@@ -530,7 +530,29 @@ func (b *Browser) currentBrowserContext() playwright.BrowserContext {
 func (b *Browser) setBrowserContext(browserContext playwright.BrowserContext) {
 	b.mu.Lock()
 	b.pwContext = browserContext
+	b.contextIterations = 0
 	b.mu.Unlock()
+}
+
+// IterationTemperature reports the iteration about to run as cold, the first
+// in its browser context, or warm, and counts it. A session that starts every
+// iteration with a fresh context or a cleared cache reports "": all its
+// iterations are cold alike. So does one refused a context.
+func (b *Browser) IterationTemperature() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	switch b.newUserPolicy {
+	case "context_each_iteration", "cookies_and_cache_each_iteration":
+		return ""
+	}
+	if b.pwContext == nil {
+		return ""
+	}
+	b.contextIterations++
+	if b.contextIterations == 1 {
+		return protocol.IterationCold
+	}
+	return protocol.IterationWarm
 }
 
 func (b *Browser) registerPage(page playwright.Page, activate bool, expectedGeneration ...string) {

@@ -772,7 +772,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		if r.BusinessTransaction {
 			group := strings.TrimSpace(r.Group)
 			transaction := strings.TrimSpace(r.ActionName)
-			if threshold, configured := slaThresholds[group]; configured && transaction != "" {
+			// A browser session's cold iteration is reported, not judged.
+			judged := r.PropertyDimensions[protocol.BrowserIterationDimension] != protocol.IterationCold
+			if threshold, configured := slaThresholds[group]; configured && transaction != "" && judged {
 				key := group + "\x00" + transaction
 				compliance := mc.transactionResponseTimeSLACumulative[key]
 				if compliance == nil && len(mc.transactionResponseTimeSLACumulative) < maxMetricDimensionEntries {

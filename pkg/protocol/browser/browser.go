@@ -123,6 +123,9 @@ type Browser struct {
 	recordedBrowserVersion string
 	browserVersionChecked  bool
 	browserVersionSkews    []browserVersionSkew
+	// contextIterations counts the iterations the current browser context
+	// has run (IterationTemperature), guarded by mu.
+	contextIterations int
 
 	mu sync.Mutex
 	// refusedPage is the page whose document at refusedURL the site refused,

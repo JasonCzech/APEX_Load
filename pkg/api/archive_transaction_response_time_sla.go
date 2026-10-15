@@ -7,6 +7,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 const transactionResponseTimeSLARequiredMetPct = 95.0
@@ -72,7 +74,8 @@ func applyTransactionResponseTimeSLAs(root string, manifest *RunArchiveManifest)
 			}
 			return fmt.Errorf("decode transaction evidence for response-time SLA evaluation: %w", err)
 		}
-		if !event.BusinessTransaction {
+		// A browser session's cold iteration is reported, not judged.
+		if !event.BusinessTransaction || event.PropertyDimensions[protocol.BrowserIterationDimension] == protocol.IterationCold {
 			continue
 		}
 		group := strings.TrimSpace(event.Group)

@@ -120,6 +120,7 @@ func convertDSLTransactionSLARules(rules []dsl.TransactionSLARule) []api.Transac
 			Comparator: rule.Comparator,
 			Threshold:  rule.Threshold,
 			Severity:   rule.Severity,
+			Iterations: rule.Iterations,
 		}
 	}
 	return converted

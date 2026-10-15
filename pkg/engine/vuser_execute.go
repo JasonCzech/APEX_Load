@@ -126,7 +126,7 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	scrubSensitiveStructuredResult(result, publicationConfig)
 	scrubSensitiveResultWithOptions(result, publicationConfig, retainResponseBody)
 	boundResultEvidence(result)
-	result.PropertyDimensions = promotedPropertyDimensions(vu.Script, result.Extractions)
+	result.PropertyDimensions = vu.resultPropertyDimensions(result.Extractions)
 	// A failure the target did not cause is interrupted: one recorded once the
 	// VUser was stopping, or the generator's own resource limit closing or
 	// refusing a browser context to protect itself.
@@ -313,7 +313,7 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	scrubSensitiveStructuredResult(tx, vu.RedactionConfig)
 	scrubSensitiveResultWithOptions(tx, vu.RedactionConfig, false)
 	boundResultEvidence(tx)
-	tx.PropertyDimensions = promotedPropertyDimensions(vu.Script, tx.Extractions)
+	tx.PropertyDimensions = vu.resultPropertyDimensions(tx.Extractions)
 	tx.Interrupted = !tx.Success && vu.interruptedFailure()
 	tx.EndsIteration = vu.endingIteration && !tx.Interrupted
 	if vu.Metrics != nil {

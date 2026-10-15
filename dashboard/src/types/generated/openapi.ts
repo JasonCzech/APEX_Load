@@ -1091,6 +1091,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -1805,6 +1806,21 @@ export interface operations {
               }>) | null;
               "version"?: number;
             }) | null;
+            "browser_iterations"?: Array<{
+              "cold"?: ({
+                "avg_ms"?: number;
+                "count"?: number;
+                "errors"?: number;
+                "p90_ms"?: number;
+              }) | null;
+              "transaction"?: string;
+              "warm"?: ({
+                "avg_ms"?: number;
+                "count"?: number;
+                "errors"?: number;
+                "p90_ms"?: number;
+              }) | null;
+            }>;
             "browser_resources"?: Array<{
               "action_name"?: string;
               "browser_engine"?: string;
@@ -5115,6 +5131,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -5918,6 +5935,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -6761,6 +6779,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -7506,6 +7525,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -12966,6 +12986,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -13871,6 +13892,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -14593,6 +14615,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -16503,6 +16526,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -17817,6 +17841,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -18419,6 +18444,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -19367,6 +19393,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -20649,6 +20676,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric": string;
                 "population"?: string;
                 "protocol"?: string;
@@ -21771,6 +21799,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric": string;
                 "population"?: string;
                 "protocol"?: string;
@@ -23394,6 +23423,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -24482,6 +24512,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -25321,6 +25352,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -30041,6 +30073,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -30775,6 +30808,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -35458,6 +35492,7 @@ export interface operations {
             "transaction_rules"?: Array<{
               "comparator"?: string;
               "group"?: string;
+              "iterations"?: string;
               "metric"?: string;
               "population"?: string;
               "protocol"?: string;
@@ -35861,6 +35896,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -36702,6 +36738,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -38963,6 +39000,7 @@ export interface operations {
             "transaction_rules"?: Array<{
               "comparator"?: string;
               "group"?: string;
+              "iterations"?: string;
               "metric"?: string;
               "population"?: string;
               "protocol"?: string;
@@ -39932,6 +39970,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric": string;
                 "population"?: string;
                 "protocol"?: string;
@@ -41623,6 +41662,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -42706,6 +42746,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -43208,6 +43249,7 @@ export interface operations {
             "transaction_rules"?: Array<{
               "comparator"?: string;
               "group"?: string;
+              "iterations"?: string;
               "metric"?: string;
               "population"?: string;
               "protocol"?: string;
@@ -44634,6 +44676,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric": string;
                 "population"?: string;
                 "protocol"?: string;
@@ -50592,6 +50635,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -51282,6 +51326,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -51894,6 +51939,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -52584,6 +52630,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -55046,6 +55093,7 @@ export interface operations {
             "transaction_rules"?: Array<{
               "comparator"?: string;
               "group"?: string;
+              "iterations"?: string;
               "metric"?: string;
               "population"?: string;
               "protocol"?: string;
@@ -57077,6 +57125,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -59134,6 +59183,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -67669,6 +67719,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -70751,6 +70802,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -71745,6 +71797,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -72452,6 +72505,7 @@ export interface operations {
               "rule": {
                 "comparator": string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric": string;
                 "population"?: string;
                 "protocol"?: string;
@@ -73361,6 +73415,21 @@ export interface operations {
               }>) | null;
               "version": number;
             }) | null;
+            "browser_iterations"?: Array<{
+              "cold"?: ({
+                "avg_ms": number;
+                "count": number;
+                "errors"?: number;
+                "p90_ms": number;
+              }) | null;
+              "transaction": string;
+              "warm"?: ({
+                "avg_ms": number;
+                "count": number;
+                "errors"?: number;
+                "p90_ms": number;
+              }) | null;
+            }>;
             "browser_resources"?: Array<{
               "action_name"?: string;
               "browser_engine"?: string;
@@ -76106,6 +76175,7 @@ export interface operations {
                 "rule": {
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -77736,6 +77806,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric": string;
                 "population"?: string;
                 "protocol"?: string;
@@ -78620,6 +78691,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -79882,6 +79954,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -80607,6 +80680,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -83560,6 +83634,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric": string;
                 "population"?: string;
                 "protocol"?: string;
@@ -88602,6 +88677,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -89116,6 +89192,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -92494,6 +92571,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -93220,6 +93298,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -105362,6 +105441,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric": string;
                 "population"?: string;
                 "protocol"?: string;
@@ -109262,6 +109342,7 @@ export interface operations {
             "transaction_rules"?: Array<{
               "comparator"?: string;
               "group"?: string;
+              "iterations"?: string;
               "metric"?: string;
               "population"?: string;
               "protocol"?: string;
@@ -111753,6 +111834,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -112713,6 +112795,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -113448,6 +113531,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -114252,6 +114336,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -115305,6 +115390,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -116027,6 +116113,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -119498,6 +119585,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -120223,6 +120311,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -120943,6 +121032,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -121997,6 +122087,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -124111,6 +124202,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -126225,6 +126317,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -128339,6 +128432,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -130453,6 +130547,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -132698,6 +132793,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -133530,6 +133626,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -134744,6 +134841,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric": string;
                 "population"?: string;
                 "protocol"?: string;
@@ -141072,6 +141170,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -143754,6 +143853,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -145362,6 +145462,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -146426,6 +146527,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -147918,6 +148020,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -149542,6 +149645,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -151133,6 +151237,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -152725,6 +152830,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -154316,6 +154422,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -160666,6 +160773,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric": string;
                 "population"?: string;
                 "protocol"?: string;
@@ -164858,6 +164966,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -165591,6 +165700,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -169110,6 +169220,7 @@ export interface operations {
             "transaction_rules"?: Array<{
               "comparator"?: string;
               "group"?: string;
+              "iterations"?: string;
               "metric"?: string;
               "population"?: string;
               "protocol"?: string;
@@ -170078,6 +170189,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric": string;
                 "population"?: string;
                 "protocol"?: string;
@@ -171917,6 +172029,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -172998,6 +173111,7 @@ export interface operations {
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "group"?: string;
+                  "iterations"?: string;
                   "metric": string;
                   "population"?: string;
                   "protocol"?: string;
@@ -178428,6 +178542,7 @@ export interface operations {
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "group"?: string;
+                "iterations"?: string;
                 "metric"?: string;
                 "population"?: string;
                 "protocol"?: string;
@@ -179132,6 +179247,7 @@ export interface operations {
             "transaction_rules"?: Array<{
               "comparator"?: string;
               "group"?: string;
+              "iterations"?: string;
               "metric"?: string;
               "population"?: string;
               "protocol"?: string;

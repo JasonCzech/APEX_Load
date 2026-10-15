@@ -14,6 +14,15 @@ func TestValidateTransactionSLARules(t *testing.T) {
 	if issues := ValidateScriptIssues(script); len(issues) != 0 {
 		t.Fatalf("valid rules produced issues: %#v", issues)
 	}
+	script.GoalConfig.TransactionRules[0].Iterations = "cold"
+	if issues := ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("a rule judging cold browser iterations produced issues: %#v", issues)
+	}
+	script.GoalConfig.TransactionRules[0].Iterations = "first"
+	if issues := ValidateScriptIssues(script); len(issues) == 0 {
+		t.Fatal("an unknown iterations value was accepted")
+	}
+	script.GoalConfig.TransactionRules[0].Iterations = ""
 	script.GoalConfig.TransactionRules[0].Metric = "median"
 	if issues := ValidateScriptIssues(script); len(issues) == 0 {
 		t.Fatal("unknown terminal transaction metric was accepted")

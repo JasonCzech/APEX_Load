@@ -1767,6 +1767,11 @@ func validateGoalConfigIssues(goal *GoalConfig) []string {
 		if rule.Severity != "" && rule.Severity != "fail" && rule.Severity != "warning" {
 			issues = append(issues, path+".severity must be fail or warning")
 		}
+		switch rule.Iterations {
+		case "", "warm", "all", "cold":
+		default:
+			issues = append(issues, path+".iterations must be warm, all or cold")
+		}
 	}
 
 	return issues

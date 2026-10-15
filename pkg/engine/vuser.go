@@ -165,7 +165,10 @@ type VUser struct {
 	// endingIteration marks the transactions recorded because the iteration
 	// ended on its own (Result.EndsIteration).
 	endingIteration bool
-	resultSequence  uint64
+	// iterationTemperature is the running iteration's browser temperature
+	// (protocol.IterationTemperatureReporter), "" outside iterations.
+	iterationTemperature string
+	resultSequence       uint64
 	// async holds the running background HTTP conversations (http_async.go);
 	// onAsyncResult lets replay report each conversation response.
 	async           *asyncConversations
@@ -638,6 +641,10 @@ func (vu *VUser) Run(ctx context.Context) {
 				logger.Error("iteration setup failed", "iteration", iteration+1, "err", scrubSensitiveError(err, vu.RedactionConfig))
 				goto teardown
 			}
+		}
+		vu.iterationTemperature = ""
+		if reporter, ok := vu.Proto.(protocol.IterationTemperatureReporter); ok {
+			vu.iterationTemperature = reporter.IterationTemperature()
 		}
 		// Protocol/session reset is iteration setup, not a started iteration or
 		// transaction. Keep reservations pending until every fallible setup step
@@ -1276,6 +1283,7 @@ func (vu *VUser) Run(ctx context.Context) {
 	}
 
 teardown:
+	vu.iterationTemperature = ""
 	vu.stopAllAsyncConversations(iterCtx, "virtual user end")
 	vu.currentIteration.Store(0)
 	releasePreIterationReservations()

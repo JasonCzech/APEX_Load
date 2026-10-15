@@ -102,6 +102,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	networkPhases := newRunArchiveNetworkPhaseAccumulator()
 	auraActions := newArchiveAuraActionAccumulator()
 	browserVersionSkews := newArchiveBrowserVersionSkewAccumulator()
+	browserIterations := newArchiveBrowserIterationAccumulator()
 	web2Migration := newRunArchiveWeb2MigrationAccumulator()
 	var browserArtifactCount int64
 	var actionSummaryCells int
@@ -312,6 +313,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		report.BrowserResources = appendTopBrowserResourceTimingsFromTransaction(report.BrowserResources, tx, 50)
 		auraActions.merge(tx)
 		browserVersionSkews.merge(tx)
+		browserIterations.merge(tx)
 		if tx.DNSMs > 0 || tx.ConnectMs > 0 || tx.TLSMs > 0 || tx.TTFBMs > 0 {
 			dependencyKey := tx.DependencyTarget
 			if tx.DependencyType != "" && dependencyKey != "" {
@@ -580,6 +582,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.NetworkPhases = networkPhases.finalizeWithExpectation(manifest.Provenance.ProtocolMix)
 	report.AuraActions = auraActions.result()
 	report.BrowserVersionSkews = browserVersionSkews.result()
+	report.BrowserIterations = browserIterations.result()
 	report.HostNetwork = buildRunArchiveHostNetwork(manifest.HostNetwork)
 	report.HTTP3Preflight = cloneHTTP3Preflight(manifest.Provenance.HTTP3Preflight)
 	report.ArtifactInventory = buildRunArchiveArtifactInventory(record, manifest)

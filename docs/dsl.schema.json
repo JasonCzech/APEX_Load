@@ -10250,6 +10250,9 @@
         "group": {
           "type": "string"
         },
+        "iterations": {
+          "type": "string"
+        },
         "metric": {
           "type": "string"
         },

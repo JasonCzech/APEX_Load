@@ -3154,6 +3154,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -5136,6 +5138,45 @@ paths:
                           type: integer
                           format: int64
                       nullable: true
+                    browser_iterations:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          cold:
+                            type: object
+                            properties:
+                              avg_ms:
+                                type: number
+                                format: double
+                              count:
+                                type: integer
+                                format: int64
+                              errors:
+                                type: integer
+                                format: int64
+                              p90_ms:
+                                type: number
+                                format: double
+                            nullable: true
+                          transaction:
+                            type: string
+                          warm:
+                            type: object
+                            properties:
+                              avg_ms:
+                                type: number
+                                format: double
+                              count:
+                                type: integer
+                                format: int64
+                              errors:
+                                type: integer
+                                format: int64
+                              p90_ms:
+                                type: number
+                                format: double
+                            nullable: true
                     browser_resources:
                       type: array
                       items:
@@ -14129,6 +14170,8 @@ paths:
                                 type: string
                               group:
                                 type: string
+                              iterations:
+                                type: string
                               metric:
                                 type: string
                               population:
@@ -16264,6 +16307,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -18427,6 +18472,8 @@ paths:
                                 type: string
                               group:
                                 type: string
+                              iterations:
+                                type: string
                               metric:
                                 type: string
                               population:
@@ -20415,6 +20462,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -86905,6 +86954,8 @@ paths:
                             type: string
                           group:
                             type: string
+                          iterations:
+                            type: string
                           metric:
                             type: string
                           population:
@@ -88005,6 +88056,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -90420,6 +90473,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -97009,6 +97064,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -103597,6 +103654,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -110199,6 +110258,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -116799,6 +116860,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -123401,6 +123464,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -130001,6 +130066,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -151522,6 +151589,8 @@ paths:
                             type: string
                           group:
                             type: string
+                          iterations:
+                            type: string
                           metric:
                             type: string
                           population:
@@ -154166,6 +154235,8 @@ paths:
                             comparator:
                               type: string
                             group:
+                              type: string
+                            iterations:
                               type: string
                             metric:
                               type: string
@@ -157441,6 +157512,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -159920,6 +159993,8 @@ paths:
                                       type: string
                                     group:
                                       type: string
+                                    iterations:
+                                      type: string
                                     metric:
                                       type: string
                                     population:
@@ -161202,6 +161277,8 @@ paths:
                           comparator:
                             type: string
                           group:
+                            type: string
+                          iterations:
                             type: string
                           metric:
                             type: string
@@ -163847,6 +163924,8 @@ paths:
                             comparator:
                               type: string
                             group:
+                              type: string
+                            iterations:
                               type: string
                             metric:
                               type: string
@@ -167019,6 +167098,8 @@ paths:
                             comparator:
                               type: string
                             group:
+                              type: string
+                            iterations:
                               type: string
                             metric:
                               type: string
@@ -171056,6 +171137,8 @@ paths:
                               type: string
                             group:
                               type: string
+                            iterations:
+                              type: string
                             metric:
                               type: string
                             population:
@@ -173992,6 +174075,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -177531,6 +177616,8 @@ paths:
                                 type: string
                               group:
                                 type: string
+                              iterations:
+                                type: string
                               metric:
                                 type: string
                               population:
@@ -179446,6 +179533,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -181581,6 +181670,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -183325,6 +183416,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -185242,6 +185335,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -186883,6 +186978,8 @@ paths:
                           comparator:
                             type: string
                           group:
+                            type: string
+                          iterations:
                             type: string
                           metric:
                             type: string
@@ -205452,6 +205549,8 @@ paths:
                                 type: string
                               group:
                                 type: string
+                              iterations:
+                                type: string
                               metric:
                                 type: string
                               population:
@@ -208451,6 +208550,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -211592,6 +211693,8 @@ paths:
                                       type: string
                                     group:
                                       type: string
+                                    iterations:
+                                      type: string
                                     metric:
                                       type: string
                                     population:
@@ -213567,6 +213670,8 @@ paths:
                                     comparator:
                                       type: string
                                     group:
+                                      type: string
+                                    iterations:
                                       type: string
                                     metric:
                                       type: string
@@ -215851,6 +215956,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -218849,6 +218956,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -221918,6 +222027,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -224118,6 +224229,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -228493,6 +228606,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -233541,6 +233656,8 @@ paths:
                                 type: string
                               group:
                                 type: string
+                              iterations:
+                                type: string
                               metric:
                                 type: string
                               population:
@@ -235758,6 +235875,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -240880,6 +240999,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -244706,6 +244827,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -246700,6 +246823,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -248787,6 +248912,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -250773,6 +250900,8 @@ paths:
                                 type: string
                               group:
                                 type: string
+                              iterations:
+                                type: string
                               metric:
                                 type: string
                               population:
@@ -252720,6 +252849,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -256747,6 +256878,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -259131,6 +259264,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -263180,6 +263315,8 @@ paths:
                                 type: string
                               group:
                                 type: string
+                              iterations:
+                                type: string
                               metric:
                                 type: string
                               population:
@@ -265139,6 +265276,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -267332,6 +267471,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -269575,6 +269716,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -273663,6 +273806,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -278401,6 +278546,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -284729,6 +284876,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -287840,6 +287989,8 @@ paths:
                                 type: string
                               group:
                                 type: string
+                              iterations:
+                                type: string
                               metric:
                                 type: string
                               population:
@@ -290281,6 +290432,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -293882,6 +294035,8 @@ paths:
                                       type: string
                                     group:
                                       type: string
+                                    iterations:
+                                      type: string
                                     metric:
                                       type: string
                                     population:
@@ -295847,6 +296002,8 @@ paths:
                                     comparator:
                                       type: string
                                     group:
+                                      type: string
+                                    iterations:
                                       type: string
                                     metric:
                                       type: string
@@ -301448,6 +301605,8 @@ paths:
                                       type: string
                                     group:
                                       type: string
+                                    iterations:
+                                      type: string
                                     metric:
                                       type: string
                                     population:
@@ -303413,6 +303572,8 @@ paths:
                                     comparator:
                                       type: string
                                     group:
+                                      type: string
+                                    iterations:
                                       type: string
                                     metric:
                                       type: string
@@ -309042,6 +309203,8 @@ paths:
                                 type: string
                               group:
                                 type: string
+                              iterations:
+                                type: string
                               metric:
                                 type: string
                               population:
@@ -310976,6 +311139,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -313021,6 +313186,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -316465,6 +316632,8 @@ paths:
                                 type: string
                               group:
                                 type: string
+                              iterations:
+                                type: string
                               metric:
                                 type: string
                               population:
@@ -318539,6 +318708,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -320739,6 +320910,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -324832,6 +325005,8 @@ paths:
                                 type: string
                               group:
                                 type: string
+                              iterations:
+                                type: string
                               metric:
                                 type: string
                               population:
@@ -326781,6 +326956,8 @@ paths:
                                 type: string
                               group:
                                 type: string
+                              iterations:
+                                type: string
                               metric:
                                 type: string
                               population:
@@ -328706,6 +328883,8 @@ paths:
                                     comparator:
                                       type: string
                                     group:
+                                      type: string
+                                    iterations:
                                       type: string
                                     metric:
                                       type: string
@@ -330667,6 +330846,8 @@ paths:
                                     comparator:
                                       type: string
                                     group:
+                                      type: string
+                                    iterations:
                                       type: string
                                     metric:
                                       type: string
@@ -332983,6 +333164,8 @@ paths:
                               comparator:
                                 type: string
                               group:
+                                type: string
+                              iterations:
                                 type: string
                               metric:
                                 type: string
@@ -343395,6 +343578,8 @@ paths:
                             type: string
                           group:
                             type: string
+                          iterations:
+                            type: string
                           metric:
                             type: string
                           population:
@@ -347614,6 +347799,8 @@ paths:
                             comparator:
                               type: string
                             group:
+                              type: string
+                            iterations:
                               type: string
                             metric:
                               type: string
@@ -361427,6 +361614,8 @@ paths:
                             comparator:
                               type: string
                             group:
+                              type: string
+                            iterations:
                               type: string
                             metric:
                               type: string
@@ -376995,6 +377184,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -379994,6 +380185,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -382097,6 +382290,8 @@ paths:
                             comparator:
                               type: string
                             group:
+                              type: string
+                            iterations:
                               type: string
                             metric:
                               type: string
@@ -385362,6 +385557,55 @@ paths:
                       - metrics
                       - version
                     nullable: true
+                  browser_iterations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        cold:
+                          type: object
+                          properties:
+                            avg_ms:
+                              type: number
+                              format: double
+                            count:
+                              type: integer
+                              format: int64
+                            errors:
+                              type: integer
+                              format: int64
+                            p90_ms:
+                              type: number
+                              format: double
+                          required:
+                            - avg_ms
+                            - count
+                            - p90_ms
+                          nullable: true
+                        transaction:
+                          type: string
+                        warm:
+                          type: object
+                          properties:
+                            avg_ms:
+                              type: number
+                              format: double
+                            count:
+                              type: integer
+                              format: int64
+                            errors:
+                              type: integer
+                              format: int64
+                            p90_ms:
+                              type: number
+                              format: double
+                          required:
+                            - avg_ms
+                            - count
+                            - p90_ms
+                          nullable: true
+                      required:
+                        - transaction
                   browser_resources:
                     type: array
                     items:
@@ -394643,6 +394887,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -406910,6 +407156,8 @@ paths:
                             comparator:
                               type: string
                             group:
+                              type: string
+                            iterations:
                               type: string
                             metric:
                               type: string
@@ -420667,6 +420915,8 @@ paths:
                             comparator:
                               type: string
                             group:
+                              type: string
+                            iterations:
                               type: string
                             metric:
                               type: string
@@ -440306,6 +440556,8 @@ paths:
                               type: string
                             group:
                               type: string
+                            iterations:
+                              type: string
                             metric:
                               type: string
                             population:
@@ -452442,6 +452694,8 @@ paths:
                                   type: string
                                 group:
                                   type: string
+                                iterations:
+                                  type: string
                                 metric:
                                   type: string
                                 population:
@@ -453939,6 +454193,8 @@ paths:
                                 comparator:
                                   type: string
                                 group:
+                                  type: string
+                                iterations:
                                   type: string
                                 metric:
                                   type: string
@@ -473375,6 +473631,8 @@ paths:
                             type: string
                           group:
                             type: string
+                          iterations:
+                            type: string
                           metric:
                             type: string
                           population:
@@ -476944,6 +477202,8 @@ paths:
                           comparator:
                             type: string
                           group:
+                            type: string
+                          iterations:
                             type: string
                           metric:
                             type: string

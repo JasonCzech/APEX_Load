@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 const (
@@ -73,8 +75,34 @@ func ValidateTransactionSLARules(rules []TransactionSLARule) error {
 		if rule.Severity != "" && rule.Severity != "fail" && rule.Severity != "warning" {
 			return fmt.Errorf("%s.severity must be fail or warning", path)
 		}
+		switch rule.Iterations {
+		case "", transactionSLAIterationsWarm, transactionSLAIterationsAll, transactionSLAIterationsCold:
+		default:
+			return fmt.Errorf("%s.iterations must be warm, all or cold", path)
+		}
 	}
 	return nil
+}
+
+// Browser iterations a transaction SLA rule judges.
+const (
+	transactionSLAIterationsWarm = "warm"
+	transactionSLAIterationsAll  = "all"
+	transactionSLAIterationsCold = "cold"
+)
+
+// transactionSLAJudgesIteration reports whether a rule judges an event's
+// browser iteration. Only iterations tagged cold differ: a session that
+// never runs warm is not tagged, so every value but "cold" judges it.
+func transactionSLAJudgesIteration(rule TransactionSLARule, event TransactionEvent) bool {
+	cold := event.PropertyDimensions[protocol.BrowserIterationDimension] == protocol.IterationCold
+	switch rule.Iterations {
+	case transactionSLAIterationsAll:
+		return true
+	case transactionSLAIterationsCold:
+		return cold
+	}
+	return !cold
 }
 
 func transactionSLASeverity(rule TransactionSLARule) string {

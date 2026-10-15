@@ -1824,6 +1824,8 @@ export interface RunArchiveReport {
   // Browser sessions whose browser major version differs from the driver's
   // tested build or from the recording's.
   browser_version_skews?: BrowserVersionSkew[]
+  // Each transaction's times in cold and warm browser iterations.
+  browser_iterations?: BrowserIterationTransaction[]
   resource_peaks: RunArchiveResourcePeaks
   release_trend?: RunArchiveReleaseTrendSummary
   // root_cause_view is the generated root cause every report format renders:
@@ -2200,6 +2202,23 @@ export interface AuraActionRollup {
   count: number
   total_ms: number
   errors?: number
+}
+
+// A transaction's passed times in browser iterations of one kind, and how
+// many failed.
+export interface BrowserIterationTimes {
+  count: number
+  errors?: number
+  avg_ms: number
+  p90_ms: number
+}
+
+// A transaction's times in cold (a browser context's first) and warm browser
+// iterations.
+export interface BrowserIterationTransaction {
+  transaction: string
+  cold?: BrowserIterationTimes
+  warm?: BrowserIterationTimes
 }
 
 // One browser version mismatch the run's sessions reported: the launched

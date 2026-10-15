@@ -566,7 +566,7 @@ var reportSectionApplies = map[string]func(d *runArchiveHTMLReportData) bool{
 		return d.Report.Manifest != nil && d.Report.Manifest.Continuity != nil && len(d.Report.Manifest.Continuity.Failovers) > 0
 	},
 	"browser": func(d *runArchiveHTMLReportData) bool {
-		return d.Report.Overview.Browser != nil || len(d.Report.AuraActions) > 0 || len(d.Report.BrowserVersionSkews) > 0
+		return d.Report.Overview.Browser != nil || len(d.Report.AuraActions) > 0 || len(d.Report.BrowserVersionSkews) > 0 || len(d.Report.BrowserIterations) > 0
 	},
 	"web2_migration": func(d *runArchiveHTMLReportData) bool { return d.Report.Web2Migration != nil },
 	"soap": func(d *runArchiveHTMLReportData) bool {
@@ -1240,6 +1240,13 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 					fmt.Sprintf("Average INP: %.1f ms", browser.AvgINPMs),
 					"")
 			}
+			if len(d.Report.BrowserIterations) > 0 {
+				*lines = append(*lines, "Cold and warm browser iterations (passed transactions; SLAs judge the warm ones):")
+				for _, row := range d.Report.BrowserIterations {
+					*lines = append(*lines, fmt.Sprintf("  %s: cold %s | warm %s", row.Transaction, browserIterationTimesText(row.Cold), browserIterationTimesText(row.Warm)))
+				}
+				*lines = append(*lines, "")
+			}
 			if len(d.Report.BrowserVersionSkews) > 0 {
 				*lines = append(*lines, "Browser version mismatches (the launched browser's major version differs):")
 				for _, skew := range d.Report.BrowserVersionSkews {
@@ -1272,6 +1279,20 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				}
 				for _, row := range rows {
 					if err := write("browser", "", row[0], row[1]); err != nil {
+						return err
+					}
+				}
+			}
+			for _, row := range d.Report.BrowserIterations {
+				for _, kind := range []struct {
+					name  string
+					times *BrowserIterationTimes
+				}{{"cold", row.Cold}, {"warm", row.Warm}} {
+					if kind.times == nil {
+						continue
+					}
+					value := fmt.Sprintf("count=%s;errors=%s;avg_ms=%s;p90_ms=%s", formatCSVInt(kind.times.Count), formatCSVInt(kind.times.Errors), formatCSVFloat(kind.times.AvgMs), formatCSVFloat(kind.times.P90Ms))
+					if err := write("browser", "browser_iteration:"+kind.name, row.Transaction, value); err != nil {
 						return err
 					}
 				}

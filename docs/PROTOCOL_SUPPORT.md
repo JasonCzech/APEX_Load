@@ -235,6 +235,15 @@ JMS, Kafka, or other high-density protocol groups.
   actions in `protocol_evidence.aura_actions` (names, the request's time, batch
   size, bytes and response state; never parameters or results), and the run
   report rolls them up by transaction.
+- A browser session that keeps its context across iterations runs its first
+  iteration in each context cold and the rest warm; clearing cookies but
+  keeping the cache leaves them warm. The engine tags each such iteration's
+  results with property `browser_iteration` (`cold` or `warm`); a session that
+  starts every iteration with a fresh context or cleared cache is not tagged.
+  SLAs judge warm iterations unless a transaction rule's `iterations` says
+  otherwise, and the run report's Browser Metrics section shows each
+  transaction's cold and warm times side by side. `browser_iteration` is
+  reserved: property analytics cannot use it.
 - Each browser session compares its browser's major version with the one the
   bundled Playwright driver was tested with (its `browsers.json`) and, for a
   recorded script, with the one it was recorded in (the recording keeps it in

@@ -3,6 +3,7 @@ package dsl
 import (
 	"fmt"
 	"github.com/jasonczech/apexload/pkg/credential"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"regexp"
 	"strings"
 )
@@ -20,6 +21,9 @@ func ValidatePropertyAnalytics(items []PropertyAnalytics) []string {
 			issues = append(issues, "property_analytics requires unique non-sensitive names and extraction keys")
 		}
 		seen[item.Name] = true
+		if item.Name == protocol.BrowserIterationDimension {
+			issues = append(issues, fmt.Sprintf("property_analytics name %q is reserved: browser iterations are tagged cold or warm under it", item.Name))
+		}
 		lower := strings.ToLower(item.Extraction)
 		for _, sensitive := range []string{"email", "phone", "address", "user", "customer", "account", "session"} {
 			if strings.Contains(lower, sensitive) {

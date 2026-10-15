@@ -333,6 +333,25 @@ type IterationController interface {
 	BeginIteration(ctx context.Context) error
 }
 
+// IterationTemperatureReporter is an optional capability of a protocol whose
+// iterations start cold (in a fresh browser context) or warm (in one an earlier
+// iteration used). The engine asks once per iteration, after BeginIteration,
+// and tags the iteration's results with the answer under
+// BrowserIterationDimension. "" leaves them untagged: a session whose every
+// iteration starts afresh has no warm iterations to tell apart.
+type IterationTemperatureReporter interface {
+	IterationTemperature() string
+}
+
+// BrowserIterationDimension is the result property that names a browser
+// iteration cold or warm. SLAs judge warm iterations unless configured
+// otherwise; reports show the two separately.
+const (
+	BrowserIterationDimension = "browser_iteration"
+	IterationCold             = "cold"
+	IterationWarm             = "warm"
+)
+
 // ConnectionController is an optional capability for protocols that pool
 // reusable network connections. The engine invokes CloseIdleConnections for
 // an http_connections_close action. Active requests are never interrupted.

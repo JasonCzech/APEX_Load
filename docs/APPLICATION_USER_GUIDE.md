@@ -1133,7 +1133,12 @@ failed. A **Browser groups** panel lists each browser group's journeys per minut
 CLS and TTFB at p75) as they are published, and the **Groups** table adds a
 Journeys/min column. LCP, FCP and TTFB describe page loads: a step that stays in a
 page an earlier step loaded (moving through a single-page app such as Salesforce
-Lightning) adds its INP and layout shift, not the load again. Page timings and Web
+Lightning) adds its INP and layout shift, not the load again. A browser group that keeps its
+browser session across iterations runs its first iteration cold, starting the app, and the
+rest warm; SLAs judge the warm iterations (a transaction SLA rule can judge `all` or only
+`cold` ones instead), and the run report's **Browser Metrics** section shows each
+transaction's cold and warm times side by side. A group that simulates a new user each
+iteration starts every iteration cold, and its SLAs judge every iteration. Page timings and Web
 Vitals, like the interaction evidence on
 the run report's **Browser** tab, are recorded only when **Capture page timings and
 Web Vitals** (and **Capture interaction evidence**) is on in the browser script's

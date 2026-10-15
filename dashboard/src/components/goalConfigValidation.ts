@@ -71,6 +71,9 @@ export function validateGoalConfig(goalConfig: GoalConfig): string | null {
 		if (!Number.isFinite(rule.threshold) || rule.threshold < 0) {
 			return `Transaction SLA rule ${index + 1} requires a finite non-negative threshold`
 		}
+		if (rule.iterations !== undefined && !['warm', 'all', 'cold'].includes(rule.iterations)) {
+			return `Transaction SLA rule ${index + 1} judges warm, all or cold browser iterations`
+		}
 	}
   if ((goalConfig.monitor_rules?.length || 0) > 32) return 'Monitoring criteria cannot contain more than 32 entries'
   for (const [index, rule] of (goalConfig.monitor_rules || []).entries()) {

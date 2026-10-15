@@ -10,6 +10,8 @@ export interface TransactionSLARule {
   comparator: 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'neq'
   threshold: number
   severity?: 'fail' | 'warning'
+  // The browser iterations judged: warm ones by default, all, or cold only.
+  iterations?: 'warm' | 'all' | 'cold'
 }
 
 export interface TransactionSLARuleResult {

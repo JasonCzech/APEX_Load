@@ -2374,6 +2374,10 @@ type TransactionSLARule struct {
 	Comparator  string  `json:"comparator"`
 	Threshold   float64 `json:"threshold"`
 	Severity    string  `json:"severity,omitempty"`
+	// Iterations names the browser iterations judged: warm ones by default
+	// ("" or "warm"), "all", or "cold" ones only. Samples from sessions
+	// that never run warm are judged by every value but "cold".
+	Iterations string `json:"iterations,omitempty"`
 }
 
 // RuntimeSettingsOverride allows overriding script-level runtime settings at test time,

@@ -811,6 +811,18 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </table>
 {{end}}
 {{else}}<p class="muted">No browser metrics were captured for this run.</p>{{end}}
+{{if .Report.BrowserIterations}}
+<h3>Cold and warm browser iterations</h3>
+<p class="muted">A browser session that keeps its context runs its first iteration cold and the rest warm. Times are of passed transactions; SLAs judge the warm iterations unless a rule says otherwise.</p>
+<table>
+  <thead><tr><th>Transaction</th><th class="num">Cold passed</th><th class="num">Cold avg</th><th class="num">Cold p90</th><th class="num">Warm passed</th><th class="num">Warm avg</th><th class="num">Warm p90</th><th class="num">Failed (cold / warm)</th></tr></thead>
+  <tbody>
+    {{range .Report.BrowserIterations}}
+    <tr><td>{{.Transaction}}</td>{{with .Cold}}<td class="num">{{.Count}}</td><td class="num">{{formatFloat .AvgMs}} ms</td><td class="num">{{formatFloat .P90Ms}} ms</td>{{else}}<td class="num">0</td><td class="num">—</td><td class="num">—</td>{{end}}{{with .Warm}}<td class="num">{{.Count}}</td><td class="num">{{formatFloat .AvgMs}} ms</td><td class="num">{{formatFloat .P90Ms}} ms</td>{{else}}<td class="num">0</td><td class="num">—</td><td class="num">—</td>{{end}}<td class="num">{{if .Cold}}{{.Cold.Errors}}{{else}}0{{end}} / {{if .Warm}}{{.Warm.Errors}}{{else}}0{{end}}</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
 {{if .Report.BrowserVersionSkews}}
 <h3>Browser version mismatches</h3>
 <p class="muted">Sessions whose browser's major version differs from the one the Playwright driver was tested with, or from the one the script was recorded with. Behavior and timings can differ between major versions.</p>

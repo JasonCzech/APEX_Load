@@ -70,7 +70,7 @@ func applyTransactionSLARules(root string, manifest *RunArchiveManifest) error {
 			if population == "" {
 				population = "transaction"
 			}
-			if archiveEventPopulation(event) != population || event.ActionName != rule.Transaction || (rule.Group != "" && rule.Group != event.Group) || (rule.Protocol != "" && rule.Protocol != protocols[event.Group]) {
+			if archiveEventPopulation(event) != population || event.ActionName != rule.Transaction || (rule.Group != "" && rule.Group != event.Group) || (rule.Protocol != "" && rule.Protocol != protocols[event.Group]) || !transactionSLAJudgesIteration(rule, event) {
 				continue
 			}
 			a := stats[i]
