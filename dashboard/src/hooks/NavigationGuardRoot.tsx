@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import UnsavedChangesModal from '../components/UnsavedChangesModal'
+import { useDesktopCloseGuard } from '../desktop/useDesktopCloseGuard'
 import {
   NavigationGuardRegisterContext,
   NavigationGuardRunnerContext,
@@ -11,7 +12,13 @@ import {
   type RegisteredNavigationGuard,
 } from './NavigationGuardProvider'
 
+// Set inside every provider, so a nested one (a dialog's own) knows it is not
+// the app's. Only the outermost provider answers a desktop quit: it sees all of
+// the page's work, a dialog's included, and the shell keeps one registration.
+const NestedNavigationGuardContext = createContext(false)
+
 export function NavigationGuardProvider({ children }: { children: ReactNode }) {
+  const nested = useContext(NestedNavigationGuardContext)
   const guardsRef = useRef<Map<string, RegisteredNavigationGuard>>(new Map())
   const sequenceRef = useRef(0)
   const [version, setVersion] = useState(0)
@@ -56,6 +63,20 @@ export function NavigationGuardProvider({ children }: { children: ReactNode }) {
     if (guard) guardsRef.current.set(guardId, { ...guard, dirty: false })
   }, [])
   const runner = useMemo<NavigationGuardRunner>(() => ({ hasDirtyGuard, runGuarded, markClean }), [hasDirtyGuard, runGuarded, markClean])
+  // A native quit in the desktop app goes through the same prompt. Quitting
+  // supersedes a leave already being asked about: that prompt stays open and,
+  // once resolved, quits (checking every guard) instead of navigating.
+  const runGuardedQuit = useCallback((quit: () => void) => {
+    const current = pendingRef.current
+    if (!current) {
+      runGuarded(quit)
+      return
+    }
+    const next = { ...current, proceed: quit, retainedGuardIds: [] }
+    pendingRef.current = next
+    setPending(next)
+  }, [runGuarded])
+  useDesktopCloseGuard(runGuardedQuit, !nested)
   const handleCancel = useCallback(() => {
     if (!saving) {
       pendingRef.current = null
@@ -63,7 +84,10 @@ export function NavigationGuardProvider({ children }: { children: ReactNode }) {
       setError(null)
     }
   }, [saving])
-  const continueAfterResolvedGuard = useCallback((resolved: PendingNavigation) => {
+  const continueAfterResolvedGuard = useCallback((answered: PendingNavigation) => {
+    // A desktop quit can take this prompt over while its save is in flight;
+    // what follows is then the quit, not the leave first asked about.
+    const resolved = pendingRef.current?.guard.id === answered.guard.id ? pendingRef.current : answered
     // A single page can publish multiple independent editors. Remove the guard
     // just resolved before inspecting the rest; its React dirty prop is updated
     // on the next render, and leaving the stale registration in the map would
@@ -109,11 +133,13 @@ export function NavigationGuardProvider({ children }: { children: ReactNode }) {
     } finally { setSaving(false) }
   }, [continueAfterResolvedGuard, pending, saving])
   return (
-    <NavigationGuardRegisterContext.Provider value={registerGuard}>
-      <NavigationGuardRunnerContext.Provider value={runner}>
-        {children}
-        {pending && <UnsavedChangesModal label={pending.guard.label} canSave={pending.guard.canSave !== false} saving={saving} error={error} onSave={() => { void handleSave() }} onDiscard={handleDiscard} onCancel={handleCancel} />}
-      </NavigationGuardRunnerContext.Provider>
-    </NavigationGuardRegisterContext.Provider>
+    <NestedNavigationGuardContext.Provider value>
+      <NavigationGuardRegisterContext.Provider value={registerGuard}>
+        <NavigationGuardRunnerContext.Provider value={runner}>
+          {children}
+          {pending && <UnsavedChangesModal label={pending.guard.label} canSave={pending.guard.canSave !== false} saving={saving} error={error} onSave={() => { void handleSave() }} onDiscard={handleDiscard} onCancel={handleCancel} />}
+        </NavigationGuardRunnerContext.Provider>
+      </NavigationGuardRegisterContext.Provider>
+    </NestedNavigationGuardContext.Provider>
   )
 }

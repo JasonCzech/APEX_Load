@@ -3,7 +3,8 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
-import { getDesktopBridge } from "./desktopBridge";
+import { installBackspaceNavigationGuard } from "./backspaceNavigationGuard";
+import { getDesktopBridge, isDesktopSurface } from "./desktopBridge";
 import { DESKTOP_QUEUED_MENU_ZOOM_EVENT } from "./rendererEvents";
 import { getWailsEventRuntime } from "./wailsRuntime";
 
@@ -337,6 +338,13 @@ export function useDesktopShellEvents(
     window.addEventListener("pagehide", markUnready);
     return () => window.removeEventListener("pagehide", markUnready);
   }, [enabled]);
+
+  // Backspace outside a text field must not navigate back out of the page.
+  // Installed for the renderer's whole life, sign-in screens included.
+  useEffect(() => {
+    if (typeof window === "undefined" || !isDesktopSurface()) return undefined;
+    return installBackspaceNavigationGuard(window);
+  }, []);
 
   // Route external http(s)/mailto links to the system browser so they never
   // replace the SPA inside the webview.

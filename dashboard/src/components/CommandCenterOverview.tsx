@@ -56,7 +56,7 @@ export default function CommandCenterOverview(props: CommandCenterOverviewProps)
     {runs.length > 0 && <>
       <p>{runs.length} active {runs.length === 1 ? 'run' : 'runs'} · {runs.length - waiting} executing or paused · {waiting} waiting or scheduled</p>
       <div className="command-overview-filters">
-        <label>Find a run<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Name or run reference" /></label>
+        <label>Find a run<input type="search" autoComplete="off" value={search} onChange={event => setSearch(event.target.value)} placeholder="Name or run reference" /></label>
         <label>Status<select value={status} onChange={event => setStatus(event.target.value)}><option value="all">All statuses</option>{[...new Set([...statuses, ...(status === 'all' ? [] : [status])])].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
         <label>Sort runs<select value={sort} onChange={event => setSort(event.target.value)}><option value="attention">Needs attention first</option><option value="recent">Most recent first</option><option value="name">Name</option></select></label>
         {(search || status !== 'all') && <button className="btn btn-secondary" type="button" onClick={() => { setSearch(''); setStatus('all') }}>Clear filters</button>}

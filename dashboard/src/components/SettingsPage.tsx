@@ -2711,7 +2711,7 @@ export default function SettingsPage({
       <div className="settings-tabbed-layout">
         {accessSettings && <AccessNavigation currentSetting={destinationId} />}
         <nav ref={settingsNavRef} hidden={accessSettings} id="settings-task-navigation" className="settings-task-navigation is-open" aria-label="Settings sections">
-          <label className="settings-navigation-search">Find settings<input className="settings-input" type="search" value={navigationSearch} onChange={event => setNavigationSearch(event.target.value)} placeholder="Search connections, policies…" /></label>
+          <label className="settings-navigation-search">Find settings<input className="settings-input" type="search" autoComplete="off" value={navigationSearch} onChange={event => setNavigationSearch(event.target.value)} placeholder="Search connections, policies…" /></label>
           {Array.from(new Set(SETTINGS_DESTINATIONS.map(item => item.group))).map(group => {
             const entries = SETTINGS_DESTINATIONS.filter(item => item.group === group && (item.id !== 'features' || canManageSystem) && matchesSettingsSearch(item, navigationSearch))
             return entries.length ? <div key={group}><h3>{group}</h3>{entries.map(item => <button type="button" key={item.id} aria-current={currentDestination.id === item.id ? 'page' : undefined} onClick={() => selectDestination(item.id)}>{item.title}{settingsOwner(item.id) !== 'settings' && <span className="settings-nav-elsewhere">{settingsOwner(item.id) === 'access' ? 'Opens Access' : 'Opens Shared assets'}</span>}{(() => {

@@ -99,7 +99,7 @@ export default function ScriptPicker({ projectId, label, value, onChange, disabl
       <div className="script-picker-controls">
         {/* Find first, then choose: the search narrows the list that follows it. */}
         <input
-          type="search"
+          type="search" autoComplete="off"
           aria-label="Find a script by name"
           placeholder="Find by name"
           value={query}

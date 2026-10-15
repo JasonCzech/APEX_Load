@@ -329,7 +329,7 @@ export function ScriptRuntimeSettingsView({
     </div>
   </div>}
   <RuntimeContextSummary script={script} debug={debugContext}>
-    <label className="runtime-settings-search">Find setting<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Timing, proxy, logging…" /></label>
+    <label className="runtime-settings-search">Find setting<input type="search" autoComplete="off" value={search} onChange={event => setSearch(event.target.value)} placeholder="Timing, proxy, logging…" /></label>
     <label className="checkbox-label runtime-settings-modified-toggle"><input type="checkbox" checked={modifiedOnly} onChange={event => setModifiedOnly(event.target.checked)} />Modified only</label>
   </RuntimeContextSummary>
   {timingIssues.length > 0 && <ul className="runtime-timing-issues" role="alert">{timingIssues.map(issue => <li key={issue}>{issue}</li>)}</ul>}

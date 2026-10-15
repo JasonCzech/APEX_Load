@@ -6168,7 +6168,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                     <>
                     <div className="action-list-filter">
                       <input
-                        type="search"
+                        type="search" autoComplete="off"
                         className="action-list-filter-input"
                         placeholder="Filter actions…"
                         value={outlineActionFilter}
@@ -7596,7 +7596,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                   </div>
                 </div>
                 {!hasTopbarContributionProvider && scriptNameField}
-                <input className="script-outline-filter" type="search" aria-label="Find action" placeholder="Find action" value={outlineActionFilter} onChange={event => setOutlineActionFilter(event.target.value)} />
+                <input className="script-outline-filter" type="search" autoComplete="off" aria-label="Find action" placeholder="Find action" value={outlineActionFilter} onChange={event => setOutlineActionFilter(event.target.value)} />
                 <nav className="script-action-navigator script-outline-tree" aria-label="Script outline">
                   <ScriptOutlineTree
                     model={outlineModel}

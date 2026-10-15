@@ -5,7 +5,7 @@ import ImportWorkflowGuide from './ImportWorkflowGuide';
 import ImportSaveConfirmation from './ImportSaveConfirmation';
 import ImportReviewTabs, { type ImportReviewTab } from './ImportReviewTabs';
 import DialogLayer from './ux/DialogLayer';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider';
 import { createPortal } from 'react-dom';
 import { type Folder, type StoredScript } from '../types';
@@ -34,6 +34,11 @@ import BrunoGeneratedValues from './BrunoGeneratedValues';
 import { brunoGeneratedValueGroups, brunoGeneratedValueSelections } from './brunoGeneratedValueGroups';
 import { useImportScenario } from './useImportScenario';
 import { useImportDestination } from './importDestinationContext';
+import { isDesktopSurface } from '../desktop/desktopBridge';
+import { BRUNO_DROP_ARCHIVE_EXTENSIONS, filesFromDroppedEntries, nativeFileReadErrorMessage } from '../desktop/desktopFiles';
+import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop';
+import DropIngestOverlay from './DropIngestOverlay';
+import { describeAccepted, useDropIngestFeedback } from './dropIngestFeedback';
 import './BrunoImport.css';
 interface Props {
     initialFiles?: File[] | null;
@@ -611,6 +616,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         return () => onOperationBusyChange?.(false);
     }, [onOperationBusyChange, operationBusy]);
     const sourceGenerationRef = useRef(0);
+    // Counts inspections and saves started, so a native drop read meanwhile
+    // yields to them (see handleNativeSourceDrop).
+    const sourceOperationRef = useRef(0);
     const mountedRef = useRef(true);
     const [sourceGeneration, setSourceGeneration] = useState(0);
     const credentialReviewIdentity = `${sourceGeneration}:${projectId || ''}`;
@@ -1068,8 +1076,11 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         const timeout = window.setTimeout(() => setProtectedSessionNow(Date.now()), Math.min(remaining, 2147483647));
         return () => window.clearTimeout(timeout);
     }, [inspection?.import_session_id, protectedSessionExpiry]);
+    // A native drop's own problem, shown on the source card it was dropped on.
+    const [sourceDropError, setSourceDropError] = useState('');
     const selectFiles = (next: File[]) => {
         advanceSourceGeneration();
+        setSourceDropError('');
         setFiles(next);
         folderNameEditedRef.current = false;
         setNewFolderName(suggestedBrunoFolderName(next));
@@ -1087,6 +1098,50 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         setNativeSaveModes({});
         setHeaderRepairs({});
     };
+    // In the desktop app the shell turns off the page's own drops, so a folder,
+    // archive or request file dropped on the source card arrives as native
+    // paths and is read through the bridge.
+    const sourceDropRef = useRef<HTMLElement>(null);
+    const desktopDrop = isDesktopSurface();
+    const selectFilesRef = useRef(selectFiles);
+    selectFilesRef.current = selectFiles;
+    const { phase: sourceDropPhase, label: sourceDropLabel, hostClassName: sourceDropHostClassName, begin: beginSourceDrop, succeed: succeedSourceDrop, fail: failSourceDrop } = useDropIngestFeedback();
+    const sourceDropSequenceRef = useRef(0);
+    const handleNativeSourceDrop = useCallback((paths: string[]) => {
+        // Only the latest drop applies, and only if nothing else happened to
+        // the source while it was read: a pick, Clear, a project switch, or an
+        // inspection or save started (whose result it would replace).
+        const drop = ++sourceDropSequenceRef.current;
+        const generation = sourceGenerationRef.current;
+        const operation = sourceOperationRef.current;
+        const current = () => {
+            if (!mountedRef.current || drop !== sourceDropSequenceRef.current)
+                return false;
+            if (sourceGenerationRef.current === generation && sourceOperationRef.current === operation)
+                return true;
+            failSourceDrop();
+            return false;
+        };
+        setSourceDropError('');
+        beginSourceDrop(paths.length > 1 ? `Reading ${paths.length} dropped items…` : 'Reading the dropped item…');
+        void filesFromDroppedEntries(paths, BRUNO_DROP_ARCHIVE_EXTENSIONS).then(dropped => {
+            if (!current())
+                return;
+            if (dropped.length > 0) {
+                selectFilesRef.current(dropped);
+                succeedSourceDrop(describeAccepted(dropped.length));
+                return;
+            }
+            failSourceDrop();
+            setSourceDropError('Nothing to import was found there. Drop a collection folder with its files, an archive or a request file.');
+        }).catch(cause => {
+            if (!current())
+                return;
+            failSourceDrop();
+            setSourceDropError(nativeFileReadErrorMessage(cause));
+        });
+    }, [beginSourceDrop, succeedSourceDrop, failSourceDrop]);
+    useDesktopFileDrop(sourceDropRef, handleNativeSourceDrop, desktopDrop && !loading);
     const createDestinationFolder = async (): Promise<string | undefined> => {
         const folderName = newFolderName.trim();
         const sourceProjectId = sourceProjectIdRef.current;
@@ -1132,6 +1187,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         if (!projectId || files.length === 0)
             return;
         const sourceRequestGeneration = advanceSourceGeneration();
+        sourceOperationRef.current += 1;
         const sourceProjectId = sourceProjectIdRef.current;
         const requestIsCurrent = () => mountedRef.current
             && sourceGenerationRef.current === sourceRequestGeneration
@@ -1199,6 +1255,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             && sourceGenerationRef.current === sourceRequestGeneration
             && sourceProjectIdRef.current === sourceProjectId
             && inspectionRef.current?.import_session_id === sourceImportSessionId;
+        sourceOperationRef.current += 1;
         setLoading(true);
         setError('');
         try {
@@ -1383,14 +1440,16 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
       </div>}
       <div hidden={!!inspection && !setupOpen}>
       {inspection && <p role="note">Changing the source replaces this inspection and resets unsaved review choices. Re-inspection creates a new session.</p>}
-      <section className="bruno-card">
+      <section className={desktopDrop ? `bruno-card ${sourceDropHostClassName}` : 'bruno-card'} ref={sourceDropRef} style={desktopDrop ? ({ '--wails-drop-target': 'drop' } as CSSProperties) : undefined}>
+        {desktopDrop && <DropIngestOverlay phase={sourceDropPhase} label={sourceDropLabel}/>}
         <div className="bruno-card-heading">
           <div>
             <h3>1. Source bundle</h3>
-            <p>Choose a complete collection directory, deterministic archive, or standalone request file.</p>
+            <p>Choose a complete collection directory, deterministic archive, or standalone request file{desktopDrop ? ', or drop one here' : ''}.</p>
           </div>
           {files.length > 0 && <span className="bruno-stat">{files.length} file{files.length === 1 ? '' : 's'} · {formatBytes(selectedBytes)}</span>}
         </div>
+        {sourceDropError && <div className="settings-error" role="alert">{sourceDropError}</div>}
         <div className="bruno-source-actions">
           <button className="btn btn-secondary" disabled={loading} onClick={() => fileInputRef.current?.click()}>Choose files or archive</button>
           <button className="btn btn-secondary" disabled={loading} onClick={() => directoryInputRef.current?.click()}>Choose collection directory</button>
@@ -1518,7 +1577,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                         Select all
                       </label>
                     </div>
-                    <div className="bruno-review-toolbar"><label>Find API<input type="search" value={apiSearch} onChange={event => { setApiSearch(event.target.value); setNativeCandidatePage(0); }}/></label><label>Readiness<select value={apiFilter} onChange={event => { setApiFilter(event.target.value); setNativeCandidatePage(0); }}><option value="all">All APIs</option><option value="review">Conversion review</option><option value="blocked">Needs configuration</option><option value="ready">No detected requirements</option></select></label><button type="button" className="btn btn-secondary" onClick={() => setNativeCandidateSort({ key: 'sequence', direction: 'asc' })}>Sort by Bruno sequence</button><span>{sortedNativeCandidates.length} matching · {selectedNativeCandidates.length} selected across all pages</span></div>
+                    <div className="bruno-review-toolbar"><label>Find API<input type="search" autoComplete="off" value={apiSearch} onChange={event => { setApiSearch(event.target.value); setNativeCandidatePage(0); }}/></label><label>Readiness<select value={apiFilter} onChange={event => { setApiFilter(event.target.value); setNativeCandidatePage(0); }}><option value="all">All APIs</option><option value="review">Conversion review</option><option value="blocked">Needs configuration</option><option value="ready">No detected requirements</option></select></label><button type="button" className="btn btn-secondary" onClick={() => setNativeCandidateSort({ key: 'sequence', direction: 'asc' })}>Sort by Bruno sequence</button><span>{sortedNativeCandidates.length} matching · {selectedNativeCandidates.length} selected across all pages</span></div>
                     <p>Selection covers the entire collection, including filtered-out APIs. Display sorting does not change saved Bruno sequence.</p>
                     {sortedNativeCandidates.length === 0 && <p role="status">No APIs match these filters.</p>}
                     <div className="bruno-native-table-wrap" role="region" aria-label="API selection table; scroll horizontally for details" tabIndex={0}>
@@ -1881,7 +1940,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
           {nativeSourceCandidate && (<BrunoNativeSourceDialog candidate={nativeSourceCandidate} importSessionId={inspection.import_session_id || ''} projectId={projectId || ''} loadSource={api.getBrunoImportSessionSource} onClose={() => setNativeSourceCandidateId(null)}/>)}
         </>)}
 
-      <ImportSaveConfirmation result={committed ? { scripts: committed.scripts.map(storedScriptFromDefinition) } : null} onImportMore={() => { selectFiles([]); fileInputRef.current?.click(); }} onOpen={saved => onImported?.(saved)} disabled={operationBusy} onCreateScenario={scenario.available && committed ? () => void scenario.create(inspection?.result.collection.name || 'Imported Bruno collection', committed.scripts.map(storedScriptFromDefinition)) : undefined} scenarioBusy={scenario.busy} scenarioError={committed ? scenario.errorFor(committed.scripts.map(storedScriptFromDefinition)) : ''}/>
+      <ImportSaveConfirmation result={committed ? { scripts: committed.scripts.map(storedScriptFromDefinition) } : null} recentName={inspection?.result.collection.name || undefined} onImportMore={() => { selectFiles([]); fileInputRef.current?.click(); }} onOpen={saved => onImported?.(saved)} disabled={operationBusy} onCreateScenario={scenario.available && committed ? () => void scenario.create(inspection?.result.collection.name || 'Imported Bruno collection', committed.scripts.map(storedScriptFromDefinition)) : undefined} scenarioBusy={scenario.busy} scenarioError={committed ? scenario.errorFor(committed.scripts.map(storedScriptFromDefinition)) : ''}/>
 
 
 

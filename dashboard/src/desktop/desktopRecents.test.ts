@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { addRecent, clearRecents, getRecents } from './desktopRecents'
+import { addRecent, clearRecents, getRecents, retargetRecent } from './desktopRecents'
 import type { WailsDesktopBridge } from './desktopBridge'
 
 type BridgeWindow = typeof window & { go?: { main?: { App?: WailsDesktopBridge } } }
@@ -30,6 +30,20 @@ describe('desktopRecents', () => {
     const items = await getRecents()
     expect(items).toHaveLength(1)
     expect(items[0].name).toBe('Order')
+  })
+
+  // A scenario draft saved as a scenario: its listed entry opens the scenario,
+  // and a draft that was never listed is not added.
+  it('retargets only a listed entry', async () => {
+    const add = vi.fn().mockResolvedValue(undefined)
+    setBridge({
+      GetRecentItems: vi.fn().mockResolvedValue('[{"kind":"scenario","id":"draft-1","name":"Orders","route":"#/tests?scenarioDraftId=draft-1"}]'),
+      AddRecentItem: add,
+    })
+    await retargetRecent('scenario', 'draft-2', { name: 'Other', route: '#/tests?scenarioId=s2' })
+    expect(add).not.toHaveBeenCalled()
+    await retargetRecent('scenario', 'draft-1', { name: 'Orders', route: '#/tests?scenarioId=s1' })
+    expect(add).toHaveBeenCalledWith(JSON.stringify({ kind: 'scenario', id: 'draft-1', name: 'Orders', route: '#/tests?scenarioId=s1' }))
   })
 
   it('returns [] on malformed bridge output', async () => {

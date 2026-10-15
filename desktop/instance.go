@@ -55,6 +55,10 @@ var importReadableFileExtensions = map[string]bool{
 	".http": true, // raw HTTP sample
 	".txt":  true, // raw/curl/sample response
 	".sh":   true, // shell/curl sample
+	".bru":  true, // Bruno request file
+	".tar":  true, // collection archive
+	".tgz":  true, // collection archive
+	".gz":   true, // collection archive (.tar.gz)
 }
 
 // Events emitted to the dashboard when the OS asks us to open a file/URL (via

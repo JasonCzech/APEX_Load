@@ -189,8 +189,9 @@ export async function pickFilesViaBridge(
 }
 
 // Importable file types accepted from a native drop. Kept in sync with the Go
-// bridge's openableFileExtensions (instance.go), which is the security boundary;
-// this client-side gate avoids attempting to read unrelated dropped files.
+// bridge's isImportableFile (instance.go: openableFileExtensions plus
+// importReadableFileExtensions), which is the security boundary; this
+// client-side gate avoids attempting to read unrelated dropped files.
 const IMPORTABLE_DROP_EXTENSIONS = [
   ".json",
   ".zip",
@@ -216,6 +217,10 @@ const IMPORTABLE_DROP_EXTENSIONS = [
   ".txt",
   ".curl",
   ".sh",
+  ".bru",
+  // Bruno archives by name; import routing sends them to the Bruno importer.
+  ".bruno.tar",
+  ".bruno.tar.gz",
 ];
 
 function isImportableDropPath(path: string): boolean {
@@ -234,6 +239,66 @@ export async function filesFromDroppedPaths(paths: string[]): Promise<File[]> {
     files.push(await readFileFromBridge(path, "drop"));
   }
   return files;
+}
+
+// Archives the Bruno source card reads. They stay out of the shared list: a
+// generic tarball dropped elsewhere is not import content, and import routing
+// would hand it to the OpenAPI importer.
+export const BRUNO_DROP_ARCHIVE_EXTENSIONS: readonly string[] = [".tar", ".tgz", ".gz"];
+
+// The shell grants only what a drop event reported: a folder, or a file of a
+// type it reads. Asking for anything else fails with "not granted".
+function isUngrantedDropError(error: unknown): boolean {
+  const cause = error instanceof NativeFileReadError ? error.cause : error;
+  return /not granted/i.test(cause instanceof Error ? cause.message : String(cause ?? ""));
+}
+
+// filesFromDroppedEntries is filesFromDroppedPaths plus dropped folders: a
+// folder's files carry webkitRelativePath ("Folder/sub/file"), like a browser
+// folder pick, so they upload through the same folder path. A dropped item
+// that is neither (a document, an app) is skipped. extraExtensions widens the
+// file types one drop zone reads.
+export async function filesFromDroppedEntries(
+  paths: string[],
+  extraExtensions: readonly string[] = [],
+): Promise<File[]> {
+  const bridge = getDesktopBridge();
+  const readFolder = async (path: string): Promise<File[] | null> => {
+    if (typeof bridge?.ReadDroppedDirectory !== "function") return null;
+    try {
+      return filesFromDroppedDirectoryPayload(await bridge.ReadDroppedDirectory(path));
+    } catch (error: unknown) {
+      if (isUngrantedDropError(error)) return null;
+      throw new NativeFileReadError(classifyNativeReadError(error), path, error);
+    }
+  };
+  // Paths are read side by side: each one the shell did not grant waits out
+  // its grant timeout, and those waits must not add up.
+  const groups = await Promise.all(paths.map(async (path): Promise<File[]> => {
+    const lower = path.toLowerCase();
+    if (isImportableDropPath(path) || extraExtensions.some((ext) => lower.endsWith(ext))) {
+      try {
+        return [await readFileFromBridge(path, "drop")];
+      } catch (error: unknown) {
+        // A folder named like a file type (orders.yml/) has no file grant.
+        const folder = isUngrantedDropError(error) ? await readFolder(path) : null;
+        if (folder) return folder;
+        throw error;
+      }
+    }
+    return (await readFolder(path)) ?? [];
+  }));
+  return groups.flat();
+}
+
+function filesFromDroppedDirectoryPayload(raw: string): File[] {
+  const parsed = JSON.parse(raw) as { files?: Array<{ path?: unknown; base64?: unknown }> } | null;
+  return (parsed?.files || []).flatMap((entry) => {
+    if (typeof entry.path !== "string" || typeof entry.base64 !== "string") return [];
+    const file = fileFromBase64(entry.path, entry.base64);
+    Object.defineProperty(file, "webkitRelativePath", { value: entry.path });
+    return [file];
+  });
 }
 
 // Native save is capped below the Go bridge's 64 MiB limit; larger exports fall

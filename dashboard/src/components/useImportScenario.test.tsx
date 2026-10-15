@@ -4,12 +4,14 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { StoredScript } from '../types'
+import { addRecent } from '../desktop/desktopRecents'
 import { useImportScenario } from './useImportScenario'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const apiMock = { createScenarioDraft: vi.fn() }
 vi.mock('../hooks/useApi', () => ({ useApi: () => apiMock }))
+vi.mock('../desktop/desktopRecents', () => ({ addRecent: vi.fn().mockResolvedValue(undefined) }))
 
 const script = (id: string) => ({ id, name: `Request ${id}`, protocol: 'http', version: '1.0', created_at: '2026-10-14T00:00:00Z' }) as StoredScript
 
@@ -40,6 +42,8 @@ describe('useImportScenario', () => {
     const saved = [script('a'), script('b')]
     await act(async () => scenario.create('Orders', saved))
     expect(window.location.hash).toContain('draftId=draft-1')
+    // The desktop app lists the draft under Recent.
+    expect(addRecent).toHaveBeenCalledWith(expect.objectContaining({ kind: 'scenario', id: 'draft-1', name: 'Orders' }))
     // An unsaved-work guard kept the user on the import.
     window.location.hash = '#/scripts'
     await act(async () => scenario.create('Orders', saved))

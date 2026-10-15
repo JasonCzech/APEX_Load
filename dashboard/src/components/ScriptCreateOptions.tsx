@@ -788,7 +788,7 @@ export default function ScriptCreateOptions({
               <label>
                 <span>Search scripts</span>
                 <input
-                  type="search"
+                  type="search" autoComplete="off"
                   aria-label="Search existing scripts"
                   value={existingScriptQuery}
                   onChange={event => setExistingScriptQuery(event.target.value)}
@@ -1073,7 +1073,7 @@ export default function ScriptCreateOptions({
             <div className="import-source-search">
               <label>
                 <span>Find a source format</span>
-                <input type="search" className="settings-input" value={sourceQuery} onChange={event => setSourceQuery(event.target.value)} placeholder="Search formats, protocols, or tools" />
+                <input type="search" autoComplete="off" className="settings-input" value={sourceQuery} onChange={event => setSourceQuery(event.target.value)} placeholder="Search formats, protocols, or tools" />
               </label>
               {sourceQuery && <button type="button" className="btn btn-secondary" onClick={() => setSourceQuery('')}>Clear search</button>}
               {!importSurfacesLoading && !importSurfacesError && <span role="status">{filteredImportSurfaces.length} of {visibleImportSurfaces.length} sources</span>}

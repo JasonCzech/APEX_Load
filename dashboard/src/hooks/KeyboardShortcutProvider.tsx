@@ -71,7 +71,7 @@ export function noopUnregister() {
   return undefined
 }
 
-function isMacLike() {
+export function isMacLike() {
   if (typeof navigator === 'undefined') return false
   return /mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent)
 }
@@ -90,6 +90,10 @@ function normalizeDisplayKey(part: string, macLike = isMacLike()) {
   if (lower === 'backspace') return 'Backspace'
   if (lower === 'enter') return 'Enter'
   if (lower === 'space') return 'Space'
+  if (lower === 'arrowleft') return '←'
+  if (lower === 'arrowright') return '→'
+  if (lower === 'arrowup') return '↑'
+  if (lower === 'arrowdown') return '↓'
   return key.charAt(0).toUpperCase() + key.slice(1)
 }
 
@@ -103,17 +107,21 @@ export function formatShortcutDisplay(keys: string | string[] | undefined, macLi
     .join(' ')
 }
 
-export function isEditableShortcutTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
+const NON_TEXT_INPUT_TYPES = new Set(['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'])
+
+// isEditableShortcutTarget reports whether keys typed at target belong to a
+// field, so page shortcuts stay out of it. With textEditing, only a field the
+// key can edit counts: not a select, nor a read-only or disabled field.
+export function isEditableShortcutTarget(target: EventTarget | null, { textEditing = false }: { textEditing?: boolean } = {}): boolean {
+  if (typeof HTMLElement === 'undefined' || !(target instanceof HTMLElement)) return false
   if (target.isContentEditable) return true
-  if (target.closest('[contenteditable="true"]')) return true
+  if (target.closest('[contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]')) return true
 
-  const tagName = target.tagName
-  if (tagName === 'TEXTAREA' || tagName === 'SELECT') return true
-  if (tagName !== 'INPUT') return false
-
-  const type = (target as HTMLInputElement).type.toLowerCase()
-  return !['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'].includes(type)
+  if (target instanceof HTMLSelectElement) return !textEditing
+  const editable = !textEditing || !((target as HTMLInputElement).readOnly || (target as HTMLInputElement).disabled)
+  if (target instanceof HTMLTextAreaElement) return editable
+  if (!(target instanceof HTMLInputElement)) return false
+  return editable && !NON_TEXT_INPUT_TYPES.has(target.type.toLowerCase())
 }
 
 export function parseShortcutSequence(shortcut: string): ParsedShortcutSequence {

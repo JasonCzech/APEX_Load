@@ -50,6 +50,8 @@ export type WailsDesktopBridge = {
   // Native-drop reads wait for the backend's OS-issued path grant, avoiding a
   // race between the frontend and backend Wails drop handlers.
   ReadDroppedFileBase64?: (path: string) => Promise<string>;
+  // A dropped folder: JSON {"files":[{"path":"Folder/sub/file","base64":"..."}]}.
+  ReadDroppedDirectory?: (path: string) => Promise<string>;
   WriteFileBase64?: (path: string, base64: string) => Promise<void>;
   // Streams a same-controller GET directly to a native save destination. The
   // native process supplies the desktop capability and never materializes the
@@ -85,6 +87,13 @@ export type WailsDesktopBridge = {
   ) => Promise<string>;
   // Closes the activation delivery window before a renderer reload/unload.
   RendererUnready?: (rendererSession: string) => Promise<void>;
+  // A native close (close button, Cmd+Q, File > Quit) is held while a close
+  // guard is registered: the shell sends "desktop:close-requested" and quits
+  // once the renderer confirms that request (or never takes it).
+  EnableCloseGuard?: () => Promise<string>;
+  DisableCloseGuard?: (token: string) => Promise<void>;
+  AcknowledgeCloseRequest?: (token: string, requestId: string) => Promise<void>;
+  ConfirmClose?: (token: string, requestId: string) => Promise<void>;
 };
 
 type LocationLike = { protocol?: string; hostname?: string };

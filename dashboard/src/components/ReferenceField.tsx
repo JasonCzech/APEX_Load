@@ -162,7 +162,7 @@ export default function ReferenceField({ value, onChange, field, label, multilin
           onMouseDown={remember} onClick={() => setPicker(current => current?.mode === 'search' ? null : { mode: 'search', query: '' })}>{'{ }'}</button>}
         {picker && scope && (
           <span className="reference-picker" role="dialog" aria-label={`References for ${label}`}>
-            {picker.mode === 'search' && <input ref={focusOnMount} type="search" className="reference-picker-search" role="combobox" aria-expanded="true" aria-controls={`${id}-listbox`} aria-activedescendant={options[active] ? `${id}-option-${active}` : undefined} aria-label="Find a reference" placeholder="Find a reference" value={picker.query}
+            {picker.mode === 'search' && <input ref={focusOnMount} type="search" autoComplete="off" className="reference-picker-search" role="combobox" aria-expanded="true" aria-controls={`${id}-listbox`} aria-activedescendant={options[active] ? `${id}-option-${active}` : undefined} aria-label="Find a reference" placeholder="Find a reference" value={picker.query}
               onChange={event => setPicker({ mode: 'search', query: event.target.value })} onKeyDown={event => { pickerKeys(event) }} />}
             <ReferenceOptions id={id} options={options} active={active} onPick={pick} onHover={setActive} />
             {picker.mode === 'search' && onMakeParameter && makesParameter && value.trim() && (
@@ -236,7 +236,7 @@ export function ReferenceSearch({ label, onPick, onClose }: { label: string; onP
   if (!scope) return null
   return (
     <span ref={container} className="reference-picker standalone" role="dialog" aria-label={`References for ${label}`}>
-      <input ref={focusOnMount} type="search" className="reference-picker-search" role="combobox" aria-expanded="true" aria-controls={`${id}-listbox`} aria-activedescendant={options[active] ? `${id}-option-${active}` : undefined} aria-label="Find a reference" placeholder="Find a reference" value={query}
+      <input ref={focusOnMount} type="search" autoComplete="off" className="reference-picker-search" role="combobox" aria-expanded="true" aria-controls={`${id}-listbox`} aria-activedescendant={options[active] ? `${id}-option-${active}` : undefined} aria-label="Find a reference" placeholder="Find a reference" value={query}
         onChange={event => setQuery(event.target.value)}
         onKeyDown={event => {
           if (event.key === 'ArrowDown') setActive(index => Math.min(options.length - 1, index + 1))

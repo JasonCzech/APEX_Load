@@ -1287,7 +1287,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
                   <span>Search scripts</span>
                   <input
                     className="settings-input"
-                    type="search"
+                    type="search" autoComplete="off"
                     value={libraryQuery}
                     onChange={(event) => setLibraryQuery(event.target.value)}
                     placeholder="Find scripts by name, protocol, or release..."

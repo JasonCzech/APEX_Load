@@ -4,10 +4,13 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ImportSaveConfirmation from './ImportSaveConfirmation'
+import { addRecent } from '../desktop/desktopRecents'
 import { importScenarioName } from './useImportScenario'
 import type { StoredScenario, StoredScript } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+vi.mock('../desktop/desktopRecents', () => ({ addRecent: vi.fn().mockResolvedValue(undefined) }))
 
 let container: HTMLDivElement
 let root: Root
@@ -73,5 +76,19 @@ describe('ImportSaveConfirmation', () => {
     await act(async () => root.render(<ImportSaveConfirmation result={{ scripts: saved(1) }} onImportMore={vi.fn()} onOpen={vi.fn()} onCreateScenario={vi.fn()} scenarioError="Your role cannot create scenarios in this project." />))
     expect(button('Create a scenario from this script')).toBeDefined()
     expect(container.querySelector('[role="alert"]')?.textContent).toBe('Your role cannot create scenarios in this project.')
+  })
+
+  // The desktop app's Recent list gets one entry per saved import (and the
+  // scenario a save made), named after the source.
+  it('records the saved import and its scenario under Recent once', async () => {
+    vi.mocked(addRecent).mockClear()
+    const scripts = saved(2).map(script => ({ ...script, project_id: 'project-1' }))
+    const scenario = { id: 'scenario-9', name: 'checkout plan', project_id: 'project-1' } as StoredScenario
+    const props = { result: { scripts, scenario }, onImportMore: vi.fn(), onOpen: vi.fn(), recentName: 'checkout plan' }
+    await act(async () => root.render(<ImportSaveConfirmation {...props} />))
+    await act(async () => root.render(<ImportSaveConfirmation {...props} disabled />))
+    await vi.waitFor(() => expect(addRecent).toHaveBeenCalledTimes(2))
+    expect(addRecent).toHaveBeenCalledWith({ kind: 'import', id: 'script-1', name: 'checkout plan', route: '#/scripts?mode=list&projectId=project-1' })
+    expect(vi.mocked(addRecent).mock.calls[1][0]).toMatchObject({ kind: 'scenario', id: 'scenario-9', name: 'checkout plan' })
   })
 })

@@ -2979,7 +2979,7 @@ function CommandRunTables({
         <label className="command-table-filter">
           <span>Filter</span>
           <input
-            type="search"
+            type="search" autoComplete="off"
             value={filter}
             aria-label="Filter command center table rows"
             placeholder="Filter rows"

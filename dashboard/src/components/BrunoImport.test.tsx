@@ -2128,6 +2128,53 @@ describe('BrunoImport', () => {
     return inspection
   }
 
+  // A desktop drop still being read when Save starts yields to the save: the
+  // save keeps its result and the page does not stay busy, whether the read
+  // lands during the save or after it.
+  it.each([['during', false], ['after', true]])('ignores a desktop drop that lands %s a save', async (_when, saveFirst) => {
+    type DesktopWindow = typeof window & { go?: unknown; runtime?: unknown }
+    const desktopWindow = window as DesktopWindow
+    let drop: ((x: number, y: number, paths: string[]) => void) | undefined
+    let finishRead: (raw: string) => void = () => undefined
+    desktopWindow.go = { main: { App: { ReadDroppedDirectory: vi.fn(() => new Promise<string>(resolve => { finishRead = resolve })) } } }
+    desktopWindow.runtime = { OnFileDrop: (callback: (x: number, y: number, paths: string[]) => void) => { drop = callback } }
+    const originalElementFromPoint = document.elementFromPoint
+    try {
+      const inspection = previouslyImportedFixture()
+      let finishCommit: (receipt: unknown) => void = () => undefined
+      apiMock.commitBrunoImport.mockImplementationOnce(() => new Promise(resolve => { finishCommit = resolve }))
+      await renderAndInspect(inspection, 'folder-1')
+      const changeSource = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Change source or destination')
+      await act(async () => { changeSource?.click() })
+      const heading = Array.from(container.querySelectorAll('h3')).find(item => item.textContent === '1. Source bundle')!
+      ;(document as unknown as { elementFromPoint: () => Element }).elementFromPoint = () => heading
+      await act(async () => { drop?.(10, 10, ['/Users/me/Other Collection']) })
+      await act(async () => {
+        saveDraftButton()?.click()
+        await Promise.resolve()
+      })
+      const read = async () => { await act(async () => { finishRead(JSON.stringify({ files: [{ path: 'Other Collection/opencollection.yml', base64: btoa('x') }] })) }) }
+      const save = async () => {
+        await act(async () => {
+          finishCommit({
+            batch_id: 'native-batch', created: true, idempotent_replay: false, count: 2, _http_status: 201,
+            updated_script_ids: ['existing-1', 'existing-2'],
+            scripts: inspection.result.scripts.map((candidate, index) => ({ ...candidate.script, id: `existing-${index + 1}` })),
+          })
+          await Promise.resolve()
+        })
+        await vi.waitFor(() => expect(container.textContent).toContain('Saved 2 scripts to the script library.'))
+      }
+      if (saveFirst) { await save(); await read() } else { await read(); await save() }
+      expect(container.textContent).toContain('Saved 2 scripts to the script library.')
+      expect(container.textContent).not.toContain('Other Collection/opencollection.yml')
+    } finally {
+      ;(document as unknown as { elementFromPoint: typeof document.elementFromPoint }).elementFromPoint = originalElementFromPoint
+      delete desktopWindow.go
+      delete desktopWindow.runtime
+    }
+  })
+
   it('updates previously imported scripts as a new version by default', async () => {
     const inspection = previouslyImportedFixture()
     apiMock.commitBrunoImport.mockResolvedValueOnce({
@@ -2568,5 +2615,95 @@ describe('BrunoImport', () => {
     // Its unresolved input still blocks replay; unknown secrets never read as ready.
     expect(container.textContent).toContain('Replay: Blocked')
     expect(container.querySelector('.bruno-unset-secrets')?.textContent).toContain('could not be checked')
+  })
+})
+
+describe('BrunoImport in the desktop app', () => {
+  type DesktopWindow = typeof window & {
+    go?: { main?: { App?: Record<string, unknown> } }
+    runtime?: { OnFileDrop?: (callback: (x: number, y: number, paths: string[]) => void, useDropTarget: boolean) => void }
+  }
+  let container: HTMLDivElement
+  let root: Root
+  let drop: ((x: number, y: number, paths: string[]) => void) | undefined
+  const originalElementFromPoint = document.elementFromPoint
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    apiMock.getBrunoSupportMatrix.mockResolvedValue({ compatibility_version: '3.5.2', import_enabled: true, safe_execution_enabled: false, developer_execution_enabled: false, native_projection_enabled: false })
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({ enabled: true, authenticated: true, project_id: 'project-1', resources: [] })
+    apiMock.listFolders.mockResolvedValue({ folders: [], count: 0 })
+    ;(window as DesktopWindow).go = { main: { App: {
+      ReadDroppedDirectory: vi.fn(async () => JSON.stringify({ files: [
+        { path: 'Orders Collection/opencollection.yml', base64: btoa('opencollection: 1.0.0') },
+        { path: 'Orders Collection/orders/get-order.yml', base64: btoa('info: {}') },
+      ] })),
+    } } }
+    ;(window as DesktopWindow).runtime = { OnFileDrop: callback => { drop = callback } }
+  })
+
+  afterEach(async () => {
+    await act(async () => root.unmount())
+    container.remove()
+    delete (window as DesktopWindow).go
+    delete (window as DesktopWindow).runtime
+    ;(document as unknown as { elementFromPoint: typeof document.elementFromPoint }).elementFromPoint = originalElementFromPoint
+    drop = undefined
+    vi.resetAllMocks()
+  })
+
+  // The shell turns off the page's own drops, so a dropped collection folder
+  // arrives as a native path and is read through the bridge, like a folder pick.
+  it('takes a collection folder dropped on the source card', async () => {
+    await act(async () => {
+      root.render(<BrunoImport projectId="project-1" />)
+      await Promise.resolve()
+    })
+    const heading = Array.from(container.querySelectorAll('h3')).find(item => item.textContent === '1. Source bundle')!
+    expect(heading.closest('section')?.textContent).toContain('or drop one here')
+    ;(document as unknown as { elementFromPoint: () => Element }).elementFromPoint = () => heading
+    expect(drop).toBeTypeOf('function')
+    await act(async () => {
+      drop?.(10, 10, ['/Users/me/Orders Collection'])
+    })
+    await vi.waitFor(() => expect(container.querySelector('.bruno-stat')?.textContent).toContain('2 files'))
+    expect(container.textContent).toContain('Orders Collection/orders/get-order.yml')
+  })
+
+  // A slow drop that finishes after a later one does not replace it.
+  it('keeps the latest dropped collection', async () => {
+    let finishSlow: (raw: string) => void = () => undefined
+    ;(window as DesktopWindow).go!.main!.App!.ReadDroppedDirectory = vi.fn((path: string) => path.endsWith('Slow')
+      ? new Promise<string>(resolve => { finishSlow = resolve })
+      : Promise.resolve(JSON.stringify({ files: [{ path: 'Fast/opencollection.yml', base64: btoa('opencollection: 1.0.0') }] })))
+    await act(async () => {
+      root.render(<BrunoImport projectId="project-1" />)
+      await Promise.resolve()
+    })
+    const heading = Array.from(container.querySelectorAll('h3')).find(item => item.textContent === '1. Source bundle')!
+    ;(document as unknown as { elementFromPoint: () => Element }).elementFromPoint = () => heading
+    await act(async () => { drop?.(10, 10, ['/Users/me/Slow']) })
+    await act(async () => { drop?.(10, 10, ['/Users/me/Fast']) })
+    await vi.waitFor(() => expect(container.textContent).toContain('Fast/opencollection.yml'))
+    await act(async () => { finishSlow(JSON.stringify({ files: [{ path: 'Slow/opencollection.yml', base64: btoa('x') }] })) })
+    expect(container.textContent).toContain('Fast/opencollection.yml')
+    expect(container.textContent).not.toContain('Slow/opencollection.yml')
+  })
+
+  // A drop with nothing to import says so on the card it was dropped on.
+  it('reports an empty drop on the source card', async () => {
+    ;(window as DesktopWindow).go!.main!.App!.ReadDroppedDirectory = vi.fn(async () => JSON.stringify({ files: [] }))
+    await act(async () => {
+      root.render(<BrunoImport projectId="project-1" />)
+      await Promise.resolve()
+    })
+    const heading = Array.from(container.querySelectorAll('h3')).find(item => item.textContent === '1. Source bundle')!
+    ;(document as unknown as { elementFromPoint: () => Element }).elementFromPoint = () => heading
+    await act(async () => {
+      drop?.(10, 10, ['/Users/me/Empty Collection'])
+    })
+    await vi.waitFor(() => expect(heading.closest('section')?.querySelector('[role="alert"]')?.textContent).toContain('Nothing to import was found there'))
   })
 })

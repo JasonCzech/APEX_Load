@@ -1,4 +1,9 @@
+import { useEffect, useRef } from 'react'
+
+import { viewToLocationHash } from '../appRouting'
+import { addRecent } from '../desktop/desktopRecents'
 import { savedScenarioBuilderHash } from './importScenario'
+import { importScenarioName } from './useImportScenario'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 
 interface Props {
@@ -13,13 +18,43 @@ interface Props {
   onCreateScenario?: () => void
   scenarioBusy?: boolean
   scenarioError?: string
+  /** What the desktop app's Recent list calls this save: the source's name, as its scenario would be named. */
+  recentName?: string
 }
 
 // Beyond this many saved scripts, the rest open from a disclosure, so a large
 // collection does not bury what to do next under one button per script.
 const LISTED_SCRIPTS = 3
 
-export default function ImportSaveConfirmation({ result, onImportMore, onOpen, disabled, onCreateScenario, scenarioBusy = false, scenarioError = '' }: Props) {
+export default function ImportSaveConfirmation({ result, onImportMore, onOpen, disabled, onCreateScenario, scenarioBusy = false, scenarioError = '', recentName }: Props) {
+  // The desktop app lists each saved import under Recent and File > Open
+  // Recent (a no-op in the browser): one script reopens in the editor, a batch
+  // in the script library, and a scenario the save made opens in the builder.
+  // Recorded once per saved batch.
+  const resultRef = useRef(result)
+  resultRef.current = result
+  const recentKey = [result?.scenario?.id || '', ...(result?.scripts || []).map(script => script.id)].join('\n')
+  useEffect(() => {
+    const saved = resultRef.current
+    const scripts = saved?.scripts
+    if (!saved || !scripts?.length) return
+    const [firstSaved] = scripts
+    const scope = firstSaved.project_id ? { projectId: firstSaved.project_id } : {}
+    void (async () => {
+      await addRecent({
+        kind: 'import',
+        id: firstSaved.id,
+        name: recentName || importScenarioName(undefined, scripts),
+        route: viewToLocationHash(scripts.length === 1
+          ? { page: 'scripts', mode: 'edit', scriptId: firstSaved.id, ...scope }
+          : { page: 'scripts', mode: 'list', ...scope }),
+      })
+      const scenario = saved.scenario
+      if (scenario?.id) {
+        await addRecent({ kind: 'scenario', id: scenario.id, name: scenario.name || scenario.id, route: savedScenarioBuilderHash(scenario.id, scenario.project_id) })
+      }
+    })()
+  }, [recentKey, recentName])
   if (!result?.scripts.length) return null
   const [first] = result.scripts
   const savedScenario = result.scenario?.id ? result.scenario : null

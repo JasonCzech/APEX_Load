@@ -101,6 +101,27 @@ func (a *App) rememberReadPath(path string) {
 	a.readGrantChanged = make(chan struct{})
 }
 
+// rememberDropEvent records the paths of a drop once their grants are in
+// place. A dropped path the bridge did not grant (a document, or a folder read
+// as a file) is then refused at once instead of after dropGrantWait.
+func (a *App) rememberDropEvent(paths []string) {
+	a.pathMu.Lock()
+	defer a.pathMu.Unlock()
+	if a.droppedPaths == nil {
+		a.droppedPaths = make(map[string]struct{})
+	}
+	for _, path := range paths {
+		if key := cleanBridgePath(path); key != "" {
+			a.droppedPaths[key] = struct{}{}
+		}
+	}
+	if a.readGrantChanged == nil {
+		a.readGrantChanged = make(chan struct{})
+	}
+	close(a.readGrantChanged)
+	a.readGrantChanged = make(chan struct{})
+}
+
 func newReadPathGrant(path string) (string, readPathGrant, error) {
 	key := cleanBridgePath(path)
 	if key == "" {
@@ -382,6 +403,7 @@ func (a *App) ReadDroppedFileBase64(path string) (string, error) {
 	for {
 		a.pathMu.Lock()
 		_, granted := a.readPaths[key]
+		_, dropped := a.droppedPaths[key]
 		changed := a.readGrantChanged
 		if changed == nil {
 			changed = make(chan struct{})
@@ -390,6 +412,9 @@ func (a *App) ReadDroppedFileBase64(path string) (string, error) {
 		a.pathMu.Unlock()
 		if granted {
 			return a.ReadFileBase64(path)
+		}
+		if dropped {
+			return "", fmt.Errorf("native drop access was not granted for %s", path)
 		}
 		select {
 		case <-changed:

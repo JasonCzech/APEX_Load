@@ -1853,7 +1853,7 @@ export default function TestExecutionArchive({
                   {archiveActionEntries.length > 20 && (
                     <input
                       className="archive-column-filter-input"
-                      type="search"
+                      type="search" autoComplete="off"
                       placeholder={`Find among ${archiveActionEntries.length}`}
                       aria-label={archivePopulation === 'transaction' ? 'Find a named transaction' : 'Find an action'}
                       value={archiveActionQuery}
@@ -1915,10 +1915,10 @@ export default function TestExecutionArchive({
                   </label>
                 </div>
 				<div className="archive-filter-bar archive-dimension-filter-bar" aria-label="Transaction dimensions">
-					<input className="archive-column-filter-input" type="search" placeholder="Region" aria-label="Filter transactions by region" value={archiveTransactionFilters.region} onChange={(event) => onArchiveTransactionFilterChange('region', event.target.value)} />
-					<input className="archive-column-filter-input" type="search" placeholder="Network profile" aria-label="Filter transactions by network profile" value={archiveTransactionFilters.networkProfile} onChange={(event) => onArchiveTransactionFilterChange('networkProfile', event.target.value)} />
-					<input className="archive-column-filter-input" type="search" placeholder="Source transaction" aria-label="Filter transactions by source transaction" value={archiveTransactionFilters.sourceTransaction} onChange={(event) => onArchiveTransactionFilterChange('sourceTransaction', event.target.value)} />
-					<input className="archive-column-filter-input" type="search" placeholder="Hierarchy" aria-label="Filter transactions by hierarchy" value={archiveTransactionFilters.hierarchy} onChange={(event) => onArchiveTransactionFilterChange('hierarchy', event.target.value)} />
+					<input className="archive-column-filter-input" type="search" autoComplete="off" placeholder="Region" aria-label="Filter transactions by region" value={archiveTransactionFilters.region} onChange={(event) => onArchiveTransactionFilterChange('region', event.target.value)} />
+					<input className="archive-column-filter-input" type="search" autoComplete="off" placeholder="Network profile" aria-label="Filter transactions by network profile" value={archiveTransactionFilters.networkProfile} onChange={(event) => onArchiveTransactionFilterChange('networkProfile', event.target.value)} />
+					<input className="archive-column-filter-input" type="search" autoComplete="off" placeholder="Source transaction" aria-label="Filter transactions by source transaction" value={archiveTransactionFilters.sourceTransaction} onChange={(event) => onArchiveTransactionFilterChange('sourceTransaction', event.target.value)} />
+					<input className="archive-column-filter-input" type="search" autoComplete="off" placeholder="Hierarchy" aria-label="Filter transactions by hierarchy" value={archiveTransactionFilters.hierarchy} onChange={(event) => onArchiveTransactionFilterChange('hierarchy', event.target.value)} />
 					<select className="archive-action-select archive-filter-select" aria-label="Filter transactions by phase" value={archiveTransactionFilters.phase} onChange={(event) => onArchiveTransactionFilterChange('phase', event.target.value)}>
 						<option value="">All phases</option><option value="init">Init</option><option value="action">Action</option><option value="teardown">Teardown</option>
 					</select>
@@ -2009,7 +2009,7 @@ export default function TestExecutionArchive({
                         <th>
                           <input
                             className="archive-column-filter-input"
-                            type="search"
+                            type="search" autoComplete="off"
                             placeholder="Status"
                             aria-label="Filter transactions by status"
                             value={archiveTransactionFilters.status}
@@ -2063,7 +2063,7 @@ export default function TestExecutionArchive({
                         <th>
                           <input
                             className="archive-column-filter-input archive-error-filter-input"
-                            type="search"
+                            type="search" autoComplete="off"
                             placeholder="Contains"
                             aria-label="Filter transactions by error text"
                             value={archiveTransactionFilters.errorContains}

@@ -1964,7 +1964,7 @@ export default function BrowserRecorderControlPanel({
             <div className="brp-step-search">
               <input
                 className="rec-input"
-                type="search"
+                type="search" autoComplete="off"
                 value={stepSearch}
                 onChange={event => setStepSearch(event.target.value)}
                 placeholder="Search recorded steps"

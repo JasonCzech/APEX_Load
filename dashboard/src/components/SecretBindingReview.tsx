@@ -1638,7 +1638,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       {error && <div className="secret-binding-review-error" role="alert">{error}</div>}
 
       <div className="import-review-toolbar">
-        <label>Search credential locations<input type="search" disabled={applying || disabled} value={credentialSearch} onChange={event => { setCredentialSearch(event.target.value); setCredentialPage(0) }} /></label>
+        <label>Search credential locations<input type="search" autoComplete="off" disabled={applying || disabled} value={credentialSearch} onChange={event => { setCredentialSearch(event.target.value); setCredentialPage(0) }} /></label>
         <label>Credential state<select disabled={applying || disabled} value={credentialState} onChange={event => { setCredentialState(event.target.value); setCredentialPage(0) }}><option value="all">All groups</option><option value="setup">Needs setup</option><option value="recorded">Kept as recorded</option><option value="preserved">Preserved</option><option value="ready">Configured or value entered</option></select></label>
         <label><input type="checkbox" disabled={applying || disabled} checked={attentionOnly} onChange={event => { setAttentionOnly(event.target.checked); setCredentialPage(0) }} /> Show bindings needing review</label>
       </div>

@@ -404,7 +404,7 @@ export default function SynchronizedTimeline({ data, annotations, overlays, onOv
           <label className="run-report-timeline-search">
             Search graphs
             <input
-              type="search"
+              type="search" autoComplete="off"
               value={graphSearch}
               onChange={(event) => setGraphSearch(event.target.value)}
               placeholder="Search by name or metric"
@@ -492,7 +492,7 @@ export default function SynchronizedTimeline({ data, annotations, overlays, onOv
                 <label className="run-report-timeline-search">
                   Search transactions
                   <input
-                    type="search"
+                    type="search" autoComplete="off"
                     value={transactionSearch}
                     onChange={(event) => setTransactionSearch(event.target.value)}
                     placeholder="Find a transaction"

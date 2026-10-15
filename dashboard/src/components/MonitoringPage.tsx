@@ -1679,7 +1679,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               {fleetAlertActionError && <p className="monitor-action-message text-danger">{fleetAlertActionError}</p>}
               {fleetAlertList.length > FLEET_ALERT_PAGE && (
                 <div className="fleet-alert-filters" role="search" aria-label="Filter fleet alerts">
-                  <label>Find<input type="search" value={fleetAlertFilter.query} placeholder="Generator or summary" onChange={event => setFleetAlertFilter(current => ({ ...current, query: event.target.value, limit: FLEET_ALERT_PAGE }))} /></label>
+                  <label>Find<input type="search" autoComplete="off" value={fleetAlertFilter.query} placeholder="Generator or summary" onChange={event => setFleetAlertFilter(current => ({ ...current, query: event.target.value, limit: FLEET_ALERT_PAGE }))} /></label>
                   <label>Severity<select value={fleetAlertFilter.severity} onChange={event => setFleetAlertFilter(current => ({ ...current, severity: event.target.value, limit: FLEET_ALERT_PAGE }))}><option value="all">All</option><option value="danger">Critical</option><option value="warning">Warning</option></select></label>
                   <label>Status<select value={fleetAlertFilter.status} onChange={event => setFleetAlertFilter(current => ({ ...current, status: event.target.value, limit: FLEET_ALERT_PAGE }))}><option value="open">Not acknowledged</option><option value="acknowledged">Acknowledged</option><option value="all">All</option></select></label>
                   <span role="status">Showing {visibleFleetAlerts.length} of {filteredFleetAlerts.length} matching ({fleetAlertList.length} total)</span>

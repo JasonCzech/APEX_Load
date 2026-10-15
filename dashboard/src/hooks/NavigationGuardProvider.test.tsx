@@ -306,6 +306,106 @@ describe('NavigationGuardProvider', () => {
     expect(cleanUnload.defaultPrevented).toBe(false)
   })
 
+  // A native quit in the desktop app asks through the same prompt: Keep
+  // editing stays, Discard quits, and a quit pressed while a leave is being
+  // asked about takes over that prompt.
+  it('asks before a desktop quit and quits only once the work is resolved', async () => {
+    const { listeners, confirmClose, uninstall } = installDesktopShell()
+    try {
+      const proceed = vi.fn()
+      const discard = vi.fn()
+      await act(async () => root.render(<NavigationGuardProvider>
+        <Runner proceed={proceed} />
+        <UnsavedWork dirty discard={discard} />
+      </NavigationGuardProvider>))
+      await act(async () => { await Promise.resolve() })
+
+      await act(async () => { listeners.get('desktop:close-requested')?.('1') })
+      expect(container.textContent).toContain('Import review has work that is not saved yet')
+      await click('Keep editing')
+      expect(confirmClose).not.toHaveBeenCalled()
+
+      await click('Navigate')
+      await act(async () => { listeners.get('desktop:close-requested')?.('2') })
+      await click('Discard changes')
+      expect(discard).toHaveBeenCalledOnce()
+      expect(proceed).not.toHaveBeenCalled()
+      expect(confirmClose).toHaveBeenCalledWith('guard-token', '2')
+    } finally {
+      uninstall()
+    }
+  })
+
+  // A quit pressed while the prompt's save is still running quits once the
+  // save lands, instead of making the leave first asked about.
+  it('quits after a save that a desktop quit took over', async () => {
+    const { listeners, confirmClose, uninstall } = installDesktopShell()
+    try {
+      let finishSave: (saved: boolean) => void = () => undefined
+      const save = vi.fn(() => new Promise<boolean>(resolve => { finishSave = resolve }))
+      const proceed = vi.fn()
+      await renderHarness({ dirty: true, proceed, save })
+      await act(async () => { await Promise.resolve() })
+
+      await click('Navigate')
+      await click('Save changes')
+      await act(async () => { listeners.get('desktop:close-requested')?.('1') })
+      await act(async () => { finishSave(true) })
+      expect(save).toHaveBeenCalledOnce()
+      expect(proceed).not.toHaveBeenCalled()
+      expect(confirmClose).toHaveBeenCalledWith('guard-token', '1')
+    } finally {
+      uninstall()
+    }
+  })
+
+  // A dialog's own provider leaves quitting to the app's: it registers no
+  // close guard of its own, so closing the dialog cannot remove the app's.
+  it('answers a desktop quit only from the outermost provider', async () => {
+    const { bridge, listeners, uninstall } = installDesktopShell()
+    try {
+      await act(async () => root.render(<NavigationGuardProvider>
+        <UnsavedWork dirty discard={vi.fn()} />
+        <NavigationGuardProvider><span>Shared assets</span></NavigationGuardProvider>
+      </NavigationGuardProvider>))
+      await act(async () => { await Promise.resolve() })
+      await act(async () => root.render(<NavigationGuardProvider>
+        <UnsavedWork dirty discard={vi.fn()} />
+      </NavigationGuardProvider>))
+      expect(bridge.EnableCloseGuard).toHaveBeenCalledOnce()
+      expect(bridge.DisableCloseGuard).not.toHaveBeenCalled()
+
+      await act(async () => { listeners.get('desktop:close-requested')?.('1') })
+      expect(container.textContent).toContain('Import review has work that is not saved yet')
+    } finally {
+      uninstall()
+    }
+  })
+
+  function installDesktopShell() {
+    const listeners = new Map<string, (...data: unknown[]) => void>()
+    const confirmClose = vi.fn().mockResolvedValue(undefined)
+    const bridge = {
+      EnableCloseGuard: vi.fn().mockResolvedValue('guard-token'),
+      DisableCloseGuard: vi.fn().mockResolvedValue(undefined),
+      AcknowledgeCloseRequest: vi.fn().mockResolvedValue(undefined),
+      ConfirmClose: confirmClose,
+    }
+    const desktopWindow = window as typeof window & { go?: unknown; runtime?: unknown }
+    desktopWindow.go = { main: { App: bridge } }
+    desktopWindow.runtime = {
+      EventsOn: (name: string, callback: (...data: unknown[]) => void) => {
+        listeners.set(name, callback)
+        return () => listeners.delete(name)
+      },
+    }
+    const uninstall = () => {
+      delete desktopWindow.go
+      delete desktopWindow.runtime
+    }
+    return { bridge, listeners, confirmClose, uninstall }
+  }
+
   async function renderHarness({
     dirty,
     discard = vi.fn(),
