@@ -795,6 +795,7 @@ func nativeXMLSecretRequirement(
 		Context:       "Bruno XML body " + kind + " " + name,
 		Value:         recoverableNativeXMLCredentialValue(value),
 		AffectedPaths: nativeSecretRequirementPaths(sourcePath),
+		readableName:  readableNativeSecretBase(localName),
 	}
 }
 

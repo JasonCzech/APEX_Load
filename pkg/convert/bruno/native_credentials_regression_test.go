@@ -1661,13 +1661,14 @@ http:
 		label      string
 		context    string
 	}{
-		"partnerPassword": {"PARTNER_PASSWORD_", "Partner password", "XML password element <mh:userPassword>"},
-		"partnerUserName": {"PARTNER_USERNAME_", "Partner username", "XML username element <mh:userName>"},
+		"partnerPassword": {"PARTNER_PASSWORD", "Partner password", "XML password element <mh:userPassword>"},
+		"partnerUserName": {"PARTNER_USERNAME", "Partner username", "XML username element <mh:userName>"},
 	}
 	bindings := make(map[string]string, len(result.SecretRequirements))
 	for _, requirement := range result.SecretRequirements {
 		want, exists := wantMetadata[requirement.SourceVariable]
-		if !exists || !strings.HasPrefix(requirement.SuggestedName, want.namePrefix) ||
+		// A readable name: the variable's own, with no source path or hash.
+		if !exists || requirement.SuggestedName != want.namePrefix ||
 			requirement.DisplayLabel != want.label ||
 			!requirement.UnresolvedSourceVariable ||
 			requirement.Context != want.context ||
@@ -1728,7 +1729,7 @@ http:
 	for _, requirement := range result.SecretRequirements {
 		if _, exists := wantVariables[requirement.SourceVariable]; !exists ||
 			!requirement.UnresolvedSourceVariable ||
-			!strings.HasPrefix(requirement.SuggestedName, "CLIENT_ID_") {
+			!(requirement.SuggestedName == "CLIENT_ID" || strings.HasPrefix(requirement.SuggestedName, "CLIENT_ID_")) {
 			t.Fatalf("distinct unresolved metadata = %#v", requirement)
 		}
 		wantVariables[requirement.SourceVariable] = true
@@ -1800,8 +1801,8 @@ http:
 	}
 	auth := candidate.Script.Actions[0].Auth
 	if auth == nil || auth.Username == auth.Password ||
-		!strings.HasPrefix(auth.Username, "{{secret.ENV_CLIENT_ID_") ||
-		!strings.HasPrefix(auth.Password, "{{secret.ENV_CLIENT_ID_") {
+		!strings.HasPrefix(auth.Username, "{{secret.ENV_CLIENT_ID") ||
+		!strings.HasPrefix(auth.Password, "{{secret.ENV_CLIENT_ID") {
 		t.Fatalf("distinct auth bindings = %#v", auth)
 	}
 }
@@ -2242,7 +2243,7 @@ http:
 	}{
 		{
 			id:             "a73758b339b71e1635eb25f9",
-			name:           "CTA_COLLECTION_6A_CTA_INQUIREACCOUNTPROFILE_312_HEADER_X_CDF_AUTH_TOKEN_84921F7A1055",
+			name:           "X_CDF_AUTH_TOKEN",
 			label:          "X-CDF auth token",
 			path:           "CTA_Collection 6a/CTA/InquireAccountProfile_312.yml",
 			sourceVariable: "authToken",

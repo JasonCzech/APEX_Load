@@ -477,6 +477,9 @@ func nativeRequestScripts(
 	if err := failures.err(); err != nil {
 		return nil, nil, nil, findings, err
 	}
+	if err := assignReadableNativeSecretNames(candidates, aggregateRequirements); err != nil {
+		return nil, nil, nil, findings, err
+	}
 
 	aggregateRequirementList := make([]SecretRequirement, 0, len(aggregateRequirements))
 	for _, requirement := range aggregateRequirements {
@@ -3327,6 +3330,7 @@ func nativeUnresolvedSourceVariableSecretRequirement(
 	requirement.DisplayLabel = nativeSourceVariableDisplayLabel(sourceVariable)
 	requirement.SourceVariable = sourceVariable
 	requirement.UnresolvedSourceVariable = true
+	requirement.readableName = readableNativeSecretBase(sourceVariable)
 	return requirement
 }
 
@@ -3399,6 +3403,7 @@ func nativeComposedHeaderSecretRequirement(
 		Context:       context,
 		DisplayLabel:  nativeHeaderDisplayLabel(headerName),
 		AffectedPaths: nativeCandidateAffectedPaths(sourcePath, candidatePaths...),
+		readableName:  readableNativeSecretBase(headerName),
 	}
 }
 
@@ -3431,6 +3436,7 @@ func nativeVariableSecretRequirement(
 		Replacement:   "{{secret." + name + "}}",
 		Context:       context,
 		AffectedPaths: nativeSecretRequirementPaths(fallbackPath),
+		readableName:  readableNativeSecretBase(variable.Name),
 	}
 }
 
@@ -3459,6 +3465,7 @@ func nativeAuthSecretRequirement(
 		Replacement:   "{{secret." + name + "}}",
 		Context:       context,
 		AffectedPaths: nativeCandidateAffectedPaths(sourcePath, candidatePaths...),
+		readableName:  readableNativeSecretBase("auth_" + field),
 	}
 }
 
@@ -3496,6 +3503,7 @@ func nativeBodyFieldSecretRequirement(
 		Replacement:   "{{secret." + name + "}}",
 		Context:       "Bruno " + bodyKind + " body credential " + field,
 		AffectedPaths: nativeSecretRequirementPaths(sourcePath),
+		readableName:  readableNativeSecretBase(field),
 	}
 }
 

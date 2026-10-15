@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"reflect"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sharedvalue"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -401,5 +403,182 @@ variables:
 	}
 	if got := inspection.Result.Environments[0].Values; !reflect.DeepEqual(got, map[string]string{"subscriberNumber": "5551234"}) {
 		t.Errorf("environment values = %v, want only the unset input", got)
+	}
+}
+
+func brunoReadableNameFiles() []brunoInspectJSONFile {
+	return []brunoInspectJSONFile{
+		{Path: "names/opencollection.yml", Content: "opencollection: 1.0.0\ninfo: {name: Names}\n"},
+		{Path: "names/inquire.yml", Content: `info: {name: Inquire, uid: inquire-names-uid, type: http}
+http:
+  method: POST
+  url: https://example.test/soap
+  body: {type: xml, data: "<Envelope><mh:userPassword>{{partnerPassword}}</mh:userPassword></Envelope>"}
+`},
+	}
+}
+
+// A secret takes a readable name, unless the project already configured the
+// hashed name an earlier import generated for it: then the import keeps that
+// name, so the values already set up still apply.
+func TestBrunoNativeSecretNamesAreReadableAndKeepConfiguredLegacyNames(t *testing.T) {
+	server, _, _ := newBrunoImportAPITestServer(t)
+	fresh := inspectBrunoNativeFiles(t, server, brunoImportTestProject, brunoReadableNameFiles())
+	if len(fresh.Result.SecretRequirements) != 1 || fresh.Result.SecretRequirements[0].SuggestedName != "PARTNER_PASSWORD" {
+		t.Fatalf("requirements = %+v, want PARTNER_PASSWORD", fresh.Result.SecretRequirements)
+	}
+
+	files := map[string][]byte{}
+	for _, file := range brunoReadableNameFiles() {
+		files[file.Path] = []byte(file.Content)
+	}
+	converted, err := brunoconvert.Inspect(brunoconvert.Input{Files: files, Options: brunoconvert.InspectOptions{OutputMode: brunoconvert.OutputModeNativeRequests}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := converted.SecretRequirements[0].LegacyName
+	if legacy == "" || legacy == "PARTNER_PASSWORD" {
+		t.Fatalf("legacy name = %q", legacy)
+	}
+	if _, err := server.projectSecretStore.Create(context.Background(), brunoImportTestProject, legacy, "configured-earlier", "test"); err != nil {
+		t.Fatal(err)
+	}
+	again := inspectBrunoNativeFiles(t, server, brunoImportTestProject, brunoReadableNameFiles())
+	requirement := again.Result.SecretRequirements[0]
+	if requirement.SuggestedName != legacy || requirement.Replacement != "{{secret."+legacy+"}}" {
+		t.Fatalf("requirement = %+v, want the configured legacy name %q", requirement, legacy)
+	}
+	if body := again.Result.Scripts[0].Script.Actions[0].Body; !strings.Contains(body, "{{secret."+legacy+"}}") {
+		t.Errorf("script body = %s, want the legacy reference", body)
+	}
+}
+
+// A readable name the project already holds for something else is numbered
+// past it, so the import never sends that secret's value; a re-import reuses
+// the name its own scripts already use.
+func TestBrunoNativeSecretNamesAvoidUnrelatedProjectSecrets(t *testing.T) {
+	server, store, _ := newBrunoImportAPITestServer(t)
+	if _, err := server.projectSecretStore.Create(context.Background(), brunoImportTestProject, "PARTNER_PASSWORD", "another-system", "test"); err != nil {
+		t.Fatal(err)
+	}
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, brunoReadableNameFiles())
+	requirement := inspection.Result.SecretRequirements[0]
+	if requirement.SuggestedName != "PARTNER_PASSWORD_2" {
+		t.Fatalf("name = %q, want PARTNER_PASSWORD_2 past the unrelated secret", requirement.SuggestedName)
+	}
+	if body := inspection.Result.Scripts[0].Script.Actions[0].Body; !strings.Contains(body, "{{secret.PARTNER_PASSWORD_2}}") {
+		t.Fatalf("script body = %s", body)
+	}
+
+	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-names")
+	created := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+		ProjectID: brunoImportTestProject, ImportSessionID: inspection.ImportSessionID, Mode: "create_native_batch", FolderID: &folderID,
+		AcknowledgedFindingIDs: requiredBrunoNativeFindingIDs(inspection.Result.Scripts[0]),
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("commit status = %d body=%s", created.Code, created.Body.String())
+	}
+	if _, err := server.projectSecretStore.Create(context.Background(), brunoImportTestProject, "PARTNER_PASSWORD_2", "configured", "test"); err != nil {
+		t.Fatal(err)
+	}
+	// The re-import updates the saved script, which already uses PARTNER_PASSWORD_2.
+	again := inspectBrunoNativeFiles(t, server, brunoImportTestProject, brunoReadableNameFiles())
+	if again.Result.Scripts[0].ExistingScript == nil {
+		t.Fatalf("re-import did not match the saved script")
+	}
+	if got := again.Result.SecretRequirements[0].SuggestedName; got != "PARTNER_PASSWORD_2" {
+		t.Errorf("re-import name = %q, want the name its script already uses", got)
+	}
+}
+
+// brunoTwoPasswordFiles is one request per {name, XML password value}.
+func brunoTwoPasswordFiles(requests ...[2]string) []brunoInspectJSONFile {
+	files := []brunoInspectJSONFile{{Path: "pw/opencollection.yml", Content: "opencollection: 1.0.0\ninfo: {name: Passwords}\n"}}
+	for _, request := range requests {
+		name, password := request[0], request[1]
+		files = append(files, brunoInspectJSONFile{Path: "pw/" + name + ".yml", Content: `info: {name: ` + name + `, uid: ` + name + `-uid, type: http}
+http:
+  method: POST
+  url: https://example.test/soap
+  body: {type: xml, data: "<Envelope><userPassword>` + password + `</userPassword></Envelope>"}
+`})
+	}
+	return files
+}
+
+func brunoRequirementNameFor(t *testing.T, inspection brunoInspectResponse, sourceSuffix string) string {
+	t.Helper()
+	for _, candidate := range inspection.Result.Scripts {
+		if strings.HasSuffix(candidate.SourcePath, sourceSuffix) {
+			if len(candidate.SecretRequirements) != 1 {
+				t.Fatalf("%s requirements = %+v", sourceSuffix, candidate.SecretRequirements)
+			}
+			return candidate.SecretRequirements[0].SuggestedName
+		}
+	}
+	t.Fatalf("no candidate for %s", sourceSuffix)
+	return ""
+}
+
+// A numbered name the project already holds is numbered again from the
+// readable base: PASSWORD_3, not PASSWORD_2_2. Bruno variables are case
+// sensitive, so {{password}} and {{Password}} are two credentials.
+func TestBrunoNativeSecretNamesNumberFromTheReadableBase(t *testing.T) {
+	server, _, _ := newBrunoImportAPITestServer(t)
+	if _, err := server.projectSecretStore.Create(context.Background(), brunoImportTestProject, "PASSWORD_2", "another-system", "test"); err != nil {
+		t.Fatal(err)
+	}
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, brunoTwoPasswordFiles(
+		[2]string{"alpha", "{{password}}"}, [2]string{"beta", "{{Password}}"}))
+	names := []string{brunoRequirementNameFor(t, inspection, "alpha.yml"), brunoRequirementNameFor(t, inspection, "beta.yml")}
+	if names[0] != "PASSWORD" || names[1] != "PASSWORD_3" {
+		t.Fatalf("names = %v, want [PASSWORD PASSWORD_3]", names)
+	}
+}
+
+// A numbered name the operator supplies from the environment is held too, so
+// numbering passes over it.
+func TestBrunoNativeSecretNamesPassOverEnvironmentSecrets(t *testing.T) {
+	server, _, _ := newBrunoImportAPITestServer(t)
+	if _, err := server.projectSecretStore.Create(context.Background(), brunoImportTestProject, "PASSWORD_2", "another-system", "test"); err != nil {
+		t.Fatal(err)
+	}
+	binding := strings.NewReplacer(".", "_", "-", "_").Replace(strings.ToUpper(engine.ProjectSecretBindingName(brunoImportTestProject, "PASSWORD_3")))
+	t.Setenv("APEXLOAD_SECRET_"+binding, "operator-supplied")
+	if !engine.ProjectScriptSecretEnvAvailable(brunoImportTestProject, "PASSWORD_3") {
+		t.Fatal("the environment secret is not visible to the project")
+	}
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, brunoTwoPasswordFiles(
+		[2]string{"alpha", "{{password}}"}, [2]string{"beta", "{{Password}}"}))
+	if got := brunoRequirementNameFor(t, inspection, "beta.yml"); got != "PASSWORD_4" {
+		t.Fatalf("name = %q, want PASSWORD_4 past the listed and the environment secrets", got)
+	}
+}
+
+// A re-import keeps a name only for the credential whose scripts use it. A new
+// request that now sorts first and takes the readable name is numbered past
+// it, so it never receives the saved script's configured value.
+func TestBrunoNativeSecretNamesReuseOnlyTheirOwnScriptsNames(t *testing.T) {
+	server, store, _ := newBrunoImportAPITestServer(t)
+	first := inspectBrunoNativeFiles(t, server, brunoImportTestProject, brunoTwoPasswordFiles([2]string{"inquire", "{{password}}"}))
+	if got := brunoRequirementNameFor(t, first, "inquire.yml"); got != "PASSWORD" {
+		t.Fatalf("first import name = %q", got)
+	}
+	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-own-names")
+	created := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+		ProjectID: brunoImportTestProject, ImportSessionID: first.ImportSessionID, Mode: "create_native_batch", FolderID: &folderID,
+		AcknowledgedFindingIDs: requiredBrunoNativeFindingIDs(first.Result.Scripts[0]),
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("commit status = %d body=%s", created.Code, created.Body.String())
+	}
+	if _, err := server.projectSecretStore.Create(context.Background(), brunoImportTestProject, "PASSWORD", "inquire-value", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	again := inspectBrunoNativeFiles(t, server, brunoImportTestProject, brunoTwoPasswordFiles(
+		[2]string{"a-new", "{{Password}}"}, [2]string{"inquire", "{{password}}"}))
+	if got := brunoRequirementNameFor(t, again, "a-new.yml"); got == "PASSWORD" {
+		t.Fatalf("the new request took the saved script's configured name %q", got)
 	}
 }

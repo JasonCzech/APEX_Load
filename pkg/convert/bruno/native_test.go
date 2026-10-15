@@ -632,9 +632,11 @@ settings: {followRedirects: false, timeout: 50}
 		}
 	}
 	if action.Auth == nil || action.Auth.Type != "basic" ||
-		!strings.HasPrefix(action.Auth.Username, "{{secret.USERNAME_") ||
+		// The request's own auth shadows the collection's, which no script
+		// uses, so the request's credentials take the plain names.
+		action.Auth.Username != "{{secret.USERNAME}}" ||
 		!strings.HasSuffix(action.Auth.Username, "}}") ||
-		!strings.HasPrefix(action.Auth.Password, "{{secret.PASSWORD_") ||
+		action.Auth.Password != "{{secret.PASSWORD}}" ||
 		!strings.HasSuffix(action.Auth.Password, "}}") {
 		t.Fatalf("Basic auth = %#v", action.Auth)
 	}
@@ -1000,8 +1002,11 @@ http:
 			if test.wantPassword != "" && password != test.wantPassword {
 				t.Fatalf("password = %q, want %q", password, test.wantPassword)
 			}
-			if strings.Contains(password, "secret.PASSWORD") {
-				t.Fatalf("credential definition was replaced with invented name: %q", password)
+			// A readable name such as PASSWORD is fine here: the import API
+			// numbers it past any secret the project already holds for
+			// something else (TestBrunoNativeSecretNamesAvoidUnrelatedProjectSecrets).
+			if test.wantPassword == "" && password != "{{secret.PASSWORD}}" {
+				t.Fatalf("credential definition = %q, want its readable name", password)
 			}
 			if test.wantSourceValue != "" {
 				found := false
@@ -1047,7 +1052,8 @@ http:
 	}
 	candidate := result.Scripts[0]
 	password := candidate.Script.Actions[0].Auth.Password
-	if !strings.HasPrefix(password, "{{secret.") || strings.Contains(password, "secret.CRED}}") {
+	// The definition's own name, readable: a generated requirement, not the raw {{cred}}.
+	if password != "{{secret.CRED}}" {
 		t.Fatalf("governed credential replacement = %q", password)
 	}
 	var requirement *SecretRequirement

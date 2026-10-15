@@ -1339,12 +1339,16 @@ func sanitizeBRU(
 type secretSuggestionRegistry struct {
 	counts map[string]int
 	used   map[string]struct{}
+	// legacy replays the path-prefixed names an earlier importer version
+	// gave these secrets, so a project that configured one can keep it.
+	legacy *secretSuggestionRegistry
 }
 
 func newSecretSuggestionRegistry() *secretSuggestionRegistry {
 	return &secretSuggestionRegistry{
 		counts: make(map[string]int),
 		used:   make(map[string]struct{}),
+		legacy: &secretSuggestionRegistry{counts: make(map[string]int), used: make(map[string]struct{})},
 	}
 }
 
@@ -1356,6 +1360,7 @@ func (registry *secretSuggestionRegistry) reserve(name string) {
 	if registry.counts[name] == 0 {
 		registry.counts[name] = 1
 	}
+	registry.legacy.reserve(name)
 }
 
 func (registry *secretSuggestionRegistry) claim(base string) string {
@@ -1398,7 +1403,18 @@ func newSecretRequirement(
 	suggestionKey string,
 	value string,
 ) SecretRequirement {
-	suggested := suggestionNames.claim(secretName(filename, suggestionKey))
+	// A readable name from the field alone (PASSWORD, AUTHORIZATION), numbered
+	// when taken; the path-prefixed name earlier versions gave stays as
+	// LegacyName.
+	legacyName := secretName(filename, suggestionKey)
+	if suggestionNames != nil {
+		legacyName = suggestionNames.legacy.claim(legacyName)
+	}
+	readable := readableNativeSecretBase(strings.TrimPrefix(strings.TrimPrefix(suggestionKey, "header_"), "body_"))
+	if readable == "" {
+		readable = secretName(filename, suggestionKey)
+	}
+	suggested := suggestionNames.claim(readable)
 	idHash := sha256.Sum256([]byte(filename + "\x00" + identity))
 	value = recoverableBrunoCredentialValue(value)
 	requirement := SecretRequirement{
@@ -1411,6 +1427,10 @@ func newSecretRequirement(
 		Value:         value,
 		AffectedPaths: nativeSecretRequirementPaths(filename),
 	}
+	if legacyName != suggested {
+		requirement.LegacyName = legacyName
+	}
+	requirement.NameBase = readable
 	if headerName, isHeader := strings.CutPrefix(suggestionKey, "header_"); isHeader {
 		requirement = describeNativeHeaderSecretRequirement(requirement, headerName, value)
 	}

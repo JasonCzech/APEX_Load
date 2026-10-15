@@ -308,7 +308,9 @@ func applyNativeProjectedVariableSecrets(
 			if err != nil {
 				return nil, 0, fmt.Errorf("scrub native credential definition %q%s: %w", file.Path, plan.pointer, err)
 			}
-			if changed {
+			// A definition source scrubbing already gave this same reference
+			// (a readable name the generated requirement keeps) is scrubbed.
+			if changed || nativeScrubTargetHolds(document, plan.pointer, plan.kind, plan.replacement) {
 				replaced++
 			}
 		}
@@ -534,4 +536,20 @@ func nativeJSONPointerUnescape(value string) (string, error) {
 		}
 	}
 	return out.String(), nil
+}
+
+// nativeScrubTargetHolds reports whether a whole-value definition already
+// holds exactly its replacement. A value inside a body or URL is never taken
+// as scrubbed this way: another occurrence in the same field could hold the
+// reference while this one still holds the credential.
+func nativeScrubTargetHolds(document any, pointer, kind, replacement string) bool {
+	if kind != "" {
+		return false
+	}
+	value, err := nativeJSONPointerValue(document, pointer)
+	if err != nil {
+		return false
+	}
+	text, ok := value.(string)
+	return ok && text == replacement
 }

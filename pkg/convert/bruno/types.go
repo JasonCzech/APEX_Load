@@ -213,6 +213,17 @@ type SecretRequirement struct {
 	scrubTargets    []nativeSecretScrubTarget
 	affectedPathSet map[string]struct{}
 	scrubTargetSet  map[string]struct{}
+	// readableName is the name a generated requirement takes once the whole
+	// collection is converted (see assignReadableNativeSecretNames).
+	readableName string
+	// LegacyName is the hashed name an earlier importer version generated for
+	// this requirement. A project that configured that secret can keep it.
+	// Server-side only.
+	LegacyName string `json:"-"`
+	// NameBase is the readable name before any collision number (PASSWORD
+	// for PASSWORD_2), for numbering past a name the project already holds.
+	// Server-side only.
+	NameBase string `json:"-"`
 }
 
 type SecurityFinding struct {

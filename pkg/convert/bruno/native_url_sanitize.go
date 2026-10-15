@@ -273,6 +273,7 @@ func nativeURLSecretRequirement(
 		Context:       "Bruno URL component credential " + name,
 		Value:         recoverableNativeURLCredentialValue(value),
 		AffectedPaths: nativeSecretRequirementPaths(sourcePath),
+		readableName:  readableNativeSecretBase(name),
 	}
 }
 

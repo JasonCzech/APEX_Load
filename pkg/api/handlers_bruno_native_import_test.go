@@ -704,7 +704,7 @@ http:
 		t.Fatalf("secret requirements = %#v", inspection.Result.SecretRequirements)
 	}
 	requirement := inspection.Result.SecretRequirements[0]
-	if !strings.HasPrefix(requirement.SuggestedName, "PARTNER_USERNAME_") ||
+	if requirement.SuggestedName != "PARTNER_USERNAME" ||
 		requirement.Replacement != "{{secret."+requirement.SuggestedName+"}}" ||
 		requirement.DisplayLabel != "Partner username" ||
 		requirement.SourceVariable != "partnerUserName" ||
@@ -849,7 +849,7 @@ http:
 		preservationReason   string
 	}{
 		{
-			name:                "CTA_COLLECTION_6A_CTA_INQUIREACCOUNTPROFILE_312_HEADER_X_CDF_AUTH_TOKEN_84921F7A1055",
+			name:                "X_CDF_AUTH_TOKEN",
 			label:               "X-CDF auth token",
 			path:                "CTA_Collection 6a/CTA/InquireAccountProfile_312.yml",
 			candidateSourcePath: "CTA/InquireAccountProfile_312.yml",

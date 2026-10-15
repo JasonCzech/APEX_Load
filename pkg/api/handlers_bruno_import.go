@@ -32,6 +32,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sharedvalue"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/importartifact"
@@ -481,6 +482,11 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 	}
 	if nativeMode {
 		s.attachBrunoNativeExistingScripts(input.ProjectID, result)
+		if err := s.settleBrunoSecretNames(r, input.ProjectID, result); err != nil {
+			clearBrunoImportSecretValues(result)
+			writeError(w, http.StatusInternalServerError, "settle Bruno secret names: "+err.Error())
+			return
+		}
 		if err := attachBrunoNativeHeaderRepairs(result); err != nil {
 			clearBrunoImportSecretValues(result)
 			writeError(w, http.StatusUnprocessableEntity, err.Error())
@@ -796,6 +802,132 @@ func brunoPreviousInputFrom(script *dsl.Script, name string) (brunoPreviousInput
 		}
 	}
 	return brunoPreviousInput{}, false
+}
+
+// settleBrunoSecretNames fits the import's readable secret names to the
+// project it imports into:
+//   - the hashed name an earlier import generated for a credential stays when
+//     the project configured it and not the readable name, so the values
+//     already set up still apply;
+//   - a readable name the project already holds for something else is
+//     numbered past it, so an import never sends another secret's value to
+//     the imported target. A name a requirement's own re-imported scripts
+//     already use is its own, and stays.
+//
+// A project whose secrets cannot be listed fails the inspection: the names
+// could otherwise reach a secret the project holds. When a secret's configured
+// state cannot be read, no hashed name is kept and an unverified numbered name
+// is passed over.
+func (s *Server) settleBrunoSecretNames(r *http.Request, projectID string, result *brunoconvert.Result) error {
+	if result == nil || s.projectSecretStore == nil {
+		return nil
+	}
+	var generated []brunoconvert.SecretRequirement
+	taken := map[string]bool{}
+	for _, requirement := range result.SecretRequirements {
+		taken[strings.ToUpper(requirement.SuggestedName)] = true
+		if requirement.LegacyName != "" && requirement.LegacyName != requirement.SuggestedName && !requirement.ExistingReference {
+			generated = append(generated, requirement)
+		}
+	}
+	if len(generated) == 0 {
+		return nil
+	}
+	listed, err := s.projectSecretStore.List(r.Context(), projectID)
+	if err != nil {
+		return fmt.Errorf("list project secrets: %w", err)
+	}
+	existing := make(map[string]bool, len(listed))
+	for _, metadata := range listed {
+		existing[strings.ToUpper(metadata.Name)] = true
+	}
+	var names []string
+	for _, requirement := range generated {
+		names = append(names, requirement.SuggestedName, requirement.LegacyName)
+	}
+	statuses, err := s.projectSecretStatuses(r, projectID, names)
+	if err != nil {
+		// The listed names still number past the project's own secrets.
+		slog.Warn("read project secret statuses for Bruno secret names", "project_id", projectID, "error", err)
+		statuses = nil
+	}
+	configured := make(map[string]bool, len(statuses))
+	for _, status := range statuses {
+		configured[strings.ToUpper(status.Name)] = status.Configured
+		if status.Configured {
+			existing[strings.ToUpper(status.Name)] = true
+		}
+	}
+	// held reports whether the project holds a numbered name: listed, or
+	// supplied from the environment or Key Vault.
+	held := func(name string) bool {
+		upper := strings.ToUpper(name)
+		if _, checked := existing[upper]; checked {
+			return existing[upper]
+		}
+		statuses, err := s.projectSecretStatuses(r, projectID, []string{name})
+		existing[upper] = err != nil || (len(statuses) == 1 && statuses[0].Configured)
+		return existing[upper]
+	}
+	// The names a requirement's own re-imported scripts already reference are
+	// its to keep. Another requirement's are not: when the collection changed
+	// order, a readable name can now belong to a different credential.
+	reusable := map[string]map[string]bool{}
+	for _, candidate := range result.Scripts {
+		if candidate.ExistingScript == nil {
+			continue
+		}
+		script, err := s.store.GetScript(candidate.ExistingScript.ScriptID)
+		if err != nil || script == nil || normalizeProjectID(script.ProjectID) != normalizeProjectID(projectID) {
+			continue
+		}
+		references := scriptSecretReferences(script)
+		for _, requirement := range candidate.SecretRequirements {
+			if reusable[requirement.ID] == nil {
+				reusable[requirement.ID] = map[string]bool{}
+			}
+			for _, name := range references {
+				reusable[requirement.ID][strings.ToUpper(name)] = true
+			}
+		}
+	}
+	sort.Slice(generated, func(i, j int) bool { return generated[i].SuggestedName < generated[j].SuggestedName })
+	renames := map[string]string{}
+	for _, requirement := range generated {
+		name := strings.ToUpper(requirement.SuggestedName)
+		legacy := strings.ToUpper(requirement.LegacyName)
+		own := reusable[requirement.ID]
+		switch {
+		case configured[legacy] && !configured[name] && !taken[legacy]:
+			renames[requirement.SuggestedName] = requirement.LegacyName
+			taken[legacy] = true
+		case existing[name] && !own[name]:
+			base := requirement.NameBase
+			if base == "" {
+				base = requirement.SuggestedName
+			}
+			for number := 2; ; number++ {
+				candidate := numberedBrunoSecretName(base, number)
+				upper := strings.ToUpper(candidate)
+				if !taken[upper] && (own[upper] || !held(candidate)) {
+					renames[requirement.SuggestedName] = candidate
+					taken[upper] = true
+					break
+				}
+			}
+		}
+	}
+	return brunoconvert.RenameNativeSecrets(result, renames)
+}
+
+// numberedBrunoSecretName is base with a collision number, base shortened
+// when the two would exceed the longest secret name.
+func numberedBrunoSecretName(base string, number int) string {
+	suffix := "_" + strconv.Itoa(number)
+	if limit := credential.MaxLogicalNameBytes - len(suffix); len(base) > limit {
+		base = strings.TrimRight(base[:max(limit, 1)], "_")
+	}
+	return base + suffix
 }
 
 // brunoImportedScriptLister is the storage needed to match a re-import with
