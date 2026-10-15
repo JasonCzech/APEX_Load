@@ -292,7 +292,7 @@ test('foreach receipts retain original row ordinals and restore enclosing bindin
     const frames = page.getByRole('region', { name: 'Active runtime frames', exact: true })
     await expect(frames).toContainText(`iteration ${row}`)
     await frames.getByRole('button', { name: 'Inspect runtime frame 2 source', exact: true }).click()
-    const source = page.getByRole('region', { name: 'Source', exact: true })
+    const source = page.getByRole('region', { name: 'DSL', exact: true })
     await expect(source.locator('.script-code-title > span')).toHaveText('actions[0]')
     if (row === 2) await page.screenshot({ path: testInfo.outputPath('foreach-frame-source.png'), fullPage: true })
     await json(await request.post(`/api/v1/script-debug/sessions/${initial.id}/step`, { data: { mode: 'into' } }))
@@ -354,7 +354,7 @@ test('Run To continues after its breakpoint socket precedes the HTTP acknowledge
     await route.fulfill({ response })
   })
   try {
-    await page.getByRole('region', { name: 'Debugger actions' }).getByRole('button', { name: /Action 2.*Selected target/ }).click()
+    await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: /^Selected target/ }).click()
     await page.getByRole('button', { name: 'Run to selected action', exact: true }).click()
     await expect.poll(() => fetchedAcknowledgement?.id).toBe(initial.id)
     await expect.poll(() => breakpointSocket?.session?.state_revision).toBe(fetchedAcknowledgement!.state_revision)

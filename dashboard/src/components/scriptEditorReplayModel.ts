@@ -116,6 +116,20 @@ export function normalizeDebugPhase(phase: string): ScriptDebugBreakpoint['phase
   return phase === 'init' || phase === 'teardown' ? phase : 'action'
 }
 
+/**
+ * Breakpoints with one on every request of a sequence (enabled), or none on
+ * them (disabled). A request that already has one keeps it, settings and all,
+ * and a one-shot Run-to breakpoint is never touched: it is the run's target.
+ */
+export function withSequenceRequestBreakpoints(breakpoints: ScriptDebugBreakpoint[], phase: string, actionIndex: number, requestCount: number, enabled: boolean): ScriptDebugBreakpoint[] {
+  const normalizedPhase = normalizeDebugPhase(phase)
+  const onRequest = (bp: ScriptDebugBreakpoint) => bp.phase === normalizedPhase && bp.action_index === actionIndex && bp.request_index != null && !bp.once
+  if (!enabled) return breakpoints.filter(bp => !onRequest(bp))
+  const set = new Set(breakpoints.filter(onRequest).map(bp => bp.request_index))
+  const missing = Array.from({ length: requestCount }, (_, index) => index).filter(index => !set.has(index))
+  return [...breakpoints, ...missing.map(index => ({ phase: normalizedPhase, action_index: actionIndex, request_index: index }))]
+}
+
 export function humanizeStepSegment(segment: string): string {
   const match = /^(\w+)\[(\d+)\]$/.exec(segment)
   if (!match) return segment

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('keeps the debug parameter list below the action list when the bottom dock is maximized', async ({ page }) => {
+test('keeps the debug outline and its parameters inside the rail when the bottom dock is maximized', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 })
   await page.goto('/#/scripts')
 
@@ -20,28 +20,23 @@ test('keeps the debug parameter list below the action list when the bottom dock 
   await bottomSeparator.press('End')
   await expect(bottomSeparator).toHaveAttribute('aria-valuenow', '640')
 
-  const actionList = page.getByRole('region', { name: 'Debugger actions' })
-  const actionSection = page.locator('.debugger-rail > .debugger-rail-section').first()
-  const parameterSection = page.locator('.debugger-parameter-section')
-  await expect(actionList).toBeVisible()
-  await expect(actionSection).toBeVisible()
-  await expect(parameterSection).toBeVisible()
+  const rail = page.getByRole('complementary', { name: 'Actions', exact: true })
+  const tree = rail.getByRole('tree', { name: 'Script steps' })
+  const parameters = rail.locator('.debug-outline-parameters')
+  await expect(tree).toBeVisible()
+  await expect(parameters).toBeVisible()
 
-  const [actionBounds, actionSectionBounds, parameterBounds, actionOverflow, parameterBackground] = await Promise.all([
-    actionList.boundingBox(),
-    actionSection.boundingBox(),
-    parameterSection.boundingBox(),
-    actionSection.evaluate(element => getComputedStyle(element).overflow),
-    parameterSection.evaluate(element => getComputedStyle(element).backgroundColor),
+  // The outline scrolls inside the rail, and the parameters sit below it, still inside the rail.
+  const [railBounds, treeBounds, parameterBounds, treeOverflow] = await Promise.all([
+    rail.boundingBox(),
+    tree.boundingBox(),
+    parameters.boundingBox(),
+    tree.evaluate(element => getComputedStyle(element).overflowY),
   ])
-  expect(actionBounds).not.toBeNull()
-  expect(actionSectionBounds).not.toBeNull()
+  expect(railBounds).not.toBeNull()
+  expect(treeBounds).not.toBeNull()
   expect(parameterBounds).not.toBeNull()
-  const visibleActionBottom = Math.min(
-    actionBounds!.y + actionBounds!.height,
-    actionSectionBounds!.y + actionSectionBounds!.height,
-  )
-  expect(actionOverflow).toBe('hidden')
-  expect(visibleActionBottom).toBeLessThanOrEqual(parameterBounds!.y)
-  expect(parameterBackground).not.toBe('rgba(0, 0, 0, 0)')
+  expect(treeOverflow).toBe('auto')
+  expect(treeBounds!.y + treeBounds!.height).toBeLessThanOrEqual(parameterBounds!.y + 1)
+  expect(parameterBounds!.y + parameterBounds!.height).toBeLessThanOrEqual(railBounds!.y + railBounds!.height + 1)
 })

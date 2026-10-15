@@ -64,7 +64,7 @@ test('debugger captures successful evidence, diagnoses runtime failure, repairs 
   // the step just extracted filled in; the step that ran is one click away.
   await expect(page.getByRole('status').filter({ hasText: 'Paused before: Check order' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Next request' })).toContainText('/order/debug-customer')
-  await page.getByRole('complementary', { name: 'Actions' }).locator('.debugger-action-row-main').filter({ hasText: 'Get customer' }).click()
+  await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: 'Get customer' }).click()
   await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('Body captured')
   // Inspecting a step stops following; follow again before continuing.
   await page.getByLabel('Follow execution', { exact: true }).check()
@@ -139,7 +139,7 @@ test('run-to starts at the beginning and consumes its temporary breakpoint witho
   await expect(hitCount).toHaveValue('12')
   await page.getByRole('button', { name: 'Disable all breakpoints', exact: true }).click()
   await page.getByText('Breakpoints (1)', { exact: true }).click()
-  await page.getByRole('region', { name: 'Debugger actions' }).getByRole('button', { name: /Action 2.*Second/ }).click()
+  await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: /^Second/ }).click()
   await page.getByRole('button', { name: 'Run to selected action', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Paused before: Second' })).toBeVisible()
   await expect(page.locator('.debugger-live-strip')).toContainText('1 recorded executions')

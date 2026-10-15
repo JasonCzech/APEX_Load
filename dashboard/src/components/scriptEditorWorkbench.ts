@@ -77,7 +77,8 @@ export const CENTER_WORKBENCH_TAB_IDS: readonly CenterWorkbenchTabId[] = [
 ]
 
 export const DEBUGGER_LAYOUT_DEFAULTS: Record<DebuggerResizeKind, number> = {
-  rail: 260,
+  // The outline plus its breakpoint gutter, at the room Author's outline has.
+  rail: 300,
   vars: 320,
   bottom: 220,
 }

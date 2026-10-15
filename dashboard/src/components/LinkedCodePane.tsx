@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { cpp } from '@codemirror/lang-cpp'
 import { javascript } from '@codemirror/lang-javascript'
@@ -61,6 +61,36 @@ const filterDecorationsField = StateField.define<DecorationSet>({
   provide: field => EditorView.decorations.from(field),
 })
 
+// Scroll a target into view inside this pane's own scroller and nowhere else.
+// CodeMirror's default handler also scrolls every scrollable ancestor, which
+// dragged the import review page down to the pane. CodeMirror calls this only
+// after it has rendered and measured the target's line, so the position holds
+// even far down a long, wrapped document, where a position read before the
+// scroll lands on an estimate.
+const scrollWithinPane = EditorView.scrollHandler.of((view, range, { y, yMargin, xMargin }) => {
+  const scroller = view.scrollDOM
+  // Sideways first (an unwrapped long line): bring the position past the
+  // sticky gutters, as CodeMirror's own "nearest" would.
+  const caret = view.coordsAtPos(range.head)
+  if (caret) {
+    const box = scroller.getBoundingClientRect()
+    const textLeft = view.dom.querySelector('.cm-gutters')?.getBoundingClientRect().right ?? box.left
+    if (caret.left < textLeft + xMargin) scroller.scrollLeft -= textLeft + xMargin - caret.left
+    else if (caret.right > box.right - xMargin) scroller.scrollLeft += caret.right - (box.right - xMargin)
+  }
+  const block = view.lineBlockAt(range.head)
+  const height = scroller.clientHeight
+  const offset = view.documentTop - scroller.getBoundingClientRect().top + scroller.scrollTop
+  const top = block.top + offset
+  const bottom = block.bottom + offset
+  let next = scroller.scrollTop
+  if (y === 'center' && block.height < height) next = top - (height - block.height) / 2
+  else if (y === 'end') next = bottom - height + yMargin
+  else if (y !== 'nearest' || top < next) next = top - yMargin
+  else if (bottom > next + height) next = Math.min(top - yMargin, bottom - height + yMargin)
+  scroller.scrollTop = Math.max(0, next)
+  return true
+})
 
 class StatusMarker extends GutterMarker {
   constructor(readonly status: GutterStatus) {
@@ -144,7 +174,16 @@ export default function LinkedCodePane({
   const gutterStatuses = useMemo(() => fullStatuses ? new Map([...fullStatuses].map(([line, status]) => [line - offset, status])) : undefined, [fullStatuses, offset])
   const offsetRef = useRef(offset)
   offsetRef.current = offset
-  const viewRef = useRef<EditorView | null>(null)
+  // The view lives in state, tagged with the editor key it was created under.
+  // react-codemirror creates its view a render after mounting, so an effect
+  // that read a ref on mount ran before the view existed and never ran again:
+  // a newly mounted pane (a destination appearing, every selection in mapped
+  // context) neither highlighted nor revealed the linked range.
+  const editorKey = contextLines == null ? 'full' : `context-${offset}`
+  const [editor, setEditor] = useState<{ key: string; view: EditorView } | null>(null)
+  const view = editor?.key === editorKey ? editor.view : null
+  const viewRef = useRef(view)
+  viewRef.current = view
   const containerRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const element = containerRef.current
@@ -157,11 +196,9 @@ export default function LinkedCodePane({
   }, [])
   const clickRef = useRef(onLineClick)
   clickRef.current = onLineClick
-  // Suppress the scroll on the first highlight after the editor mounts: the
-  // initial mapping is auto-selected when the review opens, and scrolling there
-  // would drag the whole page down to this pane (away from the Save button).
-  // Subsequent selection changes are user-driven, so scrolling is wanted.
-  const hasAppliedRangeRef = useRef(false)
+  // The range (and reveal request) this pane last scrolled to, so a re-render
+  // that changes nothing about the selection never scrolls it again.
+  const revealedRef = useRef<{ view: EditorView; key: string } | null>(null)
 
   const extensions = useMemo<Extension[]>(() => {
     const exts: Extension[] = [
@@ -169,6 +206,7 @@ export default function LinkedCodePane({
       lineNumbers({ formatNumber: line => String(line + offset) }),
       linkedRangeField,
       filterDecorationsField,
+      scrollWithinPane,
       ...(wrapLines ? [EditorView.lineWrapping] : []),
       EditorView.editable.of(false),
       EditorView.contentAttributes.of({ 'aria-label': ariaLabel || 'Read-only code' }),
@@ -199,37 +237,31 @@ export default function LinkedCodePane({
   // range (or the underlying document) changes. Depend on the range's line
   // numbers rather than the object identity: callers rebuild the range object on
   // every render, so keying on the object would re-dispatch scrollIntoView on
-  // unrelated re-renders (e.g. a 2s status poll), yanking the page back to the
+  // unrelated re-renders (e.g. a 2s status poll), yanking the pane back to the
   // highlighted line.
   const activeStartLine = activeRange?.startLine ?? null
   const activeEndLine = activeRange?.endLine ?? null
-  const prevRangeRef = useRef({ start: activeStartLine, end: activeEndLine })
-  const isSelectionChange = prevRangeRef.current.start !== activeStartLine || prevRangeRef.current.end !== activeEndLine
 
   useEffect(() => {
-    prevRangeRef.current = { start: activeStartLine, end: activeEndLine }
-  }, [activeStartLine, activeEndLine])
-
-  useEffect(() => {
-    const view = viewRef.current
     if (!view) return
 
     const effects: StateEffect<unknown>[] = []
 
     // 1. Linked Line Range
-    const isInitialRange = !hasAppliedRangeRef.current
-    hasAppliedRangeRef.current = true
     const range = activeStartLine != null ? { startLine: activeStartLine, endLine: activeEndLine ?? activeStartLine } : null
     effects.push(setLinkedRange.of(range))
 
-    if (range && range.startLine >= 1 && range.startLine <= view.state.doc.lines && (revealOnMount || (!isInitialRange && isSelectionChange))) {
-      const line = view.state.doc.line(range.startLine)
-      if (revealOnMount) {
-        view.requestMeasure({
-          read: () => view.lineBlockAt(line.from),
-          write: block => { view.scrollDOM.scrollTop = Math.max(0, block.top - view.scrollDOM.clientHeight / 2 + block.height / 2) },
-        })
-      } else effects.push(EditorView.scrollIntoView(line.from, { y: 'center' }))
+    // With revealOnMount, a new view, range or reveal request scrolls. Without
+    // it, the first range only highlights: the initial mapping is auto-selected
+    // when the review opens, and only later selection changes are user-driven.
+    const revealKey = range ? `${range.startLine}:${range.endLine}${revealOnMount ? `:${revealRequestId}` : ''}` : ''
+    const revealed = revealedRef.current
+    revealedRef.current = { view, key: revealKey }
+    const reveal = revealOnMount
+      ? revealed?.view !== view || revealed.key !== revealKey
+      : revealed !== null && revealed.key !== revealKey
+    if (range && reveal && range.startLine >= 1 && range.startLine <= view.state.doc.lines) {
+      effects.push(EditorView.scrollIntoView(view.state.doc.line(range.startLine).from, { y: 'center' }))
     }
 
     // 2. Search Query Highlighting
@@ -255,12 +287,12 @@ export default function LinkedCodePane({
     }
 
     view.dispatch({ effects })
-  }, [activeStartLine, activeEndLine, searchQuery, value, isSelectionChange, revealRequestId, revealOnMount])
+  }, [view, activeStartLine, activeEndLine, searchQuery, value, revealRequestId, revealOnMount])
 
   return (
     <div ref={containerRef} className="linked-code-pane" role="region" aria-label={ariaLabel}>
       <CodeMirror
-        key={contextLines == null ? 'full' : `context-${offset}`}
+        key={editorKey}
         value={value}
         extensions={extensions}
         editable={false}
@@ -277,9 +309,7 @@ export default function LinkedCodePane({
           allowMultipleSelections: false,
           highlightSelectionMatches: false,
         }}
-        onCreateEditor={view => {
-          viewRef.current = view
-        }}
+        onCreateEditor={created => setEditor({ key: editorKey, view: created })}
       />
     </div>
   )

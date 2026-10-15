@@ -14,8 +14,10 @@ import { HTTPVersionReplayEvidence, type HTTP3UpgradeScope } from './HTTPVersion
 import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
 import { httpReplayVersionEvidence } from './httpActionVersionModel'
 import { httpResponseContentEvidence } from './httpResponseContentEvidenceModel'
-import { debugContinuesAfterFailure, debugOverrideCount, debugRunIdError, sessionVariablesError, handleOutlineKeys, toggleFocusedRowBreakpoint } from './scriptSidebarModel'
+import { debugContinuesAfterFailure, debugOverrideCount, debugRunIdError, sessionVariablesError } from './scriptSidebarModel'
 import type { OutlineModel } from './scriptOutlineModel'
+import ScriptOutlineTree, { type OutlineDebug, type ScriptOutlineSelection } from './ScriptOutlineTree'
+import { buildDebugOutline } from './debugOutlineModel'
 import { DEFAULT_REPLAY_OPTIONS } from './scriptEditorState'
 import { currentRuntimeLookup, currentRuntimeParameter, type RuntimeInspectionMode } from './debugRuntimeState'
 import { DebugParameterInspector } from './DebugParameterInspector'
@@ -55,19 +57,16 @@ import {
 } from './scriptAuthoringAssist'
 import {
   debugBreakpointKey,
-  formatConditionEvidence,
   formatDebugLeafSuffix,
   formatReplayDiagnosisCategory,
   highlightDebugLogRaw,
   hasStructuredReplaySnapshot,
-  humanizeStepSegment,
+  normalizeDebugPhase,
 } from './scriptEditorReplayModel'
 import {
   DEBUGGER_LAYOUT_LIMITS,
   buildDebugRailRenderRows,
   type DebugRailRenderRow,
-  debugSequenceKey,
-  debugStepPathKey,
   formatDebugPhaseLabel,
   formatProtocolEvidenceSummary,
   type ScriptPhaseActionRow,
@@ -178,9 +177,17 @@ export interface ScriptReplayDebuggerViewProps {
   controller: ReplayDebuggerController
   copiedReplaySnapshotSection: string | null
   debugActionRows: ScriptPhaseActionRow[]
-  /** The Author outline's tree: the rail folds sub-transactions and names steps as it does. */
-  debugOutline?: OutlineModel
+  /** The Author outline: Debug's sidebar is the same tree, with breakpoints and run status. */
+  debugOutline: OutlineModel
+  /** The outline state Debug shares with Author: its selection, problem flags and markers. */
+  outlineSelection: ScriptOutlineSelection | null
+  outlineResetKey: string
+  outlineHasIssue: (row: ScriptPhaseActionRow) => boolean
+  outlineShowMarkers: boolean
+  onOutlineShowMarkersChange: (show: boolean) => void
   debugBreakpointKeys: Set<string>
+  /** The breakpoint keys plus each action holding a breakpoint anywhere in it, for the outline's flags. */
+  outlineBreakpointKeys: Set<string>
   debugDetailHost?: HTMLDivElement | null
   debuggerWorkbench: ReactNode
   error: string
@@ -195,11 +202,9 @@ export interface ScriptReplayDebuggerViewProps {
   onEditParameterDefinition: (name: string) => void
   onActivateDebug: () => void
   onSelectProblemAction: (row: ScriptPhaseActionRow) => void
-  parameterReferenceCounts: Map<string, number>
   problemCount: number
   projectId?: string
   replayActivity: ReplayActivityItem[]
-  replayEventRefs: React.MutableRefObject<Record<number, HTMLDivElement | null>>
   replayFailingEvent: BrowserReplayEvent | null
   replayFailingEventIndex: number
   replaying: boolean
@@ -233,6 +238,7 @@ export interface ScriptReplayDebuggerViewProps {
   selectedActionKey?: string
   selectedOutlineParameterName: string | null
   selectOutlineParameter: (parameterName: string) => void
+  parameterReferenceCounts: Map<string, number>
   onSelectDebugItem: (item: DebugRailRenderRow, hasEvidence: boolean) => void
   setBreakOnFailure: (enabled: boolean) => Promise<void>
   setExpandedReplayEvent: ScriptEditorStateSetter<number | null>
@@ -266,7 +272,13 @@ export function ScriptReplayDebuggerView({
   copiedReplaySnapshotSection,
   debugActionRows,
   debugOutline,
+  outlineSelection,
+  outlineResetKey,
+  outlineHasIssue,
+  outlineShowMarkers,
+  onOutlineShowMarkersChange,
   debugBreakpointKeys,
+  outlineBreakpointKeys,
   debugDetailHost,
   debuggerWorkbench,
   error,
@@ -282,11 +294,9 @@ export function ScriptReplayDebuggerView({
   onActivateDebug,
   onEditParameterDefinition,
   onSelectProblemAction,
-  parameterReferenceCounts,
   problemCount,
   projectId,
   replayActivity,
-  replayEventRefs,
   replayFailingEvent,
   replayFailingEventIndex,
   replaying,
@@ -311,6 +321,7 @@ export function ScriptReplayDebuggerView({
   selectedActionKey,
   selectedOutlineParameterName,
   selectOutlineParameter,
+  parameterReferenceCounts,
   onSelectDebugItem,
   setBreakOnFailure,
   setExpandedReplayEvent,
@@ -331,7 +342,6 @@ export function ScriptReplayDebuggerView({
     currentDebugActionKey,
     currentDebugAncestorKeys,
     currentDebugStepKey,
-    debugActionListCollapsed,
     debugBreakpoints,
     debugDetailCollapsed,
     debugEvents,
@@ -344,10 +354,7 @@ export function ScriptReplayDebuggerView({
     debuggerStatusState,
     debuggerTab,
     debuggerVarsWidth,
-    debugParameterListCollapsed,
-    debugRailFailuresOnly,
     debugRailFilter,
-    debugRailFilterText,
     debugRawAutoScroll,
     debugRawLevel,
     debugRawOutputRef,
@@ -357,17 +364,13 @@ export function ScriptReplayDebuggerView({
     effectiveExpandedDebugSequences,
     eventIndexByLocation,
     eventsByStepPath,
-    filterForcedDebugSequences,
     handleDebuggerResizeKeyDown,
     selectedReplayEvent,
     selectedReplayEventIndex,
-    setDebugActionListCollapsed,
     setDebugDetailCollapsed,
     setDebuggerBottomTab,
     setDebuggerSettingsOpen,
     setDebuggerTab,
-    setDebugParameterListCollapsed,
-    setDebugRailFailuresOnly,
     setDebugRailFilter,
     setDebugRawAutoScroll,
     setDebugRawClearedAt,
@@ -422,19 +425,58 @@ export function ScriptReplayDebuggerView({
   const [dockCollapsed, setDockCollapsed] = useState(true)
   const [rawLogs, setRawLogs] = useState(false)
   const [breakpointsPending, setBreakpointsPending] = useState(false)
-  const disabledBreakpointKeys = new Set(debugBreakpoints.filter(bp => bp.disabled).map(bp => bp.step_path?.length ? debugStepPathKey(bp.phase, bp.action_index, bp.step_path) : debugBreakpointKey(bp.phase, bp.action_index, bp.request_index)))
   const runtimeFailures = debugEvents.map((event, index) => ({ event, index })).filter(({ event }) => !event.success)
   const statusText = executionLabel(replaying, browserReplaySession, replayReport)
   // Shown beside Debug options, except while a run is live and the step controls need the room; the button's tooltip always carries it.
   const debugOptionsSummary = `1 virtual user · ${replayOptions.ignoreThinkTime ? 'Think time ignored' : 'Script think time'} · ${replayOptions.logLevel} logging${replayOptions.startPaused ? ' · Start paused' : ''} · ${debugContinuesAfterFailure(replayOptions, script) ? 'Continues' : 'Stops'} after a failure`
   const jumpToEvent = (index: number) => { setExpandedReplayEvent(index); setDebuggerTab('request'); setDebugDetailCollapsed(false); setNarrowPane('editor') }
+  const debugOutlineState = useMemo(() => buildDebugOutline({
+    events: debugEvents,
+    eventIndexByLocation,
+    eventsByStepPath,
+    breakpoints: debugBreakpoints,
+    breakpointKeys: debugBreakpointKeys,
+    currentActionKey: currentDebugActionKey,
+    currentStepKey: currentDebugStepKey,
+    currentAncestorKeys: currentDebugAncestorKeys,
+    terminal: replayTerminal,
+  }), [currentDebugActionKey, currentDebugAncestorKeys, currentDebugStepKey, debugBreakpointKeys, debugBreakpoints, debugEvents, eventIndexByLocation, eventsByStepPath, replayTerminal])
+  const debugOutlineOverlay = useMemo<OutlineDebug>(() => ({
+    breakpoint: debugOutlineState.breakpoint,
+    status: debugOutlineState.status,
+    onToggleBreakpoint: row => {
+      const target = debugOutlineState.breakpointTarget(row)
+      if (!target) return
+      if ('requests' in target) void setSequenceChildBreakpoints(target.phase, target.actionIndex, target.requests, target.set)
+      else if ('stepPath' in target) void toggleStepPathBreakpoint(target.phase, target.actionIndex, target.stepPath)
+      else void toggleDebugBreakpoint(target.phase, target.actionIndex, target.requestIndex)
+    },
+  }), [debugOutlineState, setSequenceChildBreakpoints, toggleDebugBreakpoint, toggleStepPathBreakpoint])
+  // The outline marks the step whose evidence is open (the run's step while
+  // following execution); otherwise the step selected in either workspace.
+  const debugOutlineSelection = useMemo<ScriptOutlineSelection | null>(() => {
+    if (!selectedReplayEvent || typeof selectedReplayEvent.action_index !== 'number') return outlineSelection
+    const stepPath = selectedReplayEvent.request_index != null
+      ? [`requests[${selectedReplayEvent.request_index}]`]
+      : selectedReplayEvent.step_path?.length ? selectedReplayEvent.step_path : undefined
+    return { phase: normalizeDebugPhase(selectedReplayEvent.phase), actionIndex: selectedReplayEvent.action_index, stepPath }
+  }, [outlineSelection, selectedReplayEvent])
+  const selectDebugOutlineItem = (item: DebugRailRenderRow) => {
+    const eventIndex = debugOutlineState.eventIndex(item)
+    onSelectDebugItem(item, eventIndex != null)
+    setNarrowPane('editor')
+    setDebuggerTab('request')
+    if (eventIndex == null) return
+    setExpandedReplayEvent(eventIndex)
+    setDebugDetailCollapsed(false)
+  }
   // Following execution keeps the action about to run in view in the action list.
   const debuggerRailRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     if (!followExecution || (!currentDebugActionKey && !currentDebugStepKey)) return
     debuggerRailRef.current?.querySelector<HTMLElement>('[aria-current="step"]')?.scrollIntoView?.({ block: 'nearest' })
   }, [currentDebugActionKey, currentDebugStepKey, followExecution])
-  const goCurrent = () => { const failureIndex = isReplayPaused && browserReplaySession?.current_event?.success === false ? debugEvents.findIndex(e => e.event_id != null && e.event_id === browserReplaySession.current_event?.event_id) : -1; setExpandedReplayEvent(failureIndex >= 0 ? failureIndex : null); onFollowExecution(true); setDebugRailFilter(''); setDebugRailFailuresOnly(false); setDebuggerTab('request'); setNarrowPane('editor'); setDebugDetailCollapsed(false) }
+  const goCurrent = () => { const failureIndex = isReplayPaused && browserReplaySession?.current_event?.success === false ? debugEvents.findIndex(e => e.event_id != null && e.event_id === browserReplaySession.current_event?.event_id) : -1; setExpandedReplayEvent(failureIndex >= 0 ? failureIndex : null); onFollowExecution(true); setDebugRailFilter(''); setDebuggerTab('request'); setNarrowPane('editor'); setDebugDetailCollapsed(false) }
   const selectedItem = useMemo(() => buildDebugRailRenderRows(debugActionRows, effectiveExpandedDebugSequences).find(item => item.key === selectedActionKey), [debugActionRows, effectiveExpandedDebugSequences, selectedActionKey])
   const selectedRow = controller.selectedDebugRow || selectedItem?.row
 
@@ -601,411 +643,51 @@ export function ScriptReplayDebuggerView({
                 } as React.CSSProperties}
               >
                 <aside className="debugger-rail" aria-label="Actions" ref={debuggerRailRef}>
-                  <section className="debugger-rail-section">
-                    <div className="debugger-rail-header">
-                      <div className="debugger-rail-header-top">
-                        <button
-                          type="button"
-                          className="debugger-rail-section-toggle"
-                          aria-expanded={!debugActionListCollapsed}
-                          onClick={() => setDebugActionListCollapsed(collapsed => !collapsed)}
-                        >
-                          <span aria-hidden="true" className="outline-section-chevron">{debugActionListCollapsed ? '▸' : '▾'}</span>
-                          <span>Action List</span>
-                        </button>
-                        <div className="debugger-rail-header-meta">
-                          <small>{breakpointSummary}</small>
-                          {debugBreakpoints.length > 0 && (
-                            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void clearDebugBreakpoints()}>Clear</button>
-                          )}
-                        </div>
-                      </div>
-                      {!debugActionListCollapsed && (
-                        <div className="debugger-rail-filter">
-                          <input value={debugRailFilter} onChange={e => setDebugRailFilter(e.target.value)} placeholder="Filter actions" aria-label="Filter actions" />
-                          <label className="checkbox-label replay-checkbox">
-                            <input type="checkbox" checked={debugRailFailuresOnly} disabled={!debugEvents.length} onChange={e => setDebugRailFailuresOnly(e.target.checked)} />
-                            <span>Failures</span>
-                          </label>
-                        </div>
-                      )}
-                    </div>
-                    {!debugActionListCollapsed && (
-                      debugActionRows.length === 0 ? (
-                        <div className="debugger-rail-empty">Add actions to the script to debug.</div>
-                      ) : (
-                        <div
-                          className="debugger-rail-list"
-                          role="region"
-                          aria-label="Debugger actions"
-                          tabIndex={0}
-                          onKeyDownCapture={event => { if (!toggleFocusedRowBreakpoint(event)) handleOutlineKeys(event) }}
-                        >
-                          {(() => {
-                            const renderRows = buildDebugRailRenderRows(debugActionRows, effectiveExpandedDebugSequences)
-                            const conditionEvidenceMap = browserReplaySession?.condition_evidence || {}
-                            const conditionEvidenceFor = (p: string, ai: number, sp: string[]) => conditionEvidenceMap[`${p}#${ai}#${sp.join('/')}`]
-                            const matchesFilter = (text: string) => !debugRailFilterText || text.toLowerCase().includes(debugRailFilterText)
-                            const indentStyle = (depth: number) => depth > 0 ? ({ paddingLeft: `${depth * 14}px` } as React.CSSProperties) : undefined
-                            const rollupByPath = new Map<string, { count: number; failed: boolean }>()
-                            const rollupKey = (phase: string, actionIndex: number, stepPath: string[]) => `${phase}#${actionIndex}#${stepPath.join('/')}`
-                            for (const event of debugEvents) {
-                              if (event.action_index === undefined) continue
-                              const eventPath = event.step_path || []
-                              for (let depth = 0; depth <= eventPath.length; depth += 1) {
-                                const key = rollupKey(event.phase, event.action_index, eventPath.slice(0, depth))
-                                const current = rollupByPath.get(key) || { count: 0, failed: false }
-                                current.count += 1
-                                current.failed ||= !event.success
-                                rollupByPath.set(key, current)
-                              }
-                            }
-                            const childBreakpointsByAction = new Map<string, number>()
-                            for (const breakpoint of debugBreakpoints) {
-                              if (breakpoint.action_index === undefined) continue
-                              if (breakpoint.request_index == null && (!breakpoint.step_path || breakpoint.step_path.length === 0)) continue
-                              const key = `${breakpoint.phase}#${breakpoint.action_index}`
-                              childBreakpointsByAction.set(key, (childBreakpointsByAction.get(key) || 0) + 1)
-                            }
-                            const out: React.ReactNode[] = []
-                            // How deep the outline nests a step's action (its transactions), for the indent.
-                            const outlineDepth = (key: string) => Math.max(0, (debugOutline?.ancestorsByKey.get(debugOutline.rowKeyByAction.get(key) ?? key)?.length ?? 1) - 1)
-                            for (const item of renderRows) {
-                              const { phase, actionIndex, action } = item.row
-                              const actionKey = debugSequenceKey(phase, actionIndex)
-                              const nesting = outlineDepth(actionKey)
-                              if (item.kind === 'container') {
-                                const containerKey = item.key
-                                const isTopLevel = item.stepPath.length === 0
-                                const subtreeRollup = rollupByPath.get(rollupKey(phase, actionIndex, item.stepPath))
-                                const anyFail = Boolean(subtreeRollup?.failed)
-                                const isCurrent = currentDebugAncestorKeys.has(containerKey)
-                                const rollup = anyFail ? 'fail' : isCurrent ? 'current' : subtreeRollup?.count ? 'pass' : 'pending'
-                                const wholeActive = isTopLevel && debugBreakpointKeys.has(debugBreakpointKey(phase, actionIndex))
-                                const childBpCount = isTopLevel ? childBreakpointsByAction.get(`${phase}#${actionIndex}`) || 0 : 0
-                                const gutterState = wholeActive ? 'active' : childBpCount > 0 ? 'partial' : ''
-								const typeLabel = item.containerType === 'http_sequence' ? 'SEQ' : item.containerType === 'control_if' ? 'IF' : item.containerType === 'control_switch' ? 'SWITCH' : 'LOOP'
-                                const unitWord = item.containerType === 'http_sequence' ? 'request' : 'step'
-								const controlEvidence = item.containerType === 'control_if' || item.containerType === 'control_switch' || item.containerType === 'control_loop'
-                                  ? conditionEvidenceFor(phase, actionIndex, item.stepPath)
-                                  : undefined
-								const branchBadge = item.containerType === 'control_if' && controlEvidence
-								  ? (controlEvidence.branch === 'then' ? 'THEN' : 'ELSE')
-								  : item.containerType === 'control_switch' && controlEvidence?.branch
-									? controlEvidence.branch.toUpperCase()
-									: null
-                                if (isTopLevel) {
-                                  const parentVisible = debugRailFailuresOnly
-                                    ? anyFail
-                                    : !debugRailFilterText || matchesFilter(`${action.name || ''} ${action.target || ''}`) || filterForcedDebugSequences.has(containerKey)
-                                  if (!parentVisible) continue
-                                }
-                                out.push(
-                                  <div key={containerKey} className={`debugger-action-row container ${rollup} ${isCurrent ? 'current' : ''}`} style={indentStyle(item.depth + nesting)}>
-                                    {isTopLevel ? (
-                                      <TooltipButton
-                                        type="button"
-                                        aria-keyshortcuts="F9"
-                                        className={`debugger-gutter ${gutterState}`}
-                                        title={wholeActive ? `Remove breakpoint (whole ${typeLabel === 'SEQ' ? 'sequence' : 'block'})` : childBpCount > 0 ? `${childBpCount} sub-step breakpoint${childBpCount === 1 ? '' : 's'} — click to break before this block` : 'Break before this block'}
-                                        aria-label={`${wholeActive ? 'Remove' : 'Add'} breakpoint on ${action.name || `action ${actionIndex + 1}`}`}
-                                        onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
-                                      >
-                                        <span className="debugger-breakpoint-dot" />
-                                      </TooltipButton>
-                                    ) : (
-                                      <span className="debugger-gutter debugger-gutter-spacer" aria-hidden="true" />
-                                    )}
-                                    <button
-                                      type="button"
-                                      className="debugger-action-row-main"
-                                      aria-expanded={item.expanded}
-                                      onClick={() => toggleDebugSequenceExpanded(containerKey)}
-                                    >
-                                      <span className="debugger-action-row-head">
-                                        <span className="replay-event-phase">
-                                          <span aria-hidden="true" className="outline-section-chevron">{item.expanded ? '▾' : '▸'}</span>
-                                          {isTopLevel ? `${formatDebugPhaseLabel(phase)} ${actionIndex + 1}` : typeLabel}
-                                        </span>
-                                        <span className={`debugger-action-status ${rollup}`} aria-hidden="true" />
-                                      </span>
-                                      <strong>{item.name}</strong>
-                                      {branchBadge && (
-										<span className={`control-branch-badge ${controlEvidence?.result ? 'taken' : 'skipped'}`} title={`Condition was ${controlEvidence?.result ? 'true' : 'false'} → ${branchBadge.toLowerCase()} branch`}>{branchBadge}</span>
-                                      )}
-                                      <small>{typeLabel} · {item.leafCount} {unitWord}{item.leafCount === 1 ? '' : 's'}{childBpCount > 0 ? ` · ${childBpCount} BP` : ''}{controlEvidence ? ` · ${formatConditionEvidence(controlEvidence)}` : ''}</small>
-                                    </button>
-                                  </div>
-                                )
-                                if (item.expanded && isTopLevel && item.containerType === 'http_sequence') {
-                                  const allChildBreakpoints = item.leafCount > 0 && childBpCount >= item.leafCount
-                                  out.push(
-                                    <div key={`${containerKey}:controls`} className="debugger-sequence-controls">
-                                      <small>{childBpCount} of {item.leafCount} sub-request breakpoint{item.leafCount === 1 ? '' : 's'}</small>
-                                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => void setSequenceChildBreakpoints(phase, actionIndex, item.leafCount, !allChildBreakpoints)}>
-                                        {allChildBreakpoints ? 'Clear all' : 'Break all'}
-                                      </button>
-                                    </div>
-                                  )
-                                }
-                                continue
-                              }
-                              if (item.kind === 'leaf') {
-                                const isHttpChild = item.requestIndex != null
-                                const stepKey = debugStepPathKey(phase, actionIndex, item.stepPath)
-                                const iterationIndices = isHttpChild ? [] : (eventsByStepPath.get(stepKey) ?? [])
-                                const stepBpKey = isHttpChild ? item.key : stepKey
-                                const stepBpActive = debugBreakpointKeys.has(stepBpKey)
-                                const headLabelBase = isHttpChild ? `Request ${(item.requestIndex ?? 0) + 1}` : humanizeStepSegment(item.stepPath[item.stepPath.length - 1] || '')
-                                // A control-flow step that ran more than once becomes an expandable
-                                // iteration group: one row per loop pass.
-                                if (iterationIndices.length > 1) {
-                                  const groupFail = iterationIndices.some(i => !debugEvents[i].success)
-                                  const isCurrentGroup = currentDebugStepKey != null && currentDebugStepKey === stepKey
-                                  const groupStatus = groupFail ? 'fail' : isCurrentGroup ? 'current' : 'pass'
-                                  if (debugRailFailuresOnly && !groupFail) continue
-                                  if (!debugRailFailuresOnly && !matchesFilter(`${item.name} ${item.target}`)) continue
-                                  const groupExpanded = effectiveExpandedDebugSequences.has(stepKey)
-                                  out.push(
-                                    <div key={stepKey} className={`debugger-action-row child ${groupStatus} ${isCurrentGroup ? 'current' : ''}`} style={indentStyle(item.depth + nesting)}>
-                                      <TooltipButton
-                                        type="button"
-                                        aria-keyshortcuts="F9"
-                                        className={`debugger-gutter ${stepBpActive ? 'active' : ''}`}
-                                        title={stepBpActive ? 'Remove sub-step breakpoint' : 'Add sub-step breakpoint (fires every iteration)'}
-                                        aria-label={`${stepBpActive ? 'Remove' : 'Add'} sub-step breakpoint on ${item.name}`}
-                                        onClick={() => void toggleStepPathBreakpoint(phase, actionIndex, item.stepPath)}
-                                      >
-                                        <span className="debugger-breakpoint-dot" />
-                                      </TooltipButton>
-                                      <button type="button" className="debugger-action-row-main" aria-expanded={groupExpanded} onClick={() => toggleDebugSequenceExpanded(stepKey)}>
-                                        <span className="debugger-action-row-head">
-                                          <span className="replay-event-phase">
-                                            <span aria-hidden="true" className="outline-section-chevron">{groupExpanded ? '▾' : '▸'}</span>
-                                            {headLabelBase} ·×{iterationIndices.length}
-                                          </span>
-                                          <span className={`debugger-action-status ${groupStatus}`} aria-hidden="true" />
-                                        </span>
-                                        <strong>{item.name || headLabelBase}</strong>
-                                        <small>{item.method || 'request'} {item.target || ''}</small>
-                                      </button>
-                                    </div>
-                                  )
-                                  if (groupExpanded) {
-                                    iterationIndices.forEach((evIdx, k) => {
-                                      const ev = debugEvents[evIdx]
-                                      // Full iteration vector (outer→inner) disambiguates nested loops;
-                                      // falls back to the innermost pass for single-level loops.
-                                      const iterPath = ev.iteration_path && ev.iteration_path.length ? ev.iteration_path : [ev.iteration ?? (k + 1)]
-                                      const iterLabel = iterPath.join('·')
-                                      const iterFail = !ev.success
-                                      if (debugRailFailuresOnly && !iterFail) return
-                                      const curPath = currentDebugAction?.iteration_path
-                                      const isCurrentIter = isCurrentGroup && curPath != null && curPath.length === iterPath.length && curPath.every((n, i) => n === iterPath[i])
-                                      const isSelectedIter = selectedReplayEventIndex != null && selectedReplayEventIndex === evIdx
-                                      out.push(
-                                        <div
-                                          key={`${stepKey}#iter${k}`}
-                                          className={`debugger-action-row child iteration ${iterFail ? 'fail' : 'pass'} ${isSelectedIter ? 'selected' : ''} ${isCurrentIter ? 'current' : ''}`}
-                                          style={indentStyle(item.depth + 1 + nesting)}
-                                          ref={node => { replayEventRefs.current[evIdx] = node }}
-                                        >
-                                          <span className="debugger-gutter debugger-gutter-spacer" aria-hidden="true" />
-                                          <button
-                                            type="button"
-                                            className="debugger-action-row-main"
-                                            onClick={() => {
-                                              setExpandedReplayEvent(evIdx)
-                                              setDebugDetailCollapsed(false)
-                                              if (debuggerTab === 'browser' && !isBrowserScript) setDebuggerTab('request')
-                                            }}
-                                          >
-                                            <span className="debugger-action-row-head">
-                                              <span className="replay-event-phase">Iteration {iterLabel}</span>
-                                              <span className={`debugger-action-status ${iterFail ? 'fail' : 'pass'}`} aria-hidden="true" />
-                                            </span>
-                                            <small>{(ev.method || item.method || 'request')} {ev.target || item.target || ''}</small>
-                                          </button>
-                                        </div>
-                                      )
-                                    })
-                                  }
-                                  continue
-                                }
-                                const eventIndex = isHttpChild
-                                  ? eventIndexByLocation.get(item.key)
-                                  : (iterationIndices.length ? iterationIndices[iterationIndices.length - 1] : undefined)
-                                const leafEvent = eventIndex != null ? debugEvents[eventIndex] : undefined
-                                const anyFail = isHttpChild ? !!(leafEvent && !leafEvent.success) : iterationIndices.some(i => !debugEvents[i].success)
-                                const bpKey = isHttpChild ? item.key : stepKey
-                                const bpActive = debugBreakpointKeys.has(bpKey)
-                                const isCurrentRow = currentDebugActionKey === item.key || (currentDebugStepKey != null && currentDebugStepKey === stepKey)
-                                const isSelectedRow = selectedReplayEventIndex != null ? selectedReplayEventIndex === eventIndex : selectedActionKey === item.key
-                                const hasEvent = leafEvent != null || iterationIndices.length > 0
-                                const rowStatus = hasEvent ? (anyFail ? 'fail' : 'pass') : isCurrentRow ? 'current' : replayTerminal ? 'not-run' : 'pending'
-                                if (debugRailFailuresOnly && !anyFail) continue
-                                if (!debugRailFailuresOnly && !matchesFilter(`${item.name} ${item.target} ${leafEvent?.target || ''}`)) continue
-                                const headLabel = isHttpChild ? `Request ${(item.requestIndex ?? 0) + 1}` : humanizeStepSegment(item.stepPath[item.stepPath.length - 1] || '')
-                                out.push(
-                                  <div
-                                    key={item.key}
-                                    className={`debugger-action-row child ${rowStatus} ${isSelectedRow ? 'selected' : ''} ${isCurrentRow ? 'current' : ''}`}
-                                    style={indentStyle(item.depth + nesting)}
-                                    ref={node => { if (eventIndex != null) replayEventRefs.current[eventIndex] = node }}
-                                  >
-                                    <TooltipButton
-                                      type="button"
-                                      aria-keyshortcuts="F9"
-                                      className={`debugger-gutter ${bpActive ? 'active' : ''}`}
-                                      data-disabled={disabledBreakpointKeys.has(bpKey)}
-                                      title={bpActive ? 'Remove sub-step breakpoint' : 'Add sub-step breakpoint'}
-                                      aria-label={`${bpActive ? 'Remove' : 'Add'} sub-step breakpoint on ${item.name}`}
-                                      onClick={() => isHttpChild ? void toggleDebugBreakpoint(phase, actionIndex, item.requestIndex) : void toggleStepPathBreakpoint(phase, actionIndex, item.stepPath)}
-                                    >
-                                      <span className="debugger-breakpoint-dot" />
-                                    </TooltipButton>
-                                    <button
-                                      type="button"
-                                      className="debugger-action-row-main"
-                                      aria-pressed={isSelectedRow}
-                                      aria-current={isCurrentRow ? 'step' : undefined}
-                                      onClick={() => {
-                                        onSelectDebugItem(item, eventIndex != null)
-                                        setNarrowPane('editor')
-                                        setDebuggerTab('request')
-                                        if (eventIndex == null) return
-                                        setExpandedReplayEvent(eventIndex)
-                                        setDebugDetailCollapsed(false)
-                                        if (debuggerTab === 'browser' && !isBrowserScript) setDebuggerTab('request')
-                                      }}
-                                    >
-                                      <span className="debugger-action-row-head">
-                                        <span className="replay-event-phase">{headLabel}{iterationIndices.length > 1 ? ` ·×${iterationIndices.length}` : ''}</span>
-                                        <span className={`debugger-action-status ${rowStatus}`} aria-hidden="true" />
-                                      </span>
-                                      <strong>{item.name || leafEvent?.action_name || headLabel}</strong>
-                                      <small>{(leafEvent?.method || item.method || 'request')} {leafEvent?.target || item.target || ''}</small><span className="debug-action-status-text">{rowStatus === 'pass' ? 'Passed' : rowStatus === 'fail' ? 'Failed' : rowStatus === 'not-run' ? 'Not run' : rowStatus === 'current' ? 'Current' : 'Pending'}</span>
-                                    </button>
-                                  </div>
-                                )
-                                continue
-                              }
-                              const rowKey = item.key
-                              const eventIndex = eventIndexByLocation.get(rowKey)
-                              const rowEvent = eventIndex != null ? debugEvents[eventIndex] : undefined
-                              const breakpointActive = debugBreakpointKeys.has(rowKey)
-                              const isCurrentRow = currentDebugActionKey === rowKey
-                              const isSelectedRow = selectedReplayEventIndex != null ? selectedReplayEventIndex === eventIndex : selectedActionKey === item.key
-                              // A marker the outline draws elsewhere (a transaction's header, or folded into
-                              // the step it measures) is not a row of its own, unless it holds a breakpoint,
-                              // the session is paused on it, or its replay failed.
-                              const outlineKey = debugOutline?.rowKeyByAction.get(rowKey)
-                              if (debugOutline && outlineKey && outlineKey !== rowKey) {
-                                const group = debugOutline.groupsByKey.get(outlineKey)
-                                if (group?.start && group.start.phase === phase && group.start.actionIndex === actionIndex && !debugRailFailuresOnly && matchesFilter(`${group.label} ${group.name}`)) {
-                                  out.push(
-                                    <div key={`group:${outlineKey}`} className="debugger-rail-group" style={indentStyle(nesting)} title={group.name}>
-                                      <strong>{group.label}</strong>
-                                      <small>{group.stepCount} step{group.stepCount === 1 ? '' : 's'}</small>
-                                    </div>
-                                  )
-                                }
-                                if (!breakpointActive && !isCurrentRow && !(rowEvent && !rowEvent.success)) continue
-                              }
-                              const outlineStep = debugOutline?.stepsByKey.get(rowKey)
-                              const rowStatus = rowEvent ? (rowEvent.success ? 'pass' : 'fail') : isCurrentRow ? 'current' : replayTerminal ? 'not-run' : 'pending'
-                              const haystack = `${outlineStep?.label || ''} ${outlineStep?.measuredAs?.name || ''} ${action.name || ''} ${action.target || ''} ${action.selector || ''} ${rowEvent?.action_name || ''} ${rowEvent?.target || ''}`
-                              if (debugRailFailuresOnly && !(rowEvent && !rowEvent.success)) continue
-                              if (!debugRailFailuresOnly && !matchesFilter(haystack)) continue
-                              out.push(
-                                <div
-                                  key={rowKey}
-                                  className={`debugger-action-row ${rowStatus} ${isSelectedRow ? 'selected' : ''} ${isCurrentRow ? 'current' : ''}`}
-                                  style={indentStyle(nesting)}
-                                  ref={node => { if (eventIndex != null) replayEventRefs.current[eventIndex] = node }}
-                                >
-                                  <TooltipButton
-                                    type="button"
-                                    aria-keyshortcuts="F9"
-                                    className={`debugger-gutter ${breakpointActive ? 'active' : ''}`}
-                                    data-disabled={disabledBreakpointKeys.has(rowKey)}
-                                    title={breakpointActive ? 'Remove breakpoint' : 'Add breakpoint'}
-                                    aria-label={`${breakpointActive ? 'Remove' : 'Add'} breakpoint on ${action.name || `action ${actionIndex + 1}`}`}
-                                    onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
-                                  >
-                                    <span className="debugger-breakpoint-dot" />
-                                  </TooltipButton>
-                                  <button
-                                    type="button"
-                                    className="debugger-action-row-main"
-                                    aria-pressed={isSelectedRow}
-                                    aria-current={isCurrentRow ? 'step' : undefined}
-                                    onDoubleClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
-                                    onClick={() => {
-                                      onSelectDebugItem(item, eventIndex != null)
-                                      setNarrowPane('editor')
-                                      setDebuggerTab('request')
-                                      if (eventIndex != null) {
-                                        setExpandedReplayEvent(eventIndex)
-                                        setDebugDetailCollapsed(false)
-                                        if (debuggerTab === 'browser' && !isBrowserScript) setDebuggerTab('request')
-                                      }
-                                    }}
-                                  >
-                                    <span className="debugger-action-row-head">
-                                      <span className="replay-event-phase">{formatDebugPhaseLabel(phase)} {actionIndex + 1}</span>
-                                      <span className={`debugger-action-status ${rowStatus}`} aria-hidden="true" />
-                                    </span>
-                                    <strong title={outlineStep?.title}>{outlineStep ? <>{outlineStep.label}{outlineStep.occurrence ? <span className="script-outline-occurrence"> #{outlineStep.occurrence}</span> : null}</> : action.name || rowEvent?.action_name || 'Unnamed action'}</strong>
-                                    <small>{(rowEvent?.method || action.method || rowEvent?.action_type || action.type || 'action')} {rowEvent?.target || action.target || action.selector || ''}</small><span className="debug-action-status-text">{rowStatus === 'pass' ? 'Passed' : rowStatus === 'fail' ? 'Failed' : rowStatus === 'not-run' ? 'Not run' : rowStatus === 'current' ? 'Current' : 'Pending'}</span>
-                                  </button>
-                                </div>
-                              )
-                            }
-                            return out.length > 0 ? out : <div className="debugger-rail-empty">{debugRailFailuresOnly ? 'No failures match the current filter.' : 'No actions match the current filter.'}</div>
-                          })()}
-                        </div>
-                      )
-                    )}
-                  </section>
-                  <section className="debugger-rail-section debugger-parameter-section" hidden={!script.parameters?.length && !script.data_sources?.length}>
-                    <div className="debugger-rail-header debugger-parameter-header">
-                      <button
-                        type="button"
-                        className="debugger-rail-section-toggle"
-                        aria-expanded={!debugParameterListCollapsed}
-                        onClick={() => setDebugParameterListCollapsed(collapsed => !collapsed)}
-                      >
-                        <span aria-hidden="true" className="outline-section-chevron">{debugParameterListCollapsed ? '▸' : '▾'}</span>
-                        <span>Parameter List</span>
-                      </button>
-                      <small>{script.parameters?.length || 0} defined</small>
-                    </div>
-                    {!debugParameterListCollapsed && (
-                      <div className="debugger-parameter-list">
-                        {(script.parameters || []).map((parameter, index) => {
-                          const parameterName = parameter.name || `Parameter ${index + 1}`
-                          const referenceCount = parameter.name ? parameterReferenceCounts.get(parameter.name) || 0 : 0
-                          const selected = selectedOutlineParameterName === parameter.name
-                          return (
-                            <button
-                              key={`debug-${parameter.name || 'parameter'}-${index}`}
-                              type="button"
-                              className={`parameter-outline-item debugger-parameter-item ${selected ? 'selected' : ''}`}
-                              onClick={() => { if (parameter.name) { selectOutlineParameter(parameter.name); setNarrowPane(isBrowserScript ? 'editor' : 'inspector') } }}
-                              disabled={!parameter.name}
-                            >
-                              <strong>{parameterName}</strong>
-                              <span>{parameter.type || 'list'} · {referenceCount} ref{referenceCount === 1 ? '' : 's'}</span>
-                            </button>
-                          )
-                        })}
-                        {(script.parameters || []).length === 0 && (
-                          <div className="debugger-rail-empty">No parameters defined yet.</div>
-                        )}
-                      </div>
-                    )}
-                  </section>
+                  {/* The Author outline, with breakpoints in its gutter and each step's run status. */}
+                  <input className="script-outline-filter" type="search" autoComplete="off" aria-label="Find action" placeholder="Find action" value={debugRailFilter} onChange={event => setDebugRailFilter(event.target.value)} />
+                  <div className="debug-outline-breakpoints">
+                    <small>{breakpointSummary}</small>
+                    {debugBreakpoints.length > 0 && <button type="button" className="btn btn-sm btn-ghost" onClick={() => void clearDebugBreakpoints()}>Clear</button>}
+                  </div>
+                  <nav className="script-action-navigator script-outline-tree" aria-label="Script outline">
+                    <ScriptOutlineTree
+                      model={debugOutline}
+                      resetKey={outlineResetKey}
+                      query={debugRailFilter}
+                      expandedContainers={effectiveExpandedDebugSequences}
+                      onToggleContainer={toggleDebugSequenceExpanded}
+                      selection={debugOutlineSelection}
+                      onSelect={selectDebugOutlineItem}
+                      hasBreakpoint={key => outlineBreakpointKeys.has(key)}
+                      hasIssue={outlineHasIssue}
+                      showMarkers={outlineShowMarkers}
+                      onShowMarkersChange={onOutlineShowMarkersChange}
+                      debug={debugOutlineOverlay}
+                    />
+                  </nav>
+                  {/* Debug only: a parameter opens its captured values in the inspector. */}
+                  {(script.parameters || []).length > 0 && (
+                    <details className="debug-outline-parameters" open>
+                      <summary>Parameters <small>{script.parameters!.length}</small></summary>
+                      {script.parameters!.map((parameter, index) => {
+                        const referenceCount = parameter.name ? parameterReferenceCounts.get(parameter.name) || 0 : 0
+                        const selected = Boolean(parameter.name) && selectedOutlineParameterName === parameter.name
+                        return (
+                          <button
+                            key={`${parameter.name || 'parameter'}-${index}`}
+                            type="button"
+                            className={`debug-outline-parameter${selected ? ' selected' : ''}`}
+                            aria-pressed={selected}
+                            disabled={!parameter.name}
+                            onClick={() => { if (parameter.name) { selectOutlineParameter(parameter.name); setNarrowPane(isBrowserScript ? 'editor' : 'inspector') } }}
+                          >
+                            <span>{parameter.name || `Parameter ${index + 1}`}</span>
+                            <small>{parameter.type || 'list'} · {referenceCount} ref{referenceCount === 1 ? '' : 's'}</small>
+                          </button>
+                        )
+                      })}
+                    </details>
+                  )}
                   <div
                     className={`debugger-resizer debugger-resizer-col ${activeDebuggerResize === 'rail' ? 'active' : ''}`}
                     onKeyDownCapture={e => handleDebuggerResizeKeyDown('rail', e)}

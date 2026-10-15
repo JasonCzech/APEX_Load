@@ -35,7 +35,7 @@ interface Props {
 }
 
 function SourceLink({ onOpenSource }: { onOpenSource?: () => void }) {
-  return onOpenSource ? <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenSource}>Edit in Source</button> : null
+  return onOpenSource ? <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenSource}>Edit in DSL</button> : null
 }
 
 /**
@@ -58,12 +58,12 @@ export default function CatalogActionForm({ action, index, onUpdate, context, on
   const spec = dslSpecForActionType(action.type, catalog)
   if (!spec) {
     return <div className="form-hint full-width catalog-form-state">
-      The controller does not describe the <code>{action.type}</code> action, so it can only be edited in Source. <SourceLink onOpenSource={onOpenSource} />
+      The controller does not describe the <code>{action.type}</code> action, so it can only be edited in DSL. <SourceLink onOpenSource={onOpenSource} />
     </div>
   }
   if (VARIANT_ACTION_TYPES.has(spec.type) && !spec.variants?.length) {
     return <div className="form-hint full-width catalog-form-state">
-      This editor needs a newer controller to edit this action’s operations; edit it in Source meanwhile. <SourceLink onOpenSource={onOpenSource} />
+      This editor needs a newer controller to edit this action’s operations; edit it in DSL meanwhile. <SourceLink onOpenSource={onOpenSource} />
     </div>
   }
   return <CatalogFields spec={spec} action={action} index={index} onUpdate={onUpdate} context={context} onOpenSource={onOpenSource} />
@@ -143,7 +143,7 @@ function CatalogFields({ spec, action, index, onUpdate, context, onOpenSource }:
         </details>}
       </>}
       {discriminatorKey && !variant && fieldValue(action, spec.discriminator!) !== undefined && (
-        <p className="form-hint" role="alert">The operation <code>{String(fieldValue(action, spec.discriminator!))}</code> is not one this controller knows; choose one, or edit it in Source. <SourceLink onOpenSource={onOpenSource} /></p>
+        <p className="form-hint" role="alert">The operation <code>{String(fieldValue(action, spec.discriminator!))}</code> is not one this controller knows; choose one, or edit it in DSL. <SourceLink onOpenSource={onOpenSource} /></p>
       )}
       {stray.length > 0 && (
         <div className="sub-section catalog-stray" role="group" aria-label="Not recognised">

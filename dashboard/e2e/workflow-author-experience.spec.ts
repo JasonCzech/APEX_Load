@@ -129,7 +129,7 @@ test('Author creates, reverses, validates, edits source and saves without losing
   await expect(body.locator('.cm-editor')).not.toHaveCSS('background-color', 'rgb(255, 255, 255)')
   await body.getByRole('button', { name: 'Check syntax', exact: true }).click()
   await expect(body).toContainText('Syntax is valid')
-  await page.getByRole('tab', { name: 'Source', exact: true }).click()
+  await page.getByRole('tab', { name: 'DSL', exact: true }).click()
   await page.getByRole('button', { name: 'Edit in Full Script JSON' }).click()
   await page.getByRole('button', { name: 'Edit JSON', exact: true }).click()
   const source = page.locator('.script-code-pane .cm-content[contenteditable="true"]')

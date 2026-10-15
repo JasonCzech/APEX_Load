@@ -158,7 +158,7 @@ describe('CatalogActionForm', () => {
     await render({ type: 'live_table', params: { alias: 'orders', operation: 'read', position: 1 } })
     expect(container.textContent).toContain('needs a newer controller')
     expect(container.querySelector('select, input')).toBeNull()
-    expect(button('Edit in Source')).toBeTruthy()
+    expect(button('Edit in DSL')).toBeTruthy()
   })
 
   it('renders any other catalog action from its fields', async () => {

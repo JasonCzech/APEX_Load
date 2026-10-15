@@ -9,6 +9,7 @@ import {
   actionTransactionMarker,
   actionTransactionName,
   buildDebugRailRenderRows,
+  containerChildSteps,
   debugContainerKind,
   debugSequenceKey,
   type DebugRailRenderRow,
@@ -419,6 +420,8 @@ export interface OutlineRow {
   /** The rows inside a group (for its problem and breakpoint flags). */
   rows: ScriptPhaseActionRow[]
   measuredAs?: OutlineMeasure
+  /** Debug only: an open sequence's "All requests" row, with how many requests it covers. */
+  allRequests?: number
   posInSet: number
   setSize: number
 }
@@ -428,6 +431,8 @@ export interface OutlineViewState {
   /** Containers (sequences, control flow) the reader opened, as buildDebugRailRenderRows keys them. */
   expandedContainers: Set<string>
   query: string
+  /** Debug: an open sequence starts with an "All requests" row, for a breakpoint on every request. */
+  allRequestsRows?: boolean
 }
 
 function rowItem(row: ScriptPhaseActionRow): DebugRailRenderRow {
@@ -440,12 +445,29 @@ function nodeRows(node: OutlineNode): ScriptPhaseActionRow[] {
   return [...(node.start ? [node.start] : []), ...node.children.flatMap(nodeRows), ...(node.end ? [node.end] : [])]
 }
 
+/** Whether a request or step inside a sequence or block (at any depth) matches the search. */
+function blockHasMatch(action: ScriptActionDefinition, needle: string): boolean {
+  const kind = debugContainerKind(action)
+  return Boolean(kind) && containerChildSteps(action, kind).some(({ action: child }) =>
+    [child.name, child.type, child.target].some(value => Boolean(value && value.toLowerCase().includes(needle))) || blockHasMatch(child, needle))
+}
+
+/** The open blocks plus every block inside a step's own, so a match deep inside shows. */
+function openingEveryBlock(row: ScriptPhaseActionRow, open: Set<string>): Set<string> {
+  const keys = new Set(open)
+  for (let size = -1; size !== keys.size;) {
+    size = keys.size
+    for (const item of buildDebugRailRenderRows([row], keys)) if (item.kind === 'container') keys.add(item.key)
+  }
+  return keys
+}
+
 function nodeMatches(node: OutlineNode | OutlinePhase, needle: string): boolean {
   const has = (value?: string) => Boolean(value && value.toLowerCase().includes(needle))
   if ('phase' in node) return has(node.label)
   if (node.kind === 'step') {
     const action = node.row.action
-    return has(node.label) || has(node.title) || has(action.name) || has(action.type) || has(action.target) || has(node.measuredAs?.name)
+    return has(node.label) || has(node.title) || has(action.name) || has(action.type) || has(action.target) || has(node.measuredAs?.name) || blockHasMatch(action, needle)
   }
   if (node.kind === 'marker') return has(node.label) || has(node.name)
   return has(node.label) || has(node.name)
@@ -457,7 +479,8 @@ function nodeHasMatch(node: OutlineNode, needle: string): boolean {
 
 /**
  * The rows the outline draws, in order. A search keeps each match's groups
- * open and visible; a group whose own name matches shows as it is.
+ * open and visible, and opens a sequence or block whose requests or steps
+ * match; a group whose own name matches shows as it is.
  */
 export function visibleOutlineRows(model: OutlineModel, view: OutlineViewState): OutlineRow[] {
   const needle = view.query.trim().toLowerCase()
@@ -468,13 +491,21 @@ export function visibleOutlineRows(model: OutlineModel, view: OutlineViewState):
       if (filtered && !matches && !nodeHasMatch(node, needle)) continue
       if (node.kind === 'step') {
         const container = debugContainerKind(node.row.action)
-        const expanded = Boolean(container) && view.expandedContainers.has(node.key)
+        const searchOpens = filtered && blockHasMatch(node.row.action, needle)
+        const expanded = Boolean(container) && (searchOpens || view.expandedContainers.has(node.key))
         out.push({
           key: node.key, level, kind: 'step', label: node.label, short: node.short, occurrence: node.occurrence, title: node.title, badge: node.badge,
           expandable: Boolean(container), expanded, parentKey, select: rowItem(node.row), rows: nodeRows(node), measuredAs: node.measuredAs, posInSet: 0, setSize: 0,
         })
         if (expanded) {
-          const nested = buildDebugRailRenderRows([node.row], view.expandedContainers).slice(1)
+          const [head, ...nested] = buildDebugRailRenderRows([node.row], searchOpens ? openingEveryBlock(node.row, view.expandedContainers) : view.expandedContainers)
+          if (view.allRequestsRows && head?.kind === 'container' && head.containerType === 'http_sequence' && head.leafCount > 0) {
+            out.push({
+              key: `${node.key}|all-requests`, level: level + 1, kind: 'nested', label: 'All requests', title: 'All requests',
+              badge: `${head.leafCount} request${head.leafCount === 1 ? '' : 's'}`, expandable: false, expanded: false, parentKey: node.key,
+              select: rowItem(node.row), rows: [node.row], allRequests: head.leafCount, posInSet: 0, setSize: 0,
+            })
+          }
           const parents: string[] = [node.key]
           for (const item of nested) {
             parents.length = item.depth

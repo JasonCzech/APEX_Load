@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from 'react'
 import type {
   BrowserReplayEvent,
@@ -16,7 +16,7 @@ import type {
   ScriptDebugLogLevel,
   ScriptDebugSession,
 } from '../types/replay'
-import { actionRequestCount, httpSequenceRequests } from './scriptActionHelpers'
+import { startPointerDrag } from './pointerDrag'
 import {
   debugBreakpointKey,
   debugLogLevelWeight,
@@ -141,37 +141,13 @@ function currentDebugAncestorKeys(action?: ScriptDebugAction): Set<string> {
   return keys
 }
 
-function filterForcedDebugSequences(
-  rows: ScriptPhaseActionRow[],
-  events: BrowserReplayEvent[],
-  filterText: string,
-  failuresOnly: boolean,
-): Set<string> {
-  const keys = new Set<string>()
-  if (!filterText && !failuresOnly) return keys
-  const addAncestors = (phase: string, actionIndex: number, stepPath?: string[]) => {
-    const base = debugBreakpointKey(phase, actionIndex)
-    keys.add(base)
-    const path = stepPath ?? []
-    for (let index = 1; index < path.length; index += 1) {
-      keys.add(`${base}|${path.slice(0, index).join('/')}`)
-    }
+function readStoredBreakpoints(key: string): ScriptDebugBreakpoint[] | null {
+  try {
+    const raw = window.localStorage.getItem(key)
+    return raw ? normalizeStoredBreakpoints(JSON.parse(raw)) : null
+  } catch {
+    return null // storage unavailable, or a malformed saved list
   }
-  if (failuresOnly) {
-    for (const event of events) {
-      if (typeof event.action_index === 'number' && !event.success) {
-        addAncestors(event.phase, event.action_index, event.step_path)
-      }
-    }
-  } else {
-    for (const row of rows) {
-      if (actionRequestCount(row.action) === 0) continue
-      if (httpSequenceRequests(row.action).some(child => `${child.name || ''} ${child.target || ''}`.toLowerCase().includes(filterText))) {
-        keys.add(debugBreakpointKey(row.phase, row.actionIndex))
-      }
-    }
-  }
-  return keys
 }
 
 interface UseScriptReplayDebuggerControllerOptions {
@@ -192,8 +168,6 @@ export function useScriptReplayDebuggerController({
   scriptId,
 }: UseScriptReplayDebuggerControllerOptions) {
   const [debugBreakpoints, setDebugBreakpoints] = useState<ScriptDebugBreakpoint[]>([])
-  const [debugActionListCollapsed, setDebugActionListCollapsed] = useState(false)
-  const [debugParameterListCollapsed, setDebugParameterListCollapsed] = useState(false)
   const [debuggerTab, setDebuggerTab] = useState<DebuggerTab>('request')
   const [debuggerSettingsOpen, setDebuggerSettingsOpen] = useState(false)
   const [debugDetailCollapsed, setDebugDetailCollapsed] = useState(false)
@@ -203,7 +177,6 @@ export function useScriptReplayDebuggerController({
   const [debugRawAutoScroll, setDebugRawAutoScroll] = useState(true)
   const [debugRawClearedAt, setDebugRawClearedAt] = useState(0)
   const [debugRailFilter, setDebugRailFilter] = useState('')
-  const [debugRailFailuresOnly, setDebugRailFailuresOnly] = useState(false)
   const [expandedDebugSequences, setExpandedDebugSequences] = useState<Set<string>>(() => new Set())
   const [debuggerRailWidth, setDebuggerRailWidth] = useState(() => loadPaneSize('rail'))
   const [debuggerVarsWidth, setDebuggerVarsWidth] = useState(() => loadPaneSize('vars'))
@@ -212,7 +185,6 @@ export function useScriptReplayDebuggerController({
   const debugRawOutputRef = useRef<HTMLDivElement | null>(null)
   const debuggerSettingsRef = useRef<HTMLDivElement | null>(null)
   const debuggerSettingsBtnRef = useRef<HTMLButtonElement | null>(null)
-  const breakpointsLoadedRef = useRef(false)
 
   const debugEvents = useMemo(
     () => selectDebugEvents(browserReplaySession, replayReport),
@@ -233,7 +205,6 @@ export function useScriptReplayDebuggerController({
   const currentDebugStepKey = currentDebugAction && (currentDebugAction.step_path?.length ?? 0) > 0
     ? debugStepPathKey(currentDebugAction.phase, currentDebugAction.action_index, currentDebugAction.step_path ?? [])
     : null
-  const debugRailFilterText = debugRailFilter.trim().toLowerCase()
   const debugFilteredLogs = useMemo(
     () => filterDebugLogs(browserReplaySession?.logs || [], debugRawClearedAt, debugRawLevel, debugRawSearch),
     [browserReplaySession?.logs, debugRawClearedAt, debugRawLevel, debugRawSearch],
@@ -244,16 +215,11 @@ export function useScriptReplayDebuggerController({
   const debugRowPositionByKey = useMemo(() => buildDebugRowPositionByKey(debugEvents), [debugEvents])
   const eventsByStepPath = useMemo(() => buildEventsByStepPath(debugEvents), [debugEvents])
   const currentDebugAncestorKeySet = useMemo(() => currentDebugAncestorKeys(currentDebugAction), [currentDebugAction])
-  const filterForcedDebugSequenceSet = useMemo(
-    () => filterForcedDebugSequences(debugActionRows, debugEvents, debugRailFilterText, debugRailFailuresOnly),
-    [debugActionRows, debugEvents, debugRailFailuresOnly, debugRailFilterText],
-  )
   const effectiveExpandedDebugSequences = useMemo(() => {
     const next = new Set(expandedDebugSequences)
     currentDebugAncestorKeySet.forEach(key => next.add(key))
-    filterForcedDebugSequenceSet.forEach(key => next.add(key))
     return next
-  }, [currentDebugAncestorKeySet, expandedDebugSequences, filterForcedDebugSequenceSet])
+  }, [currentDebugAncestorKeySet, expandedDebugSequences])
 
   const toggleDebugSequenceExpanded = useCallback((key: string) => {
     setExpandedDebugSequences(current => toggleExpandedSequence(current, key))
@@ -278,20 +244,24 @@ export function useScriptReplayDebuggerController({
     debugRawOutputRef.current.scrollTop = debugRawOutputRef.current.scrollHeight
   }, [debugRawAutoScroll, debugRawOutputText])
 
+  // A script's saved breakpoints are read while rendering, when its key
+  // changes, so they are in place before anything is saved. Read in an effect,
+  // they raced the save effect of the same commit, which wrote the list not
+  // yet replaced over them (and under StrictMode's second mount, read that
+  // back). Another saved script, or a new draft, starts from its own
+  // breakpoints or none; a draft that is first saved keeps the ones it has.
   const breakpointStorageKey = scriptId ? `apexload.debug.breakpoints.${scriptId}` : null
+  const [loadedBreakpointKey, setLoadedBreakpointKey] = useState<string | null>(null)
+  if (loadedBreakpointKey !== breakpointStorageKey) {
+    setLoadedBreakpointKey(breakpointStorageKey)
+    const stored = breakpointStorageKey ? readStoredBreakpoints(breakpointStorageKey) : null
+    if (stored) setDebugBreakpoints(stored)
+    else if (loadedBreakpointKey !== null) setDebugBreakpoints([])
+  }
   useEffect(() => {
-    breakpointsLoadedRef.current = false
-    if (!breakpointStorageKey) return
-    try {
-      const raw = window.localStorage.getItem(breakpointStorageKey)
-      if (raw) setDebugBreakpoints(normalizeStoredBreakpoints(JSON.parse(raw)))
-    } catch { /* ignore malformed persisted breakpoints */ }
-    breakpointsLoadedRef.current = true
-  }, [breakpointStorageKey])
-  useEffect(() => {
-    if (!breakpointStorageKey || !breakpointsLoadedRef.current) return
+    if (!breakpointStorageKey || loadedBreakpointKey !== breakpointStorageKey) return
     try { window.localStorage.setItem(breakpointStorageKey, JSON.stringify(debugBreakpoints.filter(bp => !bp.once))) } catch { /* storage may be unavailable */ }
-  }, [breakpointStorageKey, debugBreakpoints])
+  }, [breakpointStorageKey, debugBreakpoints, loadedBreakpointKey])
 
   useEffect(() => {
     if (!debuggerSettingsOpen) return
@@ -329,32 +299,22 @@ export function useScriptReplayDebuggerController({
     else setDebuggerBottomHeight(clampDebuggerPaneSize('bottom', nextValue))
   }, [debuggerBottomHeight, debuggerRailWidth, debuggerVarsWidth])
 
-  const startDebuggerDrag = useCallback((kind: DebuggerResizeKind, event: ReactMouseEvent) => {
-    event.preventDefault()
+  const startDebuggerDrag = useCallback((kind: DebuggerResizeKind, event: ReactPointerEvent<HTMLElement>) => {
     const startX = event.clientX
     const startY = event.clientY
     const startRail = debuggerRailWidth
     const startVars = debuggerVarsWidth
     const startBottom = debuggerBottomHeight
-    setActiveDebuggerResize(kind)
-    const onMove = (moveEvent: globalThis.MouseEvent) => {
-      if (kind === 'rail') setDebuggerRailWidth(clampDebuggerPaneSize('rail', startRail + (moveEvent.clientX - startX)))
-      else if (kind === 'vars') setDebuggerVarsWidth(clampDebuggerPaneSize('vars', startVars - (moveEvent.clientX - startX)))
-      else setDebuggerBottomHeight(clampDebuggerPaneSize('bottom', startBottom - (moveEvent.clientY - startY)))
-    }
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      window.removeEventListener('blur', onUp)
-      document.body.style.userSelect = ''
-      document.body.style.cursor = ''
-      setActiveDebuggerResize(null)
-    }
-    document.body.style.userSelect = 'none'
-    document.body.style.cursor = kind === 'bottom' ? 'row-resize' : 'col-resize'
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    window.addEventListener('blur', onUp)
+    const started = startPointerDrag(event, {
+      cursor: kind === 'bottom' ? 'row-resize' : 'col-resize',
+      onMove: moveEvent => {
+        if (kind === 'rail') setDebuggerRailWidth(clampDebuggerPaneSize('rail', startRail + (moveEvent.clientX - startX)))
+        else if (kind === 'vars') setDebuggerVarsWidth(clampDebuggerPaneSize('vars', startVars - (moveEvent.clientX - startX)))
+        else setDebuggerBottomHeight(clampDebuggerPaneSize('bottom', startBottom - (moveEvent.clientY - startY)))
+      },
+      onEnd: () => setActiveDebuggerResize(null),
+    })
+    if (started) setActiveDebuggerResize(kind)
   }, [debuggerBottomHeight, debuggerRailWidth, debuggerVarsWidth])
 
   const resetLayout = useCallback(() => {
@@ -371,7 +331,6 @@ export function useScriptReplayDebuggerController({
     currentDebugAncestorKeys: currentDebugAncestorKeySet,
     currentDebugActionKey,
     currentDebugStepKey,
-    debugActionListCollapsed,
     debugBreakpoints,
     debugDetailCollapsed,
     debugEvents,
@@ -385,37 +344,30 @@ export function useScriptReplayDebuggerController({
     debuggerStatusState,
     debuggerTab,
     debuggerVarsWidth,
-    debugRailFailuresOnly,
     debugRailFilter,
-    debugRailFilterText,
     debugRawAutoScroll,
     debugRawLevel,
     debugRawOutputRef,
     debugRawOutputText,
     debugRawSearch,
     debugRowPositionByKey,
-    debugParameterListCollapsed,
     effectiveExpandedDebugSequences,
     eventIndexByLocation,
     eventsByStepPath,
-    filterForcedDebugSequences: filterForcedDebugSequenceSet,
     handleDebuggerResizeKeyDown,
     selectedDebugRow,
     selectedReplayEvent,
     selectedReplayEventIndex,
     setDebugBreakpoints,
-    setDebugActionListCollapsed,
     setDebugDetailCollapsed,
     setDebuggerBottomTab,
     setDebuggerSettingsOpen,
     setDebuggerTab,
-    setDebugRailFailuresOnly,
     setDebugRailFilter,
     setDebugRawAutoScroll,
     setDebugRawClearedAt,
     setDebugRawLevel,
     setDebugRawSearch,
-    setDebugParameterListCollapsed,
     startDebuggerDrag,
     toggleDebugSequenceExpanded,
   }
