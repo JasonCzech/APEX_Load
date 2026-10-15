@@ -718,7 +718,11 @@ method you used last.
   an Apex call by its class and method, any other action by its descriptor, with the
   time of the request that carried it and the state its response gave. Only names are
   kept, never what the actions sent or got back. The run report's **Browser Metrics**
-  section lists each transaction's actions, most time first.
+  section lists each transaction's actions, most time first. When a run has both browser
+  observers and HTTP load groups, its **Aura parity** table compares each transaction's
+  Aura calls in the browsers with those the HTTP scripts send, flagging actions the HTTP
+  scripts send more or less often than real browsers do (Lightning caches and re-batches
+  some calls).
 - A browser recording keeps the version of the browser it ran in. A browser session whose
   browser's major version differs from it, or from the one the bundled Playwright driver
   was tested with, says so in its first step's evidence, and the run report's **Browser

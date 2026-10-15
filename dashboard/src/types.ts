@@ -1829,6 +1829,8 @@ export interface RunArchiveReport {
   browser_iterations?: BrowserIterationTransaction[]
   // Each step's Salesforce EPT readings beside its own times (calibration).
   salesforce_ept?: SalesforceEPTCalibration[]
+  // Per transaction, the browsers' Aura calls beside the HTTP scripts'.
+  aura_parity?: AuraParityTransaction[]
   resource_peaks: RunArchiveResourcePeaks
   release_trend?: RunArchiveReleaseTrendSummary
   // root_cause_view is the generated root cause every report format renders:
@@ -2214,6 +2216,31 @@ export interface BrowserIterationTimes {
   errors?: number
   avg_ms: number
   p90_ms: number
+}
+
+// One transaction's Aura calls in browsers and in the HTTP scripts, as median
+// calls per transaction instance (one VUser's pass through it in one
+// iteration), with each side's batching and response bytes per request.
+export interface AuraParityTransaction {
+  transaction: string
+  browser_instances: number
+  http_instances: number
+  browser_requests: number
+  http_requests: number
+  browser_actions_per_request: number
+  http_actions_per_request: number
+  browser_bytes_per_request: number
+  http_bytes_per_request: number
+  actions: AuraParityAction[]
+}
+
+// One Aura action's median calls per instance on each side; flagged when they
+// differ by more than one call.
+export interface AuraParityAction {
+  name: string
+  browser: number
+  http: number
+  flagged?: boolean
 }
 
 // One step's Salesforce EPT readings (eptVisible=1, read when the counter
