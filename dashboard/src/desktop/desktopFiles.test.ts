@@ -10,6 +10,7 @@ import {
   fileNameFromPath,
   filesFromDroppedEntries,
   filesFromDroppedPaths,
+  pickImportFilesViaBridge,
   NativeFileReadError,
   nativeFileReadErrorMessage,
   pickFilesViaBridge,
@@ -172,6 +173,31 @@ describe("filesFromDroppedPaths", () => {
     expect(await files[0].text()).toBe("drop");
     expect(droppedRead).toHaveBeenCalledWith("/tmp/order.json");
     expect(legacyRead).not.toHaveBeenCalled();
+  });
+});
+
+describe("pickImportFilesViaBridge", () => {
+  // File > Open Script…: a native multi-select Open dialog over the import
+  // types, by their last extension (what a dialog filter can match).
+  it("opens the import file types and reads what the person picks", async () => {
+    const open = vi.fn(async () => ["/Users/me/orders.har", "/Users/me/flow.jmx"]);
+    const read = vi.fn(async () => btoa("x"));
+    setBridge({ OpenFileDialogNative: vi.fn(), OpenFilesDialogNative: open, ReadFileBase64: read });
+
+    const files = await pickImportFilesViaBridge();
+
+    expect(files?.map((file) => file.name)).toEqual(["orders.har", "flow.jmx"]);
+    const filters = JSON.parse((open.mock.calls[0] as unknown as [string, string])[1]) as Array<{ pattern: string }>;
+    const patterns = filters[0].pattern.split(";");
+    expect(patterns).toEqual(expect.arrayContaining(["*.har", "*.zip", "*.usz", "*.json", "*.bru"]));
+    expect(patterns.every((pattern) => pattern.lastIndexOf(".") === 1)).toBe(true);
+  });
+
+  it("returns [] on cancel and null without a native dialog", async () => {
+    setBridge({ OpenFileDialogNative: vi.fn(), OpenFilesDialogNative: vi.fn(async () => []) });
+    expect(await pickImportFilesViaBridge()).toEqual([]);
+    setBridge({});
+    expect(await pickImportFilesViaBridge()).toBeNull();
   });
 });
 

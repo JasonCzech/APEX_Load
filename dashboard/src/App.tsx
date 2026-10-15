@@ -113,6 +113,7 @@ import { useDockBadge } from "./desktop/useDockBadge";
 import {
   filesFromDroppedPaths,
   nativeFileReadErrorMessage,
+  pickImportFilesViaBridge,
 } from "./desktop/desktopFiles";
 import { useDesktopRoutePersistence } from "./desktop/useDesktopRoutePersistence";
 import AboutDialog from "./components/AboutDialog";
@@ -2324,15 +2325,28 @@ function AppShell({
   }, []);
 
   const openShortcutHelp = useKeyboardShortcutHelp();
+  // File > Open Script… opens script files from disk into the import flow, as
+  // opening them from Finder or Explorer does.
+  const openScriptFilesFromDisk = useCallback(async () => {
+    try {
+      const files = await pickImportFilesViaBridge();
+      if (files === null) handleNavigate("scripts");
+      else if (files.length > 0) openNativeImportFiles(files);
+    } catch (error) {
+      setDesktopImportError(nativeFileReadErrorMessage(error));
+      handleNavigate("scripts");
+    }
+  }, [handleNavigate, openNativeImportFiles]);
   const handleDesktopMenuAction = useCallback(
     (action: string) => {
       const next = desktopActionView(action);
       if (next) setGuardedView(next);
       else if (action === "help") handleNavigate("docs");
       else if (action === "shortcuts") openShortcutHelp();
+      else if (action === "open-script") void openScriptFilesFromDisk();
       else handleNavigate("scripts");
     },
-    [setGuardedView, handleNavigate, openShortcutHelp],
+    [setGuardedView, handleNavigate, openShortcutHelp, openScriptFilesFromDisk],
   );
   const handleDesktopOpenFile = useCallback(
     async (path: string) => {

@@ -191,9 +191,11 @@ func (a *App) rebuildMenu() {
 	// in the dashboard and are reflected in the native menu on the next launch.
 }
 
+// reload is View > Reload. It asks a page holding unsaved work first, as a
+// close does (see reloadWithRendererGuard).
 func (a *App) reload(_ *menu.CallbackData) {
 	if ctx := a.runtimeContext(); ctx != nil {
-		windowReloadApp(ctx)
+		a.reloadWithRendererGuard(ctx)
 	}
 }
 

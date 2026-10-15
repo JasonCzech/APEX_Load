@@ -136,6 +136,19 @@ describe('DesktopHome', () => {
     expect(onTogglePin).toHaveBeenCalledWith(recents[0])
   })
 
+  // Clearing keeps pinned items, so Clear is offered only when an unpinned one exists.
+  it('offers Clear only when something unpinned can be cleared', async () => {
+    const pinnedOnly: RecentItem[] = [{ kind: 'script', id: 'b', name: 'Bravo', route: '#/scripts/b', pinned: true }]
+    await act(async () => {
+      root.render(<DesktopHome status={status} recents={pinnedOnly} onQuickAction={() => {}} onOpenRecent={() => {}} onClearRecents={() => {}} />)
+    })
+    expect(Array.from(container.querySelectorAll('button')).some(b => b.textContent === 'Clear')).toBe(false)
+    await act(async () => {
+      root.render(<DesktopHome status={status} recents={[...pinnedOnly, { kind: 'script', id: 'a', name: 'Alpha', route: '#/scripts/a' }]} onQuickAction={() => {}} onOpenRecent={() => {}} onClearRecents={() => {}} />)
+    })
+    expect(Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Clear')?.getAttribute('title')).toBe('Remove unpinned items')
+  })
+
   it('surfaces a startup error', async () => {
     await act(async () => {
       root.render(

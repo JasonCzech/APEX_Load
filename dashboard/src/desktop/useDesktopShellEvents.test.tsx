@@ -269,6 +269,36 @@ describe("useDesktopShellEvents", () => {
     expect(openInBrowser).toHaveBeenCalledWith("user", "project-b");
   });
 
+  // View > Zoom menu clicks (and the accelerators wherever the native menu
+  // takes the key before the page) reach the dashboard through this event.
+  it("zooms the dashboard when the native menu emits menu:zoom", async () => {
+    const listeners: Record<string, (arg?: unknown) => void> = {};
+    (window as DesktopWindow).runtime = {
+      EventsOn: (event, cb) => {
+        listeners[event] = cb;
+        return () => {
+          delete listeners[event];
+        };
+      },
+    };
+    const zoomed: unknown[] = [];
+    const onZoom = (event: Event) => zoomed.push((event as CustomEvent).detail);
+    window.addEventListener(DESKTOP_QUEUED_MENU_ZOOM_EVENT, onZoom);
+    try {
+      await act(async () => {
+        root.render(<Harness />);
+      });
+      await act(async () => {
+        listeners["menu:zoom"]?.("in");
+        listeners["menu:zoom"]?.("sideways");
+        listeners["menu:zoom"]?.("reset");
+      });
+      expect(zoomed).toEqual(["in", "reset"]);
+    } finally {
+      window.removeEventListener(DESKTOP_QUEUED_MENU_ZOOM_EVENT, onZoom);
+    }
+  });
+
   it("invokes onRecentsChanged when the native menu mutates recents", async () => {
     const listeners: Record<string, (arg?: unknown) => void> = {};
     (window as DesktopWindow).runtime = {

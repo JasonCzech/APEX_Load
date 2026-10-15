@@ -232,6 +232,13 @@ export function useDesktopShellEvents(
       if (typeof action === "string")
         void enqueueRendererEvent({ name: "menu:action", payload: action });
     });
+    // View > Zoom menu clicks always arrive here, and so do its Cmd/Ctrl+= - 0
+    // accelerators wherever the menu takes the key before the page (Windows,
+    // Linux). On macOS the page sees the key first and zooms itself.
+    on("menu:zoom", (action) => {
+      if (typeof action === "string" && MENU_ZOOM_ACTIONS.has(action))
+        void enqueueRendererEvent({ name: "menu:zoom", payload: action });
+    });
     on("desktop:open-file", (path) => {
       if (typeof path === "string") {
         void enqueueRendererEvent({ name: "desktop:open-file", payload: path });

@@ -89,7 +89,9 @@ export type WailsDesktopBridge = {
   RendererUnready?: (rendererSession: string) => Promise<void>;
   // A native close (close button, Cmd+Q, File > Quit) is held while a close
   // guard is registered: the shell sends "desktop:close-requested" and quits
-  // once the renderer confirms that request (or never takes it).
+  // once the renderer confirms that request (or never takes it). View > Reload
+  // sends "desktop:reload-requested" from the same id sequence; the renderer
+  // takes it with AcknowledgeCloseRequest and reloads itself.
   EnableCloseGuard?: () => Promise<string>;
   DisableCloseGuard?: (token: string) => Promise<void>;
   AcknowledgeCloseRequest?: (token: string, requestId: string) => Promise<void>;

@@ -223,6 +223,17 @@ const IMPORTABLE_DROP_EXTENSIONS = [
   ".bruno.tar.gz",
 ];
 
+// pickImportFilesViaBridge is File > Open Script…: a native Open dialog for the
+// import file types. A dialog filter matches a file's last extension only, so
+// compound entries (".bruno.tar.gz", ".postman_collection.json") are left to
+// their plain suffix. Returns null when the shell has no native dialog, and []
+// when the person cancels.
+export async function pickImportFilesViaBridge(): Promise<File[] | null> {
+  if (!canUseNativeDialogs()) return null;
+  const accept = IMPORTABLE_DROP_EXTENSIONS.filter((ext) => ext.lastIndexOf(".") === 0).join(",");
+  return pickFilesViaBridge(accept, true);
+}
+
 function isImportableDropPath(path: string): boolean {
   const lower = path.toLowerCase();
   return IMPORTABLE_DROP_EXTENSIONS.some((ext) => lower.endsWith(ext));

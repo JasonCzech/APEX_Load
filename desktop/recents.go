@@ -182,11 +182,19 @@ func (a *App) ToggleRecentPin(kind, id string) error {
 	return nil
 }
 
-// ClearRecentItems removes all recent items.
+// ClearRecentItems removes the recent items that are not pinned. A pin is the
+// person asking to keep an item, so clearing the list leaves it in place.
 func (a *App) ClearRecentItems() error {
 	a.recentsMu.Lock()
 	defer a.recentsMu.Unlock()
-	if err := saveRecents(a.appDataDirectory(), []recentItem{}); err != nil {
+	appDataPath := a.appDataDirectory()
+	kept := []recentItem{}
+	for _, item := range loadRecents(appDataPath) {
+		if item.Pinned {
+			kept = append(kept, item)
+		}
+	}
+	if err := saveRecents(appDataPath, kept); err != nil {
 		return err
 	}
 	a.rebuildMenu()

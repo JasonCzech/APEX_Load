@@ -7,6 +7,7 @@ import { getDesktopBridge } from '../desktop/desktopBridge'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import type { VersionResponse } from '../types'
 import { dialogBackdropProps } from './dialogBackdropProps'
+import './AboutDialog.css'
 
 interface AboutDialogProps {
   open: boolean
@@ -20,7 +21,8 @@ interface AboutDialogProps {
 export default function AboutDialog({ open, onClose }: AboutDialogProps) {
   const { getVersion } = useSystemApi()
   const [version, setVersion] = useState<VersionResponse | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const copyResetRef = useRef<number | undefined>(undefined)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const bridge = getDesktopBridge()
   useModalDialog({ dialogRef, enabled: open, onClose })
@@ -36,17 +38,19 @@ export default function AboutDialog({ open, onClose }: AboutDialogProps) {
 
   const displayVersion = version?.display_version || version?.version || '—'
 
+  // A failed export or copy says so on the button, rather than nothing at all.
   const copyDiagnostics = async () => {
-    let text: string
-    if (bridge?.ExportDiagnostics) {
-      text = await bridge.ExportDiagnostics()
-    } else {
-      text = JSON.stringify(version ?? {}, null, 2)
+    let copied = false
+    try {
+      const text = bridge?.ExportDiagnostics ? await bridge.ExportDiagnostics() : JSON.stringify(version ?? {}, null, 2)
+      copied = await copyTextToClipboard(text)
+    } catch {
+      copied = false
     }
-    if (await copyTextToClipboard(text)) {
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 2000)
-    }
+    setCopyState(copied ? 'copied' : 'failed')
+    // Only the latest result's reset runs, so it stays up its full two seconds.
+    window.clearTimeout(copyResetRef.current)
+    copyResetRef.current = window.setTimeout(() => setCopyState('idle'), 2000)
   }
 
   return (
@@ -70,7 +74,7 @@ export default function AboutDialog({ open, onClose }: AboutDialogProps) {
         </dl>
         <div className="about-actions" style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
           <button type="button" className="btn btn-sm btn-secondary" onClick={() => { void copyDiagnostics() }}>
-            {copied ? 'Copied' : 'Copy diagnostics'}
+            {copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy diagnostics'}
           </button>
           {bridge?.OpenLogsFolder && (
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => { void bridge.OpenLogsFolder?.() }}>

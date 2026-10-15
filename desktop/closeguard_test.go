@@ -150,3 +150,50 @@ func TestCloseGuardSurvivesAReloadRace(t *testing.T) {
 	}
 	app.AcknowledgeCloseRequest(token, waitForEmit(t, harness, 1)[0])
 }
+
+// View > Reload asks a page holding a guard first: it reloads at once when no
+// guard is registered, waits while the page answers, and reloads a page that
+// never takes the request.
+func TestReloadAsksTheRendererGuardFirst(t *testing.T) {
+	app, harness := newCloseGuardApp(t, 20*time.Millisecond)
+	reloaded := make(chan struct{}, 4)
+	originalReload := windowReloadApp
+	windowReloadApp = func(context.Context) { reloaded <- struct{}{} }
+	t.Cleanup(func() { windowReloadApp = originalReload })
+	app.emitReloadRequest = func(_ context.Context, id string) {
+		harness.mu.Lock()
+		harness.emitted = append(harness.emitted, id)
+		harness.mu.Unlock()
+	}
+	waitForReload := func() {
+		t.Helper()
+		select {
+		case <-reloaded:
+		case <-time.After(2 * time.Second):
+			t.Fatal("the page was not reloaded")
+		}
+	}
+
+	app.reloadWithRendererGuard(context.Background())
+	waitForReload()
+
+	token, err := app.EnableCloseGuard()
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.reloadWithRendererGuard(context.Background())
+	app.AcknowledgeCloseRequest(token, waitForEmit(t, harness, 1)[0])
+	time.Sleep(80 * time.Millisecond)
+	select {
+	case <-reloaded:
+		t.Fatal("a reload the page took went ahead without its answer")
+	default:
+	}
+
+	app.reloadWithRendererGuard(context.Background())
+	waitForEmit(t, harness, 2)
+	waitForReload()
+	if _, quits := harness.snapshot(); quits != 0 {
+		t.Fatalf("a reload quit the app %d times", quits)
+	}
+}

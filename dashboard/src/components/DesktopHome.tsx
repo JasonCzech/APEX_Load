@@ -153,8 +153,9 @@ export default function DesktopHome({
         <div className="desktop-home-card">
           <div className="desktop-home-card-head">
             <h3>Recent</h3>
-            {recents.length > 0 && (
-              <button type="button" className="btn btn-sm btn-ghost" onClick={onClearRecents}>Clear</button>
+            {/* Clearing keeps pinned items, so it is offered only when there is something else to clear. */}
+            {recents.some(item => !item.pinned) && (
+              <button type="button" className="btn btn-sm btn-ghost" onClick={onClearRecents} title="Remove unpinned items">Clear</button>
             )}
           </div>
           {orderedRecents.length === 0 ? (

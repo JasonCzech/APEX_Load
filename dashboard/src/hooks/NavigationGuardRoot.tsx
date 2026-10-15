@@ -63,20 +63,21 @@ export function NavigationGuardProvider({ children }: { children: ReactNode }) {
     if (guard) guardsRef.current.set(guardId, { ...guard, dirty: false })
   }, [])
   const runner = useMemo<NavigationGuardRunner>(() => ({ hasDirtyGuard, runGuarded, markClean }), [hasDirtyGuard, runGuarded, markClean])
-  // A native quit in the desktop app goes through the same prompt. Quitting
-  // supersedes a leave already being asked about: that prompt stays open and,
-  // once resolved, quits (checking every guard) instead of navigating.
-  const runGuardedQuit = useCallback((quit: () => void) => {
+  // A native quit or reload in the desktop app goes through the same prompt.
+  // It supersedes a leave already being asked about: that prompt stays open
+  // and, once resolved, quits or reloads (checking every guard) instead of
+  // navigating.
+  const runGuardedShellAction = useCallback((action: () => void) => {
     const current = pendingRef.current
     if (!current) {
-      runGuarded(quit)
+      runGuarded(action)
       return
     }
-    const next = { ...current, proceed: quit, retainedGuardIds: [] }
+    const next = { ...current, proceed: action, retainedGuardIds: [] }
     pendingRef.current = next
     setPending(next)
   }, [runGuarded])
-  useDesktopCloseGuard(runGuardedQuit, !nested)
+  useDesktopCloseGuard(runGuardedShellAction, !nested)
   const handleCancel = useCallback(() => {
     if (!saving) {
       pendingRef.current = null
@@ -85,8 +86,8 @@ export function NavigationGuardProvider({ children }: { children: ReactNode }) {
     }
   }, [saving])
   const continueAfterResolvedGuard = useCallback((answered: PendingNavigation) => {
-    // A desktop quit can take this prompt over while its save is in flight;
-    // what follows is then the quit, not the leave first asked about.
+    // A desktop quit or reload can take this prompt over while its save is in
+    // flight; what follows is then that action, not the leave first asked about.
     const resolved = pendingRef.current?.guard.id === answered.guard.id ? pendingRef.current : answered
     // A single page can publish multiple independent editors. Remove the guard
     // just resolved before inspecting the rest; its React dirty prop is updated

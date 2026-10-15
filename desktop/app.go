@@ -185,6 +185,7 @@ type App struct {
 	closeAckWait       time.Duration
 	quitApp            func(context.Context)
 	emitCloseRequest   func(context.Context, string)
+	emitReloadRequest  func(context.Context, string)
 }
 
 // NewApp creates a new App application struct
@@ -200,6 +201,7 @@ func NewApp() *App {
 		closeAckWait:            defaultCloseRequestAckWait,
 		quitApp:                 runtime.Quit,
 		emitCloseRequest:        emitCloseRequestEvent,
+		emitReloadRequest:       emitReloadRequestEvent,
 		initialised:             make(chan struct{}),
 		startupDone:             make(chan struct{}),
 		retiredSessions:         make(map[string]struct{}),
