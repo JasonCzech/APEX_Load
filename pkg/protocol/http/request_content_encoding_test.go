@@ -88,3 +88,30 @@ func TestHTTPCompressesTheRequestBody(t *testing.T) {
 		t.Fatalf("unsupported encoding: err %v, result %+v", err, result)
 	}
 }
+
+// Correlation evidence of a compressed request is the step's readable body,
+// so its values can be repaired in the script like any other body's.
+func TestHTTPCompressedRequestEvidenceIsTheReadableBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	h := &HTTP{}
+	if err := h.Init(context.Background(), map[string]any{protocol.CorrelationEvidenceCaptureConfigKey: true}); err != nil {
+		t.Fatal(err)
+	}
+	defer h.Teardown(context.Background())
+	const payload = `{"sessionId":"00D000000000001"}`
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name: "analytics", Type: "POST", Method: "POST", Target: server.URL + "/x", Body: []byte(payload),
+		Params: map[string]any{RequestContentEncodingParam: "gzip"},
+	})
+	if err != nil || !result.Success {
+		t.Fatalf("err %v, result %+v", err, result)
+	}
+	evidence := result.CorrelationEvidence
+	if evidence == nil || evidence.RequestBody != payload || evidence.RequestBodyTransformed {
+		t.Fatalf("evidence = %+v", evidence)
+	}
+}

@@ -1,3 +1,4 @@
+import type { RecordingProfile } from '../../types/recordingProfiles'
 import type { RecorderImportResult } from '../../types/scriptImports'
 import { request } from '../apiClient'
 import { bridgeFetch, bridgeRequest, type BrowserRecorderBridgeConnection } from './browserRecorderBridge'
@@ -48,6 +49,9 @@ export type DeviceCaptureStartRequest = {
   port?: number
   include_hosts?: string[]
   exclude_hosts?: string[]
+  // The project recording profile selected in Recording Studio; the agent
+  // records and converts the capture with it.
+  recording_profile?: RecordingProfile
 }
 
 // The device capture calls go to the paired Recording Agent; saving a

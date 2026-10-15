@@ -15,6 +15,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/qrcode"
 	"github.com/jasonczech/apexload/pkg/recorder"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 // A device capture records a phone or tablet through the Recording Agent: its
@@ -48,6 +49,21 @@ type deviceCapture struct {
 	host      string
 	port      int
 	password  string
+	// profile is the project recording profile the capture records and
+	// converts with: the agent has no project store, so the dashboard hands
+	// over the one selected in Recording Studio.
+	profile *recordingprofile.Profile
+}
+
+// recordingProfile is the profile of the capture with this session, or nil.
+func (d *deviceCapture) recordingProfile(sessionID string) *recordingprofile.Profile {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.profile == nil || d.sessionID == "" || d.sessionID != sessionID {
+		return nil
+	}
+	profile := *d.profile
+	return &profile
 }
 
 // deviceCaptureInterface is a workstation network address a device on the
@@ -185,9 +201,35 @@ func (s *Server) handleStartDeviceCapture(w http.ResponseWriter, r *http.Request
 		Port         int      `json:"port,omitempty"`
 		IncludeHosts []string `json:"include_hosts,omitempty"`
 		ExcludeHosts []string `json:"exclude_hosts,omitempty"`
+		// RecordingProfile is the project recording profile selected in
+		// Recording Studio: its host filters, capture limit and cookie
+		// capture apply to the recording, and its code generation settings
+		// to the conversion.
+		RecordingProfile *recordingprofile.Profile `json:"recording_profile,omitempty"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
+	}
+	profile := req.RecordingProfile
+	if profile != nil {
+		if err := recordingprofile.Validate([]recordingprofile.Profile{*profile}); err != nil {
+			writeError(w, http.StatusBadRequest, strings.Replace(err.Error(), "recording_profiles[0]", "recording_profile", 1))
+			return
+		}
+	}
+	filters := recorder.SessionFilters{
+		IncludeHosts:     req.IncludeHosts,
+		ExcludeHosts:     req.ExcludeHosts,
+		ExcludeStatic:    true,
+		ExcludeStaticSet: true,
+	}
+	if profile != nil {
+		// As a proxy recording on the controller applies its profile.
+		filters.IncludeHosts = mergeRecorderHostFilters(profile.IncludeHosts, req.IncludeHosts)
+		filters.ExcludeHosts = mergeRecorderHostFilters(profile.ExcludeHosts, req.ExcludeHosts)
+		filters.BodyCaptureLimitBytes = profile.BodyCaptureLimitBytes
+		filters.CaptureCookies = recorderCaptureCookies(nil, profile)
+		filters.RecordingProfileID = profile.ID
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
@@ -238,12 +280,7 @@ func (s *Server) handleStartDeviceCapture(w http.ResponseWriter, r *http.Request
 	}
 	id := uuid.New().String()
 	if err == nil {
-		if _, err = s.recorder.StartSession(id, req.Name, recorder.SessionFilters{
-			IncludeHosts:     req.IncludeHosts,
-			ExcludeHosts:     req.ExcludeHosts,
-			ExcludeStatic:    true,
-			ExcludeStaticSet: true,
-		}, nil); err != nil {
+		if _, err = s.recorder.StartSession(id, req.Name, filters, nil); err != nil {
 			_ = s.recorder.CloseListener()
 		}
 	}
@@ -253,6 +290,7 @@ func (s *Server) handleStartDeviceCapture(w http.ResponseWriter, r *http.Request
 		return
 	}
 	device.sessionID, device.name, device.host, device.port, device.password = id, req.Name, address, port, password
+	device.profile = profile
 	device.mu.Unlock()
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, map[string]any{"capture": device.view(s.recorder)})

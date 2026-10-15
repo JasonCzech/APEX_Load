@@ -3511,6 +3511,7 @@ export default function RecordingStudio({
             folderId={folderId}
             commitGenericImportBatch={api.commitGenericImportBatch}
             onImported={onImported}
+            recordingProfile={recordingProfile}
           />
         ) : browserAvailability && (
           <div className="rec-controls-card rec-device-capture" data-testid="device-capture-setup">

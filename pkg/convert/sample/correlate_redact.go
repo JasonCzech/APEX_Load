@@ -449,7 +449,7 @@ func sampleCorrelationReplacementCollisionsWithSurfaceLimit(exchanges []exchange
 				return ambiguousLiterals, ambiguousPlans
 			}
 			overlaps := overlapBudget.Contains(left.literal, right.literal) || overlapBudget.Contains(right.literal, left.literal)
-			if overlaps && !overlapBudget.Exhausted() && containmentWithReviewOnly(plans[left.planIndex], plans[right.planIndex]) {
+			if overlaps && !overlapBudget.Exhausted() && containmentWithReviewOnly(plans[left.planIndex], left.literal, plans[right.planIndex], right.literal) {
 				overlaps = false
 			}
 			if !overlaps && !overlapBudget.Exhausted() {
@@ -471,8 +471,8 @@ func sampleCorrelationReplacementCollisionsWithSurfaceLimit(exchanges []exchange
 	return ambiguousLiterals, ambiguousPlans
 }
 
-// containmentWithReviewOnly reports whether, of two literals already known to
-// contain one another, exactly one belongs to a review-only plan. A
+// containmentWithReviewOnly reports whether, of two different literals already
+// known to contain one another, exactly one belongs to a review-only plan. A
 // review-only plan is never rewritten automatically, so the containment is no
 // collision either way:
 //   - the review-only literal inside the applied one (a Salesforce org ID
@@ -484,9 +484,11 @@ func sampleCorrelationReplacementCollisionsWithSurfaceLimit(exchanges []exchange
 //     value inside it does, so leaving it whole would be no less stale, and
 //     holding the applied value would also leave its other consumers stale.
 //
-// Partial overlaps are still checked by the caller.
-func containmentWithReviewOnly(left, right correlationApplicationPlan) bool {
-	return left.reviewOnly != right.reviewOnly
+// One spelling both plans own stays a collision: the review-only owner keeps
+// its literal, as in the native Salesforce builder. Partial overlaps are still
+// checked by the caller.
+func containmentWithReviewOnly(left correlationApplicationPlan, leftLiteral string, right correlationApplicationPlan, rightLiteral string) bool {
+	return left.reviewOnly != right.reviewOnly && leftLiteral != rightLiteral
 }
 
 // collapseSameSourceDuplicateCorrelations keeps one correlation per value and

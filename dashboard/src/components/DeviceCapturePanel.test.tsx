@@ -117,6 +117,18 @@ describe('DeviceCapturePanel', () => {
     expect(button('Saved').disabled).toBe(true)
   })
 
+  it('takes the recording profile selected in the Studio to the agent', async () => {
+    agent.getState.mockResolvedValue({ interfaces: [{ name: 'en0', address: '192.168.1.20' }], capture: null })
+    const profile = { id: 'mobile', name: 'Mobile app', background_requests: ['telemetry/upload'] }
+    await act(async () => root.render(
+      <DeviceCapturePanel connection={connection} commitGenericImportBatch={vi.fn()} recordingProfile={profile} />,
+    ))
+    expect(container.querySelector('[data-testid="device-capture-profile"]')?.textContent).toContain('Mobile app')
+    agent.start.mockResolvedValue({ capture: capture() })
+    await act(async () => button('Start device capture').click())
+    expect(agent.start).toHaveBeenLastCalledWith(expect.objectContaining({ recording_profile: profile }))
+  })
+
   it('follows the network, says when the agent goes quiet, and notes kept credentials', async () => {
     const a = { name: 'en0', address: '192.168.1.20' }
     const b = { name: 'en1', address: '10.0.0.5' }
@@ -132,6 +144,7 @@ describe('DeviceCapturePanel', () => {
     agent.start.mockResolvedValue({ capture: capture({ host: b.address }) })
     await act(async () => button('Start device capture').click())
     expect(agent.start).toHaveBeenLastCalledWith(expect.objectContaining({ address: b.address }))
+    expect(agent.start.mock.lastCall?.[0]).not.toHaveProperty('recording_profile')
 
     // The agent stops answering mid-capture.
     agent.getState.mockRejectedValue(new Error('Failed to fetch'))

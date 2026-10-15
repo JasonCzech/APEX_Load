@@ -8,6 +8,7 @@ import {
   type DeviceCaptureInterface,
 } from '../hooks/api/deviceCaptureApi'
 import type { StoredScript } from '../types'
+import type { RecordingProfile } from '../types/recordingProfiles'
 import type { CommitGenericImportBatchRequest, CommitGenericImportBatchResponse, RecorderImportResult } from '../types/scriptImports'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -25,6 +26,9 @@ interface DeviceCapturePanelProps {
   folderId?: string | null
   commitGenericImportBatch: (payload: CommitGenericImportBatchRequest) => Promise<CommitGenericImportBatchResponse>
   onImported?: (result: { scripts: StoredScript[] }) => void
+  // The recording profile selected in Recording Studio: the agent has no
+  // project store, so the capture takes it along.
+  recordingProfile?: RecordingProfile
 }
 
 function hostList(value: string): string[] {
@@ -44,6 +48,7 @@ export default function DeviceCapturePanel({
   folderId,
   commitGenericImportBatch,
   onImported,
+  recordingProfile,
 }: DeviceCapturePanelProps) {
   const api = useMemo(() => deviceCaptureApi(connection), [connection])
   const [interfaces, setInterfaces] = useState<DeviceCaptureInterface[]>([])
@@ -121,7 +126,12 @@ export default function DeviceCapturePanel({
   }
 
   const start = () => run(async () => {
-    const res = await api.start({ name: name.trim() || 'Device capture', address, include_hosts: hostList(includeHosts) })
+    const res = await api.start({
+      name: name.trim() || 'Device capture',
+      address,
+      include_hosts: hostList(includeHosts),
+      ...(recordingProfile ? { recording_profile: recordingProfile } : {}),
+    })
     setCapture(res.capture)
     setPreview(null)
     setSaved(null)
@@ -236,6 +246,11 @@ export default function DeviceCapturePanel({
               aria-label="Record only these hosts"
             />
           </label>
+          {recordingProfile && (
+            <p className="rec-hint" data-testid="device-capture-profile">
+              Records and converts with the recording profile <strong>{recordingProfile.name}</strong>.
+            </p>
+          )}
           <button type="button" className="btn btn-primary" onClick={() => void start()} disabled={busy || !address}>
             Start device capture
           </button>

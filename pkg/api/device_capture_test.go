@@ -214,3 +214,88 @@ func TestDeviceCaptureFallsBackFromABusyDefaultPort(t *testing.T) {
 		t.Fatalf("capture port %d (busy %d), proxy %s", envelope.Capture.Port, busyPort, server.recorder.ProxyAddr())
 	}
 }
+
+// A device capture records and converts with the recording profile selected
+// in Recording Studio, which the dashboard hands to the agent: the agent has
+// no project store of its own.
+func TestDeviceCaptureAppliesTheStudioRecordingProfile(t *testing.T) {
+	t.Setenv("APEXLOAD_RECORDER_ALLOW_PRIVATE_TARGETS", "true")
+	t.Setenv("APEXLOAD_RECORDER_CA_DIR", t.TempDir())
+	original := deviceCaptureInterfaces
+	deviceCaptureInterfaces = func() []deviceCaptureInterface {
+		return []deviceCaptureInterface{{Name: "lo0", Address: "127.0.0.1"}}
+	}
+	t.Cleanup(func() { deviceCaptureInterfaces = original })
+	server := newBrowserRecorderBridgeTestServer(t, nil)
+	t.Cleanup(func() { _ = server.recorder.StopProxy() })
+	bridgeSession := pairBridgeForTest(t, server, bridgeTestOrigin)
+	call := func(method, path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
+		req.Header.Set("Origin", bridgeTestOrigin)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(bridgeTokenHeader, bridgeTestToken)
+		req.Header.Set(bridgeSessionHeader, bridgeSession)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		return resp
+	}
+	port := freeDeviceCapturePort(t)
+	if resp := call(http.MethodPost, "/api/v1/device-capture", fmt.Sprintf(`{"address":"127.0.0.1","port":%d,"recording_profile":{"id":"bad id","name":"x"}}`, port)); resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "recording_profile.id") {
+		t.Fatalf("an invalid profile: %d %s", resp.Code, resp.Body.String())
+	}
+	start := call(http.MethodPost, "/api/v1/device-capture", fmt.Sprintf(`{"name":"iPad","address":"127.0.0.1","port":%d,"recording_profile":{"id":"mobile","name":"Mobile app","exclude_hosts":["blocked.example"],"background_requests":["telemetry/upload"]}}`, port))
+	var envelope struct{ Capture deviceCaptureView }
+	if start.Code != http.StatusCreated || json.Unmarshal(start.Body.Bytes(), &envelope) != nil {
+		t.Fatalf("start: %d %s", start.Code, start.Body.String())
+	}
+	capture := envelope.Capture
+	session, ok := server.recorder.GetSessionWindow(capture.SessionID, false, 0, 0)
+	if !ok || session.Filters.RecordingProfileID != "mobile" || len(session.Filters.ExcludeHosts) != 1 || session.Filters.ExcludeHosts[0] != "blocked.example" {
+		t.Fatalf("session filters = %+v", session.Filters)
+	}
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+	proxyURL := &url.URL{Scheme: "http", Host: fmt.Sprintf("127.0.0.1:%d", port), User: url.UserPassword("apexload", capture.Password)}
+	client := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+	for _, send := range []func() (*http.Response, error){
+		func() (*http.Response, error) { return client.Get(upstream.URL + "/services/data/v66.0/limits") },
+		func() (*http.Response, error) {
+			return client.Post(upstream.URL+"/telemetry/upload", "application/json", strings.NewReader(`{"events":[]}`))
+		},
+	} {
+		resp, err := send()
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+	}
+	if resp := call(http.MethodPost, "/api/v1/device-capture/stop", ""); resp.Code != http.StatusOK {
+		t.Fatalf("stop: %d %s", resp.Code, resp.Body.String())
+	}
+	preview := call(http.MethodPost, "/api/v1/recorder/"+capture.SessionID+"/convert/preview", `{"name":"iPad"}`)
+	var converted struct {
+		Script struct {
+			Actions []struct {
+				Type   string         `json:"type"`
+				Params map[string]any `json:"params"`
+			} `json:"actions"`
+		} `json:"script"`
+	}
+	if preview.Code != http.StatusOK || json.Unmarshal(preview.Body.Bytes(), &converted) != nil {
+		t.Fatalf("preview %d: %.400s", preview.Code, preview.Body.String())
+	}
+	background := 0
+	for _, action := range converted.Script.Actions {
+		if action.Type == "http_async_start" && action.Params["pattern"] == "once" {
+			background++
+		}
+	}
+	if len(converted.Script.Actions) != 2 || background != 1 {
+		t.Fatalf("actions = %+v, want the profile's telemetry path sent in the background", converted.Script.Actions)
+	}
+}

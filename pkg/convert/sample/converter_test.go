@@ -3122,6 +3122,24 @@ func TestRedactExchangeSecretsBoundsExpandingSensitiveHeaderReplacement(t *testi
 	}
 }
 
+// One value owned by an applied and a review-only correlation stays a
+// collision: the review-only owner keeps its literal, so neither is applied.
+func TestPrepareCorrelationApplicationKeepsAValueAReviewOnlyOwnerShares(t *testing.T) {
+	exchanges := []exchange{
+		{URL: "https://api.example.test/source-a"},
+		{URL: "https://api.example.test/source-b"},
+		{URL: "https://api.example.test/use?token=token-123456"},
+	}
+	correlations := []Correlation{
+		{Name: "corr_a", Source: "body", ExtractType: "regex", Expression: `(token-123456)`, Value: "token-123456", FoundInStep: 1, UsedInSteps: []int{3}},
+		{Name: "corr_b", Source: "body", ExtractType: "regex", Expression: `(token-123456)`, Value: "token-123456", FoundInStep: 2, UsedInSteps: []int{3}, reviewOnly: true},
+	}
+	vars, _, _ := prepareCorrelationApplication(exchanges, correlations)
+	if len(vars) != 0 || correlations[0].PreApplied || correlations[1].PreApplied {
+		t.Fatalf("vars = %#v, correlations = %#v; want the shared value left for review", vars, correlations)
+	}
+}
+
 // A review-only correlation is never rewritten automatically, so its literal
 // containing, or contained in, an applied one is no collision: the applied
 // value is replaced wherever it occurs, inside the longer literal too.

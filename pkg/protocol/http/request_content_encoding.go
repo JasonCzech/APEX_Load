@@ -66,9 +66,3 @@ func compressRequestBody(body []byte, encoding string) ([]byte, error) {
 	}
 	return nil, fmt.Errorf("unsupported request content encoding %q", encoding)
 }
-
-// requestBodyCompressed reports whether the action's body goes compressed.
-func requestBodyCompressed(action *protocol.Action) bool {
-	encoding, err := requestContentEncoding(action)
-	return err == nil && encoding != ""
-}

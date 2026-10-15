@@ -1788,7 +1788,7 @@ func (h *HTTP) attachCorrelationEvidence(result *protocol.Result, action *protoc
 	result.CorrelationEvidence = &protocol.CorrelationEvidence{
 		RequestURL:             requestURL,
 		RequestBody:            string(fallbackBody),
-		RequestBodyTransformed: action != nil && (strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") || strings.EqualFold(action.BodyEncoding, "windows-1252") || bodyencoding.IsUTF16LE(action.BodyEncoding) || bodyencoding.IsCEscaped(action.BodyEncoding) || requestBodyCompressed(action)),
+		RequestBodyTransformed: action != nil && (strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") || strings.EqualFold(action.BodyEncoding, "windows-1252") || bodyencoding.IsUTF16LE(action.BodyEncoding) || bodyencoding.IsCEscaped(action.BodyEncoding)),
 		RequestHeaders:         correlationEvidenceRequestHeaders(wireRequest),
 		ResponseBody:           string(responseBody),
 		ResponseHeaders:        responseHeaders,

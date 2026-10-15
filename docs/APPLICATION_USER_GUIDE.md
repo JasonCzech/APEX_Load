@@ -629,7 +629,10 @@ left out or the proxy refused. The proxy refuses private-network addresses unles
 capture an app that calls intranet hosts. If port 8888 is taken, the capture listens
 on another free port, which the studio shows. **Stop capture** stops the proxy listening (set the
 device's **Configure Proxy** back to **Off**); **Convert to script** shows the steps,
-and **Save to script library** saves the script here. The agent keeps its certificate
+and **Save to script library** saves the script here. The recording profile selected in
+the studio applies to the capture as to any proxy recording: its host filters, capture
+limit and cookie capture while recording, and its code generation (background request
+paths, correlation) in the conversion. The agent keeps its certificate
 authority in your user configuration folder (or `APEXLOAD_RECORDER_CA_DIR`), so a
 device trusts it once. Android apps trust user certificates only when the app allows
 it, so most Android apps cannot be captured this way.

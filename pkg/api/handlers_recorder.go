@@ -831,7 +831,16 @@ func (s *Server) sessionRecordingProfile(session *recorder.Session, profileID st
 	if profileID == "" {
 		profileID = session.Filters.RecordingProfileID
 	}
-	profile, err := s.projectRecordingProfile(normalizeProjectID(session.ProjectID), profileID)
+	var profile *recordingprofile.Profile
+	var err error
+	if s.recordingBridge != nil && profileID != "" && strings.EqualFold(profileID, session.Filters.RecordingProfileID) {
+		// The Recording Agent has no project store: a device capture
+		// converts with the profile it was started with.
+		profile = s.recordingBridge.device.recordingProfile(session.ID)
+	}
+	if profile == nil {
+		profile, err = s.projectRecordingProfile(normalizeProjectID(session.ProjectID), profileID)
+	}
 	if err != nil || profile == nil || !strings.EqualFold(profile.ID, session.Filters.RecordingProfileID) {
 		return profile, err
 	}
