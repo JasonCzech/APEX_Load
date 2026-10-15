@@ -57,6 +57,9 @@ type ServerOptions struct {
 	// Nil preserves the existing dedicated-only process limit.
 	HostAdmission         *javarunner.DedicatedHostAdmission
 	PooledControlProfiles *PooledControlProfiles
+	// SharedJVM enables runner-qualified shared JVMs (claim_shared). It must
+	// be paired with the HostAdmission returned by NewSharedJVMPolicy.
+	SharedJVM *SharedJVMPolicy
 
 	// These unexported hooks let package tests exercise persistent lifecycle
 	// semantics on hosts such as Darwin that deliberately fail production
@@ -86,6 +89,7 @@ type Server struct {
 	pooledRuns            map[pooledRunKey]*PooledRun
 	pooledControlProfiles *PooledControlProfiles
 	pooledControlMu       sync.Mutex
+	sharedJVM             *SharedJVMPolicy
 	// captureDescriptors counts open per-slot event-capture files across every
 	// pooled run; captureDescriptorLimit (0 = unknown) is derived from
 	// RLIMIT_NOFILE so large runs fail preparation instead of hitting EMFILE.
@@ -199,6 +203,7 @@ func NewServer(options ServerOptions) *Server {
 		pooledRuns:                       make(map[pooledRunKey]*PooledRun),
 		captureDescriptorLimit:           pooledCaptureDescriptorCeiling(hostnet.ProcessOpenFileLimit()),
 		pooledControlProfiles:            options.PooledControlProfiles,
+		sharedJVM:                        options.SharedJVM,
 		supportsStrongProcessContainment: supportsStrongProcessContainment,
 		startStrongProcessTree:           startStrongProcessTree,
 		resolveJDK:                       resolveJDK,
@@ -676,7 +681,11 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		if strongContainment && s.verifyNativeHarness(operationCtx, RuntimeSettings{}) == nil {
 			response.Features = append(response.Features, protocol.FeatureNativeDataServicesV1, protocol.FeatureNativeDataSidecarV1)
 		}
-		if s.pooledControlEnabled() {
+		if strongContainment && s.hostAdmission != nil && s.sharedJVM != nil {
+			response.Features = append(response.Features, FeatureSharedJVMV1)
+			response.SharedJVM = s.sharedJVMCapabilities()
+		}
+		if s.pooledControlProfiles != nil && len(s.pooledControlProfiles.profiles) > 0 && s.hostAdmission != nil {
 			response.Features = append(response.Features, FeaturePooledReservationsV1)
 			for _, profile := range s.pooledControlProfiles.profiles {
 				if profile.AllowPreparation {

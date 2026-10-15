@@ -1,6 +1,7 @@
 package javasidecar
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -90,6 +91,8 @@ type PooledControlRequest struct {
 	Slots            []PooledSlotContext `json:"slots,omitempty"`
 	HostID           string              `json:"host_id,omitempty"`
 	SlotID           string              `json:"slot_id,omitempty"`
+	// Shared is the script-derived input of a claim_shared request only.
+	Shared *SharedJVMClaim `json:"shared,omitempty"`
 }
 
 type PooledControlDecision struct {
@@ -137,6 +140,8 @@ type PooledControlResponse struct {
 	SlotClosed            bool                        `json:"slot_closed,omitempty"`
 	HostID                string                      `json:"host_id,omitempty"`
 	SlotID                string                      `json:"slot_id,omitempty"`
+	// WarningCodes are value-free claim warnings (claim_shared only).
+	WarningCodes []string `json:"warning_codes,omitempty"`
 }
 
 type pooledControlReply struct {
@@ -148,7 +153,15 @@ type pooledControlReply struct {
 }
 
 func (s *Server) pooledControlEnabled() bool {
-	return s.hostAdmission != nil && s.pooledControlProfiles != nil && len(s.pooledControlProfiles.profiles) > 0
+	return s.hostAdmission != nil && (s.pooledControlProfiles != nil && len(s.pooledControlProfiles.profiles) > 0 || s.sharedJVM != nil)
+}
+
+func (s *Server) pooledProfile(id string) (PooledControlProfile, bool) {
+	if s.pooledControlProfiles == nil {
+		return PooledControlProfile{}, false
+	}
+	p, ok := s.pooledControlProfiles.profiles[id]
+	return p, ok
 }
 
 func validPooledControlRequest(q PooledControlRequest) bool {
@@ -167,8 +180,15 @@ func validPooledControlRequest(q PooledControlRequest) bool {
 	if q.Operation != "prepare" && len(q.Slots) != 0 {
 		return false
 	}
-	if q.Operation == "claim" {
-		return executionIDPattern.MatchString(q.ProfileID) && executionIDPattern.MatchString(q.ExecutionID) && executionIDPattern.MatchString(q.GroupID) && q.RunID == "" && q.RunToken == "" && q.VUsers == 0 && q.PrepareTimeoutMS == 0 && q.ReservationID == ""
+	if (q.Operation == "claim_shared") != (q.Shared != nil) {
+		return false
+	}
+	if q.Operation == "claim" || q.Operation == "claim_shared" {
+		profileOK := executionIDPattern.MatchString(q.ProfileID)
+		if q.Operation == "claim_shared" {
+			profileOK = q.ProfileID == "" && validSharedJVMClaim(q.Shared)
+		}
+		return profileOK && executionIDPattern.MatchString(q.ExecutionID) && executionIDPattern.MatchString(q.GroupID) && q.RunID == "" && q.RunToken == "" && q.VUsers == 0 && q.PrepareTimeoutMS == 0 && q.ReservationID == ""
 	}
 	if !executionIDPattern.MatchString(q.RunID) || len(q.RunToken) != 64 || q.ProfileID != "" || q.ExecutionID != "" || q.GroupID != "" {
 		return false
@@ -216,6 +236,10 @@ func (s *Server) handlePooledControl(w http.ResponseWriter, r *http.Request) {
 	}
 	if q.Operation == "claim" {
 		s.claimPooledControl(w, r, q)
+		return
+	}
+	if q.Operation == "claim_shared" {
+		s.claimSharedControl(w, r, q)
 		return
 	}
 	owner, code := s.beginOwnerOperation(q.OwnerID, q.OwnerEpoch)
@@ -274,7 +298,7 @@ func (s *Server) claimPooledControl(w http.ResponseWriter, r *http.Request, q Po
 	// and the shared host admission budget caps their combined JVMs and memory.
 	s.pooledControlMu.Lock()
 	defer s.pooledControlMu.Unlock()
-	profile, ok := s.pooledControlProfiles.profiles[q.ProfileID]
+	profile, ok := s.pooledProfile(q.ProfileID)
 	if !ok {
 		writeError(w, http.StatusPreconditionFailed, "pooled_profile_unavailable")
 		return
@@ -285,24 +309,8 @@ func (s *Server) claimPooledControl(w http.ResponseWriter, r *http.Request, q Po
 		return
 	}
 	defer owner.operations.Done()
-	// Count only this owner's live runs: fenced runs from an earlier epoch stay
-	// bounded by maxPooledRuns and must not block the replacement generator.
-	active := 0
-	for _, run := range s.selectedPooledRuns(owner) {
-		select {
-		case <-run.closed:
-		default:
-			active++
-		}
-	}
-	if active >= maxConcurrentPooledControlRuns {
+	if !s.pooledRunAdmissionOpen(owner) {
 		writeError(w, http.StatusConflict, "pooled_group_limit")
-		return
-	}
-	id, idErr := newOpaqueToken(s.randomBytes)
-	token, tokenErr := newOpaqueToken(s.randomBytes)
-	if idErr != nil || tokenErr != nil {
-		writeError(w, http.StatusServiceUnavailable, "pooled_control_failed")
 		return
 	}
 	budget := profile.Budget
@@ -321,12 +329,40 @@ func (s *Server) claimPooledControl(w http.ResponseWriter, r *http.Request, q Po
 		return
 	}
 	decision := PooledControlDecision{ScriptSHA256: profile.ScriptSHA256, TargetClass: d.TargetClass, PreparationEnabled: profile.AllowPreparation, CommitEnabled: profile.AllowCommit, InvocationEnabled: profile.AllowInvocation, Mode: d.Mode, ProfileID: q.ProfileID, ResourceProfile: d.ResourceProfile, ConfigurationSHA256: d.ConfigurationSHA256, ContainmentBackend: d.ContainmentBackend, SlotsPerHost: d.SlotsPerHost, HostMemoryBytes: d.HostMemoryBytes, MaxHosts: budget.MaxHosts, MaxVUsers: budget.MaxVUsers, MaxMemoryBytes: budget.MaxMemoryBytes}
+	s.publishPooledControlRun(w, q, run, q.ProfileID, decision, nil)
+}
+
+// pooledRunAdmissionOpen bounds live network runs per owner. Fenced runs from
+// an earlier epoch stay bounded by maxPooledRuns and must not block the
+// replacement generator. Callers hold pooledControlMu so the count is exact.
+func (s *Server) pooledRunAdmissionOpen(owner *ownerGeneration) bool {
+	active := 0
+	for _, run := range s.selectedPooledRuns(owner) {
+		select {
+		case <-run.closed:
+		default:
+			active++
+		}
+	}
+	return active < maxConcurrentPooledControlRuns
+}
+
+// publishPooledControlRun assigns the opaque wire identity of a newly opened
+// run and answers the claim. A token failure closes the run it cannot publish.
+func (s *Server) publishPooledControlRun(w http.ResponseWriter, q PooledControlRequest, run *PooledRun, profileID string, decision PooledControlDecision, warnings []string) {
+	id, idErr := newOpaqueToken(s.randomBytes)
+	token, tokenErr := newOpaqueToken(s.randomBytes)
+	if idErr != nil || tokenErr != nil {
+		go func() { _ = run.Close(context.Background()) }()
+		writeError(w, http.StatusServiceUnavailable, "pooled_control_failed")
+		return
+	}
 	s.pooledMu.Lock()
-	run.controlID, run.controlToken, run.controlProfile = "pool-"+id, token, q.ProfileID
+	run.controlID, run.controlToken, run.controlProfile = "pool-"+id, token, profileID
 	run.controlDecision = decision
 	s.pooledMu.Unlock()
 	go func() { <-run.closed; run.controlMu.Lock(); run.controlReplies = nil; run.controlMu.Unlock() }()
-	writeJSON(w, http.StatusOK, PooledControlResponse{Contract: ContractVersion, PooledContract: PooledControlContract, Operation: q.Operation, RequestID: q.RequestID, RunID: run.controlID, RunToken: token, LeaseTTLMS: s.runtimeLeaseTTL.Milliseconds(), Decision: decision})
+	writeJSON(w, http.StatusOK, PooledControlResponse{Contract: ContractVersion, PooledContract: PooledControlContract, Operation: q.Operation, RequestID: q.RequestID, RunID: run.controlID, RunToken: token, LeaseTTLMS: s.runtimeLeaseTTL.Milliseconds(), Decision: decision, WarningCodes: warnings})
 }
 
 var errPooledRequestConflict = errors.New("pooled_request_conflict")

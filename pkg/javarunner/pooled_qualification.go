@@ -162,7 +162,7 @@ func (r *PooledQualificationRegistry) Select(ctx context.Context, profile string
 // LaunchProvider rechecks assets at provisioning. A changed input fails this
 // reservation; it never switches to dedicated execution or replays initialization.
 func (s PooledSelection) LaunchProvider() (PooledLaunchProvider, error) {
-	if s.decision.Mode != "pooled_pilot" {
+	if s.decision.Mode != "pooled_pilot" && s.decision.Mode != SharedJVMMode {
 		return nil, ErrPooledQualification
 	}
 	return func(ctx context.Context, a HostAllocation) (PooledLaunchSpec, error) {

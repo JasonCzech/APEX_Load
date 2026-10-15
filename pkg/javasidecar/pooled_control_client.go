@@ -4,8 +4,9 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
-	"github.com/jasonczech/apexload/pkg/javarunner"
 	"net/http"
+
+	"github.com/jasonczech/apexload/pkg/javarunner"
 )
 
 // PooledControl sends an explicitly negotiated pilot control request. It never
@@ -48,8 +49,22 @@ func knownPooledControlError(code string) bool {
 		"runner_disabled", "runner_auth_unavailable", "runner_unauthorized", "server_draining", "request_too_large", "invalid_request", "method_not_allowed":
 		return true
 	default:
+		return SharedJVMClaimErrorCode(code)
+	}
+}
+
+func validSharedJVMWarnings(codes []string) bool {
+	if len(codes) > 4 {
 		return false
 	}
+	seen := map[string]bool{}
+	for _, code := range codes {
+		if seen[code] || code != WarningSharedJVMHeapIgnored && code != WarningModernXBootClasspathFallback {
+			return false
+		}
+		seen[code] = true
+	}
+	return true
 }
 
 func validPooledControlResponse(q PooledControlRequest, r PooledControlResponse) bool {
@@ -69,15 +84,29 @@ func validPooledControlResponse(q PooledControlRequest, r PooledControlResponse)
 	if q.Operation != "prepare" && (r.Ready || r.NativeData) {
 		return false
 	}
-	if r.Contract != ContractVersion || r.PooledContract != PooledControlContract || r.Operation != q.Operation || r.RequestID != q.RequestID || !executionIDPattern.MatchString(r.RunID) || r.LeaseTTLMS != RuntimeLeaseTTL.Milliseconds() || d.Mode != "pooled_pilot" || !executionIDPattern.MatchString(d.ProfileID) || !executionIDPattern.MatchString(d.ResourceProfile) || d.ContainmentBackend != "delegated_linux" || d.SlotsPerHost < 2 || d.SlotsPerHost > javarunner.MaxPooledSlotsPerHost || d.MaxHosts < 1 || d.MaxHosts > maxPooledControlHosts || d.MaxVUsers < d.SlotsPerHost || d.MaxVUsers > maxPooledControlVUsers || d.HostMemoryBytes <= 0 || d.MaxMemoryBytes < d.HostMemoryBytes {
+	shared := d.Mode == javarunner.SharedJVMMode
+	if shared && (!d.PreparationEnabled || !d.CommitEnabled || !d.InvocationEnabled || d.ProfileID != javarunner.SharedJVMProfileID || d.ScriptSHA256 == "") {
+		return false
+	}
+	if len(r.WarningCodes) > 0 && (q.Operation != "claim_shared" || !validSharedJVMWarnings(r.WarningCodes)) {
+		return false
+	}
+	if r.Contract != ContractVersion || r.PooledContract != PooledControlContract || r.Operation != q.Operation || r.RequestID != q.RequestID || !executionIDPattern.MatchString(r.RunID) || r.LeaseTTLMS != RuntimeLeaseTTL.Milliseconds() || d.Mode != "pooled_pilot" && !shared || !executionIDPattern.MatchString(d.ProfileID) || !executionIDPattern.MatchString(d.ResourceProfile) || d.ContainmentBackend != "delegated_linux" || d.SlotsPerHost < 2 || d.SlotsPerHost > javarunner.MaxPooledSlotsPerHost || d.MaxHosts < 1 || d.MaxHosts > maxPooledControlHosts || d.MaxVUsers < d.SlotsPerHost || d.MaxVUsers > maxPooledControlVUsers || d.HostMemoryBytes <= 0 || d.MaxMemoryBytes < d.HostMemoryBytes {
 		return false
 	}
 	if decoded, err := hex.DecodeString(d.ConfigurationSHA256); err != nil || len(decoded) != 32 {
 		return false
 	}
-	if q.Operation == "claim" {
+	if q.Operation == "claim" || q.Operation == "claim_shared" {
 		decoded, err := hex.DecodeString(r.RunToken)
-		return err == nil && len(decoded) == 32 && d.ProfileID == q.ProfileID && r.ReservationID == "" && len(r.Placements) == 0 && !r.Reaped && r.PrepareDeadlineUnixMS == 0
+		if err != nil || len(decoded) != 32 || r.ReservationID != "" || len(r.Placements) != 0 || r.Reaped || r.PrepareDeadlineUnixMS != 0 {
+			return false
+		}
+		if q.Operation == "claim" {
+			return !shared && d.ProfileID == q.ProfileID
+		}
+		c := q.Shared
+		return shared && d.ScriptSHA256 == c.ScriptSHA256 && d.TargetClass == c.TargetClass && (c.VUsersPerJVM == 0 || d.SlotsPerHost <= c.VUsersPerJVM)
 	}
 	if r.RunID != q.RunID || r.RunToken != "" {
 		return false

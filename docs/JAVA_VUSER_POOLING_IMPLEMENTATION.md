@@ -55,6 +55,53 @@ archive source identity retains field 40.
 | Operator pilot manifest | Bounded, strict, versioned local file binding one reviewed qualification, resolved launch request, approved DSL digest, stage permissions, and a shared host/Vuser/memory budget. Runner loads it before opening its listener; Linux-only and disabled when the environment variable is absent. |
 | Pilot qualification registry | Operator-owned evidence records bound to inspected runtime/artifact/resource identities; frozen dedicated/pilot selection, stable fallback reasons, and pre-launch revalidation. Programmatic interface and operator manifest loading; no production qualification, registry configuration endpoint, or automatic approval is supplied. |
 
+## Shared JVMs (runner-qualified)
+
+The operator policy replaces the hand-signed pilot manifest for ordinary runs.
+Set `APEXLOAD_JAVA_VUSER_SHARED_JVM=true` on the Linux runner sidecar together
+with the existing runner enablement and authentication. The runner then builds
+one admission authority that every shared and dedicated JVM charges:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `APEXLOAD_JAVA_VUSER_SHARED_JVM_VUSERS_PER_JVM` | 250 | Lifetime slots per shared JVM (2–1,024). A script may ask for fewer. |
+| `APEXLOAD_JAVA_VUSER_SHARED_JVM_HEAP_MB` | 1,024 | `-Xmx` of each shared JVM. |
+| `APEXLOAD_JAVA_VUSER_JVM_MEMORY_BUDGET_MB` | process limit × one JVM reservation | Runner-wide JVM memory budget. Set it to what the runner container can give JVMs. |
+| `APEXLOAD_JAVA_VUSER_DEDICATED_JVM_MEMORY_MB` | 256 | Budget charge of one dedicated JVM. |
+| `APEXLOAD_JAVA_VUSER_SLOT_API_JAR`, `..._SLOT_SHIM_JAR` | beside the harness jar | Artifacts from `make java-vuser-slot-runtime`. |
+
+`APEXLOAD_JAVA_VUSER_MAX_PROCESSES` still caps JVMs per runner, now counting
+shared and dedicated JVMs alike. A runner refuses to start when the policy is
+invalid, when it is not Linux, or when the pilot manifest is also set.
+
+A shared run starts with the `claim_shared` control operation. It carries the
+same runtime settings a dedicated session sends (JDK selection, exact VM
+parameters, classpath and uploaded classpath JARs), the target class and the
+script digest. The runner resolves them with the dedicated-mode validation and
+then qualifies the workload itself:
+
+- The JDK must be HotSpot or OpenJ9 17 or 21.
+- Every script classpath entry must be a jar. The jar that holds the target
+  class is private to each VUser, so the Actions class and its statics stay per
+  VUser. Other script jars and uploaded JARs load once in the shared loader. With
+  the script's dedicated class loader setting, every script jar is private.
+- The static native scan of the application jars must be complete and find no
+  indicators (native methods, `loadLibrary`, JNA/JNR, packaged native
+  libraries). The scan does not prove the absence of dynamic native loading or
+  background work; enabling the policy is the operator's acceptance of that.
+- Script heap sizing (`-Xmx`, `-Xms`, `-XX:MaxRAM*` and similar) is dropped and
+  reported as `shared_jvm_script_heap_ignored`; the operator heap applies. Other
+  VM parameters pass through unchanged.
+
+A refusal uses a stable code (`shared_jvm_runtime_unsupported`,
+`shared_jvm_classpath_unsupported`, `shared_jvm_native_code_detected`,
+`shared_jvm_inspection_incomplete`, `shared_jvm_inputs_unsupported`, or a
+dedicated-mode runtime code) and leaves the workload eligible for dedicated
+JVMs. Each launch re-verifies the frozen qualification, as with the pilot.
+Healthy runners advertise `java_vuser_shared_jvm_v1` and a `shared_jvm`
+capacity envelope (slots per JVM, JVM reservation, maximum and available
+VUsers) on `/v1/capabilities`.
+
 ## Building and checking fixtures
 
 Requirements: Go toolchain, JDK supporting `javac --release 8` and `--release 17`,

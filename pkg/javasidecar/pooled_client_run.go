@@ -70,6 +70,50 @@ func (c *Client) OpenPooledClientRun(ctx context.Context, options PooledClientOp
 	return newPooledClientRun(ctx, frozen, options.Decision, r)
 }
 
+// SharedClientOptions identifies one execution/group and carries its claim.
+// The runner, not the caller, chooses the shared-JVM decision; the returned
+// run freezes it and rejects any later drift exactly like a pilot decision.
+type SharedClientOptions struct {
+	ExecutionID string
+	GroupID     string
+	Claim       SharedJVMClaim
+}
+
+// OpenSharedClientRun claims a runner-qualified shared run against an already
+// claimed owner. A refusal whose code satisfies SharedJVMClaimErrorCode leaves
+// the workload eligible for dedicated JVMs; any other failure is ambiguous and
+// must not be retried as a new claim. Warnings are value-free codes.
+func (c *Client) OpenSharedClientRun(ctx context.Context, options SharedClientOptions) (*PooledClientRun, []string, error) {
+	if ctx == nil {
+		return nil, nil, ErrPooledClientState
+	}
+	owner, epoch, _, _ := c.ownerAndRuntimeLease()
+	if !executionIDPattern.MatchString(owner) || !executionIDPattern.MatchString(epoch) {
+		return nil, nil, ErrPooledClientState
+	}
+	frozen := &Client{baseURL: c.baseURL, httpClient: c.httpClient, authToken: c.authToken, ownerID: owner, ownerEpoch: epoch}
+	claim := options.Claim
+	claim.Runtime = cloneRuntimeSettings(claim.Runtime)
+	claimCtx, cancel := context.WithTimeout(ctx, RuntimeLeaseTTL)
+	defer cancel()
+	r, err := frozen.PooledControl(claimCtx, PooledControlRequest{Operation: "claim_shared", RequestID: "client-claim-shared", ExecutionID: options.ExecutionID, GroupID: options.GroupID, Shared: &claim})
+	if err != nil {
+		return nil, nil, err
+	}
+	run, err := newPooledClientRun(ctx, frozen, r.Decision, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	return run, append([]string(nil), r.WarningCodes...), nil
+}
+
+func cloneRuntimeSettings(r RuntimeSettings) RuntimeSettings {
+	r.AdditionalVMParameters = append([]string(nil), r.AdditionalVMParameters...)
+	r.Classpath = append([]string(nil), r.Classpath...)
+	r.ClasspathAssets = append([]ClasspathAssetRef(nil), r.ClasspathAssets...)
+	return r
+}
+
 func newPooledClientRun(ctx context.Context, client *Client, expected PooledControlDecision, claim PooledControlResponse) (*PooledClientRun, error) {
 	runCtx, cancel := context.WithCancelCause(ctx)
 	r := &PooledClientRun{client: client, decision: expected, runID: claim.RunID, token: claim.RunToken, ctx: runCtx, cancel: cancel, done: make(chan struct{}), renewEvery: RuntimeLeaseTTL / 3}

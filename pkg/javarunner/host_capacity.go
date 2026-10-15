@@ -193,6 +193,15 @@ func (a *DedicatedHostAdmission) NewHostLedger(binding HostBinding, budget HostB
 	return NewHostLedgerWithCapacity(binding, budget, lease, a.capacity)
 }
 
+// Snapshot reports current charges against the shared budget, including
+// draining and quarantined hosts that still hold their reservations.
+func (a *DedicatedHostAdmission) Snapshot() HostUsage {
+	if a == nil || a.capacity == nil {
+		return HostUsage{}
+	}
+	return a.capacity.Snapshot()
+}
+
 // Budget returns immutable ceilings, not currently available capacity.
 func (a *DedicatedHostAdmission) Budget() HostBudget {
 	if a == nil || a.capacity == nil {

@@ -711,6 +711,10 @@ The relevant environment variables are:
 - `APEXLOAD_JAVA_VUSER_CLASSPATH_ASSET_DIR` (same-host import asset root a local sidecar reads uploaded JAR bytes from)
 - `APEXLOAD_JAVA_VUSER_WORK_DIR`
 - `APEXLOAD_JAVA_VUSER_MAX_PROCESSES`
+- `APEXLOAD_JAVA_VUSER_SHARED_JVM` (runner sidecar, Linux only: enables shared JVMs, where many VUsers of one group share a JVM; see [Java VUser pooling](JAVA_VUSER_POOLING_IMPLEMENTATION.md#shared-jvms-runner-qualified))
+- `APEXLOAD_JAVA_VUSER_SHARED_JVM_VUSERS_PER_JVM` (default 250, 2–1,024), `APEXLOAD_JAVA_VUSER_SHARED_JVM_HEAP_MB` (default 1,024)
+- `APEXLOAD_JAVA_VUSER_JVM_MEMORY_BUDGET_MB` (runner-wide JVM memory budget shared by shared and dedicated JVMs) and `APEXLOAD_JAVA_VUSER_DEDICATED_JVM_MEMORY_MB` (default 256)
+- `APEXLOAD_JAVA_VUSER_SLOT_API_JAR`, `APEXLOAD_JAVA_VUSER_SLOT_SHIM_JAR` (default: `apexload-slot-api.jar` and `apexload-slot-shim.jar` beside the harness jar)
 
 Helm, Kustomize, and Compose integrations are opt-in. The standard Java runner image contains JDK 21 and a Java 17-targeted harness. Operators can mount a read-only artifact volume or publish a signed custom runner image with approved precompiled classes/JARs.
 The packaged sidecar sets `APEXLOAD_JAVA_VUSER_WORK_DIR=/tmp`; its root filesystem is read-only and `/tmp` is the bounded writable volume used by child JVMs.

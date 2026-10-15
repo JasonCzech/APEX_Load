@@ -48,6 +48,26 @@ const (
 	// staged bytes instead.
 	EnvJavaVuserClasspathAssetDir = "APEXLOAD_JAVA_VUSER_CLASSPATH_ASSET_DIR"
 
+	// Shared JVMs run many Java VUsers of one execution/group in one JVM. The
+	// operator enables the policy on the runner sidecar; each script still opts
+	// in, and the runner qualifies it (Java 17/21, jar classpath, clean native
+	// scan) before staging. Disabled, every Java VUser keeps its own JVM.
+	EnvJavaVuserSharedJVM = "APEXLOAD_JAVA_VUSER_SHARED_JVM"
+	// EnvJavaVuserSharedJVMVUsersPerJVM is the default lifetime slots per JVM
+	// (2-1024); a script may request fewer.
+	EnvJavaVuserSharedJVMVUsersPerJVM = "APEXLOAD_JAVA_VUSER_SHARED_JVM_VUSERS_PER_JVM"
+	// EnvJavaVuserSharedJVMHeapMB is the -Xmx of each shared JVM in MiB.
+	EnvJavaVuserSharedJVMHeapMB = "APEXLOAD_JAVA_VUSER_SHARED_JVM_HEAP_MB"
+	// EnvJavaVuserJVMMemoryBudgetMB is the runner-wide admission budget, in MiB,
+	// charged by every shared JVM's reservation and every dedicated JVM. Set it
+	// to the memory the runner's container can give JVMs.
+	EnvJavaVuserJVMMemoryBudgetMB = "APEXLOAD_JAVA_VUSER_JVM_MEMORY_BUDGET_MB"
+	// EnvJavaVuserDedicatedJVMMemoryMB is the budget charge of one dedicated JVM.
+	EnvJavaVuserDedicatedJVMMemoryMB = "APEXLOAD_JAVA_VUSER_DEDICATED_JVM_MEMORY_MB"
+	// Slot API and shim jars for shared JVMs; default beside the harness jar.
+	EnvJavaVuserSlotAPIJar  = "APEXLOAD_JAVA_VUSER_SLOT_API_JAR"
+	EnvJavaVuserSlotShimJar = "APEXLOAD_JAVA_VUSER_SLOT_SHIM_JAR"
+
 	EnvK8sRestartEnabled           = "APEXLOAD_K8S_RESTART_ENABLED"
 	EnvK8sNamespace                = "APEXLOAD_K8S_NAMESPACE"
 	EnvK8sControllerDeployment     = "APEXLOAD_K8S_CONTROLLER_DEPLOYMENT"
@@ -82,6 +102,13 @@ const (
 	// value from causing an unbounded semaphore allocation during runner
 	// startup. Deployment schemas enforce the same upper bound.
 	MaxJavaVuserMaxProcesses = 10000
+
+	DefaultJavaVuserSharedJVMVUsersPerJVM = 250
+	MaxJavaVuserSharedJVMVUsersPerJVM     = 1024
+	DefaultJavaVuserSharedJVMHeapMB       = 1024
+	DefaultJavaVuserDedicatedJVMMemoryMB  = 256
+	DefaultJavaVuserSlotAPIJarName        = "apexload-slot-api.jar"
+	DefaultJavaVuserSlotShimJarName       = "apexload-slot-shim.jar"
 )
 
 // JavaVuserOperatorConfig is the operator-owned runtime configuration for the
@@ -115,6 +142,22 @@ type JavaVuserOperatorConfig struct {
 	// ClasspathAssetDir is the same-host import asset root a local sidecar reads
 	// uploaded JAR bytes from. Empty for distributed runners.
 	ClasspathAssetDir string
+	// SharedJVM holds the shared-JVM policy; Enabled is false unless the
+	// operator set EnvJavaVuserSharedJVM on the runner.
+	SharedJVM JavaVuserSharedJVMConfig
+}
+
+// JavaVuserSharedJVMConfig is the operator's shared-JVM policy. Values are
+// normalized by LoadJavaVuserOperatorConfig; zero MemoryBudgetMB means the
+// runner derives a budget from its process ceiling.
+type JavaVuserSharedJVMConfig struct {
+	Enabled              bool
+	VUsersPerJVM         int
+	HeapMB               int
+	MemoryBudgetMB       int
+	DedicatedJVMMemoryMB int
+	SlotAPIJar           string
+	SlotShimJar          string
 }
 
 // K8sRestartOperatorConfig is operator-owned configuration for opt-in
@@ -160,7 +203,41 @@ func LoadJavaVuserOperatorConfig() JavaVuserOperatorConfig {
 	} else if cfg.MaxProcesses > MaxJavaVuserMaxProcesses {
 		cfg.MaxProcesses = MaxJavaVuserMaxProcesses
 	}
+	cfg.SharedJVM = loadJavaVuserSharedJVMConfig(cfg.HarnessJar)
 	return cfg
+}
+
+func loadJavaVuserSharedJVMConfig(harnessJar string) JavaVuserSharedJVMConfig {
+	shared := JavaVuserSharedJVMConfig{
+		Enabled:              envBool(EnvJavaVuserSharedJVM),
+		VUsersPerJVM:         envInt(EnvJavaVuserSharedJVMVUsersPerJVM, DefaultJavaVuserSharedJVMVUsersPerJVM),
+		HeapMB:               envInt(EnvJavaVuserSharedJVMHeapMB, DefaultJavaVuserSharedJVMHeapMB),
+		MemoryBudgetMB:       envInt(EnvJavaVuserJVMMemoryBudgetMB, 0),
+		DedicatedJVMMemoryMB: envInt(EnvJavaVuserDedicatedJVMMemoryMB, DefaultJavaVuserDedicatedJVMMemoryMB),
+		SlotAPIJar:           strings.TrimSpace(os.Getenv(EnvJavaVuserSlotAPIJar)),
+		SlotShimJar:          strings.TrimSpace(os.Getenv(EnvJavaVuserSlotShimJar)),
+	}
+	if shared.VUsersPerJVM < 2 || shared.VUsersPerJVM > MaxJavaVuserSharedJVMVUsersPerJVM {
+		shared.VUsersPerJVM = DefaultJavaVuserSharedJVMVUsersPerJVM
+	}
+	if shared.HeapMB < 64 {
+		shared.HeapMB = DefaultJavaVuserSharedJVMHeapMB
+	}
+	if shared.MemoryBudgetMB < 0 {
+		shared.MemoryBudgetMB = 0
+	}
+	if shared.DedicatedJVMMemoryMB < 16 {
+		shared.DedicatedJVMMemoryMB = DefaultJavaVuserDedicatedJVMMemoryMB
+	}
+	if dir := filepath.Dir(strings.TrimSpace(harnessJar)); strings.TrimSpace(harnessJar) != "" {
+		if shared.SlotAPIJar == "" {
+			shared.SlotAPIJar = filepath.Join(dir, DefaultJavaVuserSlotAPIJarName)
+		}
+		if shared.SlotShimJar == "" {
+			shared.SlotShimJar = filepath.Join(dir, DefaultJavaVuserSlotShimJarName)
+		}
+	}
+	return shared
 }
 
 // JavaClasspathUploadEnabled reports whether the operator has opted into

@@ -136,6 +136,8 @@ type CapabilitiesResponse struct {
 	MaxProcesses          int      `json:"max_processes"`
 	MaxExecutionTimeoutMS int64    `json:"max_execution_timeout_ms"`
 	MaxCaptureBytes       int      `json:"max_capture_bytes"`
+	// SharedJVM is present when FeatureSharedJVMV1 is advertised.
+	SharedJVM *SharedJVMCapabilities `json:"shared_jvm,omitempty"`
 }
 
 type ValidateRequest struct {

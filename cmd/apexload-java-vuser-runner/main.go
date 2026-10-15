@@ -33,7 +33,7 @@ func main() {
 	options, err := runnerServerOptions(startupCtx, operator, strings.TrimSpace(os.Getenv(runnerPilotManifestEnvironment)))
 	startupCancel()
 	if err != nil {
-		log.Fatalf("Java Vuser runner sidecar refused pilot configuration: %v", err)
+		log.Fatalf("Java Vuser runner sidecar refused pilot or shared-JVM configuration: %v", err)
 	}
 	listener, err := javasidecar.ListenLoopback(address)
 	if err != nil {
@@ -86,9 +86,22 @@ func main() {
 	}
 }
 
-// Pilot configuration is supplied solely by the operator environment, never DSL.
+// Pilot and shared-JVM configuration come solely from the operator
+// environment, never DSL. The two share one admission authority, so a runner
+// takes one of them: the manifest pilot or the shared-JVM policy.
 func runnerServerOptions(ctx context.Context, operator config.JavaVuserOperatorConfig, manifest string) (javasidecar.ServerOptions, error) {
 	options := javasidecar.ServerOptions{Operator: operator}
+	if operator.SharedJVM.Enabled {
+		if manifest != "" || runtime.GOOS != "linux" {
+			return options, javasidecar.ErrSharedJVMConfig
+		}
+		policy, admission, err := javasidecar.NewSharedJVMPolicy(operator)
+		if err != nil {
+			return options, err
+		}
+		options.SharedJVM, options.HostAdmission = policy, admission
+		return options, nil
+	}
 	if manifest == "" {
 		return options, nil
 	}
