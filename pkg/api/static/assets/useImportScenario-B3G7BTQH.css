@@ -1,0 +1,1 @@
+.import-input-supply{gap:10px;display:grid}.import-input-supply label{flex-direction:column;gap:4px;display:flex}.import-input-supply select{width:min(100%,36rem)}.import-input-supply small{color:var(--text-muted)}.import-input-supply .import-input-supply-error{color:var(--danger-text)}.import-input-supply .import-input-supply-warning{color:var(--warning-text)}
