@@ -26,6 +26,7 @@ import (
 	"unicode"
 
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/hostnet"
 	"github.com/jasonczech/apexload/pkg/internal/subprocessguard"
 	"github.com/jasonczech/apexload/pkg/javarunner"
 )
@@ -85,6 +86,12 @@ type Server struct {
 	pooledRuns            map[pooledRunKey]*PooledRun
 	pooledControlProfiles *PooledControlProfiles
 	pooledControlMu       sync.Mutex
+	// captureDescriptors counts open per-slot event-capture files across every
+	// pooled run; captureDescriptorLimit (0 = unknown) is derived from
+	// RLIMIT_NOFILE so large runs fail preparation instead of hitting EMFILE.
+	captureMu              sync.Mutex
+	captureDescriptors     int
+	captureDescriptorLimit int
 
 	supportsStrongProcessContainment func() bool
 	startStrongProcessTree           func(*exec.Cmd) error
@@ -190,6 +197,7 @@ func NewServer(options ServerOptions) *Server {
 		probeSlots:                       make(chan struct{}, 1),
 		hostAdmission:                    options.HostAdmission,
 		pooledRuns:                       make(map[pooledRunKey]*PooledRun),
+		captureDescriptorLimit:           pooledCaptureDescriptorCeiling(hostnet.ProcessOpenFileLimit()),
 		pooledControlProfiles:            options.PooledControlProfiles,
 		supportsStrongProcessContainment: supportsStrongProcessContainment,
 		startStrongProcessTree:           startStrongProcessTree,

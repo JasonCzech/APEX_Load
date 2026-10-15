@@ -21,7 +21,17 @@ const (
 	FeaturePooledInvocationV1   = "java_vuser_pooled_invocation_v1"
 	FeaturePooledDiagnosticsV1  = "java_vuser_pooled_diagnostics_v1"
 	maxPooledControlReplies     = 64
-	maxPooledControlVUsers      = 256
+	// maxPooledControlVUsers bounds one run's admissions on one runner. The
+	// complete slot list travels in one prepare request; 4,096 worst-case slot
+	// contexts fit MaxRequestBytes (pinned by a test). Larger generators split
+	// groups across runs; the shared admission budget remains authoritative.
+	maxPooledControlVUsers = 4096
+	// maxPooledControlHosts bounds one run's JVMs, independently of the
+	// operator process ceiling that also caps every claim.
+	maxPooledControlHosts = 1024
+	// maxConcurrentPooledControlRuns bounds live network runs (one per
+	// execution/group) so a misbehaving owner cannot exhaust run bookkeeping.
+	maxConcurrentPooledControlRuns = 64
 )
 
 type PooledControlProfile struct {
@@ -47,7 +57,7 @@ func NewPooledControlProfiles(profiles map[string]PooledControlProfile) (*Pooled
 	result := &PooledControlProfiles{profiles: make(map[string]PooledControlProfile, len(profiles))}
 	for id, p := range profiles {
 		d := p.Selection.Decision()
-		if (p.ScriptSHA256 != "" && !validPooledScriptSHA256(p.ScriptSHA256)) || (p.AllowInvocation && !p.AllowCommit) || (p.AllowCommit && !p.AllowPreparation) || !executionIDPattern.MatchString(id) || d.Mode != "pooled_pilot" || p.Budget.MaxHosts < 1 || p.Budget.MaxHosts > 256 || p.Budget.MaxVUsers < d.SlotsPerHost || p.Budget.MaxVUsers > maxPooledControlVUsers || p.Budget.MaxMemoryBytes < d.HostMemoryBytes {
+		if (p.ScriptSHA256 != "" && !validPooledScriptSHA256(p.ScriptSHA256)) || (p.AllowInvocation && !p.AllowCommit) || (p.AllowCommit && !p.AllowPreparation) || !executionIDPattern.MatchString(id) || d.Mode != "pooled_pilot" || p.Budget.MaxHosts < 1 || p.Budget.MaxHosts > maxPooledControlHosts || p.Budget.MaxVUsers < d.SlotsPerHost || p.Budget.MaxVUsers > maxPooledControlVUsers || p.Budget.MaxMemoryBytes < d.HostMemoryBytes {
 			return nil, javarunner.ErrPooledQualification
 		}
 		if _, err := p.Selection.LaunchProvider(); err != nil {
@@ -259,7 +269,9 @@ func (s *Server) handlePooledControl(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) claimPooledControl(w http.ResponseWriter, r *http.Request, q PooledControlRequest) {
-	// One network pilot group at a time; this lock never blocks renewal/cleanup.
+	// Claims are serialized so the concurrent-run bound below is exact; this
+	// lock never blocks renewal or cleanup. Each run owns one execution/group,
+	// and the shared host admission budget caps their combined JVMs and memory.
 	s.pooledControlMu.Lock()
 	defer s.pooledControlMu.Unlock()
 	profile, ok := s.pooledControlProfiles.profiles[q.ProfileID]
@@ -273,13 +285,19 @@ func (s *Server) claimPooledControl(w http.ResponseWriter, r *http.Request, q Po
 		return
 	}
 	defer owner.operations.Done()
-	for _, run := range s.selectedPooledRuns(nil) {
+	// Count only this owner's live runs: fenced runs from an earlier epoch stay
+	// bounded by maxPooledRuns and must not block the replacement generator.
+	active := 0
+	for _, run := range s.selectedPooledRuns(owner) {
 		select {
 		case <-run.closed:
 		default:
-			writeError(w, http.StatusConflict, "pooled_group_limit")
-			return
+			active++
 		}
+	}
+	if active >= maxConcurrentPooledControlRuns {
+		writeError(w, http.StatusConflict, "pooled_group_limit")
+		return
 	}
 	id, idErr := newOpaqueToken(s.randomBytes)
 	token, tokenErr := newOpaqueToken(s.randomBytes)

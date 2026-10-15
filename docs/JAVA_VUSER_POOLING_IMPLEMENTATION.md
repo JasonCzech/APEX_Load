@@ -354,7 +354,11 @@ operation, carry stable status/reap fields, and preserve both exit option and
 exit status. The client rejects unknown, replayed, or mismatched responses.
 
 Both transport writers have bounded queues and never block a slot callback or
-control reader behind a slow write. The Go client retains identities rather than
+control reader behind a slow write. The queues scale with the host's slot count
+(Go: `2×slots+64` queued frames and `4×slots+64` outstanding requests, never below
+the original 64/512; Java: `4×slots+64` queued replies), so a whole host finishing
+an invocation at once queues instead of overflowing. With the original fixed
+64/512 bounds, a 1,024-slot init burst reaped the host. The Go client retains identities rather than
 parameter bodies for outstanding requests. Queue overflow, malformed transport,
 and uncertain control completion retire the host; peers receive
 `pooled_host_reaped`. Ordinary invocation cancellation requests permanent slot
@@ -368,7 +372,8 @@ slot state, commit barriers, controlled exits, bounded diagnostics, raw stdout/
 stderr writes, peer progress during a blocked invocation, cooperative closure,
 ignored interrupts, and preservation of the triggering failure. Go tests also
 cover blocked writers, queue exhaustion, response schema validation, and the
-ledger's matching 256-slot host admission ceiling.
+ledger's matching 1,024-slot host admission ceiling. A real-JVM burst test opens,
+initializes, runs and closes all 1,024 slots of one host concurrently.
 
 ## Supervisor and local containment adapter
 
@@ -537,8 +542,13 @@ and the host ceiling also respects the sidecar process limit. Remote callers
 cannot supply artifact paths, JVM arguments, memory budgets, or arbitrary context
 variables.
 
-This pilot allows one active run/group, at most 256 Vusers per configured run,
-and claim, renew, reserve, abort, and close by default. A profile must separately
+A runner accepts up to 64 concurrent runs per owner, one per execution/group,
+with at most 4,096 Vusers and 1,024 JVMs per run; the shared host admission
+budget caps their combined JVMs, Vusers and memory. Each prepared slot holds one
+event-capture descriptor, so the runner also caps open capture files at half of
+`RLIMIT_NOFILE` minus 1,024 reserved descriptors; a preparation beyond that fails
+with `pooled_capacity_unavailable` before any file or JVM is created. Claim, renew, reserve, abort, and close are
+available by default. A profile must separately
 set `AllowPreparation` to enable `prepare`. Healthy runners with such a profile
 advertise `java_vuser_pooled_preparation_v1`; the selected decision also reports
 `preparation_enabled`. This operation provisions qualified local hosts and opens
@@ -884,7 +894,8 @@ Repeated review added regression coverage and corrected these issues:
 - Engine-configuration errors could leave a sample marked complete despite
   missing measurements. Error samples are now explicitly incomplete.
 - The Go ledger accepted profiles above the Java host admission ceiling. Both
-  now enforce a maximum of 256 lifetime slot admissions per host.
+  now enforce the same maximum of lifetime slot admissions per host (raised from
+  256 to 1,024 on 2026-10-15).
 - A binary response stream on stdout could be corrupted by raw/native output.
   IPC v3 replies now use a separate authenticated loopback socket.
 - Pending transport requests retained parameter bodies after serialization.

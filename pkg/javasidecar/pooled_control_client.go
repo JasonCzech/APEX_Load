@@ -69,7 +69,7 @@ func validPooledControlResponse(q PooledControlRequest, r PooledControlResponse)
 	if q.Operation != "prepare" && (r.Ready || r.NativeData) {
 		return false
 	}
-	if r.Contract != ContractVersion || r.PooledContract != PooledControlContract || r.Operation != q.Operation || r.RequestID != q.RequestID || !executionIDPattern.MatchString(r.RunID) || r.LeaseTTLMS != RuntimeLeaseTTL.Milliseconds() || d.Mode != "pooled_pilot" || !executionIDPattern.MatchString(d.ProfileID) || !executionIDPattern.MatchString(d.ResourceProfile) || d.ContainmentBackend != "delegated_linux" || d.SlotsPerHost < 2 || d.SlotsPerHost > 256 || d.MaxHosts < 1 || d.MaxHosts > 256 || d.MaxVUsers < d.SlotsPerHost || d.MaxVUsers > 256 || d.HostMemoryBytes <= 0 || d.MaxMemoryBytes < d.HostMemoryBytes {
+	if r.Contract != ContractVersion || r.PooledContract != PooledControlContract || r.Operation != q.Operation || r.RequestID != q.RequestID || !executionIDPattern.MatchString(r.RunID) || r.LeaseTTLMS != RuntimeLeaseTTL.Milliseconds() || d.Mode != "pooled_pilot" || !executionIDPattern.MatchString(d.ProfileID) || !executionIDPattern.MatchString(d.ResourceProfile) || d.ContainmentBackend != "delegated_linux" || d.SlotsPerHost < 2 || d.SlotsPerHost > javarunner.MaxPooledSlotsPerHost || d.MaxHosts < 1 || d.MaxHosts > maxPooledControlHosts || d.MaxVUsers < d.SlotsPerHost || d.MaxVUsers > maxPooledControlVUsers || d.HostMemoryBytes <= 0 || d.MaxMemoryBytes < d.HostMemoryBytes {
 		return false
 	}
 	if decoded, err := hex.DecodeString(d.ConfigurationSHA256); err != nil || len(decoded) != 32 {

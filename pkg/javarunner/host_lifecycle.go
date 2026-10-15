@@ -39,8 +39,11 @@ type HostBudget struct {
 	MaxMemoryBytes      int64
 }
 
-// MaxPooledSlotsPerHost matches the bounded Java host lifetime admission ceiling.
-const MaxPooledSlotsPerHost = 256
+// MaxPooledSlotsPerHost matches the bounded Java host lifetime admission ceiling
+// (PooledHost.java MAX_SLOTS). Slots are never reused, so this caps lifetime
+// admissions per JVM, not only concurrent VUsers. The operator's resource
+// profile chooses the working size below this ceiling.
+const MaxPooledSlotsPerHost = 1024
 
 type HostProfile struct {
 	SlotsPerHost       int

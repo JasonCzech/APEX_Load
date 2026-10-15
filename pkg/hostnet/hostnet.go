@@ -79,6 +79,10 @@ type UDPDropCounters struct {
 	SampledAt time.Time `json:"sampled_at"`
 }
 
+// ProcessOpenFileLimit reports this process's RLIMIT_NOFILE without reading
+// any filesystem facts. Available is false where the limit does not apply.
+func ProcessOpenFileLimit() OpenFileLimit { return openFileLimit() }
+
 // Collect reads the facts from root ("" for the real filesystem) and the
 // process's resource limits.
 func Collect(root string, getenv func(string) string) Facts {

@@ -253,7 +253,7 @@ func (h *localManagedHost) Ready(ctx context.Context, contexts map[string]map[st
 	if err != nil {
 		return errors.New("pooled_host_transport_lost")
 	}
-	transport, err := NewPooledTransport(connection, connection, h.generation, h.secret, func(error) { h.signal() })
+	transport, err := NewPooledTransportForSlots(connection, connection, h.generation, h.secret, max(1, len(contexts)), func(error) { h.signal() })
 	if err != nil {
 		_ = connection.Close()
 		return err

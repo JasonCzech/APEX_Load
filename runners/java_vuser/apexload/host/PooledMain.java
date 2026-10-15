@@ -17,7 +17,10 @@ public final class PooledMain {
     private final String generation;
     private final boolean qualifiedCleanup;
     private final byte[] secret;
-    private final ArrayBlockingQueue<byte[]> responses = new ArrayBlockingQueue<byte[]>(64);
+    // At least one reply slot per request the Go transport may leave outstanding
+    // (max(512, 4*slots+64)), so a synchronized burst of completions queues
+    // instead of overflowing into a whole-host reap.
+    private final ArrayBlockingQueue<byte[]> responses;
     private final ArrayBlockingQueue<byte[]> nativeResponses = new ArrayBlockingQueue<byte[]>(4);
     private final Semaphore nativePermits=new Semaphore(4);
     private final ConcurrentHashMap<String,NativePending> nativePending=new ConcurrentHashMap<String,NativePending>();
@@ -54,8 +57,9 @@ public final class PooledMain {
     private final GCPauses gcPauses;
     private volatile String terminalControlRequest = "";
 
-    private PooledMain(PooledHost host, String generation, boolean cleanup, byte[] secret, Diagnostics diagnostics) {
+    private PooledMain(PooledHost host, int capacity, String generation, boolean cleanup, byte[] secret, Diagnostics diagnostics) {
         this.host = host;
+        this.responses = new ArrayBlockingQueue<byte[]>(Math.max(512, 4 * capacity + 64));
         this.generation = generation;
         this.qualifiedCleanup = cleanup;
         this.secret = secret;
@@ -224,7 +228,7 @@ public final class PooledMain {
             output.flush();
             final DataInputStream control = new DataInputStream(controlSocket.getInputStream());
             PooledMain main = new PooledMain(new PooledHost(generation, capacity, shim, scripts, dependencies, target),
-                generation, Boolean.parseBoolean(cleanup), secret, diagnostics);
+                capacity, generation, Boolean.parseBoolean(cleanup), secret, diagnostics);
             Thread writer = new Thread(() -> {
                 try {
                     for (;;) {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/javarunner"
@@ -35,6 +36,11 @@ type pooledPreparation struct {
 	directory   string
 	commit      *pooledControlPhase // phase records are protected by run.controlMu
 	closures    map[string]*pooledControlPhase
+	// descriptors is this preparation's share of server.captureDescriptors,
+	// returned exactly once when its capture files close.
+	server       *Server
+	descriptorMu sync.Mutex
+	descriptors  int
 }
 
 func validPooledSlots(slots []PooledSlotContext) bool {
@@ -178,6 +184,16 @@ func (run *PooledRun) waitPreparation(ctx context.Context, reservation string, p
 }
 
 func (run *PooledRun) prepareCaptures(p *pooledPreparation) (map[string]map[string]string, error) {
+	// Admit every capture descriptor before creating anything; the preparation's
+	// capture reaper always runs afterwards and returns this share exactly once.
+	if !run.server.reserveCaptureDescriptors(len(p.slots)) {
+		return nil, javarunner.ErrHostCapacity
+	}
+	if run.server != nil {
+		p.descriptorMu.Lock()
+		p.server, p.descriptors = run.server, len(p.slots)
+		p.descriptorMu.Unlock()
+	}
 	parent, err := filepath.Abs(os.TempDir())
 	if err != nil {
 		return nil, err

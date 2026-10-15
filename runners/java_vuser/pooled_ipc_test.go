@@ -182,14 +182,14 @@ func TestPooledIPCRealJVM(t *testing.T) {
 			}
 		})
 	}
-	start := func(t *testing.T, cleanup bool) *javarunner.PooledTransport {
+	startSized := func(t *testing.T, cleanup bool, slots int) *javarunner.PooledTransport {
 		t.Helper()
 		qualified := "false"
 		if cleanup {
 			qualified = "true"
 		}
 		listener, port := listen(t)
-		cmd := exec.Command(java, "-XX:+IgnoreUnrecognizedVMOptions", "-XX:FlightRecorderOptions=repository="+t.TempDir(), "-cp", api, "apexload.host.PooledMain", "gen-1", "2", shim, "WireActions", qualified, port, "1", script, "0")
+		cmd := exec.Command(java, "-XX:+IgnoreUnrecognizedVMOptions", "-XX:FlightRecorderOptions=repository="+t.TempDir(), "-cp", api, "apexload.host.PooledMain", "gen-1", strconv.Itoa(slots), shim, "WireActions", qualified, port, "1", script, "0")
 		cmd.Stdout = io.Discard
 		cmd.Stderr = io.Discard
 		output, e := cmd.StdinPipe()
@@ -213,7 +213,7 @@ func TestPooledIPCRealJVM(t *testing.T) {
 			t.Fatal(e)
 		}
 		testPooledHostProof(t, input, "gen-1", secret)
-		transport, e := javarunner.NewPooledTransport(input, input, "gen-1", secret, func(error) { _ = cmd.Process.Kill() })
+		transport, e := javarunner.NewPooledTransportForSlots(input, input, "gen-1", secret, slots, func(error) { _ = cmd.Process.Kill() })
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -225,6 +225,7 @@ func TestPooledIPCRealJVM(t *testing.T) {
 		}
 		return transport
 	}
+	start := func(t *testing.T, cleanup bool) *javarunner.PooledTransport { return startSized(t, cleanup, 2) }
 	call := func(t *testing.T, tr *javarunner.PooledTransport, slot, op string, fields map[string]string) javarunner.PooledFrame {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -341,6 +342,47 @@ func TestPooledIPCRealJVM(t *testing.T) {
 			}
 		})
 	}
+	t.Run("full_host_burst", func(t *testing.T) {
+		// Every slot of a maximum-size host opens, initializes, acts and closes
+		// concurrently. Synchronized completions must queue on both sides of the
+		// authenticated socket instead of overflowing into a whole-host reap.
+		slots := javarunner.MaxPooledSlotsPerHost
+		tr := startSized(t, true, slots)
+		for i := 0; i < slots; i++ {
+			call(t, tr, "s"+strconv.Itoa(i), "open", map[string]string{"APEXLOAD_VUSER_ID": strconv.Itoa(i)})
+		}
+		call(t, tr, "", "commit", nil)
+		for _, method := range []string{"init", "action"} {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			errs := make(chan error, slots)
+			for i := 0; i < slots; i++ {
+				go func(slot string) { _, e := tr.Invoke(ctx, slot, method, nil); errs <- e }("s" + strconv.Itoa(i))
+			}
+			for i := 0; i < slots; i++ {
+				if e := <-errs; e != nil {
+					cancel()
+					t.Fatalf("%s burst: %v", method, e)
+				}
+			}
+			cancel()
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		errs := make(chan error, slots)
+		for i := 0; i < slots; i++ {
+			go func(slot string) { _, e := tr.Call(ctx, slot, "close", nil); errs <- e }("s" + strconv.Itoa(i))
+		}
+		for i := 0; i < slots; i++ {
+			if e := <-errs; e != nil {
+				t.Fatalf("close burst: %v", e)
+			}
+		}
+		select {
+		case <-tr.Done():
+			t.Fatal("burst retired the host")
+		default:
+		}
+	})
 	t.Run("unqualified_cleanup_reaps_peers", func(t *testing.T) {
 		tr := start(t, false)
 		prepare(t, tr)

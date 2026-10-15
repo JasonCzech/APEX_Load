@@ -182,15 +182,39 @@ func TestPooledControlReservationLifecycle(t *testing.T) {
 	}
 }
 
-func TestPooledControlFencesAndOneGroupLimit(t *testing.T) {
+func TestPooledControlFencesAndConcurrentGroupLimit(t *testing.T) {
 	_, c, _ := controlServerFixture(t)
 	claim := claimControl(t, c)
 	bad := controlRequest(claim, "renew", "renew-1")
 	bad.RunToken = strings.Repeat("f", 64)
 	_, err := c.PooledControl(context.Background(), bad)
 	requireControlError(t, err, "pooled_run_fenced")
-	_, err = c.PooledControl(context.Background(), PooledControlRequest{Operation: "claim", RequestID: "claim-2", ProfileID: "pilot", ExecutionID: "other-execution", GroupID: "other-group"})
+	// Independent groups now run concurrently; each still owns its own token.
+	second, err := c.PooledControl(context.Background(), PooledControlRequest{Operation: "claim", RequestID: "claim-2", ProfileID: "pilot", ExecutionID: "other-execution", GroupID: "other-group"})
+	if err != nil || second.RunID == claim.RunID || second.RunToken == claim.RunToken {
+		t.Fatalf("second group claim: %+v %v", second, err)
+	}
+	crossed := controlRequest(claim, "renew", "renew-cross")
+	crossed.RunToken = second.RunToken
+	_, err = c.PooledControl(context.Background(), crossed)
+	requireControlError(t, err, "pooled_run_fenced")
+	// The same execution/group can never be reopened in one epoch.
+	_, err = c.PooledControl(context.Background(), PooledControlRequest{Operation: "claim", RequestID: "claim-dup", ProfileID: "pilot", ExecutionID: "execution", GroupID: "group"})
+	requireControlError(t, err, "pooled_host_identity_invalid")
+	for i := 2; i < maxConcurrentPooledControlRuns; i++ {
+		if _, err := c.PooledControl(context.Background(), PooledControlRequest{Operation: "claim", RequestID: fmt.Sprintf("claim-%d", i+1), ProfileID: "pilot", ExecutionID: "execution", GroupID: fmt.Sprintf("group-%d", i)}); err != nil {
+			t.Fatalf("claim %d: %v", i, err)
+		}
+	}
+	_, err = c.PooledControl(context.Background(), PooledControlRequest{Operation: "claim", RequestID: "claim-over", ProfileID: "pilot", ExecutionID: "execution", GroupID: "group-over"})
 	requireControlError(t, err, "pooled_group_limit")
+	// Closing one run frees exactly one concurrent-run admission.
+	if closed, err := c.PooledControl(context.Background(), controlRequest(second, "close", "close-second")); err != nil || !closed.Reaped {
+		t.Fatalf("close: %+v %v", closed, err)
+	}
+	if _, err := c.PooledControl(context.Background(), PooledControlRequest{Operation: "claim", RequestID: "claim-after-close", ProfileID: "pilot", ExecutionID: "execution", GroupID: "group-after-close"}); err != nil {
+		t.Fatalf("claim after close: %v", err)
+	}
 	if _, err := c.ClaimOwner(context.Background(), "replacement"); err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +346,7 @@ func TestPooledControlProfilesFreezeAndValidate(t *testing.T) {
 	if len(profiles.profiles) != 1 {
 		t.Fatal("registry aliased caller map")
 	}
-	for _, bad := range []map[string]PooledControlProfile{nil, {"bad/path": p}, {"unqualified": {}}, {"oversized": {Selection: p.Selection, Budget: javarunner.HostBudget{MaxHosts: 257, MaxVUsers: 4, MaxMemoryBytes: p.Budget.MaxMemoryBytes}}}} {
+	for _, bad := range []map[string]PooledControlProfile{nil, {"bad/path": p}, {"unqualified": {}}, {"oversized": {Selection: p.Selection, Budget: javarunner.HostBudget{MaxHosts: maxPooledControlHosts + 1, MaxVUsers: 4, MaxMemoryBytes: p.Budget.MaxMemoryBytes}}}, {"too-many-vusers": {Selection: p.Selection, Budget: javarunner.HostBudget{MaxHosts: 1, MaxVUsers: maxPooledControlVUsers + 1, MaxMemoryBytes: p.Budget.MaxMemoryBytes}}}} {
 		if _, err := NewPooledControlProfiles(bad); err == nil {
 			t.Fatal("invalid profiles accepted")
 		}
