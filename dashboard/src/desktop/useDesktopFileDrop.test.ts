@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { registerDropZone } from './useDesktopFileDrop'
+import { installDesktopDropHandling, registerDropZone } from './useDesktopFileDrop'
 
 type DropCb = (x: number, y: number, paths: string[]) => void
 type RuntimeWindow = typeof window & {
@@ -16,6 +16,47 @@ afterEach(() => {
 })
 
 describe('registerDropZone', () => {
+  // Wails' page drop listeners (which cancel a file drop's default) exist only
+  // once OnFileDrop is called, so the page installs the router as it loads,
+  // with the guard against a dropped link.
+  it('handles drops from page load, before any drop zone mounts', () => {
+    const onFileDrop = vi.fn()
+    ;(window as RuntimeWindow).runtime = { OnFileDrop: onFileDrop }
+    const removeGuard = installDesktopDropHandling(window)
+    try {
+      expect(onFileDrop).toHaveBeenCalledTimes(1)
+      expect(onFileDrop).toHaveBeenCalledWith(expect.any(Function), true)
+      registerDropZone(document.body, vi.fn())()
+      expect(onFileDrop).toHaveBeenCalledTimes(1)
+      const link = new Event('drop', { bubbles: true, cancelable: true })
+      Object.defineProperty(link, 'dataTransfer', { value: { types: ['text/uri-list'] } })
+      document.body.dispatchEvent(link)
+      expect(link.defaultPrevented).toBe(true)
+    } finally {
+      removeGuard()
+    }
+  })
+
+  // Windows hands an item that is not a file over as an empty path.
+  it('drops the empty paths of items that are not files', () => {
+    let captured: DropCb | undefined
+    ;(window as RuntimeWindow).runtime = { OnFileDrop: cb => { captured = cb } }
+    const zone = document.createElement('div')
+    document.body.appendChild(zone)
+    ;(document as unknown as { elementFromPoint: () => Element | null }).elementFromPoint = () => zone
+    const handler = vi.fn()
+    const unregister = registerDropZone(zone, handler)
+
+    captured?.(1, 1, ['', 'C:\\Users\\me\\orders.har', ' '])
+    expect(handler).toHaveBeenCalledWith(['C:\\Users\\me\\orders.har'])
+    handler.mockClear()
+    captured?.(1, 1, [''])
+    expect(handler).not.toHaveBeenCalled()
+
+    unregister()
+    zone.remove()
+  })
+
   it('routes dropped paths to the zone containing the drop point', () => {
     let captured: DropCb | undefined
     const offSpy = vi.fn()

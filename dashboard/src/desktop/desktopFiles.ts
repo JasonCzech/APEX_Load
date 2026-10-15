@@ -8,7 +8,7 @@ import {
   apiFetch,
   readDevPreviewContext,
 } from "../hooks/apiClient";
-import { getDesktopBridge } from "./desktopBridge";
+import { getDesktopBridge, isMacDesktop } from "./desktopBridge";
 
 // fileNameFromPath returns the basename of a native (possibly Windows) path.
 export function fileNameFromPath(path: string): string {
@@ -224,17 +224,21 @@ const IMPORTABLE_DROP_EXTENSIONS = [
 ];
 
 // pickImportFilesViaBridge is File > Open Script…: a native Open dialog for the
-// import file types. A dialog filter matches a file's last extension only, so
-// a compound name is offered through its plain suffix (".postman_collection.json"
-// through ".json"). Bruno archives are not offered: their ".tar" or ".gz" would
-// admit any tarball, which import routing would take for an API description.
-// They open from the Bruno import card, or by dropping them on the window.
-// Returns null when the shell has no native dialog, and [] when the person
-// cancels.
+// import file types. On Windows and Linux a dialog filter is a pattern over the
+// whole name, so every type is offered as it is, Bruno archives
+// (".bruno.tar.gz") included. A macOS filter matches only a file's last
+// extension, so there a compound name is offered through its plain suffix
+// (".postman_collection.json" through ".json") and Bruno archives are not
+// offered: their ".tar" or ".gz" would admit any tarball, which import routing
+// would take for an API description. On macOS they open from the Bruno import
+// card, or by dropping them on the window. Returns null when the shell has no
+// native dialog, and [] when the person cancels.
 export async function pickImportFilesViaBridge(): Promise<File[] | null> {
   if (!canUseNativeDialogs()) return null;
-  const accept = IMPORTABLE_DROP_EXTENSIONS.filter((ext) => ext.lastIndexOf(".") === 0).join(",");
-  return pickFilesViaBridge(accept, true);
+  const extensions = isMacDesktop()
+    ? IMPORTABLE_DROP_EXTENSIONS.filter((ext) => ext.lastIndexOf(".") === 0)
+    : IMPORTABLE_DROP_EXTENSIONS;
+  return pickFilesViaBridge(extensions.join(","), true);
 }
 
 // openImportFilesFromDisk runs File > Open Script…: the picked files go to the

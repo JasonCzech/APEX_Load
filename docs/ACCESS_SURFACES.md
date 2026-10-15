@@ -12,6 +12,8 @@ Hosted deployments opt into a wide HTTP bind explicitly through `APEXLOAD_ADDR` 
 
 The Wails desktop app is optional. It runs an embedded local controller on loopback, uses local SQLite/keyring-backed storage, and supports local authoring and local execution. Closing the window, quitting or reloading (View › Reload) while a page holds unsaved work (an editor change, an import review) asks first, with the same prompt as leaving that page. File › Open Script… opens script and import files from disk, as opening them from Finder or Explorer does.
 
+On Windows the app takes the same file and folder drops from Explorer as on macOS; a link or text dropped outside a text field is ignored rather than opened in place of the dashboard. File › Open Script… there also offers Bruno archives (`.bruno.tar`, `.bruno.tar.gz`), which a macOS Open dialog cannot match by name. Signing out of Windows or shutting it down does not pass through the unsaved-work prompt (the Wails runtime gives the app no hook for it), so save open work first.
+
 Remote K8s connectivity is handled through Remote Workspaces. The desktop SPA stays same-origin against its embedded controller; it does not switch the whole application origin to the hosted controller. The local controller uses configured Remote Workspace credentials to push and pull scripts, scenarios, results, and dependencies, and to proxy remote run creation and controls.
 
 Remote run v1 is intentionally poll-based:

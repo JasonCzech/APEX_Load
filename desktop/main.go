@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"runtime"
 
 	"github.com/jasonczech/apexload/pkg/analysis/duckdb"
 	"github.com/jasonczech/apexload/pkg/api"
@@ -58,14 +59,9 @@ func main() {
 			UniqueId:               singleInstanceUniqueID,
 			OnSecondInstanceLaunch: app.onSecondInstanceLaunch,
 		},
-		// Surface dropped-file absolute paths to the dashboard (OnFileDrop). Drop
-		// targets opt in via the `--wails-drop-target: drop` CSS marker.
-		// DisableWebViewDrop stops the webview from navigating to an accidental
-		// file drop outside a registered target.
-		DragAndDrop: &options.DragAndDrop{
-			EnableFileDrop:     true,
-			DisableWebViewDrop: true,
-		},
+		// Surface dropped-file absolute paths to the dashboard (OnFileDrop); see
+		// desktopDragAndDrop for why Windows keeps its webview's drops on.
+		DragAndDrop: desktopDragAndDrop(runtime.GOOS),
 		Bind: []interface{}{
 			app,
 		},

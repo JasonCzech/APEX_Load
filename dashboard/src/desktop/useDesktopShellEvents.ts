@@ -232,9 +232,11 @@ export function useDesktopShellEvents(
       if (typeof action === "string")
         void enqueueRendererEvent({ name: "menu:action", payload: action });
     });
-    // View > Zoom menu clicks always arrive here, and so do its Cmd/Ctrl+= - 0
-    // accelerators wherever the menu takes the key before the page (Windows,
-    // Linux). On macOS the page sees the key first and zooms itself.
+    // View > Zoom menu clicks always arrive here, and so do its Ctrl+= - 0
+    // accelerators on Linux, where the menu takes the key before the page. On
+    // macOS the page sees the key first and zooms itself; on Windows the page
+    // zooms on Ctrl+= and Ctrl+- itself (the menu has no key for them) and
+    // Ctrl+0 reaches both, which resets twice to the same size.
     on("menu:zoom", (action) => {
       if (typeof action === "string" && MENU_ZOOM_ACTIONS.has(action))
         void enqueueRendererEvent({ name: "menu:zoom", payload: action });
@@ -347,7 +349,9 @@ export function useDesktopShellEvents(
   }, [enabled]);
 
   // Backspace outside a text field must not navigate back out of the page.
-  // Installed for the renderer's whole life, sign-in screens included.
+  // Installed for the renderer's whole life, sign-in screens included. (What
+  // is dropped on the window is guarded from the moment the page loads; see
+  // installDesktopDropHandling.)
   useEffect(() => {
     if (typeof window === "undefined" || !isDesktopSurface()) return undefined;
     return installBackspaceNavigationGuard(window);

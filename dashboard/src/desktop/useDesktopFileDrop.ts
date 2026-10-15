@@ -8,6 +8,7 @@
 
 import { useEffect } from 'react'
 
+import { installExternalDropGuard } from './externalDropGuard'
 import { getWailsEventRuntime } from './wailsRuntime'
 
 type DropHandler = (paths: string[]) => void
@@ -24,14 +25,30 @@ interface FileDropRuntime {
 const zones = new Set<DropZone>()
 let registeredRuntime: FileDropRuntime | undefined
 
+// installDesktopDropHandling runs when the desktop page loads, before any
+// screen renders (the engine's start-up and start-up failure screens
+// included). Nothing dropped on the window may replace the page: Windows'
+// webview accepts external drops (desktop/dragdrop.go). A file goes to the
+// router, whose Wails page listeners (added only once OnFileDrop is first
+// called) cancel its default; a link or text goes to the external drop guard.
+// The page never removes it; the returned function is for tests.
+export function installDesktopDropHandling(target: Window = window): () => void {
+  ensureGlobalListener()
+  return installExternalDropGuard(target)
+}
+
 function ensureGlobalListener() {
   const runtime = getWailsEventRuntime() as (FileDropRuntime | undefined)
   if (!runtime?.OnFileDrop || registeredRuntime === runtime) {
     return
   }
   registeredRuntime = runtime
-  runtime.OnFileDrop((x, y, paths) => {
-    if (!paths || paths.length === 0) {
+  runtime.OnFileDrop((x, y, dropped) => {
+    // Windows reports an item that is not a file (an attachment dragged out of
+    // a mail client, an image from a browser) as an empty path. It has nothing
+    // to read, so the drop is what remains.
+    const paths = (dropped ?? []).filter(path => typeof path === 'string' && path.trim() !== '')
+    if (paths.length === 0) {
       return
     }
     const target = typeof document !== 'undefined' ? document.elementFromPoint(x, y) : null

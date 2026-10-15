@@ -179,19 +179,33 @@ describe("filesFromDroppedPaths", () => {
 
 describe("pickImportFilesViaBridge", () => {
   // File > Open Script…: a native multi-select Open dialog over the import
-  // types, by their last extension (what a dialog filter can match).
-  it("opens the import file types and reads what the person picks", async () => {
-    const open = vi.fn(async () => ["/Users/me/orders.har", "/Users/me/flow.jmx"]);
-    const read = vi.fn(async () => btoa("x"));
-    setBridge({ OpenFileDialogNative: vi.fn(), OpenFilesDialogNative: open, ReadFileBase64: read });
+  // types. A macOS filter matches only the last extension; a Windows or Linux
+  // filter is a pattern over the whole name.
+  const pickPatterns = async (userAgent: string) => {
+    const agent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue(userAgent);
+    try {
+      const open = vi.fn(async () => ["C:\\Users\\me\\orders.har", "C:\\Users\\me\\flow.jmx"]);
+      setBridge({ OpenFileDialogNative: vi.fn(), OpenFilesDialogNative: open, ReadFileBase64: vi.fn(async () => btoa("x")) });
+      const files = await pickImportFilesViaBridge();
+      const filters = JSON.parse((open.mock.calls[0] as unknown as [string, string])[1]) as Array<{ pattern: string }>;
+      return { names: files?.map((file) => file.name), patterns: filters[0].pattern.split(";") };
+    } finally {
+      agent.mockRestore();
+    }
+  };
 
-    const files = await pickImportFilesViaBridge();
-
-    expect(files?.map((file) => file.name)).toEqual(["orders.har", "flow.jmx"]);
-    const filters = JSON.parse((open.mock.calls[0] as unknown as [string, string])[1]) as Array<{ pattern: string }>;
-    const patterns = filters[0].pattern.split(";");
+  it("offers the import types by last extension on macOS and reads what the person picks", async () => {
+    const { names, patterns } = await pickPatterns("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15");
+    expect(names).toEqual(["orders.har", "flow.jmx"]);
     expect(patterns).toEqual(expect.arrayContaining(["*.har", "*.zip", "*.usz", "*.json", "*.bru"]));
     expect(patterns.every((pattern) => pattern.lastIndexOf(".") === 1)).toBe(true);
+  });
+
+  it("offers Bruno archives by their whole name on Windows", async () => {
+    const { names, patterns } = await pickPatterns("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Edg/130.0 wails.io");
+    expect(names).toEqual(["orders.har", "flow.jmx"]);
+    expect(patterns).toEqual(expect.arrayContaining(["*.har", "*.bru", "*.bruno.tar", "*.bruno.tar.gz"]));
+    expect(patterns).not.toContain("*.gz");
   });
 
   it("returns [] on cancel and null without a native dialog", async () => {

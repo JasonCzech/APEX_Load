@@ -136,12 +136,32 @@ func scrubText(s string) string {
 		return s
 	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		s = strings.ReplaceAll(s, home, "~")
+		s = replaceHomeDir(s, home, runtime.GOOS == "windows")
 	}
 	s = userinfoRe.ReplaceAllString(s, "$1***@")
 	s = bearerTokenRe.ReplaceAllString(s, "$1***")
 	s = authorizationRe.ReplaceAllString(s, "$1***")
 	return sensitiveAssignmentRe.ReplaceAllString(s, "$1***")
+}
+
+// replaceHomeDir replaces the home directory in s with "~". A Windows path is
+// case-insensitive and can be written with either separator (an error may
+// quote C:/Users/Me/... or c:\users\me\...), so on Windows every spelling of
+// it is replaced; the user name is the part the bundle must not carry.
+func replaceHomeDir(s, home string, windows bool) string {
+	if !windows {
+		return strings.ReplaceAll(s, home, "~")
+	}
+	var pattern strings.Builder
+	pattern.WriteString("(?i)")
+	for _, r := range home {
+		if r == '\\' || r == '/' {
+			pattern.WriteString(`[\\/]`)
+			continue
+		}
+		pattern.WriteString(regexp.QuoteMeta(string(r)))
+	}
+	return regexp.MustCompile(pattern.String()).ReplaceAllLiteralString(s, "~")
 }
 
 // ExportDiagnostics returns a JSON diagnostics bundle (version, platform, app

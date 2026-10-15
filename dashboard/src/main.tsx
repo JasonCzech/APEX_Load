@@ -4,6 +4,7 @@ import App from './App'
 import { apiFetch, initializeDesktopApiOrigin } from './hooks/apiClient'
 import { ApiProvider } from './hooks/ApiProvider'
 import { getDesktopBridge } from './desktop/desktopBridge'
+import { installDesktopDropHandling } from './desktop/useDesktopFileDrop'
 import DesktopStartupFailure from './components/DesktopStartupFailure'
 import { applyInitialTheme } from './hooks/useDashboardTheme'
 import { CLIENT_ERRORS_PATH, installClientErrorReporting } from './utils/clientErrorReporting'
@@ -19,6 +20,7 @@ async function bootstrap() {
   applyInitialTheme()
   const root = ReactDOM.createRoot(document.getElementById('root')!)
   if (getDesktopBridge()) {
+    installDesktopDropHandling()
     root.render(
       <div className="auth-gate-shell">
         <section className="auth-gate-card auth-gate-card--loading" role="status">

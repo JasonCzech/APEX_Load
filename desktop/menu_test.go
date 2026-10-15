@@ -98,12 +98,19 @@ func TestBuildAppMenuNonMacHasFunctionalQuit(t *testing.T) {
 		if labeledItem(file, "Print…") == nil {
 			t.Errorf("%s: File menu missing Print…", goos)
 		}
-		quit := labeledItem(file, "Quit")
+		// Windows names it Exit.
+		quitLabel := map[string]string{"windows": "Exit", "linux": "Quit"}[goos]
+		quit := labeledItem(file, quitLabel)
 		if quit == nil {
-			t.Fatalf("%s: missing File>Quit", goos)
+			t.Fatalf("%s: missing File>%s", goos, quitLabel)
 		}
 		if quit.Click == nil {
-			t.Errorf("%s: File>Quit has no callback (regression: empty Quit)", goos)
+			t.Errorf("%s: File>%s has no callback (regression: empty Quit)", goos, quitLabel)
+		}
+		for _, label := range []string{"Open Logs Folder", "Open App Data Folder"} {
+			if labeledItem(file, label) == nil {
+				t.Errorf("%s: File menu missing %q", goos, label)
+			}
 		}
 	}
 }
@@ -118,9 +125,20 @@ func TestBuildAppMenuViewZoom(t *testing.T) {
 		if view == nil {
 			t.Fatalf("%s: missing View menu", goos)
 		}
-		for _, label := range []string{"Zoom In", "Zoom Out", "Actual Size"} {
-			if labeledItem(view, label) == nil {
+		labels := []string{"Zoom In", "Zoom Out", "Actual Size"}
+		if goos == "windows" {
+			// Wails cannot map "=" or "-" on Windows: the labels show the keys
+			// the page handles, and the items carry no accelerator of their own.
+			labels = []string{"Zoom In\tCtrl+=", "Zoom Out\tCtrl+-", "Actual Size"}
+		}
+		for i, label := range labels {
+			item := labeledItem(view, label)
+			if item == nil {
 				t.Errorf("%s: View missing %q", goos, label)
+				continue
+			}
+			if wantKey := goos != "windows" || i == 2; (item.Accelerator != nil) != wantKey {
+				t.Errorf("%s: %q accelerator = %v, want one: %v", goos, label, item.Accelerator, wantKey)
 			}
 		}
 	}
@@ -160,8 +178,12 @@ func TestBuildAppMenuOpenRecent(t *testing.T) {
 	if labeledItem(recent2, "Order flow") == nil {
 		t.Error("Open Recent should list the persisted recent 'Order flow'")
 	}
-	if labeledItem(recent2, "Clear Menu") == nil {
-		t.Error("Open Recent should offer 'Clear Menu' when items exist")
+	if labeledItem(recent2, "Clear Recent Items") == nil {
+		t.Error("Open Recent should offer 'Clear Recent Items' on Windows when items exist")
+	}
+	macRecent := submenu(submenu(buildAppMenuForOS(app2, "darwin"), "File"), "Open Recent")
+	if labeledItem(macRecent, "Clear Menu") == nil {
+		t.Error("Open Recent should offer 'Clear Menu' on macOS when items exist")
 	}
 }
 

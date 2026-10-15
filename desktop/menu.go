@@ -45,6 +45,7 @@ func buildAppMenu(app *App) *menu.Menu {
 // webview and break copy/paste.
 func buildAppMenuForOS(app *App, goos string) *menu.Menu {
 	isMac := goos == "darwin"
+	isWindows := goos == "windows"
 	appMenu := menu.NewMenu()
 
 	if isMac {
@@ -56,16 +57,26 @@ func buildAppMenuForOS(app *App, goos string) *menu.Menu {
 	fileMenu.AddText("New Run", keys.CmdOrCtrl("n"), app.menuAction("new-test"))
 	fileMenu.AddText("Open Script…", keys.CmdOrCtrl("o"), app.menuAction("open-script"))
 	fileMenu.AddText("Import…", keys.Combo("i", keys.CmdOrCtrlKey, keys.ShiftKey), app.menuAction("import"))
-	app.appendOpenRecentSubmenu(fileMenu)
+	app.appendOpenRecentSubmenu(fileMenu, isMac)
 	fileMenu.AddSeparator()
-	fileMenu.AddText("Reveal Logs Folder", nil, func(_ *menu.CallbackData) { _ = app.OpenLogsFolder() })
-	fileMenu.AddText("Reveal App Data Folder", nil, func(_ *menu.CallbackData) { _ = app.OpenAppDataFolder() })
+	// Finder reveals a folder; Explorer and Linux file managers open one.
+	folderVerb := "Open"
+	if isMac {
+		folderVerb = "Reveal"
+	}
+	fileMenu.AddText(folderVerb+" Logs Folder", nil, func(_ *menu.CallbackData) { _ = app.OpenLogsFolder() })
+	fileMenu.AddText(folderVerb+" App Data Folder", nil, func(_ *menu.CallbackData) { _ = app.OpenAppDataFolder() })
 	fileMenu.AddSeparator()
 	fileMenu.AddText("Print…", keys.CmdOrCtrl("p"), app.printWindow)
 	if !isMac {
-		// macOS exposes Quit through the role-based App menu; elsewhere File owns it.
+		// macOS exposes Quit through the role-based App menu; elsewhere File owns
+		// it, under the name the platform gives it.
+		quitLabel := "Quit"
+		if isWindows {
+			quitLabel = "Exit"
+		}
 		fileMenu.AddSeparator()
-		fileMenu.AddText("Quit", keys.CmdOrCtrl("q"), app.quit)
+		fileMenu.AddText(quitLabel, keys.CmdOrCtrl("q"), app.quit)
 	}
 
 	if isMac {
@@ -75,8 +86,19 @@ func buildAppMenuForOS(app *App, goos string) *menu.Menu {
 	viewMenu := appMenu.AddSubmenu("View")
 	viewMenu.AddText("Reload", keys.CmdOrCtrl("r"), app.reload)
 	viewMenu.AddSeparator()
-	viewMenu.AddText("Zoom In", keys.CmdOrCtrl("="), app.menuZoom("in"))
-	viewMenu.AddText("Zoom Out", keys.CmdOrCtrl("-"), app.menuZoom("out"))
+	// Wails has no Windows key for "=" or "-", so there Zoom In and Out carry no
+	// accelerator: WebView2 hands Ctrl+= and Ctrl+- to the page, which zooms
+	// itself, and the label shows the keys after a tab, as Windows menus do.
+	// (Ctrl+0 reaches both the menu and the page there; a second reset is
+	// harmless.)
+	zoomIn, zoomInKey := "Zoom In", keys.CmdOrCtrl("=")
+	zoomOut, zoomOutKey := "Zoom Out", keys.CmdOrCtrl("-")
+	if isWindows {
+		zoomIn, zoomInKey = "Zoom In\tCtrl+=", nil
+		zoomOut, zoomOutKey = "Zoom Out\tCtrl+-", nil
+	}
+	viewMenu.AddText(zoomIn, zoomInKey, app.menuZoom("in"))
+	viewMenu.AddText(zoomOut, zoomOutKey, app.menuZoom("out"))
 	viewMenu.AddText("Actual Size", keys.CmdOrCtrl("0"), app.menuZoom("reset"))
 
 	if isMac {
@@ -158,7 +180,7 @@ func (a *App) menuZoom(action string) menu.Callback {
 // menu whenever recents change (see AddRecentItem/ClearRecentItems). Linux
 // captures this submenu once before startup because Wails v2.13 cannot safely
 // replace platform menus repeatedly.
-func (a *App) appendOpenRecentSubmenu(parent *menu.Menu) {
+func (a *App) appendOpenRecentSubmenu(parent *menu.Menu, isMac bool) {
 	recent := parent.AddSubmenu("Open Recent")
 	items := loadRecents(a.appDataDirectory())
 	if len(items) == 0 {
@@ -178,7 +200,13 @@ func (a *App) appendOpenRecentSubmenu(parent *menu.Menu) {
 		})
 	}
 	recent.AddSeparator()
-	recent.AddText("Clear Menu", nil, func(_ *menu.CallbackData) {
+	// Clearing keeps pinned items (ClearRecentItems). macOS names the item
+	// Clear Menu; elsewhere it says what it clears.
+	clearLabel := "Clear Recent Items"
+	if isMac {
+		clearLabel = "Clear Menu"
+	}
+	recent.AddText(clearLabel, nil, func(_ *menu.CallbackData) {
 		_ = a.ClearRecentItems()
 	})
 }

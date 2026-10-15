@@ -171,3 +171,16 @@ func TestApexloadWindowsMessagesBranded(t *testing.T) {
 		t.Fatal("WebView2 messages should be populated")
 	}
 }
+
+// On Windows the home folder is scrubbed however a message spells it: any case,
+// either separator. Elsewhere only the exact path is.
+func TestReplaceHomeDirCoversWindowsSpellings(t *testing.T) {
+	const home = `C:\Users\Me`
+	got := replaceHomeDir(`open C:/users/ME/AppData/Local/x: denied; log c:\USERS\me\logs\a.log`, home, true)
+	if want := `open ~/AppData/Local/x: denied; log ~\logs\a.log`; got != want {
+		t.Errorf("windows scrub = %q, want %q", got, want)
+	}
+	if got := replaceHomeDir("/Users/me/a and /users/me/b", "/Users/me", false); got != "~/a and /users/me/b" {
+		t.Errorf("non-windows scrub = %q", got)
+	}
+}
