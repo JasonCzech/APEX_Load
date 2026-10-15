@@ -1752,9 +1752,12 @@ type correlationApplicationStatus struct {
 // longer claimed literal. Longest-first single-pass replacement keeps the inner
 // value intact wherever the outer literal is rewritten too, so containment is
 // not ambiguous globally; it only forbids rewriting the inner value in an
-// action where the outer literal stays literal.
+// action where an automatic outer literal stays literal. A review-only outer is
+// never rewritten automatically, so the inner value is rewritten inside it, as
+// the sample converter does (an outer holding a dynamic value is stale anyway).
 type nativeLiteralContainment struct {
-	inner, outer string
+	inner, outer   string
+	outerAutomatic bool
 }
 
 // nativeCollisionComparisonLimit bounds pairwise collision comparisons.
@@ -1845,9 +1848,9 @@ func nativeCorrelationReplacementCollisions(plans []nativeCorrelationPlan, reque
 				// keep its literal, so it still blocks the automatic one.
 				overlaps = !leftAutomatic || !rightAutomatic
 			case leftInRight && leftAutomatic:
-				containment = append(containment, nativeLiteralContainment{inner: left.literal, outer: right.literal})
+				containment = append(containment, nativeLiteralContainment{inner: left.literal, outer: right.literal, outerAutomatic: rightAutomatic})
 			case rightInLeft && rightAutomatic:
-				containment = append(containment, nativeLiteralContainment{inner: right.literal, outer: left.literal})
+				containment = append(containment, nativeLiteralContainment{inner: right.literal, outer: left.literal, outerAutomatic: leftAutomatic})
 			}
 			// Containment is not the only unsafe shape: two literals whose
 			// suffix/prefix merge really occurs on a rewrite-target surface would
@@ -1885,9 +1888,10 @@ func nativePlanLiteralRemains(plan nativeCorrelationPlan, surfaces string) bool 
 }
 
 // withoutInnerVarsOfLiteralOuters drops a contained variable from one action's
-// replacement map when its outer literal occurs in that action but is not being
-// rewritten there (manual, unmapped, or produced later). Rewriting the inner
-// value would otherwise corrupt the surviving outer literal.
+// replacement map when its automatic outer literal occurs in that action but is
+// not being rewritten there (unmapped, or produced later). Rewriting the inner
+// value would otherwise corrupt the surviving outer literal. A review-only
+// outer does not hold its inner value back.
 func withoutInnerVarsOfLiteralOuters(actionVars map[string]string, containment []nativeLiteralContainment, surfaces []string) map[string]string {
 	if len(actionVars) == 0 || len(containment) == 0 {
 		return actionVars
@@ -1895,6 +1899,9 @@ func withoutInnerVarsOfLiteralOuters(actionVars map[string]string, containment [
 	for changed := true; changed; {
 		changed = false
 		for _, contained := range containment {
+			if !contained.outerAutomatic {
+				continue
+			}
 			if _, inner := actionVars[contained.inner]; !inner {
 				continue
 			}

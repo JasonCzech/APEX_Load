@@ -959,20 +959,28 @@ func TestBuildNativePreviewIncludesReviewOnlyOwnersInCollisionCheck(t *testing.T
 	if err != nil {
 		t.Fatalf("buildNativePreview returned error: %v", err)
 	}
-	if got := preview.Script.Actions[2].Target; got != "/use?token="+longValue {
-		t.Fatalf("mixed-confidence target = %q, want review-only owner preserved", got)
+	// The review-only owner is never rewritten automatically, so the applied
+	// short value is rewritten inside it (as the sample converter does): the
+	// longer literal is stale whenever the value inside it changes.
+	if got := preview.Script.Actions[2].Target; got != "/use?token={{var.corr_short}}-extra" {
+		t.Fatalf("mixed-confidence target = %q, want the applied value rewritten inside the review-only literal", got)
 	}
-	for index := 0; index < 2; index++ {
-		if len(preview.Script.Actions[index].Extractors) != 0 {
-			t.Fatalf("source %d extractors = %#v, want no partial automatic owner", index, preview.Script.Actions[index].Extractors)
-		}
+	if extractors := preview.Script.Actions[0].Extractors; len(extractors) != 1 || extractors[0].Name != "corr_short" {
+		t.Fatalf("source A extractors = %#v, want corr_short", extractors)
 	}
-	// The short value only occurs inside the review-only literal, which stays
-	// intact, so it still needs manual replacement; the long one needs review.
+	if extractors := preview.Script.Actions[1].Extractors; len(extractors) != 0 {
+		t.Fatalf("source B extractors = %#v, want none for the review-only owner", extractors)
+	}
 	for _, correlation := range preview.Correlations {
-		want := map[string]string{"corr_short": "manual_value_replacement_required", "corr_long": "manual_review_required"}[correlation.Name]
-		if correlation.PreApplied || correlation.ReviewAction != want {
-			t.Fatalf("mixed-confidence correlation = %#v, want %s", correlation, want)
+		switch correlation.Name {
+		case "corr_short":
+			if !correlation.PreApplied || correlation.ReviewAction != "" {
+				t.Fatalf("applied correlation = %#v", correlation)
+			}
+		case "corr_long":
+			if correlation.PreApplied || correlation.ReviewAction != "manual_review_required" {
+				t.Fatalf("review-only correlation = %#v", correlation)
+			}
 		}
 	}
 }

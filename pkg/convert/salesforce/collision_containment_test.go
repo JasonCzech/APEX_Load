@@ -24,7 +24,7 @@ func TestNativeCollisionsRecordContainmentInsteadOfAmbiguity(t *testing.T) {
 	if len(literals) != 0 || len(ambiguous) != 0 {
 		t.Fatalf("containment flagged ambiguous: %v %v", literals, ambiguous)
 	}
-	want := []nativeLiteralContainment{{inner: plans[0].value, outer: plans[1].value}}
+	want := []nativeLiteralContainment{{inner: plans[0].value, outer: plans[1].value, outerAutomatic: true}}
 	if !reflect.DeepEqual(containment, want) {
 		t.Fatalf("containment=%v want %v", containment, want)
 	}
@@ -58,7 +58,7 @@ func TestCorrelationVarsUseClosestPrecedingProducer(t *testing.T) {
 // The inner variable is dropped only in an action where its outer literal is
 // still literal; elsewhere both rewrite.
 func TestWithoutInnerVarsOfLiteralOuters(t *testing.T) {
-	containment := []nativeLiteralContainment{{inner: "abc", outer: "xxabcxx"}}
+	containment := []nativeLiteralContainment{{inner: "abc", outer: "xxabcxx", outerAutomatic: true}}
 	cases := []struct {
 		name     string
 		vars     map[string]string
@@ -81,6 +81,29 @@ func TestWithoutInnerVarsOfLiteralOuters(t *testing.T) {
 				t.Fatalf("vars=%v want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// An applied value inside a review-only literal (a Salesforce cshc inside a
+// verification URL) is rewritten there too: the outer is never rewritten
+// automatically, and holding the inner value would leave it stale.
+func TestNativeCollisionsRewriteInsideReviewOnlyOuters(t *testing.T) {
+	plans := []nativeCorrelationPlan{
+		collisionPlan("corr_cshc", 1, true, "CSHCabc123def456"),
+		collisionPlan("corr_location", 2, false, "/verify?cshc=CSHCabc123def456&r=1"),
+	}
+	surfaces := "/verify?cshc=CSHCabc123def456&r=1\x00cshc=CSHCabc123def456"
+	literals, ambiguous, containment := nativeCorrelationReplacementCollisions(plans, surfaces)
+	if len(literals) != 0 || len(ambiguous) != 0 {
+		t.Fatalf("containment flagged ambiguous: %v %v", literals, ambiguous)
+	}
+	want := []nativeLiteralContainment{{inner: plans[0].value, outer: plans[1].value, outerAutomatic: false}}
+	if !reflect.DeepEqual(containment, want) {
+		t.Fatalf("containment=%v want %v", containment, want)
+	}
+	vars := withoutInnerVarsOfLiteralOuters(map[string]string{plans[0].value: "{{var.corr_cshc}}"}, containment, []string{"/verify?cshc=CSHCabc123def456&r=1"})
+	if vars[plans[0].value] != "{{var.corr_cshc}}" {
+		t.Fatalf("the review-only outer held the applied value back: %v", vars)
 	}
 }
 
