@@ -769,7 +769,7 @@ function ParameterInfoPanel({
                     </td>
                   </tr>
                   <tr>
-                    <th scope="row">Source File</th>
+                    <th scope="row">Source file</th>
                     <td><span className="parameter-info-readonly cell-mono">{sourceFileLabel}</span></td>
                   </tr>
                 </>
@@ -2664,7 +2664,7 @@ function ParameterSettingsDialog({
 
           <details className="parameter-settings-accordion" open={hasGeneratedValueSettings}>
             <summary>
-              <strong>Generated Values</strong>
+              <strong>Generated values</strong>
               <span>Ranges, counters, and string generation</span>
             </summary>
             {hasGeneratedValueSettings ? (

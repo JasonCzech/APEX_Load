@@ -9,7 +9,7 @@ interface Props {
 export default function Header({ connected, onNavigate }: Props) {
   return (
     <header className="header">
-      <button type="button" className="header-left" onClick={onNavigate} aria-label="Go to dashboard">
+      <button type="button" className="header-left" onClick={onNavigate} aria-label="Go to Dashboard">
         <Logo size={28} className="header-logo" title="APEX Load" />
         <h1 className="header-title">APEX Load</h1>
       </button>
