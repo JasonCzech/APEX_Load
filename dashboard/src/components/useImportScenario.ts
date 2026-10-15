@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { addRecent } from '../desktop/desktopRecents'
 import { ApiError } from '../hooks/apiClient'
 import { useApi } from '../hooks/useApi'
 import { type StoredScript } from '../types'
@@ -32,7 +33,10 @@ export function useImportScenario(projectId: string | undefined) {
   const create = useCallback(async (name: string, scripts: StoredScript[]) => {
     if (!projectId || scripts.length === 0 || busyRef.current) return
     const key = importScenarioKey(projectId, scripts)
+    // The desktop app lists the draft under Recent (a no-op in the browser).
+    const remember = (draftId: string) => void addRecent({ kind: 'scenario', id: draftId, name, route: scenarioDraftBuilderHash(draftId, projectId) })
     if (createdRef.current?.key === key) {
+      remember(createdRef.current.draftId)
       window.location.hash = scenarioDraftBuilderHash(createdRef.current.draftId, projectId)
       return
     }
@@ -42,6 +46,7 @@ export function useImportScenario(projectId: string | undefined) {
     try {
       const draft = await api.createScenarioDraft(projectId, { name, document: scenarioAuthoringDraftFromScripts(projectId, name, scripts) })
       createdRef.current = { key, draftId: draft.id }
+      remember(draft.id)
       if (!mountedRef.current) return
       window.location.hash = scenarioDraftBuilderHash(draft.id, projectId)
     } catch (cause) {

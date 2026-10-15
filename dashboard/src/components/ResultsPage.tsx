@@ -1793,7 +1793,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                   <span>Search results</span>
                   <input
                     className="settings-input"
-                    type="search"
+                    type="search" autoComplete="off"
                     value={search}
                     onChange={event => setSearch(event.target.value)}
                     placeholder="Find runs by name, reference or scenario…"

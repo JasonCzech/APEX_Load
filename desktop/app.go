@@ -158,6 +158,8 @@ type App struct {
 	// grants separate so opening/importing a file never authorizes write-back.
 	pathMu           sync.Mutex
 	readPaths        map[string]readPathGrant
+	readDirectories  map[string]readDirectoryGrant
+	droppedPaths     map[string]struct{}
 	writePaths       map[string]writePathGrant
 	readGrantChanged chan struct{}
 	dropGrantWait    time.Duration
@@ -173,6 +175,16 @@ type App struct {
 	notificationAuthOnce    sync.Once
 	notificationAuthErr     error
 	instanceLock            desktopProcessLock
+	// closeGuard* hold a native close while the renderer resolves unsaved work
+	// (see closeguard.go). closeConfirmed lets the confirmed quit through.
+	closeGuardMu       sync.Mutex
+	closeGuardToken    string
+	closeRequests      uint64
+	closeRequestsAcked uint64
+	closeConfirmed     bool
+	closeAckWait       time.Duration
+	quitApp            func(context.Context)
+	emitCloseRequest   func(context.Context, string)
 }
 
 // NewApp creates a new App application struct
@@ -185,6 +197,9 @@ func NewApp() *App {
 		apiReadyWait:            defaultAPIReadyTimeout,
 		shutdownWait:            defaultShutdownTimeout,
 		notificationCleanupWait: defaultNotificationCleanupTimeout,
+		closeAckWait:            defaultCloseRequestAckWait,
+		quitApp:                 runtime.Quit,
+		emitCloseRequest:        emitCloseRequestEvent,
 		initialised:             make(chan struct{}),
 		startupDone:             make(chan struct{}),
 		retiredSessions:         make(map[string]struct{}),
@@ -267,7 +282,12 @@ func (a *App) startup(ctx context.Context) {
 			if isImportableFile(path) {
 				a.rememberReadPath(path)
 			}
+			// A dropped folder (a Bruno collection) is read through
+			// ReadDroppedDirectory, even one named like a file type
+			// (orders.yml/); anything that is not a folder is ignored.
+			a.rememberDroppedDirectory(path)
 		}
+		a.rememberDropEvent(paths)
 	})
 
 	appDataPath, err := desktopAppDataPath()
@@ -632,8 +652,12 @@ func (a *App) captureWindowState(ctx context.Context) (windowState, bool) {
 }
 
 // beforeClose snapshots geometry while Wails still owns a live native window.
-// Returning false permits the close on macOS, Linux, and Windows.
+// Returning false permits the close on macOS, Linux, and Windows; a close the
+// renderer must resolve first (unsaved work) is held instead.
 func (a *App) beforeClose(ctx context.Context) bool {
+	if a.holdCloseForRenderer(ctx) {
+		return true
+	}
 	a.windowStateMu.Lock()
 	restored := a.windowStateRestored
 	a.windowStateMu.Unlock()

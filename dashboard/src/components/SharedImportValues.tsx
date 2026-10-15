@@ -369,7 +369,7 @@ export default function SharedImportValues({
         <p className="shared-values-warning" key={warning} role="status">{warning}</p>
       ))}
 
-      {(guided || groupRequirements) && <div className="import-review-toolbar"><label>{guided ? 'Find optional value' : 'Find value'}<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label></div>}
+      {(guided || groupRequirements) && <div className="import-review-toolbar"><label>{guided ? 'Find optional value' : 'Find value'}<input type="search" autoComplete="off" value={search} onChange={e => setSearch(e.target.value)} /></label></div>}
       {(groupRequirements ? ['Required runtime inputs', 'Optional substitutions'] : guided ? ['Environment overrides', 'Advanced repeated values'] : ['Values']).map(group => <details key={group} open={groupRequirements ? (group === 'Required runtime inputs' ? hasRequiredInputs : !hasRequiredInputs) || !!search : !guided || group === 'Environment overrides' || !!search}><summary>{group}</summary><ul className="shared-values-list">
         {candidates.filter(candidate => (!groupRequirements || (group === 'Required runtime inputs') === (candidate.kind === 'source_variable')) && (!guided || (group === 'Environment overrides') === (candidate.targets_base_url || candidate.name === 'base_url' || candidate.name.toLowerCase() === 'origin')) && (!search || candidate.name.toLowerCase().includes(search.toLowerCase()))).map(candidate => {
           const inputId = `shared-value-${candidate.id}`

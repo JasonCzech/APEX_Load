@@ -274,7 +274,7 @@ export function ParameterDataDialog(props: ParameterDataDialogProps) {
         </div>
         {workspaceView === 'datasets' ? <ParameterDatasetWorkspace {...props} onShowParameter={index => { onSelectParameter(index); setWorkspaceView('parameters') }} /> : <div className="parameter-workspace-layout">
           <nav className="parameter-workspace-nav" aria-label="Parameter selection">
-            <label>Find parameter<input type="search" value={parameterSearch} onChange={event => setParameterSearch(event.target.value)} /></label>
+            <label>Find parameter<input type="search" autoComplete="off" value={parameterSearch} onChange={event => setParameterSearch(event.target.value)} /></label>
             {(script.parameters || []).map((parameter, index) => ({ parameter, index })).filter(({ parameter }) => `${parameter.name} ${parameter.type} ${parameter.data_source || ''}`.toLowerCase().includes(parameterSearch.toLowerCase())).map(({ parameter, index }) => (
               <button type="button" aria-current={index === selectedParameterIdx ? 'true' : undefined} key={index} onClick={() => {
                 onSelectParameter(index)

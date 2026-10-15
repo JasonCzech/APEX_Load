@@ -38,6 +38,14 @@ export async function addRecent(item: RecentItem): Promise<void> {
   }
 }
 
+// retargetRecent points a listed Recent entry at where its item lives now (a
+// scenario draft saved as a scenario). An item that is not listed stays out.
+export async function retargetRecent(kind: string, id: string, next: Pick<RecentItem, 'name' | 'route'>): Promise<void> {
+  const current = (await getRecents()).find(item => item.kind === kind && item.id === id)
+  if (!current) return
+  await addRecent({ kind, id, ...next })
+}
+
 export async function clearRecents(): Promise<void> {
   try {
     await getDesktopBridge()?.ClearRecentItems?.()

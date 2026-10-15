@@ -50,6 +50,7 @@ describe('KeyboardShortcutProvider helpers', () => {
   it('formats platform-aware shortcut labels', () => {
     expect(formatShortcutDisplay('Cmd/Ctrl+S', true)).toBe('Cmd+S')
     expect(formatShortcutDisplay('Cmd/Ctrl+S', false)).toBe('Ctrl+S')
+    expect(formatShortcutDisplay(['Alt+ArrowLeft'], false)).toBe('Alt+←')
     expect(formatShortcutDisplay('g d', false)).toBe('G D')
   })
 

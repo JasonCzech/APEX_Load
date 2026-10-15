@@ -112,6 +112,8 @@ import { COLUMN_NAME_RULE, isReferenceableColumnName } from './ux/dataRowGridMod
 import NewTestReadiness from './NewTestReadiness'
 import type { RunLoadProfilePreview } from './newTestRunModel'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
+import { retargetRecent } from '../desktop/desktopRecents'
+import { savedScenarioBuilderHash } from './importScenario'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -3083,11 +3085,13 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     }
   }
   // Once the work is saved as a scenario, its draft has served its purpose.
-  const settleProjectDraft = async () => {
+  const settleProjectDraft = async (saved: { id: string; name?: string }) => {
     const projectId = activeProjectId
     const draft = projectDraftRef.current
     projectDraftRef.current = null
     if (!projectId || !draft) return
+    // The desktop app's Recent entry for the draft (an import's scenario) now opens the scenario.
+    void retargetRecent('scenario', draft.id, { name: saved.name || saved.id, route: savedScenarioBuilderHash(saved.id, projectId) })
     // Only the revision this builder saved or opened: anything saved to it since stays in the library.
     try { await api.deleteScenarioDraft(projectId, draft.id, draft.revision) } catch { /* It stays in the library to delete there. */ }
     void loadProjectDrafts()
@@ -3111,7 +3115,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     if (scenarioIncompleteReason) return saveProjectDraft(scenarioIncompleteReason)
     const saved = await persistScenario()
     if (!saved) return false
-    void settleProjectDraft()
+    void settleProjectDraft(saved)
     setEditingId(saved.id)
     editingBaselineFormRef.current = JSON.stringify(form)
     resumedBaselineTagRef.current = ''
@@ -3318,7 +3322,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const saveScenarioAndCreateTest = async () => {
     const saved = await persistScenario()
     if (!saved) return
-    void settleProjectDraft()
+    void settleProjectDraft(saved)
     try { clearResolvedCheckpoint() } catch { /* The server save is authoritative. */ }
     // Publish the saved state before the parent evaluates navigation guards.
     flushSync(resetScenarioBuilder)
@@ -3737,7 +3741,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   <span>Search scripts</span>
                   <input
                     ref={scriptLibrarySearchRef}
-                    type="search"
+                    type="search" autoComplete="off"
                     value={scriptLibraryQuery}
                     onChange={(event) => setScriptLibraryQuery(event.target.value)}
                     placeholder="Find scripts…"
@@ -3961,7 +3965,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         <>
               <label className="library-search scenario-clone-search">
                 <span>Search existing scenarios</span>
-                <input type="search" value={scenarioCloneQuery} onChange={event => setScenarioCloneQuery(event.target.value)} placeholder="Scenario, script, data pool, release…" />
+                <input type="search" autoComplete="off" value={scenarioCloneQuery} onChange={event => setScenarioCloneQuery(event.target.value)} placeholder="Scenario, script, data pool, release…" />
               </label>
               <div className="data-table scenario-clone-table">
                 <table>
@@ -5204,7 +5208,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 <span>Search scenarios</span>
                 <input
                   className="settings-input"
-                  type="search"
+                  type="search" autoComplete="off"
                   value={scenarioQuery}
                   onChange={(event) => setScenarioQuery(event.target.value)}
                   placeholder="Find scenarios, scripts, or data pools…"

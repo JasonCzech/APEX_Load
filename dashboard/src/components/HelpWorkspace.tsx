@@ -71,7 +71,7 @@ function HelpSearch({ isAdmin }: { isAdmin: boolean }) {
   const results = useMemo(() => searchHelp(index.filter(({ article }) => isAdmin || article.area !== 'admin-guide'), query), [index, query, isAdmin])
   return <section className="help-search" aria-label="Search documentation">
     <label htmlFor="help-search">Search all help articles</label>
-    <div className="help-search-input"><input id="help-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Try replay, permissions, pacing or backup" />
+    <div className="help-search-input"><input id="help-search" type="search" autoComplete="off" value={query} onChange={event => setQuery(event.target.value)} placeholder="Try replay, permissions, pacing or backup" />
       {query && <button type="button" className="btn btn-secondary" onClick={() => setQuery('')}>Clear search</button>}
     </div>
     {hasQuery && <div className="help-search-results">

@@ -586,6 +586,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   return (
     <div className="lr-import">
       <ImportSaveConfirmation
+        recentName={savedResult?.scripts.length ? importScenarioName(file?.name, savedResult.scripts) : undefined}
         result={savedResult}
         onImportMore={() => { importScenario.reset(); handleBrowse() }}
         onOpen={openSaved}

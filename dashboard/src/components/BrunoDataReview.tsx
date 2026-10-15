@@ -92,7 +92,7 @@ export default function BrunoDataReview({ candidates, shared, values, onChange, 
     <h3>Required runtime inputs</h3>
     <p>Supply each input the collection leaves unset: one value for every virtual user, a column of a data pool so each virtual user reads its own row, or a value generated each iteration. Inputs are applied when drafts are saved. Conversion review gates remain separate.</p>
     <div className="bruno-review-toolbar">
-      <label>Find input<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label>
+      <label>Find input<input type="search" autoComplete="off" value={search} onChange={event => setSearch(event.target.value)} /></label>
       <label><input type="checkbox" checked={unresolvedOnly} onChange={event => setUnresolvedOnly(event.target.checked)} /> Unresolved only</label>
     </div>
     {environmentFills.length > 0 && <div className="bruno-environment-fill">

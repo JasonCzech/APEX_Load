@@ -2190,6 +2190,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   return (
     <div className="sample-import">
       <ImportSaveConfirmation
+        recentName={confirmationResult?.scripts.length ? importScenarioName(file?.name, confirmationResult.scripts) : undefined}
         result={confirmationResult}
         onImportMore={() => { importScenario.reset(); invalidateConversionSource(); setFile(null) }}
         onOpen={openSaved}
@@ -2618,7 +2619,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                       <label className="sample-import-field">
                         <span>Find script</span>
                         <input
-                          type="search"
+                          type="search" autoComplete="off"
                           value={openAPIReplaceTarget.search}
                           disabled={saveTargetLocked}
                           onChange={event => {
@@ -2696,7 +2697,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                       <label className="sample-import-field">
                         <span>Find script</span>
                         <input
-                          type="search"
+                          type="search" autoComplete="off"
                           value={postmanReplaceTarget.search}
                           disabled={saveTargetLocked}
                           onChange={event => {

@@ -66,7 +66,7 @@ export default function ImportIssueWorkspace({ issues, onNavigate, onSourceSelec
       actions={nextIssue && <button type="button" className="btn btn-secondary" onClick={() => setSelectedId(nextIssue.id)}>Next unresolved issue</button>}
     />
     <div className="import-review-toolbar">
-      <label>Find an issue<input type="search" value={search} placeholder="Search evidence or source locations" onChange={event => setSearch(event.target.value)} /></label>
+      <label>Find an issue<input type="search" autoComplete="off" value={search} placeholder="Search evidence or source locations" onChange={event => setSearch(event.target.value)} /></label>
       <label>Show<select value={filter} onChange={event => setFilter(event.target.value as typeof filter)}><option value="all">All findings ({grouped.length})</option><option value="blocker">Blockers</option><option value="error">Errors</option><option value="warning">Warnings</option><option value="info">Review notes</option><option value="reviewed">Reviewed ({reviewedCount})</option></select></label>
       <span role="status">{countLabel(visible.length, 'matching finding')}</span>
     </div>

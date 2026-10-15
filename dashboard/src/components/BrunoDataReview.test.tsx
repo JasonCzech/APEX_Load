@@ -114,3 +114,10 @@ it('asks for an environment while the inputs it defines are unset', () => {
     onInspect={() => {}} onCredentials={() => {}} disabled={false} />))
   expect(container.querySelector('.bruno-environment-fill')?.textContent).toContain('The collection\'s environment defines some of these inputs. Choose one to fill them with its values.')
 })
+
+// The desktop web view offered autofill suggestions over the review's search
+// box, covering the inputs beneath it.
+it('keeps autofill off the input search', () => {
+  act(() => root.render(<BrunoDataReview candidates={candidates} shared={shared} values={{}} onChange={() => {}} onInspect={() => {}} onCredentials={() => {}} disabled={false} />))
+  expect(container.querySelector<HTMLInputElement>('input[type=search]')?.getAttribute('autocomplete')).toBe('off')
+})

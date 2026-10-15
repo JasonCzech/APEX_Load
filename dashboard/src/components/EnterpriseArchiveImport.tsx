@@ -4564,6 +4564,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         <p role="status" className="sr-only">{savedArchiveScripts.length} script{savedArchiveScripts.length === 1 ? '' : 's'} saved · {savedReviewSessionCount} review session{savedReviewSessionCount === 1 ? '' : 's'} saved · {pendingReviewScriptCount} draft{pendingReviewScriptCount === 1 ? '' : 's'} awaiting save · {validatedAwaitingSaveCount} archive{validatedAwaitingSaveCount === 1 ? '' : 's'} validated, awaiting save · {failedFileCount} archive{failedFileCount === 1 ? '' : 's'} failed</p>
       )}
       <ImportSaveConfirmation
+        recentName={savedArchiveScripts.length ? importScenarioName(importItems.length === 1 ? importItems[0].file.name : undefined, savedArchiveScripts) : undefined}
         result={savedArchiveScripts.length ? { scripts: savedArchiveScripts } : null}
         onImportMore={() => { importScenario.reset(); handleBrowseArchives() }}
         onOpen={saved => onImported?.(saved)}

@@ -3024,7 +3024,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     <span className="setting-label" id="schedule-scenario-label">Scenario</span>
                     <span className="setting-desc">Recurring runs always execute one stored scenario</span>
                   </div>
-                  <input type="search" className="settings-input" aria-label="Search schedule scenarios" placeholder="Name or reference key" value={scheduleQuery} onChange={event => setScheduleQuery(event.target.value)} />
+                  <input type="search" autoComplete="off" className="settings-input" aria-label="Search schedule scenarios" placeholder="Name or reference key" value={scheduleQuery} onChange={event => setScheduleQuery(event.target.value)} />
                   <select className="settings-input" aria-labelledby="schedule-scenario-label" value={scenarioId} onChange={(event) => {
                     const nextScenarioID = event.target.value
                     runGuarded(() => {
@@ -3493,7 +3493,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                       <span>Search scenarios</span>
                       <input
                         ref={scenarioSearchRef}
-                        type="search"
+                        type="search" autoComplete="off"
                         value={scenarioQuery}
                         onChange={(event) => setScenarioQuery(event.target.value)}
                         placeholder="Find by scenario, script, protocol, release, or data pool…"

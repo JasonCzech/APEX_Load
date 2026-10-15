@@ -133,7 +133,7 @@ export function AuthorInsertDialog({ protocol, seed, phase, position, anchorLabe
     <h3 id="author-insert-title">Insert action or block</h3>
     <p>Choose what to add and where it belongs. Cancel leaves the document unchanged.</p>
     <fieldset className="author-insert-group"><legend>Type</legend>
-      <label>Find action type<input ref={firstRef} type="search" value={filter} onChange={e => setFilter(e.target.value)} /></label>
+      <label>Find action type<input ref={firstRef} type="search" autoComplete="off" value={filter} onChange={e => setFilter(e.target.value)} /></label>
       <label>Action type<select aria-label="Action type" value={entry} onChange={e => changeType(e.target.value)}>
         {GROUP_ORDER.slice(0, 2).map(group => {
           const members = visibleSpecs.filter(spec => actionGroup(spec.type) === group)

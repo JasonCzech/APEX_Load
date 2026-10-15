@@ -20,8 +20,9 @@ import "./components/PersonalSettings.css";
 import { useDashboardTheme } from "./hooks/useDashboardTheme";
 import { requestDashboardZoom, useDashboardZoomShortcuts } from "./hooks/useDashboardZoomShortcuts";
 import { useDesktopWindowTitle } from "./desktop/useDesktopWindowTitle";
+import { desktopActionView } from "./desktop/desktopActions";
 import { useAsyncTask } from "./hooks/useAsyncTask";
-import { useKeyboardShortcutHelp, useKeyboardShortcuts } from "./hooks/KeyboardShortcutProvider";
+import { isMacLike, useKeyboardShortcutHelp, useKeyboardShortcuts } from "./hooks/KeyboardShortcutProvider";
 import { KeyboardShortcutProvider } from "./hooks/KeyboardShortcutRoot";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { ApplicationProvider } from "./hooks/ApplicationProvider";
@@ -2287,19 +2288,9 @@ function AppShell({
   // Desktop workspace hub wiring.
   const handleDesktopQuickAction = useCallback(
     (action: DesktopQuickAction) => {
-      switch (action) {
-        case "new-test":
-          setGuardedView({ page: "new-test" });
-          break;
-        case "import":
-        case "record":
-        case "scripts":
-          handleNavigate("scripts");
-          break;
-        case "results":
-          handleNavigate("results");
-          break;
-      }
+      const next = desktopActionView(action);
+      if (next) setGuardedView(next);
+      else if (action === "scripts" || action === "results") handleNavigate(action);
     },
     [setGuardedView, handleNavigate],
   );
@@ -2335,7 +2326,8 @@ function AppShell({
   const openShortcutHelp = useKeyboardShortcutHelp();
   const handleDesktopMenuAction = useCallback(
     (action: string) => {
-      if (action === "new-test") setGuardedView({ page: "new-test" });
+      const next = desktopActionView(action);
+      if (next) setGuardedView(next);
       else if (action === "help") handleNavigate("docs");
       else if (action === "shortcuts") openShortcutHelp();
       else handleNavigate("scripts");
@@ -2541,7 +2533,10 @@ function AppShell({
       {
         id: "global.back",
         label: "Go back",
-        keys: "Backspace",
+        // The platform's back keys, as in a browser. Backspace is left alone:
+        // pressed outside a field by mistake, it threw away the page's work
+        // or results (a debugger run).
+        keys: isMacLike() ? ["Cmd+[", "Cmd+ArrowLeft"] : ["Alt+ArrowLeft"],
         group: "Global",
         priority: 600,
         onTrigger: () => navigateBack("dashboard"),

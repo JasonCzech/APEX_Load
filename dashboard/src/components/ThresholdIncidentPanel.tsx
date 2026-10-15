@@ -71,7 +71,7 @@ export default function ThresholdIncidentPanel({ projectId, canManage, onSelectT
   <section className="monitor-incident-history" aria-labelledby="shared-sla-incident-history">
    <h3 id="shared-sla-incident-history">Shared SLA incident history</h3>
    <div className="monitor-workflow-actions">
-    <label>Search incidents<input type="search" value={search} maxLength={200} onChange={event => setSearch(event.target.value)} placeholder="Test, transaction, or metric" /></label>
+    <label>Search incidents<input type="search" autoComplete="off" value={search} maxLength={200} onChange={event => setSearch(event.target.value)} placeholder="Test, transaction, or metric" /></label>
     <label>Incident status<select value={status} onChange={event => { setOffset(0); setStatus(event.target.value) }}><option value="">All statuses</option><option value="active">Active</option><option value="unacknowledged">Needs acknowledgement</option><option value="acknowledged">Acknowledged</option><option value="resolved">Resolved</option></select></label>
     <label>Severity<select value={severity} onChange={event => { setOffset(0); setSeverity(event.target.value) }}><option value="">All severities</option><option value="danger">Danger</option><option value="warning">Warning</option></select></label>
     <label>Incident timeframe<select value={sinceHours} onChange={event => { setOffset(0); setSinceHours(event.target.value) }}><option value="">All history</option><option value="24">Last 24 hours</option><option value="168">Last 7 days</option><option value="720">Last 30 days</option></select></label>

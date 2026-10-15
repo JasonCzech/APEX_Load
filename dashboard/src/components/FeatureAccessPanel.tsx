@@ -162,7 +162,7 @@ const FeatureAccessPanel = forwardRef<FeatureAccessController, Props>(function F
           </label>
           <label>
             <span>Search</span>
-            <input type="search" aria-label="Search domain features" value={query} onChange={event => setQuery(event.target.value)} placeholder="name, key, description" />
+            <input type="search" autoComplete="off" aria-label="Search domain features" value={query} onChange={event => setQuery(event.target.value)} placeholder="name, key, description" />
           </label>
           <label>
             <span>Category</span>

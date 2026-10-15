@@ -1062,6 +1062,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
   return (
     <div className="sample-import">
       <ImportSaveConfirmation
+        recentName={savedResult?.scripts.length ? importScenarioName(primaryFileName, savedResult.scripts) : undefined}
         result={savedResult}
         onImportMore={() => { importScenario.reset(); handleBrowseSample('primary') }}
         onOpen={openSaved}

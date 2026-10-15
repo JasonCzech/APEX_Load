@@ -8,6 +8,7 @@ import {
   canUseNativeDialogs,
   fileFromBase64,
   fileNameFromPath,
+  filesFromDroppedEntries,
   filesFromDroppedPaths,
   NativeFileReadError,
   nativeFileReadErrorMessage,
@@ -141,16 +142,19 @@ describe("filesFromDroppedPaths", () => {
       "/etc/passwd",
       "/tmp/secrets.env",
       "/tmp/archive.ZIP",
+      "/tmp/orders.bruno.tar.gz",
+      "/tmp/backup.tar.gz",
     ]);
     expect(files.map((f) => f.name).sort()).toEqual([
       "archive.ZIP",
       "flow.js",
       "openapi.yaml",
       "order.json",
+      "orders.bruno.tar.gz",
       "plan.jmx",
       "service.wsdl",
     ]);
-    expect(read).toHaveBeenCalledTimes(6);
+    expect(read).toHaveBeenCalledTimes(7);
     expect(read).not.toHaveBeenCalledWith("/etc/passwd");
   });
 
@@ -168,6 +172,66 @@ describe("filesFromDroppedPaths", () => {
     expect(await files[0].text()).toBe("drop");
     expect(droppedRead).toHaveBeenCalledWith("/tmp/order.json");
     expect(legacyRead).not.toHaveBeenCalled();
+  });
+});
+
+describe("filesFromDroppedEntries", () => {
+  it("reads a dropped folder like a folder pick and skips items the shell did not grant", async () => {
+    const readDirectory = vi.fn(async (path: string) => {
+      if (path === "/Users/me/CTA Collection") {
+        return JSON.stringify({
+          files: [
+            { path: "CTA Collection/opencollection.yml", base64: btoa("opencollection: 1.0.0") },
+            { path: "CTA Collection/CTA/Inquire.yml", base64: btoa("info: {}") },
+          ],
+        });
+      }
+      throw "native drop access was not granted for " + path;
+    });
+    const readFile = vi.fn(async () => btoa("meta {}"));
+    setBridge({ ReadDroppedDirectory: readDirectory, ReadDroppedFileBase64: readFile });
+
+    const files = await filesFromDroppedEntries([
+      "/Users/me/CTA Collection",
+      "/Users/me/request.bru",
+      "/Users/me/notes.docx",
+    ]);
+
+    expect(files.map((file) => file.webkitRelativePath || file.name)).toEqual([
+      "CTA Collection/opencollection.yml",
+      "CTA Collection/CTA/Inquire.yml",
+      "request.bru",
+    ]);
+    expect(await files[1].text()).toBe("info: {}");
+    expect(readFile).toHaveBeenCalledWith("/Users/me/request.bru");
+  });
+
+  it("reads archives only where a drop zone asks for them, and a folder named like a file type", async () => {
+    const readFile = vi.fn(async (path: string) => {
+      if (path.endsWith("orders.yml")) throw "native drop access was not granted for " + path;
+      return btoa("archive");
+    });
+    const readDirectory = vi.fn(async (path: string) => {
+      if (path.endsWith("orders.yml")) {
+        return JSON.stringify({ files: [{ path: "orders.yml/opencollection.yml", base64: btoa("opencollection: 1.0.0") }] });
+      }
+      throw "native drop access was not granted for " + path;
+    });
+    setBridge({ ReadDroppedFileBase64: readFile, ReadDroppedDirectory: readDirectory });
+
+    expect(await filesFromDroppedEntries(["/Users/me/backup.tgz"])).toEqual([]);
+    const withArchives = await filesFromDroppedEntries(["/Users/me/backup.tgz", "/Users/me/orders.yml"], [".tgz"]);
+    expect(withArchives.map((file) => file.webkitRelativePath || file.name)).toEqual([
+      "backup.tgz",
+      "orders.yml/opencollection.yml",
+    ]);
+  });
+
+  it("reports a folder the shell refused to read", async () => {
+    setBridge({
+      ReadDroppedDirectory: vi.fn().mockRejectedValue(new Error("dropped folder is too large: home has more than 5000 files")),
+    });
+    await expect(filesFromDroppedEntries(["/Users/me"])).rejects.toMatchObject({ code: "too_large" });
   });
 });
 
