@@ -24,6 +24,10 @@ type ElementMetadata struct {
 	XPath       string            `json:"xpath,omitempty"`
 	InShadowDOM bool              `json:"in_shadow_dom,omitempty"`
 	FramePath   []string          `json:"frame_path,omitempty"`
+	// Lightning marks an element on a Salesforce Lightning page (the Aura
+	// runtime is loaded), which keeps hidden copies of earlier pages in the
+	// document and gives template ids generated suffixes.
+	Lightning bool `json:"lightning,omitempty"`
 }
 
 // maxTextSelectorLength bounds text-locator candidates: longer visible text is
@@ -32,6 +36,29 @@ const maxTextSelectorLength = 80
 
 // safeCSSIdentifier matches values usable directly after "#" without escaping.
 var safeCSSIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
+
+// lwcGeneratedID matches an id Lightning Web Components made globally unique
+// at render by appending a number (input-237, combobox-id-12).
+var lwcGeneratedID = regexp.MustCompile(`-\d+$`)
+
+// visibleSuffix restricts a CSS or XPath selector to visible elements.
+const visibleSuffix = " >> visible=true"
+
+// visibleOnly makes CSS and XPath candidates match visible elements only, so a
+// hidden copy of an earlier page (Lightning keeps them in the document) can
+// neither fail a strict match nor take the click. Role locators skip hidden
+// elements already.
+func visibleOnly(candidates []Candidate) []Candidate {
+	for i := range candidates {
+		switch candidates[i].Kind {
+		case "css":
+			candidates[i].Value += visibleSuffix
+		case "xpath":
+			candidates[i].Value = NormalizeXPath(candidates[i].Value) + visibleSuffix
+		}
+	}
+	return candidates
+}
 
 // dataTestAttributes lists the test-hook attribute names recognized across
 // frameworks, in preference order.
@@ -44,7 +71,7 @@ var dataTestAttributes = []string{"data-testid", "data-test-id", "data-test", "d
 func Candidates(meta ElementMetadata) []Candidate {
 	out := make([]Candidate, 0, 8)
 	tag := strings.ToLower(strings.TrimSpace(meta.Tag))
-	lightningElement := isLightningElement(meta)
+	lightningElement := isLightningElement(meta) || meta.Lightning
 
 	if value := strings.TrimSpace(meta.DataTestID); value != "" {
 		out = append(out, Candidate{
@@ -64,6 +91,9 @@ func Candidates(meta ElementMetadata) []Candidate {
 		if isVolatileAuraID(value) {
 			confidence = ConfidenceVolatileAuraID
 			reason = "Aura-generated id captured at recording time; ranked below role/text fallbacks because it may drift."
+		} else if lightningElement && lwcGeneratedID.MatchString(value) {
+			confidence = ConfidenceVolatileAuraID
+			reason = "Lightning Web Components id, which gets a generated numeric suffix at render; ranked below role/text fallbacks because it changes between page loads."
 		}
 		out = append(out, Candidate{
 			Kind:       "css",
@@ -105,11 +135,17 @@ func Candidates(meta ElementMetadata) []Candidate {
 		}
 	}
 	if value := strings.TrimSpace(meta.Name); value != "" {
+		confidence := ConfidenceNameAttr
+		reason := "Form control name attribute captured at recording time."
+		if lightningElement && (tag == "button" || tag == "lightning-button" || strings.EqualFold(strings.TrimSpace(meta.Role), "button")) {
+			confidence = ConfidenceLightningButtonName
+			reason = "Lightning button name attribute, which Salesforce's standard actions keep across releases."
+		}
 		out = append(out, Candidate{
 			Kind:       "css",
 			Value:      tagPrefixed(tag, CSSAttributeSelector("name", value)),
-			Confidence: ConfidenceNameAttr,
-			Reason:     "Form control name attribute captured at recording time.",
+			Confidence: confidence,
+			Reason:     reason,
 		})
 	}
 	if role := strings.TrimSpace(meta.Role); role != "" {
@@ -164,7 +200,11 @@ func Candidates(meta ElementMetadata) []Candidate {
 			Reason:     "Computed XPath captured at recording time; validate stability on replay.",
 		})
 	}
-	return Unique(out)
+	out = Unique(out)
+	if meta.Lightning {
+		out = visibleOnly(out)
+	}
+	return out
 }
 
 func dataTestAttributeName(meta ElementMetadata) string {

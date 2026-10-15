@@ -1,8 +1,11 @@
 package browser
 
 import (
+	"sort"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/selector"
 )
 
 // DevTools' report of an in-page URL change marks the navigation Playwright
@@ -45,5 +48,26 @@ func TestSameDocumentReportsMarkTheirNavigation(t *testing.T) {
 	}
 	if len(r.pendingSameDocument) != maxPendingSameDocumentReports {
 		t.Fatalf("pending reports = %d", len(r.pendingSameDocument))
+	}
+}
+
+// A candidate that matched several visible elements when recorded ranks last;
+// one that matched none (the element may be gone) keeps its place.
+func TestDemoteAmbiguousCandidates(t *testing.T) {
+	candidates := []selector.Candidate{
+		{Kind: "css", Value: `button[title="Save"] >> visible=true`, Confidence: 80},
+		{Kind: "role", Value: `role=button[name="Save"]`, Confidence: 86},
+		{Kind: "css", Value: `#gone >> visible=true`, Confidence: 70},
+	}
+	sort.SliceStable(candidates, func(a, b int) bool { return candidates[a].Confidence > candidates[b].Confidence })
+	matches := map[string]int{`button[title="Save"] >> visible=true`: 3, `role=button[name="Save"]`: 1, `#gone >> visible=true`: 0}
+	if !demoteAmbiguousCandidates(candidates, matches) {
+		t.Fatal("nothing was demoted")
+	}
+	if candidates[0].Value != `role=button[name="Save"]` || candidates[1].Value != `#gone >> visible=true` || candidates[2].Confidence != ambiguousConfidence {
+		t.Fatalf("candidates = %+v", candidates)
+	}
+	if demoteAmbiguousCandidates(candidates, matches) {
+		t.Fatal("a demoted candidate was demoted again")
 	}
 }

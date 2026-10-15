@@ -152,6 +152,7 @@ type Recorder struct {
 	wsBytes              int
 	bindingBytes         int64
 	thumbnailSlots       chan struct{}
+	selectorCheckSlots   chan struct{} // Lightning selector checks in flight (selector_check.go)
 	thumbnailBytes       int64
 	thumbnailLimitWarned bool
 	nativeMetadataBytes  int64
@@ -933,6 +934,9 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 		r.emit(Event{Type: EventStep, Step: &recorded[index]})
 		if r.opts.CaptureScreenshots && source != nil && source.Page != nil {
 			r.captureThumbnailAsync(source.Page, recorded[index].Seq)
+		}
+		if source != nil && source.Page != nil && (source.Frame == nil || source.Frame == source.Page.MainFrame()) {
+			r.checkLightningCandidatesAsync(source.Page, recorded[index])
 		}
 	}
 	return nil

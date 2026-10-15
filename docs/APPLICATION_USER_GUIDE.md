@@ -708,6 +708,11 @@ method you used last.
   since the replayed clicks make the app change them, and loading the URL would
   reload the app. Validation warns about a step that loads a Lightning page in the
   middle of a browser script, as older recordings and hand edits can.
+- On a Lightning page, the recorder ranks the ids Lightning generates for its
+  components last, and prefers titles, button names and accessible names. Its CSS and
+  XPath selectors match visible elements only, since Lightning keeps hidden copies of
+  earlier pages in the document. A selector that matched several visible elements when
+  you recorded is ranked last.
 - A browser recording keeps a HAR of its traffic of up to 100 MB. Excluded hosts are
   removed before response bodies count toward that limit. Past it, the HAR still
   keeps every request and leaves out response bodies, images and media first, and

@@ -264,7 +264,9 @@
       attributes: attrs,
       css_path: css.path,
       xpath: css.inShadow ? '' : xpathFor(el),
-      in_shadow_dom: css.inShadow
+      in_shadow_dom: css.inShadow,
+      // A Salesforce Lightning page: the Aura runtime is loaded.
+      lightning: !!(window.$A && typeof window.$A.getCallback === 'function')
     };
   }
 
