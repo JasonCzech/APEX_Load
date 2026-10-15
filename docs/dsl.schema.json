@@ -60,6 +60,11 @@
               },
               "params": {
                 "properties": {
+                  "content_encoding": {
+                    "description": "Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body.",
+                    "pattern": "^\\s*(?:[gG][zZ][iI][pP]|[dD][eE][fF][lL][aA][tT][eE]|)\\s*$",
+                    "type": "string"
+                  },
                   "html_mode": {
                     "description": "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both.",
                     "type": "boolean"
@@ -150,6 +155,11 @@
               },
               "params": {
                 "properties": {
+                  "content_encoding": {
+                    "description": "Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body.",
+                    "pattern": "^\\s*(?:[gG][zZ][iI][pP]|[dD][eE][fF][lL][aA][tT][eE]|)\\s*$",
+                    "type": "string"
+                  },
                   "html_mode": {
                     "description": "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both.",
                     "type": "boolean"
@@ -240,6 +250,11 @@
               },
               "params": {
                 "properties": {
+                  "content_encoding": {
+                    "description": "Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body.",
+                    "pattern": "^\\s*(?:[gG][zZ][iI][pP]|[dD][eE][fF][lL][aA][tT][eE]|)\\s*$",
+                    "type": "string"
+                  },
                   "html_mode": {
                     "description": "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both.",
                     "type": "boolean"
@@ -330,6 +345,11 @@
               },
               "params": {
                 "properties": {
+                  "content_encoding": {
+                    "description": "Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body.",
+                    "pattern": "^\\s*(?:[gG][zZ][iI][pP]|[dD][eE][fF][lL][aA][tT][eE]|)\\s*$",
+                    "type": "string"
+                  },
                   "html_mode": {
                     "description": "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both.",
                     "type": "boolean"
@@ -420,6 +440,11 @@
               },
               "params": {
                 "properties": {
+                  "content_encoding": {
+                    "description": "Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body.",
+                    "pattern": "^\\s*(?:[gG][zZ][iI][pP]|[dD][eE][fF][lL][aA][tT][eE]|)\\s*$",
+                    "type": "string"
+                  },
                   "html_mode": {
                     "description": "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both.",
                     "type": "boolean"
@@ -510,6 +535,11 @@
               },
               "params": {
                 "properties": {
+                  "content_encoding": {
+                    "description": "Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body.",
+                    "pattern": "^\\s*(?:[gG][zZ][iI][pP]|[dD][eE][fF][lL][aA][tT][eE]|)\\s*$",
+                    "type": "string"
+                  },
                   "html_mode": {
                     "description": "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both.",
                     "type": "boolean"
@@ -600,6 +630,11 @@
               },
               "params": {
                 "properties": {
+                  "content_encoding": {
+                    "description": "Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body.",
+                    "pattern": "^\\s*(?:[gG][zZ][iI][pP]|[dD][eE][fF][lL][aA][tT][eE]|)\\s*$",
+                    "type": "string"
+                  },
                   "html_mode": {
                     "description": "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both.",
                     "type": "boolean"

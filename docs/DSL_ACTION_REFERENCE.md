@@ -1020,6 +1020,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -1044,6 +1045,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -1068,6 +1070,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -1092,6 +1095,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -1116,6 +1120,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -1140,6 +1145,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -1164,6 +1170,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -1283,6 +1290,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -1307,6 +1315,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -1331,6 +1340,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -1355,6 +1365,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -1379,6 +1390,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -1403,6 +1415,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -1427,6 +1440,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -2006,6 +2020,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -2030,6 +2045,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -2054,6 +2070,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -2078,6 +2095,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -2102,6 +2120,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -2126,6 +2145,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
@@ -2150,6 +2170,7 @@ Protocols: http, soap, java_http
 | `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
 | `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
+| `params.content_encoding` | enum |  | Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body. One of: `gzip`, `deflate`. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 

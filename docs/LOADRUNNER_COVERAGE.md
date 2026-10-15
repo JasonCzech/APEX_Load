@@ -35,7 +35,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_convert_from_formatted` | parameter | `review_only` | Import review | Formatted-string parse is preserved for review; no APEX runtime equivalent yet. |
 | `web_convert_param` | parameter | `executable` | source_parameter action | Encoding/format conversion. |
 | `web_convert_to_formatted` | parameter | `review_only` | Import review | Formatted-string build is preserved for review; no APEX runtime equivalent yet. |
-| `web_custom_request` | web | `executable` | HTTP request action | Arbitrary method/body. |
+| `web_custom_request` | web | `executable` | HTTP request action | Arbitrary method/body. ContentEncoding=gzip or deflate compresses the body on the wire (params.content_encoding); another coding is gated. |
 | `web_disable_keep_alive` | web | `executable` | config.http.keep_alive=false | Disables persistent connections. |
 | `web_dump_cache` | web | `native_noop` | config.web_runtime attribute | No client cache; native no-op. |
 | `web_enable_keep_alive` | web | `executable` | config.http.keep_alive=true | Enables persistent connections. |

@@ -414,7 +414,19 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			}
 		}
 	}
-	requestBytes := int64(len(requestBody))
+	// A compressed body goes on the wire; snapshots and correlation evidence
+	// keep the readable one.
+	wireBody := requestBody
+	contentEncoding, encodingErr := requestContentEncoding(action)
+	if encodingErr == nil && contentEncoding != "" && len(requestBody) > 0 {
+		wireBody, encodingErr = compressRequestBody(requestBody, contentEncoding)
+	}
+	if encodingErr != nil {
+		result.ErrorMessage = encodingErr.Error()
+		result.Duration = time.Since(result.StartTime)
+		return result, nil
+	}
+	requestBytes := int64(len(wireBody))
 	connectionReused := false
 	redirectCount := 0
 	responseSet := newResponseSetCollector(action.Extractors)
@@ -422,8 +434,8 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	redirectLegStart := result.StartTime
 
 	var body io.Reader
-	if len(requestBody) > 0 {
-		body = bytes.NewReader(requestBody)
+	if len(wireBody) > 0 {
+		body = bytes.NewReader(wireBody)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, targetURL, body)
@@ -477,6 +489,12 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	deleteRequestHeaders(req, authoredHeaderNames)
 	for _, header := range effectiveHeaders {
 		addRequestHeader(req, header.Name, header.Value)
+	}
+	if contentEncoding != "" && len(wireBody) > 0 {
+		// The header names the compression replay applied, whatever the step
+		// authored.
+		deleteHeaderFold(req.Header, "Content-Encoding")
+		req.Header.Set("Content-Encoding", contentEncoding)
 	}
 	mergeRequestCookieHeaders(req)
 	req = h.runCorrelation.markCorrelationAuthorship(req)
@@ -759,7 +777,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	digestRetried := false
 	if !cacheHit && digestAuth != nil {
 		var retryErr error
-		req, resp, digestRetried, retryErr = retryWithDigestAuthDelay(&client, req, resp, digestAuth, requestBody, h.authDelay)
+		req, resp, digestRetried, retryErr = retryWithDigestAuthDelay(&client, req, resp, digestAuth, wireBody, h.authDelay)
 		// retryWithDigestAuth returns the authenticated request even when its
 		// transport fails. Redact that request before every error/version path;
 		// waiting until the success-only accounting block below would copy the
@@ -1770,7 +1788,7 @@ func (h *HTTP) attachCorrelationEvidence(result *protocol.Result, action *protoc
 	result.CorrelationEvidence = &protocol.CorrelationEvidence{
 		RequestURL:             requestURL,
 		RequestBody:            string(fallbackBody),
-		RequestBodyTransformed: action != nil && (strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") || strings.EqualFold(action.BodyEncoding, "windows-1252") || bodyencoding.IsUTF16LE(action.BodyEncoding) || bodyencoding.IsCEscaped(action.BodyEncoding)),
+		RequestBodyTransformed: action != nil && (strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") || strings.EqualFold(action.BodyEncoding, "windows-1252") || bodyencoding.IsUTF16LE(action.BodyEncoding) || bodyencoding.IsCEscaped(action.BodyEncoding) || requestBodyCompressed(action)),
 		RequestHeaders:         correlationEvidenceRequestHeaders(wireRequest),
 		ResponseBody:           string(responseBody),
 		ResponseHeaders:        responseHeaders,

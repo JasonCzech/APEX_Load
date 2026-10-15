@@ -15,6 +15,8 @@ package paritytest
 
 import (
 	"bytes"
+	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
@@ -112,6 +114,9 @@ type ExpectedRequest struct {
 	Body         *string        `json:"body,omitempty"`
 	BodyBase64   *string        `json:"body_base64,omitempty"`
 	BodyContains []string       `json:"body_contains,omitempty"`
+	// DecodedBody is the body once the request's Content-Encoding (gzip or
+	// deflate) is undone, for a body sent compressed.
+	DecodedBody *string `json:"decoded_body,omitempty"`
 	// Multipart compares a multipart body part by part. The boundary is not
 	// compared: it is generated per sender and carries no meaning.
 	Multipart []ExpectedPart `json:"multipart,omitempty"`
@@ -622,12 +627,42 @@ func (s *Server) compareOne(n int, want ExpectedRequest, got Recorded) []string 
 			add("body does not contain %q", s.expand(fragment))
 		}
 	}
+	if want.DecodedBody != nil {
+		if decoded, err := decodeRequestBody(got); err != nil {
+			add("%v", err)
+		} else if s.expand(*want.DecodedBody) != string(decoded) {
+			add("decoded body = %q, want %q", truncate(string(decoded)), truncate(s.expand(*want.DecodedBody)))
+		}
+	}
 	if len(want.Multipart) > 0 {
 		for _, problem := range compareMultipart(got, want.Multipart, s.expand) {
 			add("%s", problem)
 		}
 	}
 	return problems
+}
+
+// decodeRequestBody undoes a request's gzip or deflate Content-Encoding.
+func decodeRequestBody(got Recorded) ([]byte, error) {
+	var reader io.ReadCloser
+	var err error
+	switch encoding := got.Header.Get("Content-Encoding"); encoding {
+	case "gzip":
+		reader, err = gzip.NewReader(bytes.NewReader(got.Body))
+	case "deflate":
+		reader, err = zlib.NewReader(bytes.NewReader(got.Body))
+	default:
+		return nil, fmt.Errorf("Content-Encoding = %q, want gzip or deflate for decoded_body", encoding)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("body does not decode as %s: %v", got.Header.Get("Content-Encoding"), err)
+	}
+	defer reader.Close()
+	decoded, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("body does not decode as %s: %v", got.Header.Get("Content-Encoding"), err)
+	}
+	return decoded, nil
 }
 
 func compareMultipart(got Recorded, want []ExpectedPart, expand func(string) string) []string {

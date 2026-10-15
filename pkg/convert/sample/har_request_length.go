@@ -62,11 +62,10 @@ func normalizeHARContentLength(ex *exchange, requestData map[string]any, diagnos
 		return
 	}
 	if codings, ok := harDecodedContentEncoding(ex); ok {
-		dropHARRequestHeaders(ex, "Content-Length", "Content-Encoding")
+		dropHARRequestHeaders(ex, "Content-Length")
 		setHARRequestMetadata(ex, "har.request.content_length", length)
 		setHARRequestMetadata(ex, "har.request.recorded_content_length", recorded)
-		setHARRequestMetadata(ex, "har.request.content_encoding_removed", codings)
-		diagnostics.Add(diag.Warning, "HAR request Content-Encoding", location, fmt.Sprintf("request body was captured after decoding (Content-Encoding: %s; recorded Content-Length %d, captured %d bytes). APEX does not compress request bodies, so replay sends it uncompressed without Content-Encoding; review if the server requires compressed uploads", codings, recorded, length))
+		replayHARDecodedRequestBody(ex, codings, diagnostics, location, fmt.Sprintf("Content-Encoding: %s; recorded Content-Length %d, captured %d bytes", codings, recorded, length))
 		return
 	}
 	if strings.ContainsRune(ex.Body, utf8.RuneError) {
@@ -211,10 +210,21 @@ func harByteText(body string, recorded int64) ([]byte, bool) {
 
 // harDecodedContentEncoding reports a compressed request whose HAR body is the
 // decoded text: the request declares only known compression codings while the
-// stored body is clean text whose length differs from the recorded framing.
+// stored body is clean text (whose length differs from the recorded framing,
+// when there is one).
 func harDecodedContentEncoding(ex *exchange) (string, bool) {
+	codings, ok := harRequestContentCodings(ex.HeaderList)
+	if !ok || codings == "" || ex.BodyEncoding != "" || !harLooksLikeText(ex.Body) {
+		return "", false
+	}
+	return codings, true
+}
+
+// harRequestContentCodings lists a request's compression codings, or reports
+// false when one of them is not a known compression.
+func harRequestContentCodings(headers dsl.HeaderList) (string, bool) {
 	var codings []string
-	for _, header := range ex.HeaderList {
+	for _, header := range headers {
 		if !strings.EqualFold(header.Name, "Content-Encoding") {
 			continue
 		}
@@ -228,9 +238,6 @@ func harDecodedContentEncoding(ex *exchange) (string, bool) {
 				return "", false
 			}
 		}
-	}
-	if len(codings) == 0 || !harLooksLikeText(ex.Body) {
-		return "", false
 	}
 	return strings.Join(codings, ", "), true
 }

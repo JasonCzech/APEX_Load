@@ -182,6 +182,9 @@ type exchange struct {
 	// validators were removed (see dropHARCacheValidators): replay asks for
 	// the full response.
 	CacheValidatorsDropped bool
+	// ContentEncoding compresses the readable Body on the wire at replay
+	// (params.content_encoding): the request was a gzip or deflate upload.
+	ContentEncoding string
 }
 
 type response struct {
@@ -438,6 +441,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			Body:         body,
 			BodyEncoding: ex.BodyEncoding,
 			Metadata:     cloneMetadata(ex.Metadata),
+		}
+		if ex.ContentEncoding != "" {
+			if action.Params == nil {
+				action.Params = map[string]any{}
+			}
+			action.Params[httpprotocol.RequestContentEncodingParam] = ex.ContentEncoding
 		}
 		if name := transactionAt(req.Options.Transactions, ex); name != "" {
 			tagged, _ := action.Metadata[harSourceTransactionMeta].(string)

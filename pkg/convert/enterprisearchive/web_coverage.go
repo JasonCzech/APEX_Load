@@ -35,7 +35,7 @@ var webFunctionCoverageDetail = map[string]webCoverageDetail{
 	"web_url":                        {"HTTP request action", "GET/POST request from URL=."},
 	"web_submit_data":                {"HTTP request action", "Method= + ITEMDATA form body."},
 	"web_submit_form":                {"HTTP form step (page context)", "Submits the form on the current page that has every scripted field (then Action=, then Ordinal=): the page's live hidden fields, action URL, method and encoding, with scripted values overriding and STARTHIDDENS values filling names the page lacks. Frame-targeted forms keep the navigation gate."},
-	"web_custom_request":             {"HTTP request action", "Arbitrary method/body."},
+	"web_custom_request":             {"HTTP request action", "Arbitrary method/body. ContentEncoding=gzip or deflate compresses the body on the wire (params.content_encoding); another coding is gated."},
 	"web_rest":                       {"HTTP request action", "REST method/body/HEADERS block."},
 	"web_link":                       {"HTTP link step (page context)", "Follows the link on the current page whose visible text matches Text= (Ordinal=, /IC). A non-VuGen explicit URL= becomes a GET. Frame-targeted links keep the navigation gate."},
 	"web_image":                      {"HTTP image step (page context)", "Clicks the image on the current page matching Alt=/Src= (Ordinal=): follows its anchor, its single image-map area, or submits the form of an input image. Image-map areas (MapName/AreaAlt) and frames keep the navigation gate."},

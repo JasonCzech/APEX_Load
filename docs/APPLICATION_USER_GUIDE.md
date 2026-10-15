@@ -650,6 +650,12 @@ paths** name them; by default they are the Salesforce Mobile SDK's analytics upl
 and the `nebulaLogger` and `analyticsEvent` calls. LoadRunner script imports apply
 the same default paths.
 
+A compressed upload, such as the Mobile SDK's gzip analytics upload, converts to its
+readable body. Replay compresses it again and labels it with `Content-Encoding`, as
+LoadRunner's `ContentEncoding` does, so correlation and parameters reach the values
+inside it. Only gzip and deflate are compressed; a LoadRunner step with another
+`ContentEncoding` stays gated for review.
+
 A recorded Salesforce Mobile SDK sign-in (the app trading an authorization code at
 `/services/oauth2/token` for its session) runs in init, as a LoadRunner script signs
 in: each virtual user signs in once, and every iteration reuses its Bearer token.

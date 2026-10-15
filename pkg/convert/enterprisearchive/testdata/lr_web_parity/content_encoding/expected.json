@@ -1,0 +1,25 @@
+{
+  "description": "ContentEncoding=gzip or deflate compresses the request body on the wire and labels it with Content-Encoding.",
+  "source": "VuGen 26.1 Function Reference: web_custom_request ContentEncoding.",
+  "outcome": "replay",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/api/bulk",
+      "headers": {
+        "Content-Type": "application/json",
+        "Content-Encoding": "gzip"
+      },
+      "decoded_body": "{\"rows\":[1,2,3]}"
+    },
+    {
+      "method": "POST",
+      "path": "/api/bulk",
+      "headers": {
+        "Content-Type": "application/json",
+        "Content-Encoding": "deflate"
+      },
+      "decoded_body": "{\"rows\":[4]}"
+    }
+  ]
+}

@@ -283,6 +283,9 @@ func validateHTTPActionBoundsIssues(path string, action Action) []string {
 		}
 	}
 	issues = append(issues, validateHTTPAssertionIssues(label, action.Assertions)...)
+	if err := httpprotocol.ValidateRequestContentEncoding(action.Params); err != nil {
+		issues = append(issues, fmt.Sprintf("%s: %v", label, err))
+	}
 	if raw, present := action.Params["stream_timeout_ms"]; present {
 		value, ok := actionParamIntValue(action.Params, "stream_timeout_ms")
 		if !ok || value < 0 || value > maxTimeoutMS {

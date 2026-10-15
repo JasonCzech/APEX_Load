@@ -120,6 +120,7 @@ func parseHARWithMode(content string, includeStaticAssets bool, mode string, dia
 	h3Drafts := map[string]int{}
 	var localEntries, braceEntries []int
 	localSchemes := map[string]int{}
+	requestDecodeBudget := int64(maxDecodedHARRequestBodiesBytes)
 	for index, item := range items {
 		if origin := harOriginAdvertisingH3(item); origin != "" {
 			h3Advertised[origin] = true
@@ -159,6 +160,7 @@ func parseHARWithMode(content string, includeStaticAssets bool, mode string, dia
 			skipped++
 			continue
 		}
+		normalizeHARRequestContentEncoding(&ex, &requestDecodeBudget, diagnostics, fmt.Sprintf("HAR entry %d", index+1))
 		if escaped, changed := escapeLiteralTemplateBraces(ex.URL); changed {
 			ex.URL = escaped
 			braceEntries = append(braceEntries, index+1)

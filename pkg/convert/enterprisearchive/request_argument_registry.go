@@ -9,6 +9,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 // Every named attribute of a VuGen request step is classified here, so an
@@ -73,7 +74,7 @@ var requestArgumentClasses = map[string]requestArgumentClass{
 	"bodybinary":        requestArgumentBody,
 	"bodyunicode":       requestArgumentBody,
 	"bodyfilepath":      requestArgumentBody,
-	"contentencoding":   requestArgumentGated,
+	"contentencoding":   requestArgumentMapped, // gzip and deflate; any other value is gated
 	"extraresbasedir":   requestArgumentGated,
 	"responsetime":      requestArgumentReview,
 }
@@ -102,6 +103,8 @@ type requestArgumentReport struct {
 	review   []string
 	unknown  []string
 	userAgnt string
+	// contentEncoding is the body compression ContentEncoding asks for.
+	contentEncoding string
 }
 
 // classifyRequestArguments sorts a request step's named attributes.
@@ -129,6 +132,18 @@ func classifyRequestArguments(fn ParsedFunction) requestArgumentReport {
 		case requestArgumentMapped, requestArgumentInert:
 			if strings.EqualFold(name, "UserAgent") {
 				report.userAgnt = strings.TrimSpace(arg.Value)
+			}
+			if strings.EqualFold(name, "ContentEncoding") {
+				switch encoding := strings.ToLower(strings.TrimSpace(arg.Value)); encoding {
+				case "gzip", "deflate":
+					if report.contentEncoding != "" && report.contentEncoding != encoding {
+						// Two codings for one body: which LoadRunner applies is unknown.
+						report.gated = appendUniqueFold(report.gated, name+"="+arg.Value)
+					}
+					report.contentEncoding = encoding
+				default:
+					report.gated = appendUniqueFold(report.gated, name+"="+arg.Value)
+				}
 			}
 		case requestArgumentBody:
 			report.body = appendUniqueFold(report.body, name)
@@ -181,6 +196,13 @@ func applyRequestArgumentReview(action *dsl.Action, fn ParsedFunction, opts Conv
 				action.HeaderList = append(action.HeaderList, dsl.HeaderEntry{Name: "User-Agent", Value: value})
 			}
 		}
+	}
+	if report.contentEncoding != "" {
+		// The body is compressed on the wire, as LoadRunner sends it.
+		if action.Params == nil {
+			action.Params = make(map[string]any)
+		}
+		action.Params[httpprotocol.RequestContentEncodingParam] = report.contentEncoding
 	}
 	ref := fmt.Sprintf("%s:%d", fn.Filename, fn.LineNumber)
 	step := convertutil.FirstNonEmpty(fn.StepName, fn.Name)

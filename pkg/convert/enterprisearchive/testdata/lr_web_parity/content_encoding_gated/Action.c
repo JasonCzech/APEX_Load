@@ -4,7 +4,7 @@ Action()
 		"URL=http://parity.test/api/bulk",
 		"Method=POST",
 		"EncType=application/json",
-		"ContentEncoding=gzip",
+		"ContentEncoding=br",
 		"Body={\"rows\":[1,2,3]}",
 		LAST);
 

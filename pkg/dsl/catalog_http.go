@@ -22,6 +22,7 @@ func httpActionSpecs() []ActionSpec {
 		{Name: "params.html_mode", Kind: FieldKindBool, Doc: "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both."},
 		{Name: "params.resource_step", Kind: FieldKindBool, Doc: "LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context."},
 		{Name: "params.resources", Kind: FieldKindArray, Doc: "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification."},
+		{Name: "params.content_encoding", Kind: FieldKindEnum, Enum: httpprotocol.RequestContentEncodings, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "Compress the body on the wire and label it with Content-Encoding (replacing one the step sets): gzip, or deflate (zlib), as LoadRunner's ContentEncoding does. Snapshots and correlation evidence keep the readable body."},
 		{Name: "params", Kind: FieldKindObject, Doc: "Protocol-specific request options."},
 		{Name: "soap", Kind: FieldKindObject, Doc: "SOAP-only: {action, operation, body_mode (raw_xml|generated)}."},
 	}

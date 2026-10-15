@@ -227,7 +227,7 @@ func TestAsyncRegistrationAppliesToItsOwnURL(t *testing.T) {
 // request, sent with the auto headers, and leaves the step — even when the
 // step itself is gated for review.
 func TestConvertAsyncConversationOfAStepResource(t *testing.T) {
-	for name, encoding := range map[string]string{"executable step": "", "gated step": `"ContentEncoding=gzip", `} {
+	for name, encoding := range map[string]string{"executable step": "", "gated step": `"ExtraResBaseDir=https://cdn.test/", `} {
 		t.Run(name, func(t *testing.T) {
 			result := convertAsyncSource(t, `
 	web_add_auto_header("Authorization", "Bearer {Token}");
@@ -280,7 +280,7 @@ func TestConvertBackgroundRequestSteps(t *testing.T) {
 	web_custom_request("nebulaLogger_1", "URL=https://example.test/services/apexrest/mobile/nebulaLogger", "Method=POST", "Body={}", LAST);
 	web_reg_save_param_json("ParamName=EventId", "QueryString=$.id", SEARCH_FILTERS, "Scope=BODY", LAST);
 	web_custom_request("analyticsEvent_1", "URL=https://example.test/services/apexrest/mobile/analyticsEvent", "Method=POST", "Body={}", LAST);
-	web_custom_request("nebulaLogger_2", "URL=https://example.test/services/apexrest/mobile/nebulaLogger", "Method=POST", "ContentEncoding=gzip", "Body={}", LAST);
+	web_custom_request("nebulaLogger_2", "URL=https://example.test/services/apexrest/mobile/nebulaLogger", "Method=POST", "ExtraResBaseDir=https://cdn.test/", "Body={}", LAST);
 	web_concurrent_start(NULL);
 	web_custom_request("nebulaLogger_3", "URL=https://example.test/services/apexrest/mobile/nebulaLogger", "Method=POST", "Body={}", LAST);
 	web_custom_request("other", "URL=https://example.test/services/apexrest/mobile/other", "Method=POST", "Body={}", LAST);
@@ -333,5 +333,24 @@ func TestConvertBackgroundRequestSteps(t *testing.T) {
 	}
 	if names := backgroundNames(inline); len(names) != 0 {
 		t.Fatalf("an empty pattern list must keep every step in line: %v", names)
+	}
+}
+
+// The Mobile SDK compresses its analytics uploads (ContentEncoding=gzip): the
+// step is sent in the background with its body compressed, not gated.
+func TestConvertCompressedBackgroundRequest(t *testing.T) {
+	result := convertAsyncSource(t, `
+	web_custom_request("app-analytics-logging_1", "URL=https://example.test/services/data/v66.0/connect/proxy/app-analytics-logging", "Method=POST", "ContentEncoding=gzip", "EncType=application/json", "Body={\"events\":[]}", LAST);`)
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "http_async_start" {
+		t.Fatalf("actions = %+v", result.Script.Actions)
+	}
+	start := result.Script.Actions[0]
+	request, _ := start.Params["request"].(map[string]any)
+	params, _ := request["params"].(map[string]any)
+	if start.Params["pattern"] != "once" || params["content_encoding"] != "gzip" || start.Metadata["execution_blockers"] != nil {
+		t.Fatalf("start = %+v, request = %+v", start, request)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("the converted script must validate: %v", issues)
 	}
 }

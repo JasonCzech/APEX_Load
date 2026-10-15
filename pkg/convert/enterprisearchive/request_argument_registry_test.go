@@ -23,13 +23,14 @@ func parseSingleRequest(t *testing.T, call string) ParsedFunction {
 
 func TestClassifyRequestArguments(t *testing.T) {
 	tests := []struct {
-		name    string
-		call    string
-		body    []string
-		gated   []string
-		review  []string
-		unknown []string
-		agent   string
+		name     string
+		call     string
+		body     []string
+		gated    []string
+		review   []string
+		unknown  []string
+		agent    string
+		encoding string
 	}{
 		{
 			name: "mapped and inert attributes are quiet",
@@ -42,8 +43,19 @@ func TestClassifyRequestArguments(t *testing.T) {
 		},
 		{
 			name:  "wire-changing attributes",
-			call:  `web_custom_request("c", "URL=https://x.test/", "Method=POST", "ContentEncoding=gzip", "ExtraResBaseDir=https://cdn.test/", "Body=x", LAST);`,
-			gated: []string{"ContentEncoding", "ExtraResBaseDir"},
+			call:  `web_custom_request("c", "URL=https://x.test/", "Method=POST", "ContentEncoding=br", "ExtraResBaseDir=https://cdn.test/", "Body=x", LAST);`,
+			gated: []string{"ContentEncoding=br", "ExtraResBaseDir"},
+		},
+		{
+			name:     "gzip and deflate bodies are compressed on the wire",
+			call:     `web_custom_request("z", "URL=https://x.test/", "Method=POST", "ContentEncoding=GZIP", "Body=x", LAST);`,
+			encoding: "gzip",
+		},
+		{
+			name:     "two different codings are gated",
+			call:     `web_custom_request("z", "URL=https://x.test/", "Method=POST", "ContentEncoding=gzip", "ContentEncoding=deflate", "Body=x", LAST);`,
+			gated:    []string{"ContentEncoding=deflate"},
+			encoding: "deflate",
 		},
 		{
 			name:   "side-effect attributes",
@@ -87,6 +99,9 @@ func TestClassifyRequestArguments(t *testing.T) {
 			check("unknown", report.unknown, tt.unknown)
 			if report.userAgnt != tt.agent {
 				t.Errorf("user agent = %q, want %q", report.userAgnt, tt.agent)
+			}
+			if report.contentEncoding != tt.encoding {
+				t.Errorf("content encoding = %q, want %q", report.contentEncoding, tt.encoding)
 			}
 		})
 	}
