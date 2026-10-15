@@ -425,6 +425,11 @@ func normalizeSourceFiles(files map[string]string) (map[string]string, error) {
 	names := make([]string, 0, len(files))
 	totalBytes := 0
 	for name, content := range files {
+		// A folder picked on a Mac or from a working copy carries .DS_Store
+		// and .git files; they are not part of the service description.
+		if archiveingest.JunkReason(name) != "" {
+			continue
+		}
 		names = append(names, name)
 		if len(content) > maxWSDLBundleBytes-totalBytes {
 			return nil, fmt.Errorf("WSDL import files exceed the maximum total size of %d bytes", maxWSDLBundleBytes)

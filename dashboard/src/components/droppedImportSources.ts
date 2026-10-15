@@ -3,6 +3,8 @@
 // dropped folder carry webkitRelativePath ("Folder/sub/file"), exactly like a
 // webkitdirectory pick, so they upload through the same folder path.
 
+import { importJunkDirectoryReason } from '../utils/importJunkFiles'
+
 export interface DroppedImportSources {
   files: File[]
   folders: File[][]
@@ -40,7 +42,9 @@ async function collectFolderFiles(root: FileSystemDirectoryEntry): Promise<File[
         if (++entries > MAX_DROPPED_FOLDER_ENTRIES) throw new DroppedFolderTooLargeError(root.name)
         const childPath = `${path}/${child.name}`
         if (child.isDirectory) {
-          pending.push({ entry: child as FileSystemDirectoryEntry, path: childPath })
+          // A working copy's .git or a Mac's __MACOSX folder holds no import
+          // content, and can hold thousands of entries.
+          if (!importJunkDirectoryReason(child.name)) pending.push({ entry: child as FileSystemDirectoryEntry, path: childPath })
           continue
         }
         if (!child.isFile) continue

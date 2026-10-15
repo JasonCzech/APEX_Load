@@ -52,6 +52,19 @@ describe('readDroppedImportSources', () => {
     ])
   })
 
+  it('does not walk a working copy\'s .git folder or a Mac\'s __MACOSX folder', async () => {
+    const objects = Array.from({ length: MAX_DROPPED_FOLDER_ENTRIES + 1 }, (_, index) => fileEntry(`object-${index}`))
+    const folder = folderEntry('Checkout', [
+      fileEntry('Checkout.usr'),
+      fileEntry('.gitignore'),
+      folderEntry('.git', objects, 500),
+      folderEntry('__MACOSX', [fileEntry('._Checkout.usr')]),
+    ])
+    const { folders } = await readDroppedImportSources(transfer([{ entry: folder }]))
+    // A .gitignore stays: a Bruno collection reads it to decide what to skip.
+    expect(folders[0].map(file => file.webkitRelativePath).sort()).toEqual(['Checkout/.gitignore', 'Checkout/Checkout.usr'])
+  })
+
   it('keeps loose files apart from dropped folders', async () => {
     const archive = new File(['zip'], 'Checkout.zip')
     const { files, folders } = await readDroppedImportSources(transfer([

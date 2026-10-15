@@ -510,7 +510,8 @@ func readJMeterSidecarFiles(r *http.Request, primaryField string, primaryFileNam
 				continue
 			}
 			name := normalizeJMeterMultipartSidecarName(header.Filename)
-			if name == "" || (primaryName != "" && strings.EqualFold(name, primaryName)) {
+			if name == "" || (primaryName != "" && strings.EqualFold(name, primaryName)) ||
+				archiveingest.JunkReason(name) != "" {
 				continue
 			}
 			file, err := header.Open()

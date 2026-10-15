@@ -658,7 +658,10 @@ exact session; a good script replays a population.
 ## Importing Existing Scripts
 
 If you already have tests in another tool, import them instead of rewriting. Open the
-**Scripts** page and use the import drop zone.
+**Scripts** page and use the import drop zone. Every importer leaves out
+operating-system and version-control files from an archive or a picked folder
+(`.DS_Store`, a `__MACOSX` folder of `._` files, `.git`), so they never count as
+script content.
 
 | Source | Category | Typical outcome |
 | --- | --- | --- |

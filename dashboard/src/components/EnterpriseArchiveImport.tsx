@@ -54,6 +54,7 @@ import {
 } from './secretBindingUtils'
 import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuthoringState'
 import { credentialPreservingImportDraftRequiresSave, earliestImportDraftExpiry } from './protectedImportSession'
+import { importJunkReason } from '../utils/importJunkFiles'
 import './EnterpriseArchiveImport.css'
 
 interface ImportMetadata {
@@ -2406,7 +2407,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   // the drop animation whether the drop was accepted.
   const addFilesToQueue = useCallback((fileList?: FileList | File[] | null): number => {
     if (sourceMutationLockedRef.current) return 0
-    const incomingFiles = Array.from(fileList || [])
+    // A .DS_Store or ._ file dropped beside the archives is not a source.
+    const incomingFiles = Array.from(fileList || []).filter(file => !importJunkReason(file.webkitRelativePath || file.name))
     if (incomingFiles.length === 0) return 0
 
     const zipFiles = incomingFiles.filter(isEnterpriseArchiveZipFile)
@@ -2438,8 +2440,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     return zipFiles.length
   }, [invalidateOperationScopes])
 
-  const addFolderToQueue = useCallback((files: File[]): boolean => {
+  const addFolderToQueue = useCallback((pickedFiles: File[]): boolean => {
     if (sourceMutationLockedRef.current) return false
+    // .DS_Store, ._ resource forks and .git files are not part of the script.
+    const files = pickedFiles.filter(file => !importJunkReason(file.webkitRelativePath || file.name))
     const roots = new Set(files.map(file => (file.webkitRelativePath || '').split('/')[0]))
     if (files.length === 0 || roots.size !== 1 || files.some(file => !file.webkitRelativePath) ||
         files.filter(file => file.name.toLowerCase().endsWith('.usr')).length !== 1) {

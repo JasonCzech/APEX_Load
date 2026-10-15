@@ -661,6 +661,24 @@ describe('EnterpriseArchiveImport', () => {
     expect(live()).toBe('Folder added')
   })
 
+  it('leaves out operating-system files dropped with archives or inside a folder', async () => {
+    const files = [
+      new File(['zip'], 'Checkout.zip', { type: 'application/zip' }),
+      new File(['Bud1'], '.DS_Store'),
+      new File(['appledouble'], '._Checkout.zip'),
+    ]
+    await act(async () => root.render(<EnterpriseArchiveImport initialFiles={files} />))
+    await flushPromises()
+    expect(container.querySelectorAll('.lr-file-row')).toHaveLength(1)
+    expect(container.textContent).not.toContain('unsupported file')
+
+    // A ._ resource fork of the .usr is not a second project file.
+    await dropOnArchiveZone(container, droppedFolder('Search', ['Search.usr', 'Action.c', '.DS_Store', '._Search.usr']))
+    await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 500)) })
+    expect(container.textContent).not.toContain('is not a VuGen script folder')
+    expect(container.textContent).toContain('2 sources queued')
+  })
+
   it('reports a dropped folder that cannot be read', async () => {
     await act(async () => root.render(<EnterpriseArchiveImport />))
     const unreadable = { isFile: false, isDirectory: true, name: 'Locked', createReader: () => ({ readEntries: (_resolve: unknown, reject: (error: Error) => void) => reject(new Error('Locked could not be opened.')) }) }
