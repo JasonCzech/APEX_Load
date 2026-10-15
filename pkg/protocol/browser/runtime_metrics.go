@@ -115,10 +115,18 @@ func (b *Browser) capturePageMetrics(ctx context.Context, metrics *protocol.Clie
 		const inp = eventEntries.reduce((max, entry) => Math.max(max, entry.duration || entry.processingEnd || 0), 0);
 		const longTasks = after(performance.getEntriesByType('longtask'));
 		const observerMetrics = window.__apexloadMetrics || {};
+		// The resource timing buffer stops growing once full, as a single-page
+		// app's load leaves it: a step in that document counts the resources
+		// the observer saw instead, when the page has one.
+		const observedResources = typeof observerMetrics.takeResources === 'function';
+		if (observedResources) {
+			observerMetrics.takeResources();
+		}
 		const step = observerMetrics.step;
 		if (step) {
-			observerMetrics.step = { cls: 0, inp: 0, longTaskCount: 0 };
+			observerMetrics.step = { cls: 0, inp: 0, longTaskCount: 0, resourceCount: 0, transferKB: 0 };
 		}
+		const stepResources = sameDocument && observedResources && step;
 		const blocking = resources.filter((entry) => entry.renderBlockingStatus === 'blocking');
 		const navigationCount = nav.name && !sameDocument ? 1 : 0;
 		const documentCLS = observerMetrics.cls || cls;
@@ -136,8 +144,8 @@ func (b *Browser) capturePageMetrics(ctx context.Context, metrics *protocol.Clie
 			dom_complete_ms: nav.domComplete || 0,
 			load_event_ms: nav.loadEventEnd || 0,
 			blocking_resource_count: blocking.length,
-			total_resource_count: resources.length + navigationCount,
-			resource_transfer_kb: resources.reduce((sum, entry) => sum + ((entry.transferSize || 0) / 1024), navigationCount ? (nav.transferSize || 0) / 1024 : 0),
+			total_resource_count: stepResources ? step.resourceCount : resources.length + navigationCount,
+			resource_transfer_kb: stepResources ? step.transferKB : resources.reduce((sum, entry) => sum + ((entry.transferSize || 0) / 1024), navigationCount ? (nav.transferSize || 0) / 1024 : 0),
 			long_task_count: sameDocument ? (step ? step.longTaskCount : longTasks.length) : (observerMetrics.longTaskCount || longTasks.length),
 		};
 	})(%s, %s)`, strconv.FormatFloat(mark.timeOrigin, 'f', -1, 64), strconv.FormatFloat(mark.measuredAt, 'f', -1, 64))
@@ -468,7 +476,7 @@ const browserMetricsBootstrapScript = `(() => {
 		cls: 0,
 		inp: 0,
 		longTaskCount: 0,
-		step: { cls: 0, inp: 0, longTaskCount: 0 },
+		step: { cls: 0, inp: 0, longTaskCount: 0, resourceCount: 0, transferKB: 0 },
 	};
 	try {
 		new PerformanceObserver((list) => {
@@ -505,6 +513,20 @@ const browserMetricsBootstrapScript = `(() => {
 				}
 			}
 		}).observe({ type: 'event', buffered: true, durationThreshold: 16 });
+	} catch (e) {}
+	// The page's resource timing buffer holds 250 entries by default, which a
+	// single-page app fills as it loads; an observer sees every resource. A
+	// capture first takes the entries not yet delivered to it.
+	try {
+		const countResources = (entries) => {
+			for (const entry of entries) {
+				window.__apexloadMetrics.step.resourceCount += 1;
+				window.__apexloadMetrics.step.transferKB += (entry.transferSize || 0) / 1024;
+			}
+		};
+		const resourceObserver = new PerformanceObserver((list) => countResources(list.getEntries()));
+		resourceObserver.observe({ type: 'resource', buffered: true });
+		window.__apexloadMetrics.takeResources = () => countResources(resourceObserver.takeRecords());
 	} catch (e) {}
 })();`
 

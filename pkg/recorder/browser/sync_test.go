@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -73,7 +74,7 @@ func TestExplicitNavigations(t *testing.T) {
 		{Timestamp: ts(1500), URL: "https://x/next"},    // click-attributed
 		{Timestamp: ts(60000), URL: "https://x/typed"},  // typed URL, explicit
 	}
-	got := explicitNavigations(steps, navs)
+	got, _ := explicitNavigations(steps, navs)
 	if len(got) != 2 || got[0] != 1 || got[1] != 3 {
 		t.Errorf("explicitNavigations() = %v, want [1 3]", got)
 	}
@@ -89,7 +90,7 @@ func TestExplicitNavigationsKeepsOnlyFinalPreFirstNavigation(t *testing.T) {
 		{Timestamp: ts(600), URL: "https://x/app"},
 	}
 
-	got := explicitNavigations(steps, navs)
+	got, _ := explicitNavigations(steps, navs)
 	if len(got) != 1 || got[0] != 2 {
 		t.Errorf("explicitNavigations() = %v, want [2]", got)
 	}
@@ -111,7 +112,7 @@ func TestExplicitNavigationsSkipsRepeatedURLs(t *testing.T) {
 		{Timestamp: ts(61000), URL: "https://x/day#/week"}, // new hash route, explicit
 		{Timestamp: ts(90000), URL: "https://x/day#/week"}, // after a step, explicit
 	}
-	got := explicitNavigations(steps, navs)
+	got, _ := explicitNavigations(steps, navs)
 	if len(got) != 3 || got[0] != 1 || got[1] != 3 || got[2] != 4 {
 		t.Errorf("explicitNavigations() = %v, want [1 3 4]", got)
 	}
@@ -135,12 +136,21 @@ func TestExplicitNavigationsLeaveAppRouteChangesOut(t *testing.T) {
 		{Timestamp: ts(12000), URL: "https://x/lightning/r/Account/001/related#tab", SameDocument: true}, // unnamed, fragment only
 		{Timestamp: ts(15000), URL: "https://x/lightning/r/Account/001/related#notes", SameDocument: true, NavigationType: "fragment"},
 	}
-	got := explicitNavigations(steps, navs)
+	got, _ := explicitNavigations(steps, navs)
 	if len(got) != 3 || got[0] != 1 || got[1] != 5 || got[2] != 6 {
 		t.Fatalf("explicitNavigations() = %v, want [1 5 6]", got)
 	}
-	if n := unattributedSameDocumentNavigations(steps, navs); n != 2 {
-		t.Fatalf("route changes left out = %d, want 2", n)
+	if _, inPage := explicitNavigations(steps, navs); len(inPage) != 2 || inPage[0] != 3 || inPage[1] != 4 {
+		t.Fatalf("route changes left out = %v, want [3 4]", inPage)
+	}
+	// The conversion says how many it left out, of those among the steps it
+	// converts.
+	session := &Session{StartURL: "https://x/", Steps: steps, NavEvents: navs}
+	if warnings := strings.Join(Convert(session, ConvertOptions{}).Warnings, "\n"); !strings.Contains(warnings, "2 route change(s)") {
+		t.Fatalf("warnings = %s", warnings)
+	}
+	if warnings := strings.Join(Convert(session, ConvertOptions{StepRange: StepRange{EndSeq: 1}}).Warnings, "\n"); strings.Contains(warnings, "route change(s)") {
+		t.Fatalf("a range without route changes warned: %s", warnings)
 	}
 	// A route change long after the click still lets the next element sync.
 	sync := inferSync(steps, 0, navs[3:5], nil)
@@ -159,11 +169,11 @@ func TestSameDocumentURL(t *testing.T) {
 }
 
 func TestExplicitNavigationsEmpty(t *testing.T) {
-	if got := explicitNavigations(nil, nil); len(got) != 0 {
+	if got, _ := explicitNavigations(nil, nil); len(got) != 0 {
 		t.Errorf("explicitNavigations(nil, nil) = %v, want empty", got)
 	}
 	navs := []NavEvent{{Timestamp: ts(500), URL: "https://x/"}}
-	if got := explicitNavigations(nil, navs); len(got) != 0 {
+	if got, _ := explicitNavigations(nil, navs); len(got) != 0 {
 		t.Errorf("initial-only navigation = %v, want empty", got)
 	}
 }

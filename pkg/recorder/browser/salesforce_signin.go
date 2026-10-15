@@ -46,14 +46,14 @@ func salesforceOneTimeCode(step Step) bool {
 	return err == nil && strings.HasPrefix(parsed.Path, "/_ui/identity/verification/")
 }
 
-// salesforceSignInSteps is the recording's leading run of steps on Salesforce
-// login and identity-verification pages, by step sequence. It is empty when
-// the recording is only a sign-in, or when a step there was placed in another
-// section.
-func salesforceSignInSteps(steps []Step) map[int]bool {
+// salesforceSignInSteps is the converted steps' leading run of steps on
+// Salesforce login and identity-verification pages, by step sequence. It is
+// empty when the steps converted are only a sign-in, or when a step there was
+// placed in another section.
+func salesforceSignInSteps(steps []Step, stepRange StepRange) map[int]bool {
 	signIn := map[int]bool{}
 	for _, step := range steps {
-		if step.skipForConvert() {
+		if step.skipForConvert() || !stepRange.contains(step.Seq) {
 			continue
 		}
 		if !salesforceAuthURL(step.URL) {

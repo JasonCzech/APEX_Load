@@ -182,13 +182,21 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 		}
 	}
 
-	timeline := buildTimeline(session, opts.StepRange)
-	signIn := salesforceSignInSteps(session.Steps)
-	if moved, refusal := moveSalesforceSignInToInit(timeline, signIn); refusal != "" {
-		result.Warnings = append(result.Warnings, refusal)
-	} else if moved > 0 {
+	timeline, routeChanges := buildTimeline(session, opts.StepRange)
+	if routeChanges > 0 {
 		result.Warnings = append(result.Warnings, fmt.Sprintf(
-			"The recorded Salesforce sign-in (%d step(s)) runs in init, once per virtual user. Before running more than one observer, give each its own user or session: every one would sign in as the recorded user, and a verification code does not replay.", moved))
+			"%d route change(s) the app made in the page without a recorded step (a single-page app such as Salesforce Lightning) were not turned into navigations: loading the URL would reload the app, and the replayed steps make the app change it again.", routeChanges))
+	}
+	signIn := salesforceSignInSteps(session.Steps, opts.StepRange)
+	// A split script is one transaction and leaves out what was recorded
+	// outside one, so its sign-in stays where it was recorded.
+	if !opts.SplitAtTransactions {
+		if moved, refusal := moveSalesforceSignInToInit(timeline, signIn); refusal != "" {
+			result.Warnings = append(result.Warnings, refusal)
+		} else if moved > 0 {
+			result.Warnings = append(result.Warnings, fmt.Sprintf(
+				"The recorded Salesforce sign-in (%d step(s)) runs in init, once per virtual user. Before running more than one observer, give each its own user or session: every one would sign in as the recorded user, and a verification code does not replay.", moved))
+		}
 	}
 	for _, entry := range timeline {
 		entrySection := normalizeSection(entry.section)
@@ -526,10 +534,6 @@ func finalizeConvertWarnings(session *Session, result *ConvertResult) {
 	if len(session.NetworkEvents) > 0 || len(session.NavEvents) > 0 {
 		result.Warnings = append(result.Warnings, "Recorded element readiness is a hint; add business-result assertions for asynchronous updates and the final action. Background traffic is not used as a network-idle gate.")
 	}
-	if inPage := unattributedSameDocumentNavigations(session.Steps, session.NavEvents); inPage > 0 {
-		result.Warnings = append(result.Warnings, fmt.Sprintf(
-			"%d route change(s) the app made in the page without a recorded step (a single-page app such as Salesforce Lightning) were not turned into navigations: loading the URL would reload the app, and the replayed steps make the app change it again.", inPage))
-	}
 	if len(session.StorageState) > 0 {
 		result.Warnings = append(result.Warnings, "Recorded browser state is not embedded in the script. Replay a login in init, or explicitly configure config.browser.storage_state with a project secret containing a pre-transaction session snapshot. End-of-recording state may already contain completed transaction state.")
 	}
@@ -657,7 +661,10 @@ func titleCaseWords(s string) string {
 	return strings.Join(fields, " ")
 }
 
-func buildTimeline(session *Session, stepRange StepRange) []timelineEntry {
+// buildTimeline orders the converted steps with the navigations, markers and
+// WebSocket traffic in their window. It also counts the app route changes in
+// that window that no recorded step made, which it leaves out.
+func buildTimeline(session *Session, stepRange StepRange) ([]timelineEntry, int) {
 	entries := make([]timelineEntry, 0, len(session.Steps)+len(session.Markers))
 	var lower, upper time.Time
 	haveLower, haveUpper := false, false
@@ -688,10 +695,17 @@ func buildTimeline(session *Session, stepRange StepRange) []timelineEntry {
 		}
 		return true
 	}
-	for _, navIndex := range explicitNavigations(session.Steps, session.NavEvents) {
+	explicit, routeChanges := explicitNavigations(session.Steps, session.NavEvents)
+	for _, navIndex := range explicit {
 		nav := session.NavEvents[navIndex]
 		if within(nav.Timestamp) {
 			entries = append(entries, timelineEntry{timestamp: nav.Timestamp, navURL: nav.URL})
+		}
+	}
+	leftOut := 0
+	for _, navIndex := range routeChanges {
+		if within(session.NavEvents[navIndex].Timestamp) {
+			leftOut++
 		}
 	}
 	markerIndexes := markerIndexesForTimeline(session.Markers, stepRange, lower, upper, haveLower, haveUpper)
@@ -735,7 +749,7 @@ func buildTimeline(session *Session, stepRange StepRange) []timelineEntry {
 		return timelineTieRank(entries[i]) < timelineTieRank(entries[j])
 	})
 	assignTimelineSections(entries)
-	return entries
+	return entries, leftOut
 }
 
 // timelineTieRank orders entries that share an identical timestamp: a

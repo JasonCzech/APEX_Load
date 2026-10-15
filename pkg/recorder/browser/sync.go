@@ -69,26 +69,6 @@ func inferSync(steps []Step, i int, navs []NavEvent, network []time.Time) *dsl.B
 	return &dsl.BrowserSyncPolicy{Type: "element_visible", Value: selector}
 }
 
-// explicitNavigations returns the indexes into navs that should become
-// browser_navigate actions: navigations not attributable to a preceding
-// interaction (typed URLs, bookmarks), excluding the initial navigation which
-// the converter always emits from the session start URL. Before the first
-// captured interaction, only the final distinct URL is kept so redirect chains
-// collapse without losing a real user-initiated sidebar/bookmark navigation.
-// An app's route change never becomes one: loading its URL would reload a
-// single-page app (Salesforce Lightning) that the replayed steps drive.
-func explicitNavigations(steps []Step, navs []NavEvent) []int {
-	explicit, _ := classifyNavigations(steps, navs)
-	return explicit
-}
-
-// unattributedSameDocumentNavigations counts the app route changes that no
-// recorded step made, which explicitNavigations leaves out.
-func unattributedSameDocumentNavigations(steps []Step, navs []NavEvent) int {
-	_, inPage := classifyNavigations(steps, navs)
-	return inPage
-}
-
 // appRouteChange reports whether navs[index] is an app's in-page route change
 // (history.pushState or replaceState). A fragment change loads nothing either
 // way, so like a document load it can still be a navigation of the user's (a
@@ -108,9 +88,19 @@ func appRouteChange(navs []NavEvent, index int) bool {
 	return index == 0 || !sameDocumentURL(navs[index-1].URL, nav.URL)
 }
 
-func classifyNavigations(steps []Step, navs []NavEvent) ([]int, int) {
+// explicitNavigations returns the indexes into navs that should become
+// browser_navigate actions: navigations not attributable to a preceding
+// interaction (typed URLs, bookmarks), excluding the initial navigation which
+// the converter always emits from the session start URL. Before the first
+// captured interaction, only the final distinct URL is kept so redirect chains
+// collapse without losing a real user-initiated sidebar/bookmark navigation.
+// An app's route change never becomes one: loading its URL would reload a
+// single-page app (Salesforce Lightning) that the replayed steps drive. The
+// second result indexes the route changes no recorded step made, which are
+// left out.
+func explicitNavigations(steps []Step, navs []NavEvent) ([]int, []int) {
 	out := make([]int, 0)
-	inPage := 0
+	var inPage []int
 	firstStepAt, haveFirstStep := firstConvertibleStepTimestamp(steps)
 	lastPreFirst := lastPreFirstNavigationIndex(navs, firstStepAt, haveFirstStep)
 	initialURL := ""
@@ -148,7 +138,7 @@ func classifyNavigations(steps []Step, navs []NavEvent) ([]int, int) {
 		switch {
 		case attributed:
 		case appRouteChange(navs, i):
-			inPage++
+			inPage = append(inPage, i)
 		default:
 			out = append(out, i)
 		}

@@ -77,6 +77,12 @@ func TestConvertPutsTheSalesforceSignInInInit(t *testing.T) {
 	if got := Convert(only, ConvertOptions{}).Script; len(got.Init) != 0 {
 		t.Fatalf("a sign-in-only recording moved to init: %+v", got.Init)
 	}
+	// So is a converted range that holds only the sign-in.
+	if got := Convert(session, ConvertOptions{StepRange: StepRange{StartSeq: 1, EndSeq: 5}}).Script; len(got.Init) != 0 || len(got.Actions) == 0 {
+		t.Fatalf("a sign-in-only range: init %+v, actions %+v", got.Init, got.Actions)
+	} else if issues := dsl.ValidateScriptIssues(got); len(issues) != 0 {
+		t.Fatalf("a sign-in-only range is invalid: %v", issues)
+	}
 
 	// A transaction marked around the sign-in moves with it.
 	wrapped := &Session{StartURL: login, Steps: session.Steps, Markers: []Marker{
@@ -85,6 +91,18 @@ func TestConvertPutsTheSalesforceSignInInInit(t *testing.T) {
 	}}
 	if got := Convert(wrapped, ConvertOptions{}).Script; len(got.Init) != 8 || got.Init[1].Type != "source_transaction" || got.Init[7].Type != "source_transaction" || len(got.Actions) != 1 {
 		t.Fatalf("a Login transaction around the sign-in: init %+v, actions %+v", got.Init, got.Actions)
+	}
+	// A script split at transactions is one transaction, so the Login
+	// transaction's sign-in stays in its iteration.
+	split := Convert(wrapped, ConvertOptions{SplitAtTransactions: true})
+	if len(split.Scripts) != 1 || len(split.Scripts[0].Init) != 0 || len(split.Scripts[0].Actions) != 6 || strings.Contains(strings.Join(split.Warnings, "\n"), "runs in init") {
+		t.Fatalf("split at transactions: scripts %+v, warnings %v", split.Scripts, split.Warnings)
+	}
+	if split.Scripts[0].Actions[1].Metadata["salesforce_auth"] != true {
+		t.Fatalf("split sign-in step not tagged: %+v", split.Scripts[0].Actions[1])
+	}
+	if issues := dsl.ValidateScriptIssues(split.Scripts[0]); len(issues) != 0 {
+		t.Fatalf("split Login script is invalid: %v", issues)
 	}
 
 	// A transaction that starts during the sign-in and ends after it keeps

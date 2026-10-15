@@ -9,10 +9,11 @@ import (
 )
 
 // lightningReloadWarning warns about browser_navigate steps that load a
-// Salesforce Lightning page after the iteration's first browser step. Each
-// reloads the page and restarts Lightning, so the step's time includes the
-// framework's startup, which a user moving through the app never waits for
-// again. Older recordings and hand edits leave them.
+// Salesforce Lightning page once the iteration's journey has started, at its
+// first browser step that is not a navigation. Each reloads the page and
+// restarts Lightning, so the step's time includes the framework's startup,
+// which a user moving through the app never waits for again. Older recordings
+// and hand edits leave them.
 func lightningReloadWarning(script *dsl.Script) string {
 	if script == nil || script.Protocol != "browser" {
 		return ""
@@ -22,22 +23,17 @@ func lightningReloadWarning(script *dsl.Script) string {
 	var walk func([]dsl.Action)
 	walk = func(actions []dsl.Action) {
 		for _, action := range actions {
-			if action.Type == "browser_navigate" && started && lightningAppURL(script.Config.BaseURL, action.Target) {
-				reloads = append(reloads, action.Name)
-			}
-			if strings.HasPrefix(action.Type, "browser_") {
+			switch {
+			case action.Type == "browser_navigate":
+				// Navigations before the journey starts are where it starts.
+				if started && lightningAppURL(script.Config.BaseURL, action.Target) {
+					reloads = append(reloads, action.Name)
+				}
+			case strings.HasPrefix(action.Type, "browser_"):
 				started = true
 			}
-			if control := action.Control; control != nil {
-				walk(control.Steps)
-				walk(control.Else)
-				for _, switchCase := range control.Cases {
-					walk(switchCase.Steps)
-				}
-				walk(control.Default)
-				for _, branch := range control.Branches {
-					walk(branch.Steps)
-				}
+			for _, branch := range action.Control.ActionBranches() {
+				walk(branch.Actions)
 			}
 		}
 	}
