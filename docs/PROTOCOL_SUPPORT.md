@@ -308,6 +308,19 @@ JMS, Kafka, or other high-density protocol groups.
   otherwise, and the run report's Browser Metrics section shows each
   transaction's cold and warm times side by side. `browser_iteration` is
   reserved: property analytics cannot use it.
+- `config.browser.ept_calibration: true` (for qualification runs, not load)
+  opens Lightning URLs with `eptVisible=1`, which shows Salesforce's
+  Experienced Page Time counter on the page, and reads the counter from the
+  page's text after each passed step. A step after which the reading changed
+  reports it in `protocol_evidence.salesforce_ept` (`{"ms": n}`); an unchanged
+  counter still shows an earlier page's time and is not reported. The run
+  report's Browser Metrics section sets each step's readings beside the same
+  steps' own times (HTML, PDF, CSV and the dashboard). Salesforce documents no
+  API for the counter, so confirm the reading in the org before relying on it;
+  reloads and new tabs fold framework startup into EPT. The counter is read
+  when the step's own wait ends: a step that ends before Lightning finishes
+  the page has its reading credited to the next step, so give each in-app
+  step a wait that covers the page settling.
 - Each browser session compares its browser's major version with the one the
   bundled Playwright driver was tested with (its `browsers.json`) and, for a
   recorded script, with the one it was recorded in (the recording keeps it in

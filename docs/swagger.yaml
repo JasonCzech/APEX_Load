@@ -2187,6 +2187,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -12603,6 +12606,25 @@ paths:
                           items:
                             type: string
                       nullable: true
+                    salesforce_ept:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          avg_difference_ms:
+                            type: number
+                            format: double
+                          avg_ept_ms:
+                            type: number
+                            format: double
+                          avg_step_ms:
+                            type: number
+                            format: double
+                          samples:
+                            type: integer
+                            format: int64
+                          step:
+                            type: string
                     schema_version:
                       type: string
                     sla_rollup:
@@ -13196,6 +13218,9 @@ paths:
                           type: string
                         engine:
                           type: string
+                        ept_calibration:
+                          type: boolean
+                          nullable: true
                         experience_canary:
                           type: boolean
                         geolocation:
@@ -14467,6 +14492,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -15404,6 +15432,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -17577,6 +17608,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -19558,6 +19592,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -52308,6 +52345,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -87349,6 +87389,9 @@ paths:
                           type: string
                         engine:
                           type: string
+                        ept_calibration:
+                          type: boolean
+                          nullable: true
                         experience_canary:
                           type: boolean
                         geolocation:
@@ -88459,6 +88502,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -94871,6 +94917,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -101490,6 +101539,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -108110,6 +108162,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -114742,6 +114797,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -121374,6 +121432,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -128006,6 +128067,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -134638,6 +134702,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -150949,6 +151016,9 @@ paths:
                                   type: string
                                 engine:
                                   type: string
+                                ept_calibration:
+                                  type: boolean
+                                  nullable: true
                                 experience_canary:
                                   type: boolean
                                 geolocation:
@@ -152121,6 +152191,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -152712,6 +152785,9 @@ paths:
                           type: string
                         engine:
                           type: string
+                        ept_calibration:
+                          type: boolean
+                          nullable: true
                         experience_canary:
                           type: boolean
                         geolocation:
@@ -154812,6 +154888,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -155938,6 +156017,9 @@ paths:
                                   type: string
                                 engine:
                                   type: string
+                                ept_calibration:
+                                  type: boolean
+                                  nullable: true
                                 experience_canary:
                                   type: boolean
                                 geolocation:
@@ -158124,6 +158206,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -159250,6 +159335,9 @@ paths:
                                       type: string
                                     engine:
                                       type: string
+                                    ept_calibration:
+                                      type: boolean
+                                      nullable: true
                                     experience_canary:
                                       type: boolean
                                     geolocation:
@@ -160702,6 +160790,9 @@ paths:
                                     type: string
                                   engine:
                                     type: string
+                                  ept_calibration:
+                                    type: boolean
+                                    nullable: true
                                   experience_canary:
                                     type: boolean
                                   geolocation:
@@ -161927,6 +162018,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -162518,6 +162612,9 @@ paths:
                           type: string
                         engine:
                           type: string
+                        ept_calibration:
+                          type: boolean
+                          nullable: true
                         experience_canary:
                           type: boolean
                         geolocation:
@@ -164618,6 +164715,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -165744,6 +165844,9 @@ paths:
                                   type: string
                                 engine:
                                   type: string
+                                ept_calibration:
+                                  type: boolean
+                                  nullable: true
                                 experience_canary:
                                   type: boolean
                                 geolocation:
@@ -167828,6 +167931,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -168954,6 +169060,9 @@ paths:
                                   type: string
                                 engine:
                                   type: string
+                                ept_calibration:
+                                  type: boolean
+                                  nullable: true
                                 experience_canary:
                                   type: boolean
                                 geolocation:
@@ -171902,6 +172011,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -173028,6 +173140,9 @@ paths:
                                   type: string
                                 engine:
                                   type: string
+                                ept_calibration:
+                                  type: boolean
+                                  nullable: true
                                 experience_canary:
                                   type: boolean
                                 geolocation:
@@ -174832,6 +174947,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -178480,6 +178598,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -180416,6 +180537,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -182561,6 +182685,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -184308,6 +184435,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -186244,6 +186374,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -187826,6 +187959,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -188417,6 +188553,9 @@ paths:
                           type: string
                         engine:
                           type: string
+                        ept_calibration:
+                          type: boolean
+                          nullable: true
                         experience_canary:
                           type: boolean
                         geolocation:
@@ -205027,6 +205166,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -208294,6 +208436,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -211445,6 +211590,9 @@ paths:
                                     type: string
                                   engine:
                                     type: string
+                                  ept_calibration:
+                                    type: boolean
+                                    nullable: true
                                   experience_canary:
                                     type: boolean
                                   geolocation:
@@ -213435,6 +213583,9 @@ paths:
                                     type: string
                                   engine:
                                     type: string
+                                  ept_calibration:
+                                    type: boolean
+                                    nullable: true
                                   experience_canary:
                                     type: boolean
                                   geolocation:
@@ -215489,6 +215640,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -218754,6 +218908,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -221833,6 +221990,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -223599,6 +223759,9 @@ paths:
                       type: string
                     engine:
                       type: string
+                    ept_calibration:
+                      type: boolean
+                      nullable: true
                     experience_canary:
                       type: boolean
                     geolocation:
@@ -224100,6 +224263,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -227995,6 +228161,9 @@ paths:
                       type: string
                     engine:
                       type: string
+                    ept_calibration:
+                      type: boolean
+                      nullable: true
                     experience_canary:
                       type: boolean
                     geolocation:
@@ -228522,6 +228691,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -233580,6 +233752,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -235318,6 +235493,9 @@ paths:
                       type: string
                     engine:
                       type: string
+                    ept_calibration:
+                      type: boolean
+                      nullable: true
                     experience_canary:
                       type: boolean
                     geolocation:
@@ -235845,6 +236023,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -240958,6 +241139,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -244795,6 +244979,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -246801,6 +246988,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -248898,6 +249088,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -250914,6 +251107,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -252854,6 +253050,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -256891,6 +257090,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -258841,6 +259043,9 @@ paths:
                       type: string
                     engine:
                       type: string
+                    ept_calibration:
+                      type: boolean
+                      nullable: true
                     experience_canary:
                       type: boolean
                     geolocation:
@@ -259342,6 +259547,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -263401,6 +263609,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -265353,6 +265564,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -267557,6 +267771,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -269339,6 +269556,9 @@ paths:
                       type: string
                     engine:
                       type: string
+                    ept_calibration:
+                      type: boolean
+                      nullable: true
                     experience_canary:
                       type: boolean
                     geolocation:
@@ -269866,6 +270086,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -273965,6 +274188,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -276864,6 +277090,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -278724,6 +278953,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -280983,6 +281215,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -282812,6 +283047,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -285082,6 +285320,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -288204,6 +288445,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -290657,6 +290901,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -294249,6 +294496,9 @@ paths:
                                     type: string
                                   engine:
                                     type: string
+                                  ept_calibration:
+                                    type: boolean
+                                    nullable: true
                                   experience_canary:
                                     type: boolean
                                   geolocation:
@@ -296226,6 +296476,9 @@ paths:
                                     type: string
                                   engine:
                                     type: string
+                                  ept_calibration:
+                                    type: boolean
+                                    nullable: true
                                   experience_canary:
                                     type: boolean
                                   geolocation:
@@ -298125,6 +298378,9 @@ paths:
                                       type: string
                                     engine:
                                       type: string
+                                    ept_calibration:
+                                      type: boolean
+                                      nullable: true
                                     experience_canary:
                                       type: boolean
                                     geolocation:
@@ -299767,6 +300023,9 @@ paths:
                                       type: string
                                     engine:
                                       type: string
+                                    ept_calibration:
+                                      type: boolean
+                                      nullable: true
                                     experience_canary:
                                       type: boolean
                                     geolocation:
@@ -301857,6 +302116,9 @@ paths:
                                     type: string
                                   engine:
                                     type: string
+                                  ept_calibration:
+                                    type: boolean
+                                    nullable: true
                                   experience_canary:
                                     type: boolean
                                   geolocation:
@@ -303834,6 +304096,9 @@ paths:
                                     type: string
                                   engine:
                                     type: string
+                                  ept_calibration:
+                                    type: boolean
+                                    nullable: true
                                   experience_canary:
                                     type: boolean
                                   geolocation:
@@ -305733,6 +305998,9 @@ paths:
                                       type: string
                                     engine:
                                       type: string
+                                    ept_calibration:
+                                      type: boolean
+                                      nullable: true
                                     experience_canary:
                                       type: boolean
                                     geolocation:
@@ -307375,6 +307643,9 @@ paths:
                                       type: string
                                     engine:
                                       type: string
+                                    ept_calibration:
+                                      type: boolean
+                                      nullable: true
                                     experience_canary:
                                       type: boolean
                                     geolocation:
@@ -309512,6 +309783,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -311439,6 +311713,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -313514,6 +313791,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -315278,6 +315558,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -316978,6 +317261,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -319064,6 +319350,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -320784,6 +321073,9 @@ paths:
                       type: string
                     engine:
                       type: string
+                    ept_calibration:
+                      type: boolean
+                      nullable: true
                     experience_canary:
                       type: boolean
                     geolocation:
@@ -321311,6 +321603,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -325414,6 +325709,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -327374,6 +327672,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -329295,6 +329596,9 @@ paths:
                                     type: string
                                   engine:
                                     type: string
+                                  ept_calibration:
+                                    type: boolean
+                                    nullable: true
                                   experience_canary:
                                     type: boolean
                                   geolocation:
@@ -331264,6 +331568,9 @@ paths:
                                     type: string
                                   engine:
                                     type: string
+                                  ept_calibration:
+                                    type: boolean
+                                    nullable: true
                                   experience_canary:
                                     type: boolean
                                   geolocation:
@@ -333353,6 +333660,9 @@ paths:
                               type: string
                             engine:
                               type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
                             experience_canary:
                               type: boolean
                             geolocation:
@@ -345198,6 +345508,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -345819,6 +346132,9 @@ paths:
                           type: string
                         engine:
                           type: string
+                        ept_calibration:
+                          type: boolean
+                          nullable: true
                         experience_canary:
                           type: boolean
                         geolocation:
@@ -349573,6 +349889,9 @@ paths:
                                   type: string
                                 engine:
                                   type: string
+                                ept_calibration:
+                                  type: boolean
+                                  nullable: true
                                 experience_canary:
                                   type: boolean
                                 geolocation:
@@ -359253,6 +359572,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -363444,6 +363766,9 @@ paths:
                                   type: string
                                 engine:
                                   type: string
+                                ept_calibration:
+                                  type: boolean
+                                  nullable: true
                                 experience_canary:
                                   type: boolean
                                 geolocation:
@@ -373124,6 +373449,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -379532,6 +379860,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -382562,6 +382893,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -398801,6 +399135,31 @@ paths:
                       - source
                       - summary
                     nullable: true
+                  salesforce_ept:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        avg_difference_ms:
+                          type: number
+                          format: double
+                        avg_ept_ms:
+                          type: number
+                          format: double
+                        avg_step_ms:
+                          type: number
+                          format: double
+                        samples:
+                          type: integer
+                          format: int64
+                        step:
+                          type: string
+                      required:
+                        - avg_difference_ms
+                        - avg_ept_ms
+                        - avg_step_ms
+                        - samples
+                        - step
                   schema_version:
                     type: string
                   sla_rollup:
@@ -409110,6 +409469,9 @@ paths:
                                   type: string
                                 engine:
                                   type: string
+                                ept_calibration:
+                                  type: boolean
+                                  nullable: true
                                 experience_canary:
                                   type: boolean
                                 geolocation:
@@ -418790,6 +419152,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -422925,6 +423290,9 @@ paths:
                                   type: string
                                 engine:
                                   type: string
+                                ept_calibration:
+                                  type: boolean
+                                  nullable: true
                                 experience_canary:
                                   type: boolean
                                 geolocation:
@@ -432605,6 +432973,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -435012,6 +435383,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -435870,6 +436244,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -436686,6 +437063,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -437502,6 +437882,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -438381,6 +438764,9 @@ paths:
                           type: string
                         engine:
                           type: string
+                        ept_calibration:
+                          type: boolean
+                          nullable: true
                         experience_canary:
                           type: boolean
                         geolocation:
@@ -439196,6 +439582,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -442786,6 +443175,9 @@ paths:
                                   type: string
                                 engine:
                                   type: string
+                                ept_calibration:
+                                  type: boolean
+                                  nullable: true
                                 experience_canary:
                                   type: boolean
                                 geolocation:
@@ -452466,6 +452858,9 @@ paths:
                             type: string
                           engine:
                             type: string
+                          ept_calibration:
+                            type: boolean
+                            nullable: true
                           experience_canary:
                             type: boolean
                           geolocation:
@@ -455024,6 +455419,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -456553,6 +456951,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -458160,6 +458561,9 @@ paths:
                                   type: string
                                 engine:
                                   type: string
+                                ept_calibration:
+                                  type: boolean
+                                  nullable: true
                                 experience_canary:
                                   type: boolean
                                 geolocation:
@@ -475888,6 +476292,9 @@ paths:
                                 type: string
                               engine:
                                 type: string
+                              ept_calibration:
+                                type: boolean
+                                nullable: true
                               experience_canary:
                                 type: boolean
                               geolocation:
@@ -476509,6 +476916,9 @@ paths:
                           type: string
                         engine:
                           type: string
+                        ept_calibration:
+                          type: boolean
+                          nullable: true
                         experience_canary:
                           type: boolean
                         geolocation:
@@ -478039,6 +478449,9 @@ paths:
                                   type: string
                                 engine:
                                   type: string
+                                ept_calibration:
+                                  type: boolean
+                                  nullable: true
                                 experience_canary:
                                   type: boolean
                                 geolocation:
@@ -479600,6 +480013,9 @@ paths:
                           type: string
                         engine:
                           type: string
+                        ept_calibration:
+                          type: boolean
+                          nullable: true
                         experience_canary:
                           type: boolean
                         geolocation:

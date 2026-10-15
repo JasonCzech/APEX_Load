@@ -103,6 +103,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	auraActions := newArchiveAuraActionAccumulator()
 	browserVersionSkews := newArchiveBrowserVersionSkewAccumulator()
 	browserIterations := newArchiveBrowserIterationAccumulator()
+	salesforceEPT := newArchiveSalesforceEPTAccumulator()
 	web2Migration := newRunArchiveWeb2MigrationAccumulator()
 	var browserArtifactCount int64
 	var actionSummaryCells int
@@ -314,6 +315,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		auraActions.merge(tx)
 		browserVersionSkews.merge(tx)
 		browserIterations.merge(tx)
+		salesforceEPT.merge(tx)
 		if tx.DNSMs > 0 || tx.ConnectMs > 0 || tx.TLSMs > 0 || tx.TTFBMs > 0 {
 			dependencyKey := tx.DependencyTarget
 			if tx.DependencyType != "" && dependencyKey != "" {
@@ -583,6 +585,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.AuraActions = auraActions.result()
 	report.BrowserVersionSkews = browserVersionSkews.result()
 	report.BrowserIterations = browserIterations.result()
+	report.SalesforceEPT = salesforceEPT.result()
 	report.HostNetwork = buildRunArchiveHostNetwork(manifest.HostNetwork)
 	report.HTTP3Preflight = cloneHTTP3Preflight(manifest.Provenance.HTTP3Preflight)
 	report.ArtifactInventory = buildRunArchiveArtifactInventory(record, manifest)

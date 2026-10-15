@@ -1827,6 +1827,8 @@ export interface RunArchiveReport {
   browser_version_skews?: BrowserVersionSkew[]
   // Each transaction's times in cold and warm browser iterations.
   browser_iterations?: BrowserIterationTransaction[]
+  // Each step's Salesforce EPT readings beside its own times (calibration).
+  salesforce_ept?: SalesforceEPTCalibration[]
   resource_peaks: RunArchiveResourcePeaks
   release_trend?: RunArchiveReleaseTrendSummary
   // root_cause_view is the generated root cause every report format renders:
@@ -2212,6 +2214,16 @@ export interface BrowserIterationTimes {
   errors?: number
   avg_ms: number
   p90_ms: number
+}
+
+// One step's Salesforce EPT readings (eptVisible=1, read when the counter
+// changed) and the same steps' own times; the difference is step minus EPT.
+export interface SalesforceEPTCalibration {
+  step: string
+  samples: number
+  avg_ept_ms: number
+  avg_step_ms: number
+  avg_difference_ms: number
 }
 
 // A transaction's times in cold (a browser context's first) and warm browser

@@ -539,6 +539,7 @@ func (b *Browser) setBrowserContext(browserContext playwright.BrowserContext) {
 	b.mu.Lock()
 	b.pwContext = browserContext
 	b.contextIterations = 0
+	b.lastSalesforceEPTMs = 0
 	b.mu.Unlock()
 }
 

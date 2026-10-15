@@ -100,6 +100,9 @@ func (b *Browser) navigate(ctx context.Context, action *protocol.Action, result 
 	} else if !strings.HasPrefix(target, "http") {
 		resolvedTarget = "http://" + target
 	}
+	if b.eptCalibration {
+		resolvedTarget = salesforceEPTURL(resolvedTarget)
+	}
 
 	timeout := b.actionTimeout(action)
 	response, err := page.Goto(resolvedTarget, playwright.PageGotoOptions{

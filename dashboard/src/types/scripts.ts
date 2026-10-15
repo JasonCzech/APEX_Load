@@ -471,6 +471,7 @@ export interface BrowserConfig {
     start_gap_ms?: number
     jwt?: { login_url: string, client_id: string, private_key: string, audience?: string, start_url?: string }
   }
+  ept_calibration?: boolean
 }
 
 export interface BrowserGeolocation {

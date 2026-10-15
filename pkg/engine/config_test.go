@@ -1422,3 +1422,17 @@ func TestBuildProtoConfigForwardsQUICSettings(t *testing.T) {
 		}
 	}
 }
+
+// EPT calibration reaches the browser only when the script opts in.
+func TestBuildProtoConfigEPTCalibration(t *testing.T) {
+	on, off := true, false
+	for _, tc := range []struct {
+		value *bool
+		want  any
+	}{{&on, true}, {&off, nil}, {nil, nil}} {
+		script := &dsl.Script{Protocol: "browser", Config: dsl.ScriptConfig{Browser: dsl.BrowserConfig{EPTCalibration: tc.value}}}
+		if got := buildProtoConfig(script)["browser_ept_calibration"]; got != tc.want {
+			t.Errorf("ept_calibration %v: config %v, want %v", tc.value, got, tc.want)
+		}
+	}
+}

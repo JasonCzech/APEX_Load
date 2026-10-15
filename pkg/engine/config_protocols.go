@@ -512,6 +512,9 @@ func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 		cfg["browser_session_jwt_audience"] = session.JWT.Audience
 		cfg["browser_session_jwt_start_url"] = dsl.BrowserSessionJWTStartURL(session.JWT)
 	}
+	if browserCfg.EPTCalibration != nil && *browserCfg.EPTCalibration {
+		cfg["browser_ept_calibration"] = true
+	}
 	cfg["browser_system_language"] = browserCfg.SystemLanguage
 	cfg["browser_available_screen_width"] = browserCfg.AvailableScreenWidth
 	cfg["browser_available_screen_height"] = browserCfg.AvailableScreenHeight

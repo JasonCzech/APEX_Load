@@ -203,6 +203,11 @@ type Browser struct {
 
 	// salesforceJWT signs each new context in (session_jwt.go), or is nil.
 	salesforceJWT *salesforceJWTSession
+	// eptCalibration reads Salesforce's EPT counter after each step, and
+	// lastSalesforceEPTMs is the context's last reading, guarded by mu
+	// (salesforce_ept.go).
+	eptCalibration      bool
+	lastSalesforceEPTMs float64
 }
 
 // SetRuntimeTextRedactor installs a memory-only projection owned by the VUser.

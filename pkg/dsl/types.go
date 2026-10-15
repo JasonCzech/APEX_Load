@@ -740,6 +740,10 @@ type BrowserConfig struct {
 	ReviewPolicy       BrowserReviewPolicy        `json:"review_policy,omitempty"`
 	// Session gives each observer its own user and signed-in session.
 	Session *BrowserSessionConfig `json:"session,omitempty"`
+	// EPTCalibration (qualification runs) opens Lightning with eptVisible=1
+	// and reports Salesforce's Experienced Page Time counter after each step
+	// whose reading changed, beside the step's own time.
+	EPTCalibration *bool `json:"ept_calibration,omitempty"`
 }
 
 type BrowserGeolocation struct {

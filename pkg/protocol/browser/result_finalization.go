@@ -59,6 +59,7 @@ func (b *Browser) finalizeActionResult(ctx context.Context, action *protocol.Act
 	}
 
 	result.Success = true
+	b.recordSalesforceEPT(result)
 }
 
 func (b *Browser) captureActionPageState(ctx context.Context, action *protocol.Action, forceArtifacts bool) (capturedBrowserPageState, error) {

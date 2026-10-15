@@ -7679,6 +7679,9 @@
         "engine": {
           "type": "string"
         },
+        "ept_calibration": {
+          "type": "boolean"
+        },
         "experience_canary": {
           "type": "boolean"
         },

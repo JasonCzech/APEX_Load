@@ -43,6 +43,7 @@ func (b *Browser) applyConfig(config map[string]any) error {
 	if err := b.configureSalesforceJWTSession(config); err != nil {
 		return err
 	}
+	b.eptCalibration = config["browser_ept_calibration"] == true
 	b.systemLanguage = protocol.ConfigString(config, "browser_system_language")
 	b.availableScreenWidth = protocol.ConfigInt(config, "browser_available_screen_width")
 	b.availableScreenHeight = protocol.ConfigInt(config, "browser_available_screen_height")

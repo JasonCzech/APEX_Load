@@ -638,6 +638,7 @@ type RunArchiveReport struct {
 	AuraActions                       []AuraActionRollup                     `json:"aura_actions,omitempty"`
 	BrowserVersionSkews               []BrowserVersionSkew                   `json:"browser_version_skews,omitempty"`
 	BrowserIterations                 []BrowserIterationTransaction          `json:"browser_iterations,omitempty"`
+	SalesforceEPT                     []SalesforceEPTCalibration             `json:"salesforce_ept,omitempty"`
 	Web2Migration                     *RunArchiveWeb2MigrationEvidence       `json:"web2_migration,omitempty"`
 	OracleDB                          *RunArchiveOracleDBEvidence            `json:"oracle_db,omitempty"`
 	ResourcePeaks                     RunArchiveResourcePeaks                `json:"resource_peaks"`

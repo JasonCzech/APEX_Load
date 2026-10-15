@@ -566,7 +566,8 @@ var reportSectionApplies = map[string]func(d *runArchiveHTMLReportData) bool{
 		return d.Report.Manifest != nil && d.Report.Manifest.Continuity != nil && len(d.Report.Manifest.Continuity.Failovers) > 0
 	},
 	"browser": func(d *runArchiveHTMLReportData) bool {
-		return d.Report.Overview.Browser != nil || len(d.Report.AuraActions) > 0 || len(d.Report.BrowserVersionSkews) > 0 || len(d.Report.BrowserIterations) > 0
+		return d.Report.Overview.Browser != nil || len(d.Report.AuraActions) > 0 || len(d.Report.BrowserVersionSkews) > 0 || len(d.Report.BrowserIterations) > 0 ||
+			len(d.Report.SalesforceEPT) > 0
 	},
 	"web2_migration": func(d *runArchiveHTMLReportData) bool { return d.Report.Web2Migration != nil },
 	"soap": func(d *runArchiveHTMLReportData) bool {
@@ -1247,6 +1248,13 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				}
 				*lines = append(*lines, "")
 			}
+			if len(d.Report.SalesforceEPT) > 0 {
+				*lines = append(*lines, "Salesforce EPT calibration (each step's EPT readings beside its own time):")
+				for _, row := range d.Report.SalesforceEPT {
+					*lines = append(*lines, "  "+salesforceEPTCalibrationText(row))
+				}
+				*lines = append(*lines, "")
+			}
 			if len(d.Report.BrowserVersionSkews) > 0 {
 				*lines = append(*lines, "Browser version mismatches (the launched browser's major version differs):")
 				for _, skew := range d.Report.BrowserVersionSkews {
@@ -1295,6 +1303,12 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 					if err := write("browser", "browser_iteration:"+kind.name, row.Transaction, value); err != nil {
 						return err
 					}
+				}
+			}
+			for _, row := range d.Report.SalesforceEPT {
+				value := fmt.Sprintf("samples=%s;avg_ept_ms=%s;avg_step_ms=%s;avg_difference_ms=%s", formatCSVInt(row.Samples), formatCSVFloat(row.AvgEPTMs), formatCSVFloat(row.AvgStepMs), formatCSVFloat(row.AvgDifferenceMs))
+				if err := write("browser", "salesforce_ept", row.Step, value); err != nil {
+					return err
 				}
 			}
 			for _, skew := range d.Report.BrowserVersionSkews {

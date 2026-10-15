@@ -716,6 +716,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -4524,6 +4525,13 @@ export interface operations {
               "validity"?: string;
               "validity_reasons"?: Array<string>;
             }) | null;
+            "salesforce_ept"?: Array<{
+              "avg_difference_ms"?: number;
+              "avg_ept_ms"?: number;
+              "avg_step_ms"?: number;
+              "samples"?: number;
+              "step"?: string;
+            }>;
             "schema_version"?: string;
             "sla_rollup"?: ({
               "evaluated"?: number;
@@ -4752,6 +4760,7 @@ export interface operations {
               "device_profile"?: string;
               "download_resources"?: string;
               "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
               "experience_canary"?: boolean;
               "geolocation"?: {
                 "accuracy"?: (number) | null;
@@ -5234,6 +5243,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -5575,6 +5585,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -6422,6 +6433,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -7171,6 +7183,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -12635,6 +12648,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -13544,6 +13558,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -14270,6 +14285,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -14963,6 +14979,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -15538,6 +15555,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -16190,6 +16208,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -16856,6 +16875,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -17511,6 +17531,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -18551,6 +18572,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -19069,6 +19091,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -20805,6 +20828,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -21227,6 +21251,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -21940,6 +21965,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -22362,6 +22388,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -23126,6 +23153,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -24218,6 +24246,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -25061,6 +25090,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -27001,6 +27031,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -27661,6 +27692,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -28584,6 +28616,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -29800,6 +29833,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -30538,6 +30572,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -35705,6 +35740,7 @@ export interface operations {
               "device_profile"?: string;
               "download_resources"?: string;
               "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
               "experience_canary"?: boolean;
               "geolocation"?: Record<string, unknown>;
               "har_artifact_dir"?: string;
@@ -36111,6 +36147,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -38153,6 +38190,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -39199,6 +39237,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -39411,6 +39450,7 @@ export interface operations {
               "device_profile"?: string;
               "download_resources"?: string;
               "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
               "experience_canary"?: boolean;
               "geolocation"?: {
                 "accuracy"?: (number) | null;
@@ -40181,6 +40221,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -40603,6 +40644,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -41315,6 +41357,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -42528,6 +42571,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -43484,6 +43528,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -43709,6 +43754,7 @@ export interface operations {
               "device_profile"?: string;
               "download_resources"?: string;
               "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
               "experience_canary"?: boolean;
               "geolocation"?: {
                 "accuracy"?: (number) | null;
@@ -44958,6 +45004,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -47834,6 +47881,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -50917,6 +50965,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -51611,6 +51660,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -52227,6 +52277,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -52921,6 +52972,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -55371,6 +55423,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -55596,6 +55649,7 @@ export interface operations {
               "device_profile"?: string;
               "download_resources"?: string;
               "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
               "experience_canary"?: boolean;
               "geolocation"?: {
                 "accuracy"?: (number) | null;
@@ -56176,6 +56230,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -56969,6 +57024,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -59030,6 +59086,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -69245,6 +69302,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -71294,6 +71352,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -72299,6 +72358,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -77125,6 +77185,13 @@ export interface operations {
               "validity"?: string;
               "validity_reasons"?: Array<string>;
             }) | null;
+            "salesforce_ept"?: Array<{
+              "avg_difference_ms": number;
+              "avg_ept_ms": number;
+              "avg_step_ms": number;
+              "samples": number;
+              "step": string;
+            }>;
             "schema_version": string;
             "sla_rollup"?: ({
               "evaluated": number;
@@ -78138,6 +78205,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -78560,6 +78628,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -79051,6 +79120,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -79851,6 +79921,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -80581,6 +80652,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -84022,6 +84094,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -86898,6 +86971,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -87542,6 +87616,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -87872,6 +87947,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -88188,6 +88264,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -88504,6 +88581,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -89132,6 +89210,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -89657,6 +89736,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -90198,6 +90278,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -92559,6 +92640,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -93289,6 +93371,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -105920,6 +106003,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -108796,6 +108880,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -109835,6 +109920,7 @@ export interface operations {
               "device_profile"?: string;
               "download_resources"?: string;
               "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
               "experience_canary"?: boolean;
               "geolocation"?: Record<string, unknown>;
               "har_artifact_dir"?: string;
@@ -111850,6 +111936,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -112814,6 +112901,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -113553,6 +113641,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -114361,6 +114450,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -115418,6 +115508,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -116144,6 +116235,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -116837,6 +116929,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -117412,6 +117505,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -119625,6 +119719,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -120355,6 +120450,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -121078,6 +121174,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -123812,6 +123909,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -125937,6 +126035,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -128062,6 +128161,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -130187,6 +130287,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -132312,6 +132413,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -132892,6 +132994,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -133728,6 +133831,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -135431,6 +135535,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -138307,6 +138412,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -141294,6 +141400,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -143046,6 +143153,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -143328,6 +143436,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -143986,6 +144095,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -146064,6 +146174,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -146489,6 +146600,7 @@ export interface operations {
             "device_profile"?: string;
             "download_resources"?: string;
             "engine"?: string;
+            "ept_calibration"?: (boolean) | null;
             "experience_canary"?: boolean;
             "geolocation"?: {
               "accuracy"?: (number) | null;
@@ -146683,6 +146795,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -148002,6 +148115,7 @@ export interface operations {
             "device_profile"?: string;
             "download_resources"?: string;
             "engine"?: string;
+            "ept_calibration"?: (boolean) | null;
             "experience_canary"?: boolean;
             "geolocation"?: {
               "accuracy"?: (number) | null;
@@ -148196,6 +148310,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -149634,6 +149749,7 @@ export interface operations {
             "device_profile"?: string;
             "download_resources"?: string;
             "engine"?: string;
+            "ept_calibration"?: (boolean) | null;
             "experience_canary"?: boolean;
             "geolocation"?: {
               "accuracy"?: (number) | null;
@@ -149841,6 +149957,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -151246,6 +151363,7 @@ export interface operations {
             "device_profile"?: string;
             "download_resources"?: string;
             "engine"?: string;
+            "ept_calibration"?: (boolean) | null;
             "experience_canary"?: boolean;
             "geolocation"?: {
               "accuracy"?: (number) | null;
@@ -151453,6 +151571,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -152859,6 +152978,7 @@ export interface operations {
             "device_profile"?: string;
             "download_resources"?: string;
             "engine"?: string;
+            "ept_calibration"?: (boolean) | null;
             "experience_canary"?: boolean;
             "geolocation"?: {
               "accuracy"?: (number) | null;
@@ -153066,6 +153186,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -154471,6 +154592,7 @@ export interface operations {
             "device_profile"?: string;
             "download_resources"?: string;
             "engine"?: string;
+            "ept_calibration"?: (boolean) | null;
             "experience_canary"?: boolean;
             "geolocation"?: {
               "accuracy"?: (number) | null;
@@ -154678,6 +154800,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -161517,6 +161640,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -164393,6 +164517,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -165244,6 +165369,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -165981,6 +166107,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -169954,6 +170081,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -170166,6 +170294,7 @@ export interface operations {
               "device_profile"?: string;
               "download_resources"?: string;
               "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
               "experience_canary"?: boolean;
               "geolocation"?: {
                 "accuracy"?: (number) | null;
@@ -170935,6 +171064,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -171357,6 +171487,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -172217,6 +172348,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -173428,6 +173560,7 @@ export interface operations {
                   "device_profile"?: string;
                   "download_resources"?: string;
                   "engine"?: string;
+                  "ept_calibration"?: (boolean) | null;
                   "experience_canary"?: boolean;
                   "geolocation"?: Record<string, unknown>;
                   "har_artifact_dir"?: string;
@@ -177668,6 +177801,7 @@ export interface operations {
               "device_profile"?: string;
               "download_resources"?: string;
               "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
               "experience_canary"?: boolean;
               "geolocation"?: {
                 "accuracy"?: (number) | null;
@@ -177999,6 +178133,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -178766,6 +178901,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: {
                   "accuracy"?: (number) | null;
@@ -180050,6 +180186,7 @@ export interface operations {
                 "device_profile"?: string;
                 "download_resources"?: string;
                 "engine"?: string;
+                "ept_calibration"?: (boolean) | null;
                 "experience_canary"?: boolean;
                 "geolocation"?: Record<string, unknown>;
                 "har_artifact_dir"?: string;
@@ -180262,6 +180399,7 @@ export interface operations {
               "device_profile"?: string;
               "download_resources"?: string;
               "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
               "experience_canary"?: boolean;
               "geolocation"?: {
                 "accuracy"?: (number) | null;

@@ -1155,7 +1155,9 @@ observers' starts to stay under the target's sign-in limits. An observer sent ba
 sign in during the run fails that iteration as **Observer session lost** in the error
 charts. The launch review warns when an observer's user also appears in another group's
 data or in a second observer group: give observers their own users, so their timings
-don't share sessions or record locks with the load. Page timings and Web
+don't share sessions or record locks with the load. For a Salesforce qualification run,
+`config.browser.ept_calibration` reads Salesforce's Experienced Page Time counter after
+each step, and the **Browser Metrics** section sets it beside the step's own time. Page timings and Web
 Vitals, like the interaction evidence on
 the run report's **Browser** tab, are recorded only when **Capture page timings and
 Web Vitals** (and **Capture interaction evidence**) is on in the browser script's

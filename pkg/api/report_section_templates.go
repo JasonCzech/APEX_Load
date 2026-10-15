@@ -823,6 +823,18 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
   </tbody>
 </table>
 {{end}}
+{{if .Report.SalesforceEPT}}
+<h3>Salesforce EPT calibration</h3>
+<p class="muted">Salesforce's Experienced Page Time counter (eptVisible=1), read after each step whose counter changed, beside the same steps' own times.</p>
+<table>
+  <thead><tr><th>Step</th><th class="num">Readings</th><th class="num">EPT avg</th><th class="num">Step avg</th><th class="num">Difference avg</th></tr></thead>
+  <tbody>
+    {{range .Report.SalesforceEPT}}
+    <tr><td>{{.Step}}</td><td class="num">{{.Samples}}</td><td class="num">{{formatFloat .AvgEPTMs}} ms</td><td class="num">{{formatFloat .AvgStepMs}} ms</td><td class="num">{{formatFloat .AvgDifferenceMs}} ms</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
 {{if .Report.BrowserVersionSkews}}
 <h3>Browser version mismatches</h3>
 <p class="muted">Sessions whose browser's major version differs from the one the Playwright driver was tested with, or from the one the script was recorded with. Behavior and timings can differ between major versions.</p>
