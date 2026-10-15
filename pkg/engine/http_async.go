@@ -60,7 +60,11 @@ type asyncItem struct {
 }
 
 type asyncConversation struct {
+	// id is the conversation's registry key. A background request's is its
+	// script id plus a sequence number, as the same step may send another
+	// while one is still in flight; scriptID is the id the script gave.
 	id         string
+	scriptID   string
 	pattern    string
 	interval   time.Duration
 	request    dsl.Action
@@ -82,6 +86,10 @@ type asyncConversation struct {
 type asyncConversations struct {
 	byID  map[string]*asyncConversation
 	order []string
+	// background holds the script ids of the background requests started
+	// this iteration, so stopping one is never an error; sent counts them.
+	background map[string]bool
+	sent       int
 }
 
 func (c *asyncConversation) current() *protocol.Action {
@@ -177,10 +185,17 @@ func (vu *VUser) startAsyncConversation(ctx context.Context, action dsl.Action) 
 	if vu.async == nil {
 		vu.async = &asyncConversations{byID: map[string]*asyncConversation{}}
 	}
+	scriptID := id
 	if pattern == asyncOnce {
 		if err := vu.awaitBackgroundRequestSlot(ctx); err != nil {
 			return err
 		}
+		vu.async.sent++
+		id = fmt.Sprintf("%s#%d", scriptID, vu.async.sent)
+		if vu.async.background == nil {
+			vu.async.background = map[string]bool{}
+		}
+		vu.async.background[scriptID] = true
 	}
 	if _, running := vu.async.byID[id]; running {
 		return fmt.Errorf("async conversation %q is already running", id)
@@ -188,7 +203,7 @@ func (vu *VUser) startAsyncConversation(ctx context.Context, action dsl.Action) 
 	if pattern != asyncOnce && vu.async.running(false) >= MaxAsyncConversations {
 		return fmt.Errorf("a virtual user runs at most %d async conversations", MaxAsyncConversations)
 	}
-	conversation := &asyncConversation{id: id, pattern: pattern, interval: interval, request: request, done: make(chan struct{})}
+	conversation := &asyncConversation{id: id, scriptID: scriptID, pattern: pattern, interval: interval, request: request, done: make(chan struct{})}
 	if action.Control != nil {
 		for _, branch := range action.Control.Branches {
 			switch branch.Name {
@@ -455,7 +470,8 @@ func (vu *VUser) applyAsyncResults(ctx context.Context, conversation *asyncConve
 			return fmt.Errorf("async conversation %q on_response callback failed", conversation.id)
 		}
 	}
-	if conversation.stopRequested || len(items) == 0 {
+	if conversation.stopRequested || len(items) == 0 || conversation.pattern == asyncOnce {
+		// A background request sends nothing more, so it is not re-armed.
 		return nil
 	}
 	if !vu.runAsyncCallbacks(ctx, conversation, conversation.onRequest, AsyncOnRequest) {
@@ -487,6 +503,9 @@ func (vu *VUser) runAsyncCallbacks(ctx context.Context, conversation *asyncConve
 // callback the stop is recorded and completes after the callback.
 func (vu *VUser) stopAsyncConversation(ctx context.Context, id string) error {
 	conversation := vu.asyncConversation(id)
+	if conversation == nil && vu.async != nil && vu.async.background[id] {
+		return vu.finishBackgroundRequests(ctx, id)
+	}
 	if conversation == nil {
 		return fmt.Errorf("async conversation %q is not running", id)
 	}
@@ -500,6 +519,32 @@ func (vu *VUser) stopAsyncConversation(ctx context.Context, id string) error {
 	vu.forgetAsyncConversation(id)
 	vu.finishRequestedAsyncStops()
 	return err
+}
+
+// finishBackgroundRequests handles http_async_stop of a background request:
+// it is not cancelled (the app would not take a call back), so the stop waits
+// for those still in flight under that id and applies their responses.
+func (vu *VUser) finishBackgroundRequests(ctx context.Context, scriptID string) error {
+	if vu.inAsyncDispatch {
+		return nil
+	}
+	for _, key := range append([]string(nil), vu.async.order...) {
+		conversation := vu.async.byID[key]
+		if conversation == nil || conversation.scriptID != scriptID || conversation.pattern != asyncOnce {
+			continue
+		}
+		select {
+		case <-conversation.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		err := vu.applyAsyncResults(ctx, conversation)
+		vu.forgetAsyncConversation(key)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (vu *VUser) asyncConversation(id string) *asyncConversation {
@@ -578,6 +623,7 @@ func (vu *VUser) stopAllAsyncConversations(ctx context.Context, why string) {
 		vu.makeLogger(vu.Script.Config.Log).Warn("async conversation stopped: still running at "+why, "conversation", id)
 		_ = vu.stopAsyncConversation(ctx, id)
 	}
+	vu.async.background = nil
 }
 
 // waitForAsyncCondition handles http_sync: it applies conversation results

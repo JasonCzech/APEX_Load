@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // Limits on a profile.
@@ -232,7 +233,8 @@ func ValidateBackgroundRequests(patterns []string) error {
 		return fmt.Errorf("background_requests holds at most %d entries", MaxListEntries)
 	}
 	for _, pattern := range patterns {
-		if len(backgroundSegments(pattern)) == 0 || len(pattern) > maxBackgroundPattern || strings.ContainsAny(pattern, "?#*: \t") {
+		if len(backgroundSegments(pattern)) == 0 || len(pattern) > maxBackgroundPattern || strings.ContainsAny(pattern, "?#*:") ||
+			strings.ContainsFunc(pattern, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
 			return fmt.Errorf("background_requests entries must be URL path segments such as nebulaLogger or connect/proxy/app-analytics-logging, at most %d characters", maxBackgroundPattern)
 		}
 	}

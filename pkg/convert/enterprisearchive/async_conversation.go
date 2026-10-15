@@ -136,11 +136,6 @@ func (a *sourceAsync) resourceConversation(action *dsl.Action, baseURL string, a
 		}
 		request := dsl.Action{Name: sanitizeName(a.id), Type: "GET", Method: "GET", Target: convertParamReferences(makeRelative(a.url, baseURL)), Metadata: sourceFunctionMetadata(a.fn)}
 		request.Metadata["original_url"] = want
-		for _, key := range []string{"source_transaction", "source_subtransaction"} {
-			if value, ok := action.Metadata[key]; ok {
-				request.Metadata[key] = value
-			}
-		}
 		if len(autoHeaders) > 0 {
 			request.Headers = make(map[string]string, len(autoHeaders)+1)
 			for name, value := range autoHeaders {
@@ -192,6 +187,15 @@ func wrapBackgroundRequest(id, pattern string, fn ParsedFunction, action dsl.Act
 	wrapped, err := wrapAsyncConversation(&sourceAsync{fn: fn, id: id, pattern: "once"}, action, nil)
 	if err != nil {
 		return dsl.Action{}, err
+	}
+	// Not waited for, the request is not part of the transaction around it.
+	for _, key := range []string{"source_transaction", "source_subtransaction", "loadrunner_transaction"} {
+		delete(wrapped.Metadata, key)
+		if request, ok := wrapped.Params["request"].(map[string]any); ok {
+			if metadata, ok := request["metadata"].(map[string]any); ok {
+				delete(metadata, key)
+			}
+		}
 	}
 	wrapped.Metadata["source_background_request"] = pattern
 	return wrapped, nil

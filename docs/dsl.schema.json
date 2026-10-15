@@ -3672,7 +3672,7 @@
             ]
           },
           "then": {
-            "description": "Starts a background HTTP conversation (imported from web_reg_async_attributes, or recorded): params.request is sent repeatedly while the script continues, until http_async_stop or the end of the iteration, or once as a background request. Responses are recorded as \"async \u003cid\u003e\" and their extractors and callbacks run on the virtual user between actions. HTTP scripts only.",
+            "description": "Starts a background HTTP conversation (imported from web_reg_async_attributes, or recorded): params.request is sent repeatedly while the script continues, until http_async_stop or the end of the iteration, or once as a background request. Responses are recorded as \"async \u003cid\u003e\" (a background request's under its step's own name) and their extractors and callbacks run on the virtual user between actions. HTTP scripts only.",
             "properties": {
               "control.branches": {
                 "description": "Callback branches {name, steps} run on the virtual user, at most 64 steps each: on_request before the request is resolved again (at start and after each dispatch of responses), on_response after each response (var.async_response_status, var.async_response_success, var.async_response_body), on_body_chunk for each chunk of a streamed response (var.async_chunk: one server-sent event's data, or the whole body of a response that is not an event stream). var.async_conversation_id names the conversation; http_async_stop inside a callback ends the conversation after the callback.",
@@ -3689,7 +3689,7 @@
                     "type": "integer"
                   },
                   "pattern": {
-                    "description": "poll sends the request every interval_ms, the first one as part of this step (its response is applied before the script continues); long_poll re-sends it as soon as a response arrives; push re-opens a streaming response (read as server-sent events, see params.stream on HTTP requests) when it ends; once sends it one time, a background request such as an app's logging or analytics call, recorded under its own name and ended by its response (no http_async_stop needed; at most 16 are in flight per virtual user, and the next waits for the oldest). Defaults to poll.",
+                    "description": "poll sends the request every interval_ms, the first one as part of this step (its response is applied before the script continues); long_poll re-sends it as soon as a response arrives; push re-opens a streaming response (read as server-sent events, see params.stream on HTTP requests) when it ends; once sends it one time, a background request such as an app's logging or analytics call, recorded under its own name and ended by its response (no http_async_stop needed, and one waits for those still in flight; the same step may send it again while one is in flight; at most 16 are in flight per virtual user, and the next waits for the oldest). Defaults to poll.",
                     "examples": [
                       "poll",
                       "long_poll",

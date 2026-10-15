@@ -29,7 +29,14 @@ func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, 
 		return mappings, nil, nil, nil
 	}
 	sockets := harWebSockets(content)
-	if !asyncScan && len(sockets) == 0 && len(background) == 0 {
+	matchesBackground := false
+	for _, ex := range exchanges {
+		if recordingprofile.MatchBackgroundRequest(background, ex.URL) != "" {
+			matchesBackground = true
+			break
+		}
+	}
+	if !asyncScan && len(sockets) == 0 && !matchesBackground {
 		return mappings, nil, nil, nil
 	}
 	steps := make([]recordedshape.Step, len(exchanges))
@@ -50,7 +57,7 @@ func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, 
 	var warnings []string
 	original := cloneScriptActions(script.Actions)
 	options := recordedshape.Options{AsyncScan: asyncScan}
-	if len(background) > 0 {
+	if matchesBackground {
 		options.Background = func(rawURL string) string { return recordingprofile.MatchBackgroundRequest(background, rawURL) }
 	}
 	shaped := recordedshape.Shape(script, steps, sockets, options)

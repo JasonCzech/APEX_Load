@@ -390,6 +390,7 @@ type backgroundProtocol struct {
 	logsDone    int
 	nextAt      time.Time
 	logDoneAt   time.Time
+	onRequests  int
 }
 
 func (p *backgroundProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
@@ -411,6 +412,10 @@ func (p *backgroundProtocol) Execute(ctx context.Context, action *protocol.Actio
 	} else if action.Target == "/next" {
 		p.mu.Lock()
 		p.nextAt = started
+		p.mu.Unlock()
+	} else if action.Target == "/on-request" {
+		p.mu.Lock()
+		p.onRequests++
 		p.mu.Unlock()
 	}
 	return &protocol.Result{ActionName: action.Name, StartTime: started, Duration: time.Since(started), Success: true, StatusCode: 200}, nil
@@ -487,5 +492,36 @@ func TestHTTPAsyncOnceWaitsForASlotPastTheLimit(t *testing.T) {
 	}
 	if vu.Metrics.TotalErrors() != 0 {
 		t.Fatalf("errors = %d", vu.Metrics.TotalErrors())
+	}
+}
+
+// The same step may send its background request again while the last one is
+// in flight (a logging call inside a loop); stopping a background request
+// waits for it instead of failing, and its on_request runs once per send.
+func TestHTTPAsyncOnceRepeatsAndStopsCleanly(t *testing.T) {
+	proto := &backgroundProtocol{delay: 150 * time.Millisecond}
+	start := backgroundRequestStart("background_1")
+	start.Control = &dsl.ControlFlow{Branches: []dsl.ParallelBranch{{Name: AsyncOnRequest, Steps: []dsl.Action{
+		{Name: "count", Type: "request", Method: "GET", Target: "/on-request"},
+	}}}}
+	vu := &VUser{ID: 1, Group: "g", Proto: proto, Metrics: NewMetricsCollector(64), Script: &dsl.Script{
+		Name: "loop", Protocol: "http",
+		Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions: []dsl.Action{
+			start, start, start,
+			{Name: "stop", Type: "http_async_stop", Params: map[string]any{"id": "background_1"}},
+			// Every send has finished by now: stopping again is not an error.
+			{Name: "stop again", Type: "http_async_stop", Params: map[string]any{"id": "background_1"}},
+		},
+	}}
+	vu.Run(context.Background())
+	proto.mu.Lock()
+	logs, onRequests := proto.logsDone, proto.onRequests
+	proto.mu.Unlock()
+	if logs != 3 || vu.Metrics.TotalErrors() != 0 {
+		t.Fatalf("sent %d, errors %d; want 3 sends and no error", logs, vu.Metrics.TotalErrors())
+	}
+	if onRequests != 3 {
+		t.Fatalf("on_request ran %d times, want once per send", onRequests)
 	}
 }

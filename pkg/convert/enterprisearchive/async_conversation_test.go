@@ -313,8 +313,11 @@ func TestConvertBackgroundRequestSteps(t *testing.T) {
 	}
 	for _, action := range result.Script.Actions {
 		if action.Type == "http_async_start" {
-			if action.Params["id"] != "background_1" || action.Metadata["source_background_request"] != "nebulaLogger" {
-				t.Fatalf("background start = %+v", action)
+			request, _ := action.Params["request"].(map[string]any)
+			requestMetadata, _ := request["metadata"].(map[string]any)
+			if action.Params["id"] != "background_1" || action.Metadata["source_background_request"] != "nebulaLogger" ||
+				action.Metadata["source_transaction"] != nil || requestMetadata["source_transaction"] != nil {
+				t.Fatalf("background start = %+v; it must not belong to the transaction around it", action)
 			}
 		}
 	}

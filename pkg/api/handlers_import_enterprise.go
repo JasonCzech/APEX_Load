@@ -372,7 +372,10 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, err.Error())
 			return nil, false
 		}
-		backgroundRequests = &patterns
+		if patterns != nil {
+			// null leaves the defaults; [] replaces them with none.
+			backgroundRequests = &patterns
+		}
 	}
 
 	return &enterpriseArchiveImportRequest{

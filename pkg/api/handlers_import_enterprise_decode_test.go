@@ -148,3 +148,56 @@ func TestSourceReviewValuePreservesCompletenessEvidence(t *testing.T) {
 		t.Fatalf("OmittedSourceFiles = %#v, want %#v", review.OmittedSourceFiles, wantOmitted)
 	}
 }
+
+func TestEnterpriseArchiveImportReadsBackgroundRequests(t *testing.T) {
+	archive := buildEnterpriseArchiveProtocolArchive(t, "QTWeb", "Action()\n{\n\treturn 0;\n}\n")
+	decode := func(field *string) (*enterpriseArchiveImportRequest, *httptest.ResponseRecorder) {
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		part, err := writer.CreateFormFile("file", "Script.zip")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write(archive); err != nil {
+			t.Fatal(err)
+		}
+		if field != nil {
+			if err := writer.WriteField("background_requests", *field); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", &body)
+		request.Header.Set("Content-Type", writer.FormDataContentType())
+		response := httptest.NewRecorder()
+		decoded, _ := readEnterpriseArchiveImportRequest(response, request)
+		return decoded, response
+	}
+	field := func(value string) *string { return &value }
+
+	for name, tc := range map[string]struct {
+		field *string
+		want  *[]string
+	}{
+		"absent keeps the defaults":   {nil, nil},
+		"null keeps the defaults":     {field("null"), nil},
+		"empty list keeps all inline": {field("[]"), &[]string{}},
+		"own patterns":                {field(`["telemetry/events","nebulaLogger"]`), &[]string{"telemetry/events", "nebulaLogger"}},
+	} {
+		decoded, response := decode(tc.field)
+		if decoded == nil {
+			t.Fatalf("%s: decode failed: %d %s", name, response.Code, response.Body.String())
+		}
+		got := decoded.Opts.BackgroundRequests
+		if (got == nil) != (tc.want == nil) || (got != nil && !reflect.DeepEqual(*got, *tc.want)) {
+			t.Fatalf("%s: background requests = %v, want %v", name, got, tc.want)
+		}
+	}
+	for name, value := range map[string]string{"not JSON": "nebulaLogger", "bad pattern": `["logs?x=1"]`} {
+		if decoded, response := decode(field(value)); decoded != nil || response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "background_requests") {
+			t.Fatalf("%s: decoded=%v status=%d body=%s", name, decoded != nil, response.Code, response.Body.String())
+		}
+	}
+}

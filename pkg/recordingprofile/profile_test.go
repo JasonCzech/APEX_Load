@@ -163,7 +163,7 @@ func TestMatchBackgroundRequest(t *testing.T) {
 }
 
 func TestValidateBackgroundRequests(t *testing.T) {
-	for _, patterns := range [][]string{{""}, {"/"}, {"logs?x=1"}, {"https://host/log"}, {"a*b"}, {"two words"}} {
+	for _, patterns := range [][]string{{""}, {"/"}, {"logs?x=1"}, {"https://host/log"}, {"a*b"}, {"two words"}, {"nebula\nLogger"}, {"tab\tbed"}} {
 		list := patterns
 		err := Validate([]Profile{{ID: "a", Name: "x", BackgroundRequests: &list}})
 		if err == nil || !strings.Contains(err.Error(), "background_requests") {
