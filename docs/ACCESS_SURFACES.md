@@ -10,7 +10,7 @@ Hosted deployments opt into a wide HTTP bind explicitly through `APEXLOAD_ADDR` 
 
 ## 2. Desktop Local Workspace
 
-The Wails desktop app is optional. It runs an embedded local controller on loopback, uses local SQLite/keyring-backed storage, and supports local authoring and local execution. Closing the window or quitting while a page holds unsaved work (an editor change, an import review) asks first, with the same prompt as leaving that page.
+The Wails desktop app is optional. It runs an embedded local controller on loopback, uses local SQLite/keyring-backed storage, and supports local authoring and local execution. Closing the window, quitting or reloading (View › Reload) while a page holds unsaved work (an editor change, an import review) asks first, with the same prompt as leaving that page. File › Open Script… opens script and import files from disk, as opening them from Finder or Explorer does.
 
 Remote K8s connectivity is handled through Remote Workspaces. The desktop SPA stays same-origin against its embedded controller; it does not switch the whole application origin to the hosted controller. The local controller uses configured Remote Workspace credentials to push and pull scripts, scenarios, results, and dependencies, and to proxy remote run creation and controls.
 

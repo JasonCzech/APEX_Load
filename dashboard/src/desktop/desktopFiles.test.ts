@@ -10,8 +10,10 @@ import {
   fileNameFromPath,
   filesFromDroppedEntries,
   filesFromDroppedPaths,
+  pickImportFilesViaBridge,
   NativeFileReadError,
   nativeFileReadErrorMessage,
+  openImportFilesFromDisk,
   pickFilesViaBridge,
   saveApiResourceViaBridge,
   startDesktopBrowserDownload,
@@ -172,6 +174,77 @@ describe("filesFromDroppedPaths", () => {
     expect(await files[0].text()).toBe("drop");
     expect(droppedRead).toHaveBeenCalledWith("/tmp/order.json");
     expect(legacyRead).not.toHaveBeenCalled();
+  });
+});
+
+describe("pickImportFilesViaBridge", () => {
+  // File > Open Script…: a native multi-select Open dialog over the import
+  // types, by their last extension (what a dialog filter can match).
+  it("opens the import file types and reads what the person picks", async () => {
+    const open = vi.fn(async () => ["/Users/me/orders.har", "/Users/me/flow.jmx"]);
+    const read = vi.fn(async () => btoa("x"));
+    setBridge({ OpenFileDialogNative: vi.fn(), OpenFilesDialogNative: open, ReadFileBase64: read });
+
+    const files = await pickImportFilesViaBridge();
+
+    expect(files?.map((file) => file.name)).toEqual(["orders.har", "flow.jmx"]);
+    const filters = JSON.parse((open.mock.calls[0] as unknown as [string, string])[1]) as Array<{ pattern: string }>;
+    const patterns = filters[0].pattern.split(";");
+    expect(patterns).toEqual(expect.arrayContaining(["*.har", "*.zip", "*.usz", "*.json", "*.bru"]));
+    expect(patterns.every((pattern) => pattern.lastIndexOf(".") === 1)).toBe(true);
+  });
+
+  it("returns [] on cancel and null without a native dialog", async () => {
+    setBridge({ OpenFileDialogNative: vi.fn(), OpenFilesDialogNative: vi.fn(async () => []) });
+    expect(await pickImportFilesViaBridge()).toEqual([]);
+    setBridge({});
+    expect(await pickImportFilesViaBridge()).toBeNull();
+  });
+});
+
+describe("openImportFilesFromDisk", () => {
+  // File > Open Script…: picked files import, a cancel stays put, no native
+  // dialog opens the library, and an unreadable file is reported.
+  const target = () => ({ importFiles: vi.fn(), openLibrary: vi.fn(), reportError: vi.fn() });
+
+  it("imports the picked files", async () => {
+    setBridge({
+      OpenFileDialogNative: vi.fn(),
+      OpenFilesDialogNative: vi.fn(async () => ["/Users/me/orders.har"]),
+      ReadFileBase64: vi.fn(async () => btoa("x")),
+    });
+    const t = target();
+    await openImportFilesFromDisk(t);
+    expect(t.importFiles.mock.calls[0][0].map((file: File) => file.name)).toEqual(["orders.har"]);
+    expect(t.openLibrary).not.toHaveBeenCalled();
+    expect(t.reportError).not.toHaveBeenCalled();
+  });
+
+  it("does nothing on cancel and opens the library without a native dialog", async () => {
+    setBridge({ OpenFileDialogNative: vi.fn(), OpenFilesDialogNative: vi.fn(async () => []) });
+    const cancelled = target();
+    await openImportFilesFromDisk(cancelled);
+    expect(cancelled.importFiles).not.toHaveBeenCalled();
+    expect(cancelled.openLibrary).not.toHaveBeenCalled();
+
+    setBridge({});
+    const browser = target();
+    await openImportFilesFromDisk(browser);
+    expect(browser.openLibrary).toHaveBeenCalledTimes(1);
+    expect(browser.importFiles).not.toHaveBeenCalled();
+  });
+
+  it("reports a file it cannot read and opens the library", async () => {
+    setBridge({
+      OpenFileDialogNative: vi.fn(),
+      OpenFilesDialogNative: vi.fn(async () => ["/Users/me/huge.usz"]),
+      ReadFileBase64: vi.fn().mockRejectedValue(new Error("file is too large for the bridge")),
+    });
+    const t = target();
+    await openImportFilesFromDisk(t);
+    expect(t.reportError).toHaveBeenCalledWith(expect.stringContaining("huge.usz"));
+    expect(t.openLibrary).toHaveBeenCalledTimes(1);
+    expect(t.importFiles).not.toHaveBeenCalled();
   });
 });
 

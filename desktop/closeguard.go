@@ -16,9 +16,12 @@ import (
 // or keep editing) and confirms the quit when the work is resolved.
 const eventCloseRequested = "desktop:close-requested" // payload: request id
 
-// defaultCloseRequestAckWait bounds how long a held close waits for the
-// renderer to take the request. A page that is reloading or hung must never
-// stop the app from quitting.
+// View > Reload replaces the page the same way, so it asks the same guard.
+const eventReloadRequested = "desktop:reload-requested" // payload: request id
+
+// defaultCloseRequestAckWait bounds how long a held close, or a View > Reload,
+// waits for the renderer to take its request. A page that is reloading or hung
+// must never stop the app from quitting, and a reload goes ahead after it too.
 const defaultCloseRequestAckWait = 3 * time.Second
 
 // EnableCloseGuard registers the mounted renderer's close guard and returns
@@ -30,6 +33,7 @@ func (a *App) EnableCloseGuard() (string, error) {
 	}
 	a.closeGuardMu.Lock()
 	a.closeGuardToken = token
+	a.closeGuardSetAside = ""
 	a.closeGuardMu.Unlock()
 	return token, nil
 }
@@ -41,17 +45,27 @@ func (a *App) DisableCloseGuard(token string) {
 	if token != "" && token == a.closeGuardToken {
 		a.closeGuardToken = ""
 	}
+	if token != "" && token == a.closeGuardSetAside {
+		a.closeGuardSetAside = ""
+	}
 	a.closeGuardMu.Unlock()
 }
 
-// AcknowledgeCloseRequest records that the renderer took a close request, so
-// the held close waits for the person's answer instead of quitting.
+// AcknowledgeCloseRequest records that the renderer took a close or reload
+// request, so the shell waits for the person's answer instead of going ahead.
 func (a *App) AcknowledgeCloseRequest(token, requestID string) {
 	id, ok := parseCloseRequestID(requestID)
 	if !ok {
 		return
 	}
 	a.closeGuardMu.Lock()
+	// A page that answers a reload it let pass was only busy. If it is still
+	// here (its browser kept it at a leave-page prompt, say), it holds closes
+	// again, unless a newer page has registered since.
+	if token != "" && token == a.closeGuardSetAside && a.closeGuardToken == "" && id <= a.closeRequests {
+		a.closeGuardToken = token
+		a.closeGuardSetAside = ""
+	}
 	if token != "" && token == a.closeGuardToken && id <= a.closeRequests && id > a.closeRequestsAcked {
 		a.closeRequestsAcked = id
 	}
@@ -85,20 +99,78 @@ func (a *App) holdCloseForRenderer(ctx context.Context) bool {
 	if ctx == nil {
 		return false
 	}
-	a.closeGuardMu.Lock()
-	if a.closeConfirmed || a.closeGuardToken == "" {
-		a.closeGuardMu.Unlock()
+	id, _, held := a.beginRendererRequest()
+	if !held {
 		return false
 	}
-	a.closeRequests++
-	id := a.closeRequests
-	a.closeGuardMu.Unlock()
-
 	// Wails may call OnBeforeClose on the UI thread (Windows); publishing an
 	// event or quitting from it could wait on that same thread.
 	go a.emitCloseRequest(ctx, strconv.FormatUint(id, 10))
 	go a.quitIfCloseRequestUnacknowledged(ctx, id)
 	return true
+}
+
+// beginRendererRequest numbers a close or reload request for the renderer's
+// guard and returns the registration it goes to. Without a registered guard
+// (or once a quit is confirmed) there is no one to ask, and the action goes
+// ahead.
+func (a *App) beginRendererRequest() (uint64, string, bool) {
+	a.closeGuardMu.Lock()
+	defer a.closeGuardMu.Unlock()
+	if a.closeConfirmed || a.closeGuardToken == "" {
+		return 0, "", false
+	}
+	a.closeRequests++
+	return a.closeRequests, a.closeGuardToken, true
+}
+
+// reloadWithRendererGuard reloads the page, asking the renderer first when its
+// guard is registered: the page answers through its unsaved-work prompt and
+// reloads itself. A page that does not take the request within the wait (one
+// still loading, or one whose guard is no longer listening) is reloaded
+// anyway. That reload runs as script in the page, since Wails has no native
+// reload: a page whose script is stuck cannot run it, and a page busy past the
+// wait runs it straight after the prompt the late request opens.
+func (a *App) reloadWithRendererGuard(ctx context.Context) {
+	if ctx == nil {
+		return
+	}
+	id, token, held := a.beginRendererRequest()
+	if !held {
+		windowReloadApp(ctx)
+		return
+	}
+	go a.emitReloadRequest(ctx, strconv.FormatUint(id, 10))
+	go func() {
+		if !a.rendererTookRequest(id, token) {
+			windowReloadApp(ctx)
+		}
+	}()
+}
+
+// rendererTookRequest waits the acknowledgement window and reports whether the
+// renderer took request id (or a later one). A registration that let the
+// request pass unanswered is set aside, as a timed-out close drops it, so the
+// next close or reload does not wait on it; its page restores it by answering
+// late (see AcknowledgeCloseRequest). A newer page's registration is kept.
+func (a *App) rendererTookRequest(id uint64, token string) bool {
+	wait := a.closeAckWait
+	if wait <= 0 {
+		wait = defaultCloseRequestAckWait
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	<-timer.C
+	a.closeGuardMu.Lock()
+	defer a.closeGuardMu.Unlock()
+	if a.closeRequestsAcked >= id {
+		return true
+	}
+	if a.closeGuardToken == token {
+		a.closeGuardToken = ""
+		a.closeGuardSetAside = token
+	}
+	return false
 }
 
 func (a *App) quitIfCloseRequestUnacknowledged(ctx context.Context, id uint64) {
@@ -110,6 +182,9 @@ func (a *App) quitIfCloseRequestUnacknowledged(ctx context.Context, id uint64) {
 	defer timer.Stop()
 	<-timer.C
 	a.closeGuardMu.Lock()
+	// A later request the page took (a close, or a reload) covers this one:
+	// the page is alive and may be asking about unsaved work, which quitting
+	// under it would discard. A close it never saw is then pressed again.
 	if a.closeConfirmed || a.closeRequestsAcked >= id {
 		a.closeGuardMu.Unlock()
 		return
@@ -127,4 +202,8 @@ func parseCloseRequestID(raw string) (uint64, bool) {
 
 func emitCloseRequestEvent(ctx context.Context, requestID string) {
 	wailsruntime.EventsEmit(ctx, eventCloseRequested, requestID)
+}
+
+func emitReloadRequestEvent(ctx context.Context, requestID string) {
+	wailsruntime.EventsEmit(ctx, eventReloadRequested, requestID)
 }

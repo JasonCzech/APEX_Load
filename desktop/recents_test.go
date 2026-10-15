@@ -137,3 +137,24 @@ func TestAddRecentItemIgnoresInvalid(t *testing.T) {
 		t.Errorf("no items should be stored, got %q", out)
 	}
 }
+
+// Clearing the list keeps what the person pinned.
+func TestClearRecentItemsKeepsPinnedItems(t *testing.T) {
+	app := NewApp()
+	app.publishAppDataPath(t.TempDir())
+	for _, id := range []string{"keep", "drop"} {
+		if err := app.AddRecentItem(`{"kind":"script","id":"` + id + `","name":"` + id + `","route":"#/scripts"}`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := app.ToggleRecentPin("script", "keep"); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.ClearRecentItems(); err != nil {
+		t.Fatal(err)
+	}
+	items := loadRecents(app.appDataDirectory())
+	if len(items) != 1 || items[0].ID != "keep" || !items[0].Pinned {
+		t.Fatalf("after clear = %+v, want only the pinned item", items)
+	}
+}

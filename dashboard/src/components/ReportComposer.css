@@ -574,13 +574,12 @@
     margin: 14mm;
   }
 
-  body * {
-    visibility: hidden;
-  }
-
-  .report-composer-overlay,
-  .report-composer-overlay * {
-    visibility: visible;
+  /* Only while the composer is open: this sheet loads with the test and run
+     report pages and stays loaded, and File > Print… elsewhere prints the page
+     showing. The page behind the composer leaves the layout, not just the
+     view, so it does not print as blank pages ahead of the report. */
+  body:has(> .report-composer-overlay) > :not(.report-composer-overlay) {
+    display: none !important;
   }
 
   .report-composer-overlay {

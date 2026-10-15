@@ -4,11 +4,14 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { DESKTOP_CLOSE_REQUESTED_EVENT, useDesktopCloseGuard } from './useDesktopCloseGuard'
+import { reloadPage } from './reloadPage'
+import { DESKTOP_CLOSE_REQUESTED_EVENT, DESKTOP_RELOAD_REQUESTED_EVENT, useDesktopCloseGuard } from './useDesktopCloseGuard'
 import type { WailsDesktopBridge } from './desktopBridge'
 import type { WailsEventRuntime } from './wailsRuntime'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+vi.mock('./reloadPage', () => ({ reloadPage: vi.fn() }))
 
 type DesktopWindow = typeof window & { go?: { main?: { App?: WailsDesktopBridge } }; runtime?: WailsEventRuntime }
 
@@ -73,6 +76,24 @@ describe('useDesktopCloseGuard', () => {
 
     await act(async () => { pendingProceed?.() })
     expect(bridge.ConfirmClose).toHaveBeenCalledWith('guard-token', '3')
+  })
+
+  // View > Reload asks the same prompt; the page reloads itself once the work
+  // is resolved, and Keep editing (no proceed) leaves it as it is.
+  it('reloads only once the unsaved-work prompt proceeds', async () => {
+    vi.mocked(reloadPage).mockClear()
+    let pendingProceed: (() => void) | undefined
+    const runGuarded = vi.fn((proceed: () => void) => { pendingProceed = proceed })
+    await act(async () => { root.render(<Harness runGuarded={runGuarded} />) })
+
+    await act(async () => { listeners.get(DESKTOP_RELOAD_REQUESTED_EVENT)?.('4') })
+    expect(bridge.AcknowledgeCloseRequest).toHaveBeenCalledWith('guard-token', '4')
+    expect(reloadPage).not.toHaveBeenCalled()
+    expect(bridge.ConfirmClose).not.toHaveBeenCalled()
+
+    await act(async () => { pendingProceed?.() })
+    expect(reloadPage).toHaveBeenCalledTimes(1)
+    expect(bridge.ConfirmClose).not.toHaveBeenCalled()
   })
 
   it('quits without raising the window when nothing needs an answer', async () => {

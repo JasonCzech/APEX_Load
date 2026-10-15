@@ -758,3 +758,95 @@
 }
 .center-tabbed-pane:focus { outline: none; }
 .center-tabbed-pane:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+
+/* File > Print… (and a browser print) prints the page itself. The shell's
+   viewport-high scroll container and zoom transform would otherwise clip it to
+   one screenful framed by the navigation; and paper has no background, so every
+   theme prints with the light theme's text and surface colors. */
+@media print {
+  :root:root,
+  :root:root[data-theme] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #ffffff;
+    --bg-card: #ffffff;
+    --bg-surface: #ffffff;
+    --bg-elevated: #ffffff;
+    --border: #dcdfe3;
+    --border-subtle: #eceef1;
+    --text-primary: #1d2329;
+    --text-secondary: #454b52;
+    --text-muted: #5a6068;
+    --accent-text: #00388f;
+    --code-bg: #f2fafd;
+    --code-text: #1d2329;
+    --app-sheen: transparent;
+    /* Status, tag and link colors, as the light theme sets them. */
+    --accent: #00388f;
+    --tab-link: #0072b2;
+    --tag-text: #1d2329;
+    --success: #2d7e24;
+    --warning: #b35900;
+    --danger: #c70032;
+    --info: #0072b2;
+    --success-text: #23651c;
+    --warning-text: #8a4400;
+    --danger-text: #a8002a;
+    --info-text: #005a8c;
+    --success-border: rgba(45, 126, 36, 0.28);
+    --warning-border: rgba(234, 116, 0, 0.32);
+    --danger-border: rgba(199, 0, 50, 0.28);
+    --info-border: rgba(0, 114, 178, 0.28);
+    /* Chart series, which some dark themes make pale enough to vanish on paper. */
+    --chart-1: #1b50a9;
+    --chart-2: #36772f;
+    --chart-3: #da772f;
+    --chart-4: #c90633;
+    --chart-5: #0d9bd4;
+    --chart-6: #ae28ba;
+    --chart-7: #5533ff;
+    --chart-8: #6b3d00;
+    color-scheme: light;
+  }
+
+  /* The document itself is viewport-high with overflow hidden on screen.
+     index.css loads after this file, so these outrank its rules by specificity
+     rather than order. */
+  :root,
+  :root body,
+  :root #root {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .app-layout {
+    display: block;
+    width: auto;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    transform: none;
+  }
+
+  .sidebar-shell,
+  .main-topbar-actions {
+    display: none !important;
+  }
+
+  .main-content {
+    height: auto;
+    overflow: visible;
+    padding: 0;
+    background: none;
+  }
+
+  .main-topbar {
+    position: static;
+    margin: 0 0 16px;
+    padding: 0 0 8px;
+    background: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

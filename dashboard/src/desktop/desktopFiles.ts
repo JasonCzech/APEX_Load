@@ -223,6 +223,39 @@ const IMPORTABLE_DROP_EXTENSIONS = [
   ".bruno.tar.gz",
 ];
 
+// pickImportFilesViaBridge is File > Open Script…: a native Open dialog for the
+// import file types. A dialog filter matches a file's last extension only, so
+// a compound name is offered through its plain suffix (".postman_collection.json"
+// through ".json"). Bruno archives are not offered: their ".tar" or ".gz" would
+// admit any tarball, which import routing would take for an API description.
+// They open from the Bruno import card, or by dropping them on the window.
+// Returns null when the shell has no native dialog, and [] when the person
+// cancels.
+export async function pickImportFilesViaBridge(): Promise<File[] | null> {
+  if (!canUseNativeDialogs()) return null;
+  const accept = IMPORTABLE_DROP_EXTENSIONS.filter((ext) => ext.lastIndexOf(".") === 0).join(",");
+  return pickFilesViaBridge(accept, true);
+}
+
+// openImportFilesFromDisk runs File > Open Script…: the picked files go to the
+// import flow, as files opened from Finder or Explorer do. Without a native
+// dialog it opens the script library instead; a cancel leaves the page as it
+// is; a file that cannot be read is reported and the library opened.
+export async function openImportFilesFromDisk(target: {
+  importFiles: (files: File[]) => void;
+  openLibrary: () => void;
+  reportError: (message: string) => void;
+}): Promise<void> {
+  try {
+    const files = await pickImportFilesViaBridge();
+    if (files === null) target.openLibrary();
+    else if (files.length > 0) target.importFiles(files);
+  } catch (error) {
+    target.reportError(nativeFileReadErrorMessage(error));
+    target.openLibrary();
+  }
+}
+
 function isImportableDropPath(path: string): boolean {
   const lower = path.toLowerCase();
   return IMPORTABLE_DROP_EXTENSIONS.some((ext) => lower.endsWith(ext));

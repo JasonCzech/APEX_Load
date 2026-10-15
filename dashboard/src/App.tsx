@@ -113,6 +113,7 @@ import { useDockBadge } from "./desktop/useDockBadge";
 import {
   filesFromDroppedPaths,
   nativeFileReadErrorMessage,
+  openImportFilesFromDisk,
 } from "./desktop/desktopFiles";
 import { useDesktopRoutePersistence } from "./desktop/useDesktopRoutePersistence";
 import AboutDialog from "./components/AboutDialog";
@@ -2324,15 +2325,25 @@ function AppShell({
   }, []);
 
   const openShortcutHelp = useKeyboardShortcutHelp();
+  const openScriptFilesFromDisk = useCallback(
+    () =>
+      openImportFilesFromDisk({
+        importFiles: openNativeImportFiles,
+        openLibrary: () => handleNavigate("scripts"),
+        reportError: setDesktopImportError,
+      }),
+    [handleNavigate, openNativeImportFiles],
+  );
   const handleDesktopMenuAction = useCallback(
     (action: string) => {
       const next = desktopActionView(action);
       if (next) setGuardedView(next);
       else if (action === "help") handleNavigate("docs");
       else if (action === "shortcuts") openShortcutHelp();
+      else if (action === "open-script") void openScriptFilesFromDisk();
       else handleNavigate("scripts");
     },
-    [setGuardedView, handleNavigate, openShortcutHelp],
+    [setGuardedView, handleNavigate, openShortcutHelp, openScriptFilesFromDisk],
   );
   const handleDesktopOpenFile = useCallback(
     async (path: string) => {

@@ -1,7 +1,9 @@
 import { useState } from 'react'
 
 import { getDesktopBridge } from '../desktop/desktopBridge'
+import { saveBlobViaBridge } from '../desktop/desktopFiles'
 import { getWailsEventRuntime } from '../desktop/wailsRuntime'
+import { copyTextToClipboard } from '../utils/clipboardUtils'
 
 import './AuthGate.css'
 
@@ -10,13 +12,19 @@ export default function DesktopStartupFailure({ message }: { message: string }) 
   const runtime = getWailsEventRuntime()
   const [diagnostics, setDiagnostics] = useState<{ pending: boolean; message: string; failed: boolean }>({ pending: false, message: '', failed: false })
   // The engine cannot be restarted from inside this window, so the next best
-  // help is a diagnostics bundle the user can attach to a support request.
+  // help is a diagnostics file the user can attach to a support request. The
+  // bridge returns the bundle's JSON; it is saved where the person chooses, or
+  // copied when the shell cannot show a Save dialog.
   const exportDiagnostics = async () => {
     if (!bridge?.ExportDiagnostics || diagnostics.pending) return
     setDiagnostics({ pending: true, message: '', failed: false })
     try {
-      const path = await bridge.ExportDiagnostics()
-      setDiagnostics({ pending: false, message: path ? `Diagnostics saved to ${path}.` : 'Diagnostics export cancelled.', failed: false })
+      const bundle = await bridge.ExportDiagnostics()
+      const outcome = await saveBlobViaBridge(new Blob([bundle], { type: 'application/json' }), 'apexload-diagnostics.json')
+      if (outcome === 'saved') setDiagnostics({ pending: false, message: 'Diagnostics saved.', failed: false })
+      else if (outcome === 'cancelled') setDiagnostics({ pending: false, message: 'Diagnostics export cancelled.', failed: false })
+      else if (await copyTextToClipboard(bundle)) setDiagnostics({ pending: false, message: 'Diagnostics copied to the clipboard.', failed: false })
+      else setDiagnostics({ pending: false, message: 'Diagnostics could not be saved or copied.', failed: true })
     } catch (cause: unknown) {
       setDiagnostics({ pending: false, message: `Diagnostics could not be exported: ${cause instanceof Error ? cause.message : String(cause)}`, failed: true })
     }
@@ -33,7 +41,7 @@ export default function DesktopStartupFailure({ message }: { message: string }) 
             <button className="auth-gate-action" type="button" onClick={() => runtime.Quit?.()}>Quit APEX Load</button>
           )}
           {bridge?.ExportDiagnostics && (
-            <button className="auth-gate-action" type="button" onClick={() => { void exportDiagnostics() }} disabled={diagnostics.pending}>{diagnostics.pending ? 'Exporting diagnostics…' : 'Export diagnostics'}</button>
+            <button className="auth-gate-action" type="button" onClick={() => { void exportDiagnostics() }} disabled={diagnostics.pending}>{diagnostics.pending ? 'Exporting diagnostics…' : 'Export diagnostics…'}</button>
           )}
           {bridge?.OpenLogsFolder && (
             <button className="auth-gate-action" type="button" onClick={() => { void bridge.OpenLogsFolder?.().catch(() => undefined) }}>Open logs</button>

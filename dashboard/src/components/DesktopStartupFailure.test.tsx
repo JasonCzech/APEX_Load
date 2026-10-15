@@ -27,6 +27,7 @@ describe('DesktopStartupFailure', () => {
     container.remove()
     delete (window as BridgeWindow).go
     delete (window as RuntimeWindow).runtime
+    Reflect.deleteProperty(navigator, 'clipboard')
     vi.restoreAllMocks()
   })
 
@@ -52,13 +53,31 @@ describe('DesktopStartupFailure', () => {
     expect(openData).toHaveBeenCalledTimes(1)
   })
 
-  it('exports a diagnostics bundle and says where it went', async () => {
-    const exportDiagnostics = vi.fn().mockResolvedValue('~/Downloads/apexload-diagnostics.zip')
-    ;(window as BridgeWindow).go = { main: { App: { ExportDiagnostics: exportDiagnostics } } }
+  // The bridge returns the bundle's JSON: it is saved where the person
+  // chooses, or copied when the shell has no Save dialog.
+  it('saves the diagnostics bundle where the person chooses', async () => {
+    const bundle = '{"product":"APEX Load Desktop"}'
+    const exportDiagnostics = vi.fn().mockResolvedValue(bundle)
+    const saveDialog = vi.fn().mockResolvedValue('/Users/me/apexload-diagnostics.json')
+    const write = vi.fn().mockResolvedValue(undefined)
+    ;(window as BridgeWindow).go = { main: { App: { ExportDiagnostics: exportDiagnostics, SaveFileDialogNative: saveDialog, WriteFileBase64: write } } }
     await act(async () => root.render(<DesktopStartupFailure message="bind: address already in use" />))
-    const button = Array.from(container.querySelectorAll('button')).find(candidate => candidate.textContent === 'Export diagnostics')
+    const button = Array.from(container.querySelectorAll('button')).find(candidate => candidate.textContent === 'Export diagnostics…')
     await act(async () => button?.click())
-    expect(exportDiagnostics).toHaveBeenCalledTimes(1)
-    expect(container.textContent).toContain('Diagnostics saved to ~/Downloads/apexload-diagnostics.zip.')
+    expect(saveDialog).toHaveBeenCalledWith('Save', 'apexload-diagnostics.json', expect.any(String))
+    expect(atob(write.mock.calls[0][1] as string)).toBe(bundle)
+    expect(container.textContent).toContain('Diagnostics saved.')
+    expect(container.textContent).not.toContain('product')
+  })
+
+  it('copies the diagnostics bundle when no Save dialog is available', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    ;(window as BridgeWindow).go = { main: { App: { ExportDiagnostics: vi.fn().mockResolvedValue('{"os":"darwin"}') } } }
+    await act(async () => root.render(<DesktopStartupFailure message="bind: address already in use" />))
+    const button = Array.from(container.querySelectorAll('button')).find(candidate => candidate.textContent === 'Export diagnostics…')
+    await act(async () => button?.click())
+    expect(writeText).toHaveBeenCalledWith('{"os":"darwin"}')
+    expect(container.textContent).toContain('Diagnostics copied to the clipboard.')
   })
 })

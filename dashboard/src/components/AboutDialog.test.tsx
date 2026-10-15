@@ -56,6 +56,19 @@ describe('AboutDialog', () => {
     expect(getVersion).toHaveBeenCalledTimes(1)
   })
 
+  it('says when copying the diagnostics fails', async () => {
+    const desktopWindow = window as typeof window & { go?: unknown }
+    desktopWindow.go = { main: { App: { ExportDiagnostics: vi.fn().mockRejectedValue(new Error('bridge unavailable')) } } }
+    try {
+      await act(async () => { root.render(<AboutDialog open onClose={() => {}} />) })
+      const copy = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Copy diagnostics')
+      await act(async () => { copy?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      expect(container.textContent).toContain('Copy failed')
+    } finally {
+      delete desktopWindow.go
+    }
+  })
+
   it('invokes onClose from the Close button', async () => {
     const onClose = vi.fn()
     await act(async () => { root.render(<AboutDialog open onClose={onClose} />) })
