@@ -12,6 +12,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/javarunner"
+	"github.com/jasonczech/apexload/pkg/runtimetuning"
 )
 
 const (
@@ -31,6 +32,13 @@ const (
 )
 
 var ErrSharedJVMConfig = errors.New("shared_jvm_configuration_invalid")
+
+// sharedJVMRunnerReserveBytes is kept out of a derived budget for the runner
+// process itself.
+const sharedJVMRunnerReserveBytes = 256 << 20
+
+// sharedJVMContainerMemory reads the runner's cgroup memory limit.
+var sharedJVMContainerMemory = runtimetuning.CgroupMemoryLimit
 
 const (
 	sharedJVMRuntimeRejected     = "shared_jvm_runtime_rejected"
@@ -133,6 +141,10 @@ func NewSharedJVMPolicy(operator config.JavaVuserOperatorConfig) (*SharedJVMPoli
 	budget := javarunner.HostBudget{MaxHosts: operator.MaxProcesses, MaxVUsers: min(100000, operator.MaxProcesses*shared.VUsersPerJVM), MaxMemoryBytes: int64(shared.MemoryBudgetMB) << 20}
 	if budget.MaxMemoryBytes == 0 {
 		budget.MaxMemoryBytes = int64(operator.MaxProcesses) * max(hostMemory, dedicated)
+		// Never promise JVMs more memory than the runner's container has.
+		if limit, ok := sharedJVMContainerMemory(); ok {
+			budget.MaxMemoryBytes = min(budget.MaxMemoryBytes, limit-sharedJVMRunnerReserveBytes)
+		}
 	}
 	if budget.MaxMemoryBytes < hostMemory || budget.MaxMemoryBytes < dedicated {
 		return nil, nil, ErrSharedJVMConfig

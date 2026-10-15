@@ -66,6 +66,7 @@ func newSharedJVMFixture(t *testing.T, major int) *sharedJVMFixture {
 		}
 	}
 	f := &sharedJVMFixture{dir: dir}
+	stubSharedJVMContainerMemory(t, 0, false)
 	api := writeTestJar(t, filepath.Join(dir, config.DefaultJavaVuserSlotAPIJarName), map[string][]byte{"apexload/host/PooledMain.class": minimalClassBytes})
 	shim := writeTestJar(t, filepath.Join(dir, config.DefaultJavaVuserSlotShimJarName), map[string][]byte{"lrapi/lr.class": minimalClassBytes})
 	f.script = writeTestJar(t, filepath.Join(dir, "script.jar"), map[string][]byte{"example/Actions.class": minimalClassBytes})
@@ -129,6 +130,34 @@ func TestNewSharedJVMPolicyValidatesOperatorConfig(t *testing.T) {
 		if _, _, err := NewSharedJVMPolicy(o); !errors.Is(err, ErrSharedJVMConfig) {
 			t.Fatalf("%s accepted: %v", name, err)
 		}
+	}
+}
+
+func stubSharedJVMContainerMemory(t *testing.T, limit int64, ok bool) {
+	t.Helper()
+	previous := sharedJVMContainerMemory
+	sharedJVMContainerMemory = func() (int64, bool) { return limit, ok }
+	t.Cleanup(func() { sharedJVMContainerMemory = previous })
+}
+
+// A derived budget must fit the runner's container: four 100-VUser JVMs do not
+// fit in 1 GiB, so admission stops at what the container can hold.
+func TestSharedJVMDerivedBudgetFitsTheContainer(t *testing.T) {
+	f := newSharedJVMFixture(t, 21)
+	stubSharedJVMContainerMemory(t, 1<<30, true)
+	_, admission, err := NewSharedJVMPolicy(f.server.operator)
+	if err != nil || admission.Budget().MaxMemoryBytes != 1<<30-sharedJVMRunnerReserveBytes {
+		t.Fatalf("container-limited budget %+v %v", admission, err)
+	}
+	explicit := f.server.operator
+	explicit.SharedJVM.MemoryBudgetMB = 8192
+	if _, admission, err := NewSharedJVMPolicy(explicit); err != nil || admission.Budget().MaxMemoryBytes != 8192<<20 {
+		t.Fatalf("explicit budget was capped: %v", err)
+	}
+	// A container too small for one shared JVM refuses the policy at startup.
+	stubSharedJVMContainerMemory(t, 512<<20, true)
+	if _, _, err := NewSharedJVMPolicy(f.server.operator); !errors.Is(err, ErrSharedJVMConfig) {
+		t.Fatalf("undersized container accepted: %v", err)
 	}
 }
 

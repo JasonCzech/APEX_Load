@@ -66,13 +66,22 @@ one admission authority that every shared and dedicated JVM charges:
 | --- | --- | --- |
 | `APEXLOAD_JAVA_VUSER_SHARED_JVM_VUSERS_PER_JVM` | 250 | Lifetime slots per shared JVM (2–1,024). A script may ask for fewer. |
 | `APEXLOAD_JAVA_VUSER_SHARED_JVM_HEAP_MB` | 1,024 | `-Xmx` of each shared JVM. |
-| `APEXLOAD_JAVA_VUSER_JVM_MEMORY_BUDGET_MB` | process limit × one JVM reservation | Runner-wide JVM memory budget. Set it to what the runner container can give JVMs. |
+| `APEXLOAD_JAVA_VUSER_JVM_MEMORY_BUDGET_MB` | process limit × one JVM reservation, capped at the container memory limit less 256 MiB | Runner-wide JVM memory budget. An explicit value is used as given. |
 | `APEXLOAD_JAVA_VUSER_DEDICATED_JVM_MEMORY_MB` | 256 | Budget charge of one dedicated JVM. |
-| `APEXLOAD_JAVA_VUSER_SLOT_API_JAR`, `..._SLOT_SHIM_JAR` | beside the harness jar | Artifacts from `make java-vuser-slot-runtime`. |
+| `APEXLOAD_JAVA_VUSER_SLOT_API_JAR`, `..._SLOT_SHIM_JAR` | beside the harness jar | Artifacts from `make java-vuser-slot-runtime`; the runner image ships both. |
 
 `APEXLOAD_JAVA_VUSER_MAX_PROCESSES` still caps JVMs per runner, now counting
 shared and dedicated JVMs alike. A runner refuses to start when the policy is
-invalid, when it is not Linux, or when the pilot manifest is also set.
+invalid (including a container too small for one shared JVM), when it is not
+Linux, or when the pilot manifest is also set.
+
+Shared JVMs need the same delegated cgroup v2 containment as persistent Java
+lifecycles. The stock compose service and Helm sidecar run without it, so they
+do not advertise shared JVMs even with the policy on, and groups keep one JVM
+per VUser. On a governed runner, set the policy through the environment above
+or the chart's `javaVuser.runner.sharedJVM` values. Pooled hosts run the
+sidecar's own credential check, which accepts the runner's loopback token and
+Kubernetes service links; the host JVM's environment is allowlisted.
 
 A shared run starts with the `claim_shared` control operation. It carries the
 same runtime settings a dedicated session sends (JDK selection, exact VM
@@ -86,9 +95,15 @@ then qualifies the workload itself:
   VUser. Other script jars and uploaded JARs load once in the shared loader. With
   the script's dedicated class loader setting, every script jar is private.
 - The static native scan of the application jars must be complete and find no
-  indicators (native methods, `loadLibrary`, JNA/JNR, packaged native
-  libraries). The scan does not prove the absence of dynamic native loading or
+  indicators: native methods, `load` or `loadLibrary` calls on `System` or
+  `Runtime` (any `loadLibrary` name counts), JNA, JNR or `java.lang.foreign`
+  references, or packaged native libraries. Methods that are merely named
+  `load` (`Properties.load`, `KeyStore.load`, `ServiceLoader.load`) do not
+  count. The scan does not prove the absence of dynamic native loading or
   background work; enabling the policy is the operator's acceptance of that.
+- The JDK home is hashed file by file. Symlinks inside it, such as the
+  per-module legal notices JDK builds link to `java.base`, count only when they
+  resolve to a regular file inside the home; their targets join the identity.
 - Script heap sizing (`-Xmx`, `-Xms`, `-XX:MaxRAM*` and similar) is dropped and
   reported as `shared_jvm_script_heap_ignored`; the operator heap applies. Other
   VM parameters pass through unchanged.
@@ -119,13 +134,53 @@ envelope, records it as shared so it never charges dedicated capacity, and
 stages its JVMs during assignment staging, inside the staging deadline, so
 commit never waits on cold JVM starts. Rollback and expiry close the staged
 JVMs like pod-based Java groups. A shared group cannot grow past its staged
-VUsers (`java_shared_jvm_additional_slots_required`).
+VUsers (`java_shared_jvm_additional_slots_required`). One runner run holds at
+most 4,096 VUsers, so the engine splits a larger group on one generator into
+runs of whole JVMs that are claimed, prepared, committed and closed together;
+a failure of any run after the first claim fails the group. While one group
+prepares, the generator keeps its other staged groups from expiring, and the
+controller waits the whole preparation budget (5 minutes) for the assignment.
 
 If the runner refuses the claim at staging, the group runs dedicated and must
 fit dedicated capacity; otherwise staging fails with the dedicated capacity
 error. With 250 VUsers per JVM and the default 25 JVMs per runner, one
 generator can host 6,250 shared Java VUsers, subject to its memory budget, so
 10,000 VUsers need two generators instead of 400.
+
+## Shared JVM benchmark (2026-10-15)
+
+`scripts/java-shared-jvm-bench/run.sh` runs the middleware-heavy evidence
+fixture (`HeavyActions`: Apache HttpClient, Jackson and Guava, a GET and a POST
+per transaction) through the real engine against a Linux runner in Docker
+(Docker Desktop on Apple silicon, Temurin 21, 6 CPUs and 6.5 GB for the runner
+container, 1,024 VUsers and a 320 MB heap per shared JVM). The order service
+runs in the same container, so CPU figures include it.
+
+| 25 VUsers, 60 s, 10 s warm-up | One JVM per VUser | Shared JVMs |
+| --- | --- | --- |
+| Paced (target 1,000 tx/s): achieved | 786–927 tx/s | 980–985 tx/s |
+| Paced: p50 / p90 / p99 | 5.0–5.7 / 9.0–12.7 / 12.8–51 ms | 2.0 / 6.2 / 9.4 ms |
+| Paced: CPU | 1.9–3.0 cores | 1.0 core |
+| JVM memory (PSS) | 3.8–4.8 GB (25 JVMs) | 0.30–0.35 GB (1 JVM) |
+| All VUsers initialized | 4–13 s | 0.7–1.0 s |
+| Closed loop: throughput | 0.9k–4.6k tx/s | 3.8k–8.9k tx/s |
+
+Shared JVMs had the higher closed-loop throughput in every same-container pair.
+Closed-loop runs saturate the CPUs, and the shared Docker VM made them vary
+widely between runs; their p99 was mixed (13–47 ms shared, 32–89 ms
+dedicated). Shared paced figures repeated closely; ranges cover every run.
+
+5,000 VUsers on one runner, paced at one iteration per VUser every 5 s with a
+60 s ramp, ran in 5 shared JVMs: 421,758 transactions, no errors, steady-state
+p50 / p95 / p99 2.0 / 6.2 / 14 ms, 3.1 GB of JVM memory (4.2 GB for the whole
+container) and 2.7 cores. One JVM per VUser at this fixture's 150–190 MB each
+would need several hundred gigabytes.
+
+The benchmark found and fixed: a native-code scan that flagged any method
+named `load`; JDK legal-notice symlinks failing input qualification; pooled
+hosts running the generator's credential guard, which refuses the runner's own
+token; groups over 4,096 VUsers on one generator; and a 40 ms tail from Nagle's
+algorithm on the host control socket.
 
 ## Building and checking fixtures
 

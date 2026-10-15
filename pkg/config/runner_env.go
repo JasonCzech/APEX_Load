@@ -149,7 +149,8 @@ type JavaVuserOperatorConfig struct {
 
 // JavaVuserSharedJVMConfig is the operator's shared-JVM policy. Values are
 // normalized by LoadJavaVuserOperatorConfig; zero MemoryBudgetMB means the
-// runner derives a budget from its process ceiling.
+// runner derives a budget from its process ceiling, capped by its container's
+// memory limit less a reserve for the runner itself.
 type JavaVuserSharedJVMConfig struct {
 	Enabled              bool
 	VUsersPerJVM         int

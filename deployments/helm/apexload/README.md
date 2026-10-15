@@ -190,6 +190,13 @@ only; combined persistent imports fail capability preflight with
 as a workaround. A persistent lifecycle requires a separately governed Windows
 runner or Linux runner with a narrowly delegated cgroup subtree.
 
+`javaVuser.runner.sharedJVM` passes the shared-JVM policy (many VUsers of one
+group per JVM) to the runner. It is off by default and takes effect only on a
+runner with that delegated containment; the stock sidecar keeps one JVM per
+VUser and the run manifest says why. With `memoryBudgetMB: 0` the runner caps
+its JVM budget at the container's memory limit, so size
+`javaVuser.runner.resources.limits.memory` for the shared JVMs it should hold.
+
 The runner is released only in the `standard` coordinate: an empty
 `javaVuser.runner.image.tag` derives
 `<base image.tag>-standard`, including when controller/generator images use the

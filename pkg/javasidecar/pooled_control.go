@@ -14,6 +14,10 @@ import (
 	"github.com/jasonczech/apexload/pkg/javarunner"
 )
 
+// MaxPooledRunVUsers is the most VUsers one pooled or shared run holds on one
+// runner. An engine splits a larger shared group into several runs.
+const MaxPooledRunVUsers = 4096
+
 const (
 	PooledControlContract       = "apexload-java-vuser-pooled-control.v1"
 	FeaturePooledReservationsV1 = "java_vuser_pooled_reservations_v1"
@@ -26,7 +30,7 @@ const (
 	// complete slot list travels in one prepare request; 4,096 worst-case slot
 	// contexts fit MaxRequestBytes (pinned by a test). Larger generators split
 	// groups across runs; the shared admission budget remains authoritative.
-	maxPooledControlVUsers = 4096
+	maxPooledControlVUsers = MaxPooledRunVUsers
 	// maxPooledControlHosts bounds one run's JVMs, independently of the
 	// operator process ceiling that also caps every claim.
 	maxPooledControlHosts = 1024

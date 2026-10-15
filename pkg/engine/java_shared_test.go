@@ -31,6 +31,7 @@ type sharedPeer struct {
 	committed  bool
 	features   []string
 	refuse     string // claim_shared refusal code
+	refuseFrom int    // when set, claims after this many are refused
 	ambiguous  bool   // claim_shared answers with an unknown error
 	failPrep   bool
 	prepGate   chan struct{} // when set, prepare waits for it to close
@@ -92,6 +93,9 @@ func newSharedPeer(t *testing.T, mode string) *sharedPeer {
 			p.mu.Lock()
 			p.claims = append(p.claims, *q.Shared)
 			refuse, ambiguous := p.refuse, p.ambiguous
+			if p.refuseFrom > 0 && len(p.claims) > p.refuseFrom {
+				refuse = javarunner.SharedJVMReasonCapacity
+			}
 			p.mu.Unlock()
 			if refuse != "" {
 				write(409, javasidecar.ErrorResponse{Contract: javasidecar.ContractVersion, ErrorCode: refuse})
@@ -430,5 +434,65 @@ func TestJavaSharedEngineCommitFailureReportedOnce(t *testing.T) {
 	}
 	if ops := strings.Join(p.operations(), ","); strings.Contains(ops, "invoke") || !strings.HasSuffix(ops, "close") {
 		t.Fatalf("operations after failed commit: %s", ops)
+	}
+}
+
+// A group larger than one runner run is split into runs of whole JVMs that
+// stage, commit and close together.
+func TestJavaSharedGroupSplitsAcrossRuns(t *testing.T) {
+	previous := javaSharedRunVUsers
+	javaSharedRunVUsers = 5 // two 2-slot JVMs per run
+	t.Cleanup(func() { javaSharedRunVUsers = previous })
+	p := newSharedPeer(t, config.JavaVuserRunnerModeSidecar)
+	e, err := New(Config{Script: sharedTestScript(), VUsers: 6, TerminationMode: dsl.TerminationIterations})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := e.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalErrors != 0 || result.CompletedIterations != 6 {
+		t.Fatalf("result %+v", result)
+	}
+	if placement := result.JavaVMPlacements[0]; placement.Mode != "shared" || placement.JVMs != 3 {
+		t.Fatalf("placement %+v", placement)
+	}
+	counts := map[string]int{}
+	for _, op := range p.operations() {
+		counts[op]++
+	}
+	for op, want := range map[string]int{"claim_shared": 2, "reserve": 2, "prepare": 2, "commit": 2, "close": 2, "invoke": 18} {
+		if counts[op] != want {
+			t.Fatalf("%d %s calls, want %d: %v", counts[op], op, want, p.operations())
+		}
+	}
+}
+
+// A refusal after the first claim is a failure, not a quiet switch to
+// dedicated JVMs, and the claimed run is closed.
+func TestJavaSharedGroupAbandonsEveryRunWhenALaterClaimFails(t *testing.T) {
+	previous := javaSharedRunVUsers
+	javaSharedRunVUsers = 4
+	t.Cleanup(func() { javaSharedRunVUsers = previous })
+	p := newSharedPeer(t, config.JavaVuserRunnerModeSidecar)
+	p.refuseFrom = 1
+	script := sharedTestScript()
+	g, err := newJavaSharedGroup(GroupConfig{Name: script.Name, ScenarioID: script.ID, Script: script}, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := g.prepare(context.Background(), nil); err == nil || !strings.Contains(err.Error(), javarunner.SharedJVMReasonCapacity) {
+		t.Fatalf("later refusal: %v", err)
+	}
+	if placement := g.placement(); placement.Mode != "shared" {
+		t.Fatalf("failed group reported as %+v", placement)
+	}
+	counts := map[string]int{}
+	for _, op := range p.operations() {
+		counts[op]++
+	}
+	if counts["claim_shared"] != 2 || counts["close"] != 1 || counts["prepare"] != 0 {
+		t.Fatalf("operations %v", p.operations())
 	}
 }

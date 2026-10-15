@@ -98,6 +98,23 @@ func readCgroupMemoryLimit(root string) (int64, string) {
 	return 0, ""
 }
 
+// CgroupMemoryLimit reports this process's cgroup memory limit in bytes, or
+// false when the cgroup sets none.
+func CgroupMemoryLimit() (int64, bool) {
+	return cgroupMemoryLimitAt(defaultCgroupRoot)
+}
+
+func cgroupMemoryLimitAt(root string) (int64, bool) {
+	if raw, _, ok := readTrimmed(filepath.Join(root, "memory.max")); ok {
+		limit, err := strconv.ParseInt(raw, 10, 64)
+		return limit, err == nil && limit > 0
+	}
+	if limit, _, ok := readInt(filepath.Join(root, "memory", "memory.limit_in_bytes")); ok && limit > 0 && limit < 1<<60 {
+		return limit, true
+	}
+	return 0, false
+}
+
 func gomemlimitFromCgroup(limit int64) int64 {
 	if limit <= 0 || limit >= 1<<60 {
 		return 0

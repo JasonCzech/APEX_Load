@@ -198,6 +198,20 @@ javaVuser:
       tag: ""
       pullPolicy: Always
     maxProcesses: 25
+    # Shared JVMs run many VUsers of one group in each JVM (scripts opt in
+    # with jvm_sharing: shared). The runner offers them only with the delegated
+    # cgroup v2 containment this stock sidecar lacks, so enabling them here
+    # takes effect on a governed runner; elsewhere groups keep one JVM per
+    # VUser and the run manifest says why. The runner's container memory
+    # limit (resources.limits.memory) caps the JVMs it admits unless
+    # memoryBudgetMB sets the budget explicitly.
+    sharedJVM:
+      enabled: false
+      vusersPerJVM: 250
+      heapMB: 1024
+      # 0 derives the budget from maxProcesses and the container memory limit.
+      memoryBudgetMB: 0
+      dedicatedJVMMemoryMB: 256
     resources:
       requests:
         cpu: 250m

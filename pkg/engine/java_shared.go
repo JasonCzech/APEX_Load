@@ -76,7 +76,7 @@ type javaSharedGroup struct {
 	warnings  []string
 	jvms      int
 	slotsPer  int
-	run       *javasidecar.PooledClientRun
+	runs      []*javasidecar.PooledClientRun
 	adapters  []protocol.Protocol
 	taken     map[int]bool
 	started   bool
@@ -198,7 +198,7 @@ func (g *javaSharedGroup) active() bool {
 type javaSharedStaged struct {
 	reason   string
 	err      error
-	run      *javasidecar.PooledClientRun
+	runs     []*javasidecar.PooledClientRun
 	warnings []string
 	adapters []protocol.Protocol
 	jvms     int
@@ -213,16 +213,17 @@ func (g *javaSharedGroup) prepare(ctx context.Context, secrets SecretResolver) e
 	g.prepareMu.Lock()
 	defer g.prepareMu.Unlock()
 	g.mu.Lock()
-	state, failure, run := g.state, g.failure, g.run
+	state, failure, runs := g.state, g.failure, g.runs
 	g.mu.Unlock()
 	if state != javaSharedPending {
 		if failure != nil {
 			return failure
 		}
-		if run != nil {
-			return run.Err()
+		var errs []error
+		for _, run := range runs {
+			errs = append(errs, run.Err())
 		}
-		return nil
+		return errors.Join(errs...)
 	}
 	staged := g.stage(ctx, secrets)
 	g.mu.Lock()
@@ -233,16 +234,21 @@ func (g *javaSharedGroup) prepare(ctx context.Context, secrets SecretResolver) e
 	case staged.err != nil:
 		return g.failLocked(staged.err)
 	default:
-		g.state, g.run, g.warnings, g.adapters = javaSharedActive, staged.run, staged.warnings, staged.adapters
-		g.jvms, g.slotsPer = staged.jvms, staged.run.Decision().SlotsPerHost
+		g.state, g.runs, g.warnings, g.adapters = javaSharedActive, staged.runs, staged.warnings, staged.adapters
+		g.jvms, g.slotsPer = staged.jvms, staged.runs[0].Decision().SlotsPerHost
 	}
 	return nil
 }
 
-// stage performs the claim and cold preparation. It reads only fields fixed
-// at construction and touches no group state.
+// stage performs the claims and cold preparation. One runner run holds at
+// most javasidecar.MaxPooledRunVUsers slots, so a larger group is split into
+// runs of whole JVMs; the runner's shared admission budget covers them all. A
+// refusal of the first claim leaves the group dedicated; any later failure
+// abandons every claimed run. It reads only fields fixed at construction and
+// touches no group state.
 func (g *javaSharedGroup) stage(ctx context.Context, secrets SecretResolver) javaSharedStaged {
 	failed := func(err error) javaSharedStaged { return javaSharedStaged{err: err} }
+	deadline := time.Now().Add(JavaSharedPrepareTimeout)
 	cfg := buildProtoConfigForRunModeWithSecretResolver(g.script, "load", secrets)
 	cfg["group_name"], cfg["scenario_id"] = g.group, g.scenario
 	rt, reason, err := javaadapter.PrepareSharedJVMRuntime(ctx, cfg, g.target, g.digest, g.vusersPerJVM)
@@ -262,45 +268,109 @@ func (g *javaSharedGroup) stage(ctx context.Context, secrets SecretResolver) jav
 	if !protocol.RuntimeFeaturesSatisfy(caps.Features, javasidecar.FeatureSharedJVMV1) {
 		return javaSharedStaged{reason: javaadapter.SharedJVMReasonUnavailable}
 	}
-	run, warnings, err := rt.Client.OpenSharedClientRun(ctx, javasidecar.SharedClientOptions{ExecutionID: g.execution, GroupID: g.id, Claim: rt.Claim})
+	open := func(part int) (*javasidecar.PooledClientRun, []string, error) {
+		id := g.id
+		if part > 0 {
+			id = fmt.Sprintf("%s-%d", g.id, part)
+		}
+		return rt.Client.OpenSharedClientRun(ctx, javasidecar.SharedClientOptions{ExecutionID: g.execution, GroupID: id, Claim: rt.Claim})
+	}
+	first, warnings, err := open(0)
 	if code, refused := javaadapter.SharedJVMRefusal(err); refused {
 		return javaSharedStaged{reason: code}
 	}
 	if err != nil {
 		return failed(fmt.Errorf("java_vuser shared JVM claim failed (%s)", javaSharedSidecarCode(err)))
 	}
-	// From here a failure abandons the claimed run at once, so a discarded
-	// engine never leaves its lease renewing on the runner.
+	// From here a failure abandons every claimed run at once, so a discarded
+	// engine never leaves a lease renewing on the runner.
+	runs := []*javasidecar.PooledClientRun{first}
 	abandon := func(err error) javaSharedStaged {
-		closeCtx, cancel := context.WithTimeout(context.Background(), javasidecar.RuntimeLeaseTTL+5*time.Second)
-		defer cancel()
-		if closeErr := run.Close(closeCtx); closeErr != nil {
+		if closeSharedRuns(runs) != nil {
 			err = errors.Join(err, errors.New("java_vuser shared JVM cleanup unconfirmed"))
 		}
 		return failed(err)
 	}
-	users := make([]javasidecar.PooledSlotContext, g.prepared)
-	for i := range users {
-		users[i] = javasidecar.PooledSlotContext{VUserID: int64(g.offset + i), IgnoreThinkTime: g.script.Config.ThinkTime.Ignore, ThinkTimeLimitMS: int64(g.script.Config.ThinkTime.LimitMs)}
+	decision := first.Decision()
+	slotsPerJVM := decision.SlotsPerHost
+	perRun := max(slotsPerJVM, min(javaSharedRunVUsers, decision.MaxVUsers)/slotsPerJVM*slotsPerJVM)
+	parts := (g.prepared + perRun - 1) / perRun
+	if parts > 1 {
+		more, errs := make([]*javasidecar.PooledClientRun, parts-1), make([]error, parts-1)
+		var wg sync.WaitGroup
+		for part := 1; part < parts; part++ {
+			wg.Go(func() { more[part-1], _, errs[part-1] = open(part) })
+		}
+		wg.Wait()
+		for _, run := range more {
+			if run != nil {
+				runs = append(runs, run)
+			}
+		}
+		if err := firstError(errs); err != nil {
+			return abandon(fmt.Errorf("java_vuser shared JVM claim failed (%s)", javaSharedSidecarCode(err)))
+		}
+		for _, run := range runs[1:] {
+			if run.Decision().SlotsPerHost != slotsPerJVM {
+				return abandon(errors.New("java_vuser shared JVM claims disagree"))
+			}
+		}
 	}
-	slots, err := run.Prepare(ctx, users, JavaSharedPrepareTimeout)
-	if err != nil {
+	slots, errs := make([][]*javasidecar.PooledClientSlot, len(runs)), make([]error, len(runs))
+	var wg sync.WaitGroup
+	for i, run := range runs {
+		users := make([]javasidecar.PooledSlotContext, min(g.prepared, (i+1)*perRun)-i*perRun)
+		for j := range users {
+			users[j] = javasidecar.PooledSlotContext{VUserID: int64(g.offset + i*perRun + j), IgnoreThinkTime: g.script.Config.ThinkTime.Ignore, ThinkTimeLimitMS: int64(g.script.Config.ThinkTime.LimitMs)}
+		}
+		wg.Go(func() { slots[i], errs[i] = run.Prepare(ctx, users, time.Until(deadline)) })
+	}
+	wg.Wait()
+	if err := firstError(errs); err != nil {
 		return abandon(fmt.Errorf("java_vuser shared JVM preparation failed (%s)", javaSharedSidecarCode(err)))
 	}
-	if g.script.Config.NativeServices != nil && len(g.script.Config.NativeServices.LiveTables) > 0 && !run.NativeDataAvailable() {
-		return abandon(errors.New("native_data_pooled_v1 capability unavailable"))
-	}
 	hosts := map[string]bool{}
-	adapters := make([]protocol.Protocol, 0, len(slots))
-	for _, slot := range slots {
-		adapter, err := javaadapter.NewPooledSlotProtocol(slot, rt.ActionTimeout)
-		if err != nil {
-			return abandon(errors.New("java_vuser shared JVM adapter unavailable"))
+	adapters := make([]protocol.Protocol, 0, g.prepared)
+	for i, run := range runs {
+		if g.script.Config.NativeServices != nil && len(g.script.Config.NativeServices.LiveTables) > 0 && !run.NativeDataAvailable() {
+			return abandon(errors.New("native_data_pooled_v1 capability unavailable"))
 		}
-		hosts[slot.HostID()] = true
-		adapters = append(adapters, adapter)
+		for _, slot := range slots[i] {
+			adapter, err := javaadapter.NewPooledSlotProtocol(slot, rt.ActionTimeout)
+			if err != nil {
+				return abandon(errors.New("java_vuser shared JVM adapter unavailable"))
+			}
+			hosts[fmt.Sprintf("%d/%s", i, slot.HostID())] = true
+			adapters = append(adapters, adapter)
+		}
 	}
-	return javaSharedStaged{run: run, warnings: warnings, adapters: adapters, jvms: len(hosts)}
+	return javaSharedStaged{runs: runs, warnings: warnings, adapters: adapters, jvms: len(hosts)}
+}
+
+// javaSharedRunVUsers is the most VUsers one runner run holds (a variable
+// only so tests can split small groups).
+var javaSharedRunVUsers = javasidecar.MaxPooledRunVUsers
+
+func firstError(errs []error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// closeSharedRuns closes runs in parallel and waits for positive cleanup.
+func closeSharedRuns(runs []*javasidecar.PooledClientRun) error {
+	ctx, cancel := context.WithTimeout(context.Background(), javasidecar.RuntimeLeaseTTL+5*time.Second)
+	defer cancel()
+	errs := make([]error, len(runs))
+	var wg sync.WaitGroup
+	for i, run := range runs {
+		wg.Go(func() { errs[i] = run.Close(ctx) })
+	}
+	wg.Wait()
+	return errors.Join(errs...)
 }
 
 // javaSharedSidecarCode is the runner's stable code, never free text.
@@ -332,7 +402,7 @@ func (g *javaSharedGroup) start(ctx context.Context, stop context.CancelFunc) er
 	g.prepareMu.Lock()
 	defer g.prepareMu.Unlock()
 	g.mu.Lock()
-	run, failure, started, ready := g.run, g.failure, g.started, g.state == javaSharedActive && g.run != nil
+	runs, failure, started, ready := g.runs, g.failure, g.started, g.state == javaSharedActive && len(g.runs) > 0
 	g.started = true
 	g.mu.Unlock()
 	switch {
@@ -344,22 +414,37 @@ func (g *javaSharedGroup) start(ctx context.Context, stop context.CancelFunc) er
 		return errors.New("java_vuser shared JVM group already started")
 	}
 	// Commit runs without g.mu so placement and protocol readers never wait on it.
-	if err := run.Commit(ctx); err != nil {
-		g.mu.Lock()
-		defer g.mu.Unlock()
-		return g.failLocked(fmt.Errorf("java_vuser shared JVM commit failed (%s)", javaSharedSidecarCode(err)))
+	for _, run := range runs {
+		if err := run.Commit(ctx); err != nil {
+			g.mu.Lock()
+			defer g.mu.Unlock()
+			return g.failLocked(fmt.Errorf("java_vuser shared JVM commit failed (%s)", javaSharedSidecarCode(err)))
+		}
 	}
 	keeper, cancel := context.WithCancel(context.Background())
 	g.mu.Lock()
 	g.keeper, g.keeperEnd = cancel, make(chan struct{})
 	done := g.keeperEnd
 	g.mu.Unlock()
-	go g.keepOwner(keeper, stop, done)
+	go g.keepOwner(keeper, stop, done, runs)
 	return nil
 }
 
-func (g *javaSharedGroup) keepOwner(ctx context.Context, stop context.CancelFunc, done chan struct{}) {
+// keepOwner renews the owner lease, which covers every run of this client,
+// and stops the engine when any run ends early.
+func (g *javaSharedGroup) keepOwner(ctx context.Context, stop context.CancelFunc, done chan struct{}, runs []*javasidecar.PooledClientRun) {
 	defer close(done)
+	ended := make(chan struct{})
+	var once sync.Once
+	for _, run := range runs {
+		go func() {
+			select {
+			case <-run.Done():
+				once.Do(func() { close(ended) })
+			case <-ctx.Done():
+			}
+		}()
+	}
 	ticker := time.NewTicker(javasidecar.RunnerOwnerLeaseRenewInterval)
 	defer ticker.Stop()
 	for {
@@ -367,11 +452,11 @@ func (g *javaSharedGroup) keepOwner(ctx context.Context, stop context.CancelFunc
 		select {
 		case <-ctx.Done():
 			return
-		case <-g.run.Done():
+		case <-ended:
 			lost = errors.New("java_vuser shared JVM run lease lost")
 		case <-ticker.C:
 			call, cancel := context.WithTimeout(ctx, javasidecar.RunnerOwnerLeaseRenewInterval)
-			if err := g.run.RenewOwner(call); err != nil && ctx.Err() == nil {
+			if err := runs[0].RenewOwner(call); err != nil && ctx.Err() == nil {
 				lost = errors.New("java_vuser shared JVM owner lease lost")
 			}
 			cancel()
@@ -411,7 +496,7 @@ func (g *javaSharedGroup) close() error {
 		return nil
 	}
 	g.mu.Lock()
-	cancel, done, run := g.keeper, g.keeperEnd, g.run
+	cancel, done, runs := g.keeper, g.keeperEnd, g.runs
 	g.keeper = nil
 	g.mu.Unlock()
 	if cancel != nil {
@@ -419,12 +504,8 @@ func (g *javaSharedGroup) close() error {
 		<-done
 	}
 	var cleanup error
-	if run != nil {
-		ctx, stop := context.WithTimeout(context.Background(), javasidecar.RuntimeLeaseTTL+5*time.Second)
-		defer stop()
-		if err := run.Close(ctx); err != nil {
-			cleanup = errors.New("java_vuser shared JVM cleanup unconfirmed")
-		}
+	if closeSharedRuns(runs) != nil {
+		cleanup = errors.New("java_vuser shared JVM cleanup unconfirmed")
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()

@@ -669,10 +669,15 @@ VUsers per JVM. Each VUser still gets its own `Actions` instance, its own copy
 of the classes in the jar that holds the target class, its own `lr` context and
 its own lifecycle thread; libraries in the group's other jars load once per JVM.
 
-Shared JVMs run only on a sidecar runner whose operator enabled them
-(`APEXLOAD_JAVA_VUSER_SHARED_JVM=true`, Linux), for scripts with exactly one
-`init`, `action` and `end` call on one target class, string parameters, a closed
-workload and sequential run logic. The runner also requires Java 17 or 21, a
+Shared JVMs run only on a Linux sidecar runner whose operator enabled them
+(`APEXLOAD_JAVA_VUSER_SHARED_JVM=true`, or the Helm chart's
+`javaVuser.runner.sharedJVM` values) and that has the delegated cgroup v2
+containment persistent lifecycles need (see Persistent process containment
+below; the stock compose service and chart sidecar lack it). The runner image
+ships the slot jars they load, and the runner sizes its JVM memory budget from
+its container's memory limit unless the operator sets one. They apply to
+scripts with exactly one `init`, `action` and `end` call on one target class,
+string parameters, a closed workload and sequential run logic. The runner also requires Java 17 or 21, a
 jar-only classpath and a clean native-code scan. When any of these does not
 hold, the group runs with one JVM per VUser and the run reports the reason
 (`apexctl run` prints it next to the results). An unexplained runner error, or

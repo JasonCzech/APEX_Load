@@ -205,6 +205,12 @@ func inspectClassNative(data []byte) (native, load, jna bool, err error) {
 		err = invalid
 		return
 	}
+	// Library loads are recognised by their owner: only System and Runtime
+	// load native libraries, while "load" alone also names Properties.load,
+	// KeyStore.load, ServiceLoader.load and countless application methods.
+	utf8 := make([]string, count)
+	refs := make([][2]uint16, count) // Class: {name}; NameAndType: {name}; method refs: {class, name-and-type}
+	var methodRefs []uint16
 	for i := 1; i < int(count); i++ {
 		tag, e := u1()
 		if e != nil {
@@ -225,9 +231,31 @@ func inspectClassNative(data []byte) (native, load, jna bool, err error) {
 				return
 			}
 			value := string(body)
-			load = load || value == "loadLibrary" || value == "load" // evidence only: owner may be unrelated
-			jna = jna || strings.Contains(value, "com/sun/jna/") || strings.Contains(value, "jnr/ffi/") || strings.Contains(value, "com.sun.jna.") || strings.Contains(value, "jnr.ffi.")
-		case 3, 4, 9, 10, 11, 12, 17, 18:
+			utf8[i] = value
+			// loadLibrary is specific enough to stay a conservative indicator,
+			// which also catches a reflective System.loadLibrary.
+			load = load || value == "loadLibrary"
+			jna = jna || strings.Contains(value, "com/sun/jna/") || strings.Contains(value, "jnr/ffi/") || strings.Contains(value, "com.sun.jna.") || strings.Contains(value, "jnr.ffi.") || strings.Contains(value, "java/lang/foreign/")
+		case 7, 12:
+			name, e := u2()
+			if e != nil {
+				err = invalid
+				return
+			}
+			refs[i] = [2]uint16{name}
+			if tag == 12 {
+				n = 2
+			}
+		case 10, 11:
+			class, e := u2()
+			nameAndType, e2 := u2()
+			if e != nil || e2 != nil {
+				err = invalid
+				return
+			}
+			refs[i] = [2]uint16{class, nameAndType}
+			methodRefs = append(methodRefs, uint16(i))
+		case 3, 4, 9, 17, 18:
 			n = 4
 		case 5, 6:
 			n = 8
@@ -236,7 +264,7 @@ func inspectClassNative(data []byte) (native, load, jna bool, err error) {
 				err = invalid
 				return
 			}
-		case 7, 8, 16, 19, 20:
+		case 8, 16, 19, 20:
 			n = 2
 		case 15:
 			n = 3
@@ -247,6 +275,21 @@ func inspectClassNative(data []byte) (native, load, jna bool, err error) {
 		if skip(n) != nil {
 			err = invalid
 			return
+		}
+	}
+	for _, index := range methodRefs {
+		ref := refs[index]
+		if int(ref[0]) >= len(refs) || int(ref[1]) >= len(refs) {
+			err = invalid
+			return
+		}
+		owner, name := refs[ref[0]][0], refs[ref[1]][0]
+		if int(owner) >= len(utf8) || int(name) >= len(utf8) {
+			err = invalid
+			return
+		}
+		if (utf8[owner] == "java/lang/System" || utf8[owner] == "java/lang/Runtime") && (utf8[name] == "load" || utf8[name] == "loadLibrary") {
+			load = true
 		}
 	}
 	if skip(6) != nil {

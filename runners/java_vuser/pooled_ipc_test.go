@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -342,6 +343,25 @@ func TestPooledIPCRealJVM(t *testing.T) {
 			}
 		})
 	}
+	// Event frames precede each result. Without TCP_NODELAY a result that
+	// follows an unacknowledged event frame waits for a delayed ACK (about
+	// 40 ms) whenever the host is otherwise idle. Linux loopback shows it (see
+	// scripts/java-shared-jvm-bench); macOS acknowledges promptly and does not.
+	t.Run("idle_round_trips_are_not_delayed", func(t *testing.T) {
+		tr := start(t, true)
+		prepare(t, tr)
+		var rounds []time.Duration
+		for range 30 {
+			time.Sleep(5 * time.Millisecond)
+			begin := time.Now()
+			invoke(t, tr, "a", "action", map[string]string{"mode": "transaction"})
+			rounds = append(rounds, time.Since(begin))
+		}
+		slices.Sort(rounds)
+		if median := rounds[len(rounds)/2]; median > 20*time.Millisecond {
+			t.Fatalf("idle invocation median %s, rounds %v", median, rounds)
+		}
+	})
 	t.Run("full_host_burst", func(t *testing.T) {
 		// Every slot of a maximum-size host opens, initializes, acts and closes
 		// concurrently. Synchronized completions must queue on both sides of the
@@ -448,6 +468,7 @@ public class WireActions {
     if(Thread.currentThread()!=owner||lr.get_vuser_id()!=identity||count!=1)throw new AssertionError("context");
     String mode=lr.eval_string("{mode}");
     if(mode.equals("exit"))lr.exit(1,-17);
+    if(mode.equals("transaction")){lr.start_transaction("t");lr.end_transaction("t",lr.PASS);}
     if(mode.equals("fail"))throw new IllegalStateException("private failure details");
     if(mode.equals("rawstdin")&&new java.io.FileInputStream(java.io.FileDescriptor.in).read()!=-1)throw new AssertionError("control leaked to raw stdin");
     if(mode.equals("output")){byte[] b=new byte[100000];System.out.write(b);System.err.write(b);new java.io.FileOutputStream(java.io.FileDescriptor.out).write(b);new java.io.FileOutputStream(java.io.FileDescriptor.err).write(b);}
