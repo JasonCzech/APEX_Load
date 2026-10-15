@@ -79,19 +79,23 @@ func convertThroughSharedPipeline(session *Session, name string, opts ConvertOpt
 	// its import source.
 	ensureRecorderImportPreserved(script, session.Name)
 	script.Metadata.Import.Source = "recorder"
-	for index := range script.Actions {
-		// HAR page and timing notes say nothing about a proxy recording.
-		delete(script.Actions[index].Metadata, "har.pageref")
-		delete(script.Actions[index].Metadata, "har.timings")
-		if len(script.Actions[index].Metadata) == 0 {
-			script.Actions[index].Metadata = nil
+	// A recorded sign-in may run in init (pkg/convert/sample).
+	for _, phase := range []*[]dsl.Action{&script.Init, &script.Actions} {
+		for index := range *phase {
+			// HAR page and timing notes say nothing about a proxy recording.
+			action := &(*phase)[index]
+			delete(action.Metadata, "har.pageref")
+			delete(action.Metadata, "har.timings")
+			if len(action.Metadata) == 0 {
+				action.Metadata = nil
+			}
 		}
-	}
-	// Recording lineage hashes the exact action graph, and a draft comes
-	// back from the client as JSON: typed values inside metadata and params
-	// maps must already be in their JSON form, or the hashes differ.
-	if normalized, err := jsonNormalizedActions(script.Actions); err == nil {
-		script.Actions = normalized
+		// Recording lineage hashes the exact action graph, and a draft comes
+		// back from the client as JSON: typed values inside metadata and params
+		// maps must already be in their JSON form, or the hashes differ.
+		if normalized, err := jsonNormalizedActions(*phase); err == nil {
+			*phase = normalized
+		}
 	}
 	for _, warning := range converted.Warnings {
 		if warning != harNoteForRecordings {

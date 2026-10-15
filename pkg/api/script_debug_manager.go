@@ -1951,6 +1951,14 @@ func (s *ScriptDebugSession) appendCorrelationObservationLocked(action engine.Re
 		s.rejectCorrelationEvidenceLocked("debugger session was stopped before replay completion")
 		return
 	}
+	eventPhase := strings.TrimSpace(event.Phase)
+	actionPhase := strings.TrimSpace(action.Phase)
+	if eventPhase == "init" && actionPhase == "init" {
+		// A recording's baseline names only the iteration's steps: a sign-in
+		// the conversion moved to init has no recorded observation to bind to,
+		// so its evidence, even unavailable, says nothing about theirs.
+		return
+	}
 	if event.CorrelationEvidence.UnavailableReason != "" {
 		s.rejectCorrelationEvidenceLocked(event.CorrelationEvidence.UnavailableReason)
 		return
@@ -1958,8 +1966,6 @@ func (s *ScriptDebugSession) appendCorrelationObservationLocked(action engine.Re
 	if s.correlationEvidenceErr != "" {
 		return
 	}
-	eventPhase := strings.TrimSpace(event.Phase)
-	actionPhase := strings.TrimSpace(action.Phase)
 	if eventPhase != "action" || actionPhase != "action" || eventPhase != actionPhase {
 		s.rejectCorrelationEvidenceLocked(fmt.Sprintf("unsupported replay phase %q", eventPhase))
 		return

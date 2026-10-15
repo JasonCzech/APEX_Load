@@ -43,6 +43,8 @@ const (
 	RuleSalesforceCompositeReference = "salesforce.composite_reference"
 	RuleSalesforceCometdClientID     = "salesforce.cometd_client_id"
 	RuleSalesforceAuraTokenCookie    = "salesforce.aura_token_cookie"
+	RuleSalesforceOAuthIdentityURL   = "salesforce.oauth_identity_url"
+	RuleSalesforceOAuthAuthorizePage = "salesforce.oauth_authorize_redirect"
 )
 
 // ResponseFamily groups rules by the kind of response they inspect.
@@ -90,6 +92,8 @@ func RuleCatalog() []RuleInfo {
 		{RuleSalesforceBulkQueryLocator, FamilyHeader, "Salesforce Bulk query locator", "Bulk API 2.0 query result pagination cursor returned in the Sforce-Locator response header and reused as the next locator query parameter.", 0.9},
 		{RuleSalesforceCompositeReference, FamilyForm, "Salesforce composite referenceId", "Server-assigned record ids from a /composite subrequest, addressed by referenceId, reused in later requests.", 0.85},
 		{RuleSalesforceAuraTokenCookie, FamilyCookie, "Salesforce aura.token cookie", "__Host-ERIC_* cookie set by the Lightning bootstrap whose value later /aura requests echo as the aura.token form field.", 0.95},
+		{RuleSalesforceOAuthIdentityURL, FamilyForm, "Salesforce OAuth identity URL", "The id of a Salesforce OAuth token response, the signed-in user's identity URL, which a Mobile SDK app requests next.", 0.95},
+		{RuleSalesforceOAuthAuthorizePage, FamilyHeader, "Salesforce OAuth authorize redirect", "The source state of the approval-page redirect a Salesforce /services/oauth2/authorize returns; the sign-in requests that follow echo it.", 0.93},
 		{RuleSalesforceCometdClientID, FamilyForm, "Salesforce CometD clientId", "Bayeux clientId from a /cometd /meta/handshake response (a JSON array) reused in every later /meta/connect and /meta/subscribe request.", 0.95},
 		{RuleASPNetState, FamilyHTML, "ASP.NET state field", "WebForms __VIEWSTATE / __EVENTVALIDATION style hidden fields that change every request.", 0.95},
 		{RuleHTMLHiddenToken, FamilyHTML, "Hidden anti-CSRF/state token", "Hidden form inputs named like csrf, xsrf, token, nonce, state, viewstate, authenticity.", 0.9},
@@ -230,7 +234,7 @@ func HighConfidence(c Correlation) bool {
 // FamilyForRule maps a rule ID back to its response family (best-effort).
 func FamilyForRule(ruleID string) ResponseFamily {
 	switch {
-	case ruleID == RuleSalesforceBulkQueryLocator:
+	case ruleID == RuleSalesforceBulkQueryLocator, ruleID == RuleSalesforceOAuthAuthorizePage:
 		return FamilyHeader
 	case ruleID == RuleSalesforceAuraTokenCookie:
 		return FamilyCookie

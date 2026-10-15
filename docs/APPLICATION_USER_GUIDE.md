@@ -618,6 +618,26 @@ paths** name them; by default they are the Salesforce Mobile SDK's analytics upl
 and the `nebulaLogger` and `analyticsEvent` calls. LoadRunner script imports apply
 the same default paths.
 
+A recorded Salesforce Mobile SDK sign-in (the app trading an authorization code at
+`/services/oauth2/token` for its session) runs in init, as a LoadRunner script signs
+in: each virtual user signs in once, and every iteration reuses its Bearer token.
+The login form reads the `salesforce_users` data source, which gives each virtual
+user its own row. It holds the recorded user; add a `username,password` row for every
+virtual user, each a perf user exempt from identity verification (with fewer rows
+than virtual users, users share a row). Type the values as on the login page, unless
+the conversion says the file keeps them URL-encoded (when the login form also carries
+correlated values). Recorded traffic that cannot run at load is gated for review:
+failed sign-in attempts, a password reset request and identity verification (such as
+an SMS code). If the recording approves the app on the OAuth approval page, every
+sign-in posts that approval. To sign in without it, pre-authorize the perf users in
+the connected app (Admin approved users are pre-authorized) and record the sign-in
+again; the authorization code comes from the approval's response, so removing that
+step alone breaks the sign-in. A transaction marked across the sign-in moves to init
+whole, so mark the sign-in as its own transaction. The sign-in stays in the
+iteration, and the conversion says why, when a transaction marked during sign-in
+never ends or a background conversation started during sign-in runs on after it.
+HAR imports treat a Mobile SDK sign-in the same way.
+
 Finished recordings of both methods are listed under **Recent recordings**, newest
 first, with a **Browser** or **HTTP proxy** badge. Recording Studio reopens with the
 method you used last.

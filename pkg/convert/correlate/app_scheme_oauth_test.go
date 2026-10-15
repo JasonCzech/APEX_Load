@@ -146,3 +146,82 @@ func TestAppSchemeOAuthCodeCandidatesKeepOrdinalAfterSkippedCode(t *testing.T) {
 		t.Fatalf("candidates = %#v; want the second occurrence addressed by ordinal", candidates)
 	}
 }
+
+// The token response names the signed-in user's identity URL, which the
+// Mobile SDK requests next; each virtual user has its own.
+func TestDetectSalesforceIdentityURLFeedsIdentityRequest(t *testing.T) {
+	identity := "https://login.salesforce.com/id/00D5g000004ExAmPLE/0055g00000ABCDeAAH"
+	observations := []Observation{
+		{
+			ID:           1,
+			RequestURL:   "https://acme.my.salesforce.com/services/oauth2/token",
+			ResponseBody: `{"access_token":"00D5g000004ExAmPLE!AQ0AQexampleToken","instance_url":"https://acme.my.salesforce.com","id":"` + identity + `","token_type":"Bearer"}`,
+		},
+		{ID: 2, RequestURL: identity},
+	}
+	var found *Correlation
+	correlations := Detect(observations)
+	for index := range correlations {
+		if correlations[index].RuleID == RuleSalesforceOAuthIdentityURL {
+			found = &correlations[index]
+		}
+	}
+	if found == nil {
+		t.Fatalf("no identity URL correlation in %#v", correlations)
+	}
+	if found.Value != identity || found.FoundInID != 1 || !slices.Contains(found.UsedInIDs, 2) || found.ExtractType != "jsonpath" ||
+		found.Expression != "$.id" || !HighConfidence(*found) {
+		t.Fatalf("identity correlation = %#v", found)
+	}
+}
+
+func TestSalesforceOAuthIdentityCandidatesNeedATokenResponse(t *testing.T) {
+	for name, body := range map[string]string{
+		"no access token": `{"instance_url":"https://acme.my.salesforce.com","id":"https://login.salesforce.com/id/00D/005"}`,
+		"no instance":     `{"access_token":"tok","id":"https://login.salesforce.com/id/00D/005"}`,
+		"not an identity": `{"access_token":"tok","instance_url":"https://acme.my.salesforce.com","id":"https://acme.my.salesforce.com/services/data"}`,
+		"plain http":      `{"access_token":"tok","instance_url":"https://acme.my.salesforce.com","id":"http://login.salesforce.com/id/00D/005"}`,
+		"not JSON":        `access_token=tok&instance_url=x&id=https://login.salesforce.com/id/00D/005`,
+	} {
+		if candidates := salesforceOAuthIdentityCandidates(body); len(candidates) != 0 {
+			t.Fatalf("%s: candidates = %#v", name, candidates)
+		}
+	}
+}
+
+// The authorize endpoint states each sign-in in the approval page's source
+// parameter; the approval page request must carry the replayed sign-in's own.
+func TestDetectSalesforceAuthorizeSourceFeedsApprovalPage(t *testing.T) {
+	source := "SRCa1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0"
+	approval := "https://acme.my.salesforce.com/setup/secur/RemoteAccessAuthorizationPage.apexp?source=" + source + "&display=touch"
+	observations := []Observation{
+		{ID: 1, RequestURL: "https://acme.my.salesforce.com/services/oauth2/authorize?response_type=code", ResponseHeaders: map[string]string{"Location": approval}},
+		{ID: 2, RequestURL: approval},
+	}
+	var found *Correlation
+	correlations := Detect(observations)
+	for index := range correlations {
+		if correlations[index].RuleID == RuleSalesforceOAuthAuthorizePage {
+			found = &correlations[index]
+		}
+	}
+	if found == nil {
+		t.Fatalf("no authorize source correlation in %#v", correlations)
+	}
+	if found.Value != source || found.Name != "corr_salesforce_authorize_source" || found.FoundInID != 1 ||
+		!slices.Contains(found.UsedInIDs, 2) || found.Source != "header" || !HighConfidence(*found) {
+		t.Fatalf("authorize source correlation = %#v", found)
+	}
+	match := regexp.MustCompile(found.Expression).FindStringSubmatch("Location: " + approval)
+	if len(match) < 2 || match[1] != source {
+		t.Fatalf("expression %q extracts %q, want the source", found.Expression, match)
+	}
+
+	// The same parameter on any other redirect is not a sign-in state.
+	other := "https://app.example.test/landing?source=" + source
+	for _, candidate := range locationCandidates("Location", other, 0, 1) {
+		if candidate.RuleID == RuleSalesforceOAuthAuthorizePage {
+			t.Fatalf("a non-Salesforce redirect produced %#v", candidate)
+		}
+	}
+}

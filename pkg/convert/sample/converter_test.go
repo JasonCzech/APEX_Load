@@ -3121,3 +3121,44 @@ func TestRedactExchangeSecretsBoundsExpandingSensitiveHeaderReplacement(t *testi
 		t.Fatal("redacted source retained raw one-byte credential")
 	}
 }
+
+// A review-only correlation is never rewritten automatically, so its literal
+// containing, or contained in, an applied one is no collision: the applied
+// value is replaced wherever it occurs, inside the longer literal too.
+func TestPrepareCorrelationApplicationAppliesAroundReviewOnlyContainment(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		applied, review Correlation
+		use             string
+	}{
+		{
+			name:    "applied inside review-only",
+			applied: Correlation{Name: "corr_cshc", Source: "body", ExtractType: "regex", Expression: `(CSHCabc123def456)`, Value: "CSHCabc123def456", FoundInStep: 1, UsedInSteps: []int{3, 4}},
+			review:  Correlation{Name: "corr_location", Source: "body", ExtractType: "regex", Expression: `(/verify\?cshc=CSHCabc123def456&r=1)`, Value: "/verify?cshc=CSHCabc123def456&r=1", FoundInStep: 2, UsedInSteps: []int{3}, reviewOnly: true},
+			use:     "https://api.example.test/verify?cshc=CSHCabc123def456&r=1",
+		},
+		{
+			name:    "review-only inside applied",
+			applied: Correlation{Name: "corr_token", Source: "body", ExtractType: "regex", Expression: `(00D5g000ORG!TOKENabc123)`, Value: "00D5g000ORG!TOKENabc123", FoundInStep: 1, UsedInSteps: []int{3, 4}},
+			review:  Correlation{Name: "corr_orgid", Source: "body", ExtractType: "regex", Expression: `(00D5g000ORG)`, Value: "00D5g000ORG", FoundInStep: 2, UsedInSteps: []int{3}, reviewOnly: true},
+			use:     "https://api.example.test/use?token=00D5g000ORG!TOKENabc123",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			exchanges := []exchange{
+				{URL: "https://api.example.test/source-a"},
+				{URL: "https://api.example.test/source-b"},
+				{URL: tc.use},
+				{URL: "https://api.example.test/again?v=" + tc.applied.Value},
+			}
+			correlations := []Correlation{tc.applied, tc.review}
+			vars, _, _ := prepareCorrelationApplication(exchanges, correlations)
+			if vars[tc.applied.Value] != "{{var."+tc.applied.Name+"}}" || len(vars) != 1 {
+				t.Fatalf("vars = %#v, want only %s applied", vars, tc.applied.Name)
+			}
+			if !correlations[0].PreApplied || correlations[1].PreApplied {
+				t.Fatalf("applied = %#v, review-only = %#v", correlations[0], correlations[1])
+			}
+		})
+	}
+}

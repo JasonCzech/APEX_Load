@@ -901,7 +901,7 @@ func Truncate(value string, maxLen int) string {
 }
 
 func salesforceCandidates(responseBody string, responseHeaders map[string]string) []Candidate {
-	candidates := make([]Candidate, 0)
+	candidates := salesforceOAuthIdentityCandidates(responseBody)
 	if !looksLikeFormEncodedBody(responseBody) {
 		candidates = appendCandidatesBounded(candidates, salesforceRegexCandidates(responseBody)...)
 		if len(candidates) > maxCorrelationCandidatesPerObservation {
@@ -940,6 +940,48 @@ func salesforceCandidates(responseBody string, responseHeaders map[string]string
 		}
 	}
 	return candidates
+}
+
+// salesforceAuthorizePageRedirect reports whether a Location sends a
+// Salesforce OAuth sign-in to its approval page.
+func salesforceAuthorizePageRedirect(location string) bool {
+	path := location
+	if cut := strings.IndexAny(path, "?#"); cut >= 0 {
+		path = path[:cut]
+	}
+	return strings.HasSuffix(strings.ToLower(path), "/setup/secur/remoteaccessauthorizationpage.apexp") &&
+		strings.Contains(location, "source=")
+}
+
+// salesforceOAuthIdentityCandidates finds the identity URL (id) of a
+// Salesforce OAuth token response: it names the signed-in user, and a Mobile
+// SDK app requests it right after the token exchange.
+func salesforceOAuthIdentityCandidates(body string) []Candidate {
+	trimmed := strings.TrimSpace(body)
+	if !strings.HasPrefix(trimmed, "{") || !strings.Contains(trimmed, `"access_token"`) || !strings.Contains(trimmed, `"instance_url"`) {
+		return nil
+	}
+	var token struct {
+		AccessToken string `json:"access_token"`
+		InstanceURL string `json:"instance_url"`
+		ID          string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &token); err != nil || token.AccessToken == "" || token.InstanceURL == "" {
+		return nil
+	}
+	if !strings.HasPrefix(token.ID, "https://") || !strings.Contains(token.ID, "/id/") {
+		return nil
+	}
+	return []Candidate{{
+		Name:           "corr_salesforce_identity_url",
+		Value:          token.ID,
+		Source:         "body",
+		ExtractType:    "jsonpath",
+		Expression:     "$.id",
+		RuleID:         RuleSalesforceOAuthIdentityURL,
+		BaseConfidence: 0.95,
+		Reason:         "Salesforce OAuth token response identity URL, which names the signed-in user",
+	}}
 }
 
 func looksLikeFormEncodedBody(body string) bool {
@@ -2454,7 +2496,13 @@ func locationCandidates(headerName string, value string, headerOrdinal, headerCo
 	if len(params) == 0 {
 		return nil
 	}
-	valuesByKey := exactLocationQueryValueIndex(parsed.RawQuery, params)
+	// Salesforce's authorize endpoint states each sign-in in the approval
+	// page's source parameter, which the sign-in requests that follow echo.
+	salesforceAuthorize := salesforceAuthorizePageRedirect(value)
+	dynamic := func(key string) bool {
+		return dynamicLocationParamName(key) || (salesforceAuthorize && key == "source")
+	}
+	valuesByKey := exactLocationQueryValueIndex(parsed.RawQuery, params, dynamic)
 	keys := make([]string, 0, len(valuesByKey))
 	for key := range valuesByKey {
 		keys = append(keys, key)
@@ -2477,7 +2525,7 @@ func locationCandidates(headerName string, value string, headerOrdinal, headerCo
 			if !replayable {
 				continue
 			}
-			candidates = appendCandidatesBounded(candidates, Candidate{
+			candidate := Candidate{
 				Name:           "corr_location_" + Slug(key),
 				Value:          queryValue,
 				Source:         "header",
@@ -2487,7 +2535,12 @@ func locationCandidates(headerName string, value string, headerOrdinal, headerCo
 				RuleID:         RuleLocationParam,
 				BaseConfidence: 0.78,
 				Reason:         "Location query parameter " + key + " looks dynamic",
-			})
+			}
+			if salesforceAuthorize && key == "source" {
+				candidate.Name, candidate.RuleID, candidate.BaseConfidence = "corr_salesforce_authorize_source", RuleSalesforceOAuthAuthorizePage, 0.93
+				candidate.Reason = "Salesforce OAuth authorize state (source) for the approval page"
+			}
+			candidates = appendCandidatesBounded(candidates, candidate)
 		}
 	}
 	return candidates
@@ -2502,10 +2555,10 @@ type exactLocationQueryValues struct {
 // wire-order pass. ParseQuery's successfully decoded key set is supplied so its
 // malformed-semicolon/error behavior remains authoritative. Generated regexes
 // intentionally capture wire values and cannot replay percent-encoded keys.
-func exactLocationQueryValueIndex(rawQuery string, parsed url.Values) map[string]*exactLocationQueryValues {
+func exactLocationQueryValueIndex(rawQuery string, parsed url.Values, dynamic func(string) bool) map[string]*exactLocationQueryValues {
 	index := make(map[string]*exactLocationQueryValues)
 	for key := range parsed {
-		if dynamicLocationParamName(key) {
+		if dynamic(key) {
 			index[key] = &exactLocationQueryValues{replayable: true}
 		}
 	}

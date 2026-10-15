@@ -261,6 +261,14 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if len(exchanges) == 0 {
 		return nil, errors.New("no requests found in sample input")
 	}
+	// A recorded Salesforce Mobile SDK sign-in reads its credentials from a
+	// users file and is reviewed before correlation (salesforce_signin.go).
+	var signIn *salesforceSignIn
+	if format == "har" {
+		if signIn = findSalesforceSignIn(exchanges); signIn != nil {
+			signIn.prepareExchanges(exchanges)
+		}
+	}
 
 	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
 	inferExtractors := convertutil.BoolOption(req.Options.InferExtractors, true)
@@ -588,6 +596,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	applySOAPSampleProtocol(result.Script, &result.Warnings)
+	if signIn != nil {
+		if note := signIn.addUsersDataSource(result.Script); note != "" {
+			result.Warnings = append(result.Warnings, note)
+		}
+	}
 	finalized, err := requestimport.FinalizeScript(result.Script, finalizationReports, requestimport.FinalizeOptions{})
 	if err != nil {
 		return nil, err
@@ -631,6 +644,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 					sourceMappings[index].TargetPath, _ = moved.RemapPath(sourceMappings[index].TargetPath)
 				}
 			}
+		}
+		if signIn != nil {
+			var moved int
+			var notMoved string
+			newIndex, sourceMappings, moved, notMoved = signIn.moveToInit(result.Script, exchanges, newIndex, sourceMappings)
+			result.Warnings = append(result.Warnings, signIn.warnings(moved, notMoved)...)
+			signIn.restoreRecordedBodies(exchanges)
 		}
 		result.Baseline = recordedBaseline(exchanges, newIndex)
 	}

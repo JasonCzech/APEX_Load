@@ -449,7 +449,7 @@ func sampleCorrelationReplacementCollisionsWithSurfaceLimit(exchanges []exchange
 				return ambiguousLiterals, ambiguousPlans
 			}
 			overlaps := overlapBudget.Contains(left.literal, right.literal) || overlapBudget.Contains(right.literal, left.literal)
-			if overlaps && !overlapBudget.Exhausted() && reviewOnlyLiteralInsideApplied(plans[left.planIndex], left.literal, plans[right.planIndex], right.literal) {
+			if overlaps && !overlapBudget.Exhausted() && containmentWithReviewOnly(plans[left.planIndex], plans[right.planIndex]) {
 				overlaps = false
 			}
 			if !overlaps && !overlapBudget.Exhausted() {
@@ -471,23 +471,22 @@ func sampleCorrelationReplacementCollisionsWithSurfaceLimit(exchanges []exchange
 	return ambiguousLiterals, ambiguousPlans
 }
 
-// reviewOnlyLiteralInsideApplied reports whether, of two literals already
-// known to contain one another, the contained (shorter) one belongs to a
-// review-only plan and the longer one to an applied plan. The review-only plan
-// is never rewritten automatically, and replacing the longer literal removes
-// every occurrence nested in it, so that containment is no collision. A
-// Salesforce org ID inside an access token or session id is the common case.
-// Partial overlaps are still checked by the caller, and the reverse (an applied
-// literal inside a review-only one) stays a collision: the longer value may be
-// dynamic, and rewriting part of it would corrupt it.
-func reviewOnlyLiteralInsideApplied(left correlationApplicationPlan, leftLiteral string, right correlationApplicationPlan, rightLiteral string) bool {
-	switch {
-	case left.reviewOnly && !right.reviewOnly:
-		return len(leftLiteral) < len(rightLiteral)
-	case right.reviewOnly && !left.reviewOnly:
-		return len(rightLiteral) < len(leftLiteral)
-	}
-	return false
+// containmentWithReviewOnly reports whether, of two literals already known to
+// contain one another, exactly one belongs to a review-only plan. A
+// review-only plan is never rewritten automatically, so the containment is no
+// collision either way:
+//   - the review-only literal inside the applied one (a Salesforce org ID
+//     inside an access token or session id) disappears when the longer literal
+//     is replaced;
+//   - the applied literal inside the review-only one (a Salesforce cshc inside
+//     a verification redirect URL) is rewritten where it occurs, in that
+//     longer literal too. The longer literal changes whenever the dynamic
+//     value inside it does, so leaving it whole would be no less stale, and
+//     holding the applied value would also leave its other consumers stale.
+//
+// Partial overlaps are still checked by the caller.
+func containmentWithReviewOnly(left, right correlationApplicationPlan) bool {
+	return left.reviewOnly != right.reviewOnly
 }
 
 // collapseSameSourceDuplicateCorrelations keeps one correlation per value and

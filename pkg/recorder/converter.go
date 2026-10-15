@@ -627,19 +627,19 @@ func parameterizeInputsWithLimits(script *dsl.Script, sourceName string, scanByt
 		return rewritten.String(), true
 	}
 
-	targets := make([]string, len(script.Actions))
-	bodies := make([]string, len(script.Actions))
-	for i := range script.Actions {
-		var complete bool
-		targets[i], complete = rewrite(script.Actions[i].Target)
-		if !complete {
-			return []string{fmt.Sprintf(
-				"Recorded-input parameterization was not completed and no input rewrites were applied because analysis exceeded %d bytes or %d key/value matches.",
-				scanByteLimit, matchLimit,
-			)}
-		}
-		if script.Actions[i].Body != "" {
-			bodies[i], complete = rewrite(script.Actions[i].Body)
+	// Every phase is scanned: a recorded sign-in may run in init.
+	phases := []*[]dsl.Action{&script.Init, &script.Actions, &script.Teardown}
+	targets := make([][]string, len(phases))
+	bodies := make([][]string, len(phases))
+	for phase, actions := range phases {
+		targets[phase] = make([]string, len(*actions))
+		bodies[phase] = make([]string, len(*actions))
+		for i, action := range *actions {
+			var complete bool
+			targets[phase][i], complete = rewrite(action.Target)
+			if complete && action.Body != "" {
+				bodies[phase][i], complete = rewrite(action.Body)
+			}
 			if !complete {
 				return []string{fmt.Sprintf(
 					"Recorded-input parameterization was not completed and no input rewrites were applied because analysis exceeded %d bytes or %d key/value matches.",
@@ -653,10 +653,12 @@ func parameterizeInputsWithLimits(script *dsl.Script, sourceName string, scanByt
 		return nil
 	}
 
-	for i := range script.Actions {
-		script.Actions[i].Target = targets[i]
-		if script.Actions[i].Body != "" {
-			script.Actions[i].Body = bodies[i]
+	for phase, actions := range phases {
+		for i := range *actions {
+			(*actions)[i].Target = targets[phase][i]
+			if (*actions)[i].Body != "" {
+				(*actions)[i].Body = bodies[phase][i]
+			}
 		}
 	}
 

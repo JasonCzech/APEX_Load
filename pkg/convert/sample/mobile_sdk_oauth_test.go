@@ -79,10 +79,12 @@ func TestMobileSDKHybridSignInCorrelatesCodeAndBearerToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	actions := result.Script.Actions
-	if len(actions) != 5 {
-		t.Fatalf("got %d actions, want 5", len(actions))
+	// The sign-in, through the token exchange, runs in init; the API calls
+	// after it are the iteration.
+	if len(result.Script.Init) != 3 || len(result.Script.Actions) != 2 {
+		t.Fatalf("init %d steps, actions %d; want the sign-in (3) in init and 2 API calls", len(result.Script.Init), len(result.Script.Actions))
 	}
+	actions := append(append([]dsl.Action(nil), result.Script.Init...), result.Script.Actions...)
 	var code, token *Correlation
 	for index := range result.Correlations {
 		switch result.Correlations[index].RuleID {
