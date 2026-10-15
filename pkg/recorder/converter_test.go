@@ -1172,3 +1172,22 @@ func TestConvertSession_NamesCredentialFindingsByRequestOnce(t *testing.T) {
 		t.Fatalf("credential warnings = %q, want one naming recorded request 7", credential)
 	}
 }
+
+// A note the tester writes on a recorded request reaches its step.
+func TestConvertSessionKeepsRequestNotes(t *testing.T) {
+	base := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
+	session := &Session{ID: "notes", Name: "Notes", BaseURL: "https://shop.example.test", StartedAt: base, Requests: []RecordedRequest{
+		{Seq: 1, Timestamp: base, Method: "GET", URL: "https://shop.example.test/cart", Path: "/cart", Host: "shop.example.test", StatusCode: 200, Note: "check the totals"},
+		{Seq: 2, Timestamp: base.Add(time.Second), Method: "GET", URL: "https://shop.example.test/pay", Path: "/pay", Host: "shop.example.test", StatusCode: 200},
+	}}
+	result := ConvertSession(session, "")
+	if result.Script == nil || len(result.Script.Actions) != 2 {
+		t.Fatalf("script = %+v", result.Script)
+	}
+	if note, _ := result.Script.Actions[0].Metadata["note"].(string); note != "check the totals" {
+		t.Fatalf("first step note = %q", note)
+	}
+	if _, ok := result.Script.Actions[1].Metadata["note"]; ok {
+		t.Fatalf("second step has a note: %v", result.Script.Actions[1].Metadata["note"])
+	}
+}

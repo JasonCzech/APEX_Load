@@ -175,6 +175,9 @@ type exchange struct {
 	StepName             string
 	RecordedThinkTimeMs  int64
 	HasRecordedThinkTime bool
+	// Note is the HAR entry's comment: a note the tester wrote on this
+	// request in the recorder (or another tool's annotation).
+	Note string
 	// CacheValidatorsDropped marks a captured request whose browser cache
 	// validators were removed (see dropHARCacheValidators): replay asks for
 	// the full response.
@@ -448,7 +451,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				retagged = noteTransactionConflict(retagged, tagged, name)
 			}
 		}
-		if note := notesAt[idx]; note != "" {
+		// The request's own note, then those marked before it while recording.
+		if note := joinNotes(ex.Note, notesAt[idx]); note != "" {
 			if action.Metadata == nil {
 				action.Metadata = map[string]any{}
 			}

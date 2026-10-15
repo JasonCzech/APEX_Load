@@ -349,7 +349,8 @@ and the end takes `LR_AUTO`, so a failed step inside fails the transaction. An
 HTTP script from a recording (an HTTP proxy recording, or the HTTP script generated
 from a browser recording) gets the same pair around the requests that started while
 the transaction was open, and each of those requests is tagged with it. A note you
-add while recording is kept on the next recorded request.
+add while recording is kept on the next recorded request, after any note you write
+on that request itself in its details (a HAR entry's comment does the same).
 
 ### Control Flow
 

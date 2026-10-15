@@ -81,6 +81,17 @@ func placeNotes(notes []TimedNote, exchanges []exchange) (map[int]string, int) {
 	return placed, 0
 }
 
+// joinNotes joins the non-empty notes on one request.
+func joinNotes(notes ...string) string {
+	kept := notes[:0:0]
+	for _, note := range notes {
+		if note = strings.TrimSpace(note); note != "" {
+			kept = append(kept, note)
+		}
+	}
+	return strings.Join(kept, "; ")
+}
+
 // transactionConflict counts requests whose own transaction tag differs from
 // the transaction marked around them while recording.
 type transactionConflict struct {

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
@@ -142,5 +144,30 @@ func TestRecordedClientTimestampsWithAndWithoutAsyncScan(t *testing.T) {
 		if diagnostics != 1 {
 			t.Fatalf("async scan %v: %d client timestamp diagnostics, want 1", asyncScan, diagnostics)
 		}
+	}
+}
+
+// A note written on a request (the HAR entry's comment) reaches its action,
+// before any note marked ahead of it while recording.
+func TestHAREntryCommentBecomesTheActionNote(t *testing.T) {
+	content := recorderHAR(t,
+		recorderEntry("2026-01-01T00:00:01Z", "GET", "https://shop.test/cart", 200, "application/json", `{}`, map[string]any{"comment": "  check the totals  "}),
+		recorderEntry("2026-01-01T00:00:02Z", "GET", "https://shop.test/pay", 200, "application/json", `{}`, map[string]any{"comment": "   "}),
+		recorderEntry("2026-01-01T00:00:03Z", "GET", "https://shop.test/done", 200, "application/json", `{}`, map[string]any{"comment": strings.Repeat("é", maxHAREntryNoteBytes)}),
+	)
+	result, err := Convert(ImportRequest{Format: "har", Content: content, Options: ConvertOptions{
+		Notes: []TimedNote{{Text: "pay with the test card", At: time.Date(2026, 1, 1, 0, 0, 1, 500_000_000, time.UTC)}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes := make([]string, 0, len(result.Script.Actions))
+	for _, action := range result.Script.Actions {
+		note, _ := action.Metadata["note"].(string)
+		notes = append(notes, note)
+	}
+	if len(notes) != 3 || notes[0] != "check the totals" || notes[1] != "pay with the test card" ||
+		len(notes[2]) > maxHAREntryNoteBytes || !utf8.ValidString(notes[2]) {
+		t.Fatalf("notes = %q", notes)
 	}
 }

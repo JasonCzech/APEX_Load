@@ -19,6 +19,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
@@ -504,8 +505,13 @@ const (
 	harSourceTransactionMeta = "source_transaction"
 )
 
+// maxHAREntryNoteBytes bounds a HAR entry comment kept as the action's note,
+// as the recorder bounds the notes it writes there.
+const maxHAREntryNoteBytes = 64 << 10
+
 func applyRecorderEntryFields(ex *exchange, item map[string]any, index int) {
 	ex.StepName = strings.TrimSpace(stringValue(item[harStepNameKey]))
+	ex.Note = boundedtext.TruncateUTF8(strings.TrimSpace(stringValue(item["comment"])), maxHAREntryNoteBytes)
 	if transaction := strings.TrimSpace(stringValue(item[harTransactionKey])); transaction != "" {
 		// The engine groups metrics by this metadata key.
 		if ex.Metadata == nil {
