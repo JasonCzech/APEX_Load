@@ -88,7 +88,7 @@ func (a *App) holdCloseForRenderer(ctx context.Context) bool {
 	if ctx == nil {
 		return false
 	}
-	id, held := a.beginRendererRequest()
+	id, _, held := a.beginRendererRequest()
 	if !held {
 		return false
 	}
@@ -100,42 +100,49 @@ func (a *App) holdCloseForRenderer(ctx context.Context) bool {
 }
 
 // beginRendererRequest numbers a close or reload request for the renderer's
-// guard. Without a registered guard (or once a quit is confirmed) there is no
-// one to ask, and the action goes ahead.
-func (a *App) beginRendererRequest() (uint64, bool) {
+// guard and returns the registration it goes to. Without a registered guard
+// (or once a quit is confirmed) there is no one to ask, and the action goes
+// ahead.
+func (a *App) beginRendererRequest() (uint64, string, bool) {
 	a.closeGuardMu.Lock()
 	defer a.closeGuardMu.Unlock()
 	if a.closeConfirmed || a.closeGuardToken == "" {
-		return 0, false
+		return 0, "", false
 	}
 	a.closeRequests++
-	return a.closeRequests, true
+	return a.closeRequests, a.closeGuardToken, true
 }
 
 // reloadWithRendererGuard reloads the page, asking the renderer first when its
 // guard is registered: the page answers through its unsaved-work prompt and
-// reloads itself. A page that never takes the request (hung, which is when
-// Reload matters most) is reloaded anyway after the wait.
+// reloads itself. A page that does not take the request within the wait (one
+// still loading, or one whose guard is no longer listening) is reloaded
+// anyway. That reload runs as script in the page, since Wails has no native
+// reload: a page whose script is stuck cannot run it, and a page busy past the
+// wait runs it straight after the prompt the late request opens.
 func (a *App) reloadWithRendererGuard(ctx context.Context) {
 	if ctx == nil {
 		return
 	}
-	id, held := a.beginRendererRequest()
+	id, token, held := a.beginRendererRequest()
 	if !held {
 		windowReloadApp(ctx)
 		return
 	}
 	go a.emitReloadRequest(ctx, strconv.FormatUint(id, 10))
 	go func() {
-		if !a.rendererTookRequest(id) {
+		if !a.rendererTookRequest(id, token) {
 			windowReloadApp(ctx)
 		}
 	}()
 }
 
 // rendererTookRequest waits the acknowledgement window and reports whether the
-// renderer took request id (or a later one).
-func (a *App) rendererTookRequest(id uint64) bool {
+// renderer took request id (or a later one). A registration that let the
+// request pass unanswered is dropped, as a timed-out close drops it, so the
+// next close or reload does not wait on it again; a newer page's registration
+// is kept.
+func (a *App) rendererTookRequest(id uint64, token string) bool {
 	wait := a.closeAckWait
 	if wait <= 0 {
 		wait = defaultCloseRequestAckWait
@@ -145,7 +152,13 @@ func (a *App) rendererTookRequest(id uint64) bool {
 	<-timer.C
 	a.closeGuardMu.Lock()
 	defer a.closeGuardMu.Unlock()
-	return a.closeRequestsAcked >= id
+	if a.closeRequestsAcked >= id {
+		return true
+	}
+	if a.closeGuardToken == token {
+		a.closeGuardToken = ""
+	}
+	return false
 }
 
 func (a *App) quitIfCloseRequestUnacknowledged(ctx context.Context, id uint64) {

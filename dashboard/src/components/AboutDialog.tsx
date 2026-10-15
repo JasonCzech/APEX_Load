@@ -34,6 +34,9 @@ export default function AboutDialog({ open, onClose }: AboutDialogProps) {
     return () => { cancelled = true }
   }, [open, getVersion])
 
+  // A copy result's pending reset goes when the dialog does.
+  useEffect(() => () => window.clearTimeout(copyResetRef.current), [])
+
   if (!open) return null
 
   const displayVersion = version?.display_version || version?.version || '—'

@@ -225,9 +225,12 @@ const IMPORTABLE_DROP_EXTENSIONS = [
 
 // pickImportFilesViaBridge is File > Open Script…: a native Open dialog for the
 // import file types. A dialog filter matches a file's last extension only, so
-// compound entries (".bruno.tar.gz", ".postman_collection.json") are left to
-// their plain suffix. Returns null when the shell has no native dialog, and []
-// when the person cancels.
+// a compound name is offered through its plain suffix (".postman_collection.json"
+// through ".json"). Bruno archives are not offered: their ".tar" or ".gz" would
+// admit any tarball, which import routing would take for an API description.
+// They open from the Bruno import card, or by dropping them on the window.
+// Returns null when the shell has no native dialog, and [] when the person
+// cancels.
 export async function pickImportFilesViaBridge(): Promise<File[] | null> {
   if (!canUseNativeDialogs()) return null;
   const accept = IMPORTABLE_DROP_EXTENSIONS.filter((ext) => ext.lastIndexOf(".") === 0).join(",");

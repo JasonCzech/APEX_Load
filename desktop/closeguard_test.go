@@ -153,9 +153,12 @@ func TestCloseGuardSurvivesAReloadRace(t *testing.T) {
 
 // View > Reload asks a page holding a guard first: it reloads at once when no
 // guard is registered, waits while the page answers, and reloads a page that
-// never takes the request.
+// never takes the request, dropping that page's registration but not a newer
+// page's.
 func TestReloadAsksTheRendererGuardFirst(t *testing.T) {
-	app, harness := newCloseGuardApp(t, 20*time.Millisecond)
+	// Wide enough for the acknowledgement below to land inside it on a busy machine.
+	const ackWait = 200 * time.Millisecond
+	app, harness := newCloseGuardApp(t, ackWait)
 	reloaded := make(chan struct{}, 4)
 	originalReload := windowReloadApp
 	windowReloadApp = func(context.Context) { reloaded <- struct{}{} }
@@ -173,26 +176,46 @@ func TestReloadAsksTheRendererGuardFirst(t *testing.T) {
 			t.Fatal("the page was not reloaded")
 		}
 	}
+	ctx := context.Background()
 
-	app.reloadWithRendererGuard(context.Background())
+	app.reloadWithRendererGuard(ctx)
 	waitForReload()
 
 	token, err := app.EnableCloseGuard()
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.reloadWithRendererGuard(context.Background())
+	app.reloadWithRendererGuard(ctx)
 	app.AcknowledgeCloseRequest(token, waitForEmit(t, harness, 1)[0])
-	time.Sleep(80 * time.Millisecond)
+	time.Sleep(2 * ackWait)
 	select {
 	case <-reloaded:
 		t.Fatal("a reload the page took went ahead without its answer")
 	default:
 	}
 
-	app.reloadWithRendererGuard(context.Background())
+	app.reloadWithRendererGuard(ctx)
 	waitForEmit(t, harness, 2)
 	waitForReload()
+	if app.holdCloseForRenderer(ctx) {
+		t.Fatal("a registration that left a reload unanswered still holds closes")
+	}
+
+	if _, err := app.EnableCloseGuard(); err != nil {
+		t.Fatal(err)
+	}
+	app.reloadWithRendererGuard(ctx)
+	newer, err := app.EnableCloseGuard()
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForReload()
+	app.closeGuardMu.Lock()
+	current := app.closeGuardToken
+	app.closeGuardMu.Unlock()
+	if current != newer {
+		t.Fatal("an unanswered reload dropped the newer page's registration")
+	}
 	if _, quits := harness.snapshot(); quits != 0 {
 		t.Fatalf("a reload quit the app %d times", quits)
 	}

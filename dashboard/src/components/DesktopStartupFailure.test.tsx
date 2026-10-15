@@ -27,6 +27,7 @@ describe('DesktopStartupFailure', () => {
     container.remove()
     delete (window as BridgeWindow).go
     delete (window as RuntimeWindow).runtime
+    Reflect.deleteProperty(navigator, 'clipboard')
     vi.restoreAllMocks()
   })
 

@@ -33,6 +33,35 @@ describe('app shell layout', () => {
   })
 })
 
+describe('printing', () => {
+  // File > Print… prints the page showing, in any theme: it uses the light
+  // theme's colors (chart series included), and the report composer hides the
+  // page behind it only while it is open.
+  it('prints in the light palette and leaves pages alone outside the composer', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const read = (path: string) => readFileSync(`${cwd}/${path}`, 'utf8') as string
+    const appCss = read('src/App.css')
+    const composerCss = read('src/components/ReportComposer.css')
+
+    const light = cssTokens(cssRule(read('src/index.css'), ":root[data-theme='light']"))
+    const printed = cssTokens(cssRule(appCss.slice(appCss.indexOf('@media print {')), ':root[data-theme]'))
+    const colors = ['--text-primary', '--text-secondary', '--text-muted', '--danger-text', '--warning-text', '--success-text']
+    for (const name of [...colors, ...[1, 2, 3, 4, 5, 6, 7, 8].map(slot => `--chart-${slot}`)]) {
+      expect(printed[name], name).toBe(light[name])
+    }
+
+    const composerPrint = composerCss.slice(composerCss.indexOf('@media print {'))
+    expect(composerPrint).not.toMatch(/^\s*body \* \{/m)
+    expect(composerPrint).toContain('body:has(> .report-composer-overlay) > :not(.report-composer-overlay) {')
+  })
+})
+
+function cssTokens(rule: string): Record<string, string> {
+  return Object.fromEntries(Array.from(rule.matchAll(/(--[a-z0-9-]+):\s*([^;]+);/g), match => [match[1], match[2].trim()]))
+}
+
 function cssRule(css: string, selector: string) {
   const start = css.indexOf(`${selector} {`)
   expect(start).toBeGreaterThanOrEqual(0)
