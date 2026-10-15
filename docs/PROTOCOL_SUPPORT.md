@@ -231,7 +231,10 @@ JMS, Kafka, or other high-density protocol groups.
   later step in the same document, as in a single-page app such as Salesforce
   Lightning, is marked `same_document` and reports its own CLS, INP, long tasks
   and resources instead, and summaries average the load measures over
-  `document_loads`.
+  `document_loads`. A step that sends Salesforce Aura requests records their
+  actions in `protocol_evidence.aura_actions` (names, the request's time, batch
+  size, bytes and response state; never parameters or results), and the run
+  report rolls them up by transaction.
 - Chromium runs with client metrics enabled also capture browser-process CPU
   and RSS memory through CDP process information plus OS lookup. WebKit process
   attribution remains limited to metrics Playwright exposes reliably.

@@ -4290,6 +4290,26 @@ paths:
                           size_bytes:
                             type: integer
                             format: int64
+                    aura_actions:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          apex:
+                            type: boolean
+                          count:
+                            type: integer
+                            format: int64
+                          errors:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          total_ms:
+                            type: number
+                            format: double
+                          transaction:
+                            type: string
                     baseline_comparison:
                       type: object
                       properties:
@@ -37249,6 +37269,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -39169,6 +39194,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -41126,6 +41156,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -42965,6 +43000,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -44804,6 +44844,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -135739,6 +135784,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -137814,6 +137864,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -139949,6 +140004,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -142030,6 +142090,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -144105,6 +144170,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -146185,6 +146255,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -148266,6 +148341,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -189612,6 +189692,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -191688,6 +191773,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -193825,6 +193915,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -195907,6 +196002,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -197983,6 +198083,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -200064,6 +200169,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -202146,6 +202256,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -225134,6 +225249,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -229616,6 +229736,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -236876,6 +237001,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -260134,6 +260264,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -261618,6 +261753,17 @@ paths:
                   items:
                     type: object
                     properties:
+                      aura:
+                        type: object
+                        properties:
+                          actions:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          framework_error:
+                            type: string
+                        nullable: true
                       browser_evidence:
                         type: object
                         properties:
@@ -270672,6 +270818,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -321831,6 +321982,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -382331,6 +382487,31 @@ paths:
                           format: int64
                       required:
                         - name
+                  aura_actions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        apex:
+                          type: boolean
+                        count:
+                          type: integer
+                          format: int64
+                        errors:
+                          type: integer
+                          format: int64
+                        name:
+                          type: string
+                        total_ms:
+                          type: number
+                          format: double
+                        transaction:
+                          type: string
+                      required:
+                        - count
+                        - name
+                        - total_ms
+                        - transaction
                   baseline_comparison:
                     type: object
                     properties:
@@ -472426,6 +472607,20 @@ paths:
                         items:
                           type: object
                           properties:
+                            aura:
+                              type: object
+                              properties:
+                                actions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: AuraActionOutcome'
+                                    additionalProperties: true
+                                framework_error:
+                                  type: string
+                              required:
+                                - actions
+                              nullable: true
                             browser_evidence:
                               type: object
                               properties:

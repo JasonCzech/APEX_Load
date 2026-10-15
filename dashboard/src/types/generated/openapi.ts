@@ -1494,6 +1494,14 @@ export interface operations {
               "sha256"?: string;
               "size_bytes"?: number;
             }>;
+            "aura_actions"?: Array<{
+              "apex"?: boolean;
+              "count"?: number;
+              "errors"?: number;
+              "name"?: string;
+              "total_ms"?: number;
+              "transaction"?: string;
+            }>;
             "baseline_comparison"?: ({
               "baselines"?: Array<{
                 "archive_available"?: boolean;
@@ -60475,6 +60483,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -63047,6 +63056,10 @@ export interface operations {
               }) | null;
               "html"?: string;
               "network_entries"?: Array<{
+                "aura"?: ({
+                  "actions": Array<Record<string, unknown>>;
+                  "framework_error"?: string;
+                }) | null;
                 "browser_evidence"?: ({
                   "bytes": {
                     "request_body"?: (number) | null;
@@ -72499,6 +72512,14 @@ export interface operations {
               "sha256"?: string;
               "size_bytes"?: number;
             }>;
+            "aura_actions"?: Array<{
+              "apex"?: boolean;
+              "count": number;
+              "errors"?: number;
+              "name": string;
+              "total_ms": number;
+              "transaction": string;
+            }>;
             "baseline_comparison"?: ({
               "baselines": Array<{
                 "archive_available": boolean;
@@ -81022,6 +81043,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -81731,6 +81753,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -102524,6 +102547,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -103307,6 +103331,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -104021,6 +104046,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -112128,6 +112154,10 @@ export interface operations {
           "include_static_assets"?: boolean;
           "name"?: string;
           "network_entries"?: Array<{
+            "aura"?: ({
+              "actions"?: Array<Record<string, unknown>>;
+              "framework_error"?: string;
+            }) | null;
             "browser_evidence"?: ({
               "bytes"?: {
                 "request_body"?: (number) | null;
@@ -138423,6 +138453,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -139206,6 +139237,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -139920,6 +139952,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -146787,6 +146820,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -148278,6 +148312,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -149940,6 +149975,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -151530,6 +151566,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -153121,6 +153158,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -154711,6 +154749,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -155550,6 +155589,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -156273,6 +156313,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -156987,6 +157028,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -157814,6 +157856,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -158523,6 +158566,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -173429,6 +173473,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -174152,6 +174197,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -174875,6 +174921,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -175598,6 +175645,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -180180,6 +180228,7 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "aura"?: (Record<string, unknown>) | null;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;

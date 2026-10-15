@@ -20,6 +20,12 @@ func (b *Browser) finalizeActionResult(ctx context.Context, action *protocol.Act
 	pageState, captureErr := b.captureActionPageState(ctx, action, actionErr != nil)
 	networkEntries, acquisitionReason := b.acquireActionNetworkEntries(ctx, networkOwner, networkStart)
 	b.applyCapturedPageStateWithNetwork(result, pageState, consoleStart, networkEntries)
+	if evidence := auraActionsEvidence(networkEntries); evidence != nil {
+		if result.ProtocolEvidence == nil {
+			result.ProtocolEvidence = map[string]any{}
+		}
+		result.ProtocolEvidence["aura_actions"] = evidence
+	}
 	recordNetworkAcquisitionWarning(result, acquisitionReason)
 	result.Duration = actionDuration
 	result.ClientMetrics = b.captureClientMetrics(ctx, result.Duration, processBefore)

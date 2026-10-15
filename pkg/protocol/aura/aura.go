@@ -345,9 +345,16 @@ func (r *Report) addOutcome(ordinal int, state State) {
 type action struct {
 	id    string
 	state State
+	// descriptor and apex name a request action when names are read.
+	descriptor string
+	apex       string
 }
 
 func parseRequest(body []byte) ([]action, []Issue) {
+	return parseRequestEnvelope(body, false)
+}
+
+func parseRequestEnvelope(body []byte, names bool) ([]action, []Issue) {
 	if len(body) > MaxEnvelopeBytes {
 		return nil, []Issue{{Code: ByteLimit}}
 	}
@@ -356,7 +363,7 @@ func parseRequest(body []byte) ([]action, []Issue) {
 	}
 	trimmed := bytes.TrimSpace(body)
 	if bytes.HasPrefix(trimmed, []byte("{")) {
-		return parseEnvelope(trimmed, true)
+		return parseEnvelopeWith(trimmed, true, names)
 	}
 	if bytes.Count(trimmed, []byte("&"))+1 > MaxFormFields {
 		return nil, []Issue{{Code: WorkLimit}}
@@ -372,10 +379,17 @@ func parseRequest(body []byte) ([]action, []Issue) {
 	if len(messages) != 1 {
 		return nil, []Issue{{Code: DuplicateMessage}}
 	}
-	return parseEnvelope([]byte(messages[0]), true)
+	return parseEnvelopeWith([]byte(messages[0]), true, names)
 }
 
 func parseEnvelope(body []byte, request bool) ([]action, []Issue) {
+	return parseEnvelopeWith(body, request, false)
+}
+
+// parseEnvelopeWith also reads each request action's descriptor and, for an
+// Apex call, its namespace, class and method when names is set; nothing else
+// in params is ever kept.
+func parseEnvelopeWith(body []byte, request bool, names bool) ([]action, []Issue) {
 	fail := func(code Code, ordinal int) ([]action, []Issue) { return nil, []Issue{{Code: code, Ordinal: ordinal}} }
 	if len(body) > MaxEnvelopeBytes {
 		return fail(ByteLimit, 0)
@@ -390,7 +404,7 @@ func parseEnvelope(body []byte, request bool) ([]action, []Issue) {
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.UseNumber()
-	scanner := scanner{decoder: decoder}
+	scanner := scanner{decoder: decoder, names: names}
 	value, code := scanner.read(0, envelopeMode)
 	if code != "" {
 		return fail(code, 0)
@@ -435,6 +449,10 @@ func parseEnvelope(body []byte, request bool) ([]action, []Issue) {
 			if !ok || strings.TrimSpace(descriptor) == "" {
 				return fail(MissingDescriptor, i+1)
 			}
+			if names {
+				current.descriptor = descriptor
+				current.apex = apexName(descriptor, object["params"])
+			}
 		} else {
 			state, ok := object["state"].(string)
 			if !ok || state == "" {
@@ -462,11 +480,14 @@ const (
 	scalarMode
 	frameworkErrorMode
 	eventMode
+	paramsMode
 )
 
 type scanner struct {
 	decoder *json.Decoder
 	tokens  int
+	// names also keeps an action's params namespace, classname and method.
+	names bool
 }
 
 func (s *scanner) token() (json.Token, Code) {
@@ -505,7 +526,7 @@ func (s *scanner) read(depth int, retain mode) (any, Code) {
 	switch delimiter {
 	case '{':
 		var object map[string]any
-		if retain == envelopeMode || retain == actionMode || retain == frameworkErrorMode || retain == eventMode {
+		if retain == envelopeMode || retain == actionMode || retain == frameworkErrorMode || retain == eventMode || retain == paramsMode {
 			object = make(map[string]any)
 		}
 		for s.decoder.More() {
@@ -527,6 +548,10 @@ func (s *scanner) read(depth int, retain mode) (any, Code) {
 				childMode = scalarMode
 			case retain == frameworkErrorMode && key == "event":
 				childMode = eventMode
+			case s.names && retain == actionMode && key == "params":
+				childMode = paramsMode
+			case retain == paramsMode && (key == "namespace" || key == "classname" || key == "method"):
+				childMode = scalarMode
 			}
 			if childMode == discardMode {
 				if _, code := s.read(depth+1, discardMode); code != "" {
@@ -704,4 +729,69 @@ func unicodeEscape(body []byte, offset int) (uint16, bool) {
 		}
 	}
 	return value, true
+}
+
+// apexDescriptor is the descriptor of a call to an Apex method.
+const apexDescriptor = "aura://ApexActionController/ACTION$execute"
+
+// MaxNameBytes bounds an action name.
+const MaxNameBytes = 512
+
+// RequestAction names one action of an Aura request: its descriptor and, for
+// an Apex call, the Apex class and method (namespace.Class.method). Nothing
+// the action sends is kept.
+type RequestAction struct {
+	Descriptor string
+	Apex       string
+}
+
+// Name is the Apex method of an Apex call, else the descriptor.
+func (a RequestAction) Name() string {
+	if a.Apex != "" {
+		return a.Apex
+	}
+	return a.Descriptor
+}
+
+// RequestActions names the actions of an Aura request (the form Aura posts,
+// or a JSON envelope), in order.
+func RequestActions(body []byte) ([]RequestAction, error) {
+	actions, issues := parseRequestEnvelope(body, true)
+	if len(issues) > 0 {
+		return nil, Report{Issues: issues}.Err()
+	}
+	out := make([]RequestAction, 0, len(actions))
+	for _, action := range actions {
+		out = append(out, RequestAction{Descriptor: boundName(action.descriptor), Apex: boundName(action.apex)})
+	}
+	return out, nil
+}
+
+// apexName is namespace.Class.method for an Apex call, or "".
+func apexName(descriptor string, params any) string {
+	if descriptor != apexDescriptor {
+		return ""
+	}
+	fields, _ := params.(map[string]any)
+	class, _ := fields["classname"].(string)
+	method, _ := fields["method"].(string)
+	if strings.TrimSpace(class) == "" || strings.TrimSpace(method) == "" {
+		return ""
+	}
+	name := class + "." + method
+	if namespace, _ := fields["namespace"].(string); strings.TrimSpace(namespace) != "" {
+		name = namespace + "." + name
+	}
+	return name
+}
+
+func boundName(name string) string {
+	if len(name) <= MaxNameBytes {
+		return name
+	}
+	cut := MaxNameBytes
+	for cut > 0 && !utf8.RuneStart(name[cut]) {
+		cut--
+	}
+	return name[:cut]
 }

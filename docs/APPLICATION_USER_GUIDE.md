@@ -713,6 +713,11 @@ method you used last.
   XPath selectors match visible elements only, since Lightning keeps hidden copies of
   earlier pages in the document. A selector that matched several visible elements when
   you recorded is ranked last.
+- On a Salesforce Lightning page, each browser step records the Aura actions it sent:
+  an Apex call by its class and method, any other action by its descriptor, with the
+  time of the request that carried it and the state its response gave. Only names are
+  kept, never what the actions sent or got back. The run report's **Browser Metrics**
+  section lists each transaction's actions, most time first.
 - A browser recording that starts by signing in to Salesforce (the login page and any
   identity verification) puts those steps in init, tagged `salesforce_auth`, so each
   virtual user signs in once. A verification code is masked like a password and cannot

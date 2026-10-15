@@ -720,6 +720,7 @@ func consistencyMatrixReport() *RunArchiveReport {
 		BrowserByEngine:     map[string]*BrowserEngineLiveMetrics{"webkit": {BrowserEngine: "webkit", Samples: 4, AvgLCPMs: 280, AvgCLSScore: 0.031, AvgINPMs: 64}},
 		BrowserByPlatform:   map[string]*BrowserPlatformLiveMetrics{"ios": {DevicePlatform: "ios", BrowserEngine: "webkit", Samples: 4, AvgLCPMs: 280, AvgCLSScore: 0.031, AvgINPMs: 64}},
 		BrowserByDevice:     map[string]*BrowserDeviceLiveMetrics{"iphone-se": {DeviceProfile: "iphone-se", DevicePlatform: "ios", DeviceTier: "low", BrowserEngine: "webkit", Samples: 2, AvgLCPMs: 300, AvgINPMs: 70}},
+		AuraActions:         []AuraActionRollup{{Transaction: "Checkout", Name: "Orders.submit", Apex: true, Count: 4, TotalMs: 900, Errors: 1}},
 		NetworkPhases: RunArchiveNetworkPhaseSummary{
 			Samples: 2,
 			Overall: RunArchiveNetworkPhases{Count: 2, AvgDNSMs: 2, AvgConnectMs: 4, AvgTLSMs: 6, AvgTTFBMs: 60, MaxTTFBMs: 80},

@@ -481,6 +481,36 @@ type NetworkEntry struct {
 	RequestBodyEncoding  string            `json:"request_body_encoding,omitempty"`
 	RequestBodyTruncated bool              `json:"request_body_truncated,omitempty"`
 	ResponseHeaders      map[string]string `json:"response_headers,omitempty"`
+	// Aura names the actions of a Salesforce Aura request (/aura) and how
+	// each ended: names only, never what the actions sent.
+	Aura *AuraBatch `json:"aura,omitempty"`
+}
+
+// AuraBatch is one Aura request's actions, in order.
+type AuraBatch struct {
+	Actions []AuraActionOutcome `json:"actions"`
+	// FrameworkError is the framework error that answered the whole batch
+	// (invalid_session, client_out_of_sync, framework_error), if any.
+	FrameworkError string `json:"framework_error,omitempty"`
+}
+
+// AuraActionOutcome is one Aura action: its descriptor, or for an Apex call
+// the Apex method (namespace.Class.method), and the state its response gave
+// (SUCCESS, ERROR, INCOMPLETE, ABORTED; empty when the response was not read).
+type AuraActionOutcome struct {
+	Name  string `json:"name"`
+	Apex  bool   `json:"apex,omitempty"`
+	State string `json:"state,omitempty"`
+}
+
+// Clone copies the batch.
+func (b *AuraBatch) Clone() *AuraBatch {
+	if b == nil {
+		return nil
+	}
+	out := *b
+	out.Actions = append([]AuraActionOutcome(nil), b.Actions...)
+	return &out
 }
 
 func CloneNetworkEntries(entries []NetworkEntry) []NetworkEntry {
@@ -493,6 +523,7 @@ func CloneNetworkEntries(entries []NetworkEntry) []NetworkEntry {
 		cloned[i].RequestHeaders = cloneStringMap(entry.RequestHeaders)
 		cloned[i].ResponseHeaders = cloneStringMap(entry.ResponseHeaders)
 		cloned[i].BrowserEvidence = entry.BrowserEvidence.Clone()
+		cloned[i].Aura = entry.Aura.Clone()
 	}
 	return cloned
 }

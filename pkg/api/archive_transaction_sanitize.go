@@ -298,6 +298,13 @@ func sanitizeArchivedNetworkEntries(entries []protocol.NetworkEntry, policy scru
 		out[index].RequestHeaders = sanitizeArchivedHeaders(out[index].RequestHeaders, policy)
 		out[index].RequestBody = scrub.ValueLabel(out[index].RequestBody, policy)
 		out[index].ResponseHeaders = sanitizeArchivedHeaders(out[index].ResponseHeaders, policy)
+		if batch := out[index].Aura; batch != nil {
+			for action := range batch.Actions {
+				batch.Actions[action].Name = scrub.ValueLabel(batch.Actions[action].Name, policy)
+				batch.Actions[action].State = scrub.ValueLabel(batch.Actions[action].State, policy)
+			}
+			batch.FrameworkError = scrub.ValueLabel(batch.FrameworkError, policy)
+		}
 	}
 	return out
 }
