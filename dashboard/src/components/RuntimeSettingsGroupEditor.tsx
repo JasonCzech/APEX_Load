@@ -1599,7 +1599,7 @@ export default function RuntimeSettingsGroupEditor({
               importedVMParameters={focusGroup.importedJavaVMParameters}
               onChange={patchJavaVuser}
               listOverrideInherits
-              dedicatedClassLoaderNote="Each Java VUser keeps one JVM, Actions instance, and child loader for its full lifecycle when enabled."
+              dedicatedClassLoaderNote="Each Java VUser keeps its own Actions instance and child loader for its full lifecycle when enabled, and its own JVM unless the group uses shared JVMs."
             />
           </>
         )}

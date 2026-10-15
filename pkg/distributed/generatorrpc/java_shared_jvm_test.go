@@ -159,8 +159,12 @@ func TestSharedJVMRefusalAtStagingIsRecordedAsDedicated(t *testing.T) {
 	if ack := assignJava(t, service, "refused-large", "shared-script", sharedJVMScript, 300); ack.GetAccepted() {
 		t.Fatalf("refused shared group admitted beyond dedicated capacity: %#v", ack)
 	}
-	if ack := assignJava(t, service, "refused-small", "shared-script", sharedJVMScript, 3); !ack.GetAccepted() {
+	ack := assignJava(t, service, "refused-small", "shared-script", sharedJVMScript, 3)
+	if !ack.GetAccepted() {
 		t.Fatalf("refused shared group within dedicated capacity: %#v", ack)
+	}
+	if vm := ack.GetJavaVm(); vm == nil || vm.GetMode() != "dedicated" || vm.GetReason() != "shared_jvm_native_code_detected" {
+		t.Fatalf("ack outcome %+v", vm)
 	}
 	service.mu.RLock()
 	defer service.mu.RUnlock()
@@ -170,5 +174,20 @@ func TestSharedJVMRefusalAtStagingIsRecordedAsDedicated(t *testing.T) {
 	}
 	if execution := service.executions["refused-small"]["default"]; execution == nil || execution.javaShared {
 		t.Fatal("fallback execution still marked shared")
+	}
+}
+
+func TestJavaVMOutcomeValidation(t *testing.T) {
+	for _, bad := range []*pb.JavaVMOutcome{{Mode: "pooled"}, {Mode: "dedicated", Reason: "Has Spaces"}, {Mode: "shared", Jvms: -1}, {Mode: "shared", Warnings: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"}}} {
+		if validJavaVMOutcome(bad) != nil {
+			t.Fatalf("accepted %+v", bad)
+		}
+	}
+	good := &pb.JavaVMOutcome{Mode: "shared", Jvms: 3, VusersPerJvm: 250, Warnings: []string{"shared_jvm_script_heap_ignored"}}
+	if out := validJavaVMOutcome(good); out == nil || out == good || out.GetJvms() != 3 {
+		t.Fatalf("valid outcome %+v", out)
+	}
+	if javaVMOutcome(nil) != nil {
+		t.Fatal("dedicated-only group produced an outcome")
 	}
 }

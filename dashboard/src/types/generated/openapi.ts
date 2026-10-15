@@ -4861,8 +4861,10 @@ export interface operations {
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
+              "jvm_sharing"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
               "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -5279,8 +5281,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -18573,8 +18577,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -20875,8 +20881,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -21234,8 +21242,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -21997,8 +22007,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -22356,8 +22368,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -35676,8 +35690,10 @@ export interface operations {
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
+              "jvm_sharing"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
               "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -36078,8 +36094,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -36664,6 +36682,13 @@ export interface operations {
                   "profile": Record<string, unknown>;
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
+                }) | null;
+                "java_vm"?: ({
+                  "jvms"?: number;
+                  "mode": string;
+                  "reason"?: string;
+                  "vusers_per_jvm"?: number;
+                  "warnings"?: Array<string>;
                 }) | null;
                 "runtime_resource_admission"?: (Record<string, unknown>) | null;
                 "runtime_resource_claim"?: (Record<string, unknown>) | null;
@@ -38106,8 +38131,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -39148,8 +39175,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -39411,8 +39440,10 @@ export interface operations {
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
+              "jvm_sharing"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
               "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -40171,8 +40202,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -40530,8 +40563,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -43397,8 +43432,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -43673,8 +43710,10 @@ export interface operations {
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
+              "jvm_sharing"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
               "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -44598,6 +44637,13 @@ export interface operations {
                 "reservation_id"?: string;
                 "run_lifetime_ms": number;
               }) | null;
+              "java_vm"?: ({
+                "jvms"?: number;
+                "mode": string;
+                "reason"?: string;
+                "vusers_per_jvm"?: number;
+                "warnings"?: Array<string>;
+              }) | null;
               "runtime_resource_admission"?: (Record<string, unknown>) | null;
               "runtime_resource_claim"?: (Record<string, unknown>) | null;
               "shard_count"?: number;
@@ -44851,8 +44897,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -47774,8 +47822,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -50793,8 +50843,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -51483,8 +51535,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -52095,8 +52149,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -52785,8 +52841,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -55231,8 +55289,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -55507,8 +55567,10 @@ export interface operations {
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
+              "jvm_sharing"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
               "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -56024,8 +56086,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -56293,6 +56357,7 @@ export interface operations {
               "to_shards"?: Array<{
                 "group": string;
                 "java_host"?: (Record<string, unknown>) | null;
+                "java_vm"?: (Record<string, unknown>) | null;
                 "runtime_resource_admission"?: (Record<string, unknown>) | null;
                 "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
@@ -67622,6 +67687,13 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "java_vm"?: ({
+                  "jvms"?: number;
+                  "mode": string;
+                  "reason"?: string;
+                  "vusers_per_jvm"?: number;
+                  "warnings"?: Array<string>;
+                }) | null;
                 "runtime_resource_admission"?: (Record<string, unknown>) | null;
                 "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
@@ -69063,8 +69135,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -70701,6 +70775,13 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "java_vm"?: ({
+                  "jvms"?: number;
+                  "mode": string;
+                  "reason"?: string;
+                  "vusers_per_jvm"?: number;
+                  "warnings"?: Array<string>;
+                }) | null;
                 "runtime_resource_admission"?: (Record<string, unknown>) | null;
                 "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
@@ -71101,8 +71182,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -71695,6 +71778,13 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "java_vm"?: ({
+                  "jvms"?: number;
+                  "mode": string;
+                  "reason"?: string;
+                  "vusers_per_jvm"?: number;
+                  "warnings"?: Array<string>;
+                }) | null;
                 "runtime_resource_admission"?: (Record<string, unknown>) | null;
                 "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
@@ -72095,8 +72185,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -75210,6 +75302,7 @@ export interface operations {
                 "generator_shards"?: Array<{
                   "group": string;
                   "java_host"?: (Record<string, unknown>) | null;
+                  "java_vm"?: (Record<string, unknown>) | null;
                   "runtime_resource_admission"?: (Record<string, unknown>) | null;
                   "runtime_resource_claim"?: (Record<string, unknown>) | null;
                   "shard_count"?: number;
@@ -75715,6 +75808,7 @@ export interface operations {
                 "generator_shards"?: Array<{
                   "group": string;
                   "java_host"?: (Record<string, unknown>) | null;
+                  "java_vm"?: (Record<string, unknown>) | null;
                   "runtime_resource_admission"?: (Record<string, unknown>) | null;
                   "runtime_resource_claim"?: (Record<string, unknown>) | null;
                   "shard_count"?: number;
@@ -77947,8 +78041,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -78306,8 +78402,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -78793,8 +78891,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -83490,6 +83590,13 @@ export interface operations {
                 "reservation_id"?: string;
                 "run_lifetime_ms": number;
               }) | null;
+              "java_vm"?: ({
+                "jvms"?: number;
+                "mode": string;
+                "reason"?: string;
+                "vusers_per_jvm"?: number;
+                "warnings"?: Array<string>;
+              }) | null;
               "runtime_resource_admission"?: (Record<string, unknown>) | null;
               "runtime_resource_claim"?: (Record<string, unknown>) | null;
               "shard_count"?: number;
@@ -83743,8 +83850,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -86666,8 +86775,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -87301,8 +87412,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -87622,8 +87735,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -87929,8 +88044,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -88236,8 +88353,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -88528,6 +88647,13 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "java_vm"?: ({
+                  "jvms"?: number;
+                  "mode": string;
+                  "reason"?: string;
+                  "vusers_per_jvm"?: number;
+                  "warnings"?: Array<string>;
+                }) | null;
                 "runtime_resource_admission"?: (Record<string, unknown>) | null;
                 "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
@@ -88793,8 +88919,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -89042,6 +89170,13 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "java_vm"?: ({
+                  "jvms"?: number;
+                  "mode": string;
+                  "reason"?: string;
+                  "vusers_per_jvm"?: number;
+                  "warnings"?: Array<string>;
+                }) | null;
                 "runtime_resource_admission"?: (Record<string, unknown>) | null;
                 "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
@@ -89307,8 +89442,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -89665,6 +89802,13 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "java_vm"?: ({
+                  "jvms"?: number;
+                  "mode": string;
+                  "reason"?: string;
+                  "vusers_per_jvm"?: number;
+                  "warnings"?: Array<string>;
+                }) | null;
                 "runtime_resource_admission"?: (Record<string, unknown>) | null;
                 "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
@@ -89838,8 +89982,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -105283,6 +105429,13 @@ export interface operations {
                 "reservation_id"?: string;
                 "run_lifetime_ms": number;
               }) | null;
+              "java_vm"?: ({
+                "jvms"?: number;
+                "mode": string;
+                "reason"?: string;
+                "vusers_per_jvm"?: number;
+                "warnings"?: Array<string>;
+              }) | null;
               "runtime_resource_admission"?: (Record<string, unknown>) | null;
               "runtime_resource_claim"?: (Record<string, unknown>) | null;
               "shard_count"?: number;
@@ -105536,8 +105689,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -108459,8 +108614,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -109434,8 +109591,10 @@ export interface operations {
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
+              "jvm_sharing"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
               "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -121932,6 +122091,13 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "java_vm"?: ({
+                  "jvms"?: number;
+                  "mode": string;
+                  "reason"?: string;
+                  "vusers_per_jvm"?: number;
+                  "warnings"?: Array<string>;
+                }) | null;
                 "runtime_resource_admission"?: (Record<string, unknown>) | null;
                 "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
@@ -123373,8 +123539,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -124043,6 +124211,13 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "java_vm"?: ({
+                  "jvms"?: number;
+                  "mode": string;
+                  "reason"?: string;
+                  "vusers_per_jvm"?: number;
+                  "warnings"?: Array<string>;
+                }) | null;
                 "runtime_resource_admission"?: (Record<string, unknown>) | null;
                 "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
@@ -125484,8 +125659,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -126154,6 +126331,13 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "java_vm"?: ({
+                  "jvms"?: number;
+                  "mode": string;
+                  "reason"?: string;
+                  "vusers_per_jvm"?: number;
+                  "warnings"?: Array<string>;
+                }) | null;
                 "runtime_resource_admission"?: (Record<string, unknown>) | null;
                 "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
@@ -127595,8 +127779,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -128265,6 +128451,13 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "java_vm"?: ({
+                  "jvms"?: number;
+                  "mode": string;
+                  "reason"?: string;
+                  "vusers_per_jvm"?: number;
+                  "warnings"?: Array<string>;
+                }) | null;
                 "runtime_resource_admission"?: (Record<string, unknown>) | null;
                 "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
@@ -129706,8 +129899,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -130376,6 +130571,13 @@ export interface operations {
                   "reservation_id"?: string;
                   "run_lifetime_ms": number;
                 }) | null;
+                "java_vm"?: ({
+                  "jvms"?: number;
+                  "mode": string;
+                  "reason"?: string;
+                  "vusers_per_jvm"?: number;
+                  "warnings"?: Array<string>;
+                }) | null;
                 "runtime_resource_admission"?: (Record<string, unknown>) | null;
                 "runtime_resource_claim"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
@@ -131817,8 +132019,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -134668,6 +134872,13 @@ export interface operations {
                 "reservation_id"?: string;
                 "run_lifetime_ms": number;
               }) | null;
+              "java_vm"?: ({
+                "jvms"?: number;
+                "mode": string;
+                "reason"?: string;
+                "vusers_per_jvm"?: number;
+                "warnings"?: Array<string>;
+              }) | null;
               "runtime_resource_admission"?: (Record<string, unknown>) | null;
               "runtime_resource_claim"?: (Record<string, unknown>) | null;
               "shard_count"?: number;
@@ -134921,8 +135132,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -137844,8 +138057,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -142509,8 +142724,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -145520,8 +145737,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -160562,6 +160781,13 @@ export interface operations {
                 "reservation_id"?: string;
                 "run_lifetime_ms": number;
               }) | null;
+              "java_vm"?: ({
+                "jvms"?: number;
+                "mode": string;
+                "reason"?: string;
+                "vusers_per_jvm"?: number;
+                "warnings"?: Array<string>;
+              }) | null;
               "runtime_resource_admission"?: (Record<string, unknown>) | null;
               "runtime_resource_claim"?: (Record<string, unknown>) | null;
               "shard_count"?: number;
@@ -160815,8 +161041,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -163738,8 +163966,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -169231,8 +169461,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -169494,8 +169726,10 @@ export interface operations {
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
+              "jvm_sharing"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
               "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -170253,8 +170487,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -170612,8 +170848,10 @@ export interface operations {
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -176955,8 +177193,10 @@ export interface operations {
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
+              "jvm_sharing"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
               "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -177268,8 +177508,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -179247,8 +179489,10 @@ export interface operations {
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -179510,8 +179754,10 @@ export interface operations {
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
+              "jvm_sharing"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
               "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;

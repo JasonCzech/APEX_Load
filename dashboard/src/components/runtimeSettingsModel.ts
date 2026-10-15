@@ -135,6 +135,11 @@ export function formatJavaVuserSummary(java?: RuntimeJavaVuserSettings): string 
   if (java.dedicated_class_loader !== undefined) parts.push(java.dedicated_class_loader ? 'dedicated loader' : 'no dedicated loader')
   if (java.skip_parameter_evaluation !== undefined) parts.push(java.skip_parameter_evaluation ? 'skip param eval' : 'no skip param eval')
   if (java.use_xbootclasspath !== undefined) parts.push(java.use_xbootclasspath ? 'xboot' : 'no xboot')
+  if (java.jvm_sharing) {
+    parts.push(java.jvm_sharing === 'shared'
+      ? `shared JVMs${java.vusers_per_jvm ? ` (${java.vusers_per_jvm} per JVM)` : ''}`
+      : 'one JVM per VUser')
+  }
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
@@ -231,7 +236,9 @@ function isJavaVuserSettingsEmpty(java?: RuntimeJavaVuserSettings): boolean {
     !(java.classpath && java.classpath.length > 0) &&
     java.use_xbootclasspath === undefined &&
     java.dedicated_class_loader === undefined &&
-    java.skip_parameter_evaluation === undefined
+    java.skip_parameter_evaluation === undefined &&
+    !java.jvm_sharing &&
+    !java.vusers_per_jvm
   )
 }
 
@@ -437,6 +444,8 @@ export function runtimeOverrideFromScriptConfig(config?: ScriptConfig): RuntimeS
           use_xbootclasspath: config.java_vuser.use_xbootclasspath,
           dedicated_class_loader: config.java_vuser.dedicated_class_loader,
           skip_parameter_evaluation: config.java_vuser.skip_parameter_evaluation,
+          jvm_sharing: config.java_vuser.jvm_sharing,
+          vusers_per_jvm: config.java_vuser.vusers_per_jvm,
         }
       : undefined,
     base_url: config.base_url || undefined,

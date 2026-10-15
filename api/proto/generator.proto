@@ -513,6 +513,18 @@ message AssignmentAck {
   int32 available_capacity = 3;
   JavaHostPlacement java_host = 4;
   RuntimeResourceAdmission runtime_resource_admission = 5;
+  // java_vm reports how a java_vuser group that asked for shared JVMs was
+  // staged on this generator. Absent for every other group.
+  JavaVMOutcome java_vm = 6;
+}
+
+// JavaVMOutcome is value-free: a mode, a stable reason code and counts.
+message JavaVMOutcome {
+  string mode = 1;  // "shared" or "dedicated"
+  string reason = 2;
+  int32 jvms = 3;
+  int32 vusers_per_jvm = 4;
+  repeated string warnings = 5;
 }
 
 message VUserAdjustment {

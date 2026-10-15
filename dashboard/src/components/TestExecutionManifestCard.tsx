@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 
 import {
   GeneratorShardSummary,
+  JavaVMShardOutcome,
   TestRunManifest,
   TestRunManifestConfiguration,
   TestRunManifestRuntimeChange,
@@ -122,6 +123,49 @@ function shardSummary(shards?: GeneratorShardSummary[]): string {
   if (!shards || shards.length === 0) return 'No shards assigned'
   const vusers = shards.reduce((sum, shard) => sum + (shard.vusers || 0), 0)
   return `${shards.length} shard${shards.length === 1 ? '' : 's'} / ${vusers} VUsers`
+}
+
+// Plain-language labels for the runner's stable shared-JVM codes. Unknown
+// codes are shown as received so a newer generator is never silently hidden.
+const JAVA_VM_REASONS: Record<string, string> = {
+  shared_jvm_runner_disabled: 'Java runner is not enabled',
+  shared_jvm_requires_sidecar_runner: 'runner is not a sidecar',
+  shared_jvm_unavailable: 'runner does not offer shared JVMs',
+  shared_jvm_runtime_unsupported: 'needs Java 17 or 21',
+  shared_jvm_classpath_unsupported: 'classpath has a directory or lacks the target class',
+  shared_jvm_native_code_detected: 'native code found in the script jars',
+  shared_jvm_inspection_incomplete: 'native-code scan could not finish',
+  shared_jvm_inputs_unsupported: 'runtime or jars cannot be verified',
+  shared_jvm_lifecycle_unsupported: 'script needs exactly one init, action and end call',
+  shared_jvm_run_logic_unsupported: 'run logic is not sequential',
+  shared_jvm_parameters_unsupported: 'parameters are not plain text',
+  shared_jvm_open_workload_unsupported: 'open workloads are not supported',
+  shared_jvm_init_at_once_unsupported: 'all-at-once initialization is not supported',
+  shared_jvm_no_staged_vusers: 'group started with no VUsers',
+  shared_jvm_disabled: 'runner does not allow shared JVMs',
+  shared_jvm_runtime_rejected: 'runner could not prepare the Java runtime',
+  shared_jvm_vm_parameter_invalid: 'a VM parameter is not allowed in shared JVMs',
+  shared_jvm_qualification_failed: 'script could not be qualified for shared JVMs',
+  shared_jvm_capacity_invalid: 'runner shared-JVM sizing is invalid',
+}
+
+function describeJavaVMOutcome(vm: JavaVMShardOutcome): string {
+  if (vm.mode === 'shared') {
+    const jvms = vm.jvms ?? 0
+    return `Shared JVMs · ${jvms} JVM${jvms === 1 ? '' : 's'}${vm.vusers_per_jvm ? `, up to ${vm.vusers_per_jvm} VUsers each` : ''}`
+  }
+  const reason = vm.reason ? JAVA_VM_REASONS[vm.reason] ?? vm.reason : ''
+  return `One JVM per VUser${reason ? ` (shared JVMs not used: ${reason})` : ''}`
+}
+
+function renderJavaVMOutcome(shard: GeneratorShardSummary) {
+  if (!shard.java_vm) return null
+  return renderDefinitions([
+    ['Java VMs', describeJavaVMOutcome(shard.java_vm)],
+    ...(shard.java_vm.warnings?.includes('shared_jvm_script_heap_ignored')
+      ? [['Heap', 'Script heap settings replaced by the runner\'s shared-JVM heap'] as DefinitionEntry]
+      : []),
+  ])
 }
 
 function renderJavaHostPlacement(shard: GeneratorShardSummary) {
@@ -243,6 +287,13 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
 
       {compact ? <>
         <RuntimeResourceReservations shards={manifest.load_generators.generator_shards} />
+        {(manifest.load_generators.generator_shards || []).some(shard => shard.java_vm) && <section className="manifest-section" aria-label="Java VMs">
+          <h4>Java VMs</h4>
+          {(manifest.load_generators.generator_shards || []).filter(shard => shard.java_vm).map((shard, index) => <div key={`${shard.group}-${shard.target}-${index}`}>
+            <strong>{shard.group} · {shard.target}</strong>
+            {renderJavaVMOutcome(shard)}
+          </div>)}
+        </section>}
         {(manifest.load_generators.generator_shards || []).some(shard => shard.java_host) && <section className="manifest-section" aria-label="Java host reservations">
           <h4>Java host reservations</h4>
           {(manifest.load_generators.generator_shards || []).filter(shard => shard.java_host).map(shard => <div key={`${shard.group}-${shard.target}`}>
@@ -368,7 +419,7 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
               {(manifest.load_generators.generator_shards || []).map((shard, index) => (
                 <tr key={`${shard.group}-${shard.target}-${index}`}>
                   <td>{shard.group}</td>
-                  <td>{shard.target}{renderJavaHostPlacement(shard)}<RuntimeResourceReservations shards={[shard]} /></td>
+                  <td>{shard.target}{renderJavaHostPlacement(shard)}{renderJavaVMOutcome(shard)}<RuntimeResourceReservations shards={[shard]} /></td>
                   <td>{shard.vusers}</td>
                   <td>{shard.shard_strategy || 'Not set'}</td>
                 </tr>

@@ -316,6 +316,7 @@ export type {
   ContinueOnErrorResolution,
   GeneratorAssignmentSettings,
   GeneratorShardSummary,
+  JavaVMShardOutcome,
   ScenarioFootprint,
   TestGroup,
 } from './types/testConfiguration'

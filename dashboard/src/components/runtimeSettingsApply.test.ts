@@ -75,4 +75,12 @@ describe('materializeRuntimeSettingsForApply', () => {
     expect(result?.run_logic).toEqual({ iterations: 7, workload_model: 'closed' })
     expect(result?.iterations).toBeUndefined()
   })
+
+  it('drops the per-JVM count when an override switches a shared script to dedicated', () => {
+    const script = { base_url: '', java_vuser: { jvm_sharing: 'shared' as const, vusers_per_jvm: 120, classpath: ['/app.jar'] } }
+    const dedicated = materializeRuntimeSettingsForApply(undefined, script, { log_level: '', auto_transactions: '', java_vuser: { jvm_sharing: 'dedicated' } })
+    expect(dedicated?.java_vuser).toEqual({ jvm_sharing: 'dedicated', classpath: ['/app.jar'] })
+    const resized = materializeRuntimeSettingsForApply(undefined, script, { log_level: '', auto_transactions: '', java_vuser: { vusers_per_jvm: 40 } })
+    expect(resized?.java_vuser).toEqual({ jvm_sharing: 'shared', vusers_per_jvm: 40, classpath: ['/app.jar'] })
+  })
 })

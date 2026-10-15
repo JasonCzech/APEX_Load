@@ -669,7 +669,13 @@ jar-only classpath and a clean native-code scan. When any of these does not
 hold, the group runs with one JVM per VUser and the run reports the reason
 (`apexctl run` prints it next to the results). An unexplained runner error, or
 a failure after the runner accepted the group, stops the run instead of
-changing modes.
+changing modes. The run manifest's Java VMs entry shows each generator's
+outcome: its shared JVM count, or the reason it used one JVM per VUser.
+
+A scenario group can choose shared or dedicated JVMs, and the VUsers per JVM,
+in its Java Env runtime overrides without re-approving the script. Changing
+these settings on an approved script itself needs a new authoring approval.
+
 All of a group's VUsers are staged before the run starts, and a VUser's slot is
 never reused, so a schedule cannot grow a shared group past its staged VUsers.
 

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -242,6 +243,10 @@ func cloneRemoteGeneratorSafetyExitEvidence(value *generatorrpc.GeneratorSafetyE
 func cloneRemoteGeneratorSafetyExitEvidenceList(values []generatorrpc.GeneratorSafetyExitEvidence) []generatorrpc.GeneratorSafetyExitEvidence {
 	return append([]generatorrpc.GeneratorSafetyExitEvidence(nil), values...)
 }
+
+// sharedJVMAssignmentTimeout bounds an assignment that stages shared JVMs: the
+// generator's whole preparation budget plus room for the RPC itself.
+const sharedJVMAssignmentTimeout = engine.JavaSharedPrepareTimeout + 30*time.Second
 
 func cloneProtocolRuntimeCapacities(values []generatorrpc.ProtocolRuntimeCapacity) []generatorrpc.ProtocolRuntimeCapacity {
 	if len(values) == 0 {
@@ -1589,6 +1594,13 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 						}
 					}
 				}
+				if vm := outcomes[index].results[shardIndex].JavaVM; vm != nil {
+					for i := range activeGroupShards[group.Name] {
+						if activeGroupShards[group.Name][i].ShardOrdinal == shard.ShardOrdinal {
+							activeGroupShards[group.Name][i].JavaVM = &JavaVMShardOutcome{Mode: vm.GetMode(), Reason: vm.GetReason(), JVMs: int(vm.GetJvms()), VUsersPerJVM: int(vm.GetVusersPerJvm()), Warnings: append([]string(nil), vm.GetWarnings()...)}
+						}
+					}
+				}
 				snapshot.AvailableCapacity = outcomes[index].results[shardIndex].AvailableCapacity
 				snapshot.Stats.ActiveVUsers += int32(shard.VUsers)
 			}
@@ -1813,6 +1825,10 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 		groupVUsers += shard.VUsers
 	}
 
+	// A shared-eligible script makes each generator start its shared JVMs inside
+	// AssignWork; the content is the exact script the generators receive.
+	var parsedScript dsl.Script
+	sharedJVM := json.Unmarshal(script.Content, &parsedScript) == nil && engine.NewJavaVuserCapacityPlan(&parsedScript).SharedJVM()
 	runPlan := func(index int) {
 		plan := plans[index]
 		outcome := distributedTargetAssignmentOutcome{target: plan.target, results: make([]generatorrpc.AssignmentResult, len(plan.shards))}
@@ -1884,6 +1900,9 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 					return
 				}
 				assignmentTimeout = time.Duration(shard.JavaHost.PreparationMS) * time.Millisecond
+			} else if sharedJVM {
+				// The generator starts and stages the shared JVMs inside this call.
+				assignmentTimeout = max(assignmentTimeout, sharedJVMAssignmentTimeout)
 			}
 			rpcCtx, rpcCancel := context.WithTimeout(ctx, assignmentTimeout)
 			result, assignErr := plan.client.AssignWork(rpcCtx, assignment)
@@ -2610,6 +2629,8 @@ func preserveShardCoordinatesByTarget(next []GeneratorShardSummary, previous []G
 		out[index].VUserIDOffset = prior.VUserIDOffset
 		out[index].RuntimeResourceClaim = shardRuntimeResourceClaim(prior)
 		out[index].RuntimeResourceAdmission = generatorrpc.CloneRuntimeResourceAdmission(prior.RuntimeResourceAdmission)
+		// Scaling keeps the JVMs staged at assignment, so their outcome stands.
+		out[index].JavaVM = cloneJavaVMShardOutcome(prior.JavaVM)
 	}
 	return out, nil
 }

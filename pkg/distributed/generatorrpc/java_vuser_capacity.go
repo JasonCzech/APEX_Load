@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -371,4 +372,14 @@ func (service *Service) adjustmentJavaVuserCapacityObservation(request *pb.VUser
 		return javaVuserCapacityObservation{}
 	}
 	return observeJavaVuserCapacity()
+}
+
+// javaVMOutcome reports a staged group's JVM mode on its assignment ack. Each
+// assignment carries one group, so at most one placement exists.
+func javaVMOutcome(placements []engine.JavaVMPlacement) *pb.JavaVMOutcome {
+	if len(placements) == 0 {
+		return nil
+	}
+	p := placements[0]
+	return &pb.JavaVMOutcome{Mode: p.Mode, Reason: p.Reason, Jvms: int32(min(p.JVMs, 1<<20)), VusersPerJvm: int32(min(p.VUsersPerJVM, 1<<20)), Warnings: append([]string(nil), p.Warnings...)}
 }

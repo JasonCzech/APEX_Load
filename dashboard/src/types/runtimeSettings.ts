@@ -33,6 +33,8 @@ export type RuntimeJavaVuserSettings = Pick<
   | 'use_xbootclasspath'
   | 'dedicated_class_loader'
   | 'skip_parameter_evaluation'
+  | 'jvm_sharing'
+  | 'vusers_per_jvm'
 >
 
 /**

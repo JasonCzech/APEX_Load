@@ -638,6 +638,15 @@ func applyJavaVuserRuntimeOverride(dst *dsl.JavaVuserConfig, src *RuntimeJavaVus
 		skip := *src.SkipParameterEvaluation
 		dst.SkipParameterEvaluation = &skip
 	}
+	if src.JVMSharing != "" {
+		dst.JVMSharing = src.JVMSharing
+		if src.JVMSharing != dsl.JavaVuserJVMSharingShared {
+			dst.VUsersPerJVM = 0
+		}
+	}
+	if src.VUsersPerJVM != 0 {
+		dst.VUsersPerJVM = src.VUsersPerJVM
+	}
 }
 
 // mergeJavaVuserRuntimeOverride combines root- and group-level Java Env
@@ -674,6 +683,15 @@ func mergeJavaVuserRuntimeOverride(base *RuntimeJavaVuserOverride, group *Runtim
 	if group.SkipParameterEvaluation != nil {
 		skip := *group.SkipParameterEvaluation
 		merged.SkipParameterEvaluation = &skip
+	}
+	if group.JVMSharing != "" {
+		merged.JVMSharing = group.JVMSharing
+		if group.JVMSharing != dsl.JavaVuserJVMSharingShared {
+			merged.VUsersPerJVM = 0
+		}
+	}
+	if group.VUsersPerJVM != 0 {
+		merged.VUsersPerJVM = group.VUsersPerJVM
 	}
 	return merged
 }

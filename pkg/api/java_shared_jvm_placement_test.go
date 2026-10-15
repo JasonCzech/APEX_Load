@@ -74,3 +74,27 @@ func TestSharedJVMCapacityConsumptionIsIsolated(t *testing.T) {
 		t.Fatal("restore exceeded the envelope maximum")
 	}
 }
+
+func TestJavaVuserOverrideSharingRules(t *testing.T) {
+	script := dsl.JavaVuserConfig{JVMSharing: dsl.JavaVuserJVMSharingShared, VUsersPerJVM: 120}
+	applied := script
+	applyJavaVuserRuntimeOverride(&applied, &RuntimeJavaVuserOverride{JVMSharing: dsl.JavaVuserJVMSharingDedicated})
+	if applied.JVMSharing != dsl.JavaVuserJVMSharingDedicated || applied.VUsersPerJVM != 0 {
+		t.Fatalf("dedicated override kept the per-JVM count: %+v", applied)
+	}
+	applied = script
+	applyJavaVuserRuntimeOverride(&applied, &RuntimeJavaVuserOverride{VUsersPerJVM: 40})
+	if applied.JVMSharing != dsl.JavaVuserJVMSharingShared || applied.VUsersPerJVM != 40 {
+		t.Fatalf("count override %+v", applied)
+	}
+	merged := mergeJavaVuserRuntimeOverride(&RuntimeJavaVuserOverride{JVMSharing: dsl.JavaVuserJVMSharingShared, VUsersPerJVM: 80}, &RuntimeJavaVuserOverride{JVMSharing: dsl.JavaVuserJVMSharingDedicated})
+	if merged.JVMSharing != dsl.JavaVuserJVMSharingDedicated || merged.VUsersPerJVM != 0 {
+		t.Fatalf("merge %+v", merged)
+	}
+	if projected := runtimeJavaVuserOverrideFromConfig(script); projected == nil || projected.JVMSharing != dsl.JavaVuserJVMSharingShared || projected.VUsersPerJVM != 120 {
+		t.Fatalf("projection %+v", projected)
+	}
+	if runtimeJavaVuserOverrideFromConfig(dsl.JavaVuserConfig{}) != nil {
+		t.Fatal("empty config projected an override")
+	}
+}

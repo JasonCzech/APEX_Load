@@ -168,6 +168,26 @@ describe('TestExecutionManifestCard', () => {
     expect(container.textContent).toContain('Confirmed at reservation')
   })
 
+  it.each([false, true])('reports each generator shared-JVM outcome in plain language (compact: %s)', async compact => {
+    const manifest = makeManifest()
+    manifest.load_generators.generator_shards = [
+      { group: 'buyers', target: 'generator-a', vusers: 2500, java_vm: { mode: 'shared', jvms: 10, vusers_per_jvm: 250, warnings: ['shared_jvm_script_heap_ignored'] } },
+      { group: 'buyers', target: 'generator-b', vusers: 20, java_vm: { mode: 'dedicated', reason: 'shared_jvm_native_code_detected' } },
+      { group: 'buyers', target: 'generator-c', vusers: 20, java_vm: { mode: 'dedicated', reason: 'shared_jvm_future_code' } },
+    ]
+    await renderCard(manifest, { compact })
+    expect(container.textContent).toContain('Shared JVMs · 10 JVMs, up to 250 VUsers each')
+    expect(container.textContent).toContain("Script heap settings replaced by the runner's shared-JVM heap")
+    expect(container.textContent).toContain('One JVM per VUser (shared JVMs not used: native code found in the script jars)')
+    // An unknown code from a newer generator is shown as received, never hidden.
+    expect(container.textContent).toContain('One JVM per VUser (shared JVMs not used: shared_jvm_future_code)')
+  })
+
+  it('omits the Java VMs section for runs without shared-JVM groups', async () => {
+    await renderCard(makeManifest(), { compact: true })
+    expect(container.querySelector('[aria-label="Java VMs"]')).toBeNull()
+  })
+
   async function renderCard(manifest: TestRunManifest | null, options: { error?: string; loading?: boolean; compact?: boolean } = {}) {
     await act(async () => {
       root.render(

@@ -134,6 +134,17 @@ func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssig
 		}
 	}()
 	defer func() {
+		if callErr != nil || !ack.GetAccepted() {
+			return
+		}
+		service.mu.RLock()
+		execution := service.executions[assignment.GetTestId()][assignment.GetGroupName()]
+		service.mu.RUnlock()
+		if execution != nil && execution.engine != nil {
+			ack.JavaVm = javaVMOutcome(execution.engine.JavaVMPlacements())
+		}
+	}()
+	defer func() {
 		if ack != nil && !ack.Accepted && assignment.GetRuntimeResourceClaim() != nil {
 			ack.RuntimeResourceAdmission = runtimeResourceAdmission(assignment.RuntimeResourceClaim, nil)
 		}
@@ -863,6 +874,13 @@ func (coordinator *assignmentLifecycleCoordinator) stopStageTimerLocked(testID s
 
 func (coordinator *assignmentLifecycleCoordinator) claimStageExpiryLocked(service *Service, testID string, token uint64) bool {
 	if coordinator == nil || coordinator.stageTokens[testID] != token || !service.hasStagedExecutionLocked(testID) {
+		return false
+	}
+	if coordinator.pendingStages[testID] != nil {
+		// Another group of this test is still preparing (shared JVMs or a Java
+		// host can take minutes inside its AssignWork). Its completion re-arms
+		// the timer; until then keep one armed rather than expire the run.
+		coordinator.scheduleStageExpiryLocked(service, testID)
 		return false
 	}
 	coordinator.stopStageTimerLocked(testID)

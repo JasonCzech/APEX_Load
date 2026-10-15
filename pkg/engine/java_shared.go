@@ -31,9 +31,10 @@ const (
 	// JavaSharedReasonNoVUsers: a group staged with no VUsers (one that only
 	// grows later) has no slots to prepare, and shared slots cannot grow.
 	JavaSharedReasonNoVUsers = "shared_jvm_no_staged_vusers"
-	// javaSharedPrepareTimeout bounds cold preparation of every JVM in a group;
-	// the runner also enforces each reservation's own deadline.
-	javaSharedPrepareTimeout = 5 * time.Minute
+	// JavaSharedPrepareTimeout bounds cold preparation of every JVM in a group;
+	// the runner also enforces each reservation's own deadline. A controller
+	// staging a shared group must wait at least this long for AssignWork.
+	JavaSharedPrepareTimeout = 5 * time.Minute
 )
 
 // JavaVMPlacement is the value-free outcome of a java_vuser group's JVM mode.
@@ -282,7 +283,7 @@ func (g *javaSharedGroup) stage(ctx context.Context, secrets SecretResolver) jav
 	for i := range users {
 		users[i] = javasidecar.PooledSlotContext{VUserID: int64(g.offset + i), IgnoreThinkTime: g.script.Config.ThinkTime.Ignore, ThinkTimeLimitMS: int64(g.script.Config.ThinkTime.LimitMs)}
 	}
-	slots, err := run.Prepare(ctx, users, javaSharedPrepareTimeout)
+	slots, err := run.Prepare(ctx, users, JavaSharedPrepareTimeout)
 	if err != nil {
 		return abandon(fmt.Errorf("java_vuser shared JVM preparation failed (%s)", javaSharedSidecarCode(err)))
 	}

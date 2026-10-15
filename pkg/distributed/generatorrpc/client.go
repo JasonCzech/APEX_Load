@@ -91,9 +91,11 @@ type Assignment struct {
 type AssignmentResult struct {
 	RuntimeResourceAdmission *pb.RuntimeResourceAdmission
 	JavaHost                 *pb.JavaHostPlacement
-	Accepted                 bool
-	ErrorMessage             string
-	AvailableCapacity        int32
+	// JavaVM is the generator's shared-JVM outcome for the group, if it asked.
+	JavaVM            *pb.JavaVMOutcome
+	Accepted          bool
+	ErrorMessage      string
+	AvailableCapacity int32
 }
 
 type WorkCommitResult struct {
@@ -989,6 +991,7 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 	return AssignmentResult{
 		RuntimeResourceAdmission: CloneRuntimeResourceAdmission(ack.GetRuntimeResourceAdmission()),
 		JavaHost:                 cloneJavaHostPlacement(ack.GetJavaHost()),
+		JavaVM:                   validJavaVMOutcome(ack.GetJavaVm()),
 		Accepted:                 ack.GetAccepted(),
 		ErrorMessage:             ack.GetErrorMessage(),
 		AvailableCapacity:        ack.GetAvailableCapacity(),
@@ -2460,4 +2463,20 @@ func sharedJVMCapacityFromProto(value *pb.SharedJVMCapacity) *SharedJVMCapacity 
 		return nil
 	}
 	return &SharedJVMCapacity{VUsersPerJVM: value.GetVusersPerJvm(), MaxVUsers: value.GetMaxVusers(), AvailableVUsers: max(0, min(value.GetAvailableVusers(), value.GetMaxVusers()))}
+}
+
+// validJavaVMOutcome keeps a well-formed, bounded outcome and drops anything
+// else: the ack is informational and never changes placement.
+func validJavaVMOutcome(value *pb.JavaVMOutcome) *pb.JavaVMOutcome {
+	if value == nil || value.GetMode() != "shared" && value.GetMode() != "dedicated" || len(value.GetReason()) > 128 || value.GetJvms() < 0 || value.GetVusersPerJvm() < 0 || len(value.GetWarnings()) > 8 {
+		return nil
+	}
+	for _, code := range append([]string{value.GetReason()}, value.GetWarnings()...) {
+		for _, r := range code {
+			if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_') {
+				return nil
+			}
+		}
+	}
+	return proto.Clone(value).(*pb.JavaVMOutcome)
 }

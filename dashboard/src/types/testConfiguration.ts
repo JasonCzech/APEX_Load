@@ -91,10 +91,21 @@ export interface GeneratorShardSummary {
   runtime_resource_claim?: import('./runtimeResources').RuntimeResourceClaim
   runtime_resource_admission?: import('./runtimeResources').RuntimeResourceAdmission
   java_host?: JavaHostPlacementSummary
+  java_vm?: JavaVMShardOutcome
   group: string
   target: string
   vusers: number
   shard_strategy?: 'capacity_weighted'
+}
+
+/** How a generator staged a Java group that asked for shared JVMs. */
+export interface JavaVMShardOutcome {
+  mode: 'shared' | 'dedicated'
+  /** Stable code explaining a fallback to one JVM per VUser. */
+  reason?: string
+  jvms?: number
+  vusers_per_jvm?: number
+  warnings?: string[]
 }
 
 export interface ScenarioFootprint {
