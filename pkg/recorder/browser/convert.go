@@ -195,7 +195,7 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 			result.Warnings = append(result.Warnings, refusal)
 		} else if moved > 0 {
 			result.Warnings = append(result.Warnings, fmt.Sprintf(
-				"The recorded Salesforce sign-in (%d step(s)) runs in init, once per virtual user. Before running more than one observer, give each its own user or session: every one would sign in as the recorded user, and a verification code does not replay.", moved))
+				"The recorded Salesforce sign-in (%d step(s)) runs in init, once per virtual user. Before running more than one observer, give each its own user or session: every one would sign in as the recorded user, and a verification code does not replay. A storage_state_pool or salesforce_jwt session skips the recorded sign-in.", moved))
 		}
 	}
 	for _, entry := range timeline {

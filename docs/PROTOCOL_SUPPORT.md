@@ -295,7 +295,13 @@ JMS, Kafka, or other high-density protocol groups.
   continue-on-error setting. A `salesforce_jwt` observer then signs in again
   at its next iteration, in a new browser context (one that cannot stops, as
   a failed iteration reset does); a `storage_state_pool` observer keeps its
-  context, since its exported state cannot renew. An iteration that signs in
+  context, since its exported state cannot renew; a renewed observer runs init
+  again before its next iteration. A `storage_state_pool` or `salesforce_jwt`
+  observer, in a run or in Verify, skips a recorded sign-in: the top-level init
+  steps tagged `metadata.salesforce_auth`, and a transaction marked around only
+  them, do not run (the script keeps them), and an init navigation to a
+  Salesforce sign-in page opens the page the recording reached after signing
+  in (the next step's recorded page) instead. An iteration that signs in
   itself (its actions spell `{{identity.*}}`) reaches the sign-in page on
   purpose, so only a rejected Aura session counts as lost there. The launch review warns
   (`observer_identity_overlap`) when an observer's username also appears in

@@ -33,6 +33,8 @@ type sessionFakeRecord struct {
 	refused   map[string]bool
 	started   map[string]time.Time
 	executed  []string
+	// targets lists user|target per navigation.
+	targets []string
 }
 
 var sessionFake = &sessionFakeRecord{}
@@ -57,6 +59,9 @@ func (b *sessionFakeBrowser) Execute(_ context.Context, action *protocol.Action)
 		sessionFake.started[b.username] = time.Now()
 	}
 	sessionFake.executed = append(sessionFake.executed, b.username+"|"+action.Name)
+	if action.Type == "browser_navigate" {
+		sessionFake.targets = append(sessionFake.targets, b.username+"|"+action.Target)
+	}
 	if action.Type == "browser_navigate" && sessionFake.refused[b.username] {
 		return nil, fmt.Errorf("net::ERR_CONNECTION_REFUSED at %s", action.Target)
 	}

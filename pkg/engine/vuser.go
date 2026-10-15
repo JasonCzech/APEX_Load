@@ -173,8 +173,10 @@ type VUser struct {
 	browserIdentity       *browserIdentityBinding
 	sessionStartNotBefore time.Time
 	// browserSessionRenewal asks for a new browser context at the next
-	// iteration, for a lost salesforce_jwt session.
+	// iteration, for a lost salesforce_jwt session; recordedSignIn is how the
+	// observer runs its script's recorded sign-in (recorded_sign_in.go).
 	browserSessionRenewal bool
+	recordedSignIn        *recordedSignInPlan
 	resultSequence        uint64
 	// async holds the running background HTTP conversations (http_async.go);
 	// onAsyncResult lets replay report each conversation response.
@@ -356,6 +358,14 @@ func (vu *VUser) Run(ctx context.Context) {
 	// Observers start no closer together than their session's start gap.
 	if !vu.waitForSessionStart(ctx) {
 		return
+	}
+
+	// An observer whose session signs its browser in skips the recorded
+	// sign-in.
+	vu.recordedSignIn = newRecordedSignInPlan(vu.Script)
+	if plan := vu.recordedSignIn; plan != nil {
+		logger.Info("skipping the recorded Salesforce sign-in: the session strategy signs the browser in",
+			"strategy", plan.strategy, "steps", plan.steps, "landing_page", plan.landing != "")
 	}
 
 	// --- Init phase ---
@@ -615,6 +625,13 @@ func (vu *VUser) Run(ctx context.Context) {
 					logger.Error("iteration protocol reset failed", "iteration", iteration+1, "err", scrubSensitiveError(err, vu.RedactionConfig))
 					goto teardown
 				}
+			}
+			// A renewed session starts on a blank page: init opens the page
+			// the iteration starts from again, its recorded sign-in skipped.
+			if renewSession && !vu.SkipInit && len(vu.Script.Init) > 0 &&
+				!vu.runLifecycleActionsWithContexts(iterCtx, iterationBoundaryCtx, vu.Script.Init, "init", false, logger, logCfg, cfg.ErrorHandling) {
+				logger.Error("init after the session renewal failed", "iteration", iteration+1)
+				goto teardown
 			}
 			newUser := browserEmulationNewUserEachIteration(cfg)
 			if newUser || (vu.Script.Protocol == "http" && cfg.HTTP.ClearCookiesPerIter != nil && *cfg.HTTP.ClearCookiesPerIter) {
@@ -1852,8 +1869,18 @@ func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.
 		}
 		return flowNext
 	}
+	var signIn *recordedSignInPlan
+	if strings.EqualFold(strings.TrimSpace(phase), "init") {
+		signIn = vu.recordedSignIn
+	}
 	runActions = func(actions []dsl.Action, depth int) actionFlow {
-		for _, action := range actions {
+		for index, action := range actions {
+			if depth == 0 && signIn != nil {
+				if signIn.skips(index) {
+					continue
+				}
+				action = signIn.action(action)
+			}
 			switch f := runOne(action, depth); f {
 			case flowTeardown:
 				return flowTeardown
