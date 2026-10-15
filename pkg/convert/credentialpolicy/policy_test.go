@@ -157,8 +157,8 @@ func TestNameRegistryReservesAndDisambiguatesDeterministically(t *testing.T) {
 	t.Parallel()
 	registry := NewNameRegistry("API_TOKEN")
 	first := registry.Allocate("api-token", "requests/one")
-	if first == "API_TOKEN" || !strings.HasPrefix(first, "API_TOKEN_") {
-		t.Fatalf("first collision allocation = %q", first)
+	if first != "API_TOKEN_2" {
+		t.Fatalf("first collision allocation = %q, want API_TOKEN_2", first)
 	}
 
 	again := NewNameRegistry("API_TOKEN").Allocate("api-token", "requests/one")
@@ -167,11 +167,57 @@ func TestNameRegistryReservesAndDisambiguatesDeterministically(t *testing.T) {
 	}
 
 	second := registry.Allocate("api-token", "requests/two")
-	if second == first || !strings.HasPrefix(second, "API_TOKEN_") {
-		t.Fatalf("second collision allocation = %q", second)
+	if second != "API_TOKEN_3" {
+		t.Fatalf("second collision allocation = %q, want API_TOKEN_3", second)
 	}
 	if duplicate := registry.Allocate("api-token", "requests/one"); duplicate != first {
 		t.Fatalf("same logical allocation changed from %q to %q", first, duplicate)
+	}
+}
+
+// Hints that differ only in case or punctuation are different credentials
+// wanting one readable name: each gets its own number, never a hash.
+func TestNameRegistryNumbersCaseVariantsReadably(t *testing.T) {
+	t.Parallel()
+	registry := NewNameRegistry()
+	got := []string{
+		registry.Allocate("api-token", "requests/one"),
+		registry.Allocate("API_TOKEN", "requests/two"),
+		registry.Allocate("Api Token", "requests/three"),
+	}
+	want := []string{"API_TOKEN", "API_TOKEN_2", "API_TOKEN_3"}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("allocations = %v, want %v", got, want)
+		}
+	}
+}
+
+// A numbered name a hint produces itself is taken, not reused.
+func TestNameRegistrySkipsANumberAnotherHintTook(t *testing.T) {
+	t.Parallel()
+	registry := NewNameRegistry()
+	if got := registry.Allocate("token_2", "requests/literal"); got != "TOKEN_2" {
+		t.Fatalf("literal allocation = %q", got)
+	}
+	registry.Allocate("token", "requests/one")
+	if got := registry.Allocate("token", "requests/two"); got != "TOKEN_3" {
+		t.Fatalf("collision allocation = %q, want TOKEN_3 past the literal TOKEN_2", got)
+	}
+}
+
+// A base at the longest logical name is shortened to fit its number.
+func TestNameRegistryTruncatesLongNamesToFitTheNumber(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("A", credential.MaxLogicalNameBytes+20)
+	registry := NewNameRegistry()
+	first := registry.Allocate(long, "requests/one")
+	second := registry.Allocate(long, "requests/two")
+	if len(first) != credential.MaxLogicalNameBytes || !credential.ValidLogicalName(first) {
+		t.Fatalf("first = %d bytes", len(first))
+	}
+	if !strings.HasSuffix(second, "_2") || len(second) != credential.MaxLogicalNameBytes || !credential.ValidLogicalName(second) {
+		t.Fatalf("second = %q (%d bytes), want a valid name ending _2 at the limit", second, len(second))
 	}
 }
 
