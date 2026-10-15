@@ -183,12 +183,14 @@ func (s *Server) importExistingScripts(projectID string, scripts []*dsl.Script) 
 			match.ContentDigest = current
 		}
 		for name := range existing.Metadata.Import.Inputs {
+			input, ok := previousImportInputFrom(existing, name)
 			// A credential-shaped input is never a value for every user, so a
-			// value under its name was put there by hand and stays out.
-			if sharedvalue.CredentialShaped(name) {
+			// value under its name was put there by hand and stays out; its
+			// project secret or data column is offered again.
+			if ok && sharedvalue.CredentialShaped(name) && input.Mode == "value" {
 				continue
 			}
-			if input, ok := previousImportInputFrom(existing, name); ok {
+			if ok {
 				if match.Inputs == nil {
 					match.Inputs = make(map[string]importPreviousInput)
 				}

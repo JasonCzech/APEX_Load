@@ -674,6 +674,12 @@ supplies (**Required runtime inputs** under the review's data substitutions) tak
 for every user, a column of a data pool each virtual user reads its own row of
 (`{{data.alias.column}}`; bind the alias in the scenario's Data step), or a value generated
 each iteration (a UUID, the current time or random digits); the script records the choice.
+An input that looks like a credential or session (a token, key, password, session ID or
+anti-forgery token) takes a project secret (`{{secret.NAME}}`, named after the input and
+numbered when the project already holds that name, so it never sends another credential's
+value unasked; add the secret under Project secrets before a run) or a data pool column, never
+a value kept in the script, which would show it masked; it stays unsupplied until you choose.
+A trace ID is an ordinary input.
 Importing the same source again lists, under **Imported before**, each script an earlier
 import saved and offers to update it as a new version (it keeps its name and folder, and its
 reference key moves to the next version) or create a copy. A source that declares its identity (a Postman collection, an OpenAPI,

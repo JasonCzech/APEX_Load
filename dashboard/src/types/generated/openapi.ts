@@ -134,7 +134,8 @@ export interface components {
       "column"?: string;
       "digits"?: number;
       "generator"?: "uuid" | "timestamp" | "digits";
-      "mode": "data" | "generated";
+      "mode": "data" | "generated" | "secret";
+      "secret"?: string;
     };
     "BrunoInspectFile": {
       "content"?: string;
@@ -304,7 +305,8 @@ export interface components {
       "column"?: string;
       "digits"?: number;
       "generator"?: "uuid" | "timestamp" | "digits";
-      "mode": "value" | "data" | "generated";
+      "mode": "value" | "data" | "generated" | "secret";
+      "reference"?: string;
       "value"?: string;
     };
     "BrunoSecretRequirement": {

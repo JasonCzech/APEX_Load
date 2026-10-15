@@ -345,6 +345,48 @@ func TestBrunoNativeGeneratedInputBinding(t *testing.T) {
 	}
 }
 
+// A credential input a Bruno commit binds reads a project secret, recorded
+// for a re-import; a generated value is refused, as in every other importer.
+func TestBrunoNativeInputBindingSuppliesACredentialFromAProjectSecret(t *testing.T) {
+	script := &dsl.Script{
+		Name: "inquire", Version: "1.0", Protocol: "http",
+		Config: dsl.ScriptConfig{BaseURL: "https://stage.example.com"},
+		Actions: []dsl.Action{{
+			Name: "inquire", Type: "http_request", Method: "GET", Target: "/orders",
+			HeaderList: dsl.HeaderList{{Name: "X-Session", Value: "{{var.sessionId}}"}},
+			Metadata: map[string]any{
+				"execution_blocker": "bruno_missing_variables",
+				"missing_variables": []string{"sessionId"},
+			},
+		}},
+	}
+	var session sharedvalue.Candidate
+	candidates := sharedvalue.Detect([]*dsl.Script{script}).Candidates
+	for _, candidate := range candidates {
+		if candidate.Name == "sessionId" {
+			session = candidate
+		}
+	}
+	if session.ID == "" || !session.CredentialShaped {
+		t.Fatalf("sessionId candidate = %+v", session)
+	}
+	if err := applyBrunoNativeInputBindings(cloneScriptDefinition(script), 0, candidates, nil,
+		map[string]sharedvalue.Binding{session.ID: {Mode: sharedvalue.BindingGenerated, Generator: sharedvalue.GeneratorUUID}}); err == nil {
+		t.Fatal("a credential took a generated value")
+	}
+	bound := cloneScriptDefinition(script)
+	if err := applyBrunoNativeInputBindings(bound, 0, candidates, nil,
+		map[string]sharedvalue.Binding{session.ID: {Mode: sharedvalue.BindingSecret, Secret: "ORDERS_SESSION"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := bound.Actions[0].HeaderList[0].Value; got != "{{secret.ORDERS_SESSION}}" {
+		t.Fatalf("header = %q, want the project secret", got)
+	}
+	if input := bound.Metadata.Import.Inputs["sessionId"]; input.Mode != "secret" || input.Reference != "{{secret.ORDERS_SESSION}}" {
+		t.Fatalf("recorded input = %+v, want the project secret it reads", input)
+	}
+}
+
 // A re-import offers back how an input was supplied, but never the value of
 // a credential-shaped input, which only a person could have put there.
 func TestBrunoNativePreviousInputsSkipCredentialShapedInputs(t *testing.T) {

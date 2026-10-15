@@ -59,14 +59,23 @@ func (s *SQLiteStore) ListImportedScriptIdentities(projectID, source string) ([]
 	return identities, rows.Err()
 }
 
-// ImportBatchSavedAt returns, for each script ID, the updated_at the most
-// recent import batch recorded when it saved that script. A script whose
-// updated_at still equals that value has not been edited since the import.
-// IDs with no receipt snapshot are absent from the result.
+// ImportBatchSnapshot is a script as the most recent import batch saved it.
+type ImportBatchSnapshot struct {
+	UpdatedAt time.Time
+	// Script is the saved script, or nil when the receipt's copy does not
+	// decode.
+	Script *dsl.Script
+}
+
+// ImportBatchSnapshots returns, for each script ID, the script and updated_at
+// as the most recent import batch saved it. A script whose updated_at still
+// equals that value has not been edited since the import; one whose content
+// still matches the snapshot was changed only in ways an update keeps (a
+// rename). IDs with no receipt snapshot are absent from the result.
 //
 // Receipts are scanned newest first by their small script-ID lists, and each
 // needed receipt's script snapshots are decoded once for all the IDs it holds.
-func (s *SQLiteStore) ImportBatchSavedAt(projectID string, scriptIDs []string) (map[string]time.Time, error) {
+func (s *SQLiteStore) ImportBatchSnapshots(projectID string, scriptIDs []string) (map[string]ImportBatchSnapshot, error) {
 	projectID = normalizeProjectID(strings.TrimSpace(projectID))
 	pending := make(map[string]struct{}, len(scriptIDs))
 	for _, rawID := range scriptIDs {
@@ -74,7 +83,7 @@ func (s *SQLiteStore) ImportBatchSavedAt(projectID string, scriptIDs []string) (
 			pending[scriptID] = struct{}{}
 		}
 	}
-	saved := make(map[string]time.Time, len(pending))
+	saved := make(map[string]ImportBatchSnapshot, len(pending))
 	if len(pending) == 0 {
 		return saved, nil
 	}
@@ -122,10 +131,7 @@ func (s *SQLiteStore) ImportBatchSavedAt(projectID string, scriptIDs []string) (
 		if err != nil {
 			return nil, err
 		}
-		var snapshots []struct {
-			ID        string    `json:"id"`
-			UpdatedAt time.Time `json:"updated_at"`
-		}
+		var snapshots []json.RawMessage
 		if json.Unmarshal([]byte(scriptsJSON), &snapshots) != nil {
 			continue
 		}
@@ -133,11 +139,24 @@ func (s *SQLiteStore) ImportBatchSavedAt(projectID string, scriptIDs []string) (
 		for _, scriptID := range receiptIDs[receiptID] {
 			wanted[scriptID] = struct{}{}
 		}
-		for _, snapshot := range snapshots {
-			scriptID := strings.TrimSpace(snapshot.ID)
-			if _, ok := wanted[scriptID]; ok && !snapshot.UpdatedAt.IsZero() {
-				saved[scriptID] = snapshot.UpdatedAt
+		for _, raw := range snapshots {
+			var head struct {
+				ID        string    `json:"id"`
+				UpdatedAt time.Time `json:"updated_at"`
 			}
+			if json.Unmarshal(raw, &head) != nil {
+				continue
+			}
+			scriptID := strings.TrimSpace(head.ID)
+			if _, ok := wanted[scriptID]; !ok || head.UpdatedAt.IsZero() {
+				continue
+			}
+			snapshot := ImportBatchSnapshot{UpdatedAt: head.UpdatedAt}
+			var script dsl.Script
+			if json.Unmarshal(raw, &script) == nil {
+				snapshot.Script = &script
+			}
+			saved[scriptID] = snapshot
 		}
 	}
 	return saved, nil

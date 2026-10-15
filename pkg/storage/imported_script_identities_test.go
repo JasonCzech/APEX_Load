@@ -29,12 +29,15 @@ func TestImportedScriptIdentitiesAndReceiptSavedAt(t *testing.T) {
 		t.Fatalf("identities = %#v", identities)
 	}
 
-	saved, err := store.ImportBatchSavedAt("project-bruno", []string{"native-script-1", "native-script-2", "missing"})
+	saved, err := store.ImportBatchSnapshots("project-bruno", []string{"native-script-1", "native-script-2", "missing"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !saved["native-script-1"].Equal(result.Scripts[0].UpdatedAt) || !saved["native-script-2"].Equal(result.Scripts[1].UpdatedAt) {
+	if !saved["native-script-1"].UpdatedAt.Equal(result.Scripts[0].UpdatedAt) || !saved["native-script-2"].UpdatedAt.Equal(result.Scripts[1].UpdatedAt) {
 		t.Fatalf("saved-at = %#v, committed = %v / %v", saved, result.Scripts[0].UpdatedAt, result.Scripts[1].UpdatedAt)
+	}
+	if script := saved["native-script-1"].Script; script == nil || script.ID != "native-script-1" {
+		t.Fatalf("snapshot script = %#v, want the script the import saved", script)
 	}
 	if _, found := saved["missing"]; found {
 		t.Fatalf("saved-at reported a script no receipt holds: %#v", saved)
@@ -54,7 +57,7 @@ func TestImportedScriptIdentitiesAndReceiptSavedAt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(identities) != 1 || identities[0].UpdatedAt.Equal(saved["native-script-1"]) {
-		t.Fatalf("edited identity = %#v, receipt saved-at = %v", identities, saved["native-script-1"])
+	if len(identities) != 1 || identities[0].UpdatedAt.Equal(saved["native-script-1"].UpdatedAt) {
+		t.Fatalf("edited identity = %#v, receipt saved-at = %v", identities, saved["native-script-1"].UpdatedAt)
 	}
 }

@@ -798,11 +798,13 @@ export interface ScriptImportMetadata {
 }
 
 export interface ScriptImportInput {
-  mode: 'value' | 'data' | 'generated'
+  mode: 'value' | 'data' | 'generated' | 'secret'
   alias?: string
   column?: string
   generator?: 'uuid' | 'timestamp' | 'digits'
   digits?: number
+  /** The project secret a credential input reads, {{secret.NAME}}. */
+  reference?: string
 }
 
 export interface JavaVuserSourceManifestFile {

@@ -135,6 +135,8 @@ type importPreviousInput struct {
 	Column    string `json:"column,omitempty"`
 	Generator string `json:"generator,omitempty"`
 	Digits    int    `json:"digits,omitempty"`
+	// Reference is the project secret a credential input reads, {{secret.NAME}}.
+	Reference string `json:"reference,omitempty"`
 }
 
 type brunoCommitRequest struct {
@@ -792,8 +794,8 @@ func previousImportInputFrom(script *dsl.Script, name string) (importPreviousInp
 		recorded = script.Metadata.Import.Inputs[name]
 	}
 	switch recorded.Mode {
-	case sharedvalue.BindingData, sharedvalue.BindingGenerated:
-		return importPreviousInput{Mode: recorded.Mode, Alias: recorded.Alias, Column: recorded.Column, Generator: recorded.Generator, Digits: recorded.Digits}, true
+	case sharedvalue.BindingData, sharedvalue.BindingGenerated, sharedvalue.BindingSecret:
+		return importPreviousInput{Mode: recorded.Mode, Alias: recorded.Alias, Column: recorded.Column, Generator: recorded.Generator, Digits: recorded.Digits, Reference: recorded.Reference}, true
 	}
 	// A value for every user lives in the parameter, which the script's
 	// author may have edited since.
@@ -935,7 +937,7 @@ func numberedBrunoSecretName(base string, number int) string {
 // the scripts an earlier import created.
 type brunoImportedScriptLister interface {
 	ListImportedScriptIdentities(projectID, source string) ([]storage.ImportedScriptIdentity, error)
-	ImportBatchSavedAt(projectID string, scriptIDs []string) (map[string]time.Time, error)
+	ImportBatchSnapshots(projectID string, scriptIDs []string) (map[string]storage.ImportBatchSnapshot, error)
 }
 
 // attachBrunoNativeExistingScripts marks each candidate whose source request
@@ -1029,21 +1031,25 @@ func (s *Server) attachBrunoNativeExistingScripts(projectID string, result *brun
 	if len(chosen) == 0 {
 		return
 	}
-	savedAt, err := lister.ImportBatchSavedAt(projectID, chosenIDs)
+	snapshots, err := lister.ImportBatchSnapshots(projectID, chosenIDs)
 	if err != nil {
 		slog.Warn("read Bruno import receipts for edit detection", "project_id", projectID, "error", err)
-		savedAt = nil
+		snapshots = nil
 	}
 	for index, best := range chosen {
 		folderID := ""
 		if best.identity.FolderID != nil {
 			folderID = strings.TrimSpace(*best.identity.FolderID)
 		}
-		saved, known := savedAt[best.identity.ID]
-		// Postgres keeps microseconds while the receipt keeps nanoseconds. A
-		// script with no receipt is treated as edited, which only adds a
-		// warning.
-		edited := !known || !saved.Truncate(time.Microsecond).Equal(best.identity.UpdatedAt.Truncate(time.Microsecond))
+		// A script with no receipt is treated as edited, which only adds a
+		// warning. One updated since its receipt is edited only if its content
+		// moved from what the import saved, as for every other importer: a
+		// rename alone is not an edit the update replaces.
+		snapshot, known := snapshots[best.identity.ID]
+		edited := !known || !sameImportUpdateTime(snapshot.UpdatedAt, best.identity.UpdatedAt)
+		if edited && known && snapshot.Script != nil {
+			edited = s.brunoScriptContentMoved(best.identity.ID, snapshot.Script)
+		}
 		result.Scripts[index].ExistingScript = &brunoconvert.NativeExistingScript{
 			ScriptID:          best.identity.ID,
 			Name:              best.identity.Name,
@@ -1055,6 +1061,22 @@ func (s *Server) attachBrunoNativeExistingScripts(projectID string, result *brun
 			EditedSinceImport: edited,
 		}
 	}
+}
+
+// brunoScriptContentMoved reports whether a stored script's content differs
+// from the receipt snapshot of what its import saved (or cannot be compared).
+func (s *Server) brunoScriptContentMoved(scriptID string, saved *dsl.Script) bool {
+	current, err := s.store.GetScript(scriptID)
+	if err != nil || current == nil {
+		return true
+	}
+	projected, err := storage.ImportBatchReceiptSnapshot(current)
+	if err != nil || projected == nil {
+		return true
+	}
+	now, nowErr := importedScriptContentDigest(projected)
+	then, thenErr := importedScriptContentDigest(saved)
+	return nowErr != nil || thenErr != nil || now != then
 }
 
 // brunoNativeImportIdentity returns the source identity a native Bruno import
@@ -1162,7 +1184,7 @@ func applyBrunoNativeInputBindings(
 			if _, err := sharedvalue.Bind(script, candidate, binding); err != nil {
 				return err
 			}
-			inputs[candidate.Name] = dsl.ImportInput{Mode: binding.Mode, Alias: binding.Alias, Column: binding.Column, Generator: binding.Generator, Digits: binding.Digits}
+			inputs[candidate.Name] = binding.Input(candidate.Name)
 			continue
 		}
 		if value := strings.TrimSpace(values[candidate.ID]); value != "" {
@@ -1772,9 +1794,9 @@ func (s *Server) handleCommitBrunoNativeImport(
 		}
 		trusted := rebaseBrunoSharedValues(trustedSharedValueCandidates(brunoNativeCandidateScripts(projection)), selectedIndexes)
 		trustedShared = trusted
-		known := make(map[string]sharedvalue.Kind, len(trusted))
+		known := make(map[string]sharedvalue.Candidate, len(trusted))
 		for _, candidate := range trusted {
-			known[candidate.ID] = candidate.Kind
+			known[candidate.ID] = candidate
 		}
 		for id := range request.SharedValues {
 			if _, ok := known[id]; !ok {
@@ -1783,15 +1805,19 @@ func (s *Server) handleCommitBrunoNativeImport(
 				return
 			}
 		}
-		for id := range request.InputBindings {
-			kind, ok := known[id]
+		for id, binding := range request.InputBindings {
+			candidate, ok := known[id]
 			if !ok {
 				writeError(w, http.StatusConflict,
 					"selected Bruno input bindings are stale or unavailable; inspect the source again")
 				return
 			}
-			if kind != sharedvalue.KindSourceVariable {
+			if candidate.Kind != sharedvalue.KindSourceVariable {
 				writeError(w, http.StatusBadRequest, "input_bindings can only bind a variable the source left unset")
+				return
+			}
+			if err := binding.ValidateFor(candidate); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 		}
@@ -3021,6 +3047,10 @@ func normalizeBrunoNativeCommitRequest(request *brunoCommitRequest) error {
 		binding.Alias = strings.TrimSpace(binding.Alias)
 		binding.Column = strings.TrimSpace(binding.Column)
 		binding.Generator = strings.ToLower(strings.TrimSpace(binding.Generator))
+		binding.Secret = strings.TrimSpace(binding.Secret)
+		if binding.Mode != sharedvalue.BindingSecret {
+			binding.Secret = ""
+		}
 		if binding.Mode != sharedvalue.BindingGenerated || binding.Generator != sharedvalue.GeneratorDigits {
 			binding.Digits = 0
 		}

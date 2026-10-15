@@ -133,3 +133,54 @@ func TestBindingValidation(t *testing.T) {
 		t.Errorf("valid data binding refused: %v", err)
 	}
 }
+
+func TestBindReadsAProjectSecret(t *testing.T) {
+	script := gatedScript("https://example.test")
+	candidate := subscriberCandidate(t, script)
+	if _, err := Bind(script, candidate, Binding{Mode: BindingSecret, Secret: "SUBSCRIBER_NUMBER"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := script.Actions[0].HeaderList[0].Value; got != "{{secret.SUBSCRIBER_NUMBER}}" {
+		t.Fatalf("header = %q, want the project secret", got)
+	}
+	if len(script.Parameters) != 0 {
+		t.Fatalf("a secret binding defined parameters: %+v", script.Parameters)
+	}
+	if err := (Binding{Mode: BindingSecret, Secret: "api-token"}).Validate(); err == nil {
+		t.Fatal("a lowercase secret name was accepted")
+	}
+}
+
+// A credential reads a project secret or a data pool column, and a refusal
+// does not suggest the value for every user a credential cannot take.
+func TestBindKeepsCredentialsOutOfTheScript(t *testing.T) {
+	script := gatedScript("https://example.test")
+	candidate := subscriberCandidate(t, script)
+	candidate.CredentialShaped = true
+	if _, err := Bind(script, candidate, Binding{Mode: BindingGenerated, Generator: GeneratorUUID}); err == nil ||
+		!strings.Contains(err.Error(), "looks like a credential") {
+		t.Fatalf("generated credential: err = %v", err)
+	}
+	inURL := gatedScript("https://{{var.subscriberNumber}}.example.test")
+	_, err := Bind(inURL, candidate, Binding{Mode: BindingSecret, Secret: "SUBSCRIBER"})
+	if !errors.Is(err, ErrBindingUnsupported) || strings.Contains(err.Error(), "one value for every user") ||
+		!strings.Contains(err.Error(), "correct where the source uses it") {
+		t.Fatalf("credential in the base URL: err = %v", err)
+	}
+}
+
+// The recorded input keeps only what its mode reads.
+func TestBindingInputRecordsWhatItsModeReads(t *testing.T) {
+	for _, test := range []struct {
+		binding Binding
+		want    dsl.ImportInput
+	}{
+		{Binding{Mode: BindingSecret, Secret: "API_TOKEN", Alias: "stray"}, dsl.ImportInput{Mode: BindingSecret, Reference: "{{secret.API_TOKEN}}"}},
+		{Binding{Mode: BindingData, Alias: "users", Column: "id", Secret: "STRAY"}, dsl.ImportInput{Mode: BindingData, Alias: "users", Column: "id"}},
+		{Binding{Mode: BindingGenerated, Generator: GeneratorDigits, Digits: 6}, dsl.ImportInput{Mode: BindingGenerated, Generator: GeneratorDigits, Digits: 6}},
+	} {
+		if got := test.binding.Input("apiToken"); got != test.want {
+			t.Errorf("%s input = %+v, want %+v", test.binding.Mode, got, test.want)
+		}
+	}
+}

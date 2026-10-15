@@ -62,7 +62,8 @@ describe('ImportSaveConfirmation', () => {
   })
 
   it('names a scenario after its source, else its one script, else a count', () => {
-    expect(importScenarioName('Orders API.postman_collection.json', saved(4))).toBe('Orders API.postman_collection')
+    expect(importScenarioName('Orders API.postman_collection.json', saved(4))).toBe('Orders API')
+    expect(importScenarioName('checkout_plan.jmx', saved(2))).toBe('checkout plan')
     expect(importScenarioName('checkout.jmx', saved(2))).toBe('checkout')
     expect(importScenarioName('', saved(1))).toBe('Request 1')
     expect(importScenarioName(undefined, saved(3))).toBe('3 imported scripts')

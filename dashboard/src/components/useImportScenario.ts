@@ -6,6 +6,7 @@ import { type StoredScript } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import { scenarioDraftBuilderHash } from './importScenario'
 import { scenarioAuthoringDraftFromScripts } from './scenarioAuthoringDraft'
+import { importSourceLabel } from './importSourceLabel'
 
 // One scenario from a saved import batch: a group per script, saved as a
 // project draft and opened in the Scenario Builder to shape the load. A draft
@@ -71,7 +72,7 @@ function importScenarioKey(projectId: string, scripts: readonly StoredScript[]):
 // The name a scenario from an import takes: the source's own name when there
 // is one, else the one saved script's, else a count.
 export function importScenarioName(sourceName: string | undefined, scripts: readonly StoredScript[]): string {
-  const base = (sourceName || '').replace(/\.[^./\\]+$/, '').trim()
+  const base = importSourceLabel(sourceName)
   if (base) return base
   if (scripts.length === 1) return scripts[0].name
   return `${scripts.length} imported scripts`

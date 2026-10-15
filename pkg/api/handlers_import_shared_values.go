@@ -174,7 +174,7 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 			writeError(w, http.StatusBadRequest, "bindings can only supply an input the source left unset")
 			return
 		}
-		if err := binding.Validate(); err != nil {
+		if err := binding.ValidateFor(candidate); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -316,7 +316,7 @@ func applyImportInputBindings(scripts []*dsl.Script, candidates []sharedvalue.Ca
 				if _, err := sharedvalue.Bind(script, candidate, binding); err != nil {
 					return err
 				}
-				input = dsl.ImportInput{Mode: binding.Mode, Alias: binding.Alias, Column: binding.Column, Generator: binding.Generator, Digits: binding.Digits}
+				input = binding.Input(candidate.Name)
 			}
 			if script.Metadata == nil {
 				script.Metadata = &dsl.ScriptMetadata{}

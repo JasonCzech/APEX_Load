@@ -424,6 +424,10 @@ components:
           enum:
             - data
             - generated
+            - secret
+        secret:
+          type: string
+          description: Project secret a credential input reads (capital letters, digits, underscores).
       additionalProperties: false
       required:
         - mode
@@ -978,6 +982,10 @@ components:
             - value
             - data
             - generated
+            - secret
+        reference:
+          type: string
+          description: Project secret a credential input reads, {{secret.NAME}}.
         value:
           type: string
       required:

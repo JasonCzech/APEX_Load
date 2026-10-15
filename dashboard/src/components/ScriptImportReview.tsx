@@ -1056,9 +1056,12 @@ export default function ScriptImportReview({
   const credentialSetupCount = secretBindingRequirements.filter(requirementNeedsSecretBinding).length
   // Neither kept as a usable value nor replaceable by a project secret.
   const keptAsRecordedCredentialCount = secretBindingRequirements.length - preservedCredentialCount - credentialSetupCount
-  const editableSharedCandidates = onSharedValuesApplied ? (sharedValues?.candidates || []).filter(candidate => !candidate.credential_shaped) : []
-  const requiredDataCount = editableSharedCandidates.filter(candidate => candidate.kind === 'source_variable').length
-  const optionalDataCount = editableSharedCandidates.length - requiredDataCount + (onParameterizationApplied ? parameterization?.suggestions?.length || 0 : 0)
+  const sharedDataCandidates = onSharedValuesApplied ? sharedValues?.candidates || [] : []
+  // Every unset input is supplied in the Data tab, a credential from a project
+  // secret or data pool column; other credential-shaped values are not offered.
+  const requiredDataCount = sharedDataCandidates.filter(candidate => candidate.kind === 'source_variable').length
+  const optionalDataCount = sharedDataCandidates.filter(candidate => candidate.kind !== 'source_variable' && !candidate.credential_shaped).length
+    + (onParameterizationApplied ? parameterization?.suggestions?.length || 0 : 0)
   const hasParameterizationReview = !!parameterization && (!!parameterization.aura_payload || (!!onParameterizationApplied && (parameterization.suggestions?.length ?? 0) > 0))
   const protectedSessionLabel = protectedImportExpiryLabel(protectedImportSessionExpiresAt)
   const importDraftExpiry = importDraftExpiryStatus(importDraftExpiresAt)

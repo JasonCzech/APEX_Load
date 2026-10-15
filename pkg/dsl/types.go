@@ -162,14 +162,18 @@ type ImportMetadata struct {
 
 // ImportInput is how one source variable was supplied at import: one value
 // for every virtual user (mode "value"; the parameter of that name holds it),
-// a data pool column read per virtual user ("data"), or a value generated
-// each iteration ("generated").
+// a data pool column read per virtual user ("data"), a value generated each
+// iteration ("generated"), or, for a credential, a project secret ("secret").
 type ImportInput struct {
 	Mode      string `json:"mode"`
 	Alias     string `json:"alias,omitempty"`
 	Column    string `json:"column,omitempty"`
 	Generator string `json:"generator,omitempty"`
 	Digits    int    `json:"digits,omitempty"`
+	// Reference is the project secret a credential input reads
+	// ({{secret.NAME}}; mode "secret"). The key is not one a projection masks,
+	// so the name survives every read.
+	Reference string `json:"reference,omitempty"`
 }
 
 type ScriptConfig struct {

@@ -205,7 +205,8 @@ export interface SharedValueCandidate {
   script_names?: string[]
   // Credential-shaped candidates are never applied as parameters: a parameter
   // of that name is masked out of every disclosure-safe read, so the value
-  // would be destroyed on the next save. They route to Secret Bindings instead.
+  // would be destroyed on the next save. An unset one reads a project secret or
+  // data pool column instead; any other is left to credential review.
   credential_shaped?: boolean
   rationale?: string
   targets_base_url?: boolean
@@ -236,7 +237,7 @@ export interface ApplySharedValuesRequest {
   scripts: ScriptDefinition[]
   values: Record<string, string>
   /** Inputs the source left unset, read per virtual user instead: a data pool column or a generated value. */
-  bindings?: Record<string, { mode: 'data' | 'generated'; alias?: string; column?: string; generator?: 'uuid' | 'timestamp' | 'digits'; digits?: number }>
+  bindings?: Record<string, { mode: 'data' | 'generated' | 'secret'; alias?: string; column?: string; generator?: 'uuid' | 'timestamp' | 'digits'; digits?: number; secret?: string }>
 }
 
 export interface ApplySharedValuesResponse {
@@ -377,6 +378,8 @@ export interface ImportPreviousInput {
   column?: string
   generator?: string
   digits?: number
+  /** The project secret a credential input reads, {{secret.NAME}}. */
+  reference?: string
 }
 
 /** An earlier imported script a new one matches by source identity. */

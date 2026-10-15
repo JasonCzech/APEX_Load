@@ -403,12 +403,22 @@ func TestBrunoNativeReimportFlagsEditedScriptsAndPathOnlyMatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	saved.Name = "Orders, tuned in the editor"
+	// A rename alone is not an edit an update replaces: it keeps the name.
+	saved.Name = "Orders, renamed in the library"
 	saved.UpdatedAt = time.Now().UTC().Add(time.Second)
 	if err := store.SaveScript(saved); err != nil {
 		t.Fatal(err)
 	}
+	renamed := inspectBrunoNativeFiles(t, server, brunoImportTestProject, invalidCookieFreeBrunoNativeFiles("Orders API"))
+	if existing := renamed.Result.Scripts[0].ExistingScript; existing == nil || existing.EditedSinceImport || !existing.SameCollection {
+		t.Fatalf("renamed script match = %#v, want it not flagged as edited", existing)
+	}
 
+	saved.Actions[0].ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 2500}
+	saved.UpdatedAt = time.Now().UTC().Add(2 * time.Second)
+	if err := store.SaveScript(saved); err != nil {
+		t.Fatal(err)
+	}
 	edited := inspectBrunoNativeFiles(t, server, brunoImportTestProject, invalidCookieFreeBrunoNativeFiles("Orders API"))
 	if existing := edited.Result.Scripts[0].ExistingScript; existing == nil || !existing.EditedSinceImport || !existing.SameCollection {
 		t.Fatalf("edited script match = %#v", existing)

@@ -11,11 +11,13 @@ import { type ScriptDefinition } from '../types/scripts'
 
 const applyMock = vi.fn()
 const listDataPoolsMock = vi.fn()
+const listProjectSecretsMock = vi.fn()
 
 vi.mock('../hooks/useApi', () => ({
   useApi: () => ({
     applyImportSharedValues: applyMock,
     listDataPools: listDataPoolsMock,
+    listProjectSecrets: listProjectSecretsMock,
   }),
 }))
 
@@ -60,6 +62,8 @@ describe('SharedImportValues', () => {
     applyMock.mockReset()
     listDataPoolsMock.mockReset()
     listDataPoolsMock.mockResolvedValue({ data_pools: [] })
+    listProjectSecretsMock.mockReset()
+    listProjectSecretsMock.mockResolvedValue({ secrets: [] })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -288,12 +292,91 @@ describe('SharedImportValues', () => {
   })
 
   // A parameter named like a credential is masked out of every later read, so
-  // the panel must not offer to store one.
-  it('offers no value input for a credential-shaped candidate', () => {
+  // the panel must not offer to store one: a credential reads a project secret
+  // or a data pool column, and only once the operator chooses one.
+  it('supplies a credential-shaped input from a project secret the operator chooses, never a value', async () => {
+    applyMock.mockResolvedValue({ scripts, diffs: [], applied_count: 1 })
+    render(buildSharedValues([candidate({
+      id: 'sv_token', name: 'apiToken', kind: 'source_variable',
+      credential_shaped: true, current_value: undefined,
+    })]))
+    expect(container.querySelector('#shared-value-sv_token')).toBeNull()
+    const supply = container.querySelector<HTMLSelectElement>('.import-input-supply select')!
+    expect(Array.from(supply.options).map(option => option.value)).toEqual(['value', 'secret', 'data'])
+    expect(supply.value).toBe('value')
+    const button = () => container.querySelector<HTMLButtonElement>('.shared-values-actions button')!
+    expect(button().disabled).toBe(true)
+
+    select('Supply apiToken', 'secret')
+    expect(container.textContent).toContain('{{secret.API_TOKEN}}')
+    await act(async () => {
+      button().dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(applyMock).toHaveBeenCalledWith({ scripts, values: {}, bindings: { sv_token: { mode: 'secret', secret: 'API_TOKEN' } } })
+  })
+
+  // Bruno's lesson: a credential never reads another credential's secret by
+  // default, and a name the operator types that the project already holds is
+  // called out. Dots and hyphens become underscores, as the secret store reads them.
+  it('suggests a project secret no other credential uses and flags one that is', async () => {
+    listProjectSecretsMock.mockResolvedValue({ secrets: [{ name: 'API_TOKEN' }, { name: 'ORDERS_KEY' }] })
+    act(() => {
+      root.render(
+        <SharedImportValues
+          sharedValues={buildSharedValues([candidate({ id: 'sv_token', name: 'apiToken', kind: 'source_variable', credential_shaped: true, current_value: undefined })])}
+          scripts={[{ ...script('get-users'), project_id: 'project-1' }]}
+          onApplied={vi.fn()}
+        />,
+      )
+    })
+    await act(async () => { await Promise.resolve() })
+    expect(listProjectSecretsMock).toHaveBeenCalledWith('project-1')
+    select('Supply apiToken', 'secret')
+    expect(fieldIn('Project secret for apiToken').value).toBe('API_TOKEN_2')
+    expect(container.textContent).not.toContain('The project already has')
+
+    type(fieldIn('Project secret for apiToken'), 'orders.key')
+    expect(fieldIn('Project secret for apiToken').value).toBe('ORDERS_KEY')
+    expect(container.textContent).toContain('The project already has ORDERS_KEY')
+
+    type(fieldIn('Project secret for apiToken'), 'orders key')
+    expect(container.querySelector('.import-input-supply-error')?.textContent).toContain('capital letters, digits and underscores')
+  })
+
+  // Two credentials that would share a name read two secrets.
+  it('numbers a second credential that wants a secret name another row chose', () => {
+    render(buildSharedValues([
+      candidate({ id: 'sv_token', name: 'apiToken', kind: 'source_variable', credential_shaped: true, current_value: undefined }),
+      candidate({ id: 'sv_token_snake', name: 'api_token', kind: 'source_variable', credential_shaped: true, current_value: undefined }),
+    ]))
+    select('Supply apiToken', 'secret')
+    select('Supply api_token', 'secret')
+    expect(fieldIn('Project secret for apiToken').value).toBe('API_TOKEN')
+    expect(fieldIn('Project secret for api_token').value).toBe('API_TOKEN_2')
+  })
+
+  // A re-import reads the secret the scripts it updates read, as the operator
+  // chose it before.
+  it('starts a credential from the project secret the updated scripts read', async () => {
+    listProjectSecretsMock.mockResolvedValue({ secrets: [{ name: 'ORDERS_KEY' }] })
+    render(buildSharedValues([candidate({ id: 'sv_token', name: 'apiToken', kind: 'source_variable', credential_shaped: true, current_value: undefined })]), {
+      previousInputs: { apiToken: { mode: 'secret', reference: '{{secret.ORDERS_KEY}}' } },
+      scripts: [{ ...script('get-users'), project_id: 'project-1' }],
+    })
+    await act(async () => { await Promise.resolve() })
+    expect(listProjectSecretsMock).toHaveBeenCalledWith('project-1')
+    expect(fieldIn('Project secret for apiToken').value).toBe('ORDERS_KEY')
+    expect(container.textContent).toContain('As the last import of these scripts supplied it.')
+    expect(container.textContent).not.toContain('The project already has')
+  })
+
+  // A collect-only panel has no supply control; it says where a credential is
+  // set.
+  it('points a credential-shaped candidate to the Credentials tab without a supply control', () => {
     render(buildSharedValues([candidate({
       id: 'sv_pw', name: 'password', kind: 'source_variable',
       credential_shaped: true, current_value: undefined,
-    })]))
+    })]), { collectOnly: true })
     expect(container.querySelector('#shared-value-sv_pw')).toBeNull()
     expect(container.textContent).toContain('Credentials tab')
   })

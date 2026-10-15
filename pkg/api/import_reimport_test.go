@@ -415,6 +415,7 @@ func TestReimportMatchCarriesTheEarlierInputChoices(t *testing.T) {
 				"customer":  map[string]any{"mode": "data", "alias": "customers", "column": "id"},
 				"region":    map[string]any{"mode": "value"},
 				"apiSecret": map[string]any{"mode": "value"},
+				"apiToken":  map[string]any{"mode": "secret", "reference": "{{secret.API_TOKEN}}"},
 			},
 		}}
 		script["parameters"] = []any{
@@ -445,6 +446,9 @@ func TestReimportMatchCarriesTheEarlierInputChoices(t *testing.T) {
 	}
 	if inputs["region"].Mode != "value" || inputs["region"].Value != "us-east" {
 		t.Errorf("region input = %+v, want the value for every user", inputs["region"])
+	}
+	if inputs["apiToken"].Mode != "secret" || inputs["apiToken"].Reference != "{{secret.API_TOKEN}}" {
+		t.Errorf("apiToken input = %+v, want its project secret offered again", inputs["apiToken"])
 	}
 	if _, leaked := inputs["apiSecret"]; leaked {
 		t.Error("a credential-shaped input was offered again")
