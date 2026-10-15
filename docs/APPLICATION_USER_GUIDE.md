@@ -522,8 +522,10 @@ never the values. Secret writes require an authorized human action: editors and
 project admins add project secrets (from Project secrets, the script editor's
 Configure secrets, or an import's credential setup), and project admins rotate them;
 viewers see the inventory and what uses each secret.
-Imports name each secret after its field or variable (`PASSWORD`, `X_API_KEY`); a
-second credential in the same import that wants the same name is numbered (`_2`).
+Imports name each secret after its field or variable: a Bruno collection uses the
+name alone (`PASSWORD`, `X_API_KEY`), and other formats put the format or the request
+in front (`POSTMAN_AUTHORIZATION`). A second credential in the same import that wants
+the same name is numbered (`_2`).
 A script from an older import can reference a name ending in a hashed identity; the
 editor's Secret bindings, Author Problems and Checks, and the script library show it by
 its readable name, with the exact name in the details or on hover. Shared assets lists
@@ -645,7 +647,9 @@ Once you have a recording:
 - **Parameterization review** suggests which recorded literals should become data-pool
   or template values, so the script drives varied data instead of one fixed path.
   **Generated values** are identifiers and time stamps a client makes up per request,
-  such as trace and message IDs, regenerated each iteration instead of replayed.
+  such as trace and message IDs, regenerated each iteration instead of replayed. An ID
+  that every request records with its own value (`X-Request-Id`) becomes one parameter
+  that is new each time it is sent.
 
 The result is an executable script you refine in the Script Editor just like a
 hand-authored one — and you should refine it. A raw recording replays one person's

@@ -18,7 +18,9 @@ package paramize
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -195,7 +197,9 @@ func Suggest(script *dsl.Script, opts Options) Result {
 		var generatedParts []string
 		for _, suggestion := range suggestions {
 			if suggestion.Kind == KindGenerated {
-				generatedParts = append(generatedParts, suggestion.LiteralValue)
+				for _, location := range suggestion.Locations {
+					generatedParts = append(generatedParts, location.SearchText)
+				}
 			}
 		}
 		dataAdvice, err := dataParamSuggestions(script, names, claimed, skipBodies, generatedParts)
@@ -328,13 +332,21 @@ func claimedValues(suggestions []Suggestion) map[string]bool {
 		if s.LiteralValue != "" {
 			claimed[s.LiteralValue] = true
 		}
+		if s.Kind == KindGenerated {
+			// One generated parameter can stand for several recorded values.
+			for _, location := range s.Locations {
+				if location.SearchText != "" {
+					claimed[location.SearchText] = true
+				}
+			}
+		}
 	}
 	return claimed
 }
 
 // nameRegistry hands out unique variable names, seeded with identifiers the
 // script already uses so suggestions never collide with existing parameters,
-// data sources, or extractors.
+// data sources, extractors, or variables the script reads.
 type nameRegistry struct {
 	taken map[string]bool
 }
@@ -364,8 +376,19 @@ func newNameRegistry(script *dsl.Script) *nameRegistry {
 		}
 		return nil
 	})
+	// A variable the script reads keeps its name even when nothing defines it,
+	// as with an input the source left unset: a suggestion under that name
+	// would supply the input with its own value, or define it twice.
+	if payload, err := json.Marshal(script); err == nil {
+		for _, match := range variableReferencePattern.FindAllSubmatch(payload, -1) {
+			registry.taken[string(match[1])] = true
+		}
+	}
 	return registry
 }
+
+// variableReferencePattern finds the name in a {{var.NAME}} reference.
+var variableReferencePattern = regexp.MustCompile(`\{\{\s*var\.([A-Za-z0-9_\-]+)`)
 
 func reserveExtractorNames(taken map[string]bool, raw any) {
 	reserve := func(value any) {

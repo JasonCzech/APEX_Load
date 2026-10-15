@@ -142,7 +142,12 @@ These suggestions start unchecked (confidence 0.6).
 for an identifier, hex runs of 16 or more characters, in header values, the query and the
 body (XML elements and attributes, JSON and form fields alike). Only the token is replaced,
 so a prefix such as `Partner~` or a trace header's flags stay as recorded, and a value used
-in several places is one parameter, so those places still agree. A generated time stamp
+in several places is one parameter, new each iteration, so those places still agree. Values
+recorded once each in the same kind of field of different requests (an `X-Request-Id` per
+request) share one parameter that is new each time it is sent (`update: each_occurrence`),
+rather than one parameter per request; two values in one request stay apart. A suggestion
+never takes the name of a variable the script reads, even one nothing defines yet (an input
+the source left unset). A generated time stamp
 keeps the recorded layout (fractional digits and zone style). A suggestion is pre-selected
 (confidence 0.85) when every place names a per-request identifier or a time stamp. A
 session, conversation, transaction or event ID (the target may already hold it), a GUID in

@@ -1,6 +1,7 @@
 package paramize
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -277,5 +278,117 @@ func TestGeneratedValuesAreOptIn(t *testing.T) {
 	})
 	if got := generatedOnly(Suggest(script, Options{EnableDataParams: true})); len(got) != 0 {
 		t.Errorf("suggestions without EnableGenerated = %+v", got)
+	}
+}
+
+// A request ID recorded once per request becomes one parameter that is new
+// each time it is sent, not one parameter per request; an ID two requests
+// share keeps its own parameter, so they still send the same value.
+func TestGeneratedValuesShareOneEachUseParameterAcrossRequests(t *testing.T) {
+	ids := []string{
+		"0a1b2c3d-1111-4aaa-8bbb-000000000001",
+		"0a1b2c3d-2222-4aaa-8bbb-000000000002",
+		"0a1b2c3d-3333-4aaa-8bbb-000000000003",
+	}
+	var actions []dsl.Action
+	for index, id := range ids {
+		actions = append(actions, dsl.Action{
+			Name: "call " + string(rune('a'+index)), Type: "http_request", Method: "GET", Target: "/orders",
+			HeaderList: dsl.HeaderList{
+				{Name: "X-Request-Id", Value: id},
+				{Name: "X-Conversation-Id", Value: testConversationID},
+				{Name: "idp-trace-id", Value: fmt.Sprintf("4bf92f3577b34da%d:a3ce929d0e0e473%d:0:1", index, index)},
+			},
+		})
+	}
+	script := generatedScript(actions...)
+	suggestions := suggestGenerated(script)
+	var perRequest, shared *Suggestion
+	var trace []Suggestion
+	for index := range suggestions {
+		switch suggestions[index].Locations[0].Field {
+		case "headers.idp-trace-id":
+			trace = append(trace, suggestions[index])
+		case "headers.X-Request-Id":
+			if perRequest != nil {
+				t.Fatalf("request IDs became more than one suggestion: %+v", suggestions)
+			}
+			perRequest = &suggestions[index]
+		case "headers.X-Conversation-Id":
+			shared = &suggestions[index]
+		}
+	}
+	if perRequest == nil || shared == nil {
+		t.Fatalf("suggestions = %+v", suggestions)
+	}
+	if len(perRequest.Locations) != 3 || perRequest.Parameter.Update != "each_occurrence" {
+		t.Fatalf("request ID suggestion = %+v, want 3 places and a parameter new each time", perRequest)
+	}
+	for index, location := range perRequest.Locations {
+		if location.SearchText != ids[index] || location.ReplaceText != perRequest.Replacement {
+			t.Errorf("location %d = %+v", index, location)
+		}
+	}
+	if strings.Contains(perRequest.Rationale, ids[0]) || !strings.Contains(perRequest.Rationale, "each of 3 places") {
+		t.Errorf("rationale = %q", perRequest.Rationale)
+	}
+	if len(shared.Locations) != 3 || shared.Parameter.Update != "each_iteration" {
+		t.Fatalf("shared ID suggestion = %+v, want its own parameter, new each iteration", shared)
+	}
+	// The trace header's trace IDs share one parameter and its span IDs another.
+	if len(trace) != 2 {
+		t.Fatalf("trace header suggestions = %+v, want one for the trace IDs and one for the span IDs", trace)
+	}
+	for _, suggestion := range trace {
+		if len(suggestion.Locations) != 3 || suggestion.Parameter.Update != "each_occurrence" {
+			t.Errorf("trace header suggestion = %+v, want 3 places, new each time", suggestion)
+		}
+	}
+	if trace[0].Locations[0].SearchText != "4bf92f3577b34da0" || trace[1].Locations[0].SearchText != "a3ce929d0e0e4730" {
+		t.Errorf("trace header groups = %q / %q, want the trace IDs first, then the span IDs",
+			trace[0].Locations[0].SearchText, trace[1].Locations[0].SearchText)
+	}
+
+	applied, diffs, err := ApplySuggestions(script, suggestions, map[string]bool{perRequest.ID: true, shared.ID: true})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(applied.Parameters) != 2 {
+		t.Fatalf("parameters = %+v, want one per suggestion", applied.Parameters)
+	}
+	for index, action := range applied.Actions {
+		if got := action.HeaderList[0].Value; got != perRequest.Replacement {
+			t.Errorf("request %d X-Request-Id = %q", index, got)
+		}
+	}
+	found := false
+	for _, diff := range diffs {
+		if diff.Kind == "parameter_added" && strings.Contains(diff.After, "new each time it is sent") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("diffs = %+v, want the each-use parameter described", diffs)
+	}
+}
+
+// A suggestion never takes the name of a variable the script reads, even one
+// nothing defines (an input the source left unset): it would supply that
+// input with its own value.
+func TestGeneratedValuesAvoidAVariableTheScriptReads(t *testing.T) {
+	script := generatedScript(dsl.Action{
+		Name: "one", Type: "http_request", Method: "POST", Target: "/orders",
+		HeaderList: dsl.HeaderList{{Name: "X-Trace", Value: "{{var.trace_id}}"}},
+		Body:       `{"trace_id": "` + testMessageID + `"}`,
+	})
+	suggestions := suggestGenerated(script)
+	if len(suggestions) != 1 {
+		t.Fatalf("suggestions = %+v", suggestions)
+	}
+	if suggestions[0].VarName == "trace_id" {
+		t.Fatalf("the generated value took trace_id, the name of an input the script reads")
+	}
+	if suggestions[0].VarName != "trace_id_2" {
+		t.Errorf("var name = %q, want trace_id_2", suggestions[0].VarName)
 	}
 }

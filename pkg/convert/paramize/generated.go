@@ -260,6 +260,8 @@ type generatedGroup struct {
 	confident bool
 	key       string
 	place     string
+	// base is the name the parameter is claimed under when it is emitted.
+	base string
 }
 
 func newGeneratedCollector(names *nameRegistry, claimed map[string]bool) *generatedCollector {
@@ -294,51 +296,127 @@ func (c *generatedCollector) add(rule, value, key, place, section string, index 
 		return
 	}
 	c.seen[locationKey] = true
+	location := Location{
+		Section: section, ActionIndex: index, ActionName: action.Name, Field: field,
+		SearchText: value,
+	}
 	if group, ok := c.grouped[value]; ok {
 		group.confident = group.confident && confident
-		group.suggestion.Locations = append(group.suggestion.Locations, Location{
-			Section: section, ActionIndex: index, ActionName: action.Name, Field: field,
-			SearchText: value, ReplaceText: group.suggestion.Replacement,
-		})
+		group.suggestion.Locations = append(group.suggestion.Locations, location)
 		return
 	}
 	base := key
 	if base == "" {
 		base = map[string]string{generatedRuleUUID: "generated_id", generatedRuleHex: "generated_id", generatedRuleTimestamp: "generated_time"}[rule]
 	}
-	varName := c.names.claim(base)
-	template := "{{var." + varName + "}}"
 	c.grouped[value] = &generatedGroup{
 		confident: confident,
 		key:       key,
 		place:     place,
+		base:      base,
 		suggestion: Suggestion{
 			Kind:         KindGenerated,
-			VarName:      varName,
-			Replacement:  template,
 			LiteralValue: value,
 			SampleValue:  truncateValue(value),
-			Locations: []Location{{
-				Section: section, ActionIndex: index, ActionName: action.Name, Field: field,
-				SearchText: value, ReplaceText: template,
-			}},
-			RuleID:    rule,
-			Parameter: generatedParameter(rule, varName, value),
+			Locations:    []Location{location},
+			RuleID:       rule,
 		},
 	}
 	c.order = append(c.order, value)
 }
 
+// generatedEachUseKey groups values recorded once each in the same kind of
+// field, written the same way: a per-request ID such as X-Request-Id.
+type generatedEachUseKey struct {
+	rule, place, format string
+	confident           bool
+	// ordinal is the value's place among the same kind of values in its
+	// request: a trace header's trace ID shares with the other trace IDs, its
+	// span ID with the other span IDs.
+	ordinal int
+}
+
 func (c *generatedCollector) suggestions() []Suggestion {
+	// A value recorded once has no other use to stay equal to. Values recorded
+	// once each in the same kind of field of different requests share one
+	// parameter that is new each time it is sent: every request still sends its
+	// own value, and a recording with an ID per request gets one parameter
+	// rather than one per request. Two values in one request (a trace and a span
+	// ID) stay apart, and a value used in several places keeps its own
+	// parameter, new each iteration, so those uses stay equal.
+	eachUse := map[generatedEachUseKey][]*generatedGroup{}
+	ordinals := map[*generatedGroup]int{}
+	kindOf := func(group *generatedGroup) (generatedEachUseKey, bool) {
+		if len(group.suggestion.Locations) != 1 {
+			return generatedEachUseKey{}, false
+		}
+		shape := generatedParameter(group.suggestion.RuleID, "", group.suggestion.LiteralValue)
+		return generatedEachUseKey{
+			rule:      group.suggestion.RuleID,
+			place:     group.place,
+			format:    fmt.Sprintf("%s|%s|%d|%s", shape.Type, shape.Format, shape.Length, shape.Charset),
+			confident: group.confident,
+		}, true
+	}
+	keyOf := func(group *generatedGroup) (generatedEachUseKey, bool) {
+		key, single := kindOf(group)
+		key.ordinal = ordinals[group]
+		return key, single
+	}
+	seenInAction := map[generatedEachUseKey]map[string]int{}
+	for _, value := range c.order {
+		group := c.grouped[value]
+		key, single := kindOf(group)
+		if !single {
+			continue
+		}
+		location := group.suggestion.Locations[0]
+		action := fmt.Sprintf("%s|%d", location.Section, location.ActionIndex)
+		if seenInAction[key] == nil {
+			seenInAction[key] = map[string]int{}
+		}
+		ordinals[group] = seenInAction[key][action]
+		seenInAction[key][action]++
+		key.ordinal = ordinals[group]
+		eachUse[key] = append(eachUse[key], group)
+	}
 	out := make([]Suggestion, 0, len(c.order))
+	emitted := map[generatedEachUseKey]bool{}
 	for _, value := range c.order {
 		group := c.grouped[value]
 		suggestion := group.suggestion
+		suggestion.Locations = append([]Location(nil), suggestion.Locations...)
+		members := []*generatedGroup{group}
+		key, single := keyOf(group)
+		shared := single && len(eachUse[key]) > 1
+		if shared {
+			if emitted[key] {
+				continue
+			}
+			emitted[key] = true
+			members = eachUse[key]
+			suggestion.Locations = suggestion.Locations[:0]
+			for _, member := range members {
+				suggestion.Locations = append(suggestion.Locations, member.suggestion.Locations...)
+			}
+		}
+		varName := c.names.claim(group.base)
+		suggestion.VarName = varName
+		suggestion.Replacement = "{{var." + varName + "}}"
+		for index := range suggestion.Locations {
+			suggestion.Locations[index].ReplaceText = suggestion.Replacement
+		}
+		suggestion.Parameter = generatedParameter(suggestion.RuleID, varName, suggestion.LiteralValue)
 		suggestion.Confidence = generatedReviewConfidence
 		if group.confident {
 			suggestion.Confidence = generatedConfidence
 		}
-		suggestion.Rationale = generatedRationale(suggestion.RuleID, group.place, group.confident, len(suggestion.Locations))
+		if shared {
+			suggestion.Parameter.Update = "each_occurrence"
+			suggestion.Rationale = generatedEachUseRationale(suggestion.RuleID, group.place, group.confident, len(members))
+		} else {
+			suggestion.Rationale = generatedRationale(suggestion.RuleID, group.place, group.confident, len(suggestion.Locations))
+		}
 		out = append(out, suggestion)
 	}
 	return out
@@ -370,6 +448,31 @@ func generatedRationale(rule, place string, confident bool, occurrences int) str
 			text += " Leave it if the date means something to the target, such as a range or a birth date."
 		default:
 			text += " Leave it if the target expects this exact value, such as a conversation, account or session it already holds."
+		}
+	}
+	return text
+}
+
+// generatedEachUseRationale explains one parameter shared by values each
+// recorded once in the same kind of field.
+func generatedEachUseRationale(rule, place string, confident bool, places int) string {
+	what := map[string]string{
+		generatedRuleUUID:      "a new UUID",
+		generatedRuleHex:       "a new random hex value of the same length",
+		generatedRuleTimestamp: "the current time in the same format",
+	}[rule]
+	recorded := map[string]string{
+		generatedRuleUUID:      "UUID",
+		generatedRuleHex:       "hex identifier",
+		generatedRuleTimestamp: "time",
+	}[rule]
+	text := fmt.Sprintf("The %s holds a different recorded %s in each of %d places, and each is sent again as recorded. Generate %s each time one is sent.", place, recorded, places, what)
+	if !confident {
+		switch rule {
+		case generatedRuleTimestamp:
+			text += " Leave it if the dates mean something to the target, such as a range or a birth date."
+		default:
+			text += " Leave it if the target expects these exact values, such as conversations, accounts or sessions it already holds."
 		}
 	}
 	return text

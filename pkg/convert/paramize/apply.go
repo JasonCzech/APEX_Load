@@ -872,11 +872,15 @@ func materializeGeneratedParameter(script *dsl.Script, suggestion Suggestion) (D
 	}
 	param := *suggestion.Parameter
 	script.Parameters = append(script.Parameters, param)
+	when := "new each iteration"
+	if param.Update == "each_occurrence" {
+		when = "new each time it is sent"
+	}
 	return Diff{
 		SuggestionID: suggestion.ID,
 		Kind:         "parameter_added",
 		Path:         "/parameters",
-		After:        fmt.Sprintf("%s -> %s, new each iteration", param.Name, param.Type),
+		After:        fmt.Sprintf("%s -> %s, %s", param.Name, param.Type, when),
 	}, true
 }
 
