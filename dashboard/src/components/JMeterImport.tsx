@@ -894,7 +894,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
             onEdit={onEdit && primaryScript && result.scripts.length === 1 && !savedResult ? handleEditConverted : undefined}
             editLabel={editRequiresCredentialPreservingSave ? 'Save and open in Visual Editor' : 'Open draft in Visual Editor'}
             previewTitle="Import Preview"
-            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={primaryScript} title="Source Comparison" /> : undefined}
+            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={primaryScript} projectId={projectId} title="Source Comparison" /> : undefined}
           >
 
 

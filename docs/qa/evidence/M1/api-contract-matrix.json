@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 762,
+    "routes": 763,
     "public": 31,
-    "protected": 731,
-    "rbac": 726,
+    "protected": 732,
+    "rbac": 727,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 762,
+    "green": 763,
     "partial": 0,
     "missing": 0
   },
@@ -9040,6 +9040,33 @@
       "method": "GET",
       "path": "/api/v1/projects/{id}/shared-asset-usage",
       "operation_id": "handleSharedAssetUsage",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/source-review/texts/{sha256}",
+      "operation_id": "handleGetSourceReviewText",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

@@ -372,6 +372,9 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/recording/status", viewerProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/imports/source", editorProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/imports/revisions", viewerProjectAccess(resolveScriptProjectID)),
+	// Full text of a truncated source file a review names by hash; readable by
+	// whoever can read the project's scripts, before or after the import is saved.
+	routeAuth(http.MethodGet, "/api/v1/projects/{id}/source-review/texts/{sha256}", viewerProjectAccess(resolveProjectIDFromPath)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/imports/rollback", editorProjectAccess(resolveScriptProjectID)),
 	// Legacy aliases. An entry missing here does not merely lose a name: the
 	// route would resolve to the default access policy instead of the intended

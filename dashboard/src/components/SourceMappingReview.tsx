@@ -21,6 +21,7 @@ import { useCodeLineWrapPreference } from './codeLineWrapPreference'
 import { scrollMappingRowIntoTableView } from './sourceMappingScroll'
 import { buildDslDocument, lineRangeForTargetPath } from './dslJsonPointers'
 import { ImportSourceIssueFocusContext, type ImportSourceIssueFocus } from './ImportSourceIssueFocus'
+import { type SourceReviewFullText, useSourceReviewFullText } from './useSourceReviewFullText'
 import {
   type MappingCategory,
   type SourceFilePathResolver,
@@ -56,6 +57,8 @@ interface Props {
   focusedMappingId?: string
   id?: string
   onToggleWorkspaceMaximized?: () => void
+  /** Project the review's full source texts load from; defaults to the script's. */
+  projectId?: string
   showTitle?: boolean
   sourceReview?: SourceReview | null
   script?: ScriptDefinition | null
@@ -137,7 +140,7 @@ function issueSourceTarget(
   const file = exactFile || (basenameMatches.length === 1 ? basenameMatches[0] : files.length === 1 ? files[0] : null)
   const lineText = /\bline\s*:?\s*(\d+)\b/i.exec(evidence)?.[1] || /:(\d+)\b/.exec(focus.source)?.[1]
   const line = lineText ? Number(lineText) : 0
-  const validLine = file && line > 0 && line <= file.content.split('\n').length ? line : 0
+  const validLine = file && line > 0 && line <= (file.full_lines || sourceTextLineCount(file.content, file.truncated)) ? line : 0
   // Several unrelated mappings can share a source line. Only select a mapping
   // when the finding explicitly identifies it; otherwise show the source line.
   const mapping = mappings.find(item =>
@@ -192,6 +195,39 @@ function formatSourceRange(mapping?: SourceReviewMapping | null) {
   return `${mapping.source_file}:${mapping.start_line}`
 }
 
+// A truncated preview ends with this marker, which is not source.
+const TRUNCATED_PREVIEW_MARKER = '\n\n[truncated for source review]'
+
+/** Lines of source a review file's text holds, as the code view counts them. */
+function sourceTextLineCount(text: string, truncated?: boolean) {
+  const source = truncated && text.endsWith(TRUNCATED_PREVIEW_MARKER) ? text.slice(0, -TRUNCATED_PREVIEW_MARKER.length) : text
+  return source.split(/\r\n|\r|\n/).length
+}
+
+// Files larger than this are never kept in full (sourceview.MaxFullTextBytes).
+const MAX_FULL_TEXT_BYTES = 16 << 20
+
+/** What the source pane says about text it cannot show yet, or at all. */
+function sourceTextLimitNote(
+  file: SourceReviewFile | null,
+  fullText: SourceReviewFullText,
+  loadedLines: number,
+  line: number | undefined,
+  hasProject: boolean,
+) {
+  if (!file?.truncated) return ''
+  if (fullText.status === 'loading') {
+    return `Loading all ${(file.full_lines || 0).toLocaleString()} lines of ${file.path}. Until then this shows the first ${loadedLines.toLocaleString()}.`
+  }
+  if (!line || line <= loadedLines) return ''
+  if (fullText.status === 'ready') return `Line ${line.toLocaleString()} is past the end of ${file.path}, which has ${loadedLines.toLocaleString()} lines.`
+  const past = `Line ${line.toLocaleString()} is past the first ${loadedLines.toLocaleString()} lines kept of ${file.path}`
+  if (fullText.status === 'unavailable') return `${past}, and the full file could not be loaded: ${fullText.message}`
+  if (file.full_sha256 && !hasProject) return `${past}. The full file is stored with its project, which this view does not name.`
+  if ((file.original_bytes || 0) > MAX_FULL_TEXT_BYTES) return `${past}. The file is too large to keep in full (over 16 MB); inspect it in the original source.`
+  return `${past}. This import kept only the preview; inspect the line in the original source.`
+}
+
 function excerptFromText(text: string, startLine?: number, endLine?: number) {
   if (!text || !startLine) return ''
   const lines = text.split('\n')
@@ -219,6 +255,7 @@ export default function SourceMappingReview({
   focusedSourceFile = '',
   id,
   onToggleWorkspaceMaximized,
+  projectId: projectIdProp,
   showTitle = true,
   sourceReview,
   script: providedScript,
@@ -235,6 +272,9 @@ export default function SourceMappingReview({
     [sourceReview],
   )
   const truncatedFiles = files.filter(file => file.truncated)
+  // A truncated file with a stored full text opens in full, so only the rest
+  // stay limited to their preview.
+  const previewOnlyFiles = truncatedFiles.filter(file => !file.full_sha256)
   const isJavaVuserReview = script?.protocol?.trim().toLowerCase() === 'java_vuser'
   const javaSourceManifest = javaVuserSourceManifest(script)
   const sourceFilePaths = useMemo(() => files.map(file => file.path), [files])
@@ -339,6 +379,21 @@ export default function SourceMappingReview({
       : findSourceFile(files, selectedMapping?.source_file, sourcePathResolver),
     [files, selectedFilePath, selectedMapping?.source_file, sourcePathResolver, unmappedIssueFocus],
   )
+  // A truncated file a mapping opens loads its full text when selected, so any
+  // mapped line can be shown. Until then (or without it) the pane keeps the
+  // preview.
+  const projectId = projectIdProp || providedScript?.project_id || baselineScript?.project_id
+  const fullText = useSourceReviewFullText(projectId, selectedFile)
+  const sourceText = fullText.status === 'ready' ? fullText.content : selectedFile?.content || ''
+  const loadedSourceLines = fullText.status === 'ready' ? fullText.lines : sourceTextLineCount(sourceText, selectedFile?.truncated)
+  // The selection may only exist in the full text, so reveal it once that
+  // text arrives.
+  const fullTextReadyKey = fullText.status === 'ready' && selectedFile ? `${selectedFile.path}:${selectedFile.full_sha256}` : ''
+  const [revealedFullTextKey, setRevealedFullTextKey] = useState('')
+  if (fullTextReadyKey && fullTextReadyKey !== revealedFullTextKey) {
+    setRevealedFullTextKey(fullTextReadyKey)
+    setRevealRequestId(value => value + 1)
+  }
 
   const destinationScript = destinationView === 'baseline' ? identity.state?.snapshot : script
   const dslDocument = useMemo(() => (destinationScript ? buildDslDocument(destinationScript) : null), [destinationScript])
@@ -631,7 +686,8 @@ export default function SourceMappingReview({
   const destinationPath = noOriginTarget || (destinationView === 'baseline' ? selectedMapping?.target_path : selectedMapping ? identity.resolved[selectedMapping.id]?.path : undefined)
   const dslActiveRange = dslDocument ? lineRangeForTargetPath(dslDocument.ranges, destinationPath) : null
 
-  const sourceExcerpt = excerptFromText(selectedFile?.content || '', sourceActiveRange?.startLine, sourceActiveRange?.endLine)
+  const sourceExcerpt = excerptFromText(sourceText, sourceActiveRange?.startLine, sourceActiveRange?.endLine)
+  const sourceTextNote = sourceTextLimitNote(selectedFile, fullText, loadedSourceLines, sourceActiveRange?.startLine, Boolean(projectId))
   const dslExcerpt = excerptFromText(dslDocument?.text || '', dslActiveRange?.startLine, dslActiveRange?.endLine)
   const copySupported = canCopyTextToClipboard()
 
@@ -717,7 +773,7 @@ export default function SourceMappingReview({
 
       {sourceOnly && <p role="note">These mappings describe the original import before native transformations. Source navigation and conversion coverage refer to that captured import.</p>}
 
-      {(omittedFiles.length > 0 || truncatedFiles.length > 0 || unaccountedFiles > 0) && (
+      {(omittedFiles.length > 0 || previewOnlyFiles.length > 0 || unaccountedFiles > 0 || isBoundedJavaPreview) && (
         <aside className="source-map-incomplete" role="note" aria-label="Source preview limits">
           <strong>Preview limits only — not an import issue</strong>
           <p>Preview limits do not truncate the imported script or remove data from the import. Any conversion issues are reported separately.</p>
@@ -731,11 +787,11 @@ export default function SourceMappingReview({
                 : 'The immutable full Java source manifest is missing; re-import before approval.'}
             </p>
           )}
-          {(omittedFiles.length > 0 || truncatedFiles.length > 0) && (
+          {(omittedFiles.length > 0 || previewOnlyFiles.length > 0) && (
             <details className="source-map-preview-files">
-              <summary>View files with limited previews ({omittedFiles.length + truncatedFiles.length})</summary>
+              <summary>View files with limited previews ({omittedFiles.length + previewOnlyFiles.length})</summary>
               <ul aria-label="Files with limited previews">
-                {truncatedFiles.map(file => (
+                {previewOnlyFiles.map(file => (
                   <li key={file.path}>
                     <code className="source-map-preview-path">{file.path}</code>
                     <span className="source-map-preview-status">Shortened in preview</span>
@@ -771,7 +827,7 @@ export default function SourceMappingReview({
             {!selectedFile && <option value="">No unambiguous source file</option>}
             {sourceFileOptions.map(file => (
               <option key={file.path} value={file.path}>
-                {file.path}{file.truncated ? ' (truncated)' : ''}
+                {file.path}{file.truncated && !file.full_sha256 ? ' (truncated)' : ''}
               </option>
             ))}
           </select>
@@ -903,16 +959,17 @@ export default function SourceMappingReview({
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('source', sourceExcerpt)} disabled={!copySupported || !sourceExcerpt}>
                 {copied === 'source' ? 'Copied' : 'Copy mapped source'}
               </button>
-              <button type="button" className="btn btn-sm btn-ghost" disabled={!copySupported || !selectedFile} onClick={() => void copyValue('source', selectedFile?.content || '')}>Copy whole source file</button>
+              <button type="button" className="btn btn-sm btn-ghost" disabled={!copySupported || !selectedFile} onClick={() => void copyValue('source', sourceText)}>Copy whole source file</button>
               {!sourceOnly && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'source' ? null : 'source')}>
                 {maximizedPane === 'source' ? 'Return to comparison' : 'Expand source'}
               </button>}
             </div>
           </div>
+          {selectedFile && !noOriginTarget && sourceTextNote && <p className="source-map-text-limit" role="status">{sourceTextNote}</p>}
           {selectedFile && !noOriginTarget ? (
             <Suspense fallback={<PaneFallback />}>
               <LinkedCodePane
-                value={selectedFile.content}
+                value={sourceText}
                 language={selectedFile.language}
                 searchQuery={filter}
                 gutterStatuses={sourceGutter}

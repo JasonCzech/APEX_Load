@@ -850,6 +850,19 @@ export interface SourceReviewFile {
   original_bytes?: number
   truncated?: boolean
   redacted?: boolean
+  /** Hash of the complete text of a truncated file a mapping opens, stored
+   * beside the project's import assets and loaded on demand. */
+  full_sha256?: string
+  full_bytes?: number
+  full_lines?: number
+}
+
+/** GET /projects/{id}/source-review/texts/{sha256}: a source file's full text. */
+export interface SourceReviewText {
+  sha256: string
+  size_bytes: number
+  lines: number
+  content: string
 }
 
 export interface SourceReviewMapping {

@@ -83366,6 +83366,87 @@ paths:
       tags:
         - Projects
       x-handler: handleSharedAssetUsage
+  /api/v1/projects/{id}/source-review/texts/{sha256}:
+    get:
+      summary: Get Source Review Text
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleGetSourceReviewText
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: string
+                  lines:
+                    type: integer
+                    format: int64
+                  sha256:
+                    type: string
+                  size_bytes:
+                    type: integer
+                    format: int64
+                required:
+                  - content
+                  - lines
+                  - sha256
+                  - size_bytes
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sha256
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: If-None-Match
+          in: header
+          description: Handler-read request header; whether it is required can depend on authentication mode or operation state.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleGetSourceReviewText
   /api/v1/projects/{id}/telemetry-policy:
     put:
       summary: Update Project Telemetry Policy

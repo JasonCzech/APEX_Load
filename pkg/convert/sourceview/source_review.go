@@ -16,6 +16,10 @@ import (
 const (
 	MaxFiles     = 20
 	MaxFileChars = 60000
+	// MaxFullTextBytes bounds the untruncated text kept for one mapped file
+	// whose preview was cut at MaxFileChars. The import API stores that text
+	// outside the script and records it as FullSHA256.
+	MaxFullTextBytes = 16 << 20
 )
 
 var mappingIDUnsafeChars = regexp.MustCompile(`[^a-z0-9_.\[\]-]+`)
@@ -39,6 +43,15 @@ type SourceFile struct {
 	OriginalBytes int    `json:"original_bytes"`
 	Truncated     bool   `json:"truncated,omitempty"`
 	Redacted      bool   `json:"redacted,omitempty"`
+	// FullSHA256 names the complete decoded text of a truncated file that a
+	// mapping opens, stored outside the script so the review can load it on
+	// demand. FullBytes and FullLines describe that text.
+	FullSHA256 string `json:"full_sha256,omitempty"`
+	FullBytes  int    `json:"full_bytes,omitempty"`
+	FullLines  int    `json:"full_lines,omitempty"`
+	// FullText carries that complete text from the converter to the import
+	// API, which stores it and clears this field. It is never serialized.
+	FullText string `json:"-"`
 }
 
 type Mapping struct {
@@ -304,7 +317,13 @@ func buildFiles(files map[string]string, mappings []Mapping) ([]SourceFile, int,
 			content = decoded
 		}
 		truncated := false
+		fullText := ""
 		if len(content) > MaxFileChars {
+			// A mapping can point anywhere in the file, so keep the whole text
+			// of a mapped file for the API to store beside the review.
+			if fileReferenced(name, referenced) && len(content) <= MaxFullTextBytes {
+				fullText = content
+			}
 			end := MaxFileChars
 			for end > 0 && !utf8.RuneStart(content[end]) {
 				end--
@@ -319,12 +338,15 @@ func buildFiles(files map[string]string, mappings []Mapping) ([]SourceFile, int,
 			OriginalBytes: len([]byte(raw)),
 			Truncated:     truncated,
 			Redacted:      false,
+			FullText:      fullText,
 		})
 	}
 	return out, totalSourceFiles, omittedSourceFiles
 }
 
-func shouldIncludeFile(name string, referenced map[string]struct{}) bool {
+// fileReferenced reports whether a review mapping opens the named file, by
+// its path or its logical base name.
+func fileReferenced(name string, referenced map[string]struct{}) bool {
 	lower := strings.ToLower(strings.TrimSpace(name))
 	if lower == "" {
 		return false
@@ -332,7 +354,16 @@ func shouldIncludeFile(name string, referenced map[string]struct{}) bool {
 	if _, ok := referenced[lower]; ok {
 		return true
 	}
-	if _, ok := referenced[strings.ToLower(archiveingest.LogicalBase(lower))]; ok {
+	_, ok := referenced[strings.ToLower(archiveingest.LogicalBase(lower))]
+	return ok
+}
+
+func shouldIncludeFile(name string, referenced map[string]struct{}) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	if lower == "" {
+		return false
+	}
+	if fileReferenced(name, referenced) {
 		return true
 	}
 	switch archiveingest.LogicalExt(lower) {

@@ -4947,7 +4947,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           </div>
           <JavaDependencyInventory metadata={reviewArtifact.metadata} />
           {sourceReview && (
-            <SourceMappingReview sourceReview={sourceReview} script={null} />
+            <SourceMappingReview sourceReview={sourceReview} script={null} projectId={projectId} />
           )}
         </div>
       )}
@@ -5158,7 +5158,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             previewData={importedScript}
             previewInitiallyOpen
             previewAside={sourceReview
-              ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} repairPaths={allTabIssues.flatMap(issue => issue.findings.flatMap(f => f.action_path ? [f.action_path] : []))} onRepairTarget={path => { setIssueFocus(previous => ({ path, revision: previous.revision + 1 })); setValidationReviewTab('overview') }} focusedSourceFile={repairSourceFocus.file} focusedMappingId={repairSourceFocus.id} focusRequestId={repairSourceFocus.revision} />
+              ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} projectId={projectId} repairPaths={allTabIssues.flatMap(issue => issue.findings.flatMap(f => f.action_path ? [f.action_path] : []))} onRepairTarget={path => { setIssueFocus(previous => ({ path, revision: previous.revision + 1 })); setValidationReviewTab('overview') }} focusedSourceFile={repairSourceFocus.file} focusedMappingId={repairSourceFocus.id} focusRequestId={repairSourceFocus.revision} />
               : <div className="lr-review-tab-empty">No source mapping was generated for this archive.</div>}
             showPreview={validationReviewTab === 'dsl'}
             showPreviewAside={validationReviewTab === 'source'}

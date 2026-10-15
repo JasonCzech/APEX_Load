@@ -2517,7 +2517,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             sourceFocusRequest={auraSourceFocus}
             previewAside={kind === 'recorder-export'
               ? <SelectorCandidatesReview script={reviewedScript} onPromoteCandidate={handlePromoteRecorderCandidate} />
-              : sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
+              : sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} projectId={projectId} title="Source Comparison" /> : undefined}
           >
             {kind === 'recorder-export' && (
               <RecorderStepMappingReview summary={result.summary as Record<string, unknown> | undefined} />

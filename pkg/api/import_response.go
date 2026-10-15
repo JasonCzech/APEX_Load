@@ -833,6 +833,10 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 	if opts.textMemo == nil {
 		opts.textMemo = &importProjectionTextMemo{}
 	}
+	// Store the full text of truncated, mapped source files first: the source
+	// reviews record each text's hash, and they are part of the drafts
+	// fingerprinted below.
+	s.retainImportResponseSourceTexts(r, &opts)
 	protectedRequirements := opts.ProtectedRequirements
 	defer clearCredentialRequirementValues(protectedRequirements)
 	scriptsForCredentialReview := uniqueImportDraftScripts(importDraftScriptPointers(opts.Script, opts.Scripts))

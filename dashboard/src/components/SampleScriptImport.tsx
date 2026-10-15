@@ -1419,7 +1419,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
             onSave={handleSave}
             onEdit={onEdit && !savedResult ? handleEdit : undefined}
             editLabel={editRequiresCredentialPreservingSave ? 'Save and open in Visual Editor' : 'Open draft in Visual Editor'}
-            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
+            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} projectId={projectId} title="Source Comparison" /> : undefined}
           >
             {replayPreflight && (
               <div className="sample-import-preflight">

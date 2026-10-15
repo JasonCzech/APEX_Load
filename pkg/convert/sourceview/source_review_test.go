@@ -1,6 +1,7 @@
 package sourceview
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -197,5 +198,41 @@ func TestBuildExactMappingPathsTakePriorityOverBasenameAliases(t *testing.T) {
 		if !strings.HasPrefix(file.Path, "nested/") {
 			t.Fatal("unreferenced basename alias received exact mapping priority")
 		}
+	}
+}
+
+func TestBuildKeepsFullTextOnlyForTruncatedMappedFiles(t *testing.T) {
+	long := strings.Repeat("web_url(\"step\", LAST);\n", MaxFileChars/5)
+	review := Build(map[string]string{
+		"Action.c":     long,
+		"pre_cci.c":    long,
+		"vuser_init.c": "lr_start_transaction(\"t\");\n",
+	}, []Mapping{
+		{SourceFile: "Action.c", StartLine: 5000, Function: "web_url", Status: "converted"},
+		{SourceFile: "vuser_init.c", StartLine: 1, Function: "lr_start_transaction", Status: "converted"},
+	})
+	files := map[string]SourceFile{}
+	for _, file := range review.SourceFiles {
+		files[file.Path] = file
+	}
+	if action := files["Action.c"]; !action.Truncated || action.FullText != long {
+		t.Fatalf("Action.c truncated=%v full text kept=%v, want the whole mapped file kept", action.Truncated, action.FullText == long)
+	}
+	if extra := files["pre_cci.c"]; !extra.Truncated || extra.FullText != "" {
+		t.Fatalf("pre_cci.c full text kept=%v, want only mapped files kept", extra.FullText != "")
+	}
+	if small := files["vuser_init.c"]; small.Truncated || small.FullText != "" {
+		t.Fatalf("vuser_init.c truncated=%v full text kept=%v, want a whole preview and no copy", small.Truncated, small.FullText != "")
+	}
+	encoded, err := json.Marshal(review)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two previews serialize; the full text, twice their size, must not.
+	if len(encoded) >= len(long) {
+		t.Fatalf("serialized review is %d bytes, at least the %d-byte full text", len(encoded), len(long))
+	}
+	if strings.Contains(string(encoded), "FullText") || strings.Contains(string(encoded), "full_text") {
+		t.Fatal("serialized review names the in-memory full text")
 	}
 }

@@ -199,6 +199,9 @@ func sourceReviewFilesValue(value any) []enterprisearchive.SourceReviewFile {
 				OriginalBytes: intValue(mapping["original_bytes"]),
 				Truncated:     boolValue(mapping["truncated"]),
 				Redacted:      boolValue(mapping["redacted"]),
+				FullSHA256:    stringValue(mapping["full_sha256"]),
+				FullBytes:     intValue(mapping["full_bytes"]),
+				FullLines:     intValue(mapping["full_lines"]),
 			}
 			if file.Path == "" {
 				continue

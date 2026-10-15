@@ -3966,6 +3966,16 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/source-review/texts/{sha256}",
+      "operationId": "handleGetSourceReviewText",
+      "summary": "Get Source Review Text",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
       "method": "PUT",
       "path": "/api/v1/projects/{id}/telemetry-policy",
       "operationId": "handleUpdateProjectTelemetryPolicy",

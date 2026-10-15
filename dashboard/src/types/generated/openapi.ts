@@ -82845,6 +82845,58 @@ export interface operations {
       };
     };
   };
+  "handleGetSourceReviewText": {
+    parameters: {
+      "path": {
+        "id": string;
+        "sha256": string;
+      };
+      "header"?: {
+        "If-None-Match"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "content": string;
+            "lines": number;
+            "sha256": string;
+            "size_bytes": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetSystemInventory": {
     parameters?: never;
     requestBody?: never;
@@ -182882,6 +182934,9 @@ export interface paths {
   };
   "/api/v1/projects/{id}/shared-asset-usage": {
     "get": operations["handleSharedAssetUsage"];
+  };
+  "/api/v1/projects/{id}/source-review/texts/{sha256}": {
+    "get": operations["handleGetSourceReviewText"];
   };
   "/api/v1/projects/{id}/telemetry-policy": {
     "put": operations["handleUpdateProjectTelemetryPolicy"];

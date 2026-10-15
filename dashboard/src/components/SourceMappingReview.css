@@ -522,6 +522,7 @@
 .source-map-workspace { display: grid; gap: 12px; min-width: 0; }
 .source-map-comparison { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .source-map-issue-focus { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); background: var(--surface-raised, transparent); }
+.source-map-text-limit { margin: 6px 8px 0; padding: 6px 10px; border-left: 3px solid var(--accent); border-radius: 4px; color: var(--text-secondary); background: var(--bg-secondary); font-size: 12px; }
 .source-map-view-options { font-size: 12px; }
 .source-map-view-options > summary { cursor: pointer; color: var(--text-secondary); }
 .source-map-view-options .source-map-review-controls { margin-top: 8px; border: 0; padding: 0; }

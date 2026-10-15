@@ -1206,6 +1206,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	// handler with the same authorization -- see TestImportRouteAliasesMatch.
 	s.mux.Handle("GET /api/v1/scripts/{id}/imports/source", cors(log(auth(http.HandlerFunc(s.handleGetImportSource)))))
 	s.mux.Handle("GET /api/v1/scripts/{id}/imports/revisions", cors(log(auth(http.HandlerFunc(s.handleListImportSourceRevisions)))))
+	s.mux.Handle("GET /api/v1/projects/{id}/source-review/texts/{sha256}", cors(log(auth(http.HandlerFunc(s.handleGetSourceReviewText)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/imports/rollback", cors(log(auth(http.HandlerFunc(s.handleRollbackImportSource)))))
 	// The bruno-imports/* paths predate source retention generalizing to every
 	// importer. They stay as aliases for existing clients.
