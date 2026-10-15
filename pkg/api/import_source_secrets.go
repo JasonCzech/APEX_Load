@@ -188,10 +188,12 @@ func extractProjectedRedactions(raw, projected string) ([]string, bool) {
 	if values, ok := extractLinearlyProjectedRedactions(raw, projected); ok {
 		return values, true
 	}
-	// JSON request bodies are structurally projected and then marshaled, which
-	// intentionally canonicalizes whitespace and object-key order. Fall back to
-	// a structural comparison so ordinary formatted JSON remains migratable
-	// without weakening the unique-alignment rule for free-form strings.
+	// A JSON body whose projection does not line up byte for byte (a nested
+	// JSON string the projection had to re-encode whole because its spans
+	// could not be spliced) can still pair its sentinels with recorded values
+	// by structure, without weakening the unique-alignment rule for free-form
+	// strings. Such values can be kept or migrated but not rebound: binding
+	// splices with the linear alignment.
 	return extractStructurallyProjectedJSONRedactions(raw, projected)
 }
 

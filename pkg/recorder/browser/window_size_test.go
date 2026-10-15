@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/selector"
 	"github.com/mxschmitt/playwright-go"
 )
 
@@ -33,6 +34,13 @@ func TestApplyRecordingPageSize(t *testing.T) {
 		device.IsMobile == nil || !*device.IsMobile || device.HasTouch == nil || !*device.HasTouch {
 		t.Fatalf("device = %+v, want the emulated viewport", device)
 	}
+}
+
+// sizedClick is a convertible click on its own button, recorded at width x
+// height.
+func sizedClick(seq int, at time.Time, width, height int) Step {
+	button := &selector.ElementMetadata{Tag: "button", ID: fmt.Sprintf("b%d", seq), CSSPath: fmt.Sprintf("#b%d", seq)}
+	return Step{Seq: seq, Kind: StepClick, Timestamp: at, URL: "https://shop.example/", Element: button, Candidates: selector.Candidates(*button), ViewportWidth: width, ViewportHeight: height}
 }
 
 func viewportClick(ts int64, width, height int) string {
@@ -69,30 +77,67 @@ func TestStepKeepsItsRecordedPageSize(t *testing.T) {
 
 // Only the steps a conversion keeps choose its replay size.
 func TestRecordedViewportsCountOnlyConvertedSteps(t *testing.T) {
+	base := time.Now()
 	step := func(seq, width int, skip string) Step {
-		return Step{Seq: seq, Kind: StepClick, ViewportWidth: width, ViewportHeight: 900, Excluded: skip == "excluded", Deleted: skip == "deleted"}
+		click := sizedClick(seq, base.Add(time.Duration(seq)*time.Second), width, 900)
+		click.Excluded, click.Deleted = skip == "excluded", skip == "deleted"
+		return click
 	}
-	session := &Session{Steps: []Step{
+	session := &Session{StartURL: "https://shop.example/", StartedAt: base, Steps: []Step{
 		step(1, 800, "deleted"), step(2, 800, "deleted"), step(3, 800, "excluded"),
 		step(4, 1400, ""), step(5, 1400, ""), step(6, 800, ""), step(7, 0, ""),
 	}}
-	viewports := recordedViewports(session, StepRange{})
+	converted := func(stepRange StepRange) []recordedViewport {
+		return recordedViewports(assembleActions(session, ConvertOptions{StepRange: stepRange}, "https://shop.example", &ConvertResult{}))
+	}
+	viewports := converted(StepRange{})
 	if fmt.Sprint(viewports) != fmt.Sprint([]recordedViewport{{1400, 900, 2}, {800, 900, 1}}) {
 		t.Fatalf("viewports = %+v, want only the kept steps counted", viewports)
 	}
 	if replay, ok := replayViewport(viewports); !ok || replay.Width != 1400 {
 		t.Fatalf("replay = %+v %t, want 1400 wide", replay, ok)
 	}
-	inRange := recordedViewports(session, StepRange{StartSeq: 6})
-	if replay, _ := replayViewport(inRange); replay.Width != 800 {
+	if replay, _ := replayViewport(converted(StepRange{StartSeq: 6})); replay.Width != 800 {
 		t.Fatalf("range replay = %+v, want the steps in range to choose", replay)
 	}
-	tied := recordedViewports(&Session{Steps: []Step{step(1, 1000, ""), step(2, 1200, "")}}, StepRange{})
+	tied := recordedViewports([]sectionedAction{{width: 1000, height: 900}, {width: 1200, height: 900}})
 	if replay, _ := replayViewport(tied); replay.Width != 1000 {
 		t.Fatalf("tied replay = %+v, want the first seen", replay)
 	}
 	if _, ok := replayViewport(nil); ok {
 		t.Fatal("no sizes reported a replay viewport")
+	}
+}
+
+// A script split at transactions replays at the size its own steps were
+// recorded at, not the size most of the recording used, and warns by name
+// only for a resize within it.
+func TestSplitScriptsReplayAtTheirOwnRecordedViewport(t *testing.T) {
+	base := time.Now()
+	at := func(seconds int) time.Time { return base.Add(time.Duration(seconds) * time.Second) }
+	click := func(seq, width int) Step { return sizedClick(seq, at(seq*10), width, 900) }
+	session := &Session{StartURL: "https://shop.example/", StartedAt: base,
+		Steps: []Step{click(1, 1400), click(2, 1400), click(3, 1400), click(4, 800), click(5, 800), click(6, 1400)},
+		Markers: []Marker{
+			{Kind: MarkerTransactionStart, Name: "Browse", Timestamp: at(5)}, {Kind: MarkerTransactionEnd, Name: "Browse", Timestamp: at(35)},
+			{Kind: MarkerTransactionStart, Name: "Search", Timestamp: at(36)}, {Kind: MarkerTransactionEnd, Name: "Search", Timestamp: at(65)},
+		},
+	}
+	result := Convert(session, ConvertOptions{ScriptName: "Shop", SplitAtTransactions: true})
+	if len(result.Scripts) != 2 {
+		t.Fatalf("scripts = %d, want 2", len(result.Scripts))
+	}
+	if browse, search := result.Scripts[0].Config.Browser.Viewport, result.Scripts[1].Config.Browser.Viewport; browse.Width != 1400 || search.Width != 800 {
+		t.Fatalf("replay widths = %d and %d, want each script's own 1400 and 800", browse.Width, search.Width)
+	}
+	var resized []string
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "resized while recording") {
+			resized = append(resized, warning)
+		}
+	}
+	if len(resized) != 1 || !strings.Contains(resized[0], `Script "Shop — Search" replays at 800x900`) || !strings.Contains(resized[0], "1 step(s) were recorded at 1400x900") {
+		t.Fatalf("resize warnings = %q, want one naming the Search script", resized)
 	}
 }
 
@@ -104,7 +149,7 @@ func TestConvertReplaysAtTheRecordedViewport(t *testing.T) {
 		for _, size := range sizes {
 			for range size[2] {
 				seq++
-				recorded.Steps = append(recorded.Steps, Step{Seq: seq, Kind: StepClick, Timestamp: base.Add(time.Duration(seq) * time.Second), URL: "https://shop.example/", ViewportWidth: size[0], ViewportHeight: size[1]})
+				recorded.Steps = append(recorded.Steps, sizedClick(seq, base.Add(time.Duration(seq)*time.Second), size[0], size[1]))
 			}
 		}
 		return recorded
