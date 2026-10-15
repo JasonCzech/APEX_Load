@@ -294,7 +294,11 @@ JMS, Kafka, or other high-density protocol groups.
   lost** in the error charts) and ends that iteration whatever its
   continue-on-error setting. An iteration that signs in itself (its actions
   spell `{{identity.*}}`) reaches the sign-in page on purpose, so only a
-  rejected Aura session counts as lost there.
+  rejected Aura session counts as lost there. The launch review warns
+  (`observer_identity_overlap`) when an observer's username also appears in
+  another group's list parameters or CSV/DAT data sources (the first 8 MiB of
+  each; data pools are not read), or in a second observer group: observers
+  sharing users with the load share their sessions and record locks.
 - A browser session that keeps its context across iterations runs its first
   iteration in each context cold and the rest warm; clearing cookies but
   keeping the cache leaves them warm. The engine tags each such iteration's

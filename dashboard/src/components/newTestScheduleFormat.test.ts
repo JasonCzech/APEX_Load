@@ -14,6 +14,7 @@ import {
   startNowBlocker,
   formatDatetimeLocalValue,
   formatLaunchConflict,
+  formatLaunchConflicts,
   formatLaunchDecision,
   formatLaunchWindow,
   formatReservationWindow,
@@ -111,6 +112,15 @@ describe('launch conflict helpers', () => {
     expect(firstLaunchConflict(preflight({ warnings: [warning] }))).toBe(warning)
     expect(formatLaunchConflict(preflight({ blocking_conflicts: [blocking] }))).toBe('no capacity')
     expect(formatLaunchConflict(preflight({}))).toBe('None')
+  })
+
+  it('lists every conflict, blocking ones first', () => {
+    const blocking = { message: 'No capacity' } as LaunchConflict
+    const overlap = { message: 'Observer group "observers" shares users with group "load": perf1@acme.test.' } as LaunchConflict
+    const window = { message: ' Tight window. ' } as LaunchConflict
+    expect(formatLaunchConflicts(preflight({ blocking_conflicts: [blocking], warnings: [window, overlap] })))
+      .toBe('No capacity. Tight window. Observer group "observers" shares users with group "load": perf1@acme.test.')
+    expect(formatLaunchConflicts(preflight({}))).toBe('None')
   })
 })
 

@@ -506,6 +506,7 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 	if warning := tr.runContinuityLaunchWarning(preview); warning != nil {
 		warnings = append(warnings, *warning)
 	}
+	warnings = append(warnings, observerIdentityOverlapLaunchWarnings(preview.Groups)...)
 
 	// Durable occurrence/reservation reads can block on another transaction.
 	// Keep them completely outside the global runner lock, then evaluate the

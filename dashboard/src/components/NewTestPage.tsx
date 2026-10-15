@@ -33,6 +33,7 @@ import {
   firstLaunchConflict,
   formatDatetimeLocalValue,
   formatLaunchConflict,
+  formatLaunchConflicts,
   startNowBlocker,
   formatLaunchDecision,
   formatLaunchWindow,
@@ -1471,7 +1472,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       { label: 'Estimated bottleneck', value: bottleneckValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
       { label: 'Preflight Decision', value: formatLaunchDecision(immediatePreflight, immediatePreflightLoading), tone: launchBlocked ? 'warning' : 'normal' },
       { label: `Proposed launch window (${Intl.DateTimeFormat().resolvedOptions().timeZone})`, value: formatReservationWindow(immediatePreflight) },
-      { label: 'Conflicts', value: launchConflict ? launchConflict.message : 'None', tone: launchConflict ? 'warning' : 'normal' },
+      { label: 'Conflicts', value: formatLaunchConflicts(immediatePreflight), tone: launchConflict ? 'warning' : 'normal' },
       { label: 'Next Blocking Event', value: formatNextBlockingEvent(immediatePreflight), tone: launchBlocked ? 'warning' : 'normal' },
     ]
   }, [canManageTests, dataPoolNames, effectiveAccessError, effectiveAccessLoaded, estimateCheckedAt, preflightCheckedAt, draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateFailed, estimateLoading, groupRunOverrides, immediatePreflight, immediatePreflightError, immediatePreflightLoading, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])

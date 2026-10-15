@@ -211,6 +211,15 @@ export function formatLaunchConflict(preflight?: LaunchPreflightResponse | null)
   return conflict.message
 }
 
+/** Every launch conflict's message as a sentence, blocking ones first, or None. */
+export function formatLaunchConflicts(preflight?: LaunchPreflightResponse | null) {
+  const messages = [...(preflight?.blocking_conflicts || []), ...(preflight?.warnings || [])]
+    .map(conflict => (conflict.message || '').trim())
+    .filter(Boolean)
+    .map(message => (/[.!?]$/.test(message) ? message : `${message}.`))
+  return messages.length ? messages.join(' ') : 'None'
+}
+
 export function formatNextBlockingEvent(preflight?: LaunchPreflightResponse | null) {
   const conflicts = preflight?.blocking_conflicts || []
   const dated = conflicts

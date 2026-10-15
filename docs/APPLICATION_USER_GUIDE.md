@@ -1153,7 +1153,9 @@ expired, or who cannot sign in, fail the run before ramp-up, named, so you can e
 their storage state again or fix the connected app. `start_gap_ms` spaces the
 observers' starts to stay under the target's sign-in limits. An observer sent back to
 sign in during the run fails that iteration as **Observer session lost** in the error
-charts. Page timings and Web
+charts. The launch review warns when an observer's user also appears in another group's
+data or in a second observer group: give observers their own users, so their timings
+don't share sessions or record locks with the load. Page timings and Web
 Vitals, like the interaction evidence on
 the run report's **Browser** tab, are recorded only when **Capture page timings and
 Web Vitals** (and **Capture interaction evidence**) is on in the browser script's
