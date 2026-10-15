@@ -97,6 +97,7 @@ import ReplayPreflightCard from './ReplayPreflightCard'
 import ScriptSecretBindingsDialog from './ScriptSecretBindingsDialog'
 import { buildLocalReplayPreflight, reconcileReplayPreflightSecretStatus, replayPreflightStatusLabel, templateVariableNames } from './replayPreflightUtils'
 import { openingEditorFocus, replayReadinessIssues, type ReadinessFacts } from './replayReadinessIssues'
+import { secretBindingDisplayNames, secretDisplayName } from './secretBindingUtils'
 import {
   applyMigrationAssistantSuggestion,
   applyAuthoringComponentToScript,
@@ -763,7 +764,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   } | null>(null)
   const projectSecretProbeRequestRef = useRef(0)
   const [projectSecretProbeRetryGeneration, setProjectSecretProbeRetryGeneration] = useState(0)
-  const replayMissingProjectSecretsRef = useRef<string[]>([])
+  const replayMissingProjectSecretLabelsRef = useRef<string[]>([])
   const replaySecretStatusKnownRef = useRef(true)
   const refreshScriptSecretStatus = useCallback(async () => {
     const requestId = ++scriptSecretStatusRequestRef.current
@@ -3336,7 +3337,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       setError('Project secret status is not available yet. Wait for the credential check to complete before running this script.')
       return
     }
-    const missingSecrets = replayMissingProjectSecretsRef.current
+    const missingSecrets = replayMissingProjectSecretLabelsRef.current
     if (missingSecrets.length > 0) {
       setError(`Configure missing project secret${missingSecrets.length === 1 ? '' : 's'} before running: ${missingSecrets.join(', ')}.`)
       return
@@ -3945,11 +3946,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       ? Array.from(persistedStatusByName.values())
       : []
   const secretStatusKnown = requiredProjectSecretNames.length === 0 || projectProbeIsReady || canUsePersistedStatusFallback
+  // Secret names as the Secret bindings dialog shows them, worked out over
+  // every secret the script needs so each reads the same everywhere.
+  const secretLabels = secretBindingDisplayNames(requiredProjectSecretNames, script)
   const secretReconciledPreflight = reconcileReplayPreflightSecretStatus(
     preflightWithAllRequiredSecrets,
     secretStatuses,
     secretStatusKnown,
     projectProbeIsUnavailable,
+    secretLabels,
   )
   const replayPreflight = errorCount || jsonParseMessage || (validationResultIsCurrent && validationSidebarResult?.tone === 'error') ? { ...secretReconciledPreflight, valid: false, checks: [...(secretReconciledPreflight.checks || []), { id: 'author-problems', label: 'Current draft', status: 'fail' as const, detail: 'The current draft has blocking issues. Open Author Problems to repair them.' }] } : secretReconciledPreflight
   // Readiness problems come from the preflight Checks & readiness shows, so
@@ -3967,12 +3972,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   } satisfies ReadinessFacts)
   // Text Author Problems already lists from validation or the last replay.
   const alreadyListedProblemsJson = JSON.stringify([...(validationResultIsCurrent ? validationSidebarResult?.issues || [] : []), ...warnings])
+  const secretLabelsJson = JSON.stringify([...secretLabels])
   const readinessIssues = useMemo(
-    () => replayReadinessIssues(JSON.parse(readinessFactsJson) as ReadinessFacts, JSON.parse(alreadyListedProblemsJson) as string[]),
-    [readinessFactsJson, alreadyListedProblemsJson],
+    () => replayReadinessIssues(
+      JSON.parse(readinessFactsJson) as ReadinessFacts,
+      JSON.parse(alreadyListedProblemsJson) as string[],
+      new Map(JSON.parse(secretLabelsJson) as [string, string][]),
+    ),
+    [readinessFactsJson, alreadyListedProblemsJson, secretLabelsJson],
   )
   const missingProjectSecrets = replayPreflight.missing_secrets || []
-  replayMissingProjectSecretsRef.current = missingProjectSecrets
+  const missingProjectSecretLabels = missingProjectSecrets.map(name => secretDisplayName(secretLabels, name))
+  replayMissingProjectSecretLabelsRef.current = missingProjectSecretLabels
   replaySecretStatusKnownRef.current = secretStatusKnown
   const replayBlockedByUnknownSecretStatus = requiredProjectSecretNames.length > 0 && !secretStatusKnown
   const replayBlockedByMissingSecrets = missingProjectSecrets.length > 0 || replayBlockedByUnknownSecretStatus
@@ -4008,7 +4019,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         ? 'Project secret status is temporarily unavailable. Retry the credential check before running.'
         : 'Checking project secret configuration before running…')
     : replayBlockedByMissingSecrets
-      ? `Configure missing project secret${missingProjectSecrets.length === 1 ? '' : 's'} before running: ${missingProjectSecrets.join(', ')}.`
+      ? `Configure missing project secret${missingProjectSecrets.length === 1 ? '' : 's'} before running: ${missingProjectSecretLabels.join(', ')}.`
       : replayStartButtonLabel
   const debugActionRows = scriptPhaseActionRows
   const stepReplayDisabled = replaying

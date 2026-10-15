@@ -87,7 +87,7 @@ it('reads an input from a data pool column or generates it, and says when a re-i
 it('fills inputs from a chosen environment as one value for every user', () => {
   const changed = vi.fn()
   const bindingsChanged = vi.fn()
-  const environments = [
+  const environments: { name: string; path: string; values?: Record<string, string> }[] = [
     { name: 'dev', path: 'CTA/environments/dev.yml', values: { env: 'dev.example.test' } },
     { name: 'empty', path: 'CTA/environments/empty.yml', values: { unrelated: 'x' } },
   ]

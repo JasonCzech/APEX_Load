@@ -8,6 +8,7 @@ import {
   requirementsPreserveDestinationValues,
   secretBindingDisplayNames,
   secretBindingRequirementsForScript,
+  secretDisplayName,
   updateSecretBindingRequirementNames,
 } from './secretBindingUtils'
 
@@ -44,6 +45,55 @@ describe('secretBindingDisplayNames', () => {
       LOGIN_PASSWORD: 'LOGIN_PASSWORD',
     })
     expect(secretBindingDisplayNames(['CLIENT_ID_12ABCDEF345'], nativeBrunoScript).get('CLIENT_ID_12ABCDEF345')).toBe('CLIENT_ID_12ABCDEF345')
+  })
+
+  it('labels an older path-prefixed native Bruno field secret by the field alone', () => {
+    const names = [
+      'API_ORDERS_GET_ORDER_HEADER_X_API_KEY_84921F7A1055',
+      // A header named with AUTH keeps its whole name.
+      'API_ACCOUNT_PROFILE_HEADER_X_CDF_AUTH_TOKEN_53E6F3601255',
+      'API_ORDERS_GET_ORDER_QUERY_ACCESS_TOKEN_0B2497BE7673',
+      'API_ORDERS_CREATE_BODY_JSON_CLIENT_SECRET_161E2747AD92',
+      'API_ORDERS_CREATE_BODY_XML_USER_PASSWORD_53E6F3601255',
+      'API_LOGIN_BODY_FORM_PASSWORD_9C0FFEE12345',
+      'API_UPLOAD_BODY_MULTIPART_API_KEY_0DDBA11C0FFE',
+      'API_ORDERS_LOGIN_AUTH_PASSWORD_A3CA62479DB7',
+      // A file named after headers: the last marker is the field's.
+      'API_SET_HEADER_TEST_HEADER_AUTHORIZATION_1EE1A2332399',
+    ]
+
+    expect(Object.fromEntries(secretBindingDisplayNames(names, nativeBrunoScript))).toEqual({
+      API_ORDERS_GET_ORDER_HEADER_X_API_KEY_84921F7A1055: 'X_API_KEY',
+      API_ACCOUNT_PROFILE_HEADER_X_CDF_AUTH_TOKEN_53E6F3601255: 'X_CDF_AUTH_TOKEN',
+      API_ORDERS_GET_ORDER_QUERY_ACCESS_TOKEN_0B2497BE7673: 'ACCESS_TOKEN',
+      API_ORDERS_CREATE_BODY_JSON_CLIENT_SECRET_161E2747AD92: 'CLIENT_SECRET',
+      API_ORDERS_CREATE_BODY_XML_USER_PASSWORD_53E6F3601255: 'USER_PASSWORD',
+      API_LOGIN_BODY_FORM_PASSWORD_9C0FFEE12345: 'PASSWORD',
+      API_UPLOAD_BODY_MULTIPART_API_KEY_0DDBA11C0FFE: 'API_KEY',
+      API_ORDERS_LOGIN_AUTH_PASSWORD_A3CA62479DB7: 'AUTH_PASSWORD',
+      API_SET_HEADER_TEST_HEADER_AUTHORIZATION_1EE1A2332399: 'AUTHORIZATION',
+    })
+    // Only a native Bruno import named secrets this way.
+    expect(secretBindingDisplayNames(['API_ORDERS_HEADER_X_API_KEY_84921F7A1055'], { ...first, metadata: { import: { source: 'har' } } })
+      .get('API_ORDERS_HEADER_X_API_KEY_84921F7A1055')).toBe('API_ORDERS_HEADER_X_API_KEY')
+  })
+
+  it('simplifies the collision identity any older import gave a second credential', () => {
+    const harScript = { ...first, name: 'Recorded', metadata: { import: { source: 'har' } } }
+    const labels = secretBindingDisplayNames(['API_TOKEN', 'API_TOKEN_84921F7A1055', 'SESSION_DEADBEEFCAFE', 'TOKEN_2'], harScript)
+
+    expect(Object.fromEntries(labels)).toEqual({
+      API_TOKEN: 'API_TOKEN · source 1',
+      API_TOKEN_84921F7A1055: 'API_TOKEN · source 2',
+      // Twelve letters with no digit read as a word, not an identity.
+      SESSION_DEADBEEFCAFE: 'SESSION_DEADBEEFCAFE',
+      TOKEN_2: 'TOKEN_2',
+    })
+    // The 24-digit identity only ever came from a native Bruno import.
+    expect(secretBindingDisplayNames(['TOKEN_1234567890ABCDEF12345678'], harScript).get('TOKEN_1234567890ABCDEF12345678'))
+      .toBe('TOKEN_1234567890ABCDEF12345678')
+    expect(secretDisplayName(labels, ' API_TOKEN_84921F7A1055 ')).toBe('API_TOKEN · source 2')
+    expect(secretDisplayName(labels, 'UNLISTED')).toBe('UNLISTED')
   })
 
   it('keeps distinct case-sensitive Bruno variables distinguishable', () => {

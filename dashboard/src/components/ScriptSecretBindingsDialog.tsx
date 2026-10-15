@@ -88,8 +88,8 @@ export default function ScriptSecretBindingsDialog({
 
   const draftSummaries = useMemo(() => scriptSecretReferenceSummaries(script), [script])
   const displayNames = useMemo(
-    () => secretBindingDisplayNames(bindings.map(binding => binding.name), script),
-    [bindings, script],
+    () => secretBindingDisplayNames([...bindings.map(binding => binding.name), ...draftSummaries.map(summary => summary.name)], script),
+    [bindings, draftSummaries, script],
   )
   const displayNameFor = (name: string) => displayNames.get(name) || name
 

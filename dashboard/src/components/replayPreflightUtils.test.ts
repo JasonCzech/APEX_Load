@@ -260,6 +260,26 @@ describe('buildLocalReplayPreflight', () => {
     })
   })
 
+  it('names a missing secret by its display name, keeping the exact name in missing_secrets', () => {
+    const local = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [{
+        ...baseScript.actions[0],
+        headers: { Authorization: 'Bearer {{secret.API_TOKEN_84921F7A1055}}' },
+      }],
+    })
+
+    const reconciled = reconcileReplayPreflightSecretStatus(local, [
+      { name: 'API_TOKEN_84921F7A1055', configured: false },
+    ], true, false, new Map([['API_TOKEN_84921F7A1055', 'API_TOKEN']]))
+
+    expect(reconciled.missing_secrets).toEqual(['API_TOKEN_84921F7A1055'])
+    expect(reconciled.checks?.find(check => check.id === 'secrets')).toMatchObject({
+      status: 'fail',
+      detail: 'Configure missing project secret: API_TOKEN.',
+    })
+  })
+
   it('does not claim draft references are missing before the project-scoped status probe completes', () => {
     const local = buildLocalReplayPreflight({
       ...baseScript,

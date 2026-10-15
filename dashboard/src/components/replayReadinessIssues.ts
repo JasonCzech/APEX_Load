@@ -89,7 +89,11 @@ export type ReadinessFacts = Pick<ReplayPreflight, 'issues' | 'blocking_variable
  *   (current server validation issues, validation and replay warnings), so
  *   the same text is not listed twice.
  */
-export function replayReadinessIssues(preflight: ReadinessFacts | null | undefined, alreadyListed: readonly string[] = []): ReadinessIssue[] {
+export function replayReadinessIssues(
+  preflight: ReadinessFacts | null | undefined,
+  alreadyListed: readonly string[] = [],
+  secretLabels: ReadonlyMap<string, string> = new Map(),
+): ReadinessIssue[] {
   if (!preflight) return []
   const listed = new Set(alreadyListed.map(normalize))
   const issues: ReadinessIssue[] = []
@@ -112,8 +116,19 @@ export function replayReadinessIssues(preflight: ReadinessFacts | null | undefin
   for (const name of structured ? preflight.placeholder_variables || [] : preflight.missing_variables || []) {
     issues.push({ id: `readiness:placeholder:${name}`, severity: 'warning', title: `Missing value: ${name}`, description: 'Nothing provides it before use, so replay sends the placeholder text.', variable: name })
   }
+  // The title uses the secret's display name (secretBindingDisplayNames); the
+  // exact name the script references stays in the description.
   for (const name of preflight.missing_secrets || []) {
-    issues.push({ id: `readiness:secret:${name}`, severity: 'blocker', title: `Configure project secret: ${name}`, description: 'Replay stays blocked until the project secret has a value.', secret: name })
+    const label = secretLabels.get(name) || name
+    issues.push({
+      id: `readiness:secret:${name}`,
+      severity: 'blocker',
+      title: `Configure project secret: ${label}`,
+      description: label === name
+        ? 'Replay stays blocked until the project secret has a value.'
+        : `Replay stays blocked until the project secret ${name} has a value.`,
+      secret: name,
+    })
   }
   // Data-source warnings refuse replay; an older controller does not single
   // them out, so there they stay in the warnings below. Only the preflight

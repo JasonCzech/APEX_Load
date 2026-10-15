@@ -28,6 +28,19 @@ describe('replayReadinessIssues', () => {
     expect(issues[3].secret).toBe('PROXY_PASSWORD')
   })
 
+  it('titles a secret by its display name and keeps the exact name in the description', () => {
+    const issues = replayReadinessIssues(
+      preflight({ missing_secrets: ['PARTNER_PASSWORD_A3CA62479DB786C5096A4AE7', 'USERNAME'] }),
+      [],
+      new Map([['PARTNER_PASSWORD_A3CA62479DB786C5096A4AE7', 'PARTNER_PASSWORD']]),
+    )
+
+    expect(issues.map(issue => [issue.title, issue.description, issue.secret])).toEqual([
+      ['Configure project secret: PARTNER_PASSWORD', 'Replay stays blocked until the project secret PARTNER_PASSWORD_A3CA62479DB786C5096A4AE7 has a value.', 'PARTNER_PASSWORD_A3CA62479DB786C5096A4AE7'],
+      ['Configure project secret: USERNAME', 'Replay stays blocked until the project secret has a value.', 'USERNAME'],
+    ])
+  })
+
   it('maps actions[] paths to the action phase and keeps a nested request path in view', () => {
     const message = 'actions[4].params.requests[1] "Pay": review-required action blocks replay until review metadata is removed'
     const [gate] = replayReadinessIssues(preflight({ issues: [message] }))

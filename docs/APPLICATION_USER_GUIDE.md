@@ -522,6 +522,12 @@ never the values. Secret writes require an authorized human action: editors and
 project admins add project secrets (from Project secrets, the script editor's
 Configure secrets, or an import's credential setup), and project admins rotate them;
 viewers see the inventory and what uses each secret.
+Imports name each secret after its field or variable (`PASSWORD`, `X_API_KEY`); a
+second credential in the same import that wants the same name is numbered (`_2`).
+A script from an older import can reference a name ending in a hashed identity; the
+editor's Secret bindings, Author Problems and Checks, and the script library show it by
+its readable name, with the exact name in the details or on hover. Shared assets lists
+exact names.
 Values resolved through `{{secret.NAME}}` are redacted from logs, snapshots, reports,
 and archives regardless of any other setting.
 

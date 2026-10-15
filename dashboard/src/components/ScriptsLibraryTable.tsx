@@ -19,6 +19,7 @@ import { authoringHealthCounts, prioritizeHealthInputs } from './authoringHealth
 import { isAddressableScriptId } from './scriptIdentity'
 import type { IssueDetail } from './IssueDetailsDialog'
 import { scriptContainsSecretReferences } from './scriptSecretReferenceModel'
+import { secretBindingDisplayNames, secretDisplayName } from './secretBindingUtils'
 import SelectAllCheckbox from './SelectAllCheckbox'
 import StatusBadge from './StatusBadge'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
@@ -359,6 +360,9 @@ export default function ScriptsLibraryTable({
             const secretStatus = scriptAddressable ? secretStatusByScript[scriptId] : undefined
             const secretStatusState = scriptAddressable ? secretStatusStateByScript[scriptId] : 'error'
             const missingSecrets = secretStatus?.missing || []
+            // Names as the Secret bindings dialog shows them; the exact name
+            // stays on hover and in the details.
+            const secretLabels = secretBindingDisplayNames([...(secretStatus?.required || []), ...missingSecrets], script.script)
             const requiresSecrets = (secretStatus?.required.length || 0) > 0 || scriptContainsSecretReferences(script)
             const secretStatusUnknown = !scriptAddressable
               || (requiresSecrets && secretStatusState !== undefined && secretStatusState !== 'ready')
@@ -433,7 +437,7 @@ export default function ScriptsLibraryTable({
                         health={script.authoring_health}
                         inputs={prioritizeHealthInputs(script.authoring_health?.inputs || [])}
                         secretState={!scriptAddressable ? 'unaddressable' : !secretStatusUnknown ? 'ready' : secretStatusState === 'loading' ? 'loading' : 'error'}
-                        missingSecrets={missingSecrets}
+                        missingSecrets={missingSecrets.map(name => secretDisplayName(secretLabels, name))}
                         onConfigureSecrets={configureSecretsAvailable ? () => onConfigureSecrets?.(script) : undefined}
                         onRetrySecretCheck={onRetrySecretStatus && scriptAddressable ? () => onRetrySecretStatus(script) : undefined}
                       />
@@ -480,13 +484,18 @@ export default function ScriptsLibraryTable({
                             }
                             setIssueDialog({
                               title: `${script.name} missing secrets`,
-                              issues: missingSecrets.map((name, index) => ({
-                                id: `${name}-${index}`,
-                                severity: 'warning',
-                                title: name,
-                                description: 'This required project secret has not been configured.',
-                                source: 'Project secrets',
-                              })),
+                              issues: missingSecrets.map((name, index) => {
+                                const label = secretDisplayName(secretLabels, name)
+                                return {
+                                  id: `${name}-${index}`,
+                                  severity: 'warning',
+                                  title: label,
+                                  description: label === name
+                                    ? 'This required project secret has not been configured.'
+                                    : `This required project secret, ${name}, has not been configured.`,
+                                  source: 'Project secrets',
+                                }
+                              }),
                             })
                           }}
                         />
@@ -580,7 +589,10 @@ export default function ScriptsLibraryTable({
                           <div className="script-health-detail">
                             <span className="results-compare-label">Missing Project Secrets</span>
                             <div className="archive-report-badges">
-                              {missingSecrets.map(name => <span key={name} className="archive-chip danger">{name}</span>)}
+                              {missingSecrets.map(name => {
+                                const label = secretDisplayName(secretLabels, name)
+                                return <span key={name} className="archive-chip danger" title={label === name ? undefined : name}>{label}</span>
+                              })}
                             </div>
                             {onConfigureSecrets && (
                               <button className="btn btn-secondary btn-sm" type="button" onClick={() => onConfigureSecrets(script)}>
