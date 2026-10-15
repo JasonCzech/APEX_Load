@@ -156,6 +156,56 @@ export function actionExecutionBlockers(action: Action): string[] {
   return [...blockers].sort()
 }
 
+// The headers an import left out of the request, from its header fidelity
+// marker. Markers written before headers were named hold a placeholder.
+export function actionOmittedImportHeaderNames(action: Action): string[] {
+  const marker = action.metadata?.import_header_fidelity
+  const occurrences = marker && typeof marker === 'object' && Array.isArray((marker as { omitted_occurrences?: unknown }).omitted_occurrences)
+    ? (marker as { omitted_occurrences: unknown[] }).omitted_occurrences
+    : []
+  const names: string[] = []
+  for (const occurrence of occurrences) {
+    const name = occurrence && typeof occurrence === 'object' ? (occurrence as { name?: unknown }).name : undefined
+    if (typeof name !== 'string') continue
+    const trimmed = name.trim()
+    if (!trimmed || trimmed === '<header>' || trimmed === '<invalid-header>' || names.includes(trimmed)) continue
+    names.push(trimmed)
+  }
+  return names
+}
+
+// Whether an import holds the action only for headers it left out.
+function importReviewOnlyForHeaders(action: Action): boolean {
+  const metadata = action.metadata || {}
+  if (metadata.import_multipart_fidelity || metadata.import_http_version_fidelity) return false
+  const review = metadata.import_review
+  const reasons = review && typeof review === 'object' && Array.isArray((review as { reason_codes?: unknown }).reason_codes)
+    ? (review as { reason_codes: unknown[] }).reason_codes
+    : []
+  return reasons.every(reason => typeof reason === 'string' && reason.startsWith('http_header_'))
+}
+
+// Each execution blocker with what it is about, as the server words it
+// (pkg/api/replay_review_gates.go executionBlockerDetail): the variables a
+// Bruno request leaves unset, or a count of the headers an import left out,
+// noting when the same hold covers something else too.
+export function actionExecutionBlockerDetails(action: Action): string[] {
+  return actionExecutionBlockers(action).map(code => {
+    if (code === 'bruno_missing_variables') {
+      const missing = action.metadata?.missing_variables
+      const names = Array.isArray(missing) ? missing.filter((name): name is string => typeof name === 'string' && Boolean(name.trim())) : []
+      return names.length ? `${code} (${names.join(', ')})` : code
+    }
+    if (code === 'import_review_required') {
+      const names = actionOmittedImportHeaderNames(action)
+      if (names.length === 0) return code
+      const label = `${names.length} ${names.length === 1 ? 'header' : 'headers'} left out`
+      return `${code} (${importReviewOnlyForHeaders(action) ? '' : 'other review and '}${label}: ${names.join(', ')})`
+    }
+    return code
+  })
+}
+
 /**
  * Imported LoadRunner calls (transaction markers, rendezvous, timers and other
  * lr_* utilities) replayed at their source position. They carry the source

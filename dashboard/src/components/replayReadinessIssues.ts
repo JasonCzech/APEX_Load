@@ -25,6 +25,13 @@ const PHASE_PATH = /^(init|actions|teardown)\[(\d+)\]/
 // `init[2] "Name": <what blocks replay>`, or `init[2]: …` for an unnamed action.
 // The name match is lazy so a quote inside it (escaped or not) still parses.
 const GATE_MESSAGE = /^(?:init|actions|teardown)\[\d+\](\S*)(?: ".*?")?: (.+)$/
+// A header check names the request, then the header after its position:
+// `actions[3] "Create session".header_list[7] "X-Bad": <what is wrong> (<code>)`.
+// Both names are Go-quoted, so a name may hold an escaped quote.
+const HEADER_MESSAGE = /^(?:init|actions|teardown)\[\d+\].*?\.(header_list|headers|effective_headers)\[\d+\] "((?:[^"\\]|\\.)*)": (.+)$/
+// The same check on the script's own default headers.
+const DEFAULT_HEADER_MESSAGE = /^config\.http\.(?:default_header_list|default_headers)\[\d+\] "((?:[^"\\]|\\.)*)": (.+)$/
+const TRAILING_CODE = /\s*\([a-z0-9_]+\)$/
 const EXECUTION_BLOCKER = /^execution blocker (.+) blocks \S+ until the imported behavior is resolved$/
 // Warnings the preflight phrases as sentences about lists this module itemizes.
 const ITEMIZED_WARNING = /^(variable\(s\) with no seed|configure project secret\(s\)|secret\(s\) require project configuration)/i
@@ -42,6 +49,8 @@ export interface ReviewGateIssue {
   rest: string
   /** Execution blocker codes, when the gate is one. */
   codes: string[]
+  /** What each code is about, when the message says: `(headers left out: X-Bad)`. */
+  details: Record<string, string>
 }
 
 /**
@@ -56,10 +65,26 @@ export function parseReviewGateIssue(message: string): ReviewGateIssue | null {
   if (!gate || !path) return null
   const [, subPath, rest] = gate
   const blocker = EXECUTION_BLOCKER.exec(rest)
+  const details: Record<string, string> = {}
   const codes = blocker
-    ? blocker[1].split(/,\s*(?![^()]*\))/).map(code => code.replace(/\s*\(.*\)$/, '').trim()).filter(Boolean)
+    ? blocker[1].split(/,\s*(?![^()]*\))/).map(part => {
+      const code = part.replace(/\s*\(.*\)$/, '').trim()
+      const detail = /\((.*)\)$/.exec(part.trim())?.[1]
+      if (code && detail) details[code] = detail
+      return code
+    }).filter(Boolean)
     : []
-  return { phase: path[1] as ReviewGateIssue['phase'], actionIndex: Number(path[2]), subPath, rest, codes }
+  return { phase: path[1] as ReviewGateIssue['phase'], actionIndex: Number(path[2]), subPath, rest, codes, details }
+}
+
+// `header value contains …` as `value contains …`, without its code.
+function headerProblem(rest: string): string {
+  return rest.replace(TRAILING_CODE, '').replace(/^header\s+/i, '').trim()
+}
+
+// A Go-quoted name as written, with its escaped quotes and backslashes plain.
+function unquoteName(quoted: string): string {
+  return quoted.replace(/\\(["\\])/g, '$1')
 }
 
 /** The reader-facing title of an execution blocker code. */
@@ -71,10 +96,52 @@ export function blockerTitle(code: string): string {
  * Titles a preflight issue the way the importer titles the same finding, and
  * drops the action path the breadcrumb already shows.
  */
+/**
+ * A header check as the server or the local preflight words it, in plain
+ * words: which header, what is wrong with it and where to fix it, without its
+ * JSON path; null for any other message. Author Problems titles server
+ * validation issues with it too.
+ */
+export function headerIssueText(message: string): { title: string; description: string } | null {
+  const defaultHeader = DEFAULT_HEADER_MESSAGE.exec(message.trim())
+  if (defaultHeader) {
+    return {
+      title: `Default header "${unquoteName(defaultHeader[1])}": ${headerProblem(defaultHeader[2])}`,
+      description: 'Every request sends the script\'s default headers. Correct or remove this one in Runtime Settings › Request Defaults.',
+    }
+  }
+  const header = HEADER_MESSAGE.exec(message.trim())
+  if (header) {
+    const [, list, name, problem] = header
+    return {
+      title: `Header "${unquoteName(name)}": ${headerProblem(problem)}`,
+      description: list === 'effective_headers'
+        ? 'The request sends this header with the script\'s default headers, exactly as written. Correct or remove it in Runtime Settings › Request Defaults or in this request\'s headers.'
+        : 'Replay sends headers exactly as written. Correct or remove it in this request\'s headers.',
+    }
+  }
+  return null
+}
+
 function issueText(message: string): { title: string; description?: string } {
+  const header = headerIssueText(message)
+  if (header) return header
   const gate = parseReviewGateIssue(message)
   if (!gate) return { title: message }
-  const { subPath, rest, codes } = gate
+  const { subPath, rest, codes, details } = gate
+  // Only a hold for left-out headers alone is titled after them; the server
+  // says "other review and N headers left out" when it covers more.
+  const leftOutMatch = codes.length === 1 && codes[0] === 'import_review_required'
+    ? /^(\d+) headers? left out: (.+)$/.exec(details.import_review_required || '')
+    : null
+  if (leftOutMatch) {
+    const plural = Number(leftOutMatch[1]) !== 1
+    const leftOut = leftOutMatch[2]
+    return {
+      title: `${plural ? 'Headers' : 'Header'} ${leftOut} left out on import`,
+      description: `HTTP cannot send ${plural ? 'these headers' : 'this header'} as the source recorded ${plural ? 'them' : 'it'}, so the import left ${plural ? 'them' : 'it'} out and holds the request for review. Correct ${plural ? 'them' : 'it'} in the source and import it again.`,
+    }
+  }
   // A nested request's own path is not in the breadcrumb, so keep it in view.
   const description = subPath ? message : sentence(rest)
   if (codes.length === 0) return subPath ? { title: sentence(rest), description } : { title: sentence(rest) }

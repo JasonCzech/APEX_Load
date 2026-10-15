@@ -96,7 +96,7 @@ import PageViewToggle from './PageViewToggle'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import ScriptSecretBindingsDialog from './ScriptSecretBindingsDialog'
 import { buildLocalReplayPreflight, reconcileReplayPreflightSecretStatus, replayPreflightStatusLabel, templateVariableNames } from './replayPreflightUtils'
-import { openingEditorFocus, replayReadinessIssues, type ReadinessFacts } from './replayReadinessIssues'
+import { headerIssueText, openingEditorFocus, replayReadinessIssues, type ReadinessFacts } from './replayReadinessIssues'
 import { secretBindingDisplayNames, secretDisplayName } from './secretBindingUtils'
 import {
   applyMigrationAssistantSuggestion,
@@ -5467,7 +5467,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       }] : []),
     ]
     const serverIssues: IssueDetail[] = validationResultIsCurrent ? (validationSidebarResult?.issues || []).map((title, index) => ({
-      id: `server-${index}`, severity: 'error', title, source: 'Server validation', onSelect: () => {
+      id: `server-${index}`, severity: 'error', ...(headerIssueText(title) || { title }), source: 'Server validation', onSelect: () => {
         const match = /(?:script\.)?(actions|init|teardown)\[(\d+)\]/.exec(title)
         if (match) { const row = scriptPhaseActionRows.find(row => row.phase === (match[1] === 'actions' ? 'action' : match[1]) && row.actionIndex === Number(match[2])); if (row) selectAuthorPhaseActionRef.current(row) }
         else { setShowFullScriptJson(true); openCenterTab(SCRIPT_JSON_TAB_ID) }

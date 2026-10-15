@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 )
@@ -138,12 +139,11 @@ func scriptReviewGateIssuesWithBrowserPolicy(
 		action := reviewGateSurfaceAction(ref)
 		label := fmt.Sprintf("%s %q", ref.Path, action.Name)
 		if blockers := executionReviewBlockerCodes(action.Metadata); len(blockers) > 0 {
-			detail := strings.Join(blockers, ", ")
-			if len(blockers) == 1 && blockers[0] == "bruno_missing_variables" {
-				if names := metadataStringSlice(action.Metadata, "missing_variables"); len(names) > 0 {
-					detail = fmt.Sprintf("%s (%s)", blockers[0], strings.Join(names, ", "))
-				}
+			details := make([]string, 0, len(blockers))
+			for _, blocker := range blockers {
+				details = append(details, executionBlockerDetail(blocker, action.Metadata))
 			}
+			detail := strings.Join(details, ", ")
 			// The script editor titles this message by its shape
 			// (dashboard/src/components/replayReadinessIssues.ts); a new
 			// wording still shows, just untitled.
@@ -282,6 +282,82 @@ func metadataBool(metadata map[string]any, key string) bool {
 
 func metadataString(metadata map[string]any, key string) string {
 	return strings.ToLower(dslwalk.MetadataString(metadata, key))
+}
+
+// executionBlockerDetail is a blocker code with what it is about, when the
+// action says: the variables a Bruno request leaves unset, or the headers an
+// import left out. A hold for left-out headers counts them, and says when the
+// same hold also covers something else (an HTTP version, multipart fields),
+// so the editor does not present the headers as the only fix. The script
+// editor shows the names (dashboard/src/components/replayReadinessIssues.ts).
+func executionBlockerDetail(code string, metadata map[string]any) string {
+	switch code {
+	case "bruno_missing_variables":
+		if names := metadataStringSlice(metadata, "missing_variables"); len(names) > 0 {
+			return fmt.Sprintf("%s (%s)", code, strings.Join(names, ", "))
+		}
+	case "import_review_required":
+		if names := omittedImportHeaderNames(metadata); len(names) > 0 {
+			noun := "headers"
+			if len(names) == 1 {
+				noun = "header"
+			}
+			label := fmt.Sprintf("%d %s left out", len(names), noun)
+			if !importReviewOnlyForHeaders(metadata) {
+				label = "other review and " + label
+			}
+			return fmt.Sprintf("%s (%s: %s)", code, label, strings.Join(names, ", "))
+		}
+	}
+	return code
+}
+
+// importReviewOnlyForHeaders reports whether an import holds the action only
+// for headers it left out.
+func importReviewOnlyForHeaders(metadata map[string]any) bool {
+	if metadata[dsl.ImportMultipartFidelityMetadataKey] != nil || metadata[requestimport.ImportHTTPVersionFidelityMetadataKey] != nil {
+		return false
+	}
+	review, _ := metadata["import_review"].(map[string]any)
+	for _, reason := range metadataStringSlice(review, "reason_codes") {
+		if !strings.HasPrefix(reason, "http_header_") {
+			return false
+		}
+	}
+	return true
+}
+
+// omittedImportHeaderNames lists the headers an import left out of the
+// request, from its header fidelity marker. Markers written before headers
+// were named hold a placeholder, which names nothing.
+func omittedImportHeaderNames(metadata map[string]any) []string {
+	marker, _ := metadata[dsl.ImportHeaderFidelityMetadataKey].(map[string]any)
+	if marker == nil {
+		return nil
+	}
+	var occurrences []map[string]any
+	switch typed := marker["omitted_occurrences"].(type) {
+	case []map[string]any:
+		occurrences = typed
+	case []any:
+		for _, entry := range typed {
+			if occurrence, ok := entry.(map[string]any); ok {
+				occurrences = append(occurrences, occurrence)
+			}
+		}
+	}
+	seen := map[string]bool{}
+	var names []string
+	for _, occurrence := range occurrences {
+		name, _ := occurrence["name"].(string)
+		name = strings.TrimSpace(name)
+		if name == "" || name == "<header>" || name == "<invalid-header>" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	return names
 }
 
 func metadataStringSlice(metadata map[string]any, key string) []string {

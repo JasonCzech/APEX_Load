@@ -206,10 +206,12 @@ func restoreProjectedBoundedNonSecretHeaders(projected, source *dsl.Script) {
 
 // maskImportHeaderFidelityBytes projects the exact, inert source bytes retained
 // for runtime-incompatible headers and multipart fields. The durable execution
-// copy keeps those bytes behind import_review_required, but ordinary reads,
-// exports, and review responses must not disclose either an authored name or
-// value. The historical function name is retained because header fidelity was
-// the first consumer of this shared byte envelope.
+// copy keeps those bytes behind import_review_required; ordinary reads,
+// exports, and review responses mask them. An occurrence's name field still
+// names the header (or quotes a name HTTP cannot carry) on purpose, so the
+// review and the editor can say which header was left out: nothing an
+// imported script holds is a secret. The historical function name is retained
+// because header fidelity was the first consumer of this shared byte envelope.
 func maskImportHeaderFidelityBytes(script *dsl.Script) error {
 	if script == nil {
 		return nil

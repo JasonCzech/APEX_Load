@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
@@ -290,37 +291,26 @@ func headerIssueReasonCode(code httpprotocol.HeaderListIssueCode) string {
 	return "http_header_" + stableCode(string(code))
 }
 
+// safeHeaderEvidenceName is how review evidence names a header the runtime
+// left out, so the review and the debugger can say which header it was. The
+// standing decision is that nothing an imported script holds is a secret, so
+// the authored name is shown; a name HTTP cannot carry is shown quoted, with
+// its control characters escaped. The header's value never appears here.
 func safeHeaderEvidenceName(name string) string {
+	const maxBytes = 120
+	shown := name
 	if !httpguts.ValidHeaderFieldName(name) {
-		return "<invalid-header>"
+		shown = strconv.QuoteToGraphic(name)
 	}
-	// Only runtime-defined special names are known to be non-sensitive. An
-	// otherwise valid authored name can itself carry a canary/credential, so do
-	// not copy arbitrary names into findings or durable evidence.
-	switch strings.ToLower(name) {
-	case "host":
-		return "Host"
-	case "user-agent":
-		return "User-Agent"
-	case "content-length":
-		return "Content-Length"
-	case "transfer-encoding":
-		return "Transfer-Encoding"
-	case "trailer":
-		return "Trailer"
-	case "connection":
-		return "Connection"
-	case "keep-alive":
-		return "Keep-Alive"
-	case "proxy-connection":
-		return "Proxy-Connection"
-	case "te":
-		return "TE"
-	case "upgrade":
-		return "Upgrade"
-	default:
-		return "<header>"
+	if len(shown) <= maxBytes {
+		return shown
 	}
+	// Cut at a rune boundary: a quoted name keeps printable non-ASCII runes.
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(shown[cut]) {
+		cut--
+	}
+	return shown[:cut] + "…"
 }
 
 func applyRuntimeFidelityMetadata(action *dsl.Action, projection runtimeFidelityProjection) {
@@ -1438,7 +1428,7 @@ func parseMapRequestHeaderMap(
 }
 
 func malformedHeaderShapeOmission(index int, name string, source SourceRef) runtimeHeaderOmission {
-	evidenceName := "<header>"
+	evidenceName := "an unnamed header"
 	if strings.TrimSpace(name) != "" {
 		evidenceName = safeHeaderEvidenceName(name)
 	}

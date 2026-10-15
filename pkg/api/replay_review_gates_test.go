@@ -600,3 +600,41 @@ func firstMetadataKey(metadata map[string]any) string {
 	}
 	return "metadata"
 }
+
+// A request an import held because HTTP cannot send a header names that
+// header, so the editor and the debugger can say which one it was. A marker
+// from before headers were named names nothing.
+func TestImportReviewBlockerNamesTheHeadersLeftOut(t *testing.T) {
+	script := &dsl.Script{
+		Protocol: "http",
+		Actions: []dsl.Action{{
+			Name: "Imported request",
+			Type: "http_request",
+			Metadata: map[string]any{
+				"execution_blockers": []any{"import_review_required", "legacy_tls_replacement"},
+				dsl.ImportHeaderFidelityMetadataKey: map[string]any{
+					"version": 1,
+					"omitted_occurrences": []any{
+						map[string]any{"source_index": 0, "name": "X-Bad", "reason_code": "http_header_invalid_value"},
+						map[string]any{"source_index": 1, "name": "<header>", "reason_code": "http_header_invalid_value"},
+						map[string]any{"source_index": 2, "name": `"X Pasted\r\nHeader"`, "reason_code": "http_header_invalid_header_name"},
+					},
+				},
+			},
+		}},
+	}
+	issues := replayReviewGateIssues(script)
+	want := `actions[0] "Imported request": execution blocker import_review_required (2 headers left out: X-Bad, "X Pasted\r\nHeader"), legacy_tls_replacement blocks replay until the imported behavior is resolved`
+	if len(issues) != 1 || issues[0] != want {
+		t.Fatalf("issues = %q, want %q", issues, want)
+	}
+
+	// When the same hold also covers an HTTP version, the headers are not
+	// presented as the only thing to fix.
+	script.Actions[0].Metadata["execution_blockers"] = []any{"import_review_required"}
+	script.Actions[0].Metadata["import_review"] = map[string]any{"reason_codes": []any{"http_header_invalid_value", "http_version_not_preserved"}}
+	issues = replayReviewGateIssues(script)
+	if len(issues) != 1 || !strings.Contains(issues[0], `import_review_required (other review and 2 headers left out: X-Bad, "X Pasted\r\nHeader")`) {
+		t.Fatalf("issues = %q, want the other review named", issues)
+	}
+}

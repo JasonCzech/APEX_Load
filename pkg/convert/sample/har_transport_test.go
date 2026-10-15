@@ -70,7 +70,8 @@ func TestHARRecordedContentLength(t *testing.T) {
 			}
 			lengthBlocker := false
 			for _, d := range result.Unsupported {
-				if d.Element == "Content-Length" && d.Severity == diag.Blocker {
+				// The blocker names the header as the capture wrote it.
+				if strings.EqualFold(d.Element, "Content-Length") && d.Severity == diag.Blocker {
 					lengthBlocker = true
 				}
 			}

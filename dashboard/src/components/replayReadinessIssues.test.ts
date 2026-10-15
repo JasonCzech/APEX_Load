@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ReplayPreflight } from '../types/scripts'
 import { templateVariableNames } from './replayPreflightUtils'
-import { openingEditorFocus, replayReadinessIssues } from './replayReadinessIssues'
+import { headerIssueText, openingEditorFocus, replayReadinessIssues } from './replayReadinessIssues'
 
 const preflight = (overrides: Partial<ReplayPreflight>): ReplayPreflight => ({ valid: false, action_count: 3, expected_action_count: 3, data_source_count: 0, parameter_count: 0, ...overrides })
 
@@ -55,6 +55,45 @@ describe('replayReadinessIssues', () => {
     ] }))
     expect(gate.location).toEqual({ phase: 'teardown', actionIndex: 0 })
     expect(gate.title).toBe('Replace encrypted proxy password · Bruno missing variables')
+  })
+
+  it('names a header the request cannot send, in plain words, without its path', () => {
+    const issues = replayReadinessIssues(preflight({ issues: [
+      'actions[3] "Create session".header_list[7] "X-Bad": header value contains characters HTTP does not allow (http_header_invalid_value)',
+      'actions[0] "Say \\"hi\\"".params.requests[1].headers[0] "X \\"q\\"": header name contains characters HTTP does not allow (http_header_invalid_header_name)',
+      'actions[1] "Search".effective_headers[2] "Host": duplicate singleton header (http_header_duplicate_singleton_header)',
+      'config.http.default_header_list[0] "X-Trace": header value contains characters HTTP does not allow (http_header_invalid_value)',
+    ] }))
+    expect(issues.map(issue => issue.title)).toEqual([
+      'Header "X-Bad": value contains characters HTTP does not allow',
+      'Header "X "q"": name contains characters HTTP does not allow',
+      'Header "Host": duplicate singleton header',
+      'Default header "X-Trace": value contains characters HTTP does not allow',
+    ])
+    expect(issues[0].location).toEqual({ phase: 'action', actionIndex: 3 })
+    expect(issues[0].description).toBe('Replay sends headers exactly as written. Correct or remove it in this request\'s headers.')
+    expect(issues[2].description).toContain('Runtime Settings › Request Defaults')
+    expect(issues.every(issue => !issue.description?.includes('header_list'))).toBe(true)
+    expect(headerIssueText('actions[0] "Pay": execution blocker legacy_tls_replacement blocks replay until the imported behavior is resolved')).toBeNull()
+  })
+
+  it('names the headers an import left out, from the blocker detail', () => {
+    const [single, both, comma, mixed] = replayReadinessIssues(preflight({ issues: [
+      'actions[2] "Pay": execution blocker import_review_required (1 header left out: X-Bad) blocks replay until the imported behavior is resolved',
+      'actions[4]: execution blocker import_review_required (2 headers left out: X-Bad, "X Pasted\\r\\nHeader") blocks replay until the imported behavior is resolved',
+      'actions[5]: execution blocker import_review_required (1 header left out: "X, Y") blocks replay until the imported behavior is resolved',
+      'actions[6]: execution blocker import_review_required (other review and 1 header left out: X-Bad) blocks replay until the imported behavior is resolved',
+    ] }))
+    expect(single.title).toBe('Header X-Bad left out on import')
+    expect(single.description).toContain('Correct it in the source and import it again.')
+    expect(both.title).toBe('Headers X-Bad, "X Pasted\\r\\nHeader" left out on import')
+    expect(both.location).toEqual({ phase: 'action', actionIndex: 4 })
+    // One header whose quoted name holds a comma is still one header.
+    expect(comma.title).toBe('Header "X, Y" left out on import')
+    // A hold that covers more than the headers keeps its general title, and
+    // the names stay in its description.
+    expect(mixed.title).toBe('Review imported behavior')
+    expect(mixed.description).toContain('other review and 1 header left out: X-Bad')
   })
 
   it('titles a gate on an unnamed action, as the local preflight words it', () => {

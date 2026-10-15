@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
@@ -48,7 +49,8 @@ func TestFinalizeActionRuntimeHeaderFidelity(t *testing.T) {
 			wantHeaders: dsl.HeaderList{{Name: "Host", Value: "first.example.test"}},
 			wantSummary: map[string]string{"Host": "first.example.test"},
 			wantReasons: []string{"http_header_duplicate_singleton_header"},
-			wantElement: "Host",
+			// The left-out occurrence, as authored.
+			wantElement: "host",
 		},
 		{
 			name:    "templated host and templated extension name are import-valid",
@@ -183,15 +185,19 @@ func TestFinalizeScriptSanitizesActionHeaderMapWithRuntimePrecedence(t *testing.
 	}
 }
 
-func TestRuntimeHeaderFidelityDoesNotDiscloseAuthoredCanaryName(t *testing.T) {
+// A header the runtime leaves out is named in the review, so the review and
+// the debugger can say which one it was: nothing an imported script holds is a
+// secret. A name HTTP cannot carry is quoted with its control characters
+// escaped; the header's value stays out of the evidence.
+func TestRuntimeHeaderFidelityNamesTheLeftOutHeader(t *testing.T) {
 	t.Parallel()
-	const canary = "CANARY-do-not-disclose"
+	const value = "value-not-in-evidence-5c21"
 	action, report, err := FinalizeAction(EffectiveRequest{
 		Method: "GET",
 		Target: "/",
 		Headers: HeaderList{{
-			Name:  "X " + canary,
-			Value: "value",
+			Name:  "X Pasted\r\nHeader",
+			Value: value,
 		}},
 	}, FinalizeOptions{ActionPath: "actions[0]"})
 	if err != nil {
@@ -207,11 +213,15 @@ func TestRuntimeHeaderFidelityDoesNotDiscloseAuthoredCanaryName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), canary) {
-		t.Fatalf("fidelity evidence disclosed authored header name: %s", encoded)
+	if strings.Contains(string(encoded), value) {
+		t.Fatalf("fidelity evidence disclosed the header value: %s", encoded)
 	}
-	if len(action.HeaderList) != 0 || headerFidelityOccurrenceName(t, action) != "<invalid-header>" {
-		t.Fatalf("action = %#v", action)
+	want := `"X Pasted\r\nHeader"`
+	if len(action.HeaderList) != 0 || headerFidelityOccurrenceName(t, action) != want {
+		t.Fatalf("occurrence name = %q, want %q", headerFidelityOccurrenceName(t, action), want)
+	}
+	if len(report.Findings) != 1 || report.Findings[0].Element != want {
+		t.Fatalf("findings = %+v, want the header named", report.Findings)
 	}
 }
 
@@ -675,4 +685,18 @@ func sliceContains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// A long name is cut at a rune boundary, so a quoted name that keeps
+// printable non-ASCII characters is never left as broken UTF-8.
+func TestSafeHeaderEvidenceNameCutsAtARuneBoundary(t *testing.T) {
+	t.Parallel()
+	name := "X " + strings.Repeat("é", 100)
+	shown := safeHeaderEvidenceName(name)
+	if !utf8.ValidString(shown) || !strings.HasSuffix(shown, "…") || len(shown) > 120+len("…") {
+		t.Fatalf("shown = %q (%d bytes)", shown, len(shown))
+	}
+	if got := safeHeaderEvidenceName("X-Short"); got != "X-Short" {
+		t.Fatalf("short name = %q", got)
+	}
 }

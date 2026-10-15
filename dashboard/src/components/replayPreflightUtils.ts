@@ -1,7 +1,7 @@
 import type { ReplayPreflight, ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import type { ProjectSecretStatus } from '../types/secrets'
 import {
-  actionExecutionBlockers,
+  actionExecutionBlockerDetails,
   actionMetadataBool,
 } from './scriptActionHelpers'
 
@@ -95,7 +95,7 @@ function appendReviewGateIssues(
   script: ScriptDefinition,
   issues: string[],
 ): void {
-  const blockers = actionExecutionBlockers(action)
+  const blockers = actionExecutionBlockerDetails(action)
   const name = action.name?.trim()
   const label = name ? `${path} "${name}"` : path
   if (blockers.length > 0) {
