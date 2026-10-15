@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -258,9 +259,11 @@ type actionHeader struct {
 	value string
 }
 
-// sensitiveActionHeaders lists the credential headers of an action.
+// sensitiveActionHeaders lists the credential headers of an action: those an
+// operator supplies, not cookies or the session, anti-forgery and tracing
+// state the source recorded, which stay as imported.
 func sensitiveActionHeaders(action *dsl.Action) []actionHeader {
-	return actionHeaders(action, func(name, _ string) bool { return SensitiveHeaderKey(name) })
+	return actionHeaders(action, func(name, _ string) bool { return credential.ImportCredentialHeader(name) })
 }
 
 // actionHeaders lists an action's non-empty headers that keep accepts (all of

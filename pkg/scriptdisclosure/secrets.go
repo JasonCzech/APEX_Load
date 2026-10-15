@@ -79,6 +79,14 @@ func newSecretCollector(
 	}
 }
 
+// sensitiveDisclosureHeader reports whether a header's value is a credential
+// the script view masks: not recorded cookie, session, anti-forgery or tracing
+// state, which shows as recorded.
+func sensitiveDisclosureHeader(name string) bool {
+	return !credential.RecordedStateHeader(name) &&
+		(credential.SensitiveHeader(name) || isSensitiveKey(name))
+}
+
 func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
 	if depth > maxProjectionDepth || !c.structuredBudget.reserveValue() {
 		c.structuredBudget.incomplete = true
@@ -88,7 +96,7 @@ func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
 	case map[string]any:
 		if ctx.headerList {
 			name, _ := typed["name"].(string)
-			if credential.SensitiveHeader(name) || isSensitiveKey(name) {
+			if sensitiveDisclosureHeader(name) {
 				c.addNamedNode(name, typed["value"])
 			}
 		}
@@ -122,7 +130,10 @@ func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
 				}
 			case normalized == "bodymultipart":
 				c.collectMultipartParts(child)
-			case ctx.headers && (credential.SensitiveHeader(key) || isSensitiveKey(key)):
+			case ctx.headers && credential.RecordedStateHeader(key):
+				// Shown as recorded (see sensitiveDisclosureHeader), so its value
+				// is not a credential to mask elsewhere either.
+			case ctx.headers && sensitiveDisclosureHeader(key):
 				c.addNamedNode(key, child)
 			case isSensitiveKey(key) && !isSecretReferenceKey(key):
 				switch child.(type) {
@@ -902,7 +913,7 @@ func (c *secretCollector) collectMultipartBody(payload []byte, boundary string) 
 			c.add(string(body))
 		}
 		for name, values := range part.Header {
-			if credential.SensitiveHeader(name) || credential.SensitiveName(name) {
+			if !credential.RecordedStateHeader(name) && (credential.SensitiveHeader(name) || credential.SensitiveName(name)) {
 				for _, value := range values {
 					if credential.MatchableNamedValue(name, value) {
 						c.add(value)
@@ -948,7 +959,9 @@ func (c *secretCollector) collectMultipartParts(raw any) {
 		headers, _ := part["headers"].(map[string]any)
 		for headerName, headerValue := range headers {
 			text, _ := headerValue.(string)
-			if (credential.SensitiveHeader(headerName) || credential.SensitiveName(headerName)) && credential.MatchableNamedValue(headerName, text) {
+			if !credential.RecordedStateHeader(headerName) &&
+				(credential.SensitiveHeader(headerName) || credential.SensitiveName(headerName)) &&
+				credential.MatchableNamedValue(headerName, text) {
 				c.add(text)
 			}
 		}

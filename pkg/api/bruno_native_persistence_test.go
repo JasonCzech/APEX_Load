@@ -294,7 +294,12 @@ http:
 	if response.Code != http.StatusCreated {
 		t.Fatalf("XML preservation commit status = %d body=%s", response.Code, response.Body.String())
 	}
-	for _, canary := range []string{xmlPassword, headerValue} {
+	// The session header is recorded state, shown as imported; the password
+	// is a credential and stays masked.
+	if !strings.Contains(response.Body.String(), headerValue) {
+		t.Fatalf("commit response hid the recorded session header: %s", response.Body.String())
+	}
+	for _, canary := range []string{xmlPassword} {
 		if strings.Contains(response.Body.String(), canary) {
 			t.Fatalf("commit response disclosed imported credential %q: %s", canary, response.Body.String())
 		}

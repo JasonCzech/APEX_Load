@@ -827,13 +827,15 @@ http:
 `,
 		},
 	})
-	for _, protectedValue := range []string{
+	// Session headers are recorded state, not credentials, so the review
+	// shows them as imported.
+	for _, recordedValue := range []string{
 		activateSessionValue,
 		darkModeSessionValue,
 		cpniSessionValue,
 	} {
-		if bytes.Contains(responseBody, []byte(protectedValue)) {
-			t.Fatalf("native inspect response disclosed a supplied header credential")
+		if !bytes.Contains(responseBody, []byte(recordedValue)) {
+			t.Fatalf("native inspect response hid recorded session state %q", recordedValue)
 		}
 	}
 

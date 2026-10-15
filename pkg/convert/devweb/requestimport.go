@@ -256,12 +256,12 @@ func devWebCredentialDataBindings(actions []dsl.Action) map[string]map[string]st
 	for _, action := range actions {
 		collectDevWebCredentialURLDataReferences(action.Target, record)
 		for name, value := range action.Headers {
-			if credential.SensitiveHeader(name) || credential.SensitiveName(name) {
+			if credential.ImportCredentialHeader(name) {
 				record(value)
 			}
 		}
 		for _, header := range action.HeaderList {
-			if credential.SensitiveHeader(header.Name) || credential.SensitiveName(header.Name) {
+			if credential.ImportCredentialHeader(header.Name) {
 				record(header.Value)
 			}
 		}

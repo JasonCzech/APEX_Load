@@ -421,6 +421,13 @@ func (p *projector) projectHeaderValue(name string, value any) any {
 		}
 		return value
 	}
+	if credential.RecordedStateHeader(name) {
+		// Cookies and session, anti-forgery and tracing headers are state the
+		// source recorded, not credentials: nothing an imported script holds is
+		// a secret, so they show as recorded. A value that is also a credential
+		// held elsewhere in the script, or a known project secret, still masks.
+		return p.replaceKnown(text)
+	}
 	if credential.SensitiveHeader(name) || isSensitiveKey(name) {
 		return projectSensitiveString(text)
 	}

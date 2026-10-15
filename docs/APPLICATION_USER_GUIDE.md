@@ -665,7 +665,11 @@ script content. A header HTTP cannot send as recorded (a quote, a line break or 
 curl fragment in its name or value) is left out of the request, which is held for
 review; the import review and the editor's Author Problems name the header and what is
 wrong with it, so you can correct it in the source and import again (a Bruno collection
-instead offers to trim or remove it at review). An input the source references but never
+instead offers to trim or remove it at review). Only credentials an operator supplies
+(authorization, API and subscription keys, auth tokens, passwords) go to credential
+review; cookies and session, anti-forgery and trace headers are state the source
+recorded, so every importer keeps them as imported and the script shows them (run
+evidence redaction, when it is on, still masks them). An input the source references but never
 supplies (**Required runtime inputs** under the review's data substitutions) takes one value
 for every user, a column of a data pool each virtual user reads its own row of
 (`{{data.alias.column}}`; bind the alias in the scenario's Data step), or a value generated

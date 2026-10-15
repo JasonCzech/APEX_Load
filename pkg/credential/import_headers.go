@@ -7,13 +7,13 @@ import (
 
 // recordedStateWords mark headers that carry state the source tool recorded or
 // generated for one session or request: session identifiers, anti-forgery
-// tokens and tracing or correlation identifiers.
+// tokens, tracing or correlation identifiers and idempotency keys.
 var recordedStateWords = map[string]struct{}{
 	"session": {}, "sessionid": {}, "sessiontoken": {}, "sid": {},
 	"csrf": {}, "csrftoken": {}, "xsrf": {}, "xsrftoken": {},
 	"trace": {}, "traceid": {}, "traceparent": {}, "tracestate": {},
 	"span": {}, "spanid": {}, "correlation": {}, "correlationid": {},
-	"conversation": {}, "conversationid": {},
+	"conversation": {}, "conversationid": {}, "idempotency": {},
 }
 
 // credentialWords name what an operator supplies to authenticate. Present in
@@ -25,23 +25,39 @@ var credentialWords = map[string]struct{}{
 }
 
 // ImportCredentialHeader reports whether an imported request header carries a
-// credential an operator supplies, such as Authorization, an API key or an
-// auth token. Importers route only these headers to credential review.
+// credential an operator supplies, such as Authorization, an API or
+// subscription key, or an auth token. Every importer routes only these headers
+// to credential review.
 //
 // Cookies and session, anti-forgery and correlation headers are state the
-// source recorded. By product decision an imported script's own values are not
-// secrets, so those headers stay as imported. Log and evidence redaction still
-// use the broader SensitiveHeader and AlwaysSensitiveHeader checks.
+// source recorded (RecordedStateHeader). By product decision an imported
+// script's own values are not secrets, so those headers stay as imported. Log
+// and evidence redaction still use the broader SensitiveHeader and
+// AlwaysSensitiveHeader checks.
 func ImportCredentialHeader(name string) bool {
 	lower := strings.ToLower(strings.TrimSpace(name))
-	if lower == "" || CookieHeader(lower) {
+	if lower == "" || RecordedStateHeader(lower) {
 		return false
+	}
+	return SensitiveHeader(lower) || AlwaysSensitiveHeader(lower)
+}
+
+// RecordedStateHeader reports whether a request header carries state the
+// source recorded for one session or request rather than a credential an
+// operator supplies: cookies, and session, anti-forgery and tracing or
+// correlation headers whose name has no credential word. Imports keep these
+// as recorded and script views show them, because an imported script's own
+// values are not secrets; log and run-evidence redaction does not use this.
+func RecordedStateHeader(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	if lower == "" {
+		return false
+	}
+	if CookieHeader(lower) {
+		return true
 	}
 	words := headerNameWords(lower)
-	if hasHeaderWord(words, recordedStateWords) && !hasHeaderWord(words, credentialWords) {
-		return false
-	}
-	return AlwaysSensitiveHeader(lower)
+	return hasHeaderWord(words, recordedStateWords) && !hasHeaderWord(words, credentialWords)
 }
 
 func headerNameWords(lower string) []string {

@@ -259,6 +259,23 @@ describe('HttpRequestDefaultsEditor', () => {
     expect(container.textContent).not.toContain(secret)
   })
 
+  it('shows recorded session and anti-forgery headers without a credential warning', () => {
+    render({
+      default_header_list: [
+        { name: 'X-CSRF-Token', value: 'recorded-csrf-52' },
+        { name: 'X-Auth-Token', value: 'operator-token-63' },
+      ],
+    })
+
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Header 1 value"]')?.type).toBe('text')
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Header 2 value"]')?.type).toBe('password')
+    expect(container.textContent).not.toContain('X-CSRF-Token may contain a credential')
+    expect(container.textContent).toContain('X-Auth-Token may contain a credential')
+    act(() => click(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Show preview') || null))
+    expect(container.textContent).toContain('recorded-csrf-52')
+    expect(container.textContent).not.toContain('operator-token-63')
+  })
+
   it('shows only the winning authored default when it overrides a typed header', () => {
     render({
       user_agent: 'typed-agent',

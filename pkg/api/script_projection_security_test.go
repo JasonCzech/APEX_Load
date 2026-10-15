@@ -114,7 +114,7 @@ func TestMaskScriptSecretsProjectsEveryCredentialSurface(t *testing.T) {
 		"url-pass", "global-password", "global-token", "proxy-password", "header-api-key", "grpc-token",
 		"soap-password", "db-password", "ldap-password", "sap-password", "jms-password", "jms-client-secret",
 		"kafka-password", "schema-password", "eventhub-key", "browser-password", "certificate-passphrase",
-		"action-password", "action-token", "action-api-key", "action-cookie", "body-password", "param-secret",
+		"action-password", "action-token", "action-api-key", "body-password", "param-secret",
 		"short-signature", "short-account-key", "short-csrf", "short-pwd",
 		"nested-secret", "metadata-secret", "nested-metadata-secret", "short-action-password", `"X-Custom-Secret":"short"`, `"X-Custom-Token":"tiny"`,
 	} {
@@ -126,6 +126,11 @@ func TestMaskScriptSecretsProjectsEveryCredentialSurface(t *testing.T) {
 		if !strings.Contains(text, reference) {
 			t.Fatalf("masked script lost secret reference %q: %s", reference, text)
 		}
+	}
+	// A cookie is session state the source recorded, not a credential: it
+	// shows as recorded.
+	if !strings.Contains(text, "session=action-cookie") {
+		t.Fatalf("masked script hid the recorded cookie: %s", text)
 	}
 	if !strings.Contains(text, maskedScriptSecret) || raw.Config.HTTP.Auth.Password != "global-password" {
 		t.Fatal("projection did not redact deeply or mutated the runtime script")
@@ -716,8 +721,10 @@ func TestMaskScriptSecretsPreservesNativeSourceAndMessageIdentifiers(t *testing.
 	if got := action.Metadata["source_step_id"]; got != "0a3d7bb4aa0ff8b2b1512082a253b7af" {
 		t.Fatalf("source step id = %#v", got)
 	}
-	if got := action.Headers["idpctx-session-id"]; got != maskedScriptSecret {
-		t.Fatalf("session credential = %q, want redaction", got)
+	// A session header is recorded state, not a credential: it shows as
+	// recorded and needs no binding.
+	if got := action.Headers["idpctx-session-id"]; got != "source-session-credential" {
+		t.Fatalf("session header = %q, want it shown as recorded", got)
 	}
 	preserved := masked.Metadata.Import.Preserved
 	if preserved["effective_auth"] != "basic" {
@@ -730,8 +737,8 @@ func TestMaskScriptSecretsPreservesNativeSourceAndMessageIdentifiers(t *testing.
 	if !ok || fields["auth_mode"] != "basic" {
 		t.Fatalf("effective fields = %#v", preserved["effective_fields"])
 	}
-	if unresolved := discoverSecretBindingRequirements(masked, 0); len(unresolved) != 2 {
-		t.Fatalf("unresolved requirements = %#v, want only the duplicated session credential surfaces", unresolved)
+	if unresolved := discoverSecretBindingRequirements(masked, 0); len(unresolved) != 0 {
+		t.Fatalf("unresolved requirements = %#v, want none for recorded session state", unresolved)
 	}
 	// A repeat comes from the masking cache and must match exactly, including
 	// the typed values restored from the source script.
@@ -1866,14 +1873,16 @@ func TestMaskScriptSecretsMasksRetainedUnsupportedAuthSourceFields(t *testing.T)
 	}
 }
 
-func TestMaskScriptSecretsPreservesOnlyKnownAgentforceSessionEndReason(t *testing.T) {
+// x-session-end-reason is session state the source recorded (Agentforce's
+// lifecycle reason), not a credential: any value shows as recorded.
+func TestMaskScriptSecretsShowsAgentforceSessionEndReason(t *testing.T) {
 	for _, test := range []struct {
 		name  string
 		value string
 		want  string
 	}{
 		{name: "known enum", value: "UserRequest", want: "UserRequest"},
-		{name: "arbitrary value", value: "session-end-secret", want: maskedScriptSecret},
+		{name: "arbitrary value", value: "session-end-reason-7", want: "session-end-reason-7"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			script := &dsl.Script{
@@ -1888,10 +1897,8 @@ func TestMaskScriptSecretsPreservesOnlyKnownAgentforceSessionEndReason(t *testin
 			if projected == nil || projected.Teardown[0].Headers["x-session-end-reason"] != test.want {
 				t.Fatalf("projected header = %#v, want %q", projected, test.want)
 			}
-			if test.want == "UserRequest" {
-				if requirements := discoverSecretBindingRequirements(projected, 0); len(requirements) != 0 {
-					t.Fatalf("known lifecycle enum created credential requirements: %#v", requirements)
-				}
+			if requirements := discoverSecretBindingRequirements(projected, 0); len(requirements) != 0 {
+				t.Fatalf("session end reason created credential requirements: %#v", requirements)
 			}
 		})
 	}

@@ -1104,9 +1104,15 @@ func TestConvertOpenAPIPreservesAuthoredCredentialExamplesAcrossRequestSurfaces(
 		"xml-pass",
 		"path-pass",
 		"header-pass",
-		"cookie-pass",
 		"query-pass",
 	)
+	// A cookie parameter is session state, not an operator credential (a
+	// cookie API key security scheme is): the script view shows it.
+	if projected, err := scriptdisclosure.Project(result.Script); err != nil {
+		t.Fatal(err)
+	} else if encoded, _ := json.Marshal(projected); !strings.Contains(string(encoded), "session_token=cookie-pass") {
+		t.Fatalf("script disclosure hid the authored cookie: %s", encoded)
+	}
 	for _, actionName := range []string{
 		"jsonCredential",
 		"formCredential",

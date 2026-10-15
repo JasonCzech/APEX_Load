@@ -19,7 +19,7 @@ import {
   type SharedValues,
 } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
-import { isSensitiveCredentialPreviewKey, normalizeCredentialPreviewName } from './credentialPreviewPolicy'
+import { isRecordedStateHeader, isSensitiveCredentialPreviewKey, normalizeCredentialPreviewName } from './credentialPreviewPolicy'
 import { importActionEntries } from './importReviewIssues'
 import ParameterizationReview from './ParameterizationReview'
 import { ImportTransportPanel } from './ImportTransportPanel'
@@ -73,6 +73,17 @@ function previewObjectHasSensitiveSemanticName(candidate: Record<string, unknown
     }
   }
   return false
+}
+
+// previewHeaderContainer reports whether the object at path is a header map
+// (headers, default_headers) or one header_list entry.
+function previewHeaderContainer(path: string): 'map' | 'entry' | null {
+  const segments = path.split('/')
+  const last = normalizeCredentialPreviewName(segments[segments.length - 1] || '')
+  if (last === 'headers' || last === 'defaultheaders') return 'map'
+  const parent = normalizeCredentialPreviewName(segments[segments.length - 2] || '')
+  if ((parent === 'headerlist' || parent === 'defaultheaderlist') && /^\d+$/.test(segments[segments.length - 1] || '')) return 'entry'
+  return null
 }
 
 function safeCredentialReference(value: string): boolean {
@@ -342,7 +353,9 @@ function previewJSON(value: unknown, complete = false, protectedPaths: Set<strin
     truncated: false,
     seen: new WeakSet<object>(),
   }
-  const visit = (candidate: unknown, depth: number, sensitiveAncestor = false, path = ''): unknown => {
+  // recordedState marks the value of a cookie, session, anti-forgery or tracing
+  // header: state the source recorded, which the server shows as recorded.
+  const visit = (candidate: unknown, depth: number, sensitiveAncestor = false, path = '', recordedState = false): unknown => {
     if (state.nodes >= maxNodes || depth > maxDepth) {
       state.truncated = true
       return '… preview limit reached …'
@@ -353,7 +366,7 @@ function previewJSON(value: unknown, complete = false, protectedPaths: Set<strin
       if (sensitiveAncestor && !safeCredentialReference(candidate)) return PROTECTED_PREVIEW_VALUE
       const truncated = candidate.length > maxString
       const boundedCandidate = truncated ? candidate.slice(0, maxString) : candidate
-      const safeCandidate = redactPreviewText(boundedCandidate)
+      const safeCandidate = recordedState && !sensitiveAncestor ? boundedCandidate : redactPreviewText(boundedCandidate)
       if (!truncated && safeCandidate.length <= maxString) return safeCandidate
       state.truncated = true
       return `${safeCandidate.slice(0, maxString)}…`
@@ -385,26 +398,38 @@ function previewJSON(value: unknown, complete = false, protectedPaths: Set<strin
       const keyCount = Math.min(keys.length, maxKeys)
       if (keyCount < keys.length) state.truncated = true
       const result: Record<string, unknown> = {}
-      const sensitiveSemanticName = previewObjectHasSensitiveSemanticName(candidate as Record<string, unknown>, keys)
+      const headerContainer = previewHeaderContainer(path)
+      let recordedEntry = false
+      if (headerContainer === 'entry') {
+        try {
+          const headerName = (candidate as Record<string, unknown>).name
+          recordedEntry = typeof headerName === 'string' && isRecordedStateHeader(headerName)
+        } catch {
+          // A throwing accessor cannot prove the header is recorded state.
+        }
+      }
+      const sensitiveSemanticName = !recordedEntry && previewObjectHasSensitiveSemanticName(candidate as Record<string, unknown>, keys)
       for (let index = 0; index < keyCount && state.nodes < maxNodes; index += 1) {
         const key = keys[index]
         if (['import_draft_token', 'source_secret_session_id', 'protected_import_session_id'].includes(key)) { result[key] = PROTECTED_PREVIEW_VALUE; continue }
         try {
           const child = (candidate as Record<string, unknown>)[key]
           const semanticNameKey = sensitiveSemanticName && isPreviewSemanticNameKey(key)
+          const childRecordedState = (headerContainer === 'map' && isRecordedStateHeader(key)) ||
+            (recordedEntry && normalizeCredentialPreviewName(key) === 'value')
           const childSensitive = (
             sensitiveAncestor
             // Opaque source snippets and positional arguments cannot be safely
             // classified by a browser name-based redactor. Preserve their shape
             // while hiding values in the downloadable review.
             || (complete && ['metadata', 'args', 'call_args'].includes(key))
-            || (!semanticNameKey && isSensitiveCredentialPreviewKey(key))
+            || (!semanticNameKey && !childRecordedState && isSensitiveCredentialPreviewKey(key))
             // A semantic credential record can use arbitrary adapter-specific
             // payload keys such as defaultValue, values, or schema.default. Protect
             // every non-name descendant instead of relying on a small allowlist.
             || (sensitiveSemanticName && !semanticNameKey)
           )
-          result[key] = visit(child, depth + 1, childSensitive, `${path}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`)
+          result[key] = visit(child, depth + 1, childSensitive, `${path}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`, childRecordedState)
         } catch {
           result[key] = '[Unable to preview value]'
         }

@@ -452,8 +452,10 @@ describe('ScriptImportReview', () => {
     expect(preview).not.toContain('raw-authorization-token')
     expect(preview).not.toContain('raw-api-key-value')
     expect(preview).not.toContain('raw-session-object')
-    expect(preview).not.toContain('raw-idpctx-session')
-    expect(preview).not.toContain('raw-csrf-header')
+    // Session and anti-forgery headers are recorded state, shown as the
+    // server shows them; the same names in a body stay protected.
+    expect(preview).toContain('raw-idpctx-session')
+    expect(preview).toContain('raw-csrf-header')
     expect(preview).not.toContain('raw-session-body')
     expect(preview).not.toContain('raw-csrf-body')
     expect(preview).not.toContain('raw-xsrf-xml')
@@ -527,6 +529,37 @@ describe('ScriptImportReview', () => {
     expect(preview).not.toContain('semantic-values-canary')
     expect(preview).not.toContain('semantic-nested-canary')
     expect(preview).toContain('visible-display-name')
+  })
+
+  it('shows recorded cookie, session and anti-forgery headers as the server does', () => {
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          title="Recorded state preview"
+          script={script}
+          previewData={{
+            actions: [{
+              headers: {
+                Cookie: 'JSESSIONID=recorded-cookie-41; sid=recorded-sid-42',
+                'X-CSRF-Token': 'recorded-csrf-52',
+                Authorization: 'Bearer operator-bearer-63',
+              },
+              header_list: [
+                { name: 'idpctx-session-id', value: 'recorded-session-74' },
+                { name: 'Authorization', value: 'Bearer operator-list-85' },
+              ],
+            }],
+          }}
+        />,
+      )
+    })
+
+    const preview = container.querySelector('.script-import-review-preview')?.textContent || ''
+    expect(preview).toContain('JSESSIONID=recorded-cookie-41; sid=recorded-sid-42')
+    expect(preview).toContain('recorded-csrf-52')
+    expect(preview).toContain('recorded-session-74')
+    expect(preview).not.toContain('operator-bearer-63')
+    expect(preview).not.toContain('operator-list-85')
   })
 
   it('mirrors broad backend header governance without hiding non-sensitive header values', () => {
