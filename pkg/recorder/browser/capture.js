@@ -240,7 +240,7 @@
         break;
       }
     }
-    ['title', 'data-aura-class', 'data-aura-rendered-by'].forEach((name) => {
+    ['title', 'autocomplete', 'data-aura-class', 'data-aura-rendered-by'].forEach((name) => {
       const v = el.getAttribute(name);
       if (v) attrs[name] = v;
     });
@@ -408,6 +408,14 @@
       (el.getAttribute('type') || 'text').toLowerCase() === 'password';
   }
 
+  // A one-time verification code (Salesforce identity verification) never
+  // leaves the page either: it cannot replay.
+  function isOneTimeCodeInput(el) {
+    if (!el.tagName || el.tagName.toLowerCase() !== 'input') return false;
+    if ((el.getAttribute('autocomplete') || '').toLowerCase() === 'one-time-code') return true;
+    return location.pathname.indexOf('/_ui/identity/verification/') === 0 && isTextEntryControl(el);
+  }
+
   function isTextEntryControl(el) {
     if (!el || !el.tagName) return false;
     if (isEditableContent(el)) return true;
@@ -442,7 +450,7 @@
   }
 
   function fillSnapshot(el) {
-    const masked = isPasswordInput(el);
+    const masked = isPasswordInput(el) || isOneTimeCodeInput(el);
     if (isEditableContent(el)) {
       return { value: String(el.innerText || el.textContent || ''), masked: false };
     }

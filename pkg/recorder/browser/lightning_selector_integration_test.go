@@ -103,3 +103,55 @@ func TestRecordedLightningSelectorsMatchOneVisibleElement(t *testing.T) {
 		t.Fatalf("replayed clicks did not reach the visible buttons: %v %+v", err, check)
 	}
 }
+
+// A verification code typed on a Salesforce identity-verification page is
+// masked at capture, like a password: its digits never leave the page.
+func TestRecordedVerificationCodeIsMasked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser integration")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!doctype html><html><body><input id="smc" type="text"><input id="other" type="text" autocomplete="one-time-code"></body></html>`)
+	}))
+	defer server.Close()
+	recorder := New(Options{StartURL: server.URL + "/_ui/identity/verification/method/SmsVerificationFinish", Headless: true})
+	if err := recorder.Start(); err != nil {
+		if os.Getenv("APEXLOAD_BROWSER_TESTS") == "require" {
+			t.Fatal(err)
+		}
+		t.Skipf("browser runtime unavailable: %v", err)
+	}
+	defer recorder.Stop()
+	page := recorder.context.Pages()[0]
+	for index, field := range []string{"#smc", "#other"} {
+		if err := page.Fill(field, "482913"); err != nil {
+			t.Fatal(err)
+		}
+		if err := page.Press(field, "Tab"); err != nil {
+			t.Fatal(err)
+		}
+		waitForSteps(t, recorder, index+1, 5*time.Second)
+	}
+	session, err := recorder.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fills := 0
+	for _, step := range session.Steps {
+		if step.Kind != StepFill {
+			continue
+		}
+		fills++
+		if !step.Masked || step.Value != "" {
+			t.Fatalf("verification code step = %+v", step)
+		}
+	}
+	if fills == 0 {
+		t.Fatalf("no fill recorded: %+v", session.Steps)
+	}
+	encoded, _ := json.Marshal(session)
+	if strings.Contains(string(encoded), "482913") {
+		t.Fatal("the code reached the recording")
+	}
+}

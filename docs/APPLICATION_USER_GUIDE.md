@@ -713,6 +713,11 @@ method you used last.
   XPath selectors match visible elements only, since Lightning keeps hidden copies of
   earlier pages in the document. A selector that matched several visible elements when
   you recorded is ranked last.
+- A browser recording that starts by signing in to Salesforce (the login page and any
+  identity verification) puts those steps in init, tagged `salesforce_auth`, so each
+  virtual user signs in once. A verification code is masked like a password and cannot
+  replay: exempt the perf users from identity verification. Before running more than one
+  observer, give each its own user, since every one would sign in as the recorded user.
 - A browser recording keeps a HAR of its traffic of up to 100 MB. Excluded hosts are
   removed before response bodies count toward that limit. Past it, the HAR still
   keeps every request and leaves out response bodies, images and media first, and

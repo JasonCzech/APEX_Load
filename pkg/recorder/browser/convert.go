@@ -182,7 +182,15 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 		}
 	}
 
-	for _, entry := range buildTimeline(session, opts.StepRange) {
+	timeline := buildTimeline(session, opts.StepRange)
+	signIn := salesforceSignInSteps(session.Steps)
+	if moved, refusal := moveSalesforceSignInToInit(timeline, signIn); refusal != "" {
+		result.Warnings = append(result.Warnings, refusal)
+	} else if moved > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"The recorded Salesforce sign-in (%d step(s)) runs in init, once per virtual user. Before running more than one observer, give each its own user or session: every one would sign in as the recorded user, and a verification code does not replay.", moved))
+	}
+	for _, entry := range timeline {
 		entrySection := normalizeSection(entry.section)
 		switch {
 		case entry.wsOpen || entry.wsFrame != nil:
@@ -235,6 +243,9 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 				continue
 			}
 			decorate(&action, true)
+			if signIn[step.Seq] {
+				setMeta(&action, "salesforce_auth", true)
+			}
 			sa := sectionedAction{action: action, section: entrySection, timestamp: entry.timestamp, width: step.ViewportWidth, height: step.ViewportHeight}
 			// A dialog fires from the action just before it, but replay arms the
 			// handler one-shot — so place handle_dialog before its trigger. Only
@@ -955,7 +966,12 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 		action.Name = "Fill " + stepLabel(step)
 		action.Type = "browser_fill"
 		action.Value = step.Value
-		if step.Masked {
+		if salesforceOneTimeCode(step) {
+			key := secretEnvKey(step)
+			action.Value = "{{env." + key + "}}"
+			result.Warnings = append(result.Warnings, fmt.Sprintf(
+				"step %d entered a one-time verification code, which was masked at capture and cannot replay: exempt the perf users from identity verification, or give each observer a signed-in session", step.Seq))
+		} else if step.Masked {
 			key := secretEnvKey(step)
 			action.Value = "{{env." + key + "}}"
 			result.Warnings = append(result.Warnings, fmt.Sprintf(
@@ -1182,6 +1198,9 @@ func attachStepMetadata(action *dsl.Action, step Step) {
 	}
 	if step.Masked {
 		action.Metadata["source_masked_secret"] = true
+	}
+	if salesforceOneTimeCode(step) {
+		action.Metadata["source_one_time_code"] = true
 	}
 	if step.MarkSecret {
 		action.Metadata["source_marked_secret"] = true
