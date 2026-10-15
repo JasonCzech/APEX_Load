@@ -253,6 +253,7 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	appendSOAPConfig(cfg, script)
 	appendDatabaseConfig(cfg, script)
 	appendNetworkConfig(cfg, script)
+	appendAppiumConfig(cfg, script)
 	appendBrowserConfig(cfg, script)
 	appendJMSConfig(cfg, script)
 	appendKafkaConfig(cfg, script)

@@ -128,6 +128,7 @@ import {
   EMPTY_DATA_SOURCE,
   EMPTY_JMS_ACTION,
   EMPTY_NETWORK_ACTION,
+  EMPTY_APPIUM_ACTION,
   EMPTY_PARAMETER,
   EMPTY_SCRIPT,
   EMPTY_SOAP_ACTION,
@@ -1015,6 +1016,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const isGrpcScript = script.protocol === 'grpc'
   const isDatabaseScript = script.protocol === 'database'
   const isNetworkScript = script.protocol === 'network'
+  const isAppiumScript = script.protocol === 'appium'
   const canEditProtocol = !scriptId && !script.metadata?.import && !scriptHasAuthoredActions(script)
   // True when editing a saved script (has an id) vs. authoring a brand-new draft. Drives
   // context-aware sidebar emphasis: scaffolding aids lead for new scripts, review/parameter
@@ -2617,7 +2619,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 ? EMPTY_DATABASE_ACTION
                 : isNetworkScript
                   ? EMPTY_NETWORK_ACTION
-                  : EMPTY_ACTION
+                  : isAppiumScript
+                    ? EMPTY_APPIUM_ACTION
+                    : EMPTY_ACTION
     const currentActions = phaseActionsForScript(script, phase)
     const a = JSON.parse(JSON.stringify({
       ...template,

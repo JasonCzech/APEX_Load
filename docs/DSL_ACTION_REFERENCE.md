@@ -357,6 +357,70 @@ Replays an imported XML document operation, saving the result into a variable.
 | `params.args` | array |  | Positional arguments of the imported source function call. |
 | `params.save_param` | string |  | Variable name receiving the extracted value. |
 
+## Protocol: appium
+
+### `appium_activate_app`
+
+Brings an app to the foreground, launching it if needed.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.bundle_id` | string | yes | The app's bundle id (iOS) or package (Android). |
+
+### `appium_execute`
+
+Runs an Appium mobile command, such as mobile: swipe or mobile: scroll.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.script` | string | yes | The command, such as mobile: swipe. |
+| `params.args` | object |  | The command's arguments, such as {"direction": "up"}. |
+
+### `appium_screenshot`
+
+Takes a screenshot of the device for the step's evidence.
+
+### `appium_tap`
+
+Waits for an element on the device and taps it.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | The element to tap. Its accessibility id unless params.using names another locator. |
+| `params.using` | enum |  | Locator strategy; defaults to accessibility id. One of: `accessibility id`, `id`, `name`, `xpath`, `class name`, `-ios predicate string`, `-ios class chain`, `-android uiautomator`. |
+| `params.timeout_ms` | int |  | How long to wait for the element, in milliseconds; defaults to config.appium.element_timeout_ms (15 seconds). |
+
+### `appium_terminate_app`
+
+Closes an app, so the next iteration starts it fresh.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.bundle_id` | string | yes | The app's bundle id (iOS) or package (Android). |
+
+### `appium_type`
+
+Waits for a text field on the device and types into it.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | The field to type into. Its accessibility id unless params.using names another locator. |
+| `params.using` | enum |  | Locator strategy; defaults to accessibility id. One of: `accessibility id`, `id`, `name`, `xpath`, `class name`, `-ios predicate string`, `-ios class chain`, `-android uiautomator`. |
+| `params.timeout_ms` | int |  | How long to wait for the element, in milliseconds; defaults to config.appium.element_timeout_ms (15 seconds). |
+| `value` | string |  | The text to type; template variables are expanded. |
+| `params.clear` | bool |  | Clear the field first. |
+
+### `appium_wait`
+
+Waits until an element shows on the device, optionally with some text; the element's text is the step's response.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | The element to wait for. Its accessibility id unless params.using names another locator. |
+| `params.using` | enum |  | Locator strategy; defaults to accessibility id. One of: `accessibility id`, `id`, `name`, `xpath`, `class name`, `-ios predicate string`, `-ios class chain`, `-android uiautomator`. |
+| `params.timeout_ms` | int |  | How long to wait for the element, in milliseconds; defaults to config.appium.element_timeout_ms (15 seconds). |
+| `params.text` | string |  | Text the element must contain. |
+
 ## Protocol: browser
 
 ### `browser_back`

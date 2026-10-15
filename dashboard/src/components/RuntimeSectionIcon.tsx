@@ -108,6 +108,13 @@ export function RuntimeSectionIcon({ section }: { section: RuntimeSettingsSectio
             <path d="M5 10c0 1.7 3.1 3 7 3s7-1.3 7-3" />
           </>
         )
+      case 'appium':
+        return (
+          <>
+            <rect x="6.5" y="3" width="11" height="18" rx="2" />
+            <path d="M10.5 17.5h3" />
+          </>
+        )
       case 'network':
         return (
           <>

@@ -79,6 +79,7 @@ type Protocol interface {
 - **database**: SQL query/exec/transactions
 - **network**: DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP
 - **browser**: Playwright replay + canary diagnostics (FCP/LCP/CLS/INP/TTFB)
+- **appium**: Device observer; drives one real device or simulator through an Appium server's W3C WebDriver API (tap, type, wait, app launch, mobile commands, screenshots)
 
 The controller, generator, and `apexctl` binaries bundle all of the above through
 `pkg/protocol/builtin`.

@@ -118,6 +118,9 @@ func validateScriptIssues(script *Script, allowPreservedJavaVMCredentials bool) 
 	if script.Protocol == "network" {
 		issues = append(issues, validateNetworkScriptIssues(script)...)
 	}
+	if script.Protocol == "appium" {
+		issues = append(issues, validateAppiumScriptIssues(script)...)
+	}
 	if script.Protocol == "sap_gui" {
 		issues = append(issues, validateSAPGUIScriptIssues(script)...)
 	}
@@ -586,7 +589,7 @@ var fileTemplateRefPattern = regexp.MustCompile(`\{\{\s*file\.([^{}\s]+)\s*\}\}`
 
 func protocolAllowsEmptyBaseURL(protocolName string) bool {
 	switch ProtocolFamily(protocolName) {
-	case "browser", "bruno", "database", "network", "jms", "kafka", "eventhubs", "sap_gui", "java_vuser":
+	case "browser", "bruno", "database", "network", "jms", "kafka", "eventhubs", "sap_gui", "java_vuser", "appium":
 		return true
 	default:
 		return false
@@ -929,10 +932,10 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 		return rebaseActionIssues(fmt.Sprintf("actions[%d]", index), path, nestedIssues)
 	}
 	protocolFamily := ProtocolFamily(protocol)
-	if protocolFamily == "jms" || protocolFamily == "kafka" || protocolFamily == "eventhubs" {
+	if protocolFamily == "jms" || protocolFamily == "kafka" || protocolFamily == "eventhubs" || protocolFamily == "appium" {
 		spec, ok := protocolActionSpec(protocolFamily, action.Type)
 		if !ok {
-			label := map[string]string{"jms": "JMS", "kafka": "Kafka", "eventhubs": "Event Hubs"}[protocolFamily]
+			label := map[string]string{"jms": "JMS", "kafka": "Kafka", "eventhubs": "Event Hubs", "appium": "Appium"}[protocolFamily]
 			return append(issues, fmt.Sprintf("%s: unsupported %s action type %q", actionLabel(path, action), label, action.Type))
 		}
 		if spec.Validate != nil {
@@ -1309,7 +1312,7 @@ func fileDataSourceHasContent(source DataSource) bool {
 // those runtimes and the dashboard editor both support.
 func extractorSourceTypeAllowlistApplies(protocol string) bool {
 	switch ProtocolFamily(protocol) {
-	case "browser", "bruno", "websocket", "grpc", "database", "network", "sap_gui", "java_vuser", "jms", "kafka", "eventhubs":
+	case "browser", "bruno", "websocket", "grpc", "database", "network", "sap_gui", "java_vuser", "jms", "kafka", "eventhubs", "appium":
 		return false
 	}
 	return true

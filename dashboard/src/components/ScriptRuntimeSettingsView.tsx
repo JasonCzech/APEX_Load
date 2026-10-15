@@ -19,6 +19,8 @@ import { jmsProviderForProtocol } from './scriptEditorHelpers'
 import { JavaEnvSettingsFields } from './JavaEnvSettingsFields'
 import { readImportedJavaVMParameters } from './scriptEditorImportModel'
 import { RuntimeSectionIcon } from './RuntimeSectionIcon'
+import AppiumRuntimeFields from './AppiumRuntimeFields'
+import { appiumDeviceSummary } from './appiumRuntimeModel'
 import {
   ImportedSourceRuntimeSection,
   JavaHTTPRuntimeSection,
@@ -213,6 +215,7 @@ export function ScriptRuntimeSettingsView({
     javaVuser: isJavaVuserScript,
     jms: isJmsScript,
     network: isNetworkScript,
+    appium: isAppiumScript,
     soap: isSoapScript,
     webSocket: isWebSocketScript,
   } = capabilities
@@ -1058,6 +1061,22 @@ export function ScriptRuntimeSettingsView({
               <input value={script.config.network?.base_dn || ''}
                 onChange={e => updateField('config.network', { ...script.config.network, base_dn: e.target.value })} placeholder="dc=example,dc=com" /></label>
           </div>
+        </div>
+      )}
+    </div>
+  )}
+
+  {isAppiumScript && (
+    <div className={`settings-section ${runtimeSectionIsActive('appium') ? 'open' : ''}`}>
+      <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('appium')}>
+        <RuntimeSectionIcon section="appium" />
+        <span className="section-label">Appium Device</span>
+        <span className="section-summary">{appiumDeviceSummary(script.config.appium)}</span>
+        <span className="chevron">{runtimeSectionIsActive('appium') ? '▾' : '▸'}</span>
+      </button>
+      {runtimeSectionIsActive('appium') && (
+        <div className="section-body">
+          <AppiumRuntimeFields config={script.config.appium} onChange={appium => updateField('config.appium', appium)} />
         </div>
       )}
     </div>

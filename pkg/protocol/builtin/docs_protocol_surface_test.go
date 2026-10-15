@@ -14,6 +14,7 @@ import (
 // hand-maintained, so this test is the cross-check that keeps them from drifting
 // away from pkg/protocol/builtin when a protocol is added.
 var protocolDocAliases = map[string][]string{
+	"appium":         {"appium", "Appium"},
 	"browser":        {"browser"},
 	"bruno":          {"bruno"},
 	"database":       {"database"},

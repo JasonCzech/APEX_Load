@@ -29,7 +29,8 @@ under it. A few concepts recur throughout the product:
 
 APEX Load can drive HTTP/1.1 and HTTP/2, SOAP/WSDL, WebSocket, gRPC, messaging (JMS,
 Kafka, Azure Event Hubs), databases, network protocols, and browser replay — so one
-platform covers API, integration, and end-to-end load.
+platform covers API, integration, and end-to-end load. A device observer measures one
+real phone or tablet, through Appium, while that load runs.
 
 Work is organized as a hierarchy: **Domain → Application Repository → Category →
 Project → Release**. The **Project** is the boundary for access control, scripts,
@@ -830,6 +831,40 @@ A scenario brings together:
 - **Shakeout** and **Resource baseline windows** — whether the run first proves the
   scripts with a canary, and whether it captures an idle resource baseline before load
   starts.
+
+### Measuring A Real Device Under Load
+
+A **device observer** times what a person on a real phone or tablet sees while the
+HTTP groups supply the load. It is a script with the **Mobile device (Appium)**
+protocol, run as its own group of one virtual user, usually with a **Start offset**
+so it begins once the load has ramped up. Its transactions appear in the run's
+report next to the load's, by group.
+
+In the script's **Appium Device** runtime settings, set the Appium server and the
+capabilities that name the device and the app:
+
+- a device cloud's WebDriver hub, with its credentials as project-secret
+  references, such as `https://{{secret.CLOUD_USER}}:{{secret.CLOUD_KEY}}@hub.example.com/wd/hub`;
+  the cloud's own capabilities (such as its device group) go in the capabilities;
+- or, for development, Appium on a Mac driving an iOS simulator
+  (`http://127.0.0.1:4723`, `appium:automationName` `XCUITest`, and the simulator's
+  `appium:udid`).
+
+The generator that runs the observer group opens the session, so it must reach the
+Appium server: a device cloud's hub from anywhere with internet access, Appium on a
+Mac only from a controller or generator on that Mac (or an address the generator can
+reach). A project's runtime target policy applies to the Appium server too.
+
+The steps wait for an element and act on it: **appium_tap**, **appium_type** and
+**appium_wait** (optionally for some text), each finding its element by accessibility
+id unless `params.using` names another locator (`-ios predicate string`, `xpath`, and
+others). **appium_activate_app** and **appium_terminate_app** start and close the
+app, **appium_execute** runs an Appium mobile command such as `mobile: swipe`, and
+**appium_screenshot** keeps a screenshot. Mark each journey step with **Start
+transaction** and **End transaction** steps, as in any script. Each virtual user
+opens its Appium session at init (a device cloud may take minutes to allocate the
+device; the session timeout allows three by default) and closes it at teardown.
+Appium does not generate load: give the group one virtual user per device.
 
 ### Sizing From A Goal
 

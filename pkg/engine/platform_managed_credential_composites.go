@@ -356,12 +356,14 @@ func scriptCredentialCompositeSurfaces(
 	// (protocolhttp.ResolveURL), proxy_url feeds http.ProxyURL whenever
 	// proxy_username is empty (pkg/protocol/http/config.go), browser_proxy_server
 	// is handed to Playwright verbatim, and kafka_schema_registry_url is dialed
-	// by a plain net/http client (pkg/protocol/kafka/schemaregistry.go).
+	// by a plain net/http client (pkg/protocol/kafka/schemaregistry.go), as is
+	// appium_server_url (pkg/protocol/appium/webdriver.go).
 	appendURL("config.base_url", script.Config.BaseURL, "base_url")
 	appendURL("config.http.proxy.url", httpProxy.URL, "proxy_url")
 	appendURL("config.browser.proxy.server", browserProxy.Server, "browser_proxy_server")
 	appendURL("config.kafka.schema_registry_url",
 		script.Config.Kafka.SchemaRegistryURL, "kafka_schema_registry_url")
+	appendURL("config.appium.server_url", script.Config.Appium.ServerURL, "appium_server_url")
 
 	// A DSN is only protected when the field that actually supplies it defers to
 	// the secret store. An imported literal DSN is script-sourced: the operator

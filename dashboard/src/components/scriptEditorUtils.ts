@@ -107,6 +107,12 @@ export const EMPTY_NETWORK_ACTION: Action = {
   think_time_after: true,
 }
 
+export const EMPTY_APPIUM_ACTION: Action = {
+  name: '', type: 'appium_tap', target: '', headers: {}, body: '',
+  params: {}, metadata: {}, extractors: [], assertions: [],
+  think_time_after: true,
+}
+
 export const EMPTY_SOAP_ACTION: Action = {
   name: '', type: 'POST', method: 'POST', target: '', headers: {}, body: '',
   extractors: [], assertions: [{ type: 'status_code', expected: 200 }], think_time_after: true,

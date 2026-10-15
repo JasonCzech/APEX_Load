@@ -173,6 +173,7 @@ type ScriptConfig struct {
 	SOAP             SOAPConfig            `json:"soap,omitempty"`
 	Database         DatabaseConfig        `json:"database,omitempty"`
 	Network          NetworkConfig         `json:"network,omitempty"`
+	Appium           AppiumConfig          `json:"appium,omitzero"`
 	Browser          BrowserConfig         `json:"browser,omitempty"`
 	// BrowserEmulation drives HTTP-transport replay identity (User-Agent /
 	// Accept-Language) and browser-cache simulation. Nil means legacy behavior:
@@ -464,6 +465,26 @@ type NetworkConfig struct {
 	From        string   `json:"from,omitempty"`
 	To          []string `json:"to,omitempty"`
 	BaseDN      string   `json:"base_dn,omitempty"`
+}
+
+// AppiumConfig connects a device observer script (protocol appium) to an
+// Appium server: one driving an iOS simulator on a Mac, or a device cloud's
+// hub driving a real device.
+type AppiumConfig struct {
+	// ServerURL is the server's WebDriver URL, such as http://127.0.0.1:4723
+	// or a device cloud's hub; a cloud's credentials may ride in its user info
+	// as {{secret.NAME}} references.
+	ServerURL string `json:"server_url,omitempty"`
+	// Capabilities name the device and the app: platformName,
+	// appium:automationName, appium:deviceName, appium:app or
+	// appium:bundleId, and any the server or device cloud needs.
+	Capabilities map[string]any `json:"capabilities,omitempty"`
+	// SessionTimeoutMs bounds opening the session (a device cloud allocates
+	// a device and installs the app); defaults to 3 minutes.
+	SessionTimeoutMs int `json:"session_timeout_ms,omitempty"`
+	// ElementTimeoutMs is how long a step waits for its element unless it
+	// says otherwise; defaults to 15 seconds.
+	ElementTimeoutMs int `json:"element_timeout_ms,omitempty"`
 }
 
 type SAPGUIConfig struct {

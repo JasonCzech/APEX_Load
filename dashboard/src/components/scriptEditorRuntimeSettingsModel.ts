@@ -17,6 +17,7 @@ import {
   EMPTY_BROWSER_ACTION,
   EMPTY_DATABASE_ACTION,
   EMPTY_GRPC_ACTION,
+  EMPTY_APPIUM_ACTION,
   EMPTY_JMS_ACTION,
   EMPTY_NETWORK_ACTION,
   EMPTY_SOAP_ACTION,
@@ -38,6 +39,7 @@ export const SCRIPT_PROTOCOL_OPTIONS = [
   { value: 'jms-ibmmq', label: 'JMS IBM MQ' },
   { value: 'kafka', label: 'Kafka' },
   { value: 'eventhubs', label: 'Azure Event Hubs' },
+  { value: 'appium', label: 'Mobile device (Appium)' },
 ] as const
 
 export const RUNTIME_SETTINGS_SECTION_IDS = [
@@ -52,6 +54,7 @@ export const RUNTIME_SETTINGS_SECTION_IDS = [
   'grpc',
   'database',
   'network',
+  'appium',
   'http',
   'browser_emulation',
   'soap',
@@ -78,6 +81,7 @@ export const HTTP_TRANSPORT_TAB_OPTIONS = [
 export type HTTPTransportTabId = typeof HTTP_TRANSPORT_TAB_OPTIONS[number]['id']
 
 export interface RuntimeProtocolCapabilities {
+  appium: boolean
   browser: boolean
   browserEmulation: boolean
   database: boolean
@@ -121,8 +125,10 @@ export function getRuntimeProtocolCapabilities(protocol: string): RuntimeProtoco
   const jms = normalized.startsWith('jms')
   const eventHubs = normalized === 'eventhubs'
   const network = normalized === 'network'
+  const appium = normalized === 'appium'
   const httpTransport = http || normalized === 'https' || javaHttp || soap || browser
   return {
+    appium,
     browser,
     // Browser emulation drives the HTTP replay engine; the browser protocol's
     // emulation home stays the browser sub-tab (config.browser).
@@ -136,7 +142,7 @@ export function getRuntimeProtocolCapabilities(protocol: string): RuntimeProtoco
     javaVuser,
     jms,
     network,
-    requiresBaseURL: !jms && !database && !network && !javaVuser,
+    requiresBaseURL: !jms && !database && !network && !javaVuser && !appium,
     soap,
     webSocket: normalized === 'websocket',
   }
@@ -151,6 +157,7 @@ export function runtimeSettingsSectionIsAvailable(section: RuntimeSettingsSectio
     case 'grpc': return capability.grpc
     case 'database': return capability.database
     case 'network': return capability.network
+    case 'appium': return capability.appium
     case 'http': return capability.httpTransport
     case 'browser_emulation': return capability.browserEmulation
     case 'soap': return capability.soap
@@ -712,6 +719,19 @@ export function transitionScriptProtocol(script: ScriptDefinition, protocol: str
     }
     if (next.actions.length === 0) {
       next.actions = [{ ...structuredClone(EMPTY_NETWORK_ACTION), name: 'Network_Health' }]
+      selectedFirstAction = true
+    }
+  }
+
+  if (protocol === 'appium') {
+    next.config.appium = {
+      server_url: next.config.appium?.server_url || 'http://127.0.0.1:4723',
+      capabilities: next.config.appium?.capabilities || { platformName: 'iOS', 'appium:automationName': 'XCUITest' },
+      session_timeout_ms: next.config.appium?.session_timeout_ms,
+      element_timeout_ms: next.config.appium?.element_timeout_ms,
+    }
+    if (next.actions.length === 0) {
+      next.actions = [{ ...structuredClone(EMPTY_APPIUM_ACTION), name: 'Tap' }]
       selectedFirstAction = true
     }
   }

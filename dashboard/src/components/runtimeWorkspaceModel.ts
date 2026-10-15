@@ -19,6 +19,7 @@ export const RUNTIME_WORKSPACE_CATEGORIES: { group: string; id: RuntimeSettingsS
   { group: 'Protocol settings', id: 'grpc', label: 'gRPC Runtime', fields: ['grpc'] },
   { group: 'Protocol settings', id: 'database', label: 'Database Runtime', fields: ['database'] },
   { group: 'Protocol settings', id: 'network', label: 'Network Runtime', fields: ['network'] },
+  { group: 'Protocol settings', id: 'appium', label: 'Appium Device', fields: ['appium'] },
   { group: 'Imported compatibility', id: 'web_runtime', label: 'Web HTTP/HTML Compatibility', fields: ['web_runtime'] },
   { group: 'Imported compatibility', id: 'imported_source', label: 'Imported Source Runtime Settings', fields: [] },
 ]

@@ -77,6 +77,8 @@ var credentialSurfaceDispositions = map[string]credentialSurfaceDisposition{
 	"action.extractors.scope.request_url":       excluded("a wildcard filter matched against response URLs; it is never sent on the wire or used to build a request, so no credential composite can be synthesized from it"),
 	"config.kafka.schema_registry_url": covered("config.kafka.schema_registry_url",
 		"dialed by a net/http client in pkg/protocol/kafka"),
+	"config.appium.server_url": covered("config.appium.server_url",
+		"a device cloud's hub; pkg/protocol/appium sends Basic from its userinfo"),
 	"action.target": covered("action.target",
 		"net/http synthesises Basic from userinfo; the surface this file was written for"),
 
@@ -274,6 +276,7 @@ func emittedCredentialSurfaceNames() map[string]struct{} {
 			Network: dsl.NetworkConfig{
 				Address: "u:{{secret.P}}@net.test:1234", Username: "u", Password: "{{secret.P}}",
 			},
+			Appium: dsl.AppiumConfig{ServerURL: "https://u:{{secret.P}}@hub.test/wd/hub"},
 			Browser: dsl.BrowserConfig{
 				HTTPCredentials: dsl.BrowserHTTPCredentials{Username: "u", Password: "{{secret.P}}"},
 				Proxy: dsl.BrowserProxyConfig{

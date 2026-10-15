@@ -176,6 +176,27 @@ describe('scriptEditorRuntimeSettingsModel', () => {
     expect(script.actions).toEqual([])
   })
 
+  it('seeds a device observer draft for a local Appium and a simulator', () => {
+    const script: ScriptDefinition = {
+      name: 'Device draft',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: '' },
+      actions: [],
+    }
+    const appium = transitionScriptProtocol(script, 'appium')
+    expect(appium.script.config.appium).toMatchObject({
+      server_url: 'http://127.0.0.1:4723',
+      capabilities: { platformName: 'iOS', 'appium:automationName': 'XCUITest' },
+    })
+    expect(appium.script.actions[0]).toMatchObject({ name: 'Tap', type: 'appium_tap' })
+    expect(appium.selectedFirstAction).toBe(true)
+    const capabilities = getRuntimeProtocolCapabilities('appium')
+    expect(capabilities).toMatchObject({ appium: true, requiresBaseURL: false, httpTransport: false })
+    expect(runtimeSettingsSectionIsAvailable('appium', 'appium')).toBe(true)
+    expect(runtimeSettingsSectionIsAvailable('appium', 'http')).toBe(false)
+  })
+
   it('seeds an Event Hubs draft the backend can validate without pinning an auth mode', () => {
     const script: ScriptDefinition = {
       name: 'Protocol draft',

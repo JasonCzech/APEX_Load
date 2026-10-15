@@ -458,6 +458,23 @@ func appendNetworkConfig(cfg map[string]any, script *dsl.Script) {
 	}
 }
 
+func appendAppiumConfig(cfg map[string]any, script *dsl.Script) {
+	appiumCfg := script.Config.Appium
+	if appiumCfg.ServerURL != "" {
+		cfg["appium_server_url"] = appiumCfg.ServerURL
+	}
+	if len(appiumCfg.Capabilities) > 0 {
+		// Secret resolution copies it, {{secret.NAME}} values resolved.
+		cfg["appium_capabilities"] = appiumCfg.Capabilities
+	}
+	if appiumCfg.SessionTimeoutMs > 0 {
+		cfg["appium_session_timeout_ms"] = float64(appiumCfg.SessionTimeoutMs)
+	}
+	if appiumCfg.ElementTimeoutMs > 0 {
+		cfg["appium_element_timeout_ms"] = float64(appiumCfg.ElementTimeoutMs)
+	}
+}
+
 func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 	browserCfg := script.Config.Browser
 	if browserCfg.CaptureDocumentMetrics != nil {

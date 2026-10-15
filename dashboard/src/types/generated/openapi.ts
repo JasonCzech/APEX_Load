@@ -630,6 +630,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -5432,6 +5438,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -6268,6 +6280,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -7006,6 +7024,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -12459,6 +12483,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -13357,6 +13387,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -14072,6 +14108,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -14754,6 +14796,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -15319,6 +15367,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -15960,6 +16014,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -16615,6 +16675,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -17260,6 +17326,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -18803,6 +18875,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -19648,6 +19726,7 @@ export interface operations {
                 }>;
                 "archived_at"?: (string) | null;
                 "config": {
+                  "appium"?: Record<string, unknown>;
                   "base_url": string;
                   "browser"?: Record<string, unknown>;
                   "browser_emulation"?: (Record<string, unknown>) | null;
@@ -19858,6 +19937,7 @@ export interface operations {
                 }>;
                 "archived_at"?: (string) | null;
                 "config": {
+                  "appium"?: Record<string, unknown>;
                   "base_url": string;
                   "browser"?: Record<string, unknown>;
                   "browser_emulation"?: (Record<string, unknown>) | null;
@@ -22535,6 +22615,7 @@ export interface operations {
                   "wait_for"?: (Record<string, unknown>) | null;
                 }>;
                 "config": {
+                  "appium"?: Record<string, unknown>;
                   "base_url": string;
                   "browser"?: Record<string, unknown>;
                   "browser_emulation"?: (Record<string, unknown>) | null;
@@ -22820,6 +22901,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -23615,6 +23702,7 @@ export interface operations {
                   "wait_for"?: (Record<string, unknown>) | null;
                 }>;
                 "config": {
+                  "appium"?: Record<string, unknown>;
                   "base_url": string;
                   "browser"?: Record<string, unknown>;
                   "browser_emulation"?: (Record<string, unknown>) | null;
@@ -23900,6 +23988,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -24732,6 +24826,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -26386,6 +26486,7 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: Record<string, unknown>;
               "base_url"?: string;
               "browser"?: Record<string, unknown>;
               "browser_emulation"?: (Record<string, unknown>) | null;
@@ -26658,6 +26759,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -27303,6 +27410,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -27965,6 +28078,7 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: Record<string, unknown>;
               "base_url"?: string;
               "browser"?: Record<string, unknown>;
               "browser_emulation"?: (Record<string, unknown>) | null;
@@ -28203,6 +28317,12 @@ export interface operations {
         content: {
           "application/json": {
             "config": {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url": string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -29410,6 +29530,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -30137,6 +30263,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -40855,6 +40987,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -41765,6 +41903,7 @@ export interface operations {
                   "wait_for"?: (Record<string, unknown>) | null;
                 }>;
                 "config": {
+                  "appium"?: Record<string, unknown>;
                   "base_url": string;
                   "browser"?: Record<string, unknown>;
                   "browser_emulation"?: (Record<string, unknown>) | null;
@@ -42050,6 +42189,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -56410,6 +56555,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -58460,6 +58611,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -78883,6 +79040,7 @@ export interface operations {
                   "wait_for"?: (Record<string, unknown>) | null;
                 }>;
                 "config": {
+                  "appium"?: Record<string, unknown>;
                   "base_url": string;
                   "browser"?: Record<string, unknown>;
                   "browser_emulation"?: (Record<string, unknown>) | null;
@@ -79168,6 +79326,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -79887,6 +80051,12 @@ export interface operations {
                 }) | null;
               }>;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -91756,6 +91926,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -92475,6 +92651,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -93856,6 +94038,7 @@ export interface operations {
                 "actions": Array<Record<string, unknown>>;
                 "archived_at"?: (string) | null;
                 "config": {
+                  "appium"?: Record<string, unknown>;
                   "base_url": string;
                   "browser"?: Record<string, unknown>;
                   "browser_emulation"?: (Record<string, unknown>) | null;
@@ -110987,6 +111170,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -111936,6 +112125,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -112664,6 +112859,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -113461,6 +113662,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -114507,6 +114714,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -115222,6 +115435,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -115904,6 +116123,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -116469,6 +116694,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -118672,6 +118903,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -119391,6 +119628,12 @@ export interface operations {
                 }) | null;
               }>;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -120103,6 +120346,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -131836,6 +132085,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -132661,6 +132916,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -140183,6 +140444,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -142203,6 +142470,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -142846,6 +143119,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -143558,6 +143837,7 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: Record<string, unknown>;
               "base_url"?: string;
               "browser"?: Record<string, unknown>;
               "browser_emulation"?: (Record<string, unknown>) | null;
@@ -145504,6 +145784,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -146986,6 +147272,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -148600,6 +148892,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -150181,6 +150479,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -151763,6 +152067,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -153344,6 +153654,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -163857,6 +164173,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -164583,6 +164905,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -170782,6 +171110,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;
@@ -171690,6 +172024,7 @@ export interface operations {
                   "wait_for"?: (Record<string, unknown>) | null;
                 }>;
                 "config": {
+                  "appium"?: Record<string, unknown>;
                   "base_url": string;
                   "browser"?: Record<string, unknown>;
                   "browser_emulation"?: (Record<string, unknown>) | null;
@@ -171975,6 +172310,12 @@ export interface operations {
               }>;
               "archived_at"?: (string) | null;
               "config": {
+                "appium"?: {
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                };
                 "base_url": string;
                 "browser"?: {
                   "available_screen_height"?: number;
@@ -177266,6 +177607,12 @@ export interface operations {
             }>;
             "archived_at"?: (string) | null;
             "config"?: {
+              "appium"?: {
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              };
               "base_url"?: string;
               "browser"?: {
                 "available_screen_height"?: number;

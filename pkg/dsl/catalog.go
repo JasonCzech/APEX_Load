@@ -201,6 +201,7 @@ func actionCatalogSeeds() []ActionSpec {
 	seeds = append(seeds, grpcActionSpecs()...)
 	seeds = append(seeds, databaseActionSpecs()...)
 	seeds = append(seeds, networkActionSpecs()...)
+	seeds = append(seeds, appiumActionSpecs()...)
 	seeds = append(seeds, sapGUIActionSpecs()...)
 	seeds = append(seeds, javaVuserActionSpecs()...)
 	seeds = append(seeds, jmsActionSpecs()...)

@@ -297,7 +297,7 @@ func TestActionSpecsForProtocol(t *testing.T) {
 // TestCatalogProtocolFamilies pins the family list the API and docs expose.
 func TestCatalogProtocolFamilies(t *testing.T) {
 	got := CatalogProtocolFamilies()
-	want := []string{"browser", "database", "eventhubs", "grpc", "http", "java_http", "java_vuser", "jms", "kafka", "network", "sap_gui", "soap", "websocket"}
+	want := []string{"appium", "browser", "database", "eventhubs", "grpc", "http", "java_http", "java_vuser", "jms", "kafka", "network", "sap_gui", "soap", "websocket"}
 	if len(got) != len(want) {
 		t.Fatalf("CatalogProtocolFamilies() = %v, want %v", got, want)
 	}

@@ -416,7 +416,7 @@ function collectControlFlowIssues(action: ScriptActionDefinition, phase: Authori
 /** Mirrors the controller's protocolAllowsEmptyBaseURL contract. */
 export function requiresScriptBaseURL(protocol: string): boolean {
   const family = protocol.trim().startsWith('jms-') ? 'jms' : protocol.trim()
-  return protocol !== '' && !['browser', 'bruno', 'database', 'network', 'jms', 'kafka', 'eventhubs', 'sap_gui', 'java_vuser'].includes(family)
+  return protocol !== '' && !['browser', 'bruno', 'database', 'network', 'jms', 'kafka', 'eventhubs', 'sap_gui', 'java_vuser', 'appium'].includes(family)
 }
 
 const HTTP_BASE_URL_PROTOCOLS = new Set(['', 'http', 'https', 'web', 'rest', 'soap', 'graphql', 'openapi'])

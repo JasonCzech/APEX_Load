@@ -638,6 +638,261 @@
             "properties": {
               "type": {
                 "enum": [
+                  "appium_activate_app"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Brings an app to the foreground, launching it if needed.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "bundle_id": {
+                    "description": "The app's bundle id (iOS) or package (Android).",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "bundle_id"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "params"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "appium_execute"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Runs an Appium mobile command, such as mobile: swipe or mobile: scroll.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "args": {
+                    "description": "The command's arguments, such as {\"direction\": \"up\"}.",
+                    "type": "object"
+                  },
+                  "script": {
+                    "description": "The command, such as mobile: swipe.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "script"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "params"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "appium_screenshot"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Takes a screenshot of the device for the step's evidence."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "appium_tap"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Waits for an element on the device and taps it.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "timeout_ms": {
+                    "description": "How long to wait for the element, in milliseconds; defaults to config.appium.element_timeout_ms (15 seconds).",
+                    "type": "integer"
+                  },
+                  "using": {
+                    "description": "Locator strategy; defaults to accessibility id.",
+                    "pattern": "^\\s*(?:[aA][cC][cC][eE][sS][sS][iI][bB][iI][lL][iI][tT][yY] [iI][dD]|[iI][dD]|[nN][aA][mM][eE]|[xX][pP][aA][tT][hH]|[cC][lL][aA][sS][sS] [nN][aA][mM][eE]|-[iI][oO][sS] [pP][rR][eE][dD][iI][cC][aA][tT][eE] [sS][tT][rR][iI][nN][gG]|-[iI][oO][sS] [cC][lL][aA][sS][sS] [cC][hH][aA][iI][nN]|-[aA][nN][dD][rR][oO][iI][dD] [uU][iI][aA][uU][tT][oO][mM][aA][tT][oO][rR]|)\\s*$",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "The element to tap. Its accessibility id unless params.using names another locator.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "appium_terminate_app"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Closes an app, so the next iteration starts it fresh.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "bundle_id": {
+                    "description": "The app's bundle id (iOS) or package (Android).",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "bundle_id"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "params"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "appium_type"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Waits for a text field on the device and types into it.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "clear": {
+                    "description": "Clear the field first.",
+                    "type": "boolean"
+                  },
+                  "timeout_ms": {
+                    "description": "How long to wait for the element, in milliseconds; defaults to config.appium.element_timeout_ms (15 seconds).",
+                    "type": "integer"
+                  },
+                  "using": {
+                    "description": "Locator strategy; defaults to accessibility id.",
+                    "pattern": "^\\s*(?:[aA][cC][cC][eE][sS][sS][iI][bB][iI][lL][iI][tT][yY] [iI][dD]|[iI][dD]|[nN][aA][mM][eE]|[xX][pP][aA][tT][hH]|[cC][lL][aA][sS][sS] [nN][aA][mM][eE]|-[iI][oO][sS] [pP][rR][eE][dD][iI][cC][aA][tT][eE] [sS][tT][rR][iI][nN][gG]|-[iI][oO][sS] [cC][lL][aA][sS][sS] [cC][hH][aA][iI][nN]|-[aA][nN][dD][rR][oO][iI][dD] [uU][iI][aA][uU][tT][oO][mM][aA][tT][oO][rR]|)\\s*$",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "The field to type into. Its accessibility id unless params.using names another locator.",
+                "type": "string"
+              },
+              "value": {
+                "description": "The text to type; template variables are expanded.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "appium_wait"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Waits until an element shows on the device, optionally with some text; the element's text is the step's response.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "text": {
+                    "description": "Text the element must contain.",
+                    "type": "string"
+                  },
+                  "timeout_ms": {
+                    "description": "How long to wait for the element, in milliseconds; defaults to config.appium.element_timeout_ms (15 seconds).",
+                    "type": "integer"
+                  },
+                  "using": {
+                    "description": "Locator strategy; defaults to accessibility id.",
+                    "pattern": "^\\s*(?:[aA][cC][cC][eE][sS][sS][iI][bB][iI][lL][iI][tT][yY] [iI][dD]|[iI][dD]|[nN][aA][mM][eE]|[xX][pP][aA][tT][hH]|[cC][lL][aA][sS][sS] [nN][aA][mM][eE]|-[iI][oO][sS] [pP][rR][eE][dD][iI][cC][aA][tT][eE] [sS][tT][rR][iI][nN][gG]|-[iI][oO][sS] [cC][lL][aA][sS][sS] [cC][hH][aA][iI][nN]|-[aA][nN][dD][rR][oO][iI][dD] [uU][iI][aA][uU][tT][oO][mM][aA][tT][oO][rR]|)\\s*$",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "The element to wait for. Its accessibility id unless params.using names another locator.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "browser_back"
                 ]
               }
@@ -7003,6 +7258,13 @@
             "PATCH",
             "POST",
             "PUT",
+            "appium_activate_app",
+            "appium_execute",
+            "appium_screenshot",
+            "appium_tap",
+            "appium_terminate_app",
+            "appium_type",
+            "appium_wait",
             "begin",
             "browser_back",
             "browser_check",
@@ -7193,6 +7455,24 @@
         },
         "page_name": {
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AppiumConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "type": "object"
+        },
+        "element_timeout_ms": {
+          "type": "integer"
+        },
+        "server_url": {
+          "type": "string"
+        },
+        "session_timeout_ms": {
+          "type": "integer"
         }
       },
       "type": "object"
@@ -9669,6 +9949,9 @@
     "ScriptConfig": {
       "additionalProperties": false,
       "properties": {
+        "appium": {
+          "$ref": "#/$defs/AppiumConfig"
+        },
         "base_url": {
           "type": "string"
         },

@@ -146,7 +146,9 @@ real franz-go network adapter opt-in via `-tags kafka_real`; Event Hubs Kafka-en
 `config.kafka.profile: eventhubs`), Azure Event Hubs (native `eventhubs` protocol, producer-first:
 `eventhubs_produce` + observer-probe `eventhubs_consume`; in-memory mock by default, real
 azeventhubs/AMQP adapter opt-in via `-tags eventhubs_real`), database (SQL query/exec/transactions),
-network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), and browser (replay + canary diagnostics).
+network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), browser (replay + canary diagnostics), and
+appium (a device observer: one real device or simulator driven through an Appium server's WebDriver
+API while the HTTP groups supply the load).
 Bruno Runner is retired and excluded from builds; its source is preserved under `_retired/bruno-runner`. Native Bruno HTTP import remains available.
 `sap_gui` actions are authorable/importable via the DSL catalog but have no registered runtime
 protocol and cannot be executed.

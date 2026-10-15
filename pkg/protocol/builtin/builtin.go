@@ -3,6 +3,7 @@
 package builtin
 
 import (
+	_ "github.com/jasonczech/apexload/pkg/protocol/appium"
 	_ "github.com/jasonczech/apexload/pkg/protocol/browser"
 	_ "github.com/jasonczech/apexload/pkg/protocol/database"
 	_ "github.com/jasonczech/apexload/pkg/protocol/eventhubs"

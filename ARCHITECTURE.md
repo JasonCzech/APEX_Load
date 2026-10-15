@@ -163,6 +163,7 @@ Protocols implement the compiled-in `pkg/protocol.Protocol` interface and are re
 - Azure Event Hubs (`eventhubs`): producer-first with observer consumption; real AMQP adapter opt-in via `-tags eventhubs_real`
 - database and network protocol import/runtime paths where supported
 - browser replay and browser canary diagnostics
+- Appium (`appium`): a device observer that drives one real device or simulator through an Appium server (a device cloud's hub, or Appium on a Mac) while HTTP groups supply the load
 
 Script inputs can be created directly in the dashboard, through REST, through `apexctl`, or by import. Import surfaces include LoadRunner/VuGen ZIP, JMeter, DevWeb, HAR, OpenAPI/Swagger, WSDL, raw HTTP, cURL, REST JSON, and sample packs.
 

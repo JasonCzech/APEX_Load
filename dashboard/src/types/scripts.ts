@@ -755,6 +755,15 @@ export interface DatabaseConfig {
   rollback_on_teardown?: boolean
 }
 
+// AppiumConfig connects a device observer script (protocol appium) to an
+// Appium server: one on a Mac driving a simulator, or a device cloud's hub.
+export interface AppiumConfig {
+  server_url?: string
+  capabilities?: Record<string, unknown>
+  session_timeout_ms?: number
+  element_timeout_ms?: number
+}
+
 export interface NetworkConfig {
   subprotocol?: string
   host?: string
@@ -896,6 +905,7 @@ export interface ScriptConfig {
   grpc?: GRPCConfig
   database?: DatabaseConfig
   network?: NetworkConfig
+  appium?: AppiumConfig
   browser?: BrowserConfig
   browser_emulation?: BrowserEmulationConfig
   jms?: JMSConfig

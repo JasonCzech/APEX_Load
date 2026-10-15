@@ -1897,6 +1897,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -14961,6 +14975,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -17103,6 +17131,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -19053,6 +19095,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -51718,6 +51774,20 @@ paths:
                   config:
                     type: object
                     properties:
+                      appium:
+                        type: object
+                        properties:
+                          capabilities:
+                            type: object
+                            additionalProperties: {}
+                          element_timeout_ms:
+                            type: integer
+                            format: int64
+                          server_url:
+                            type: string
+                          session_timeout_ms:
+                            type: integer
+                            format: int64
                       base_url:
                         type: string
                       browser:
@@ -59585,6 +59655,10 @@ paths:
                             config:
                               type: object
                               properties:
+                                appium:
+                                  type: object
+                                  description: 'Go type: AppiumConfig'
+                                  additionalProperties: true
                                 base_url:
                                   type: string
                                 browser:
@@ -203559,6 +203633,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -205885,6 +205973,9 @@ paths:
                           config:
                             type: object
                             properties:
+                              appium:
+                                type: object
+                                additionalProperties: true
                               base_url:
                                 type: string
                               browser:
@@ -206774,6 +206865,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -209002,6 +209107,9 @@ paths:
                               config:
                                 type: object
                                 properties:
+                                  appium:
+                                    type: object
+                                    additionalProperties: true
                                   base_url:
                                     type: string
                                   browser:
@@ -209891,6 +209999,20 @@ paths:
                           config:
                             type: object
                             properties:
+                              appium:
+                                type: object
+                                properties:
+                                  capabilities:
+                                    type: object
+                                    additionalProperties: {}
+                                  element_timeout_ms:
+                                    type: integer
+                                    format: int64
+                                  server_url:
+                                    type: string
+                                  session_timeout_ms:
+                                    type: integer
+                                    format: int64
                               base_url:
                                 type: string
                               browser:
@@ -211850,6 +211972,20 @@ paths:
                           config:
                             type: object
                             properties:
+                              appium:
+                                type: object
+                                properties:
+                                  capabilities:
+                                    type: object
+                                    additionalProperties: {}
+                                  element_timeout_ms:
+                                    type: integer
+                                    format: int64
+                                  server_url:
+                                    type: string
+                                  session_timeout_ms:
+                                    type: integer
+                                    format: int64
                               base_url:
                                 type: string
                               browser:
@@ -213874,6 +214010,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -216198,6 +216348,9 @@ paths:
                           config:
                             type: object
                             properties:
+                              appium:
+                                type: object
+                                additionalProperties: true
                               base_url:
                                 type: string
                               browser:
@@ -217087,6 +217240,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -219243,6 +219410,9 @@ paths:
                           config:
                             type: object
                             properties:
+                              appium:
+                                type: object
+                                additionalProperties: true
                               base_url:
                                 type: string
                               browser:
@@ -220132,6 +220302,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -222332,6 +222516,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -226678,6 +226876,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -231696,6 +231908,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -233894,6 +234120,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -238075,6 +238315,9 @@ paths:
                           config:
                             type: object
                             properties:
+                              appium:
+                                type: object
+                                additionalProperties: true
                               base_url:
                                 type: string
                               browser:
@@ -238964,6 +239207,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -242766,6 +243023,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -244741,6 +245012,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -246807,6 +247092,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -248792,6 +249091,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -250701,6 +251014,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -253002,6 +253329,9 @@ paths:
                           config:
                             type: object
                             properties:
+                              appium:
+                                type: object
+                                additionalProperties: true
                               base_url:
                                 type: string
                               browser:
@@ -253698,6 +254028,9 @@ paths:
                           config:
                             type: object
                             properties:
+                              appium:
+                                type: object
+                                additionalProperties: true
                               base_url:
                                 type: string
                               browser:
@@ -254701,6 +255034,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -257085,6 +257432,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -261093,6 +261454,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -263014,6 +263389,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -265187,6 +265576,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -267429,6 +267832,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -271488,6 +271905,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -273620,6 +274051,9 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          additionalProperties: true
                         base_url:
                           type: string
                         browser:
@@ -274349,6 +274783,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -276166,6 +276614,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -278394,6 +278856,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -280180,6 +280656,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -282407,6 +282897,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -284561,6 +285065,9 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          additionalProperties: true
                         base_url:
                           type: string
                         browser:
@@ -285478,6 +285985,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -287900,6 +288421,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -289807,6 +290342,9 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          additionalProperties: true
                         base_url:
                           type: string
                         browser:
@@ -291454,6 +291992,20 @@ paths:
                           config:
                             type: object
                             properties:
+                              appium:
+                                type: object
+                                properties:
+                                  capabilities:
+                                    type: object
+                                    additionalProperties: {}
+                                  element_timeout_ms:
+                                    type: integer
+                                    format: int64
+                                  server_url:
+                                    type: string
+                                  session_timeout_ms:
+                                    type: integer
+                                    format: int64
                               base_url:
                                 type: string
                               browser:
@@ -293400,6 +293952,20 @@ paths:
                           config:
                             type: object
                             properties:
+                              appium:
+                                type: object
+                                properties:
+                                  capabilities:
+                                    type: object
+                                    additionalProperties: {}
+                                  element_timeout_ms:
+                                    type: integer
+                                    format: int64
+                                  server_url:
+                                    type: string
+                                  session_timeout_ms:
+                                    type: integer
+                                    format: int64
                               base_url:
                                 type: string
                               browser:
@@ -295268,6 +295834,20 @@ paths:
                             config:
                               type: object
                               properties:
+                                appium:
+                                  type: object
+                                  properties:
+                                    capabilities:
+                                      type: object
+                                      additionalProperties: {}
+                                    element_timeout_ms:
+                                      type: integer
+                                      format: int64
+                                    server_url:
+                                      type: string
+                                    session_timeout_ms:
+                                      type: integer
+                                      format: int64
                                 base_url:
                                   type: string
                                 browser:
@@ -296880,6 +297460,20 @@ paths:
                             config:
                               type: object
                               properties:
+                                appium:
+                                  type: object
+                                  properties:
+                                    capabilities:
+                                      type: object
+                                      additionalProperties: {}
+                                    element_timeout_ms:
+                                      type: integer
+                                      format: int64
+                                    server_url:
+                                      type: string
+                                    session_timeout_ms:
+                                      type: integer
+                                      format: int64
                                 base_url:
                                   type: string
                                 browser:
@@ -298940,6 +299534,20 @@ paths:
                           config:
                             type: object
                             properties:
+                              appium:
+                                type: object
+                                properties:
+                                  capabilities:
+                                    type: object
+                                    additionalProperties: {}
+                                  element_timeout_ms:
+                                    type: integer
+                                    format: int64
+                                  server_url:
+                                    type: string
+                                  session_timeout_ms:
+                                    type: integer
+                                    format: int64
                               base_url:
                                 type: string
                               browser:
@@ -300886,6 +301494,20 @@ paths:
                           config:
                             type: object
                             properties:
+                              appium:
+                                type: object
+                                properties:
+                                  capabilities:
+                                    type: object
+                                    additionalProperties: {}
+                                  element_timeout_ms:
+                                    type: integer
+                                    format: int64
+                                  server_url:
+                                    type: string
+                                  session_timeout_ms:
+                                    type: integer
+                                    format: int64
                               base_url:
                                 type: string
                               browser:
@@ -302754,6 +303376,20 @@ paths:
                             config:
                               type: object
                               properties:
+                                appium:
+                                  type: object
+                                  properties:
+                                    capabilities:
+                                      type: object
+                                      additionalProperties: {}
+                                    element_timeout_ms:
+                                      type: integer
+                                      format: int64
+                                    server_url:
+                                      type: string
+                                    session_timeout_ms:
+                                      type: integer
+                                      format: int64
                                 base_url:
                                   type: string
                                 browser:
@@ -304366,6 +305002,20 @@ paths:
                             config:
                               type: object
                               properties:
+                                appium:
+                                  type: object
+                                  properties:
+                                    capabilities:
+                                      type: object
+                                      additionalProperties: {}
+                                    element_timeout_ms:
+                                      type: integer
+                                      format: int64
+                                    server_url:
+                                      type: string
+                                    session_timeout_ms:
+                                      type: integer
+                                      format: int64
                                 base_url:
                                   type: string
                                 browser:
@@ -306473,6 +307123,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -308369,6 +309033,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -310407,6 +311085,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -312140,6 +312832,20 @@ paths:
                       config:
                         type: object
                         properties:
+                          appium:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties: {}
+                              element_timeout_ms:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              session_timeout_ms:
+                                type: integer
+                                format: int64
                           base_url:
                             type: string
                           browser:
@@ -313810,6 +314516,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -315865,6 +316585,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -318045,6 +318779,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -322108,6 +322856,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -324037,6 +324799,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
@@ -325927,6 +326703,20 @@ paths:
                           config:
                             type: object
                             properties:
+                              appium:
+                                type: object
+                                properties:
+                                  capabilities:
+                                    type: object
+                                    additionalProperties: {}
+                                  element_timeout_ms:
+                                    type: integer
+                                    format: int64
+                                  server_url:
+                                    type: string
+                                  session_timeout_ms:
+                                    type: integer
+                                    format: int64
                               base_url:
                                 type: string
                               browser:
@@ -327865,6 +328655,20 @@ paths:
                           config:
                             type: object
                             properties:
+                              appium:
+                                type: object
+                                properties:
+                                  capabilities:
+                                    type: object
+                                    additionalProperties: {}
+                                  element_timeout_ms:
+                                    type: integer
+                                    format: int64
+                                  server_url:
+                                    type: string
+                                  session_timeout_ms:
+                                    type: integer
+                                    format: int64
                               base_url:
                                 type: string
                               browser:
@@ -329924,6 +330728,20 @@ paths:
                     config:
                       type: object
                       properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
                         base_url:
                           type: string
                         browser:
