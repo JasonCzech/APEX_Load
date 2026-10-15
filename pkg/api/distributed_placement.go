@@ -302,7 +302,9 @@ func capacityWeightedShardsForGroup(group TestGroup, targets []string, loadByTar
 		maximum := max(0, int(snapshot.AvailableCapacity))
 		if plan.RequiresPersistentLifecycle() {
 			runtimeMaximum := 0
-			if available, advertised := protocolRuntimeAvailableVUsers(snapshot, "java_vuser"); advertised {
+			if available, advertised, shared := groupJavaRuntimeAvailableVUsers(group, snapshot); advertised && shared {
+				runtimeMaximum = int(min(int64(group.VUsers), max(available, 0)))
+			} else if advertised {
 				runtimeMaximum = maximumVUsersWithinRuntimeCapacity(plan, group.VUsers, available)
 			}
 			maximum = min(maximum, runtimeMaximum)
@@ -557,8 +559,41 @@ func runtimeCapacityAllowsGroup(group TestGroup, snapshot generatorLoadSnapshot,
 	if !plan.RequiresPersistentLifecycle() {
 		return true
 	}
-	available, advertised := protocolRuntimeAvailableVUsers(snapshot, "java_vuser")
-	return advertised && available > 0 && plan.Demand(vusers) <= available
+	available, advertised, shared := groupJavaRuntimeAvailableVUsers(group, snapshot)
+	return advertised && available > 0 && groupJavaRuntimeDemand(group, shared, vusers) <= available
+}
+
+// groupJavaRuntimeAvailableVUsers is the java_vuser capacity a group draws on
+// at a target: the runner's shared-JVM envelope for a shared-eligible script on
+// a generator that hosts shared JVMs, otherwise dedicated JVM slots.
+func groupJavaRuntimeAvailableVUsers(group TestGroup, snapshot generatorLoadSnapshot) (available int64, advertised, shared bool) {
+	if javaVuserCapacityPlanForGroup(group).SharedJVM() {
+		if capacity := protocolRuntimeSharedJVM(snapshot); capacity != nil {
+			return capacity.AvailableVUsers, true, true
+		}
+	}
+	available, advertised = protocolRuntimeAvailableVUsers(snapshot, "java_vuser")
+	return available, advertised, false
+}
+
+// groupJavaRuntimeDemand is the capacity vusers consume: one shared-JVM slot
+// each, or the dedicated plan's pinned JVM sessions.
+func groupJavaRuntimeDemand(group TestGroup, shared bool, vusers int) int64 {
+	if shared {
+		return int64(max(vusers, 0))
+	}
+	return javaVuserCapacityPlanForGroup(group).Demand(vusers)
+}
+
+// protocolRuntimeSharedJVM returns a target's shared-JVM envelope, if any.
+func protocolRuntimeSharedJVM(snapshot generatorLoadSnapshot) *generatorrpc.SharedJVMCapacity {
+	for index := range snapshot.RuntimeCapacities {
+		capacity := &snapshot.RuntimeCapacities[index]
+		if strings.EqualFold(strings.TrimSpace(capacity.Protocol), "java_vuser") && capacity.Available && capacity.SharedJVM != nil {
+			return capacity.SharedJVM
+		}
+	}
+	return nil
 }
 
 func consumeGroupRuntimeCapacity(snapshot *generatorLoadSnapshot, group TestGroup, vusers int) {
@@ -575,7 +610,8 @@ func consumeGroupRuntimeCapacity(snapshot *generatorLoadSnapshot, group TestGrou
 		return
 	}
 	plan := javaVuserCapacityPlanForGroup(group)
-	demand := plan.Demand(vusers)
+	_, _, shared := groupJavaRuntimeAvailableVUsers(group, *snapshot)
+	demand := groupJavaRuntimeDemand(group, shared, vusers)
 	for index := range snapshot.RuntimeCapacities {
 		if !strings.EqualFold(strings.TrimSpace(snapshot.RuntimeCapacities[index].Protocol), "java_vuser") {
 			continue
@@ -585,7 +621,9 @@ func consumeGroupRuntimeCapacity(snapshot *generatorLoadSnapshot, group TestGrou
 		if currentMode == "" || currentMode == generatorrpc.RuntimeOccupancyModeIdle {
 			capacity.OccupancyMode = occupancyMode
 		}
-		if plan.RequiresPersistentLifecycle() {
+		if shared && capacity.SharedJVM != nil {
+			capacity.SharedJVM.AvailableVUsers = max(0, capacity.SharedJVM.AvailableVUsers-demand)
+		} else if plan.RequiresPersistentLifecycle() {
 			capacity.AvailableVUsers -= demand
 			if capacity.AvailableVUsers < 0 {
 				capacity.AvailableVUsers = 0
@@ -602,11 +640,16 @@ func restoreGroupRuntimeCapacity(snapshot *generatorLoadSnapshot, group TestGrou
 	if !plan.RequiresPersistentLifecycle() {
 		return
 	}
-	demand := plan.Demand(vusers)
+	_, _, shared := groupJavaRuntimeAvailableVUsers(group, *snapshot)
+	demand := groupJavaRuntimeDemand(group, shared, vusers)
 	for index := range snapshot.RuntimeCapacities {
 		capacity := &snapshot.RuntimeCapacities[index]
 		if !strings.EqualFold(strings.TrimSpace(capacity.Protocol), "java_vuser") ||
 			!capacity.Available || capacity.MaxVUsers <= 0 {
+			continue
+		}
+		if shared && capacity.SharedJVM != nil {
+			capacity.SharedJVM.AvailableVUsers = min(capacity.SharedJVM.MaxVUsers, capacity.SharedJVM.AvailableVUsers+demand)
 			continue
 		}
 		capacity.AvailableVUsers += demand

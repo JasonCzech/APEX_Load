@@ -324,11 +324,9 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 			if g.ScenarioID == "" {
 				g.ScenarioID = g.Script.ID
 			}
-			prepared := g.VUsers
-			if g.VUserIDSpan > 0 {
-				prepared = g.VUserIDSpan
-			}
-			shared, err := newJavaSharedGroup(*g, prepared)
+			// Stage exactly the group's VUsers: the ID span is a namespace bound
+			// (generators set it to their whole capacity), not a population.
+			shared, err := newJavaSharedGroup(*g, g.VUsers)
 			if err != nil {
 				return nil, fmt.Errorf("group[%d] %q: %w", i, g.Name, err)
 			}

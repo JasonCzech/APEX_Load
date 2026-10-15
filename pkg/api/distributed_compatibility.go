@@ -321,13 +321,18 @@ func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string
 			))
 			continue
 		}
-		if available, advertised := protocolRuntimeAvailableVUsers(snapshot, "java_vuser"); advertised {
-			demand := javaVuserCapacityPlanForGroup(group).Demand(group.VUsers)
+		if available, advertised, shared := groupJavaRuntimeAvailableVUsers(group, snapshot); advertised {
+			demand := groupJavaRuntimeDemand(group, shared, group.VUsers)
+			kind := "java_vuser runtime slots"
+			if shared {
+				kind = "java_vuser shared JVM slots"
+			}
 			if demand > available {
 				reasons = append(reasons, fmt.Sprintf(
-					"%s has %d available java_vuser runtime slots for demand %d",
+					"%s has %d available %s for demand %d",
 					spec.Address,
 					available,
+					kind,
 					demand,
 				))
 			}

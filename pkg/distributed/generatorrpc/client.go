@@ -527,6 +527,15 @@ type ProtocolRuntimeCapacity struct {
 	AvailableVUsers  int64                             `json:"available_vusers"`
 	Features         []string                          `json:"features,omitempty"`
 	OccupancyMode    string                            `json:"occupancy_mode,omitempty"`
+	// SharedJVM is the java_vuser runner's shared-JVM envelope, when hosted.
+	SharedJVM *SharedJVMCapacity `json:"shared_jvm,omitempty"`
+}
+
+// SharedJVMCapacity mirrors pb.SharedJVMCapacity for controller placement.
+type SharedJVMCapacity struct {
+	VUsersPerJVM    int32 `json:"vusers_per_jvm"`
+	MaxVUsers       int64 `json:"max_vusers"`
+	AvailableVUsers int64 `json:"available_vusers"`
 }
 
 type HeartbeatResponse struct {
@@ -1599,6 +1608,7 @@ func protocolRuntimeCapacitiesFromProto(values []*pb.ProtocolRuntimeCapacity) []
 			AvailableVUsers: value.GetAvailableVusers(),
 			Features:        append([]string(nil), value.GetFeatures()...),
 			OccupancyMode:   value.GetOccupancyMode(),
+			SharedJVM:       sharedJVMCapacityFromProto(value.GetSharedJvm()),
 		})
 	}
 	if len(out) == 0 {
@@ -2443,4 +2453,11 @@ func (c *Client) AcknowledgeEvidence(ctx context.Context, request EvidenceAcknow
 		return EvidenceAckResult{}, err
 	}
 	return EvidenceAckResult{Deleted: ack.GetDeleted(), Retained: ack.GetRetained()}, nil
+}
+
+func sharedJVMCapacityFromProto(value *pb.SharedJVMCapacity) *SharedJVMCapacity {
+	if value == nil || value.GetVusersPerJvm() < 2 || value.GetMaxVusers() <= 0 {
+		return nil
+	}
+	return &SharedJVMCapacity{VUsersPerJVM: value.GetVusersPerJvm(), MaxVUsers: value.GetMaxVusers(), AvailableVUsers: max(0, min(value.GetAvailableVusers(), value.GetMaxVusers()))}
 }

@@ -988,6 +988,18 @@ message ProtocolRuntimeCapacity {
   string occupancy_mode = 6;
   string resource_contract = 7;
   RuntimeResourceCapacity resources = 8;
+  // shared_jvm is present when the java_vuser runner hosts shared JVMs. The
+  // fields above stay dedicated (one JVM per VUser) capacity.
+  SharedJVMCapacity shared_jvm = 9;
+}
+
+// SharedJVMCapacity is a generator's shared-JVM envelope for java_vuser groups
+// whose script asks for shared JVMs. available_vusers already subtracts JVMs
+// the runner holds and shared groups the generator has admitted but not staged.
+message SharedJVMCapacity {
+  int32 vusers_per_jvm = 1;
+  int64 max_vusers = 2;
+  int64 available_vusers = 3;
 }
 
 // GeneratorSafetyExitEvidence is the token-free durable explanation for the

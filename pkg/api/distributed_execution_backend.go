@@ -255,6 +255,10 @@ func cloneProtocolRuntimeCapacities(values []generatorrpc.ProtocolRuntimeCapacit
 			resources := *values[index].Resources
 			out[index].Resources = &resources
 		}
+		if values[index].SharedJVM != nil {
+			shared := *values[index].SharedJVM
+			out[index].SharedJVM = &shared
+		}
 	}
 	return out
 }

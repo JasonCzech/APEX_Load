@@ -120,6 +120,17 @@ type RuntimeCapabilities struct {
 	Available bool
 	Features  []string
 	MaxVUsers int64
+	// SharedJVM is the runner's shared-JVM capacity, present only when the
+	// java_vuser runner hosts shared JVMs. MaxVUsers stays dedicated capacity.
+	SharedJVM *SharedJVMCapacity
+}
+
+// SharedJVMCapacity is a runner's live shared-JVM envelope. AvailableVUsers
+// already reflects JVMs the runner holds for shared and dedicated work.
+type SharedJVMCapacity struct {
+	VUsersPerJVM    int64
+	MaxVUsers       int64
+	AvailableVUsers int64
 }
 
 // ReadRuntimeCapabilities invokes the optional runtime-capability extension

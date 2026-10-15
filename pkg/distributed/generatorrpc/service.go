@@ -87,10 +87,15 @@ type assignedTest struct {
 	groupScripts                    map[string]string
 	groupJavaHosts                  map[string]string
 	groupJavaHostPrepared           map[string]int32
-	groupRuntimeResources           map[string]protocol.RuntimeResourceReservation
-	groupRuntimeResourceClaims      map[string]*pb.RuntimeResourceClaim
-	groupRuntimeResourcePeaks       map[string]int32
-	terminalError                   string
+	// groupSharedJVM marks groups staged in runner-qualified shared JVMs;
+	// their VUsers charge the runner's shared envelope, not dedicated slots.
+	// groupSharedJVMVUsers is the population staged before the run.
+	groupSharedJVM             map[string]bool
+	groupSharedJVMVUsers       map[string]int32
+	groupRuntimeResources      map[string]protocol.RuntimeResourceReservation
+	groupRuntimeResourceClaims map[string]*pb.RuntimeResourceClaim
+	groupRuntimeResourcePeaks  map[string]int32
+	terminalError              string
 
 	// metricsCollection identifies the collection that produced the window in
 	// groupTransactions and groupAggregates; every batch built from the
@@ -115,7 +120,10 @@ const (
 type ServiceOption func(*Service)
 
 type groupExecution struct {
-	javaHost            bool
+	javaHost bool
+	// javaShared holds runner shared-JVM reservations staged at assignment
+	// time; like javaHost they are released on rollback without running.
+	javaShared          bool
 	owner               *sourcePlanExecution
 	stagedConfig        *engine.MultiGroupConfig
 	groupName           string
@@ -1192,7 +1200,7 @@ func stopGroupExecution(execution *groupExecution) {
 		return
 	}
 	execution.stopOnce.Do(func() {
-		if execution.javaHost && execution.engine != nil {
+		if (execution.javaHost || execution.javaShared) && execution.engine != nil {
 			execution.engine.Stop()
 		}
 
@@ -1203,7 +1211,7 @@ func stopGroupExecution(execution *groupExecution) {
 		// A staged execution has no goroutines that could close done. Closing it at
 		// detach time preserves the reuse/fencing barrier without ever starting the
 		// engine merely to tear it down.
-		if execution.javaHost && execution.engine != nil {
+		if (execution.javaHost || execution.javaShared) && execution.engine != nil {
 			go func() {
 				_ = execution.engine.ClosePreparedRuntime()
 				execution.stagedDoneOnce.Do(func() {
@@ -1514,6 +1522,11 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		active := s.activeVUsersLocked()
 		avail := s.availableCapacityLocked()
 		persistentJavaReserved := s.heartbeatJavaVuserCapacityInUseLocked()
+		sharedJavaPending := int64(0)
+		if s.lifecycleCoordinator != nil {
+			sharedJavaPending = s.lifecycleCoordinator.pendingSharedJavaVusersLocked()
+		}
+		sharedJavaAdmitted := s.activeSharedJavaVusersLocked() + sharedJavaPending
 		podCapacity := s.podCapacitySnapshotLocked()
 		javaOccupancyMode := s.heartbeatJavaVuserOccupancyModeLocked()
 		s.mu.RUnlock()
@@ -1521,7 +1534,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		supportedProtocols, compatibleFeatures, runtimeCapacities := runtimeAdvertisementWithCapacities(
 			stream.Context(),
 			true,
-			map[string]int64{"java_vuser": persistentJavaReserved},
+			map[string]int64{"java_vuser": persistentJavaReserved, sharedJVMAdmittedKey: sharedJavaAdmitted, sharedJVMPendingKey: sharedJavaPending},
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
 		activeTestIDs := s.activeTestIDs()
@@ -1692,6 +1705,13 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 				AvailableVusers: remaining,
 				Features:        sortedUniqueRuntimeNames(capabilities.Features),
 				OccupancyMode:   occupancyModes[normalized],
+			}
+			if shared := capabilities.SharedJVM; normalized == "java_vuser" && runtimeAvailable && shared != nil {
+				runtimeEntry.SharedJvm = &pb.SharedJVMCapacity{
+					VusersPerJvm:    int32(min(shared.VUsersPerJVM, 1<<20)),
+					MaxVusers:       shared.MaxVUsers,
+					AvailableVusers: sharedJVMAvailable(shared, inUse[sharedJVMAdmittedKey], inUse[sharedJVMPendingKey]),
+				}
 			}
 			if resourceSupported && normalized == "eventhubs" {
 				runtimeEntry.ResourceContract = FeatureRuntimeResourceReservationsV1

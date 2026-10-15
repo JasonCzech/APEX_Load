@@ -102,6 +102,31 @@ Healthy runners advertise `java_vuser_shared_jvm_v1` and a `shared_jvm`
 capacity envelope (slots per JVM, JVM reservation, maximum and available
 VUsers) on `/v1/capabilities`.
 
+## Shared JVMs across generators
+
+A generator whose runner hosts shared JVMs reports a `shared_jvm` envelope on
+the `java_vuser` runtime capacity in every heartbeat: VUsers per JVM, the
+runner's maximum, and the VUsers still available. The available figure is the
+lower of the runner's live figure (which already reflects dedicated JVMs and
+quarantined hosts) and the runner maximum minus every shared VUser this
+generator has admitted, so a heartbeat-cached runner figure cannot over-admit.
+
+For a group whose script asks for shared JVMs and has a supported shape, the
+controller places VUsers by that envelope (one slot per VUser) instead of by
+dedicated JVM slots, and generators without an envelope fall back to their
+dedicated capacity. The generator admits such a group against the same
+envelope, records it as shared so it never charges dedicated capacity, and
+stages its JVMs during assignment staging, inside the staging deadline, so
+commit never waits on cold JVM starts. Rollback and expiry close the staged
+JVMs like pod-based Java groups. A shared group cannot grow past its staged
+VUsers (`java_shared_jvm_additional_slots_required`).
+
+If the runner refuses the claim at staging, the group runs dedicated and must
+fit dedicated capacity; otherwise staging fails with the dedicated capacity
+error. With 250 VUsers per JVM and the default 25 JVMs per runner, one
+generator can host 6,250 shared Java VUsers, subject to its memory budget, so
+10,000 VUsers need two generators instead of 400.
+
 ## Building and checking fixtures
 
 Requirements: Go toolchain, JDK supporting `javac --release 8` and `--release 17`,
