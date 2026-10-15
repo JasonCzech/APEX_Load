@@ -602,6 +602,36 @@ though locked-down workstations may need IT approval to run a signed binary, lau
 browser automation, or allow private-network access from the dashboard origin to
 loopback.
 
+**Capture a phone or tablet** records a device's apps through the Recording Agent,
+on a workstation on the device's network. Where this controller opens a browser
+itself, click **Set up the Recording Agent** to pair one. Choose the workstation's
+network address and click **Start device capture**: the agent's recording proxy
+listens there (port 8888) with a new password, only while the capture runs, and the
+studio shows the server, port, username and password, a QR code for the device's
+setup page, and the steps for iOS:
+
+1. Scan the QR code with the device's camera (or open the setup page), tap
+   **Download the certificate**, then **Allow**.
+2. In **Settings › General › VPN & Device Management**, install **APEX Load
+   Recording Proxy CA**.
+3. In **Settings › General › About › Certificate Trust Settings**, turn on full
+   trust for it.
+4. In **Settings › Wi-Fi**, tap **ⓘ** beside the network, then **Configure Proxy ›
+   Manual**: the server and port shown, **Authentication** on, and the username and
+   password shown.
+5. Use the app, naming each step with **Start transaction** and **End transaction**.
+
+The studio counts the requests recorded from the device, and those the host filter
+left out or the proxy refused. The proxy refuses private-network addresses unless
+`APEXLOAD_RECORDER_ALLOW_PRIVATE_TARGETS=true` is set where the agent runs; set it to
+capture an app that calls intranet hosts. If port 8888 is taken, the capture listens
+on another free port, which the studio shows. **Stop capture** stops the proxy listening (set the
+device's **Configure Proxy** back to **Off**); **Convert to script** shows the steps,
+and **Save to script library** saves the script here. The agent keeps its certificate
+authority in your user configuration folder (or `APEXLOAD_RECORDER_CA_DIR`), so a
+device trusts it once. Android apps trust user certificates only when the app allows
+it, so most Android apps cannot be captured this way.
+
 While an HTTP proxy recording runs, as when you capture a phone app or simulator
 through the proxy, name each step as you perform it: **Start transaction** with a
 name, **End transaction** when the step is done, and **Add note** for anything to

@@ -83584,6 +83584,9 @@ paths:
                   dropped_websocket_messages:
                     type: integer
                     format: int64
+                  filtered_requests:
+                    type: integer
+                    format: int64
                   filters:
                     type: object
                     properties:
@@ -83611,6 +83614,8 @@ paths:
                     required:
                       - exclude_static
                   id:
+                    type: string
+                  last_filtered_host:
                     type: string
                   last_rejected_host:
                     type: string
@@ -84177,6 +84182,9 @@ paths:
                   dropped_websocket_messages:
                     type: integer
                     format: int64
+                  filtered_requests:
+                    type: integer
+                    format: int64
                   filters:
                     type: object
                     properties:
@@ -84204,6 +84212,8 @@ paths:
                     required:
                       - exclude_static
                   id:
+                    type: string
+                  last_filtered_host:
                     type: string
                   last_rejected_host:
                     type: string
@@ -84638,6 +84648,9 @@ paths:
                   dropped_websocket_messages:
                     type: integer
                     format: int64
+                  filtered_requests:
+                    type: integer
+                    format: int64
                   filters:
                     type: object
                     properties:
@@ -84665,6 +84678,8 @@ paths:
                     required:
                       - exclude_static
                   id:
+                    type: string
+                  last_filtered_host:
                     type: string
                   last_rejected_host:
                     type: string
@@ -84894,6 +84909,9 @@ paths:
                   dropped_websocket_messages:
                     type: integer
                     format: int64
+                  filtered_requests:
+                    type: integer
+                    format: int64
                   filters:
                     type: object
                     properties:
@@ -84921,6 +84939,8 @@ paths:
                     required:
                       - exclude_static
                   id:
+                    type: string
+                  last_filtered_host:
                     type: string
                   last_rejected_host:
                     type: string
@@ -275886,6 +275906,8 @@ paths:
             schema:
               type: object
               properties:
+                origin:
+                  type: string
                 project_id:
                   type: string
                 scripts:

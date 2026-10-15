@@ -173,7 +173,7 @@ func stripProxyRequestHeaders(header http.Header, websocket bool) {
 }
 
 func (r *Recorder) authorizeProxyRequest(req *http.Request) bool {
-	token := strings.TrimSpace(r.proxyAuthToken)
+	token := r.ProxyAuthToken()
 	if token == "" {
 		return !r.requireProxyAuth
 	}

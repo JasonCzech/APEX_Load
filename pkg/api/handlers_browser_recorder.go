@@ -803,8 +803,20 @@ func (s *Server) handleAttestBridgedBrowserRecordingImport(w http.ResponseWriter
 	var req struct {
 		ProjectID string       `json:"project_id,omitempty"`
 		Scripts   []dsl.Script `json:"scripts"`
+		// Origin "device" hands over the HTTP script of a device capture the
+		// agent's proxy recorded, instead of a browser recording's.
+		Origin string `json:"origin,omitempty" enums:"device"`
 	}
 	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	device := false
+	switch strings.TrimSpace(req.Origin) {
+	case "":
+	case "device":
+		device = true
+	default:
+		writeError(w, http.StatusBadRequest, "origin must be omitted or device")
 		return
 	}
 	if len(req.Scripts) == 0 || len(req.Scripts) > maxBridgedBrowserImportScripts {
@@ -850,11 +862,14 @@ func (s *Server) handleAttestBridgedBrowserRecordingImport(w http.ResponseWriter
 		script.ProjectID = projectID
 		protocol := strings.ToLower(strings.TrimSpace(script.Protocol))
 		source := ""
-		switch protocol {
-		case "browser":
+		switch {
+		case protocol == "browser" && !device:
 			source = "browser_recorder"
-		case "http", "soap":
+		case protocol == "http" || protocol == "soap":
 			source = "browser_recording_har"
+		case device:
+			writeError(w, http.StatusBadRequest, "a device capture handoff supports only HTTP scripts")
+			return
 		default:
 			writeError(w, http.StatusBadRequest, "paired browser recording handoff supports only browser and HTTP scripts")
 			return
@@ -880,6 +895,11 @@ func (s *Server) handleAttestBridgedBrowserRecordingImport(w http.ResponseWriter
 				script.Metadata.Import.Preserved,
 				dsl.ImportPreservedCredentialPolicyKey,
 			)
+		}
+		if device {
+			// The agent's proxy recorded the device; the script is saved
+			// through the Recording Agent handoff all the same.
+			ensureScriptImportPreserved(script, source)[deviceCaptureOriginKey] = deviceCaptureOrigin
 		}
 		ensureCredentialPreservingImportMetadata(script, source)
 		if err := sanitizePersistentImportReviewSurfaces(script); err != nil {

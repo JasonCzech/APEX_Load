@@ -24641,6 +24641,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "origin"?: string;
           "project_id"?: string;
           "scripts"?: Array<{
             "actions"?: Array<{
@@ -66565,6 +66566,7 @@ export interface operations {
             "base_url"?: string;
             "dropped_requests"?: number;
             "dropped_websocket_messages"?: number;
+            "filtered_requests"?: number;
             "filters": {
               "body_capture_limit_bytes"?: number;
               "capture_cookies"?: boolean;
@@ -66575,6 +66577,7 @@ export interface operations {
               "redact_headers"?: Array<string>;
             };
             "id": string;
+            "last_filtered_host"?: string;
             "last_rejected_host"?: string;
             "last_seq"?: number;
             "markers"?: Array<Record<string, unknown>>;
@@ -102698,6 +102701,7 @@ export interface operations {
             "base_url"?: string;
             "dropped_requests"?: number;
             "dropped_websocket_messages"?: number;
+            "filtered_requests"?: number;
             "filters": {
               "body_capture_limit_bytes"?: number;
               "capture_cookies"?: boolean;
@@ -102708,6 +102712,7 @@ export interface operations {
               "redact_headers"?: Array<string>;
             };
             "id": string;
+            "last_filtered_host"?: string;
             "last_rejected_host"?: string;
             "last_seq"?: number;
             "markers"?: Array<Record<string, unknown>>;
@@ -138475,6 +138480,7 @@ export interface operations {
             "base_url"?: string;
             "dropped_requests"?: number;
             "dropped_websocket_messages"?: number;
+            "filtered_requests"?: number;
             "filters": {
               "body_capture_limit_bytes"?: number;
               "capture_cookies"?: boolean;
@@ -138485,6 +138491,7 @@ export interface operations {
               "redact_headers"?: Array<string>;
             };
             "id": string;
+            "last_filtered_host"?: string;
             "last_rejected_host"?: string;
             "last_seq"?: number;
             "markers"?: Array<Record<string, unknown>>;
@@ -156984,6 +156991,7 @@ export interface operations {
             "base_url"?: string;
             "dropped_requests"?: number;
             "dropped_websocket_messages"?: number;
+            "filtered_requests"?: number;
             "filters": {
               "body_capture_limit_bytes"?: number;
               "capture_cookies"?: boolean;
@@ -156994,6 +157002,7 @@ export interface operations {
               "redact_headers"?: Array<string>;
             };
             "id": string;
+            "last_filtered_host"?: string;
             "last_rejected_host"?: string;
             "last_seq"?: number;
             "markers"?: Array<Record<string, unknown>>;

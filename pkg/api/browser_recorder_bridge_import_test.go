@@ -217,3 +217,48 @@ func TestBridgedBrowserImportDefaultsOmittedProjectForGlobalCaller(t *testing.T)
 		t.Fatalf("default-project scripts = %#v, want project_id %q", payload.Scripts, storage.DefaultProjectID)
 	}
 }
+
+// A device capture's HTTP script crosses the same handoff, marked as such;
+// a browser script or an unknown origin does not.
+func TestBridgedDeviceCaptureImportIsMarkedAndHTTPOnly(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	attest := func(origin, protocol string) *httptest.ResponseRecorder {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{
+			"project_id": storage.DefaultProjectID,
+			"origin":     origin,
+			"scripts": []dsl.Script{{
+				Name: "iPad capture", Version: "1", Protocol: protocol, ProjectID: storage.DefaultProjectID,
+				Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
+				Actions: []dsl.Action{{Name: "limits", Type: "request", Method: http.MethodGet, Target: "/services/data/v66.0/limits"}},
+			}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/browser-recorder/attest", bytes.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		server.mux.ServeHTTP(response, request)
+		return response
+	}
+	response := attest("device", "http")
+	if response.Code != http.StatusOK {
+		t.Fatalf("device handoff status = %d body=%s", response.Code, response.Body.String())
+	}
+	var attested struct {
+		Scripts []dsl.Script `json:"scripts"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &attested); err != nil || len(attested.Scripts) != 1 {
+		t.Fatalf("attested = %+v, %v", attested, err)
+	}
+	imported := attested.Scripts[0].Metadata.Import
+	if imported.Source != "browser_recording_har" || imported.Preserved[deviceCaptureOriginKey] != deviceCaptureOrigin {
+		t.Fatalf("device handoff metadata = %+v", imported)
+	}
+	for _, tc := range []struct{ origin, protocol string }{{"device", "browser"}, {"tablet", "http"}} {
+		if response := attest(tc.origin, tc.protocol); response.Code != http.StatusBadRequest {
+			t.Fatalf("origin %q protocol %q: status %d body=%s", tc.origin, tc.protocol, response.Code, response.Body.String())
+		}
+	}
+}

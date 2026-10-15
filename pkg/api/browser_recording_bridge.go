@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +43,11 @@ type BrowserRecorderBridgeConfig struct {
 	PairingTTL     time.Duration
 	SessionTTL     time.Duration
 	AllowedOrigins []string
+	// CADir holds the recording proxy's certificate authority. A device
+	// trusts it once, so the agent keeps it in one place across runs; empty
+	// uses the recorder's default (APEXLOAD_RECORDER_CA_DIR or the working
+	// directory's artifacts/recorder).
+	CADir string
 }
 
 type BrowserRecordingBridge struct {
@@ -54,6 +60,8 @@ type BrowserRecordingBridge struct {
 	sessions       map[string]bridgeSession
 	pairFailures   map[string]bridgePairFailure
 	server         *Server
+	// device is the device capture (device_capture.go).
+	device *deviceCapture
 }
 
 type bridgeSession struct {
@@ -112,7 +120,7 @@ func NewBrowserRecorderBridgeServer(cfg BrowserRecorderBridgeConfig) *Server {
 		scriptDebug:      NewScriptDebugManager(hub),
 		browserRecording: NewBrowserRecordingManager(hub),
 		browserInstall:   newBrowserInstallState(),
-		recorder:         recorder.New(""),
+		recorder:         bridgeRecorder(cfg.CADir),
 		mux:              http.NewServeMux(),
 		bridgeMode:       true,
 	}
@@ -126,6 +134,7 @@ func NewBrowserRecorderBridgeServer(cfg BrowserRecorderBridgeConfig) *Server {
 		sessions:       make(map[string]bridgeSession),
 		pairFailures:   make(map[string]bridgePairFailure),
 		server:         s,
+		device:         &deviceCapture{},
 	}
 	for _, origin := range cfg.AllowedOrigins {
 		origin = strings.TrimSpace(origin)
@@ -146,6 +155,19 @@ func NewBrowserRecorderBridgeServer(cfg BrowserRecorderBridgeConfig) *Server {
 		ErrorLog:       httpServerErrorLog(),
 	}
 	return s
+}
+
+// bridgeRecorder is the agent's recording proxy: it listens only while a
+// device capture runs, and serves the device its setup page.
+func bridgeRecorder(caDir string) *recorder.Recorder {
+	var rec *recorder.Recorder
+	if caDir = strings.TrimSpace(caDir); caDir != "" {
+		rec = recorder.NewWithCAFiles("", filepath.Join(caDir, recorder.DefaultCACertFile), "")
+	} else {
+		rec = recorder.New("")
+	}
+	rec.SetDeviceSetup(true)
+	return rec
 }
 
 func (s *Server) BridgePairingToken() string {
@@ -210,6 +232,19 @@ func (s *Server) bridgeRoutes() {
 	s.mux.Handle("GET /api/v1/browser-recorder/devices", cors(log(auth(http.HandlerFunc(s.handleListBrowserRecorderDevices)))))
 	s.mux.Handle("POST /api/v1/browser-recorder/install", cors(log(auth(http.HandlerFunc(s.handleBrowserRecorderInstall)))))
 	s.mux.Handle("GET /api/v1/browser-recorder/install", cors(log(auth(http.HandlerFunc(s.handleGetBrowserRecorderInstall)))))
+	// Device capture: the agent's proxy records a phone or tablet, and the
+	// proxy recording routes the controller serves run here for it.
+	s.mux.Handle("GET /api/v1/device-capture", cors(log(auth(http.HandlerFunc(s.handleGetDeviceCapture)))))
+	s.mux.Handle("POST /api/v1/device-capture", cors(log(auth(http.HandlerFunc(s.handleStartDeviceCapture)))))
+	s.mux.Handle("POST /api/v1/device-capture/stop", cors(log(auth(http.HandlerFunc(s.handleStopDeviceCapture)))))
+	s.mux.Handle("GET /api/v1/device-capture/qr.svg", cors(log(auth(http.HandlerFunc(s.handleDeviceCaptureQRCode)))))
+	s.mux.Handle("GET /api/v1/recorder/{id}", cors(log(auth(http.HandlerFunc(s.handleGetRecording)))))
+	s.mux.Handle("PATCH /api/v1/recorder/{id}/requests/{seq}", cors(log(auth(http.HandlerFunc(s.handleUpdateRecordedRequest)))))
+	s.mux.Handle("POST /api/v1/recorder/{id}/transactions/start", cors(log(auth(http.HandlerFunc(s.handleStartRecordingTransaction)))))
+	s.mux.Handle("POST /api/v1/recorder/{id}/transactions/end", cors(log(auth(http.HandlerFunc(s.handleEndRecordingTransaction)))))
+	s.mux.Handle("POST /api/v1/recorder/{id}/notes", cors(log(auth(http.HandlerFunc(s.handleAddRecordingNote)))))
+	s.mux.Handle("POST /api/v1/recorder/{id}/convert/preview", cors(log(auth(http.HandlerFunc(s.handlePreviewRecordingConversion)))))
+	s.mux.Handle("GET /api/v1/recorder/{id}/export", cors(log(auth(http.HandlerFunc(s.handleExportRecording)))))
 	s.mux.Handle("OPTIONS /api/", cors(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})))

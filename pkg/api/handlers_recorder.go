@@ -335,6 +335,8 @@ func sanitizeRecorderSessionForResponse(session *recorder.Session) *recorder.Ses
 		DroppedWebSocketMessages: session.DroppedWebSocketMessages,
 		RejectedRequests:         session.RejectedRequests,
 		LastRejectedHost:         session.LastRejectedHost,
+		FilteredRequests:         session.FilteredRequests,
+		LastFilteredHost:         session.LastFilteredHost,
 		Truncated:                session.Truncated,
 		Warnings:                 sanitizeRecorderWarningsForResponse(session.Warnings),
 		Filters: recorder.SessionFilters{

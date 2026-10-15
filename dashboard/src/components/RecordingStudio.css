@@ -1849,3 +1849,71 @@
 .brp-issues-cancelled > summary {
   cursor: pointer;
 }
+
+/* Device capture through the Recording Agent */
+.rec-device-capture {
+  margin-top: 16px;
+}
+
+.rec-device-live,
+.rec-device-stopped,
+.rec-device-review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rec-device-setup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.rec-device-qr {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.rec-device-settings {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+}
+
+.rec-device-settings dt {
+  color: var(--text-muted);
+}
+
+.rec-device-settings dd {
+  margin: 0;
+  overflow-wrap: break-word;
+}
+
+.rec-device-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-secondary);
+}
+
+.rec-device-steps li {
+  margin: 4px 0;
+}
+
+.rec-device-count {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.rec-device-warnings {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-secondary);
+}
+
+.rec-device-live > .btn,
+.rec-device-review > .btn {
+  align-self: flex-start;
+}

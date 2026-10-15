@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -58,7 +59,7 @@ const maxConcurrentRecorderProxyRequests = 256
 
 const (
 	defaultRecorderCADir  = "artifacts/recorder"
-	defaultRecorderCACert = "ca-cert.pem"
+	defaultRecorderCACert = DefaultCACertFile
 	defaultRecorderCAKey  = "ca-key.pem"
 )
 
@@ -128,6 +129,8 @@ type Session struct {
 	DroppedWebSocketMessages int64             `json:"dropped_websocket_messages,omitempty"`
 	RejectedRequests         int64             `json:"rejected_requests,omitempty"`  // targets the proxy refused to forward to
 	LastRejectedHost         string            `json:"last_rejected_host,omitempty"` // the most recent of them
+	FilteredRequests         int64             `json:"filtered_requests,omitempty"`  // requests the host filters left out
+	LastFilteredHost         string            `json:"last_filtered_host,omitempty"` // the most recent of them
 	Truncated                bool              `json:"truncated,omitempty"`
 	Warnings                 []string          `json:"warnings,omitempty"`
 	Filters                  SessionFilters    `json:"filters"`
@@ -195,8 +198,11 @@ type Recorder struct {
 	proxyAuthToken   string
 	requireProxyAuth bool
 	requireLoopback  bool
-	caCertPath       string
-	caKeyPath        string
+	// deviceSetup serves the device setup page and certificate on the proxy
+	// port (device_setup.go).
+	deviceSetup atomic.Bool
+	caCertPath  string
+	caKeyPath   string
 	// upstreamBodyInactivityTimeout is internal so tests can exercise stalled
 	// response handling without waiting for the production timeout.
 	upstreamBodyInactivityTimeout time.Duration
@@ -727,6 +733,8 @@ func (s *Session) snapshotWindow(includeRequests bool, sinceSeq int, tail int) *
 		DroppedWebSocketMessages: s.DroppedWebSocketMessages,
 		RejectedRequests:         s.RejectedRequests,
 		LastRejectedHost:         s.LastRejectedHost,
+		FilteredRequests:         s.FilteredRequests,
+		LastFilteredHost:         s.LastFilteredHost,
 		Truncated:                s.Truncated,
 		Warnings:                 append([]string(nil), s.Warnings...),
 		Filters:                  s.Filters,
@@ -846,6 +854,31 @@ func (r *Recorder) activeSessionWithRequests(includeRequests bool) *Session {
 func (r *Recorder) StartProxy() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.startProxyLocked()
+}
+
+// Listen binds the recording proxy to addr with a new token, closing the
+// listener it has first; its sessions are kept. A device capture binds it to
+// the workstation's network address with a fresh password for each capture.
+func (r *Recorder) Listen(addr, token string) error {
+	if err := r.closeListener(false); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.addr = strings.TrimSpace(addr)
+	r.proxyAuthToken = strings.TrimSpace(token)
+	return r.startProxyLocked()
+}
+
+// CloseListener stops the proxy listening and closes its tunnels, keeping
+// its sessions, so a later Listen can bind it again. StopProxy instead ends
+// the proxy for good.
+func (r *Recorder) CloseListener() error {
+	return r.closeListener(false)
+}
+
+func (r *Recorder) startProxyLocked() error {
 	if r.proxyStopped {
 		return http.ErrServerClosed
 	}
@@ -890,11 +923,17 @@ func (r *Recorder) StartProxy() error {
 // process-lifecycle components; making stop terminal prevents an in-flight
 // startup or late hijack from resurrecting a listener during server shutdown.
 func (r *Recorder) StopProxy() error {
+	return r.closeListener(true)
+}
+
+func (r *Recorder) closeListener(terminal bool) error {
 	r.mu.Lock()
 	server := r.proxy
 	listener := r.proxyListener
 	done := r.proxyDone
-	r.proxyStopped = true
+	if terminal {
+		r.proxyStopped = true
+	}
 	r.proxy = nil
 	r.proxyListener = nil
 	r.proxyDone = nil
@@ -998,10 +1037,15 @@ func (r *Recorder) noteRejectedTarget(session *Session, host string, err error) 
 }
 
 func (r *Recorder) ProxyAuthToken() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return strings.TrimSpace(r.proxyAuthToken)
 }
 
 func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
+	if r.serveDeviceSetup(w, req) {
+		return
+	}
 	if !r.authorizeProxyRequest(req) {
 		// Browsers implement Basic proxy challenges and will prompt for these
 		// per-launch credentials. Keep Bearer as a second challenge for scripted
@@ -1477,10 +1521,12 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 
 	// A host entry matches that host and its subdomains, as the browser
 	// recorder's HAR filters do.
-	if len(s.Filters.IncludeHosts) > 0 && hostpattern.Index(host, s.Filters.IncludeHosts) < 0 {
-		return 0
-	}
-	if hostpattern.Index(host, s.Filters.ExcludeHosts) >= 0 {
+	if (len(s.Filters.IncludeHosts) > 0 && hostpattern.Index(host, s.Filters.IncludeHosts) < 0) ||
+		hostpattern.Index(host, s.Filters.ExcludeHosts) >= 0 {
+		// Counted, so a capture can show traffic arrives that the filters
+		// leave out.
+		s.FilteredRequests++
+		s.LastFilteredHost = (&url.URL{Host: host}).Hostname()
 		return 0
 	}
 	if len(s.Requests) >= maxRecordedRequests {

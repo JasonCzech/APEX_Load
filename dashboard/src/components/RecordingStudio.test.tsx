@@ -99,6 +99,11 @@ vi.mock("../hooks/apiClient", () => ({
   trimTrailingSlash: (value: string) => value.replace(/\/+$/, ""),
 }));
 
+// The device capture panel talks to the agent itself (its own test covers it).
+vi.mock("./DeviceCapturePanel", () => ({
+  default: () => <div data-testid="device-capture-panel" />,
+}));
+
 vi.mock("../utils/fileUtils", () => ({
   downloadBlob: downloadBlobMock,
   downloadFilenameFromDisposition: (_header: string | null, fallback: string) =>
@@ -3458,6 +3463,38 @@ describe("RecordingStudio", () => {
     );
   });
 
+  it("offers the Recording Agent for a device capture where the controller opens a browser itself", async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ":8081",
+      ca_cert_path: "artifacts/recorder/ca-cert.pem",
+      active: null,
+      browser: {
+        // A stale retryable install state must not read as a missing browser.
+        availability: { available: true },
+        active: null,
+        install: { status: "failed", error: "earlier attempt" },
+      },
+    });
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    expect(container.querySelector('[data-testid="browser-recorder-unavailable"]')).toBeNull();
+    const setup = container.querySelector('[data-testid="device-capture-setup"]')!;
+    expect(setup.textContent).toContain("Capture a phone or tablet");
+    const button = Array.from(setup.querySelectorAll("button")).find((b) => b.textContent === "Set up the Recording Agent")!;
+    await act(async () => {
+      button.click();
+    });
+    const pairing = container.querySelector('[data-testid="browser-recorder-unavailable"]')!;
+    expect(pairing.querySelector('[data-testid="browser-recorder-bridge-panel"]')).not.toBeNull();
+    expect(pairing.textContent).toContain("To capture a phone or tablet, run the APEX Load Recording Agent");
+    expect(pairing.textContent).not.toContain("isn't installed on this controller");
+    expect(container.querySelector('[data-testid="device-capture-setup"]')?.textContent).toContain(
+      "Follow the Recording Agent steps above, then click Connect.",
+    );
+  });
+
   it("leads with the workstation path and keeps the proxy as an alternative when the controller cannot open a browser", async () => {
     apiMock.getRecorderStatus.mockResolvedValue({
       proxy_addr: ":8081",
@@ -3733,6 +3770,8 @@ describe("RecordingStudio", () => {
     await flushPromises();
     expect(container.textContent).not.toContain("no longer accepts this connection");
     expect(container.querySelector('[data-testid="browser-recorder-bridge-connected"]')).not.toBeNull();
+    // A paired agent can also capture a phone or tablet.
+    expect(container.querySelector('[data-testid="device-capture-panel"]')).not.toBeNull();
   });
 
   it("explains the drop when another tab cleared the refused connection first", async () => {

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -107,7 +109,9 @@ func Usage(program string, defaultAddr string) string {
 	return fmt.Sprintf(`Usage: %s [options]
 
 Starts a foreground localhost bridge so a remote APEX Load dashboard can launch
-and control a browser recording session on this workstation.
+and control a browser recording session on this workstation, or capture a phone
+or tablet: a device capture opens the recording proxy on the network address
+chosen in Recording Studio, with its own password, only while it runs.
 
 Options:
   --addr            Listen address (default %s)
@@ -180,6 +184,7 @@ func Run(ctx context.Context, args Args, stdout io.Writer, program string) error
 		PairingTTL:     args.PairingTTL,
 		SessionTTL:     args.SessionTTL,
 		AllowedOrigins: args.AllowOrigins,
+		CADir:          agentCADir(),
 	})
 
 	errCh := make(chan error, 1)
@@ -241,6 +246,20 @@ func Run(ctx context.Context, args Args, stdout io.Writer, program string) error
 		}
 		return nil
 	}
+}
+
+// agentCADir keeps the device capture's certificate authority in the
+// user's configuration directory, so a phone trusts it once whichever folder
+// the agent runs from; APEXLOAD_RECORDER_CA_DIR still wins.
+func agentCADir() string {
+	if strings.TrimSpace(os.Getenv("APEXLOAD_RECORDER_CA_DIR")) != "" {
+		return ""
+	}
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "APEX Load", "Recording Agent")
 }
 
 func InstallBrowsers(stdout io.Writer) error {

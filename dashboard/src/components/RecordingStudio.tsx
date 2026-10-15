@@ -48,6 +48,7 @@ import {
 import { withFallbackPersistedScript } from "./importSaveUtils";
 import { useSourceSecretSessionLifecycle } from "./sourceSecretSessionLifecycle";
 import BrowserRecorderControlPanel from "./BrowserRecorderControlPanel";
+import DeviceCapturePanel from "./DeviceCapturePanel";
 import RecordingMarkerControls from "./RecordingMarkerControls";
 import {
   CLIENT_DOWNLOAD_PLATFORMS,
@@ -813,6 +814,9 @@ export default function RecordingStudio({
     error?: string;
   } | null>(null);
   const [bridgeOrigin, setBridgeOrigin] = useState(DEFAULT_BRIDGE_ORIGIN);
+  // Capturing a phone or tablet runs in the Recording Agent, so its setup is
+  // offered even where this controller opens a browser itself.
+  const [deviceAgentSetup, setDeviceAgentSetup] = useState(false);
   const [bridgeToken, setBridgeToken] = useState(initialBridgePairingToken);
   const [bridgeTokenRevealed, setBridgeTokenRevealed] = useState(false);
   const [bridgePairing, setBridgePairing] = useState(false);
@@ -2842,6 +2846,7 @@ export default function RecordingStudio({
   // it can install one; a paired agent's missing browser is the workstation's.
   const browserInstallOffered =
     !api.browserRecorderBridge &&
+    browserAvailability?.available === false &&
     !!installState &&
     (canRetryBrowserInstall || installState.status === "installing");
   // A profile's host filters add to the typed ones: the proxy merges them when
@@ -2960,7 +2965,7 @@ export default function RecordingStudio({
             <p className="rec-browser-note" role="status">
               Checking how this controller can record…
             </p>
-          ) : !browserAvailability.available ? (
+          ) : !browserAvailability.available || (deviceAgentSetup && !api.browserRecorderBridge) ? (
             <div
               className="rec-browser-workstation"
               data-testid="browser-recorder-unavailable"
@@ -3014,7 +3019,9 @@ export default function RecordingStudio({
                 <p className="rec-bridge-lead">
                   {api.browserRecorderBridge
                     ? "If the agent is not running, run the command again on your computer; then connect to the Recording Agent."
-                    : browserInstallOffered
+                    : browserAvailability.available
+                      ? "To capture a phone or tablet, run the APEX Load Recording Agent on a computer on the device's network."
+                      : browserInstallOffered
                       ? "The browser opens on your computer instead, through the APEX Load Recording Agent."
                       : "This controller can't open a browser for you, so the browser opens on your computer instead, through the APEX Load Recording Agent."}
                 </p>
@@ -3497,6 +3504,32 @@ export default function RecordingStudio({
           )}
 
         </div>
+        {recordingMode === 'browser' && (api.browserRecorderBridge ? (
+          <DeviceCapturePanel
+            connection={api.browserRecorderBridge}
+            projectId={activeProject?.id}
+            folderId={folderId}
+            commitGenericImportBatch={api.commitGenericImportBatch}
+            onImported={onImported}
+          />
+        ) : browserAvailability && (
+          <div className="rec-controls-card rec-device-capture" data-testid="device-capture-setup">
+            <div className="rec-option-heading">
+              <h3 className="rec-section-title">Capture a phone or tablet</h3>
+              <p>
+                The APEX Load Recording Agent records a device's apps through a proxy on a
+                computer on the same network.
+              </p>
+            </div>
+            {browserAvailability.available && !deviceAgentSetup ? (
+              <button type="button" className="btn btn-secondary" onClick={() => setDeviceAgentSetup(true)}>
+                Set up the Recording Agent
+              </button>
+            ) : (
+              <p className="rec-hint">Follow the Recording Agent steps above, then click Connect.</p>
+            )}
+          </div>
+        ))}
 
         <div
           className="rec-controls-card rec-proxy-recorder-option"
