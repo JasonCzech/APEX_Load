@@ -110,8 +110,9 @@ expected_dashboard_build_time = (
 )
 dashboard_build_time_seen = False
 dashboard_version_seen = False
+# The extension must end the name: ".js" must not match the start of ".json".
 asset_reference = re.compile(
-    rb"(?:/assets/|\./)[A-Za-z0-9_.-]+\.(?:css|gif|jpe?g|js|png|svg|webp|woff2?)"
+    rb"(?:/assets/|\./)[A-Za-z0-9_.-]+\.(?:css|gif|jpe?g|js|json|png|svg|webp|woff2?)(?![A-Za-z0-9])"
 )
 pending = deque(urllib.parse.urljoin(base_url + "/", asset) for asset in sorted(parser.assets))
 visited = set()
