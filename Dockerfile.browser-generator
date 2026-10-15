@@ -5,7 +5,7 @@ ARG PLAYWRIGHT_DRIVER_VERSION=1.61.1
 # so recording, Verify and observers report the same Chromium major (the
 # browser version skew check stays quiet). Protocol-only generator pools keep
 # the lean Alpine image in Dockerfile, which drives Alpine's musl Chromium.
-FROM node:22.22.0-bookworm-slim@sha256:dd9d21971ec4395903fa6143c2b9267d048ae01ca6d3ea96f16cb30df6187d94 AS driver
+FROM node:26.10.0-bookworm-slim@sha256:3ffc19ea878019d9e9ae8971732ad4a03cda44f167107173174b60ed7c65bed3 AS driver
 
 ARG PLAYWRIGHT_DRIVER_VERSION
 
