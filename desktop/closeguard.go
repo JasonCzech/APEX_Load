@@ -19,9 +19,9 @@ const eventCloseRequested = "desktop:close-requested" // payload: request id
 // View > Reload replaces the page the same way, so it asks the same guard.
 const eventReloadRequested = "desktop:reload-requested" // payload: request id
 
-// defaultCloseRequestAckWait bounds how long a held close waits for the
-// renderer to take the request. A page that is reloading or hung must never
-// stop the app from quitting.
+// defaultCloseRequestAckWait bounds how long a held close, or a View > Reload,
+// waits for the renderer to take its request. A page that is reloading or hung
+// must never stop the app from quitting, and a reload goes ahead after it too.
 const defaultCloseRequestAckWait = 3 * time.Second
 
 // EnableCloseGuard registers the mounted renderer's close guard and returns
@@ -33,6 +33,7 @@ func (a *App) EnableCloseGuard() (string, error) {
 	}
 	a.closeGuardMu.Lock()
 	a.closeGuardToken = token
+	a.closeGuardSetAside = ""
 	a.closeGuardMu.Unlock()
 	return token, nil
 }
@@ -43,6 +44,9 @@ func (a *App) DisableCloseGuard(token string) {
 	a.closeGuardMu.Lock()
 	if token != "" && token == a.closeGuardToken {
 		a.closeGuardToken = ""
+	}
+	if token != "" && token == a.closeGuardSetAside {
+		a.closeGuardSetAside = ""
 	}
 	a.closeGuardMu.Unlock()
 }
@@ -55,6 +59,13 @@ func (a *App) AcknowledgeCloseRequest(token, requestID string) {
 		return
 	}
 	a.closeGuardMu.Lock()
+	// A page that answers a reload it let pass was only busy. If it is still
+	// here (its browser kept it at a leave-page prompt, say), it holds closes
+	// again, unless a newer page has registered since.
+	if token != "" && token == a.closeGuardSetAside && a.closeGuardToken == "" && id <= a.closeRequests {
+		a.closeGuardToken = token
+		a.closeGuardSetAside = ""
+	}
 	if token != "" && token == a.closeGuardToken && id <= a.closeRequests && id > a.closeRequestsAcked {
 		a.closeRequestsAcked = id
 	}
@@ -139,9 +150,9 @@ func (a *App) reloadWithRendererGuard(ctx context.Context) {
 
 // rendererTookRequest waits the acknowledgement window and reports whether the
 // renderer took request id (or a later one). A registration that let the
-// request pass unanswered is dropped, as a timed-out close drops it, so the
-// next close or reload does not wait on it again; a newer page's registration
-// is kept.
+// request pass unanswered is set aside, as a timed-out close drops it, so the
+// next close or reload does not wait on it; its page restores it by answering
+// late (see AcknowledgeCloseRequest). A newer page's registration is kept.
 func (a *App) rendererTookRequest(id uint64, token string) bool {
 	wait := a.closeAckWait
 	if wait <= 0 {
@@ -157,6 +168,7 @@ func (a *App) rendererTookRequest(id uint64, token string) bool {
 	}
 	if a.closeGuardToken == token {
 		a.closeGuardToken = ""
+		a.closeGuardSetAside = token
 	}
 	return false
 }

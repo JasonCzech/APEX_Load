@@ -237,6 +237,25 @@ export async function pickImportFilesViaBridge(): Promise<File[] | null> {
   return pickFilesViaBridge(accept, true);
 }
 
+// openImportFilesFromDisk runs File > Open Script…: the picked files go to the
+// import flow, as files opened from Finder or Explorer do. Without a native
+// dialog it opens the script library instead; a cancel leaves the page as it
+// is; a file that cannot be read is reported and the library opened.
+export async function openImportFilesFromDisk(target: {
+  importFiles: (files: File[]) => void;
+  openLibrary: () => void;
+  reportError: (message: string) => void;
+}): Promise<void> {
+  try {
+    const files = await pickImportFilesViaBridge();
+    if (files === null) target.openLibrary();
+    else if (files.length > 0) target.importFiles(files);
+  } catch (error) {
+    target.reportError(nativeFileReadErrorMessage(error));
+    target.openLibrary();
+  }
+}
+
 function isImportableDropPath(path: string): boolean {
   const lower = path.toLowerCase();
   return IMPORTABLE_DROP_EXTENSIONS.some((ext) => lower.endsWith(ext));

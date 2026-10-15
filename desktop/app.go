@@ -176,9 +176,12 @@ type App struct {
 	notificationAuthErr     error
 	instanceLock            desktopProcessLock
 	// closeGuard* hold a native close while the renderer resolves unsaved work
-	// (see closeguard.go). closeConfirmed lets the confirmed quit through.
+	// (see closeguard.go). closeConfirmed lets the confirmed quit through;
+	// closeGuardSetAside is a registration an unanswered reload took out of
+	// service, which a late answer from its page restores.
 	closeGuardMu       sync.Mutex
 	closeGuardToken    string
+	closeGuardSetAside string
 	closeRequests      uint64
 	closeRequestsAcked uint64
 	closeConfirmed     bool

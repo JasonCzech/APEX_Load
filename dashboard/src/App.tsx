@@ -113,7 +113,7 @@ import { useDockBadge } from "./desktop/useDockBadge";
 import {
   filesFromDroppedPaths,
   nativeFileReadErrorMessage,
-  pickImportFilesViaBridge,
+  openImportFilesFromDisk,
 } from "./desktop/desktopFiles";
 import { useDesktopRoutePersistence } from "./desktop/useDesktopRoutePersistence";
 import AboutDialog from "./components/AboutDialog";
@@ -2325,18 +2325,15 @@ function AppShell({
   }, []);
 
   const openShortcutHelp = useKeyboardShortcutHelp();
-  // File > Open Script… opens script files from disk into the import flow, as
-  // opening them from Finder or Explorer does.
-  const openScriptFilesFromDisk = useCallback(async () => {
-    try {
-      const files = await pickImportFilesViaBridge();
-      if (files === null) handleNavigate("scripts");
-      else if (files.length > 0) openNativeImportFiles(files);
-    } catch (error) {
-      setDesktopImportError(nativeFileReadErrorMessage(error));
-      handleNavigate("scripts");
-    }
-  }, [handleNavigate, openNativeImportFiles]);
+  const openScriptFilesFromDisk = useCallback(
+    () =>
+      openImportFilesFromDisk({
+        importFiles: openNativeImportFiles,
+        openLibrary: () => handleNavigate("scripts"),
+        reportError: setDesktopImportError,
+      }),
+    [handleNavigate, openNativeImportFiles],
+  );
   const handleDesktopMenuAction = useCallback(
     (action: string) => {
       const next = desktopActionView(action);

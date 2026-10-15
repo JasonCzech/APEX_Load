@@ -13,6 +13,7 @@ import {
   pickImportFilesViaBridge,
   NativeFileReadError,
   nativeFileReadErrorMessage,
+  openImportFilesFromDisk,
   pickFilesViaBridge,
   saveApiResourceViaBridge,
   startDesktopBrowserDownload,
@@ -198,6 +199,52 @@ describe("pickImportFilesViaBridge", () => {
     expect(await pickImportFilesViaBridge()).toEqual([]);
     setBridge({});
     expect(await pickImportFilesViaBridge()).toBeNull();
+  });
+});
+
+describe("openImportFilesFromDisk", () => {
+  // File > Open Script…: picked files import, a cancel stays put, no native
+  // dialog opens the library, and an unreadable file is reported.
+  const target = () => ({ importFiles: vi.fn(), openLibrary: vi.fn(), reportError: vi.fn() });
+
+  it("imports the picked files", async () => {
+    setBridge({
+      OpenFileDialogNative: vi.fn(),
+      OpenFilesDialogNative: vi.fn(async () => ["/Users/me/orders.har"]),
+      ReadFileBase64: vi.fn(async () => btoa("x")),
+    });
+    const t = target();
+    await openImportFilesFromDisk(t);
+    expect(t.importFiles.mock.calls[0][0].map((file: File) => file.name)).toEqual(["orders.har"]);
+    expect(t.openLibrary).not.toHaveBeenCalled();
+    expect(t.reportError).not.toHaveBeenCalled();
+  });
+
+  it("does nothing on cancel and opens the library without a native dialog", async () => {
+    setBridge({ OpenFileDialogNative: vi.fn(), OpenFilesDialogNative: vi.fn(async () => []) });
+    const cancelled = target();
+    await openImportFilesFromDisk(cancelled);
+    expect(cancelled.importFiles).not.toHaveBeenCalled();
+    expect(cancelled.openLibrary).not.toHaveBeenCalled();
+
+    setBridge({});
+    const browser = target();
+    await openImportFilesFromDisk(browser);
+    expect(browser.openLibrary).toHaveBeenCalledTimes(1);
+    expect(browser.importFiles).not.toHaveBeenCalled();
+  });
+
+  it("reports a file it cannot read and opens the library", async () => {
+    setBridge({
+      OpenFileDialogNative: vi.fn(),
+      OpenFilesDialogNative: vi.fn(async () => ["/Users/me/huge.usz"]),
+      ReadFileBase64: vi.fn().mockRejectedValue(new Error("file is too large for the bridge")),
+    });
+    const t = target();
+    await openImportFilesFromDisk(t);
+    expect(t.reportError).toHaveBeenCalledWith(expect.stringContaining("huge.usz"));
+    expect(t.openLibrary).toHaveBeenCalledTimes(1);
+    expect(t.importFiles).not.toHaveBeenCalled();
   });
 });
 

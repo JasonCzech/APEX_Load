@@ -220,3 +220,62 @@ func TestReloadAsksTheRendererGuardFirst(t *testing.T) {
 		t.Fatalf("a reload quit the app %d times", quits)
 	}
 }
+
+// A page that was only busy answers the reload it let pass. If it is still
+// there (kept at its browser's leave-page prompt), it holds closes again; a
+// newer page's registration is never displaced by an old page's late answer.
+func TestALateAnswerRestoresAGuardAnUnansweredReloadSetAside(t *testing.T) {
+	app, harness := newCloseGuardApp(t, 20*time.Millisecond)
+	reloaded := make(chan struct{}, 1)
+	originalReload := windowReloadApp
+	windowReloadApp = func(context.Context) { reloaded <- struct{}{} }
+	t.Cleanup(func() { windowReloadApp = originalReload })
+	app.emitReloadRequest = func(_ context.Context, id string) {
+		harness.mu.Lock()
+		harness.emitted = append(harness.emitted, id)
+		harness.mu.Unlock()
+	}
+	registered := func() string {
+		app.closeGuardMu.Lock()
+		defer app.closeGuardMu.Unlock()
+		return app.closeGuardToken
+	}
+
+	unansweredReload := func(emitted int) string {
+		t.Helper()
+		app.reloadWithRendererGuard(context.Background())
+		id := waitForEmit(t, harness, emitted)[emitted-1]
+		select {
+		case <-reloaded:
+		case <-time.After(2 * time.Second):
+			t.Fatal("the unanswered reload never went ahead")
+		}
+		if registered() != "" {
+			t.Fatal("the registration that let the reload pass still holds closes")
+		}
+		return id
+	}
+
+	token, err := app.EnableCloseGuard()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := unansweredReload(1)
+	app.AcknowledgeCloseRequest(token, id)
+	if registered() != token {
+		t.Fatal("a late answer from the page did not restore its registration")
+	}
+
+	id = unansweredReload(2)
+	newer, err := app.EnableCloseGuard()
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.AcknowledgeCloseRequest(token, id)
+	if registered() != newer {
+		t.Fatal("an old page's late answer displaced the newer registration")
+	}
+	if _, quits := harness.snapshot(); quits != 0 {
+		t.Fatalf("a reload quit the app %d times", quits)
+	}
+}
