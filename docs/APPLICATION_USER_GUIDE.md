@@ -729,7 +729,10 @@ method you used last.
   recorded them, since each split script is one transaction. A verification code is
   masked like a password and cannot replay: exempt the perf users from identity
   verification. Before running more than one observer, give each its own user, since
-  every one would sign in as the recorded user.
+  every one would sign in as the recorded user. An observer whose session signs its
+  browser in (a storage-state pool or `salesforce_jwt`) skips the recorded sign-in, and
+  any transaction marked around only it, and opens the page the recording reached after
+  signing in instead of the sign-in page; Verify does the same.
 - A browser recording keeps a HAR of its traffic of up to 100 MB. Excluded hosts are
   removed before response bodies count toward that limit. Past it, the HAR still
   keeps every request and leaves out response bodies, images and media first, and

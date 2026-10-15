@@ -845,8 +845,18 @@ func runReplayPhaseInOrder(
 			order[index] = index
 		}
 	}
+	// An observer whose session signs its browser in skips the recorded
+	// sign-in; the other steps keep their positions.
+	var signIn *recordedSignInPlan
+	if strings.EqualFold(strings.TrimSpace(phase), "init") {
+		signIn = newRecordedSignInPlan(vu.Script)
+	}
 	for _, actionIndex := range order {
 		action := actions[actionIndex]
+		if signIn.skips(actionIndex) {
+			continue
+		}
+		action = signIn.action(action)
 		leafOrdinal := 0
 		flow, abort := expandReplayAction(ctx, vu, action, phase, actionIndex, 0, nil, nil, &leafOrdinal, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
 		if abort {
