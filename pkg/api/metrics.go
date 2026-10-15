@@ -84,6 +84,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 	if snap.Browser != nil {
 		live.Browser = &BrowserLiveMetrics{
 			Samples:              snap.Browser.Samples,
+			DocumentLoads:        snap.Browser.DocumentLoads,
 			AvgFCPMs:             snap.Browser.AvgFCPMs,
 			AvgLCPMs:             snap.Browser.AvgLCPMs,
 			AvgCLSScore:          snap.Browser.AvgCLSScore,
@@ -105,6 +106,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 				DeviceTier:           metrics.DeviceTier,
 				BrowserEngine:        metrics.BrowserEngine,
 				Samples:              metrics.Samples,
+				DocumentLoads:        metrics.DocumentLoads,
 				AvgFCPMs:             metrics.AvgFCPMs,
 				AvgLCPMs:             metrics.AvgLCPMs,
 				AvgCLSScore:          metrics.AvgCLSScore,

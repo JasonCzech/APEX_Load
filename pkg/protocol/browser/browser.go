@@ -114,6 +114,9 @@ type Browser struct {
 	cdpInstallGeneration uint64
 	createCDPSession     func(playwright.BrowserContext, playwright.Page) (playwright.CDPSession, error)
 	currentFrameSelector string
+	// metricsMark is the document the last page-metrics capture measured
+	// (runtime_metrics.go), guarded by mu.
+	metricsMark pageMetricsMark
 
 	mu sync.Mutex
 	// refusedPage is the page whose document at refusedURL the site refused,

@@ -273,3 +273,40 @@ func TestVolatileAuraIDConfidence(t *testing.T) {
 		t.Fatalf("volatile aura id confidence = %d, want %d", conf, ConfidenceVolatileAuraID)
 	}
 }
+
+// On a Lightning page, an LWC id with its generated suffix ranks last, a
+// Lightning button's name and any title are candidates, and CSS and XPath
+// candidates match visible elements only.
+func TestCandidatesOnALightningPage(t *testing.T) {
+	input := Candidates(ElementMetadata{
+		Tag: "input", ID: "input-237", Name: "Name", Role: "textbox", AriaLabel: "Account Name",
+		CSSPath: "records-record-layout-item input", XPath: "//input[1]", Lightning: true,
+	})
+	if input[0].Value != `input[aria-label="Account Name"] >> visible=true` || input[0].Confidence != ConfidenceLightningAriaLabel {
+		t.Fatalf("top candidate = %+v", input[0])
+	}
+	id, _ := confidenceForValue(input, "css", `#input-237 >> visible=true`)
+	if id != ConfidenceVolatileAuraID {
+		t.Fatalf("LWC id confidence = %d; candidates %v", id, candidateValues(input))
+	}
+	if _, ok := confidenceForValue(input, "xpath", `xpath=//input[1] >> visible=true`); !ok {
+		t.Fatalf("xpath candidate not visible-only: %v", candidateValues(input))
+	}
+	if _, ok := confidenceForValue(input, "role", `role=textbox[name="Account Name"]`); !ok {
+		t.Fatalf("role candidate changed: %v", candidateValues(input))
+	}
+
+	button := Candidates(ElementMetadata{Tag: "button", Name: "SaveEdit", Text: "Save", Attributes: map[string]string{"title": "Save"}, Lightning: true})
+	if got, _ := confidenceForValue(button, "css", `button[name="SaveEdit"] >> visible=true`); got != ConfidenceLightningButtonName {
+		t.Fatalf("button name confidence = %d; candidates %v", got, candidateValues(button))
+	}
+	if _, ok := confidenceForValue(button, "css", `button[title="Save"] >> visible=true`); !ok {
+		t.Fatalf("title candidate missing: %v", candidateValues(button))
+	}
+
+	// Elsewhere an id with a numeric suffix is an ordinary id.
+	plain := Candidates(ElementMetadata{Tag: "input", ID: "input-237"})
+	if plain[0].Value != "#input-237" || plain[0].Confidence != ConfidenceHTMLID {
+		t.Fatalf("plain page = %v", candidateValues(plain))
+	}
+}

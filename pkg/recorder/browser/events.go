@@ -216,6 +216,11 @@ type PauseInterval struct {
 type NavEvent struct {
 	Timestamp time.Time `json:"timestamp"`
 	URL       string    `json:"url"`
+	// SameDocument marks an in-page URL change (history.pushState or a
+	// fragment), which Chromium reports as one; NavigationType is its kind
+	// when Chromium names it (historyApi, fragment, other).
+	SameDocument   bool   `json:"same_document,omitempty"`
+	NavigationType string `json:"navigation_type,omitempty"`
 }
 
 // WebSocketSummary describes one WebSocket connection observed during recording.

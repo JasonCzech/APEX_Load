@@ -182,7 +182,23 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 		}
 	}
 
-	for _, entry := range buildTimeline(session, opts.StepRange) {
+	timeline, routeChanges := buildTimeline(session, opts.StepRange)
+	if routeChanges > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"%d route change(s) the app made in the page without a recorded step (a single-page app such as Salesforce Lightning) were not turned into navigations: loading the URL would reload the app, and the replayed steps make the app change it again.", routeChanges))
+	}
+	signIn := salesforceSignInSteps(session.Steps, opts.StepRange)
+	// A split script is one transaction and leaves out what was recorded
+	// outside one, so its sign-in stays where it was recorded.
+	if !opts.SplitAtTransactions {
+		if moved, refusal := moveSalesforceSignInToInit(timeline, signIn); refusal != "" {
+			result.Warnings = append(result.Warnings, refusal)
+		} else if moved > 0 {
+			result.Warnings = append(result.Warnings, fmt.Sprintf(
+				"The recorded Salesforce sign-in (%d step(s)) runs in init, once per virtual user. Before running more than one observer, give each its own user or session: every one would sign in as the recorded user, and a verification code does not replay.", moved))
+		}
+	}
+	for _, entry := range timeline {
 		entrySection := normalizeSection(entry.section)
 		switch {
 		case entry.wsOpen || entry.wsFrame != nil:
@@ -235,6 +251,9 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 				continue
 			}
 			decorate(&action, true)
+			if signIn[step.Seq] {
+				setMeta(&action, "salesforce_auth", true)
+			}
 			sa := sectionedAction{action: action, section: entrySection, timestamp: entry.timestamp, width: step.ViewportWidth, height: step.ViewportHeight}
 			// A dialog fires from the action just before it, but replay arms the
 			// handler one-shot — so place handle_dialog before its trigger. Only
@@ -642,7 +661,10 @@ func titleCaseWords(s string) string {
 	return strings.Join(fields, " ")
 }
 
-func buildTimeline(session *Session, stepRange StepRange) []timelineEntry {
+// buildTimeline orders the converted steps with the navigations, markers and
+// WebSocket traffic in their window. It also counts the app route changes in
+// that window that no recorded step made, which it leaves out.
+func buildTimeline(session *Session, stepRange StepRange) ([]timelineEntry, int) {
 	entries := make([]timelineEntry, 0, len(session.Steps)+len(session.Markers))
 	var lower, upper time.Time
 	haveLower, haveUpper := false, false
@@ -673,10 +695,17 @@ func buildTimeline(session *Session, stepRange StepRange) []timelineEntry {
 		}
 		return true
 	}
-	for _, navIndex := range explicitNavigations(session.Steps, session.NavEvents) {
+	explicit, routeChanges := explicitNavigations(session.Steps, session.NavEvents)
+	for _, navIndex := range explicit {
 		nav := session.NavEvents[navIndex]
 		if within(nav.Timestamp) {
 			entries = append(entries, timelineEntry{timestamp: nav.Timestamp, navURL: nav.URL})
+		}
+	}
+	leftOut := 0
+	for _, navIndex := range routeChanges {
+		if within(session.NavEvents[navIndex].Timestamp) {
+			leftOut++
 		}
 	}
 	markerIndexes := markerIndexesForTimeline(session.Markers, stepRange, lower, upper, haveLower, haveUpper)
@@ -720,7 +749,7 @@ func buildTimeline(session *Session, stepRange StepRange) []timelineEntry {
 		return timelineTieRank(entries[i]) < timelineTieRank(entries[j])
 	})
 	assignTimelineSections(entries)
-	return entries
+	return entries, leftOut
 }
 
 // timelineTieRank orders entries that share an identical timestamp: a
@@ -951,7 +980,12 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 		action.Name = "Fill " + stepLabel(step)
 		action.Type = "browser_fill"
 		action.Value = step.Value
-		if step.Masked {
+		if salesforceOneTimeCode(step) {
+			key := secretEnvKey(step)
+			action.Value = "{{env." + key + "}}"
+			result.Warnings = append(result.Warnings, fmt.Sprintf(
+				"step %d entered a one-time verification code, which was masked at capture and cannot replay: exempt the perf users from identity verification, or give each observer a signed-in session", step.Seq))
+		} else if step.Masked {
 			key := secretEnvKey(step)
 			action.Value = "{{env." + key + "}}"
 			result.Warnings = append(result.Warnings, fmt.Sprintf(
@@ -1178,6 +1212,9 @@ func attachStepMetadata(action *dsl.Action, step Step) {
 	}
 	if step.Masked {
 		action.Metadata["source_masked_secret"] = true
+	}
+	if salesforceOneTimeCode(step) {
+		action.Metadata["source_one_time_code"] = true
 	}
 	if step.MarkSecret {
 		action.Metadata["source_marked_secret"] = true

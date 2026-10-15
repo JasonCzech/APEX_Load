@@ -4295,6 +4295,26 @@ paths:
                           size_bytes:
                             type: integer
                             format: int64
+                    aura_actions:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          apex:
+                            type: boolean
+                          count:
+                            type: integer
+                            format: int64
+                          errors:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          total_ms:
+                            type: number
+                            format: double
+                          transaction:
+                            type: string
                     baseline_comparison:
                       type: object
                       properties:
@@ -4765,6 +4785,9 @@ paths:
                             type: string
                           device_tier:
                             type: string
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
@@ -4806,6 +4829,9 @@ paths:
                             format: double
                           browser_engine:
                             type: string
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
@@ -4849,6 +4875,9 @@ paths:
                             type: string
                           device_platform:
                             type: string
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
@@ -11861,6 +11890,9 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
@@ -37158,6 +37190,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -37265,6 +37299,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -37882,6 +37921,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -39074,6 +39115,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -39181,6 +39224,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -39798,6 +39846,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -41027,6 +41077,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -41134,6 +41186,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -41751,6 +41808,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -42862,6 +42921,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -42969,6 +43030,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -43586,6 +43652,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -44697,6 +44765,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -44804,6 +44874,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -45421,6 +45496,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -90749,10 +90826,14 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                             browser_by_device:
@@ -92255,10 +92336,14 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                           browser_by_device:
@@ -92304,10 +92389,14 @@ paths:
                                   type: string
                                 device_tier:
                                   type: string
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                           browser_documents:
@@ -97350,10 +97439,14 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                             browser_by_device:
@@ -98856,10 +98949,14 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                           browser_by_device:
@@ -98905,10 +99002,14 @@ paths:
                                   type: string
                                 device_tier:
                                   type: string
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                           browser_documents:
@@ -103952,10 +104053,14 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                             browser_by_device:
@@ -105458,10 +105563,14 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                           browser_by_device:
@@ -105507,10 +105616,14 @@ paths:
                                   type: string
                                 device_tier:
                                   type: string
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                           browser_documents:
@@ -110566,10 +110679,14 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                             browser_by_device:
@@ -112072,10 +112189,14 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                           browser_by_device:
@@ -112121,10 +112242,14 @@ paths:
                                   type: string
                                 device_tier:
                                   type: string
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                           browser_documents:
@@ -117180,10 +117305,14 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                             browser_by_device:
@@ -118686,10 +118815,14 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                           browser_by_device:
@@ -118735,10 +118868,14 @@ paths:
                                   type: string
                                 device_tier:
                                   type: string
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                           browser_documents:
@@ -123794,10 +123931,14 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                             browser_by_device:
@@ -125300,10 +125441,14 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                           browser_by_device:
@@ -125349,10 +125494,14 @@ paths:
                                   type: string
                                 device_tier:
                                   type: string
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                           browser_documents:
@@ -130408,10 +130557,14 @@ paths:
                                 avg_ttfb_ms:
                                   type: number
                                   format: double
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                             browser_by_device:
@@ -131914,10 +132067,14 @@ paths:
                               avg_ttfb_ms:
                                 type: number
                                 format: double
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                           browser_by_device:
@@ -131963,10 +132120,14 @@ paths:
                                   type: string
                                 device_tier:
                                   type: string
+                                document_loads:
+                                  type: integer
+                                  format: int64
                                 samples:
                                   type: integer
                                   format: int64
                               required:
+                                - document_loads
                                 - samples
                               nullable: true
                           browser_documents:
@@ -135738,6 +135899,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -135845,6 +136008,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -136462,6 +136630,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -137809,6 +137979,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -137916,6 +138088,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -138533,6 +138710,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -139940,6 +140119,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -140047,6 +140228,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -140664,6 +140850,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -142017,6 +142205,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -142124,6 +142314,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -142741,6 +142936,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -144088,6 +144285,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -144195,6 +144394,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -144812,6 +145016,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -146164,6 +146370,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -146271,6 +146479,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -146888,6 +147101,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -148241,6 +148456,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -148348,6 +148565,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -148965,6 +149187,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -189703,6 +189927,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -189810,6 +190036,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -190427,6 +190658,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -191775,6 +192008,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -191882,6 +192117,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -192499,6 +192739,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -193908,6 +194150,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -194015,6 +194259,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -194632,6 +194881,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -195986,6 +196237,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -196093,6 +196346,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -196710,6 +196968,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -198058,6 +198318,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -198165,6 +198427,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -198782,6 +199049,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -200135,6 +200404,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -200242,6 +200513,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -200859,6 +201135,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -202213,6 +202491,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -202320,6 +202600,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -202937,6 +203222,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -225237,6 +225524,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -225344,6 +225633,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -225961,6 +226255,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -229720,6 +230016,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -229827,6 +230125,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -230444,6 +230747,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -236986,6 +237291,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -237093,6 +237400,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -237710,6 +238022,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -260280,6 +260594,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -260387,6 +260703,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -261004,6 +261325,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -261869,6 +262192,17 @@ paths:
                   items:
                     type: object
                     properties:
+                      aura:
+                        type: object
+                        properties:
+                          actions:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          framework_error:
+                            type: string
+                        nullable: true
                       browser_evidence:
                         type: object
                         properties:
@@ -270834,6 +271168,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -270941,6 +271277,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -271558,6 +271899,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -322104,6 +322447,8 @@ paths:
                                   - metrics
                                   - version
                                 nullable: true
+                              same_document:
+                                type: boolean
                               script_duration_ms:
                                 type: number
                                 format: double
@@ -322211,6 +322556,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                aura:
+                                  type: object
+                                  description: 'Go type: AuraBatch'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -322828,6 +323178,8 @@ paths:
                                     - metrics
                                     - version
                                   nullable: true
+                                same_document:
+                                  type: boolean
                                 script_duration_ms:
                                   type: number
                                   format: double
@@ -348761,10 +349113,14 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                         browser_by_device:
@@ -348810,10 +349166,14 @@ paths:
                                 type: string
                               device_tier:
                                 type: string
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                         browser_documents:
@@ -351160,10 +351520,14 @@ paths:
                           avg_ttfb_ms:
                             type: number
                             format: double
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
                         required:
+                          - document_loads
                           - samples
                         nullable: true
                       browser_by_device:
@@ -351209,10 +351573,14 @@ paths:
                               type: string
                             device_tier:
                               type: string
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                       browser_documents:
@@ -362588,10 +362956,14 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                         browser_by_device:
@@ -362637,10 +363009,14 @@ paths:
                                 type: string
                               device_tier:
                                 type: string
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                         browser_documents:
@@ -364987,10 +365363,14 @@ paths:
                           avg_ttfb_ms:
                             type: number
                             format: double
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
                         required:
+                          - document_loads
                           - samples
                         nullable: true
                       browser_by_device:
@@ -365036,10 +365416,14 @@ paths:
                               type: string
                             device_tier:
                               type: string
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                       browser_documents:
@@ -382822,6 +383206,31 @@ paths:
                           format: int64
                       required:
                         - name
+                  aura_actions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        apex:
+                          type: boolean
+                        count:
+                          type: integer
+                          format: int64
+                        errors:
+                          type: integer
+                          format: int64
+                        name:
+                          type: string
+                        total_ms:
+                          type: number
+                          format: double
+                        transaction:
+                          type: string
+                      required:
+                        - count
+                        - name
+                        - total_ms
+                        - transaction
                   baseline_comparison:
                     type: object
                     properties:
@@ -385217,10 +385626,14 @@ paths:
                           type: string
                         device_tier:
                           type: string
+                        document_loads:
+                          type: integer
+                          format: int64
                         samples:
                           type: integer
                           format: int64
                       required:
+                        - document_loads
                         - samples
                       nullable: true
                   browser_by_engine:
@@ -385260,10 +385673,14 @@ paths:
                           format: double
                         browser_engine:
                           type: string
+                        document_loads:
+                          type: integer
+                          format: int64
                         samples:
                           type: integer
                           format: int64
                       required:
+                        - document_loads
                         - samples
                       nullable: true
                   browser_by_platform:
@@ -385305,10 +385722,14 @@ paths:
                           type: string
                         device_platform:
                           type: string
+                        document_loads:
+                          type: integer
+                          format: int64
                         samples:
                           type: integer
                           format: int64
                       required:
+                        - document_loads
                         - samples
                       nullable: true
                   browser_document_evidence:
@@ -396386,10 +396807,14 @@ paths:
                           avg_ttfb_ms:
                             type: number
                             format: double
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
                         required:
+                          - document_loads
                           - samples
                         nullable: true
                       error_pct:
@@ -408085,10 +408510,14 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                         browser_by_device:
@@ -408134,10 +408563,14 @@ paths:
                                 type: string
                               device_tier:
                                 type: string
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                         browser_documents:
@@ -410484,10 +410917,14 @@ paths:
                           avg_ttfb_ms:
                             type: number
                             format: double
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
                         required:
+                          - document_loads
                           - samples
                         nullable: true
                       browser_by_device:
@@ -410533,10 +410970,14 @@ paths:
                               type: string
                             device_tier:
                               type: string
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                       browser_documents:
@@ -421856,10 +422297,14 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                         browser_by_device:
@@ -421905,10 +422350,14 @@ paths:
                                 type: string
                               device_tier:
                                 type: string
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                         browser_documents:
@@ -424255,10 +424704,14 @@ paths:
                           avg_ttfb_ms:
                             type: number
                             format: double
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
                         required:
+                          - document_loads
                           - samples
                         nullable: true
                       browser_by_device:
@@ -424304,10 +424757,14 @@ paths:
                               type: string
                             device_tier:
                               type: string
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                       browser_documents:
@@ -441538,10 +441995,14 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                         browser_by_device:
@@ -441587,10 +442048,14 @@ paths:
                                 type: string
                               device_tier:
                                 type: string
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                         browser_documents:
@@ -443937,10 +444402,14 @@ paths:
                           avg_ttfb_ms:
                             type: number
                             format: double
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
                         required:
+                          - document_loads
                           - samples
                         nullable: true
                       browser_by_device:
@@ -443986,10 +444455,14 @@ paths:
                               type: string
                             device_tier:
                               type: string
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                       browser_documents:
@@ -457346,10 +457819,14 @@ paths:
                             avg_ttfb_ms:
                               type: number
                               format: double
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                         browser_by_device:
@@ -457395,10 +457872,14 @@ paths:
                                 type: string
                               device_tier:
                                 type: string
+                              document_loads:
+                                type: integer
+                                format: int64
                               samples:
                                 type: integer
                                 format: int64
                             required:
+                              - document_loads
                               - samples
                             nullable: true
                         browser_documents:
@@ -459733,10 +460214,14 @@ paths:
                           avg_ttfb_ms:
                             type: number
                             format: double
+                          document_loads:
+                            type: integer
+                            format: int64
                           samples:
                             type: integer
                             format: int64
                         required:
+                          - document_loads
                           - samples
                         nullable: true
                       browser_by_device:
@@ -459782,10 +460267,14 @@ paths:
                               type: string
                             device_tier:
                               type: string
+                            document_loads:
+                              type: integer
+                              format: int64
                             samples:
                               type: integer
                               format: int64
                           required:
+                            - document_loads
                             - samples
                           nullable: true
                       browser_documents:
@@ -473042,6 +473531,20 @@ paths:
                         items:
                           type: object
                           properties:
+                            aura:
+                              type: object
+                              properties:
+                                actions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: AuraActionOutcome'
+                                    additionalProperties: true
+                                framework_error:
+                                  type: string
+                              required:
+                                - actions
+                              nullable: true
                             browser_evidence:
                               type: object
                               properties:

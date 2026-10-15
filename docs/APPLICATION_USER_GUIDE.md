@@ -702,6 +702,29 @@ method you used last.
 - A selected **recording profile** shows the host filters it adds: on an HTTP proxy
   recording they are added to the hosts you type; on a browser recording they filter
   the HTTP script converted from it.
+- A browser recording loads a page only where you did: a URL you typed, or a link
+  that opened a new page. A single-page app such as Salesforce Lightning changes its
+  URL inside the page as you move through it; those changes are not loaded again,
+  since the replayed clicks make the app change them, and loading the URL would
+  reload the app. Validation warns about a step that loads a Lightning page in the
+  middle of a browser script, as older recordings and hand edits can.
+- On a Lightning page, the recorder ranks the ids Lightning generates for its
+  components last, and prefers titles, button names and accessible names. Its CSS and
+  XPath selectors match visible elements only, since Lightning keeps hidden copies of
+  earlier pages in the document. A selector that matched several visible elements when
+  you recorded is ranked last.
+- On a Salesforce Lightning page, each browser step records the Aura actions it sent:
+  an Apex call by its class and method, any other action by its descriptor, with the
+  time of the request that carried it and the state its response gave. Only names are
+  kept, never what the actions sent or got back. The run report's **Browser Metrics**
+  section lists each transaction's actions, most time first.
+- A browser recording that starts by signing in to Salesforce (the login page and any
+  identity verification) puts those steps in init, tagged `salesforce_auth`, so each
+  virtual user signs in once. A recording split at transactions keeps them where you
+  recorded them, since each split script is one transaction. A verification code is
+  masked like a password and cannot replay: exempt the perf users from identity
+  verification. Before running more than one observer, give each its own user, since
+  every one would sign in as the recorded user.
 - A browser recording keeps a HAR of its traffic of up to 100 MB. Excluded hosts are
   removed before response bodies count toward that limit. Past it, the HAR still
   keeps every request and leaves out response bodies, images and media first, and
@@ -1104,7 +1127,10 @@ samples have arrived). A journey is one iteration of the group's script, passed 
 failed. A **Browser groups** panel lists each browser group's journeys per minute
 (1 min avg), its page requests per second, and the pages' Web Vitals (LCP, FCP, INP,
 CLS and TTFB at p75) as they are published, and the **Groups** table adds a
-Journeys/min column. Page timings and Web Vitals, like the interaction evidence on
+Journeys/min column. LCP, FCP and TTFB describe page loads: a step that stays in a
+page an earlier step loaded (moving through a single-page app such as Salesforce
+Lightning) adds its INP and layout shift, not the load again. Page timings and Web
+Vitals, like the interaction evidence on
 the run report's **Browser** tab, are recorded only when **Capture page timings and
 Web Vitals** (and **Capture interaction evidence**) is on in the browser script's
 Runtime Settings › Browser; a scenario's or group's own browser runtime settings

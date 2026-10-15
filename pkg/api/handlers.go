@@ -1888,6 +1888,9 @@ func validationWarnings(script *dsl.Script) []string {
 	if needsRecordedResourceMetadataWarning(script) {
 		warnings = append(warnings, recordedResourceMetadataWarning())
 	}
+	if warning := lightningReloadWarning(script); warning != "" {
+		warnings = append(warnings, warning)
+	}
 
 	return warnings
 }

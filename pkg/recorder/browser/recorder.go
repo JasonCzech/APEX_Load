@@ -132,6 +132,9 @@ type Recorder struct {
 	activePage     playwright.Page
 	controlPages   map[playwright.Page]struct{}
 	openingControl bool
+	// pendingSameDocument holds DevTools' reports of in-page URL changes
+	// whose navigation event is not recorded yet (same_document.go).
+	pendingSameDocument []sameDocumentReport
 
 	// controlNonce is a per-session secret baked into the capture script's
 	// closure. Destructive in-page control events (stop/delete/exclude/mark)
@@ -149,6 +152,7 @@ type Recorder struct {
 	wsBytes              int
 	bindingBytes         int64
 	thumbnailSlots       chan struct{}
+	selectorCheckSlots   chan struct{} // Lightning selector checks in flight (selector_check.go)
 	thumbnailBytes       int64
 	thumbnailLimitWarned bool
 	nativeMetadataBytes  int64
@@ -633,6 +637,7 @@ func (r *Recorder) registerPage(page playwright.Page) {
 		if !paused {
 			if len(r.session.NavEvents) < maxBrowserNetworkEvents {
 				nav.URL = r.retainNativeStringLocked(rawURL, maxBrowserNativeURLBytes)
+				nav.SameDocument, nav.NavigationType = r.takeSameDocumentReportLocked(nav.URL, nav.Timestamp)
 				r.session.NavEvents = append(r.session.NavEvents, nav)
 				retained = true
 				if switchStepSeq > 0 {
@@ -667,6 +672,7 @@ func (r *Recorder) registerPage(page playwright.Page) {
 		}
 		r.emit(Event{Type: EventNavigation, Nav: &nav})
 	})
+	go r.watchSameDocumentNavigations(page)
 	page.OnRequest(func(playwright.Request) {
 		r.mu.Lock()
 		retained := false
@@ -928,6 +934,9 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 		r.emit(Event{Type: EventStep, Step: &recorded[index]})
 		if r.opts.CaptureScreenshots && source != nil && source.Page != nil {
 			r.captureThumbnailAsync(source.Page, recorded[index].Seq)
+		}
+		if source != nil && source.Page != nil && (source.Frame == nil || source.Frame == source.Page.MainFrame()) {
+			r.checkLightningCandidatesAsync(source.Page, recorded[index])
 		}
 	}
 	return nil

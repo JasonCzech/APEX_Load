@@ -308,3 +308,36 @@ func TestFrameworkErrorResponses(t *testing.T) {
 		t.Fatalf("marker inside a value treated as an error: %+v", report)
 	}
 }
+
+// An Aura request's actions are named by descriptor, and an Apex call by its
+// namespace, class and method; nothing the actions send is kept.
+func TestRequestActionsNamesWithoutParameters(t *testing.T) {
+	message := `{"actions":[` +
+		`{"id":"1;a","descriptor":"aura://ApexActionController/ACTION$execute","params":{"namespace":"","classname":"AccountSearch","method":"find","params":{"term":"secret-term-123"},"cacheable":false}},` +
+		`{"id":"2;a","descriptor":"aura://ApexActionController/ACTION$execute","params":{"namespace":"acme","classname":"Orders","method":"submit","params":{"id":"secret-order"}}},` +
+		`{"id":"3;a","descriptor":"serviceComponent://ui.force.components.controllers.recordGlobalValueProvider.RecordGvpController/ACTION$getRecord","params":{"recordDescriptor":"secret-record"}}` +
+		`]}`
+	body := "message=" + url.QueryEscape(message) + "&aura.token=secret-token"
+	actions, err := RequestActions([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"AccountSearch.find", "acme.Orders.submit", "serviceComponent://ui.force.components.controllers.recordGlobalValueProvider.RecordGvpController/ACTION$getRecord"}
+	if len(actions) != len(want) {
+		t.Fatalf("actions = %+v", actions)
+	}
+	for i, action := range actions {
+		if action.Name() != want[i] {
+			t.Fatalf("action %d name = %q, want %q", i, action.Name(), want[i])
+		}
+	}
+	encoded := fmt.Sprintf("%+v", actions)
+	for _, secret := range []string{"secret-term-123", "secret-order", "secret-record", "secret-token"} {
+		if strings.Contains(encoded, secret) {
+			t.Fatalf("a parameter value was kept: %s", encoded)
+		}
+	}
+	if _, err := RequestActions([]byte("message=%7Bnot-json")); err == nil {
+		t.Fatal("a malformed request was named")
+	}
+}

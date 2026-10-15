@@ -3,15 +3,23 @@ package browser
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	playwright "github.com/mxschmitt/playwright-go"
 )
 
 type browserPageMetrics struct {
+	// SameDocument: the document is the one the previous capture on this page
+	// measured. TimeOrigin identifies the document and Now is when it was
+	// measured, in its own clock.
+	SameDocument          bool    `json:"same_document"`
+	TimeOrigin            float64 `json:"time_origin"`
+	Now                   float64 `json:"now"`
 	FCPMs                 float64 `json:"fcp_ms"`
 	LCPMs                 float64 `json:"lcp_ms"`
 	CLSScore              float64 `json:"cls_score"`
@@ -24,6 +32,8 @@ type browserPageMetrics struct {
 	TotalResourceCount    int     `json:"total_resource_count"`
 	ResourceTransferKB    float64 `json:"resource_transfer_kb"`
 	LongTaskCount         int     `json:"long_task_count"`
+	// DocumentCLS is the document's cumulative layout shift.
+	DocumentCLS float64 `json:"document_cls"`
 }
 
 func (b *Browser) captureClientMetrics(ctx context.Context, duration time.Duration, processBefore browserProcessSnapshot) *protocol.ClientMetrics {
@@ -67,46 +77,107 @@ func (b *Browser) processMetricsAttributionEnabled() bool {
 	return envFlagEnabled("APEXLOAD_BROWSER_PROCESS_METRICS")
 }
 
+// pageMetricsMark is where the previous capture left a page's document. A
+// single-page app (Salesforce Lightning) keeps one document across a whole
+// journey: the next capture on that document reports what its step did, not
+// the page load again.
+type pageMetricsMark struct {
+	page       playwright.Page
+	timeOrigin float64
+	measuredAt float64
+	cls        float64
+}
+
 func (b *Browser) capturePageMetrics(ctx context.Context, metrics *protocol.ClientMetrics) error {
+	page := b.currentPage()
+	b.mu.Lock()
+	mark := b.metricsMark
+	b.mu.Unlock()
+	if mark.page != page {
+		mark = pageMetricsMark{}
+	}
 	var snapshot browserPageMetrics
-	expression := `(() => {
+	// A document is the one measured before when its time origin is. Its
+	// step-scoped measures come from the observer's step counters, which each
+	// capture reads and resets, else from the entries since that capture.
+	expression := fmt.Sprintf(`((previousOrigin, since) => {
+		const sameDocument = previousOrigin > 0 && performance.timeOrigin === previousOrigin;
+		const after = (entries) => sameDocument ? entries.filter((entry) => entry.startTime >= since) : entries;
 		const paints = performance.getEntriesByType('paint');
 		const fcp = paints.find((entry) => entry.name === 'first-contentful-paint');
 		const nav = performance.getEntriesByType('navigation')[0] || {};
-		const resources = performance.getEntriesByType('resource');
+		const resources = after(performance.getEntriesByType('resource'));
 		const lcpEntries = performance.getEntriesByType('largest-contentful-paint');
 		const lcp = lcpEntries.length ? lcpEntries[lcpEntries.length - 1].startTime : 0;
 		const shifts = performance.getEntriesByType('layout-shift');
 		const cls = shifts.reduce((sum, entry) => sum + (entry.hadRecentInput ? 0 : (entry.value || 0)), 0);
-		const eventEntries = performance.getEntriesByType('event');
+		const eventEntries = after(performance.getEntriesByType('event'));
 		const inp = eventEntries.reduce((max, entry) => Math.max(max, entry.duration || entry.processingEnd || 0), 0);
-		const longTasks = performance.getEntriesByType('longtask');
+		const longTasks = after(performance.getEntriesByType('longtask'));
 		const observerMetrics = window.__apexloadMetrics || {};
+		// The resource timing buffer stops growing once full, as a single-page
+		// app's load leaves it: a step in that document counts the resources
+		// the observer saw instead, when the page has one.
+		const observedResources = typeof observerMetrics.takeResources === 'function';
+		if (observedResources) {
+			observerMetrics.takeResources();
+		}
+		const step = observerMetrics.step;
+		if (step) {
+			observerMetrics.step = { cls: 0, inp: 0, longTaskCount: 0, resourceCount: 0, transferKB: 0 };
+		}
+		const stepResources = sameDocument && observedResources && step;
 		const blocking = resources.filter((entry) => entry.renderBlockingStatus === 'blocking');
-		const navigationCount = nav.name ? 1 : 0;
+		const navigationCount = nav.name && !sameDocument ? 1 : 0;
+		const documentCLS = observerMetrics.cls || cls;
 		return {
+			same_document: sameDocument,
+			time_origin: performance.timeOrigin,
+			now: performance.now(),
 			fcp_ms: fcp ? fcp.startTime : 0,
 			lcp_ms: observerMetrics.lcp || lcp,
-			cls_score: observerMetrics.cls || cls,
-			inp_ms: observerMetrics.inp || inp,
+			cls_score: sameDocument ? (step ? step.cls : -1) : documentCLS,
+			document_cls: documentCLS,
+			inp_ms: sameDocument ? (step ? step.inp : inp) : (observerMetrics.inp || inp),
 			ttfb_ms: nav.responseStart && nav.requestStart ? Math.max(0, nav.responseStart - nav.requestStart) : 0,
 			dom_content_loaded_ms: nav.domContentLoadedEventEnd || 0,
 			dom_complete_ms: nav.domComplete || 0,
 			load_event_ms: nav.loadEventEnd || 0,
 			blocking_resource_count: blocking.length,
-			total_resource_count: resources.length + navigationCount,
-			resource_transfer_kb: resources.reduce((sum, entry) => sum + ((entry.transferSize || 0) / 1024), (nav.transferSize || 0) / 1024),
-			long_task_count: observerMetrics.longTaskCount || longTasks.length,
+			total_resource_count: stepResources ? step.resourceCount : resources.length + navigationCount,
+			resource_transfer_kb: stepResources ? step.transferKB : resources.reduce((sum, entry) => sum + ((entry.transferSize || 0) / 1024), navigationCount ? (nav.transferSize || 0) / 1024 : 0),
+			long_task_count: sameDocument ? (step ? step.longTaskCount : longTasks.length) : (observerMetrics.longTaskCount || longTasks.length),
 		};
-	})()`
+	})(%s, %s)`, strconv.FormatFloat(mark.timeOrigin, 'f', -1, 64), strconv.FormatFloat(mark.measuredAt, 'f', -1, 64))
 	if err := b.evaluatePageExpression(ctx, expression, &snapshot); err != nil {
 		return err
 	}
+	if snapshot.SameDocument {
+		snapshot = sameDocumentPageMetrics(snapshot, mark)
+	}
+	b.mu.Lock()
+	b.metricsMark = pageMetricsMark{page: page, timeOrigin: snapshot.TimeOrigin, measuredAt: snapshot.Now, cls: snapshot.DocumentCLS}
+	b.mu.Unlock()
 	applyBrowserPageMetrics(snapshot, metrics)
 	return nil
 }
 
+// sameDocumentPageMetrics keeps a step's own measures for a document an
+// earlier step measured: its page-load measures belong to that load and are
+// left out, and its layout shift is the step's (the change since that
+// capture when the page has no step counter).
+func sameDocumentPageMetrics(snapshot browserPageMetrics, mark pageMetricsMark) browserPageMetrics {
+	snapshot.FCPMs, snapshot.LCPMs, snapshot.TTFBMs = 0, 0, 0
+	snapshot.DOMContentLoadedMs, snapshot.DOMCompleteMs, snapshot.LoadEventMs = 0, 0, 0
+	snapshot.BlockingResourceCount = 0
+	if snapshot.CLSScore < 0 {
+		snapshot.CLSScore = max(0, snapshot.DocumentCLS-mark.cls)
+	}
+	return snapshot
+}
+
 func applyBrowserPageMetrics(snapshot browserPageMetrics, metrics *protocol.ClientMetrics) {
+	metrics.SameDocument = snapshot.SameDocument
 	metrics.FCPMs = snapshot.FCPMs
 	metrics.LCPMs = snapshot.LCPMs
 	metrics.CLSScore = snapshot.CLSScore
@@ -398,11 +469,14 @@ const browserMetricsBootstrapScript = `(() => {
 	if (window.__apexloadMetrics) {
 		return;
 	}
+	// step holds what happened since the last metrics capture, which reads
+	// and resets it.
 	window.__apexloadMetrics = {
 		lcp: 0,
 		cls: 0,
 		inp: 0,
 		longTaskCount: 0,
+		step: { cls: 0, inp: 0, longTaskCount: 0, resourceCount: 0, transferKB: 0 },
 	};
 	try {
 		new PerformanceObserver((list) => {
@@ -416,6 +490,7 @@ const browserMetricsBootstrapScript = `(() => {
 			for (const entry of list.getEntries()) {
 				if (!entry.hadRecentInput) {
 					window.__apexloadMetrics.cls += entry.value || 0;
+					window.__apexloadMetrics.step.cls += entry.value || 0;
 				}
 			}
 		}).observe({ type: 'layout-shift', buffered: true });
@@ -423,6 +498,7 @@ const browserMetricsBootstrapScript = `(() => {
 	try {
 		new PerformanceObserver((list) => {
 			window.__apexloadMetrics.longTaskCount += list.getEntries().length;
+			window.__apexloadMetrics.step.longTaskCount += list.getEntries().length;
 		}).observe({ type: 'longtask', buffered: true });
 	} catch (e) {}
 	try {
@@ -432,8 +508,25 @@ const browserMetricsBootstrapScript = `(() => {
 				if (duration > window.__apexloadMetrics.inp) {
 					window.__apexloadMetrics.inp = duration;
 				}
+				if (duration > window.__apexloadMetrics.step.inp) {
+					window.__apexloadMetrics.step.inp = duration;
+				}
 			}
 		}).observe({ type: 'event', buffered: true, durationThreshold: 16 });
+	} catch (e) {}
+	// The page's resource timing buffer holds 250 entries by default, which a
+	// single-page app fills as it loads; an observer sees every resource. A
+	// capture first takes the entries not yet delivered to it.
+	try {
+		const countResources = (entries) => {
+			for (const entry of entries) {
+				window.__apexloadMetrics.step.resourceCount += 1;
+				window.__apexloadMetrics.step.transferKB += (entry.transferSize || 0) / 1024;
+			}
+		};
+		const resourceObserver = new PerformanceObserver((list) => countResources(list.getEntries()));
+		resourceObserver.observe({ type: 'resource', buffered: true });
+		window.__apexloadMetrics.takeResources = () => countResources(resourceObserver.takeRecords());
 	} catch (e) {}
 })();`
 

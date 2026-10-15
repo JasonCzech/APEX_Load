@@ -565,7 +565,9 @@ var reportSectionApplies = map[string]func(d *runArchiveHTMLReportData) bool{
 	"controller_failover": func(d *runArchiveHTMLReportData) bool {
 		return d.Report.Manifest != nil && d.Report.Manifest.Continuity != nil && len(d.Report.Manifest.Continuity.Failovers) > 0
 	},
-	"browser":        func(d *runArchiveHTMLReportData) bool { return d.Report.Overview.Browser != nil },
+	"browser": func(d *runArchiveHTMLReportData) bool {
+		return d.Report.Overview.Browser != nil || len(d.Report.AuraActions) > 0
+	},
 	"web2_migration": func(d *runArchiveHTMLReportData) bool { return d.Report.Web2Migration != nil },
 	"soap": func(d *runArchiveHTMLReportData) bool {
 		return len(d.SOAPOperationRows)+len(d.SOAPFaultCodeRows)+len(d.SOAPFaultBuckets)+len(d.SOAPPayloadBuckets) > 0
@@ -1226,35 +1228,50 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	add(reportSectionRenderer{ID: "browser", Label: "Browser Metrics",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, reportSectionTitle("browser"))
-			browser := d.Report.Overview.Browser
-			if browser == nil {
+			if browser := d.Report.Overview.Browser; browser == nil {
 				*lines = append(*lines, "No browser metrics were captured for this run.", "")
-				return
+			} else {
+				*lines = append(*lines, legacyBrowserSummaryNote)
+				*lines = append(*lines,
+					fmt.Sprintf("Samples: %s", formatPDFInt(browser.Samples)),
+					fmt.Sprintf("Average FCP: %.1f ms", browser.AvgFCPMs),
+					fmt.Sprintf("Average LCP: %.1f ms", browser.AvgLCPMs),
+					fmt.Sprintf("Average CLS: %.3f", browser.AvgCLSScore),
+					fmt.Sprintf("Average INP: %.1f ms", browser.AvgINPMs),
+					"")
 			}
-			*lines = append(*lines, legacyBrowserSummaryNote)
-			*lines = append(*lines,
-				fmt.Sprintf("Samples: %s", formatPDFInt(browser.Samples)),
-				fmt.Sprintf("Average FCP: %.1f ms", browser.AvgFCPMs),
-				fmt.Sprintf("Average LCP: %.1f ms", browser.AvgLCPMs),
-				fmt.Sprintf("Average CLS: %.3f", browser.AvgCLSScore),
-				fmt.Sprintf("Average INP: %.1f ms", browser.AvgINPMs),
-				"")
+			if len(d.Report.AuraActions) > 0 {
+				*lines = append(*lines, "Salesforce Aura actions by transaction (time of the requests that carried each):")
+				for _, row := range d.Report.AuraActions {
+					*lines = append(*lines, fmt.Sprintf("  %s | %s: %s calls, %.1f ms, %s errors", auraTransactionLabel(row.Transaction), row.Name, formatPDFInt(row.Count), row.TotalMs, formatPDFInt(row.Errors)))
+				}
+				*lines = append(*lines, "")
+			}
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			browser := d.Report.Overview.Browser
 			if browser == nil {
-				return csvNote(write, "browser", "No browser metrics were captured for this run.")
+				if err := csvNote(write, "browser", "No browser metrics were captured for this run."); err != nil {
+					return err
+				}
+			} else {
+				rows := [][2]string{
+					{"metric_basis", "legacy_action_summary"},
+					{"samples", formatCSVInt(browser.Samples)},
+					{"avg_fcp_ms", formatCSVFloat(browser.AvgFCPMs)},
+					{"avg_lcp_ms", formatCSVFloat(browser.AvgLCPMs)},
+					{"avg_cls_score", formatCSVFloat(browser.AvgCLSScore)},
+					{"avg_inp_ms", formatCSVFloat(browser.AvgINPMs)},
+				}
+				for _, row := range rows {
+					if err := write("browser", "", row[0], row[1]); err != nil {
+						return err
+					}
+				}
 			}
-			rows := [][2]string{
-				{"metric_basis", "legacy_action_summary"},
-				{"samples", formatCSVInt(browser.Samples)},
-				{"avg_fcp_ms", formatCSVFloat(browser.AvgFCPMs)},
-				{"avg_lcp_ms", formatCSVFloat(browser.AvgLCPMs)},
-				{"avg_cls_score", formatCSVFloat(browser.AvgCLSScore)},
-				{"avg_inp_ms", formatCSVFloat(browser.AvgINPMs)},
-			}
-			for _, row := range rows {
-				if err := write("browser", "", row[0], row[1]); err != nil {
+			for _, row := range d.Report.AuraActions {
+				value := fmt.Sprintf("calls=%s;total_ms=%s;errors=%s", formatCSVInt(row.Count), formatCSVFloat(row.TotalMs), formatCSVInt(row.Errors))
+				if err := write("browser", "aura_actions:"+auraTransactionLabel(row.Transaction), row.Name, value); err != nil {
 					return err
 				}
 			}

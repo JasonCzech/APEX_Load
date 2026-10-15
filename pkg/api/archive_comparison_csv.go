@@ -222,6 +222,7 @@ func browserLiveMetricsFromDevice(metrics *BrowserDeviceLiveMetrics) *BrowserLiv
 	}
 	return &BrowserLiveMetrics{
 		Samples:              metrics.Samples,
+		DocumentLoads:        metrics.DocumentLoads,
 		AvgFCPMs:             metrics.AvgFCPMs,
 		AvgLCPMs:             metrics.AvgLCPMs,
 		AvgCLSScore:          metrics.AvgCLSScore,
@@ -241,6 +242,7 @@ func browserLiveMetricsFromPlatform(metrics *BrowserPlatformLiveMetrics) *Browse
 	}
 	return &BrowserLiveMetrics{
 		Samples:              metrics.Samples,
+		DocumentLoads:        metrics.DocumentLoads,
 		AvgFCPMs:             metrics.AvgFCPMs,
 		AvgLCPMs:             metrics.AvgLCPMs,
 		AvgCLSScore:          metrics.AvgCLSScore,
@@ -260,6 +262,7 @@ func browserLiveMetricsFromEngine(metrics *BrowserEngineLiveMetrics) *BrowserLiv
 	}
 	return &BrowserLiveMetrics{
 		Samples:              metrics.Samples,
+		DocumentLoads:        metrics.DocumentLoads,
 		AvgFCPMs:             metrics.AvgFCPMs,
 		AvgLCPMs:             metrics.AvgLCPMs,
 		AvgCLSScore:          metrics.AvgCLSScore,

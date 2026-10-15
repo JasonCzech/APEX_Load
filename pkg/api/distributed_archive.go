@@ -2040,12 +2040,16 @@ func mergeRemoteArchiveSummaryBrowser(current, incoming *BrowserLiveMetrics) *Br
 	}
 	currentSamples := current.Samples
 	totalSamples := currentSamples + incoming.Samples
-	current.AvgFCPMs = mergeRemoteArchiveWeightedAverage(current.AvgFCPMs, currentSamples, incoming.AvgFCPMs, incoming.Samples)
-	current.AvgLCPMs = mergeRemoteArchiveWeightedAverage(current.AvgLCPMs, currentSamples, incoming.AvgLCPMs, incoming.Samples)
+	// Page-load averages weigh by the loads behind them.
+	currentLoads := engine.BrowserDocumentLoads(current.DocumentLoads, current.Samples, current.AvgFCPMs, current.AvgLCPMs, current.AvgTTFBMs, current.AvgBlockingResources)
+	incomingLoads := engine.BrowserDocumentLoads(incoming.DocumentLoads, incoming.Samples, incoming.AvgFCPMs, incoming.AvgLCPMs, incoming.AvgTTFBMs, incoming.AvgBlockingResources)
+	current.AvgFCPMs = mergeRemoteArchiveWeightedAverage(current.AvgFCPMs, currentLoads, incoming.AvgFCPMs, incomingLoads)
+	current.AvgLCPMs = mergeRemoteArchiveWeightedAverage(current.AvgLCPMs, currentLoads, incoming.AvgLCPMs, incomingLoads)
+	current.AvgTTFBMs = mergeRemoteArchiveWeightedAverage(current.AvgTTFBMs, currentLoads, incoming.AvgTTFBMs, incomingLoads)
+	current.AvgBlockingResources = mergeRemoteArchiveWeightedAverage(current.AvgBlockingResources, currentLoads, incoming.AvgBlockingResources, incomingLoads)
+	current.DocumentLoads = currentLoads + incomingLoads
 	current.AvgCLSScore = mergeRemoteArchiveWeightedAverage(current.AvgCLSScore, currentSamples, incoming.AvgCLSScore, incoming.Samples)
 	current.AvgINPMs = mergeRemoteArchiveWeightedAverage(current.AvgINPMs, currentSamples, incoming.AvgINPMs, incoming.Samples)
-	current.AvgTTFBMs = mergeRemoteArchiveWeightedAverage(current.AvgTTFBMs, currentSamples, incoming.AvgTTFBMs, incoming.Samples)
-	current.AvgBlockingResources = mergeRemoteArchiveWeightedAverage(current.AvgBlockingResources, currentSamples, incoming.AvgBlockingResources, incoming.Samples)
 	current.AvgLongTaskCount = mergeRemoteArchiveWeightedAverage(current.AvgLongTaskCount, currentSamples, incoming.AvgLongTaskCount, incoming.Samples)
 	current.AvgJSHeapUsedMB = mergeRemoteArchiveWeightedAverage(current.AvgJSHeapUsedMB, currentSamples, incoming.AvgJSHeapUsedMB, incoming.Samples)
 	current.AvgBrowserProcessCPU = mergeRemoteArchiveWeightedAverage(current.AvgBrowserProcessCPU, currentSamples, incoming.AvgBrowserProcessCPU, incoming.Samples)
@@ -2082,12 +2086,15 @@ func mergeRemoteArchiveSummaryBrowserByDevice(destination, source map[string]*Br
 			continue
 		}
 		currentSamples := current.Samples
-		current.AvgFCPMs = mergeRemoteArchiveWeightedAverage(current.AvgFCPMs, currentSamples, incoming.AvgFCPMs, incoming.Samples)
-		current.AvgLCPMs = mergeRemoteArchiveWeightedAverage(current.AvgLCPMs, currentSamples, incoming.AvgLCPMs, incoming.Samples)
+		currentLoads := engine.BrowserDocumentLoads(current.DocumentLoads, current.Samples, current.AvgFCPMs, current.AvgLCPMs, current.AvgTTFBMs, current.AvgBlockingResources)
+		incomingLoads := engine.BrowserDocumentLoads(incoming.DocumentLoads, incoming.Samples, incoming.AvgFCPMs, incoming.AvgLCPMs, incoming.AvgTTFBMs, incoming.AvgBlockingResources)
+		current.AvgFCPMs = mergeRemoteArchiveWeightedAverage(current.AvgFCPMs, currentLoads, incoming.AvgFCPMs, incomingLoads)
+		current.AvgLCPMs = mergeRemoteArchiveWeightedAverage(current.AvgLCPMs, currentLoads, incoming.AvgLCPMs, incomingLoads)
+		current.AvgTTFBMs = mergeRemoteArchiveWeightedAverage(current.AvgTTFBMs, currentLoads, incoming.AvgTTFBMs, incomingLoads)
+		current.AvgBlockingResources = mergeRemoteArchiveWeightedAverage(current.AvgBlockingResources, currentLoads, incoming.AvgBlockingResources, incomingLoads)
+		current.DocumentLoads = currentLoads + incomingLoads
 		current.AvgCLSScore = mergeRemoteArchiveWeightedAverage(current.AvgCLSScore, currentSamples, incoming.AvgCLSScore, incoming.Samples)
 		current.AvgINPMs = mergeRemoteArchiveWeightedAverage(current.AvgINPMs, currentSamples, incoming.AvgINPMs, incoming.Samples)
-		current.AvgTTFBMs = mergeRemoteArchiveWeightedAverage(current.AvgTTFBMs, currentSamples, incoming.AvgTTFBMs, incoming.Samples)
-		current.AvgBlockingResources = mergeRemoteArchiveWeightedAverage(current.AvgBlockingResources, currentSamples, incoming.AvgBlockingResources, incoming.Samples)
 		current.AvgLongTaskCount = mergeRemoteArchiveWeightedAverage(current.AvgLongTaskCount, currentSamples, incoming.AvgLongTaskCount, incoming.Samples)
 		current.AvgJSHeapUsedMB = mergeRemoteArchiveWeightedAverage(current.AvgJSHeapUsedMB, currentSamples, incoming.AvgJSHeapUsedMB, incoming.Samples)
 		current.AvgBrowserProcessCPU = mergeRemoteArchiveWeightedAverage(current.AvgBrowserProcessCPU, currentSamples, incoming.AvgBrowserProcessCPU, incoming.Samples)

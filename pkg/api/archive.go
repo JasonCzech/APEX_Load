@@ -635,6 +635,7 @@ type RunArchiveReport struct {
 	BrowserByPlatform                 map[string]*BrowserPlatformLiveMetrics `json:"browser_by_platform,omitempty"`
 	BrowserByDevice                   map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
 	BrowserResources                  []BrowserResourceTiming                `json:"browser_resources,omitempty"`
+	AuraActions                       []AuraActionRollup                     `json:"aura_actions,omitempty"`
 	Web2Migration                     *RunArchiveWeb2MigrationEvidence       `json:"web2_migration,omitempty"`
 	OracleDB                          *RunArchiveOracleDBEvidence            `json:"oracle_db,omitempty"`
 	ResourcePeaks                     RunArchiveResourcePeaks                `json:"resource_peaks"`
@@ -906,6 +907,7 @@ type RunArchiveSOAPPayloadTimelineBucket struct {
 type BrowserEngineLiveMetrics struct {
 	BrowserEngine        string  `json:"browser_engine,omitempty"`
 	Samples              int64   `json:"samples"`
+	DocumentLoads        int64   `json:"document_loads"`
 	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
 	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
 	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
@@ -922,6 +924,7 @@ type BrowserPlatformLiveMetrics struct {
 	DevicePlatform       string  `json:"device_platform,omitempty"`
 	BrowserEngine        string  `json:"browser_engine,omitempty"`
 	Samples              int64   `json:"samples"`
+	DocumentLoads        int64   `json:"document_loads"`
 	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
 	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
 	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`

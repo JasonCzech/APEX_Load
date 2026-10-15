@@ -582,12 +582,15 @@ func mergeReportBrowserMetrics(summary *BrowserLiveMetrics, metrics *protocol.Cl
 		return
 	}
 	summary.Samples++
-	summary.AvgFCPMs += metrics.FCPMs
-	summary.AvgLCPMs += metrics.LCPMs
+	if !metrics.SameDocument {
+		summary.DocumentLoads++
+		summary.AvgFCPMs += metrics.FCPMs
+		summary.AvgLCPMs += metrics.LCPMs
+		summary.AvgTTFBMs += metrics.TTFBMs
+		summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
+	}
 	summary.AvgCLSScore += metrics.CLSScore
 	summary.AvgINPMs += metrics.INPMs
-	summary.AvgTTFBMs += metrics.TTFBMs
-	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
 	summary.AvgBrowserProcessCPU += metrics.BrowserProcessCPUPct
@@ -599,12 +602,12 @@ func finalizeReportBrowserMetrics(summary *BrowserLiveMetrics) {
 		return
 	}
 	divisor := float64(summary.Samples)
-	summary.AvgFCPMs /= divisor
-	summary.AvgLCPMs /= divisor
+	summary.AvgFCPMs = browserLoadAverage(summary.AvgFCPMs, summary.DocumentLoads)
+	summary.AvgLCPMs = browserLoadAverage(summary.AvgLCPMs, summary.DocumentLoads)
+	summary.AvgTTFBMs = browserLoadAverage(summary.AvgTTFBMs, summary.DocumentLoads)
+	summary.AvgBlockingResources = browserLoadAverage(summary.AvgBlockingResources, summary.DocumentLoads)
 	summary.AvgCLSScore /= divisor
 	summary.AvgINPMs /= divisor
-	summary.AvgTTFBMs /= divisor
-	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
 	summary.AvgBrowserProcessCPU /= divisor
@@ -622,12 +625,15 @@ func mergeReportBrowserDeviceMetrics(summary *BrowserDeviceLiveMetrics, metrics 
 		summary.DevicePlatform = metrics.DevicePlatform
 	}
 	summary.Samples++
-	summary.AvgFCPMs += metrics.FCPMs
-	summary.AvgLCPMs += metrics.LCPMs
+	if !metrics.SameDocument {
+		summary.DocumentLoads++
+		summary.AvgFCPMs += metrics.FCPMs
+		summary.AvgLCPMs += metrics.LCPMs
+		summary.AvgTTFBMs += metrics.TTFBMs
+		summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
+	}
 	summary.AvgCLSScore += metrics.CLSScore
 	summary.AvgINPMs += metrics.INPMs
-	summary.AvgTTFBMs += metrics.TTFBMs
-	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
 	summary.AvgBrowserProcessCPU += metrics.BrowserProcessCPUPct
@@ -644,12 +650,15 @@ func mergeReportBrowserPlatformMetrics(summary *BrowserPlatformLiveMetrics, metr
 		summary.BrowserEngine = "multiple"
 	}
 	summary.Samples++
-	summary.AvgFCPMs += metrics.FCPMs
-	summary.AvgLCPMs += metrics.LCPMs
+	if !metrics.SameDocument {
+		summary.DocumentLoads++
+		summary.AvgFCPMs += metrics.FCPMs
+		summary.AvgLCPMs += metrics.LCPMs
+		summary.AvgTTFBMs += metrics.TTFBMs
+		summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
+	}
 	summary.AvgCLSScore += metrics.CLSScore
 	summary.AvgINPMs += metrics.INPMs
-	summary.AvgTTFBMs += metrics.TTFBMs
-	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
 	summary.AvgBrowserProcessCPU += metrics.BrowserProcessCPUPct
@@ -661,12 +670,15 @@ func mergeReportBrowserEngineMetrics(summary *BrowserEngineLiveMetrics, metrics 
 		return
 	}
 	summary.Samples++
-	summary.AvgFCPMs += metrics.FCPMs
-	summary.AvgLCPMs += metrics.LCPMs
+	if !metrics.SameDocument {
+		summary.DocumentLoads++
+		summary.AvgFCPMs += metrics.FCPMs
+		summary.AvgLCPMs += metrics.LCPMs
+		summary.AvgTTFBMs += metrics.TTFBMs
+		summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
+	}
 	summary.AvgCLSScore += metrics.CLSScore
 	summary.AvgINPMs += metrics.INPMs
-	summary.AvgTTFBMs += metrics.TTFBMs
-	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
 	summary.AvgBrowserProcessCPU += metrics.BrowserProcessCPUPct
@@ -678,12 +690,12 @@ func finalizeReportBrowserEngineMetrics(summary *BrowserEngineLiveMetrics) {
 		return
 	}
 	divisor := float64(summary.Samples)
-	summary.AvgFCPMs /= divisor
-	summary.AvgLCPMs /= divisor
+	summary.AvgFCPMs = browserLoadAverage(summary.AvgFCPMs, summary.DocumentLoads)
+	summary.AvgLCPMs = browserLoadAverage(summary.AvgLCPMs, summary.DocumentLoads)
+	summary.AvgTTFBMs = browserLoadAverage(summary.AvgTTFBMs, summary.DocumentLoads)
+	summary.AvgBlockingResources = browserLoadAverage(summary.AvgBlockingResources, summary.DocumentLoads)
 	summary.AvgCLSScore /= divisor
 	summary.AvgINPMs /= divisor
-	summary.AvgTTFBMs /= divisor
-	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
 	summary.AvgBrowserProcessCPU /= divisor
@@ -695,12 +707,12 @@ func finalizeReportBrowserPlatformMetrics(summary *BrowserPlatformLiveMetrics) {
 		return
 	}
 	divisor := float64(summary.Samples)
-	summary.AvgFCPMs /= divisor
-	summary.AvgLCPMs /= divisor
+	summary.AvgFCPMs = browserLoadAverage(summary.AvgFCPMs, summary.DocumentLoads)
+	summary.AvgLCPMs = browserLoadAverage(summary.AvgLCPMs, summary.DocumentLoads)
+	summary.AvgTTFBMs = browserLoadAverage(summary.AvgTTFBMs, summary.DocumentLoads)
+	summary.AvgBlockingResources = browserLoadAverage(summary.AvgBlockingResources, summary.DocumentLoads)
 	summary.AvgCLSScore /= divisor
 	summary.AvgINPMs /= divisor
-	summary.AvgTTFBMs /= divisor
-	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
 	summary.AvgBrowserProcessCPU /= divisor
@@ -712,12 +724,12 @@ func finalizeReportBrowserDeviceMetrics(summary *BrowserDeviceLiveMetrics) {
 		return
 	}
 	divisor := float64(summary.Samples)
-	summary.AvgFCPMs /= divisor
-	summary.AvgLCPMs /= divisor
+	summary.AvgFCPMs = browserLoadAverage(summary.AvgFCPMs, summary.DocumentLoads)
+	summary.AvgLCPMs = browserLoadAverage(summary.AvgLCPMs, summary.DocumentLoads)
+	summary.AvgTTFBMs = browserLoadAverage(summary.AvgTTFBMs, summary.DocumentLoads)
+	summary.AvgBlockingResources = browserLoadAverage(summary.AvgBlockingResources, summary.DocumentLoads)
 	summary.AvgCLSScore /= divisor
 	summary.AvgINPMs /= divisor
-	summary.AvgTTFBMs /= divisor
-	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
 	summary.AvgBrowserProcessCPU /= divisor
@@ -750,4 +762,13 @@ func archiveErrorPatternFailureRate(report *RunArchiveReport, pattern RunArchive
 		rate = float64(pattern.Count) / float64(report.Overview.Transactions)
 	}
 	return rate
+}
+
+// browserLoadAverage divides a page-load measure's sum by the document loads
+// behind it, or is zero with none.
+func browserLoadAverage(sum float64, loads int64) float64 {
+	if loads <= 0 {
+		return 0
+	}
+	return sum / float64(loads)
 }

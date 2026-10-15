@@ -6,6 +6,7 @@ import PrometheusArchiveEvidence from './PrometheusArchiveEvidence'
 import MonitorArchiveEvidence from './MonitorArchiveEvidence'
 import BrowserResourceEvidence from './BrowserResourceEvidence'
 import ArchiveResourceInspectorDisclosure from './ArchiveResourceInspectorDisclosure'
+import AuraActionRollupTable from './AuraActionRollupTable'
 import BrowserDocumentEvidencePanel from './BrowserDocumentEvidencePanel'
 import { grpcDiagnosticLines } from '../utils/grpcDiagnostics'
 import { websocketDiagnosticLines } from '../utils/websocketDiagnostics'
@@ -1263,6 +1264,7 @@ export default function TestExecutionArchive({
             {(archiveReport.browser_documents != null || archiveReport.browser_document_evidence !== undefined || archiveReport.overview.browser || showStandaloneReportSection) &&
               <BrowserDocumentEvidencePanel summary={archiveReport.browser_documents} observations={archiveReport.browser_document_evidence}
                 summaryMode="archive-latest" observationsTruncated={archiveReport.browser_document_evidence_truncated} softNavigation={archiveReport.browser_soft_navigation} />}
+            {archiveReport.aura_actions && archiveReport.aura_actions.length > 0 && <AuraActionRollupTable rows={archiveReport.aura_actions} />}
             </>
           )}
 

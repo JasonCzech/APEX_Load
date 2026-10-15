@@ -159,7 +159,11 @@ type TransactionResponseTimeSLACompliance struct {
 }
 
 type BrowserMetricsSummary struct {
-	Samples              int64   `json:"samples"`
+	Samples int64 `json:"samples"`
+	// DocumentLoads counts the samples that loaded a document: FCP, LCP,
+	// TTFB and render-blocking resources are averaged over them, the rest
+	// over every sample.
+	DocumentLoads        int64   `json:"document_loads,omitempty"`
 	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
 	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
 	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
@@ -173,11 +177,15 @@ type BrowserMetricsSummary struct {
 }
 
 type BrowserDeviceMetrics struct {
-	DeviceProfile        string  `json:"device_profile,omitempty"`
-	DevicePlatform       string  `json:"device_platform,omitempty"`
-	DeviceTier           string  `json:"device_tier,omitempty"`
-	BrowserEngine        string  `json:"browser_engine,omitempty"`
-	Samples              int64   `json:"samples"`
+	DeviceProfile  string `json:"device_profile,omitempty"`
+	DevicePlatform string `json:"device_platform,omitempty"`
+	DeviceTier     string `json:"device_tier,omitempty"`
+	BrowserEngine  string `json:"browser_engine,omitempty"`
+	Samples        int64  `json:"samples"`
+	// DocumentLoads counts the samples that loaded a document: FCP, LCP,
+	// TTFB and render-blocking resources are averaged over them, the rest
+	// over every sample.
+	DocumentLoads        int64   `json:"document_loads,omitempty"`
 	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
 	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
 	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
@@ -1286,12 +1294,15 @@ func mergeBrowserMetricsSummary(summary *BrowserMetricsSummary, metrics *protoco
 		return
 	}
 	summary.Samples++
-	summary.AvgFCPMs += metrics.FCPMs
-	summary.AvgLCPMs += metrics.LCPMs
+	if !metrics.SameDocument {
+		summary.DocumentLoads++
+		summary.AvgFCPMs += metrics.FCPMs
+		summary.AvgLCPMs += metrics.LCPMs
+		summary.AvgTTFBMs += metrics.TTFBMs
+		summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
+	}
 	summary.AvgCLSScore += metrics.CLSScore
 	summary.AvgINPMs += metrics.INPMs
-	summary.AvgTTFBMs += metrics.TTFBMs
-	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
 	summary.AvgBrowserProcessCPU += metrics.BrowserProcessCPUPct
@@ -1528,16 +1539,35 @@ func finalizeBrowserMetricsSummary(summary *BrowserMetricsSummary) {
 		return
 	}
 	divisor := float64(summary.Samples)
-	summary.AvgFCPMs /= divisor
-	summary.AvgLCPMs /= divisor
+	loads := float64(summary.DocumentLoads)
+	summary.AvgFCPMs = averageOver(summary.AvgFCPMs, loads)
+	summary.AvgLCPMs = averageOver(summary.AvgLCPMs, loads)
+	summary.AvgTTFBMs = averageOver(summary.AvgTTFBMs, loads)
+	summary.AvgBlockingResources = averageOver(summary.AvgBlockingResources, loads)
 	summary.AvgCLSScore /= divisor
 	summary.AvgINPMs /= divisor
-	summary.AvgTTFBMs /= divisor
-	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
 	summary.AvgBrowserProcessCPU /= divisor
 	summary.AvgBrowserProcessMem /= divisor
+}
+
+// BrowserDocumentLoads is a browser summary's document-load count. A summary
+// saved before the count existed has none although its page-load averages
+// are set: then every sample was averaged as a load.
+func BrowserDocumentLoads(loads, samples int64, fcp, lcp, ttfb, blocking float64) int64 {
+	if loads > 0 || (fcp == 0 && lcp == 0 && ttfb == 0 && blocking == 0) {
+		return loads
+	}
+	return samples
+}
+
+// averageOver divides a sum by its sample count, or is zero with none.
+func averageOver(sum, count float64) float64 {
+	if count <= 0 {
+		return 0
+	}
+	return sum / count
 }
 
 func mergeBrowserDeviceMetrics(summary *BrowserDeviceMetrics, metrics *protocol.ClientMetrics) {
@@ -1551,12 +1581,15 @@ func mergeBrowserDeviceMetrics(summary *BrowserDeviceMetrics, metrics *protocol.
 		summary.DevicePlatform = metrics.DevicePlatform
 	}
 	summary.Samples++
-	summary.AvgFCPMs += metrics.FCPMs
-	summary.AvgLCPMs += metrics.LCPMs
+	if !metrics.SameDocument {
+		summary.DocumentLoads++
+		summary.AvgFCPMs += metrics.FCPMs
+		summary.AvgLCPMs += metrics.LCPMs
+		summary.AvgTTFBMs += metrics.TTFBMs
+		summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
+	}
 	summary.AvgCLSScore += metrics.CLSScore
 	summary.AvgINPMs += metrics.INPMs
-	summary.AvgTTFBMs += metrics.TTFBMs
-	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
 	summary.AvgBrowserProcessCPU += metrics.BrowserProcessCPUPct
@@ -1568,12 +1601,13 @@ func finalizeBrowserDeviceMetrics(summary *BrowserDeviceMetrics) {
 		return
 	}
 	divisor := float64(summary.Samples)
-	summary.AvgFCPMs /= divisor
-	summary.AvgLCPMs /= divisor
+	loads := float64(summary.DocumentLoads)
+	summary.AvgFCPMs = averageOver(summary.AvgFCPMs, loads)
+	summary.AvgLCPMs = averageOver(summary.AvgLCPMs, loads)
+	summary.AvgTTFBMs = averageOver(summary.AvgTTFBMs, loads)
+	summary.AvgBlockingResources = averageOver(summary.AvgBlockingResources, loads)
 	summary.AvgCLSScore /= divisor
 	summary.AvgINPMs /= divisor
-	summary.AvgTTFBMs /= divisor
-	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
 	summary.AvgBrowserProcessCPU /= divisor

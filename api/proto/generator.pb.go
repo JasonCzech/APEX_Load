@@ -5029,8 +5029,12 @@ type BrowserMetrics struct {
 	AvgJsHeapUsedMb         float64                `protobuf:"fixed64,9,opt,name=avg_js_heap_used_mb,json=avgJsHeapUsedMb,proto3" json:"avg_js_heap_used_mb,omitempty"`
 	AvgBrowserProcessCpuPct float64                `protobuf:"fixed64,10,opt,name=avg_browser_process_cpu_pct,json=avgBrowserProcessCpuPct,proto3" json:"avg_browser_process_cpu_pct,omitempty"`
 	AvgBrowserProcessMemMb  float64                `protobuf:"fixed64,11,opt,name=avg_browser_process_mem_mb,json=avgBrowserProcessMemMb,proto3" json:"avg_browser_process_mem_mb,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	// Steps that loaded a document. FCP, LCP, TTFB and render-blocking
+	// resources are averaged over them; zero from an older generator, whose
+	// samples were all loads.
+	DocumentLoads int64 `protobuf:"varint,12,opt,name=document_loads,json=documentLoads,proto3" json:"document_loads,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BrowserMetrics) Reset() {
@@ -5136,6 +5140,13 @@ func (x *BrowserMetrics) GetAvgBrowserProcessCpuPct() float64 {
 func (x *BrowserMetrics) GetAvgBrowserProcessMemMb() float64 {
 	if x != nil {
 		return x.AvgBrowserProcessMemMb
+	}
+	return 0
+}
+
+func (x *BrowserMetrics) GetDocumentLoads() int64 {
+	if x != nil {
+		return x.DocumentLoads
 	}
 	return 0
 }
@@ -8669,7 +8680,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\vstatus_code\x18\x05 \x01(\x05R\n" +
 	"statusCode\x12\x16\n" +
 	"\x06reason\x18\x06 \x01(\tR\x06reason\x12*\n" +
-	"\x11timestamp_unix_ms\x18\a \x01(\x03R\x0ftimestampUnixMs\"\xd5\x03\n" +
+	"\x11timestamp_unix_ms\x18\a \x01(\x03R\x0ftimestampUnixMs\"\xfc\x03\n" +
 	"\x0eBrowserMetrics\x12\x18\n" +
 	"\asamples\x18\x01 \x01(\x03R\asamples\x12\x1c\n" +
 	"\n" +
@@ -8685,7 +8696,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x13avg_js_heap_used_mb\x18\t \x01(\x01R\x0favgJsHeapUsedMb\x12<\n" +
 	"\x1bavg_browser_process_cpu_pct\x18\n" +
 	" \x01(\x01R\x17avgBrowserProcessCpuPct\x12:\n" +
-	"\x1aavg_browser_process_mem_mb\x18\v \x01(\x01R\x16avgBrowserProcessMemMb\"\xe5\x01\n" +
+	"\x1aavg_browser_process_mem_mb\x18\v \x01(\x01R\x16avgBrowserProcessMemMb\x12%\n" +
+	"\x0edocument_loads\x18\f \x01(\x03R\rdocumentLoads\"\xe5\x01\n" +
 	"\x14BrowserDeviceMetrics\x12%\n" +
 	"\x0edevice_profile\x18\x01 \x01(\tR\rdeviceProfile\x12'\n" +
 	"\x0fdevice_platform\x18\x02 \x01(\tR\x0edevicePlatform\x12\x1f\n" +

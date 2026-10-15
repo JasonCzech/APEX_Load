@@ -48,6 +48,9 @@ const (
 	ConfidenceLightningAuraClass = 84
 	ConfidenceLightningTitle     = 80
 	ConfidenceVolatileAuraID     = 56
+	// ConfidenceLightningButtonName ranks a Lightning button's name attribute,
+	// the hook Salesforce's own standard actions carry (Edit, SaveEdit).
+	ConfidenceLightningButtonName = 82
 )
 
 // Unique trims, dedupes (by kind+value), and sorts candidates by confidence

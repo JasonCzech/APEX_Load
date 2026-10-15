@@ -653,6 +653,10 @@ func (b *Browser) recordNetworkTask(task browserNetworkTask) {
 	if !finished && durationMs < 0 {
 		durationMs = 0
 	}
+	var auraBatch *protocol.AuraBatch
+	if finished && auraRequest(request) {
+		auraBatch = summarizeAuraRequest(request, nativeResponse, nativeSizes)
+	}
 	entry := boundBrowserNetworkEntry(protocol.NetworkEntry{
 		BrowserEvidence:      b.associateResourceEvidence(populateResourceEvidence(task.evidence, request, nativeResponse, nativeSizes), task.join, task.generation),
 		FailureKind:          browserNetworkFailureKind(finished, statusCode),
@@ -667,6 +671,7 @@ func (b *Browser) recordNetworkTask(task browserNetworkTask) {
 		RequestBodyEncoding:  requestBodyEncoding,
 		RequestBodyTruncated: requestBodyTruncated,
 		ResponseHeaders:      responseHeaders,
+		Aura:                 auraBatch,
 	})
 	b.mu.Lock()
 	if b.networkTaskCurrentLocked(task) {
@@ -787,6 +792,11 @@ func browserNetworkEntryMetadataBytes(entry protocol.NetworkEntry) int {
 	}
 	for key, value := range entry.ResponseHeaders {
 		bytes += 64 + len(key) + len(value)
+	}
+	if entry.Aura != nil {
+		for _, action := range entry.Aura.Actions {
+			bytes += 32 + len(action.Name) + len(action.State)
+		}
 	}
 	return bytes
 }

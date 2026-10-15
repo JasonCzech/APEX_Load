@@ -1820,6 +1820,8 @@ export interface RunArchiveReport {
   browser_by_platform?: Record<string, BrowserPlatformLiveMetrics>
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   browser_resources?: BrowserResourceTiming[]
+  // The Salesforce Aura actions each transaction's steps sent, most time first.
+  aura_actions?: AuraActionRollup[]
   resource_peaks: RunArchiveResourcePeaks
   release_trend?: RunArchiveReleaseTrendSummary
   // root_cause_view is the generated root cause every report format renders:
@@ -2186,6 +2188,18 @@ export interface RunArchiveEvidenceTier {
   reason?: string
 }
 
+// One Aura action in one transaction over the run: its calls, the time of
+// the requests that carried it (a batch's time counts for each action in it),
+// and its errors.
+export interface AuraActionRollup {
+  transaction: string
+  name: string
+  apex?: boolean
+  count: number
+  total_ms: number
+  errors?: number
+}
+
 export interface BrowserResourceTiming {
   failure_kind?: string
   timestamp: string
@@ -2393,6 +2407,9 @@ export interface GeneratorResourceSnapshot {
 
 export interface BrowserLiveMetrics {
   samples: number
+  // Samples that loaded a document: FCP, LCP, TTFB and render-blocking
+  // resources average over them (a single-page app loads once per journey).
+  document_loads?: number
   avg_fcp_ms?: number
   avg_lcp_ms?: number
   avg_cls_score?: number

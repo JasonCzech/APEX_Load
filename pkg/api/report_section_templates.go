@@ -811,6 +811,18 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </table>
 {{end}}
 {{else}}<p class="muted">No browser metrics were captured for this run.</p>{{end}}
+{{if .Report.AuraActions}}
+<h3>Salesforce Aura actions by transaction</h3>
+<p class="muted">The actions each transaction's steps sent, with the most time first. Time is that of the requests that carried the action: a batch's time counts for every action in it.</p>
+<table>
+  <thead><tr><th>Transaction</th><th>Action</th><th class="num">Calls</th><th class="num">Total time</th><th class="num">Errors</th></tr></thead>
+  <tbody>
+    {{range .Report.AuraActions}}
+    <tr><td>{{if .Transaction}}{{.Transaction}}{{else}}Outside transactions{{end}}</td><td>{{.Name}}</td><td class="num">{{.Count}}</td><td class="num">{{formatFloat .TotalMs}} ms</td><td class="num">{{.Errors}}</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
 {{end}}
 
 {{define "soap"}}
