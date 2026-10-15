@@ -7,8 +7,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/config"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
 
 var isolatedServiceSequence atomic.Uint64
@@ -17,9 +19,14 @@ var isolatedServiceSequence atomic.Uint64
 // binary when the operator has not set it, so generator-side archive tests
 // never write per-run directories into the module tree. See the package api
 // TestMain and config.DefaultArchiveDir for the full rationale. Individual
-// tests may still override APEXLOAD_ARCHIVE_DIR via t.Setenv.
+// tests may still override APEXLOAD_ARCHIVE_DIR via t.Setenv. It also closes
+// the browsers the tests left in the browser protocol's process-wide pool
+// before the Playwright driver exits with the test binary: a browser whose
+// driver exits first aborts, and macOS records a crash.
 func TestMain(m *testing.M) {
-	os.Exit(runArchiveSandboxedTests(m))
+	code := runArchiveSandboxedTests(m)
+	browserprotocol.ShutdownPool(10 * time.Second)
+	os.Exit(code)
 }
 
 func runArchiveSandboxedTests(m *testing.M) int {
