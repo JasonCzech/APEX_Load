@@ -671,6 +671,9 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		MaxExecutionTimeoutMS: MaximumExecutionTimeout.Milliseconds(),
 		MaxCaptureBytes:       MaxCaptureBytes,
 	}
+	if dedicated, ok := s.dedicatedJVMCapacity(); ok {
+		response.DedicatedCapacity = &dedicated
+	}
 	status := http.StatusOK
 	if failure != nil {
 		response.ErrorCode = failure.code

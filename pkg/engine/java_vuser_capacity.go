@@ -328,8 +328,14 @@ func validatedJavaVuserRuntimeCapacityForPlan(ctx context.Context, instance prot
 	if err != nil {
 		return protocol.RuntimeCapabilities{}, err
 	}
-	if demand > capabilities.MaxVUsers {
-		return protocol.RuntimeCapabilities{}, fmt.Errorf("java_vuser persistent runtime capacity exceeded: requires %d VUsers, maximum %d", demand, capabilities.MaxVUsers)
+	// A runner's live dedicated ceiling (shared JVMs and its memory budget)
+	// can be lower than its process slots.
+	limit := capabilities.MaxVUsers
+	if ceiling := capabilities.DedicatedCeiling; ceiling != nil {
+		limit = min(limit, max(*ceiling, 0))
+	}
+	if demand > limit {
+		return protocol.RuntimeCapabilities{}, fmt.Errorf("java_vuser persistent runtime capacity exceeded: requires %d VUsers, maximum %d", demand, limit)
 	}
 	if healthy, supported, healthErr := protocol.CheckRuntimeHealth(ctx, instance); supported {
 		if healthErr != nil {

@@ -120,6 +120,11 @@ type RuntimeCapabilities struct {
 	Available bool
 	Features  []string
 	MaxVUsers int64
+	// DedicatedCeiling is a java_vuser runner's live limit on dedicated JVMs
+	// beside its current shared JVMs and memory budget, present when it
+	// reports one. Callers charge their dedicated VUsers against the lower of
+	// it and MaxVUsers.
+	DedicatedCeiling *int64
 	// SharedJVM is the runner's shared-JVM capacity, present only when the
 	// java_vuser runner hosts shared JVMs. MaxVUsers stays dedicated capacity.
 	SharedJVM *SharedJVMCapacity

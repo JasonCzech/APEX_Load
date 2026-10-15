@@ -14,6 +14,7 @@ import (
 
 type javaVuserCapacityGateProtocol struct {
 	maxVUsers int64
+	ceiling   *int64
 	features  []string
 }
 
@@ -38,9 +39,10 @@ func (p *javaVuserCapacityGateProtocol) RuntimeCapabilities() protocol.RuntimeCa
 		}
 	}
 	return protocol.RuntimeCapabilities{
-		Available: true,
-		Features:  features,
-		MaxVUsers: p.maxVUsers,
+		Available:        true,
+		Features:         features,
+		MaxVUsers:        p.maxVUsers,
+		DedicatedCeiling: p.ceiling,
 	}
 }
 func (*javaVuserCapacityGateProtocol) LegacyRuntimeAvailable() bool { return true }
@@ -63,6 +65,21 @@ func TestEngineJavaVuserRuntimeGateEnforcesPersistentVUserCapacity(t *testing.T)
 	engine := &Engine{script: combinedJavaRuntimeGateScript(), vusers: 2}
 	if err := engine.validateJavaVuserRuntime(context.Background(), instance); err == nil || !strings.Contains(err.Error(), "capacity exceeded") {
 		t.Fatalf("validateJavaVuserRuntime = %v, want persistent capacity rejection", err)
+	}
+}
+
+// Shared JVMs and the runner's memory budget can leave fewer dedicated JVMs
+// than process slots.
+func TestEngineJavaVuserRuntimeGateUsesTheDedicatedCeiling(t *testing.T) {
+	ceiling := int64(1)
+	instance := &javaVuserCapacityGateProtocol{maxVUsers: 4, ceiling: &ceiling}
+	engine := &Engine{script: combinedJavaRuntimeGateScript(), vusers: 2}
+	if err := engine.validateJavaVuserRuntime(context.Background(), instance); err == nil || !strings.Contains(err.Error(), "requires 2 VUsers, maximum 1") {
+		t.Fatalf("validateJavaVuserRuntime = %v, want the runner's dedicated ceiling", err)
+	}
+	engine.vusers = 1
+	if err := engine.validateJavaVuserRuntime(context.Background(), instance); err != nil {
+		t.Fatalf("demand within the ceiling: %v", err)
 	}
 }
 

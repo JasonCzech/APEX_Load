@@ -1378,6 +1378,10 @@ func (j *JavaVuser) RuntimeCapabilities() protocol.RuntimeCapabilities {
 			features = append(features, protocol.FeatureNativeDataJavaV1)
 		}
 		result := protocol.RuntimeCapabilities{Available: true, Features: features, MaxVUsers: int64(capabilities.MaxProcesses)}
+		if live := capabilities.DedicatedCapacity; live != nil {
+			ceiling := max(0, min(int64(*live), result.MaxVUsers))
+			result.DedicatedCeiling = &ceiling
+		}
 		if shared := capabilities.SharedJVM; shared != nil && protocol.RuntimeFeaturesSatisfy(features, javasidecar.FeatureSharedJVMV1) && shared.VUsersPerJVM >= 2 && shared.MaxVUsers > 0 {
 			result.SharedJVM = &protocol.SharedJVMCapacity{VUsersPerJVM: int64(shared.VUsersPerJVM), MaxVUsers: int64(shared.MaxVUsers), AvailableVUsers: max(0, min(int64(shared.AvailableVUsers), int64(shared.MaxVUsers)))}
 		}

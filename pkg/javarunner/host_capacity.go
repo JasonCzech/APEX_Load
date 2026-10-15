@@ -202,6 +202,14 @@ func (a *DedicatedHostAdmission) Snapshot() HostUsage {
 	return a.capacity.Snapshot()
 }
 
+// MemoryBytes is the budget charge of one dedicated JVM.
+func (a *DedicatedHostAdmission) MemoryBytes() int64 {
+	if a == nil {
+		return 0
+	}
+	return a.memory
+}
+
 // Budget returns immutable ceilings, not currently available capacity.
 func (a *DedicatedHostAdmission) Budget() HostBudget {
 	if a == nil || a.capacity == nil {

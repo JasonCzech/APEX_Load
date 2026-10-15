@@ -1694,9 +1694,13 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 				used = 0
 			}
 			maxVUsers := max(capabilities.MaxVUsers, 0)
+			limit := maxVUsers
+			if normalized == "java_vuser" {
+				limit = dedicatedJVMMax(capabilities)
+			}
 			remaining := int64(0)
-			if runtimeAvailable && used < maxVUsers {
-				remaining = maxVUsers - used
+			if runtimeAvailable && used < limit {
+				remaining = limit - used
 			}
 			runtimeEntry := &pb.ProtocolRuntimeCapacity{
 				Protocol:        normalized,

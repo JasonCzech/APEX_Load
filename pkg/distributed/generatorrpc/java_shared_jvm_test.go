@@ -35,6 +35,12 @@ func sharedJVMRunner(t *testing.T, shared *javasidecar.SharedJVMCapabilities) {
 // claim_shared with refusal, as a runner would for native code.
 func sharedJVMRunnerRefusing(t *testing.T, shared *javasidecar.SharedJVMCapabilities, refusal string) {
 	t.Helper()
+	sharedJVMRunnerWith(t, shared, refusal, nil)
+}
+
+// sharedJVMRunnerWith also reports a live dedicated capacity when set.
+func sharedJVMRunnerWith(t *testing.T, shared *javasidecar.SharedJVMCapabilities, refusal string, dedicated *int) {
+	t.Helper()
 	features := []string{protocol.FeatureJavaVuserPersistentLifecycleV1, javasidecar.FeatureSessionFrameTokenV1, javasidecar.FeatureOwnerFencingV1, javasidecar.FeatureExternalRuntimeV1, javasidecar.FeatureRunnerOwnerLeaseV1, javasidecar.FeatureRuntimeLeaseV1, javasidecar.FeaturePhaseLifecycleV1}
 	if shared != nil {
 		features = append(features, javasidecar.FeatureSharedJVMV1)
@@ -42,7 +48,7 @@ func sharedJVMRunnerRefusing(t *testing.T, shared *javasidecar.SharedJVMCapabili
 	runner := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch {
 		case request.Method == http.MethodGet && request.URL.Path == "/v1/capabilities":
-			_ = json.NewEncoder(response).Encode(javasidecar.CapabilitiesResponse{Contract: javasidecar.ContractVersion, Healthy: true, Features: features, MinimumJavaMajor: 17, JavaMajor: 21, MaxProcesses: 4, MaxExecutionTimeoutMS: javasidecar.MaximumExecutionTimeout.Milliseconds(), MaxCaptureBytes: javasidecar.MaxCaptureBytes, SharedJVM: shared})
+			_ = json.NewEncoder(response).Encode(javasidecar.CapabilitiesResponse{Contract: javasidecar.ContractVersion, Healthy: true, Features: features, MinimumJavaMajor: 17, JavaMajor: 21, MaxProcesses: 4, MaxExecutionTimeoutMS: javasidecar.MaximumExecutionTimeout.Milliseconds(), MaxCaptureBytes: javasidecar.MaxCaptureBytes, SharedJVM: shared, DedicatedCapacity: dedicated})
 		case request.Method == http.MethodGet && request.URL.Path == "/v1/health":
 			_ = json.NewEncoder(response).Encode(javasidecar.HealthResponse{Contract: javasidecar.ContractVersion, Status: "healthy"})
 		case request.Method == http.MethodPost && request.URL.Path == "/v1/validate":
@@ -94,7 +100,9 @@ func TestSharedJVMAssignmentsUseSharedEnvelope(t *testing.T) {
 	if ack := assignJava(t, service, "shared-b", "shared-script", sharedJVMScript, 200); ack.GetAccepted() || !strings.Contains(ack.GetErrorMessage(), "insufficient java_vuser shared JVM capacity: 100 available") {
 		t.Fatalf("over-admitted shared VUsers: %#v", ack)
 	}
-	// Dedicated Java work still sees all four dedicated JVMs.
+	// A runner that reports no dedicated ceiling leaves dedicated work its
+	// four process slots (TestDedicatedJavaWorkUsesTheRunnersLiveCeiling
+	// covers a runner that does).
 	dedicatedScript := strings.Replace(sharedJVMScript, `"jvm_sharing":"shared"`, `"jvm_sharing":"dedicated"`, 1)
 	if ack := assignJava(t, service, "dedicated-a", "dedicated-script", dedicatedScript, 4); !ack.GetAccepted() {
 		t.Fatalf("dedicated work blocked by shared admissions: %#v", ack)
@@ -189,5 +197,30 @@ func TestJavaVMOutcomeValidation(t *testing.T) {
 	}
 	if javaVMOutcome(nil) != nil {
 		t.Fatal("dedicated-only group produced an outcome")
+	}
+}
+
+// Shared JVMs and the memory budget lower the runner's dedicated ceiling;
+// the generator admits and advertises dedicated work against the lower limit.
+func TestDedicatedJavaWorkUsesTheRunnersLiveCeiling(t *testing.T) {
+	one := 1
+	sharedJVMRunnerWith(t, &javasidecar.SharedJVMCapabilities{VUsersPerJVM: 100, MaxJVMs: 4, MaxVUsers: 400, AvailableVUsers: 100}, "", &one)
+	service := newIsolatedService(t, 1000)
+	dedicatedScript := strings.Replace(sharedJVMScript, `"jvm_sharing":"shared"`, `"jvm_sharing":"dedicated"`, 1)
+	if ack := assignJava(t, service, "dedicated-two", "dedicated-script", dedicatedScript, 2); ack.GetAccepted() || !strings.Contains(ack.GetErrorMessage(), "insufficient java_vuser runtime capacity: maximum 1") {
+		t.Fatalf("dedicated work over the runner's ceiling: %#v", ack)
+	}
+	if ack := assignJava(t, service, "dedicated-one", "dedicated-script", dedicatedScript, 1); !ack.GetAccepted() {
+		t.Fatalf("dedicated work within the ceiling refused: %#v", ack)
+	}
+	_, _, capacities := runtimeAdvertisementWithCapacities(context.Background(), true, map[string]int64{"java_vuser": 0}, nil)
+	var java *pb.ProtocolRuntimeCapacity
+	for _, capacity := range capacities {
+		if capacity.GetProtocol() == "java_vuser" {
+			java = capacity
+		}
+	}
+	if java == nil || java.GetMaxVusers() != 4 || java.GetAvailableVusers() != 1 {
+		t.Fatalf("heartbeat capacity %+v", java)
 	}
 }

@@ -161,6 +161,42 @@ func TestSharedJVMDerivedBudgetFitsTheContainer(t *testing.T) {
 	}
 }
 
+// Dedicated room shrinks with whatever else holds the budget: a 1 GiB
+// container leaves 768 MiB, three 256 MiB dedicated JVMs, and one other
+// charge (as a shared host would) leaves two.
+func TestDedicatedJVMCapacityReflectsTheBudget(t *testing.T) {
+	f := newSharedJVMFixture(t, 21)
+	stubSharedJVMContainerMemory(t, 1<<30, true)
+	operator := f.server.operator
+	operator.SharedJVM.DedicatedJVMMemoryMB = 256
+	policy, admission, err := NewSharedJVMPolicy(operator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerOptions{Operator: operator, HostAdmission: admission, SharedJVM: policy, CredentialCheck: func() error { return nil }})
+	if capacity, ok := server.dedicatedJVMCapacity(); !ok || capacity != 3 {
+		t.Fatalf("dedicated capacity %d %v", capacity, ok)
+	}
+	release, err := admission.Acquire(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if capacity, _ := server.dedicatedJVMCapacity(); capacity != 2 {
+		t.Fatalf("capacity beside another charge %d", capacity)
+	}
+	// A running dedicated JVM holds a slot and its charge; it is not
+	// subtracted again, since callers count their own dedicated VUsers.
+	server.slots <- struct{}{}
+	defer func() { <-server.slots }()
+	if capacity, _ := server.dedicatedJVMCapacity(); capacity != 3 {
+		t.Fatalf("capacity with a running dedicated JVM %d", capacity)
+	}
+	if capacity, ok := NewServer(ServerOptions{Operator: operator, CredentialCheck: func() error { return nil }}).dedicatedJVMCapacity(); ok {
+		t.Fatalf("runner without a budget reported %d", capacity)
+	}
+}
+
 func TestSharedJVMClaimQualifiesAndFreezesDecision(t *testing.T) {
 	f := newSharedJVMFixture(t, 21)
 	claim := sharedClaim(f.library, f.script)

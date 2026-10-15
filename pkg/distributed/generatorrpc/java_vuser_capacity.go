@@ -43,7 +43,18 @@ func (observation javaVuserCapacityObservation) persistentMaxVUsers() (int64, bo
 		observation.capabilities.MaxVUsers <= 0 {
 		return 0, false
 	}
-	return observation.capabilities.MaxVUsers, true
+	return dedicatedJVMMax(observation.capabilities), true
+}
+
+// dedicatedJVMMax is the dedicated JVM limit: the runner's process ceiling,
+// lowered by its live dedicated ceiling when shared JVMs and a memory budget
+// leave less room.
+func dedicatedJVMMax(capabilities protocol.RuntimeCapabilities) int64 {
+	maxVUsers := max(capabilities.MaxVUsers, 0)
+	if ceiling := capabilities.DedicatedCeiling; ceiling != nil {
+		maxVUsers = min(maxVUsers, max(*ceiling, 0))
+	}
+	return maxVUsers
 }
 
 // sharedCapacity is the runner's live shared-JVM envelope, present only on a

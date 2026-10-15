@@ -141,6 +141,11 @@ a failure of any run after the first claim fails the group. While one group
 prepares, the generator keeps its other staged groups from expiring, and the
 controller waits the whole preparation budget (5 minutes) for the assignment.
 
+Dedicated JVMs share the runner's process slots and memory budget with shared
+JVMs, so the runner also reports `dedicated_capacity`: the dedicated JVMs it
+could hold beside its current shared JVMs. Generators admit and advertise
+dedicated Java work against the lower of that and the process limit.
+
 If the runner refuses the claim at staging, the group runs dedicated and must
 fit dedicated capacity; otherwise staging fails with the dedicated capacity
 error. With 250 VUsers per JVM and the default 25 JVMs per runner, one

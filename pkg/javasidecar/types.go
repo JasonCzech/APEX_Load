@@ -138,6 +138,13 @@ type CapabilitiesResponse struct {
 	MaxCaptureBytes       int      `json:"max_capture_bytes"`
 	// SharedJVM is present when FeatureSharedJVMV1 is advertised.
 	SharedJVM *SharedJVMCapabilities `json:"shared_jvm,omitempty"`
+	// DedicatedCapacity is present when every JVM charges one runner-wide
+	// admission budget (shared JVMs or a pilot): the dedicated JVMs the runner
+	// could hold beside its current shared JVMs, after their hosts and the
+	// budget's memory. Running dedicated JVMs are not subtracted, so callers
+	// charge their own dedicated VUsers against it as against MaxProcesses,
+	// which stays the operator's process ceiling.
+	DedicatedCapacity *int `json:"dedicated_capacity,omitempty"`
 }
 
 type ValidateRequest struct {

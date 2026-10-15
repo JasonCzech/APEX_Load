@@ -173,6 +173,24 @@ func validSlotLabel(label string) bool {
 	return len(label) <= 256 && utf8.ValidString(label) && strings.IndexFunc(label, unicode.IsControl) < 0
 }
 
+// dedicatedJVMCapacity reports how many dedicated JVMs the runner could hold
+// beside its current shared JVMs: process slots, and the hosts, VUsers and
+// memory the budget has left once every non-dedicated charge is counted. Each
+// running dedicated JVM holds one slot and one host-sized charge, so those are
+// added back. Without a budget ok is false.
+func (s *Server) dedicatedJVMCapacity() (capacity int, ok bool) {
+	if s.hostAdmission == nil || s.hostAdmission.MemoryBytes() <= 0 {
+		return 0, false
+	}
+	budget, usage, charge := s.hostAdmission.Budget(), s.hostAdmission.Snapshot(), s.hostAdmission.MemoryBytes()
+	dedicated := len(s.slots)
+	otherHosts := max(0, usage.Hosts-dedicated)
+	otherVUsers := max(0, usage.VUsers-dedicated)
+	otherMemory := max(0, usage.MemoryBytes-int64(dedicated)*charge)
+	memory := max(0, min((budget.MaxMemoryBytes-otherMemory)/charge, int64(cap(s.slots))))
+	return max(0, min(cap(s.slots), budget.MaxHosts-otherHosts, budget.MaxVUsers-otherVUsers, int(memory))), true
+}
+
 // sharedJVMCapabilities reports the envelope, or nil when shared JVMs are off.
 func (s *Server) sharedJVMCapabilities() *SharedJVMCapabilities {
 	if s.sharedJVM == nil || s.hostAdmission == nil {
