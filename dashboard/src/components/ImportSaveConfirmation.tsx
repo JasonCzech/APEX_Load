@@ -1,3 +1,4 @@
+import { savedScenarioBuilderHash } from './importScenario'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 
 interface Props {
@@ -5,7 +6,10 @@ interface Props {
   onImportMore: () => void
   onOpen: (result: ImportedSaveResult) => void
   disabled?: boolean
-  /** Creates one scenario from every saved script and opens it. */
+  /**
+   * Creates one scenario from every saved script and opens it. Not offered
+   * when the save already made a scenario (result.scenario): that one opens.
+   */
   onCreateScenario?: () => void
   scenarioBusy?: boolean
   scenarioError?: string
@@ -18,6 +22,8 @@ const LISTED_SCRIPTS = 3
 export default function ImportSaveConfirmation({ result, onImportMore, onOpen, disabled, onCreateScenario, scenarioBusy = false, scenarioError = '' }: Props) {
   if (!result?.scripts.length) return null
   const [first] = result.scripts
+  const savedScenario = result.scenario?.id ? result.scenario : null
+  const createScenario = savedScenario ? undefined : onCreateScenario
   const listed = result.scripts.length > LISTED_SCRIPTS ? [] : result.scripts
   const more = result.scripts.length > LISTED_SCRIPTS ? result.scripts : []
   const openButton = (script: typeof first) => (
@@ -29,15 +35,20 @@ export default function ImportSaveConfirmation({ result, onImportMore, onOpen, d
     <div className="settings-notice">
       <p role="status">Saved {result.scripts.length} script{result.scripts.length === 1 ? '' : 's'} to the script library.</p>
       <div className="script-import-review-actions">
-        {onCreateScenario && (
-          <button type="button" className="btn btn-primary" disabled={disabled || scenarioBusy} onClick={onCreateScenario}>
+        {savedScenario && (
+          <button type="button" className="btn btn-primary" disabled={disabled} onClick={() => { window.location.hash = savedScenarioBuilderHash(savedScenario.id, savedScenario.project_id) }}>
+            Open scenario {savedScenario.name}
+          </button>
+        )}
+        {createScenario && (
+          <button type="button" className="btn btn-primary" disabled={disabled || scenarioBusy} onClick={createScenario}>
             {scenarioBusy ? 'Creating scenario…' : `Create a scenario from ${result.scripts.length === 1 ? 'this script' : `these ${result.scripts.length} scripts`}`}
           </button>
         )}
         <button type="button" className="btn btn-secondary" disabled={disabled} onClick={() => onOpen({ scripts: [first], editorWorkspace: 'debug' })}>
           Debug {first.name}
         </button>
-        <button type="button" className={onCreateScenario ? 'btn btn-secondary' : 'btn btn-primary'} disabled={disabled} onClick={onImportMore}>Import More Files</button>
+        <button type="button" className={savedScenario || createScenario ? 'btn btn-secondary' : 'btn btn-primary'} disabled={disabled} onClick={onImportMore}>Import More Files</button>
         {listed.map(openButton)}
       </div>
       {more.length > 0 && (

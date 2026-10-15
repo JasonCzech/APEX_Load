@@ -4,6 +4,7 @@ import ImportRuntimeSettingsTable from './ImportRuntimeSettingsTable'
 import { ImportConversionDetails, ImportEvidenceFacts } from './ImportConversionDetails'
 import { ImportGuidedRepair, type RepairResult } from './ImportGuidedRepair'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
+import { importScenarioName, useImportScenario } from './useImportScenario'
 import { type ImportSaveDestination } from './useImportSaveOutcome'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
@@ -921,6 +922,7 @@ const ENTERPRISE_RESULT_PAGE_SIZE = 50
 
 export default function EnterpriseArchiveImport({ initialFiles, projectId, folderId, onImported, onEdit, onClose, onOperationBusyChange }: Props) {
   const api = useApi()
+  const importScenario = useImportScenario(projectId)
   const apiRef = useRef(api)
   apiRef.current = api
   const fileRef = useRef<HTMLInputElement>(null)
@@ -4499,9 +4501,14 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       )}
       <ImportSaveConfirmation
         result={savedArchiveScripts.length ? { scripts: savedArchiveScripts } : null}
-        onImportMore={handleBrowseArchives}
+        onImportMore={() => { importScenario.reset(); handleBrowseArchives() }}
         onOpen={saved => onImported?.(saved)}
         disabled={sourceMutationLocked}
+        onCreateScenario={importScenario.available && savedArchiveScripts.length
+          ? () => void importScenario.create(importScenarioName(importItems.length === 1 ? importItems[0].file.name : undefined, savedArchiveScripts), savedArchiveScripts)
+          : undefined}
+        scenarioBusy={importScenario.busy}
+        scenarioError={importScenario.errorFor(savedArchiveScripts)}
       />
 
       <details ref={archiveSetupRef} className="lr-completed-setup" open={!result}>

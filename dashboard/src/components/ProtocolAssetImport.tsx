@@ -3,6 +3,7 @@ import { importSourceName } from '../appTopbar'
 import { ImportConversionDetails, ImportEvidenceFacts } from './ImportConversionDetails'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
+import { importScenarioName, useImportScenario } from './useImportScenario'
 import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
@@ -735,6 +736,7 @@ function importDraftHasExpired(result: ProtocolImportResult | null | undefined):
 
 export default function ProtocolAssetImport({ kind, initialFile, initialMode, projectId, folderId, onImported, onEdit, onClose, onOperationBusyChange }: Props) {
   const api = useApi()
+  const importScenario = useImportScenario(projectId)
   const sourceSecretSessions = useSourceSecretSessionLifecycle(api.discardImportSecretSession)
   const convertTask = useAsyncTask<ProtocolImportResult>()
   const saveTask = useAsyncTask<StoredScript>()
@@ -2156,9 +2158,20 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     selectAsyncAPIReviewScript(nextIndex, true)
   }
 
+  const confirmationResult = asyncAPIMultiScript ? { scripts: generatedScripts.flatMap((_, index) => asyncAPISavedScripts[index] ? [asyncAPISavedScripts[index]] : []) } : savedResult
   return (
     <div className="sample-import">
-      <ImportSaveConfirmation result={asyncAPIMultiScript ? { scripts: generatedScripts.flatMap((_, index) => asyncAPISavedScripts[index] ? [asyncAPISavedScripts[index]] : []) } : savedResult} onImportMore={() => { invalidateConversionSource(); setFile(null) }} onOpen={openSaved} disabled={sourceMutationLocked} />
+      <ImportSaveConfirmation
+        result={confirmationResult}
+        onImportMore={() => { importScenario.reset(); invalidateConversionSource(); setFile(null) }}
+        onOpen={openSaved}
+        disabled={sourceMutationLocked}
+        onCreateScenario={importScenario.available && confirmationResult?.scripts.length
+          ? () => void importScenario.create(importScenarioName(file?.name, confirmationResult.scripts), confirmationResult.scripts)
+          : undefined}
+        scenarioBusy={importScenario.busy}
+        scenarioError={confirmationResult ? importScenario.errorFor(confirmationResult.scripts) : ''}
+      />
       <div className="sample-import-header">
         <div>
           <h2>{labels.title}</h2>

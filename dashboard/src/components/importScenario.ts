@@ -7,3 +7,9 @@ export function scenarioDraftBuilderHash(draftId: string, projectId: string): st
   const scope = workspaceScopeForAppView(parseAppViewFromHash(window.location.hash))
   return viewToLocationHash(mergeAppViewWithWorkspace({ page: 'tests', scenarioView: 'builder', scenarioDraftId: draftId, projectId }, scope))
 }
+
+// Where a saved scenario opens in the Scenario Builder, in its project.
+export function savedScenarioBuilderHash(scenarioId: string, projectId: string | undefined): string {
+  const scope = workspaceScopeForAppView(parseAppViewFromHash(window.location.hash))
+  return viewToLocationHash(mergeAppViewWithWorkspace({ page: 'tests', scenarioView: 'builder', scenarioId, ...(projectId ? { projectId } : {}) }, scope))
+}

@@ -661,7 +661,10 @@ If you already have tests in another tool, import them instead of rewriting. Ope
 **Scripts** page and use the import drop zone. Every importer leaves out
 operating-system and version-control files from an archive or a picked folder
 (`.DS_Store`, a `__MACOSX` folder of `._` files, `.git`), so they never count as
-script content.
+script content. After a save, every importer offers **Debug** on the first saved script
+and **Create a scenario** from the saved scripts (a project scenario draft with a group
+per script, named after the source), or **Open scenario** when the import already made
+one, as JMeter does from its thread groups.
 
 | Source | Category | Typical outcome |
 | --- | --- | --- |

@@ -4,7 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ImportSaveConfirmation from './ImportSaveConfirmation'
-import type { StoredScript } from '../types'
+import { importScenarioName } from './useImportScenario'
+import type { StoredScenario, StoredScript } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -45,6 +46,26 @@ describe('ImportSaveConfirmation', () => {
     expect(button('Import More Files')?.className).toContain('btn-primary')
     expect(button('Open Request 2 in Visual Editor')).toBeDefined()
     expect(container.querySelector('.import-save-more-scripts')).toBeNull()
+  })
+
+  it('opens the scenario a save already made instead of creating another', async () => {
+    const onCreateScenario = vi.fn()
+    const scenario = { id: 'scenario-7', name: 'Checkout plan', project_id: 'project-1' } as StoredScenario
+    window.location.hash = '#/scripts'
+    await act(async () => root.render(<ImportSaveConfirmation result={{ scripts: saved(3), scenario }} onImportMore={vi.fn()} onOpen={vi.fn()} onCreateScenario={onCreateScenario} />))
+    expect(button('Create a scenario from these 3 scripts')).toBeUndefined()
+    expect(button('Import More Files')?.className).toContain('btn-secondary')
+    await act(async () => button('Open scenario Checkout plan')!.click())
+    expect(onCreateScenario).not.toHaveBeenCalled()
+    expect(window.location.hash).toContain('scenarioId=scenario-7')
+    expect(window.location.hash).toContain('view=builder')
+  })
+
+  it('names a scenario after its source, else its one script, else a count', () => {
+    expect(importScenarioName('Orders API.postman_collection.json', saved(4))).toBe('Orders API.postman_collection')
+    expect(importScenarioName('checkout.jmx', saved(2))).toBe('checkout')
+    expect(importScenarioName('', saved(1))).toBe('Request 1')
+    expect(importScenarioName(undefined, saved(3))).toBe('3 imported scripts')
   })
 
   it('shows why a scenario could not be created', async () => {

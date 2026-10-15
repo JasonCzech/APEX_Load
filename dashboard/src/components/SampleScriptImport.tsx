@@ -2,6 +2,7 @@ import { ImportConversionDetails } from './ImportConversionDetails'
 import { importSourceName } from '../appTopbar'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
+import { importScenarioName, useImportScenario } from './useImportScenario'
 import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
 import { useCallback, useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
@@ -441,6 +442,7 @@ function inferSampleFormatFromFile(file: File | undefined, fallback: SampleForma
 
 export default function SampleScriptImport({ initialFiles, projectId, folderId, onImported, onEdit, onClose, preset: initialPreset = 'default', onOperationBusyChange }: Props) {
   const api = useApi()
+  const importScenario = useImportScenario(projectId)
   const sourceSecretSessions = useSourceSecretSessionLifecycle(api.discardImportSecretSession)
   const primaryFileRef = useRef<HTMLInputElement>(null)
   const secondaryFileRef = useRef<HTMLInputElement>(null)
@@ -1046,7 +1048,17 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
 
   return (
     <div className="sample-import">
-      <ImportSaveConfirmation result={savedResult} onImportMore={() => handleBrowseSample('primary')} onOpen={openSaved} disabled={operationBusy} />
+      <ImportSaveConfirmation
+        result={savedResult}
+        onImportMore={() => { importScenario.reset(); handleBrowseSample('primary') }}
+        onOpen={openSaved}
+        disabled={operationBusy}
+        onCreateScenario={importScenario.available && savedResult?.scripts.length
+          ? () => void importScenario.create(importScenarioName(primaryFileName, savedResult.scripts), savedResult.scripts)
+          : undefined}
+        scenarioBusy={importScenario.busy}
+        scenarioError={savedResult ? importScenario.errorFor(savedResult.scripts) : ''}
+      />
       <div className="sample-import-header">
         <div>
           <h2>{isJavaHttpPreset ? 'Import Java over HTTP samples' : importSourceName('sample')}</h2>

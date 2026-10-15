@@ -19,6 +19,7 @@ const apiMock = {
   migrateImportSecrets: vi.fn(),
   discardImportSecretSession: vi.fn(),
   applyImportParameterization: vi.fn(),
+  createScenarioDraft: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -220,6 +221,46 @@ describe('JMeterImport', () => {
       scripts: [expect.objectContaining({ id: 'jmeter-saved-after-change' })],
     }))
     expect(onImported.mock.calls[0]?.[0]).toHaveProperty('stayInImportReview', true)
+  })
+
+  it('leads a save to one scenario of the saved scripts, or to the scenario the save made', async () => {
+    const saveAndConfirm = async (response: unknown) => {
+      apiMock.saveJMeterImport.mockResolvedValueOnce(response)
+      await act(async () => {
+        root.render(<JMeterImport projectId="project-1" onImported={vi.fn()} />)
+      })
+      await flushPromises()
+      const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+      await act(async () => {
+        Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['<jmeterTestPlan />'], 'checkout.jmx')] })
+        fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await act(async () => {
+        Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Validate Only'))?.click()
+      })
+      await flushPromises()
+      await act(async () => {
+        Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Save \d+ drafts?/.test(button.textContent || ''))?.click()
+      })
+      await flushPromises()
+    }
+    const saved = { id: 'jmeter-saved', name: 'Auth_Users', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z' }
+    apiMock.createScenarioDraft.mockResolvedValueOnce({ id: 'draft-9' })
+    window.location.hash = '#/scripts'
+    await saveAndConfirm({ count: 1, scripts: [saved] })
+    const create = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Create a scenario from this script')
+    expect(create).toBeDefined()
+    await act(async () => { create!.click() })
+    await flushPromises()
+    expect(apiMock.createScenarioDraft).toHaveBeenCalledWith('project-1', expect.objectContaining({ name: 'checkout' }))
+    expect(window.location.hash).toContain('draftId=draft-9')
+
+    await act(async () => { root.unmount() })
+    root = createRoot(container)
+    // A save that also made a scenario from the thread groups opens that one.
+    await saveAndConfirm({ count: 1, scripts: [saved], scenario: { id: 'scenario-3', name: 'Checkout load', project_id: 'project-1' } })
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Create a scenario from this script')).toBe(false)
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Open scenario Checkout load')).toBe(true)
   })
 
   it('reports a deferred batch save as busy until its persistence response settles', async () => {
