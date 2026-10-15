@@ -125,6 +125,7 @@ func NewJavaPooledPilot(cfg Config, options JavaPooledPilotOptions) (*Engine, er
 		return nil, err
 	}
 	e.pooledPilot = &javaPooledPilot{options: options}
+	e.sharedExecution = nil // the operator-approved pilot owns this engine's JVMs
 	return e, nil
 }
 
@@ -286,6 +287,9 @@ func (e *Engine) vuserProtocol(id int) (protocol.Protocol, error) {
 			return nil, errors.New("pooled_pilot_slot_unavailable")
 		}
 		return e.pooledPilot.adapters[id], nil
+	}
+	if e.sharedExecution.active() {
+		return e.sharedExecution.adapter(id)
 	}
 	return protocol.Get(e.script.Protocol)
 }

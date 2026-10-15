@@ -1,6 +1,6 @@
 # Java Vuser pooling: evidence tooling and implementation status
 
-Status: Experimental pooled evidence collector and dedicated distributed execution-pod integration; no distributed pooled execution or enabled AKS backend
+Status: Shared JVMs available for ordinary runs behind an operator switch and a per-script setting (2026-10-15); the pilot evidence collector and dedicated execution-pod integration remain; no enabled AKS backend
 
 This document tracks the evidence-first implementation of pooled Java Vuser
 hosts. Dedicated execution remains the default runtime path. Explicitly wired

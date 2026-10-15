@@ -54,6 +54,7 @@ func NewJavaBrokerExecution(cfg Config, o JavaBrokerOptions) (*Engine, error) {
 		return nil, e
 	}
 	engine.brokerExecution = &javaBrokerExecution{options: o}
+	engine.sharedExecution = nil // the broker owns this engine's JVMs
 	return engine, nil
 }
 func validateJavaBrokerScript(input *dsl.Script, duration time.Duration, o JavaBrokerOptions) (*dsl.Script, error) {

@@ -535,3 +535,26 @@ func TestPooledMaximumPrepareRequestFitsRequestLimit(t *testing.T) {
 		t.Fatalf("%d worst-case slots encode to %d bytes, over MaxRequestBytes %d", maxPooledControlVUsers, len(encoded), MaxRequestBytes)
 	}
 }
+
+func TestPooledCaptureUsesSharedClaimLabels(t *testing.T) {
+	run := &PooledRun{execution: "engine-0123", group: "group-abcd", groupLabel: "Checkout users", scenarioLabel: "scenario-7"}
+	p := &pooledPreparation{slots: []PooledSlotContext{{SlotID: "slot", VUserID: 3}}}
+	values, err := run.prepareCaptures(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { p.closeCaptures(); _ = os.RemoveAll(p.directory) }()
+	if values["slot"]["APEXLOAD_GROUP_NAME"] != "Checkout users" || values["slot"]["APEXLOAD_SCENARIO_ID"] != "scenario-7" {
+		t.Fatalf("labels not applied: %v", values["slot"])
+	}
+	plain := &PooledRun{execution: "engine-0123", group: "group-abcd"}
+	q := &pooledPreparation{slots: []PooledSlotContext{{SlotID: "slot", VUserID: 3}}}
+	values, err = plain.prepareCaptures(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { q.closeCaptures(); _ = os.RemoveAll(q.directory) }()
+	if values["slot"]["APEXLOAD_GROUP_NAME"] != "group-abcd" || values["slot"]["APEXLOAD_SCENARIO_ID"] != "engine-0123" {
+		t.Fatalf("pilot runs must keep opaque IDs: %v", values["slot"])
+	}
+}

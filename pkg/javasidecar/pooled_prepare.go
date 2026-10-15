@@ -205,6 +205,13 @@ func (run *PooledRun) prepareCaptures(p *pooledPreparation) (map[string]map[stri
 	p.directory = directory
 	p.captures = make(map[string]*pooledSlotCapture, len(p.slots))
 	values := make(map[string]map[string]string, len(p.slots))
+	group, scenario := run.group, run.execution
+	if run.groupLabel != "" {
+		group = run.groupLabel
+	}
+	if run.scenarioLabel != "" {
+		scenario = run.scenarioLabel
+	}
 	for i, slot := range p.slots {
 		path := filepath.Join(directory, strconv.Itoa(i)+".jsonl")
 		file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
@@ -214,8 +221,8 @@ func (run *PooledRun) prepareCaptures(p *pooledPreparation) (map[string]map[stri
 		p.captures[slot.SlotID] = &pooledSlotCapture{file: file, path: path}
 		values[slot.SlotID] = map[string]string{
 			"APEXLOAD_VUSER_ID":              strconv.FormatInt(slot.VUserID, 10),
-			"APEXLOAD_GROUP_NAME":            run.group,
-			"APEXLOAD_SCENARIO_ID":           run.execution,
+			"APEXLOAD_GROUP_NAME":            group,
+			"APEXLOAD_SCENARIO_ID":           scenario,
 			"APEXLOAD_IGNORE_THINK_TIME":     strconv.FormatBool(slot.IgnoreThinkTime),
 			"APEXLOAD_THINK_TIME_LIMIT_MS":   strconv.FormatInt(slot.ThinkTimeLimitMS, 10),
 			"APEXLOAD_JAVA_VUSER_EVENT_FILE": path,

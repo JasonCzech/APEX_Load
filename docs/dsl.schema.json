@@ -8957,6 +8957,13 @@
           ],
           "type": "string"
         },
+        "jvm_sharing": {
+          "enum": [
+            "dedicated",
+            "shared"
+          ],
+          "type": "string"
+        },
         "max_processes": {
           "type": "integer"
         },
@@ -8981,6 +8988,11 @@
         },
         "use_xbootclasspath": {
           "type": "boolean"
+        },
+        "vusers_per_jvm": {
+          "maximum": 1024,
+          "minimum": 0,
+          "type": "integer"
         },
         "work_dir": {
           "type": "string"

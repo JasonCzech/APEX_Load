@@ -27,6 +27,9 @@ func (s *PooledClientSlot) VUserID() int64 { return s.userID }
 func (s *PooledClientSlot) HostID() string { return s.hostID }
 func (s *PooledClientSlot) SlotID() string { return s.slotID }
 
+// Mode is the run's frozen decision mode ("pooled_pilot" or "shared").
+func (s *PooledClientSlot) Mode() string { return s.run.decision.Mode }
+
 // Invoke consumes a sequence before submitting any work. Any remote failure
 // permanently fences this handle, including errors that appear retryable. The
 // caller must close it; a later invocation must never reconstruct Java state.

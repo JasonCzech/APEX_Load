@@ -173,8 +173,27 @@ func (mge *MultiGroupEngine) ClosePreparedRuntime() error {
 		if g.javaBroker != nil {
 			err = errors.Join(err, g.javaBroker.close())
 		}
+		err = errors.Join(err, g.javaShared.close())
 	}
 	return err
+}
+
+// JavaVMPlacements reports how each java_vuser group that asked for shared
+// JVMs actually ran. Groups that did not ask are dedicated and omitted.
+func (mge *MultiGroupEngine) JavaVMPlacements() []JavaVMPlacement {
+	if mge == nil {
+		return nil
+	}
+	mge.mu.Lock()
+	groups := append([]GroupConfig(nil), mge.groups...)
+	mge.mu.Unlock()
+	var out []JavaVMPlacement
+	for _, g := range groups {
+		if g.javaShared != nil {
+			out = append(out, g.javaShared.placement())
+		}
+	}
+	return out
 }
 
 // JavaBrokerPlacement is token-free evidence of a prepared group reservation.

@@ -39,6 +39,7 @@ func validateJavaVuserScriptIssuesWithPolicy(script *Script, allowPreservedCrede
 		issues = append(issues, fmt.Sprintf("config.java_vuser.action_timeout_ms must not exceed %d", MaxConfiguredProtocolTimeoutMS))
 	}
 	issues = append(issues, validateJavaVuserParamBraces(cfg.ParamLeftBrace, cfg.ParamRightBrace)...)
+	issues = append(issues, validateJavaVuserJVMSharing(cfg)...)
 	selection := normalizeJavaVuserJDKSelection(cfg.JDKSelection)
 	if selection == "" {
 		issues = append(issues, "config.java_vuser.jdk_selection must be internal or specified")
@@ -175,6 +176,31 @@ func validateJavaVuserParamBraces(left, right string) []string {
 	for _, brace := range []struct{ field, value string }{{"param_left_brace", left}, {"param_right_brace", right}} {
 		if utf8.RuneCountInString(brace.value) > 8 || strings.TrimSpace(brace.value) != brace.value || strings.ContainsFunc(brace.value, unicode.IsSpace) || containsJavaVuserControlCharacter(brace.value) {
 			issues = append(issues, "config.java_vuser."+brace.field+" must be 1 to 8 visible characters")
+		}
+	}
+	return issues
+}
+
+// Shared-JVM bounds match the runner's per-JVM lifetime slot ceiling.
+const (
+	JavaVuserJVMSharingDedicated = "dedicated"
+	JavaVuserJVMSharingShared    = "shared"
+	maxJavaVuserVUsersPerJVM     = 1024
+)
+
+func validateJavaVuserJVMSharing(cfg JavaVuserConfig) []string {
+	var issues []string
+	switch cfg.JVMSharing {
+	case "", JavaVuserJVMSharingDedicated, JavaVuserJVMSharingShared:
+	default:
+		issues = append(issues, "config.java_vuser.jvm_sharing must be dedicated or shared")
+	}
+	if cfg.VUsersPerJVM != 0 {
+		if cfg.VUsersPerJVM < 2 || cfg.VUsersPerJVM > maxJavaVuserVUsersPerJVM {
+			issues = append(issues, fmt.Sprintf("config.java_vuser.vusers_per_jvm must be between 2 and %d", maxJavaVuserVUsersPerJVM))
+		}
+		if cfg.JVMSharing != JavaVuserJVMSharingShared {
+			issues = append(issues, "config.java_vuser.vusers_per_jvm requires jvm_sharing shared")
 		}
 	}
 	return issues

@@ -240,6 +240,8 @@ func TestSharedJVMClaimDisabledAndValidation(t *testing.T) {
 		"bad digest": {TargetClass: "a.B", ScriptSHA256: "abc"},
 		"one slot":   {TargetClass: "a.B", ScriptSHA256: strings.Repeat("a", 64), VUsersPerJVM: 1},
 		"too many":   {TargetClass: "a.B", ScriptSHA256: strings.Repeat("a", 64), VUsersPerJVM: javarunner.MaxPooledSlotsPerHost + 1},
+		"label ctrl": {TargetClass: "a.B", ScriptSHA256: strings.Repeat("a", 64), GroupName: "a\nb"},
+		"label long": {TargetClass: "a.B", ScriptSHA256: strings.Repeat("a", 64), ScenarioID: strings.Repeat("s", 257)},
 	} {
 		if _, _, err := f.client.OpenSharedClientRun(context.Background(), SharedClientOptions{ExecutionID: "execution", GroupID: "group", Claim: claim}); err == nil || errors.As(err, &remote) {
 			t.Fatalf("%s: invalid claim reached the runner: %v", name, err)

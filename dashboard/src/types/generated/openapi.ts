@@ -876,6 +876,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -883,6 +884,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -5685,6 +5687,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -5692,6 +5695,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -6528,6 +6532,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -6535,6 +6540,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -7273,6 +7279,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -7280,6 +7287,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -12733,6 +12741,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -12740,6 +12749,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -13638,6 +13648,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -13645,6 +13656,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -14360,6 +14372,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -14367,6 +14380,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -15049,6 +15063,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -15056,6 +15071,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -15621,6 +15637,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -15628,6 +15645,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -16270,6 +16288,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -16277,6 +16296,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -16932,6 +16952,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -16939,6 +16960,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -17584,6 +17606,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -17591,6 +17614,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -19134,6 +19158,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -19141,6 +19166,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -23161,6 +23187,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -23168,6 +23195,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -24249,6 +24277,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -24256,6 +24285,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -25088,6 +25118,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -25095,6 +25126,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -27024,6 +27056,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -27031,6 +27064,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -27681,6 +27715,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -27688,6 +27723,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -28669,6 +28705,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -28676,6 +28713,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -29808,6 +29846,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -29815,6 +29854,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -30542,6 +30582,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -30549,6 +30590,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -41327,6 +41369,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -41334,6 +41377,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -42470,6 +42514,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -42477,6 +42522,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -56837,6 +56883,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -56844,6 +56891,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -58894,6 +58942,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -58901,6 +58950,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -79610,6 +79660,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -79617,6 +79668,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -80336,6 +80388,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -80343,6 +80396,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -92212,6 +92266,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -92219,6 +92274,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -92938,6 +92994,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -92945,6 +93002,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -111458,6 +111516,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -111465,6 +111524,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -112414,6 +112474,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -112421,6 +112482,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -113149,6 +113211,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -113156,6 +113219,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -113953,6 +114017,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -113960,6 +114025,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -115006,6 +115072,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -115013,6 +115080,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -115728,6 +115796,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -115735,6 +115804,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -116417,6 +116487,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -116424,6 +116495,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -116989,6 +117061,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -116996,6 +117069,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -119199,6 +119273,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -119206,6 +119281,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -119925,6 +120001,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -119932,6 +120009,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -120644,6 +120722,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -120651,6 +120730,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -132384,6 +132464,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -132391,6 +132472,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -133216,6 +133298,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -133223,6 +133306,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -140745,6 +140829,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -140752,6 +140837,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -142772,6 +142858,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -142779,6 +142866,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -143427,6 +143515,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -143434,6 +143523,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -146099,6 +146189,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -146106,6 +146197,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -147588,6 +147680,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -147595,6 +147688,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -149209,6 +149303,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -149216,6 +149311,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -150797,6 +150893,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -150804,6 +150901,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -152386,6 +152484,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -152393,6 +152492,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -153974,6 +154074,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -153981,6 +154082,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -164494,6 +164596,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -164501,6 +164604,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -165227,6 +165331,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -165234,6 +165339,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -171493,6 +171599,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -171500,6 +171607,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({
@@ -172634,6 +172742,7 @@ export interface operations {
                   "harness_jar"?: string;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
+                  "jvm_sharing"?: string;
                   "max_processes"?: number;
                   "param_left_brace"?: string;
                   "param_right_brace"?: string;
@@ -172641,6 +172750,7 @@ export interface operations {
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
+                  "vusers_per_jvm"?: number;
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
@@ -177992,6 +178102,7 @@ export interface operations {
                 "harness_jar"?: string;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
+                "jvm_sharing"?: string;
                 "max_processes"?: number;
                 "param_left_brace"?: string;
                 "param_right_brace"?: string;
@@ -177999,6 +178110,7 @@ export interface operations {
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
+                "vusers_per_jvm"?: number;
                 "work_dir"?: string;
               };
               "jmeter"?: ({

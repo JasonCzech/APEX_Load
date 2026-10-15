@@ -2589,6 +2589,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -2607,6 +2609,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -15673,6 +15678,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -15691,6 +15698,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -17835,6 +17845,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -17853,6 +17865,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -19805,6 +19820,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -19823,6 +19840,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -52642,6 +52662,8 @@ paths:
                             type: string
                           jdk_selection:
                             type: string
+                          jvm_sharing:
+                            type: string
                           max_processes:
                             type: integer
                             format: int64
@@ -52660,6 +52682,9 @@ paths:
                           use_xbootclasspath:
                             type: boolean
                             nullable: true
+                          vusers_per_jvm:
+                            type: integer
+                            format: int64
                           work_dir:
                             type: string
                       jmeter:
@@ -204474,6 +204499,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -204492,6 +204519,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -207586,6 +207616,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -207604,6 +207636,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -210726,6 +210761,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -210744,6 +210781,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -212705,6 +212745,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -212723,6 +212765,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -214874,6 +214919,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -214892,6 +214939,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -217984,6 +218034,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -218002,6 +218054,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -221052,6 +221107,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -221070,6 +221127,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -223272,6 +223332,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -223290,6 +223352,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -227638,6 +227703,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -227656,6 +227723,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -232676,6 +232746,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -232694,6 +232766,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -234894,6 +234969,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -234912,6 +234989,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -239987,6 +240067,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -240005,6 +240087,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -243813,6 +243898,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -243831,6 +243918,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -245808,6 +245898,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -245826,6 +245918,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -247894,6 +247989,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -247912,6 +248009,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -249899,6 +249999,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -249917,6 +250019,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -251828,6 +251933,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -251846,6 +251953,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -255854,6 +255964,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -255872,6 +255984,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -258258,6 +258373,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -258276,6 +258393,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -262286,6 +262406,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -262304,6 +262426,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -264227,6 +264352,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -264245,6 +264372,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -266420,6 +266550,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -266438,6 +266570,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -268682,6 +268817,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -268700,6 +268837,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -272761,6 +272901,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -272779,6 +272921,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -275658,6 +275803,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -275676,6 +275823,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -277499,6 +277649,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -277517,6 +277669,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -279756,6 +279911,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -279774,6 +279931,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -281575,6 +281735,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -281593,6 +281755,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -283826,6 +283991,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -283844,6 +284011,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -286937,6 +287107,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -286955,6 +287127,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -289379,6 +289554,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -289397,6 +289574,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -292960,6 +293140,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -292978,6 +293160,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -294926,6 +295111,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -294944,6 +295131,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -296823,6 +297013,8 @@ paths:
                                       type: string
                                     jdk_selection:
                                       type: string
+                                    jvm_sharing:
+                                      type: string
                                     max_processes:
                                       type: integer
                                       format: int64
@@ -296841,6 +297033,9 @@ paths:
                                     use_xbootclasspath:
                                       type: boolean
                                       nullable: true
+                                    vusers_per_jvm:
+                                      type: integer
+                                      format: int64
                                     work_dir:
                                       type: string
                                 jmeter:
@@ -298455,6 +298650,8 @@ paths:
                                       type: string
                                     jdk_selection:
                                       type: string
+                                    jvm_sharing:
+                                      type: string
                                     max_processes:
                                       type: integer
                                       format: int64
@@ -298473,6 +298670,9 @@ paths:
                                     use_xbootclasspath:
                                       type: boolean
                                       nullable: true
+                                    vusers_per_jvm:
+                                      type: integer
+                                      format: int64
                                     work_dir:
                                       type: string
                                 jmeter:
@@ -300526,6 +300726,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -300544,6 +300746,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -302492,6 +302697,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -302510,6 +302717,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -304389,6 +304599,8 @@ paths:
                                       type: string
                                     jdk_selection:
                                       type: string
+                                    jvm_sharing:
+                                      type: string
                                     max_processes:
                                       type: integer
                                       format: int64
@@ -304407,6 +304619,9 @@ paths:
                                     use_xbootclasspath:
                                       type: boolean
                                       nullable: true
+                                    vusers_per_jvm:
+                                      type: integer
+                                      format: int64
                                     work_dir:
                                       type: string
                                 jmeter:
@@ -306021,6 +306236,8 @@ paths:
                                       type: string
                                     jdk_selection:
                                       type: string
+                                    jvm_sharing:
+                                      type: string
                                     max_processes:
                                       type: integer
                                       format: int64
@@ -306039,6 +306256,9 @@ paths:
                                     use_xbootclasspath:
                                       type: boolean
                                       nullable: true
+                                    vusers_per_jvm:
+                                      type: integer
+                                      format: int64
                                     work_dir:
                                       type: string
                                 jmeter:
@@ -308139,6 +308359,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -308157,6 +308379,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -310055,6 +310280,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -310073,6 +310300,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -312119,6 +312349,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -312137,6 +312369,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -313881,6 +314116,8 @@ paths:
                                 type: string
                               jdk_selection:
                                 type: string
+                              jvm_sharing:
+                                type: string
                               max_processes:
                                 type: integer
                                 format: int64
@@ -313899,6 +314136,9 @@ paths:
                               use_xbootclasspath:
                                 type: boolean
                                 nullable: true
+                              vusers_per_jvm:
+                                type: integer
+                                format: int64
                               work_dir:
                                 type: string
                           jmeter:
@@ -315562,6 +315802,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -315580,6 +315822,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -317637,6 +317882,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -317655,6 +317902,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -319837,6 +320087,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -319855,6 +320107,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -323920,6 +324175,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -323938,6 +324195,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -325869,6 +326129,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -325887,6 +326149,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:
@@ -327779,6 +328044,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -327797,6 +328064,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -329737,6 +330007,8 @@ paths:
                                     type: string
                                   jdk_selection:
                                     type: string
+                                  jvm_sharing:
+                                    type: string
                                   max_processes:
                                     type: integer
                                     format: int64
@@ -329755,6 +330027,9 @@ paths:
                                   use_xbootclasspath:
                                     type: boolean
                                     nullable: true
+                                  vusers_per_jvm:
+                                    type: integer
+                                    format: int64
                                   work_dir:
                                     type: string
                               jmeter:
@@ -331941,6 +332216,8 @@ paths:
                               type: string
                             jdk_selection:
                               type: string
+                            jvm_sharing:
+                              type: string
                             max_processes:
                               type: integer
                               format: int64
@@ -331959,6 +332236,9 @@ paths:
                             use_xbootclasspath:
                               type: boolean
                               nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
                             work_dir:
                               type: string
                         jmeter:

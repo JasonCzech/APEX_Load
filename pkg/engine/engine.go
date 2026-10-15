@@ -67,6 +67,7 @@ type Engine struct {
 	runtimePause       *engineRuntimePause
 	pooledPilot        *javaPooledPilot
 	brokerExecution    *javaBrokerExecution
+	sharedExecution    *javaSharedGroup
 	evidenceSchedule   []VUserLifetime
 	evidenceStarted    func(time.Time)
 	completionObserver func(int, bool)
@@ -127,12 +128,14 @@ type Config struct {
 // RunResult contains final test results after execution completes.
 type RunResult struct {
 	CompletedIterations int64
-	TeardownErrors      int64           // Protocol cleanup failures; never inferred from log output.
-	DroppedResults      int64           // Evidence is incomplete when this is nonzero.
-	Duration            time.Duration   // Actual test duration
-	TotalTransactions   int64           // Total completed transactions across all VUsers
-	TotalErrors         int64           // Total failed transactions
-	FinalSnapshot       MetricsSnapshot // Aggregated metrics at end of run
+	TeardownErrors      int64 // Protocol cleanup failures; never inferred from log output.
+	// JavaVMPlacements reports how a script that asked for shared JVMs ran.
+	JavaVMPlacements  []JavaVMPlacement
+	DroppedResults    int64           // Evidence is incomplete when this is nonzero.
+	Duration          time.Duration   // Actual test duration
+	TotalTransactions int64           // Total completed transactions across all VUsers
+	TotalErrors       int64           // Total failed transactions
+	FinalSnapshot     MetricsSnapshot // Aggregated metrics at end of run
 }
 
 // New creates a new Engine with the given config.
@@ -224,10 +227,15 @@ func New(cfg Config) (*Engine, error) {
 	if resourceErr != nil {
 		return nil, resourceErr
 	}
+	shared, err := newJavaSharedGroup(GroupConfig{Name: cfg.Script.Name, ScenarioID: cfg.Script.ID, Script: cfg.Script}, cfg.VUsers)
+	if err != nil {
+		return nil, err
+	}
 	metrics := NewMetricsCollector(10000)
 	metrics.timingObserver = cfg.TimingObserver
 	metrics.initializationObserver = cfg.InitializationObserver
 	return &Engine{
+		sharedExecution:   shared,
 		liveTableClient:   cfg.LiveTableClient,
 		liveTableClientID: cfg.LiveTableClientID,
 		liveTableBindings: cloneLiveTableBindings(cfg.LiveTableBindings),
@@ -317,6 +325,23 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 		}
 		ctx = lifetime
 	}
+	if e.sharedExecution != nil {
+		defer func() { runErr = errors.Join(runErr, e.sharedExecution.close()) }()
+		if err := e.sharedExecution.prepare(ctx, e.secrets); err != nil {
+			return nil, fmt.Errorf("protocol runtime: %s", scrubSensitiveTextWithConfig(err.Error(), e.redaction))
+		}
+		if e.sharedExecution.active() {
+			lifetime, stop := context.WithCancel(ctx)
+			defer stop()
+			e.mu.Lock()
+			e.cancel = stop
+			e.mu.Unlock()
+			if err := e.sharedExecution.start(lifetime, stop); err != nil {
+				return nil, fmt.Errorf("protocol runtime: %s", scrubSensitiveTextWithConfig(err.Error(), e.redaction))
+			}
+			ctx = lifetime
+		}
+	}
 	var cancel context.CancelFunc
 	if e.terminationMode == dsl.TerminationIterations {
 		ctx, cancel = context.WithCancel(ctx)
@@ -338,12 +363,13 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 	javaCapacityPlan := NewJavaVuserCapacityPlan(e.script)
 	var javaCapacityReservation *javaVuserCapacityReservation
 	var javaLegacyReservation *javaVuserLegacyRunReservation
-	if e.pooledPilot == nil && e.brokerExecution == nil && javaCapacityPlan.RequiresPersistentLifecycle() {
+	staged := e.pooledPilot != nil || e.brokerExecution != nil || e.sharedExecution.active()
+	if !staged && javaCapacityPlan.RequiresPersistentLifecycle() {
 		javaCapacityReservation, err = reserveJavaVuserCapacity(javaCapacityPlan.Demand(e.vusers), e.javaVuserCapacityLimit)
 		if err != nil {
 			return nil, fmt.Errorf("protocol runtime: %s", scrubSensitiveTextWithConfig(err.Error(), e.redaction))
 		}
-	} else if e.pooledPilot == nil && e.brokerExecution == nil && javaVuserScriptUsesLegacyOneShot(e.script) {
+	} else if !staged && javaVuserScriptUsesLegacyOneShot(e.script) {
 		javaLegacyReservation, err = reserveLegacyJavaVuserRun()
 		if err != nil {
 			return nil, fmt.Errorf("protocol runtime: %s", scrubSensitiveTextWithConfig(err.Error(), e.redaction))
@@ -580,6 +606,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 	e.metrics.Stop()
 
 	result := &RunResult{
+		JavaVMPlacements:    e.JavaVMPlacements(),
 		CompletedIterations: e.metrics.CompletedIterations(),
 		TeardownErrors:      teardownErrors.Load(),
 		DroppedResults:      e.metrics.current.droppedResults.Load(),
@@ -603,7 +630,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 // lifecycle scripts pin one JVM per live VUser, so direct launches must reserve
 // the advertised persistent-runner capacity before any VUser starts.
 func (e *Engine) validateJavaVuserRuntime(ctx context.Context, instance protocol.Protocol) error {
-	if e == nil || e.pooledPilot != nil || e.brokerExecution != nil || e.script == nil || !strings.EqualFold(strings.TrimSpace(e.script.Protocol), "java_vuser") {
+	if e == nil || e.pooledPilot != nil || e.brokerExecution != nil || e.sharedExecution.active() || e.script == nil || !strings.EqualFold(strings.TrimSpace(e.script.Protocol), "java_vuser") {
 		return nil
 	}
 	plan := NewJavaVuserCapacityPlan(e.script)

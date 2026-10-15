@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/javarunner"
@@ -81,6 +83,10 @@ type SharedJVMClaim struct {
 	ScriptSHA256 string          `json:"script_sha256"`
 	// VUsersPerJVM may lower the operator's slots per JVM; zero keeps it.
 	VUsersPerJVM int `json:"vusers_per_jvm,omitempty"`
+	// GroupName and ScenarioID are the human labels a dedicated VUser sees as
+	// APEXLOAD_GROUP_NAME/APEXLOAD_SCENARIO_ID. Empty uses the opaque run IDs.
+	GroupName  string `json:"group_name,omitempty"`
+	ScenarioID string `json:"scenario_id,omitempty"`
 }
 
 // SharedJVMCapabilities is the runner's shared-JVM admission envelope. Usage
@@ -143,7 +149,16 @@ func NewSharedJVMPolicy(operator config.JavaVuserOperatorConfig) (*SharedJVMPoli
 }
 
 func validSharedJVMClaim(c *SharedJVMClaim) bool {
-	return c != nil && javarunner.ValidPooledTargetClass(c.TargetClass) && validPooledScriptSHA256(c.ScriptSHA256) && (c.VUsersPerJVM == 0 || c.VUsersPerJVM >= 2 && c.VUsersPerJVM <= javarunner.MaxPooledSlotsPerHost)
+	return c != nil && javarunner.ValidPooledTargetClass(c.TargetClass) && validPooledScriptSHA256(c.ScriptSHA256) && (c.VUsersPerJVM == 0 || c.VUsersPerJVM >= 2 && c.VUsersPerJVM <= javarunner.MaxPooledSlotsPerHost) && validSlotLabel(c.GroupName) && validSlotLabel(c.ScenarioID)
+}
+
+// ValidSharedJVMLabel reports whether a group or scenario label can travel in
+// a claim; callers drop other labels and slots then see the opaque run IDs.
+func ValidSharedJVMLabel(label string) bool { return validSlotLabel(label) }
+
+// validSlotLabel bounds a label copied into each slot's environment.
+func validSlotLabel(label string) bool {
+	return len(label) <= 256 && utf8.ValidString(label) && strings.IndexFunc(label, unicode.IsControl) < 0
 }
 
 // sharedJVMCapabilities reports the envelope, or nil when shared JVMs are off.
@@ -310,6 +325,9 @@ func (s *Server) claimSharedControl(w http.ResponseWriter, r *http.Request, q Po
 		writePooledControlError(w, err)
 		return
 	}
+	// Published before the run's wire identity exists, so no preparation can
+	// observe the opaque fallback labels.
+	run.groupLabel, run.scenarioLabel = q.Shared.GroupName, q.Shared.ScenarioID
 	decision := PooledControlDecision{ScriptSHA256: q.Shared.ScriptSHA256, TargetClass: d.TargetClass, PreparationEnabled: true, CommitEnabled: true, InvocationEnabled: true, Mode: d.Mode, ProfileID: javarunner.SharedJVMProfileID, ResourceProfile: d.ResourceProfile, ConfigurationSHA256: d.ConfigurationSHA256, ContainmentBackend: d.ContainmentBackend, SlotsPerHost: d.SlotsPerHost, HostMemoryBytes: d.HostMemoryBytes, MaxHosts: budget.MaxHosts, MaxVUsers: budget.MaxVUsers, MaxMemoryBytes: budget.MaxMemoryBytes}
 	s.publishPooledControlRun(w, q, run, javarunner.SharedJVMProfileID, decision, warnings)
 }

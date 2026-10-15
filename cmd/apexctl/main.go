@@ -196,6 +196,9 @@ func runTest() {
 			if versions := httpVersionSummaryJSON(result.FinalSnapshot.HTTPVersions); versions != nil {
 				out["http_versions"] = versions
 			}
+			if len(result.JavaVMPlacements) > 0 {
+				out["java_vm"] = result.JavaVMPlacements
+			}
 		} else if apiResult != nil {
 			if apiResult.TestID != "" {
 				out["test_id"] = apiResult.TestID
@@ -245,6 +248,9 @@ func runTest() {
 			fmt.Printf("  TPS:          %.1f\n", snap.TPS)
 		}
 		for _, line := range httpVersionSummaryLines(snap.HTTPVersions) {
+			fmt.Println(line)
+		}
+		for _, line := range javaVMSummaryLines(result.JavaVMPlacements) {
 			fmt.Println(line)
 		}
 	} else if apiResult != nil {
@@ -487,4 +493,23 @@ Examples:
 	fmt.Println(ctlUsage())
 	fmt.Println()
 	fmt.Println(archiveUsage())
+}
+
+// javaVMSummaryLines reports how a script that asked for shared JVMs ran.
+func javaVMSummaryLines(placements []engine.JavaVMPlacement) []string {
+	var lines []string
+	for _, p := range placements {
+		switch {
+		case p.Mode == "shared":
+			lines = append(lines, fmt.Sprintf("  Java VMs:     shared (%d JVMs, up to %d VUsers each)", p.JVMs, p.VUsersPerJVM))
+		case p.Reason != "":
+			lines = append(lines, fmt.Sprintf("  Java VMs:     one per VUser (shared JVMs refused: %s)", p.Reason))
+		default:
+			lines = append(lines, "  Java VMs:     one per VUser")
+		}
+		for _, warning := range p.Warnings {
+			lines = append(lines, "    - "+warning)
+		}
+	}
+	return lines
 }

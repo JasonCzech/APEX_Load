@@ -41,6 +41,9 @@ type PooledRun struct {
 	controlMu                               sync.Mutex
 	controlReplies                          map[string]pooledControlReply
 	preparations                            map[string]*pooledPreparation
+	// groupLabel/scenarioLabel replace the opaque IDs in slot environments
+	// when a shared claim supplied the dedicated-mode labels.
+	groupLabel, scenarioLabel string
 }
 
 // OpenPooledRun accepts only a frozen, operator-qualified selection. No user

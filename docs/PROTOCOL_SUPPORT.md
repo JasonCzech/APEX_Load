@@ -651,6 +651,28 @@ Attached JARs are supported on a local runner only. A distributed run that carri
 
 With `dedicated_class_loader`, the system classpath contains only the harness. The harness creates a child `URLClassLoader` for the effective script-plus-shared classpath, uses it for class loading and the complete requested lifecycle, and sets and restores the thread context class loader (including the startup worker). Local and sidecar execution create one JVM, `Actions` instance, and loader for each VUser session, retain them across `init`, repeated `action` calls, and `end`, and close them during teardown. Java fields, static state inside that isolated loader, and `lr.save_*` parameters therefore survive between lifecycle calls for the same VUser. This is class-loading isolation inside the runner; it is not a security sandbox.
 
+### Shared JVMs
+
+By default each Java VUser gets its own JVM, so a runner holds at most
+`APEXLOAD_JAVA_VUSER_MAX_PROCESSES` VUsers (25 by default). Set
+`config.java_vuser.jvm_sharing` to `shared` to run many VUsers of one group in
+each JVM instead; `config.java_vuser.vusers_per_jvm` can lower the runner's
+VUsers per JVM. Each VUser still gets its own `Actions` instance, its own copy
+of the classes in the jar that holds the target class, its own `lr` context and
+its own lifecycle thread; libraries in the group's other jars load once per JVM.
+
+Shared JVMs run only on a sidecar runner whose operator enabled them
+(`APEXLOAD_JAVA_VUSER_SHARED_JVM=true`, Linux), for scripts with exactly one
+`init`, `action` and `end` call on one target class, string parameters, a closed
+workload and sequential run logic. The runner also requires Java 17 or 21, a
+jar-only classpath and a clean native-code scan. When any of these does not
+hold, the group runs with one JVM per VUser and the run reports the reason
+(`apexctl run` prints it next to the results). An unexplained runner error, or
+a failure after the runner accepted the group, stops the run instead of
+changing modes.
+All of a group's VUsers are staged before the run starts, and a VUser's slot is
+never reused, so a schedule cannot grow a shared group past its staged VUsers.
+
 ### Backends and preflight
 
 `APEXLOAD_JAVA_VUSER_RUNNER_MODE` selects `local` (the backward-compatible default) or `sidecar`.
