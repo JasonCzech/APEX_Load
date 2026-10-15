@@ -675,6 +675,14 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	baseCheckRedirect := client.CheckRedirect
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if !followableRedirectScheme(req.URL) {
+			// A redirect to an app's private URI scheme, such as a native OAuth
+			// callback (RFC 8252: com.example.app:/oauth/done?code=...), is handed
+			// to the app by a real client, never fetched. The 3xx is the final
+			// response, not a hop, so its Location stays available to extractors
+			// instead of failing on an unsupported scheme.
+			return http.ErrUseLastResponse
+		}
 		observeVerificationRedirect(ctx, req.Response, false)
 		responseSet.addHop(req.Response)
 		traceMu.Lock()

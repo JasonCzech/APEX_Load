@@ -16,6 +16,7 @@ const (
 	RuleJSONNumericID                = "json.numeric_id"
 	RuleJSONDynamicID                = "json.dynamic_id"
 	RuleHTMLHiddenToken              = "html.hidden_token"
+	RuleHTMLAppSchemeOAuthCode       = "html.app_scheme_oauth_code"
 	RuleASPNetState                  = "html.aspnet_state"
 	RuleXMLSOAPToken                 = "xml.soap_token"
 	RuleXMLDynamicID                 = "xml.dynamic_id"
@@ -73,6 +74,7 @@ type RuleInfo struct {
 // stay in sync with behavior.
 func RuleCatalog() []RuleInfo {
 	return []RuleInfo{
+		{RuleHTMLAppSchemeOAuthCode, FamilyHTML, "App-scheme OAuth code", "Authorization code a sign-in page sends to a native or hybrid app's private-scheme OAuth callback (RFC 8252), reused by the token request.", 0.95},
 		{RuleSalesforceAuraToken, FamilyForm, "Salesforce Aura token", "aura.token values from Lightning bootstrap/form traffic that are echoed in later /aura requests.", 0.95},
 		{RuleSalesforceAuraContextFWUID, FamilyForm, "Salesforce Aura fwuid", "fwuid values inside aura.context that bind a Lightning component/app bundle version.", 0.94},
 		{RuleSalesforceViewState, FamilyForm, "Salesforce Visualforce ViewState", "com.salesforce.visualforce.ViewState and related ViewStateMAC/CSRF hidden fields.", 0.94},

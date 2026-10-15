@@ -293,6 +293,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			correlations = nil
 			warnings = append(warnings, fmt.Sprintf("correlation analysis was not completed and no automatic correlation rewrites were applied: %v", err))
 		}
+		correlations = collapseSameSourceDuplicateCorrelations(exchanges, correlations)
 		if req.Options.HighConfidenceOnly {
 			for index := range correlations {
 				correlations[index].reviewOnly = !correlate.HighConfidence(correlate.Correlation{Confidence: correlations[index].Confidence})

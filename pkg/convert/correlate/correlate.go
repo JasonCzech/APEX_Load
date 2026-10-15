@@ -524,6 +524,9 @@ func candidatesCheckedWithTruncation(responseBody string, responseHeaders map[st
 	if appendFamily(salesforceCandidates(responseBody, responseHeaders), false) {
 		return finish()
 	}
+	if appendFamily(appSchemeOAuthCodeCandidates(responseBody, responseHeaders), false) {
+		return finish()
+	}
 	if appendFamily(formCandidates(responseBody), false) {
 		return finish()
 	}
@@ -1939,6 +1942,128 @@ func htmlInputCorrelationRule(field string) (string, float64, string) {
 		return RuleSalesforceViewState, 0.94, "Salesforce Visualforce ViewState hidden field"
 	}
 	return RuleHTMLHiddenToken, 0.9, "Hidden form field " + field + " (anti-CSRF/state token)"
+}
+
+// appSchemeCallbackPattern finds a URL literal with a query string, its scheme
+// starting at a non-scheme character. That is the shape of the RFC 8252
+// callback a sign-in page sends a native or hybrid app to, such as
+// location.replace('com.example.app:/oauth/done?display=touch&code=...'). A
+// JSON or script string may escape its slashes (\/) and ampersands (&).
+var appSchemeCallbackPattern = regexp.MustCompile(`(?:^|[^A-Za-z0-9+.\-])([A-Za-z][A-Za-z0-9+.\-]{0,62}):((?:/|\\/){0,3}(?:[^\s'"<>\\?#]|\\/)*)\?((?:[^\s'"<>\\#]|\\/|\\u0026)*)`)
+
+// hostPortPath matches the start of "host:port/..." text, which the pattern
+// would otherwise read as a scheme named after the host.
+var hostPortPath = regexp.MustCompile(`^[0-9]+(?:/|$)`)
+
+// maxAppSchemeCallbackMatches bounds the URL literals one response is scanned
+// for, since script-heavy pages contain many "word:...?..." spans.
+const maxAppSchemeCallbackMatches = 256
+
+// browserURLSchemes are fetched or handled by the browser itself. A code in one
+// of them is not handed to an app through a private-scheme callback.
+var browserURLSchemes = map[string]bool{
+	"about": true, "blob": true, "data": true, "file": true, "ftp": true, "http": true, "https": true,
+	"javascript": true, "mailto": true, "sms": true, "tel": true, "urn": true, "ws": true, "wss": true,
+}
+
+var jsonEscapedSlash = strings.NewReplacer(`\/`, `/`)
+
+// appSchemeOAuthCodeCandidates finds the authorization code a sign-in page
+// hands to a native or hybrid app through its private-scheme OAuth callback
+// (RFC 8252). The Salesforce Mobile SDK's approval page, for example, answers
+// with a 200 page whose script navigates to
+// testsfdc:///mobilesdk/detect/oauth/done?display=touch&code=..., and the app
+// then sends that code to the token endpoint. Like a Location query parameter,
+// the extractor captures the callback's wire spelling and decodes it. Script
+// and stylesheet bundles are skipped: they carry no callback to follow, and
+// they are the largest bodies in a recording.
+func appSchemeOAuthCodeCandidates(body string, headers map[string]string) []Candidate {
+	if !strings.Contains(body, "code=") || scriptOrStylesheetResponse(headers) {
+		return nil
+	}
+	candidates := make([]Candidate, 0)
+	ordinals := make(map[string]int)
+	emitted := make(map[string]bool)
+	for _, match := range appSchemeCallbackPattern.FindAllStringSubmatch(body, maxAppSchemeCallbackMatches) {
+		if remainingCandidateMatchLimit(candidates) == 0 {
+			return candidates
+		}
+		scheme := strings.ToLower(match[1])
+		if browserURLSchemes[scheme] || hostPortPath.MatchString(jsonEscapedSlash.Replace(match[2])) {
+			continue
+		}
+		wire, ok := appSchemeCallbackCode(strings.ReplaceAll(match[3], `\u0026`, "&"))
+		if !ok {
+			continue
+		}
+		expression := `(?:^|[^A-Za-z0-9+.\-])` + regexp.QuoteMeta(match[1]+":"+match[2]) +
+			`\?(?:(?:[^\s'"<>\\#]|\\/|\\u0026)*?(?:&(?:amp;)?|\\u0026))?code=([^&\s'"<>\\#]+)`
+		// Count every code-bearing occurrence, as the extractor does, before
+		// skipping one, so a later code keeps the ordinal that replay resolves.
+		ordinals[expression]++
+		value, err := url.QueryUnescape(wire)
+		if err != nil || len(value) < 8 {
+			continue
+		}
+		// A page often repeats the same navigation (a replace() call and an
+		// href fallback); the first occurrence already extracts that code.
+		if emitted[expression+"\x00"+wire] {
+			continue
+		}
+		emitted[expression+"\x00"+wire] = true
+		extractType, extractorExpression, replayable := regexExtractorForMatch("body", expression, ordinals[expression])
+		if !replayable {
+			continue
+		}
+		candidates = appendCandidatesBounded(candidates, Candidate{
+			Name:           "corr_oauth_code",
+			Value:          value,
+			Source:         "body",
+			ExtractType:    extractType,
+			Expression:     extractorExpression,
+			Convert:        "url_decode",
+			RuleID:         RuleHTMLAppSchemeOAuthCode,
+			BaseConfidence: 0.95,
+			Reason:         "OAuth authorization code the page sends to the app's " + scheme + ": callback",
+		})
+	}
+	return candidates
+}
+
+func scriptOrStylesheetResponse(headers map[string]string) bool {
+	for name, value := range headers {
+		if !strings.EqualFold(strings.TrimSpace(name), "Content-Type") {
+			continue
+		}
+		lower := strings.ToLower(value)
+		if strings.Contains(lower, "javascript") || strings.Contains(lower, "ecmascript") || strings.Contains(lower, "text/css") {
+			return true
+		}
+	}
+	return false
+}
+
+// appSchemeCallbackCode returns the first code parameter of a callback query
+// whose separators are plain "&" (the caller turns a JSON "\u0026" into one),
+// accepting the &amp; separator of an HTML-escaped URL. It mirrors the
+// extractor expression: the first code= after the "?" or after a separator,
+// up to the first backslash, so the value always equals what replay extracts.
+func appSchemeCallbackCode(query string) (string, bool) {
+	for index, field := range strings.Split(query, "&") {
+		key, value, found := strings.Cut(field, "=")
+		if index > 0 {
+			key = strings.TrimPrefix(key, "amp;")
+		}
+		if key != "code" || !found {
+			continue
+		}
+		value, _, _ = strings.Cut(value, "\\")
+		if value != "" {
+			return value, true
+		}
+		return "", false
+	}
+	return "", false
 }
 
 // aspNetHiddenCandidates handles ASP.NET WebForms state fields, which are the
