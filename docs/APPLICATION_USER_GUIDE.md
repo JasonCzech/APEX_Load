@@ -688,7 +688,9 @@ script creates no new scenario: the scenarios that use those scripts run the new
 After a save, every importer offers **Debug** on the first saved script
 and **Create a scenario** from the saved scripts (a project scenario draft with a group
 per script, named after the source), or **Open scenario** when the import already made
-one, as JMeter does from its thread groups.
+one, as JMeter does from its thread groups. A JMeter plan whose scripts still need review
+before they can run cannot save that scenario yet: the review offers **Save the scripts
+without the scenario**, and you create the scenario from them once they are resolved.
 
 | Source | Category | Typical outcome |
 | --- | --- | --- |

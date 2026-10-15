@@ -1072,6 +1072,10 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 	// The scenario resolved its groups by the source names; an updated
 	// script then keeps its current name.
 	keepUpdatedScriptNames(preparedScripts, updates)
+	if blocked := jmeterScenarioBlockedScripts(preparedScripts, scenarioRequest); len(blocked) > 0 {
+		writeJMeterScenarioScriptsBlocked(w, blocked)
+		return
+	}
 
 	// A stale pending receipt can represent a crash after all assets committed
 	// but before the receipt was finalized. Heal that state without entering a
@@ -1360,7 +1364,7 @@ func buildJMeterScenarioRequestNamed(
 			}
 		}
 		if request.Duration == "" {
-			return nil, fmt.Errorf("JMeter messaging scenario requires an explicit schedule duration")
+			return nil, fmt.Errorf("JMeter messaging scenario requires an explicit schedule duration; set a Duration under Runtime settings (Imported scenario settings) and apply it, or save the scripts without the scenario draft")
 		}
 	}
 	if request.Duration == "" && request.TerminationMode != dsl.TerminationIterations {
@@ -1450,6 +1454,10 @@ func (s *Server) resolveJMeterBatchDestination(
 			return "", nil, http.StatusBadRequest, errors.New("JMeter scripts must use one destination folder")
 		}
 	}
+	// A project that does not exist is named before its folder is checked.
+	if status, err := s.importProjectStatus(projectID); err != nil {
+		return "", nil, status, err
+	}
 	if status, err := s.applyProtectedImportFolderOverride(&scripts[0], &folderID); err != nil {
 		return "", nil, status, err
 	}
@@ -1480,4 +1488,64 @@ func completeJMeterImportDraftClaims(s *Server, claims []*importDraftAttestation
 		}
 		claims[index] = nil
 	}
+}
+
+// importScenarioScriptsBlockedCode is the error code of a JMeter save whose
+// scenario draft uses scripts that need review before they can run.
+const importScenarioScriptsBlockedCode = "import_scenario_scripts_blocked"
+
+// jmeterScenarioBlockedScripts names the scripts a scenario draft uses that
+// its launch review gate would refuse (a messaging plan's draft is exempt, as
+// when the scenario is stored), so the save can say so before writing.
+func jmeterScenarioBlockedScripts(scripts []*dsl.Script, request *CreateScenarioRequest) []string {
+	if request == nil {
+		return nil
+	}
+	byID := make(map[string]*dsl.Script, len(scripts))
+	for _, script := range scripts {
+		if script != nil {
+			byID[strings.TrimSpace(script.ID)] = script
+		}
+	}
+	var blocked []string
+	seen := make(map[string]bool)
+	for _, group := range request.Groups {
+		script := byID[strings.TrimSpace(group.ScriptID)]
+		if script == nil || seen[script.ID] {
+			continue
+		}
+		seen[script.ID] = true
+		if script.Config.JMeter != nil && script.Config.JMeter.Profile == dsl.JMeterMessagingProfile {
+			continue
+		}
+		if len(launchReviewGateIssues(script)) > 0 {
+			blocked = append(blocked, script.Name)
+		}
+	}
+	return blocked
+}
+
+// writeJMeterScenarioScriptsBlocked answers a save whose scenario draft uses
+// scripts that still need review: the scripts can be saved without it.
+func writeJMeterScenarioScriptsBlocked(w http.ResponseWriter, blocked []string) {
+	named := make([]string, 0, 5)
+	for index, name := range blocked {
+		if index == 5 {
+			named = append(named, fmt.Sprintf("%d more", len(blocked)-5))
+			break
+		}
+		named = append(named, fmt.Sprintf("%q", name))
+	}
+	subject := "a script that still needs review before it can run"
+	if len(blocked) > 1 {
+		subject = fmt.Sprintf("%d scripts that still need review before they can run", len(blocked))
+	}
+	writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+		"error": fmt.Sprintf(
+			"the scenario draft uses %s (%s); save the scripts without the scenario draft, resolve them in the editor, then create the scenario from the saved scripts",
+			subject, strings.Join(named, ", "),
+		),
+		"code":    importScenarioScriptsBlockedCode,
+		"scripts": blocked,
+	})
 }

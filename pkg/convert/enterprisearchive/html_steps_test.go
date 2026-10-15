@@ -26,3 +26,16 @@ func TestStepModeAndResourceAttributes(t *testing.T) {
 		}
 	}
 }
+
+// A form submitted with no fields is an empty list, which validates and
+// saves, rather than null.
+func TestSourceHTMLStepWritesAnEmptyFormFieldList(t *testing.T) {
+	step, reason := sourceHTMLStep(ParsedFunction{Name: "web_submit_form", Args: map[string]string{}})
+	if reason != "" {
+		t.Fatalf("form step refused: %s", reason)
+	}
+	fields, ok := step["fields"].([]any)
+	if !ok || fields == nil || len(fields) != 0 {
+		t.Fatalf("fields = %#v, want an empty list", step["fields"])
+	}
+}

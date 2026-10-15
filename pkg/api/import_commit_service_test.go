@@ -1941,7 +1941,7 @@ func TestImportCommitReplaceRejectsInvalidMergedScriptBeforeResponseOrPersistenc
 			if resp.Code != http.StatusBadRequest {
 				t.Fatalf("invalid merged status = %d, want 400 body=%s", resp.Code, resp.Body.String())
 			}
-			if !strings.Contains(resp.Body.String(), "failed to finalize imported script") {
+			if !strings.Contains(resp.Body.String(), "the script is not valid") {
 				t.Fatalf("invalid merged error did not come from shared finalizer: %s", resp.Body.String())
 			}
 			unchanged, ok := server.runner.GetScript(stored.ID)

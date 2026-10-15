@@ -205,6 +205,10 @@ func finalizeImportCommitScript(
 ) (*dsl.Script, *ReplayPreflight, error) {
 	finalized, err := requestimport.FinalizeScript(script, nil, requestimport.FinalizeOptions{})
 	if err != nil {
+		var invalid *requestimport.ScriptValidationError
+		if errors.As(err, &invalid) {
+			return nil, nil, fmt.Errorf("the script is not valid: %s; correct it in the review and save again", strings.Join(invalid.Issues, "; "))
+		}
 		return nil, nil, fmt.Errorf("failed to finalize imported script: %w", err)
 	}
 	script = finalized.Script
@@ -698,6 +702,9 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 				spec.sourceProfile,
 				draftAttestationClaim.Token,
 			)
+		}
+		if !s.requireImportProject(w, script.ProjectID) {
+			return
 		}
 		script, preflight, err := finalizeImportCommitScript(
 			script,

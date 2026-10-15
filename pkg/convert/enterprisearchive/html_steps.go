@@ -85,6 +85,10 @@ func sourceHTMLStep(fn ParsedFunction) (map[string]any, string) {
 			return nil, err
 		}
 		step["kind"] = "form"
+		if fields == nil {
+			// A form submitted with no fields is an empty list, not null.
+			fields = []any{}
+		}
 		step["fields"] = fields
 		if len(hidden) > 0 {
 			step["hidden"] = hidden

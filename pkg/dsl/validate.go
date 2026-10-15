@@ -998,7 +998,8 @@ func validateHTMLStepIssues(label, protocol string, raw any) []string {
 		}
 	case "form":
 		for _, key := range []string{"fields", "hidden", "submit"} {
-			if value, present := step[key]; present {
+			if value, present := step[key]; present && value != nil {
+				// null (an import that wrote no items) is an empty list.
 				items, ok := value.([]any)
 				if !ok {
 					issues = append(issues, fmt.Sprintf("%s: params.html_step %s must be a list of {name, value}", label, key))

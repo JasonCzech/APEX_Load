@@ -3,6 +3,8 @@ package api
 // handlers_import_shared — split from handlers_scripts.go (same package, behavior-preserving).
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -11,6 +13,53 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+// requireImportProject answers 404 when an import save names a project that
+// does not exist, before anything is reserved or written, so the operator
+// learns to pick an existing project instead of meeting a server error.
+func (s *Server) requireImportProject(w http.ResponseWriter, projectID string) bool {
+	if status, err := s.importProjectStatus(projectID); err != nil {
+		writeError(w, status, err.Error())
+		return false
+	}
+	return true
+}
+
+// importProjectStatus is requireImportProject's check: 404 with what to do
+// when projectID does not exist, 500 when it cannot be read.
+func (s *Server) importProjectStatus(projectID string) (int, error) {
+	if s == nil || s.store == nil {
+		return 0, nil
+	}
+	projectID = normalizeProjectID(projectID)
+	project, err := s.store.GetProject(projectID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return http.StatusInternalServerError, fmt.Errorf("failed to load the import project: %w", err)
+	}
+	if project == nil {
+		return http.StatusNotFound, fmt.Errorf("project %q not found; choose an existing project to import into", projectID)
+	}
+	return 0, nil
+}
+
+// bindImportDrafts returns copies of a batch save's scripts bound to
+// projectID (400 for one bound elsewhere), after checking that project exists,
+// so a missing project is named before any folder is checked or anything is
+// reserved.
+func (s *Server) bindImportDrafts(w http.ResponseWriter, scripts []dsl.Script, projectID string) ([]dsl.Script, bool) {
+	drafts := make([]dsl.Script, len(scripts))
+	for index := range scripts {
+		drafts[index] = scripts[index]
+		if err := bindDraftScriptProject(&drafts[index], projectID); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d: %v", index+1, err))
+			return nil, false
+		}
+	}
+	if !s.requireImportProject(w, projectID) {
+		return nil, false
+	}
+	return drafts, true
+}
 
 func ensureScriptImportPreserved(script *dsl.Script, source string) map[string]any {
 	if script.Metadata == nil {

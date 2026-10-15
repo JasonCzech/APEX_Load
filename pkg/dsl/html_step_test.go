@@ -9,6 +9,10 @@ func TestHTMLStepValidation(t *testing.T) {
 	if issues := ValidateScriptIssues(script("http", map[string]any{"kind": "link", "text": "Next", "ordinal": float64(2)})); len(issues) != 0 {
 		t.Fatalf("a link step needs no target: %v", issues)
 	}
+	// An import that wrote a form with no fields stored null: an empty list.
+	if issues := ValidateScriptIssues(script("http", map[string]any{"kind": "form", "fields": nil, "hidden": nil})); len(issues) != 0 {
+		t.Fatalf("a form with null field lists: %v", issues)
+	}
 	for _, tt := range []struct {
 		step any
 		want string

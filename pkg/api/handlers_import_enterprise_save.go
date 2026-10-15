@@ -66,14 +66,14 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 	if authorized, scoped := authorizedProjectFromRequest(r); scoped {
 		projectID = normalizeProjectID(authorized)
 	}
+	boundDrafts, ok := s.bindImportDrafts(w, req.Scripts, projectID)
+	if !ok {
+		return
+	}
 	requestScripts := make([]*dsl.Script, 0, len(req.Scripts))
 	requestedFolderIDs := make([]*string, len(req.Scripts))
-	for index := range req.Scripts {
-		draft := req.Scripts[index]
-		if err := bindDraftScriptProject(&draft, projectID); err != nil {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d: %v", index+1, err))
-			return
-		}
+	for index := range boundDrafts {
+		draft := boundDrafts[index]
 		if status, err := s.applyProtectedImportFolderOverride(&draft, req.FolderID); err != nil {
 			writeError(w, status, err.Error())
 			return

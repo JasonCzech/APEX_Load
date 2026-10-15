@@ -11,6 +11,7 @@ import { importScenarioName, useImportScenario } from './useImportScenario'
 import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
+import { ApiError } from '../hooks/apiClient'
 import { summarizeImportExtractors, summarizeSupportMatrix, summarizeSupportMatrixEntries } from './jmeterImportUtils'
 import { type JMeterImportResult as ImportResult, type JMeterSupportMatrixEntry, type JMeterSupportMatrixResponse, type SecretBindingSelection, type SharedValues, type SupportMatrix } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
@@ -89,6 +90,10 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
     file: File | null
   } | null>(null)
   const [error, setError] = useState('')
+  // The result whose scenario draft the save refused because its scripts need
+  // review first, and where that save was headed; it offers to save the
+  // scripts without the scenario.
+  const [scenarioRefused, setScenarioRefused] = useState<{ result: ImportResult; destination: ImportSaveDestination } | null>(null)
   const [notice, setNotice] = useState('')
   const [supportMatrix, setSupportMatrix] = useState<SupportMatrix | null>(null)
   const [supportEntries, setSupportEntries] = useState<JMeterSupportMatrixEntry[]>([])
@@ -428,7 +433,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
     setNotice('Collection values updated every generated script. Review the changes before saving.')
   }
 
-  const handleSaveConverted = async (destination: ImportSaveDestination = 'stay') => {
+  const handleSaveConverted = async (destination: ImportSaveDestination = 'stay', withoutScenario = false) => {
     if (savedResult) return
     const publish = (result: ImportedSaveResult) => publishSaved(result, destination)
     const resultToSave = latestResultRef.current
@@ -455,9 +460,10 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
       // When every script updates one imported before, the scenarios using
       // those scripts run the new versions; another scenario would duplicate.
       const scenarioKept = Boolean(resultToSave.scenario_draft && updateTargets?.every(Boolean))
+      const scenarioLeftOut = withoutScenario && Boolean(resultToSave.scenario_draft) && !scenarioKept
       const response = await api.saveJMeterImport({
         scripts,
-        ...(scenarioKept ? {} : { scenario_draft: resultToSave.scenario_draft }),
+        ...(scenarioKept || withoutScenario ? {} : { scenario_draft: resultToSave.scenario_draft }),
         ...(updateTargets ? { update_targets: updateTargets } : {}),
       })
       const savedScripts = withFallbackPersistedScripts(response.scripts, resultToSave.scripts)
@@ -470,8 +476,11 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
         })
       }
       if (!requestIsCurrent()) return
-      setNotice(`Saved ${response.count || resultToSave.scripts.length} script${resultToSave.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.${scenarioKept ? ' No new scenario was created: every script updated one imported before.' : ''}`)
+      setNotice(`Saved ${response.count || resultToSave.scripts.length} script${resultToSave.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.${scenarioKept ? ' No new scenario was created: every script updated one imported before.' : ''}${scenarioLeftOut ? ' The scenario draft was not saved: create the scenario from these scripts once they are resolved.' : ''}`)
     } catch (error: unknown) {
+      if (requestIsCurrent() && error instanceof ApiError && error.code === 'import_scenario_scripts_blocked') {
+        setScenarioRefused({ result: resultToSave, destination })
+      }
       if (requestIsCurrent()) setError(getErrorMessage(error, 'Failed to save converted scripts'))
     } finally {
       if (saveInFlightRef.current === saveScope) {
@@ -688,6 +697,13 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
 
       </details>
       {error && <div className="lr-error" role="alert">{error}</div>}
+      {result && scenarioRefused?.result === result && !savedResult && (
+        <div className="lr-error-actions">
+          <button type="button" className="btn btn-secondary" disabled={saving} onClick={() => void handleSaveConverted(scenarioRefused.destination, true)}>
+            Save the scripts without the scenario
+          </button>
+        </div>
+      )}
       {notice && <div className="settings-notice">{notice}</div>}
 
       {coverageSections.length > 0 ? (

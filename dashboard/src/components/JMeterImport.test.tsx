@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import JMeterImport from './JMeterImport'
+import { ApiError } from '../hooks/apiClient'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -1031,6 +1032,50 @@ describe('JMeterImport', () => {
     })))
     expect(request).not.toHaveProperty('scenario_draft')
     expect(container.textContent).toContain('No new scenario was created: every script updated one imported before.')
+  })
+
+  it('offers to save the scripts without a scenario draft the save refused', async () => {
+    const base = await apiMock.validateJMeterImport.getMockImplementation()!()
+    apiMock.validateJMeterImport.mockResolvedValueOnce({
+      ...base,
+      scenario_draft: { name: 'Checkout plan', duration: '1m', scenario_mode: 'vuser_driven', groups: [{ name: '', script_name: base.scripts[0].name, vusers: 1 }] },
+    })
+    apiMock.saveJMeterImport
+      .mockRejectedValueOnce(new ApiError('the scenario draft uses a script that still needs review before it can run', 422, {
+        error: 'the scenario draft uses a script that still needs review before it can run',
+        code: 'import_scenario_scripts_blocked',
+      }))
+      .mockResolvedValueOnce({ count: base.scripts.length, scripts: [] })
+
+    await act(async () => {
+      root.render(<JMeterImport projectId="project-1" />)
+    })
+    await flushPromises()
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['<jmeterTestPlan />'], 'extractors.jmx', { type: 'application/xml' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    await act(async () => {
+      Array.from(container.querySelectorAll('button')).find(button => /^Save \d+ drafts?/.test(button.textContent || ''))
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.saveJMeterImport.mock.calls[0][0]).toHaveProperty('scenario_draft')
+
+    const withoutScenario = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save the scripts without the scenario')
+    expect(withoutScenario).toBeDefined()
+    await act(async () => withoutScenario?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+
+    expect(apiMock.saveJMeterImport).toHaveBeenCalledTimes(2)
+    expect(apiMock.saveJMeterImport.mock.calls[1][0]).not.toHaveProperty('scenario_draft')
+    expect(container.textContent).toContain('The scenario draft was not saved: create the scenario from these scripts once they are resolved.')
   })
 
   it('adds the active project and selected destination folder when saving reviewed scripts', async () => {
