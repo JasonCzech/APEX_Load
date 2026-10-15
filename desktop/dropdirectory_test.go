@@ -43,9 +43,9 @@ func decodeDroppedDirectory(t *testing.T, raw string) map[string]string {
 // named from the folder down, without bookkeeping folders or links out.
 func TestReadDroppedDirectoryReturnsTheFolderLikeAFolderPick(t *testing.T) {
 	parent := t.TempDir()
-	root := filepath.Join(parent, "CTA Collection")
+	root := filepath.Join(parent, "Orders Collection")
 	writeDropFile(t, filepath.Join(root, "opencollection.yml"), "opencollection: 1.0.0\n")
-	writeDropFile(t, filepath.Join(root, "CTA", "Inquire.yml"), "info: {name: Inquire}\n")
+	writeDropFile(t, filepath.Join(root, "orders", "get-order.yml"), "info: {name: Get order}\n")
 	writeDropFile(t, filepath.Join(root, ".gitignore"), "*.log\n")
 	writeDropFile(t, filepath.Join(root, ".git", "config"), "[core]\n")
 	writeDropFile(t, filepath.Join(parent, "outside.txt"), "not dropped\n")
@@ -65,12 +65,12 @@ func TestReadDroppedDirectoryReturnsTheFolderLikeAFolderPick(t *testing.T) {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
-	want := []string{"CTA Collection/.gitignore", "CTA Collection/CTA/Inquire.yml", "CTA Collection/opencollection.yml"}
+	want := []string{"Orders Collection/.gitignore", "Orders Collection/opencollection.yml", "Orders Collection/orders/get-order.yml"}
 	if strings.Join(paths, ",") != strings.Join(want, ",") {
 		t.Fatalf("paths = %v, want %v", paths, want)
 	}
-	if files["CTA Collection/CTA/Inquire.yml"] != "info: {name: Inquire}\n" {
-		t.Fatalf("content = %q", files["CTA Collection/CTA/Inquire.yml"])
+	if files["Orders Collection/orders/get-order.yml"] != "info: {name: Get order}\n" {
+		t.Fatalf("content = %q", files["Orders Collection/orders/get-order.yml"])
 	}
 }
 

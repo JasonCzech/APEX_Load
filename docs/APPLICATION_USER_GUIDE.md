@@ -119,7 +119,8 @@ Global keys:
   searches pages and actions. It works even while you are typing in a field.
 - `?` opens the shortcut help panel, which also lists the shortcuts that only apply to
   the page you are on.
-- `Cmd` + `[` or `Cmd` + `←` (macOS), or `Alt` + `←`, goes back; `/` focuses the current page's search or filter box.
+- `Cmd` + `[` or `Cmd` + `←` (macOS), or `Alt` + `←`, goes back (`Backspace` no longer does, so a stray press
+  outside a field keeps your place); `/` focuses the current page's search or filter box.
 - `Cmd/Ctrl` + `=` / `-` / `0` zoom the interface in, out, and back to normal. The
   command palette offers the same three zoom commands.
 

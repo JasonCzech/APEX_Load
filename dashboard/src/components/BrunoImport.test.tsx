@@ -2637,8 +2637,8 @@ describe('BrunoImport in the desktop app', () => {
     apiMock.listFolders.mockResolvedValue({ folders: [], count: 0 })
     ;(window as DesktopWindow).go = { main: { App: {
       ReadDroppedDirectory: vi.fn(async () => JSON.stringify({ files: [
-        { path: 'CTA Collection/opencollection.yml', base64: btoa('opencollection: 1.0.0') },
-        { path: 'CTA Collection/CTA/Inquire.yml', base64: btoa('info: {}') },
+        { path: 'Orders Collection/opencollection.yml', base64: btoa('opencollection: 1.0.0') },
+        { path: 'Orders Collection/orders/get-order.yml', base64: btoa('info: {}') },
       ] })),
     } } }
     ;(window as DesktopWindow).runtime = { OnFileDrop: callback => { drop = callback } }
@@ -2666,10 +2666,10 @@ describe('BrunoImport in the desktop app', () => {
     ;(document as unknown as { elementFromPoint: () => Element }).elementFromPoint = () => heading
     expect(drop).toBeTypeOf('function')
     await act(async () => {
-      drop?.(10, 10, ['/Users/me/CTA Collection'])
+      drop?.(10, 10, ['/Users/me/Orders Collection'])
     })
     await vi.waitFor(() => expect(container.querySelector('.bruno-stat')?.textContent).toContain('2 files'))
-    expect(container.textContent).toContain('CTA Collection/CTA/Inquire.yml')
+    expect(container.textContent).toContain('Orders Collection/orders/get-order.yml')
   })
 
   // A slow drop that finishes after a later one does not replace it.

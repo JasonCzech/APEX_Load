@@ -178,11 +178,11 @@ describe("filesFromDroppedPaths", () => {
 describe("filesFromDroppedEntries", () => {
   it("reads a dropped folder like a folder pick and skips items the shell did not grant", async () => {
     const readDirectory = vi.fn(async (path: string) => {
-      if (path === "/Users/me/CTA Collection") {
+      if (path === "/Users/me/Orders Collection") {
         return JSON.stringify({
           files: [
-            { path: "CTA Collection/opencollection.yml", base64: btoa("opencollection: 1.0.0") },
-            { path: "CTA Collection/CTA/Inquire.yml", base64: btoa("info: {}") },
+            { path: "Orders Collection/opencollection.yml", base64: btoa("opencollection: 1.0.0") },
+            { path: "Orders Collection/orders/get-order.yml", base64: btoa("info: {}") },
           ],
         });
       }
@@ -192,14 +192,14 @@ describe("filesFromDroppedEntries", () => {
     setBridge({ ReadDroppedDirectory: readDirectory, ReadDroppedFileBase64: readFile });
 
     const files = await filesFromDroppedEntries([
-      "/Users/me/CTA Collection",
+      "/Users/me/Orders Collection",
       "/Users/me/request.bru",
       "/Users/me/notes.docx",
     ]);
 
     expect(files.map((file) => file.webkitRelativePath || file.name)).toEqual([
-      "CTA Collection/opencollection.yml",
-      "CTA Collection/CTA/Inquire.yml",
+      "Orders Collection/opencollection.yml",
+      "Orders Collection/orders/get-order.yml",
       "request.bru",
     ]);
     expect(await files[1].text()).toBe("info: {}");
