@@ -181,6 +181,15 @@ p50 / p95 / p99 2.0 / 6.2 / 14 ms, 3.1 GB of JVM memory (4.2 GB for the whole
 container) and 2.7 cores. One JVM per VUser at this fixture's 150–190 MB each
 would need several hundred gigabytes.
 
+The bench binary's `-script <file>` runs an APEX java_vuser DSL script, such
+as an imported one (bare or wrapped in `{"script": …}`), instead of the
+fixture. `-classpath`, `-vm-args` and `-pace-ms` then replace the script's own
+values when given, `-sharing` and `-vusers-per-jvm` apply as usual, and
+`-target` is refused. `run.sh` always runs the fixture, so for a script start
+the runner container the same way and call `/bench/bench -script …` with
+`docker exec`. The summary's `failed_transactions` counts business
+transactions that ended failed, warm-up included.
+
 The benchmark found and fixed: a native-code scan that flagged any method
 named `load`; JDK legal-notice symlinks failing input qualification; pooled
 hosts running the generator's credential guard, which refuses the runner's own

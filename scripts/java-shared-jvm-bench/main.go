@@ -1,6 +1,8 @@
 // Command java-shared-jvm-bench runs one java_vuser group through the real
 // engine against a Java VUser runner sidecar on this host's loopback, with a
 // built-in order service as the system under test, and prints a JSON summary.
+// With -script it runs an APEX java_vuser DSL script, such as an imported one,
+// instead of the built-in fixture.
 // run.sh starts it inside the runner's container (as a generator shares the
 // runner's pod) so it can also sample the runner's JVMs and cgroup.
 package main
@@ -36,6 +38,7 @@ type summary struct {
 	Iterations       int64                    `json:"iterations"`
 	Transactions     int64                    `json:"transactions"`
 	Errors           int64                    `json:"errors"`
+	FailedTx         int64                    `json:"failed_transactions"` // business transactions that ended failed, warm-up included
 	TransactionsPerS float64                  `json:"transactions_per_second"`
 	AvgMS            float64                  `json:"avg_ms"`
 	P50MS            float64                  `json:"p50_ms"`
@@ -53,19 +56,32 @@ type summary struct {
 func main() {
 	sharing := flag.String("sharing", "shared", "dedicated or shared")
 	vusers := flag.Int("vusers", 25, "VUsers in the group")
-	perJVM := flag.Int("vusers-per-jvm", 0, "VUsers per shared JVM (0 keeps the runner's value)")
+	perJVM := flag.Int("vusers-per-jvm", 0, "VUsers per shared JVM (0 keeps the script's value, else the runner's)")
 	duration := flag.Duration("duration", time.Minute, "steady run length")
 	rampUp := flag.Duration("ramp-up", 0, "ramp-up period")
 	target := flag.String("target", "HeavyActions", "Actions class")
-	classpath := flag.String("classpath", "", "comma-separated jar paths on the runner, target jar first")
-	vmArgs := flag.String("vm-args", "", "comma-separated script VM parameters")
-	paceMS := flag.Int("pace-ms", 0, "fixed iteration interval in ms (0 runs iterations back to back)")
+	classpath := flag.String("classpath", "", "comma-separated jar paths on the runner, target jar first (with -script, replaces the script's classpath)")
+	vmArgs := flag.String("vm-args", "", "comma-separated script VM parameters (with -script, replaces the script's)")
+	paceMS := flag.Int("pace-ms", 0, "fixed iteration interval in ms (0 runs iterations back to back, or keeps a -script script's pacing)")
 	warmup := flag.Duration("warmup", 0, "leave transactions that start in this first part of the run out of the latency figures")
 	waitReady := flag.Duration("wait-ready", 30*time.Second, "how long to wait for the runner")
+	scriptPath := flag.String("script", "", "run this APEX java_vuser DSL script (JSON) instead of the built-in fixture")
 	flag.Parse()
+	targetSet := false
+	flag.Visit(func(f *flag.Flag) { targetSet = targetSet || f.Name == "target" })
 
 	out := summary{Sharing: *sharing, VUsers: *vusers}
-	err := run(&out, *sharing, *vusers, *perJVM, *duration, *rampUp, *warmup, *target, split(*classpath), split(*vmArgs), *paceMS, *waitReady)
+	var err error
+	switch {
+	case *sharing != dsl.JavaVuserJVMSharingShared && *sharing != dsl.JavaVuserJVMSharingDedicated:
+		err = errors.New("sharing must be dedicated or shared")
+	case *scriptPath != "" && targetSet:
+		err = errors.New("-target names the built-in fixture's class; a -script script names its own")
+	case *scriptPath != "":
+		err = runScriptFile(&out, *scriptPath, *sharing, *vusers, *perJVM, *duration, *rampUp, *warmup, split(*classpath), split(*vmArgs), *paceMS, *waitReady)
+	default:
+		err = run(&out, *sharing, *vusers, *perJVM, *duration, *rampUp, *warmup, *target, split(*classpath), split(*vmArgs), *paceMS, *waitReady)
+	}
 	if err != nil {
 		out.Error = err.Error()
 	}
@@ -88,9 +104,6 @@ func split(value string) []string {
 }
 
 func run(out *summary, sharing string, vusers, perJVM int, duration, rampUp, warmup time.Duration, target string, classpath, vmArgs []string, paceMS int, waitReady time.Duration) error {
-	if sharing != dsl.JavaVuserJVMSharingShared && sharing != dsl.JavaVuserJVMSharingDedicated {
-		return fmt.Errorf("sharing must be dedicated or shared")
-	}
 	if len(classpath) == 0 {
 		return errors.New("classpath is required")
 	}
@@ -103,34 +116,78 @@ func run(out *summary, sharing string, vusers, perJVM int, duration, rampUp, war
 	}
 	defer stopSUT()
 
-	java := dsl.JavaVuserConfig{Classpath: classpath, AdditionalVMParameters: vmArgs, JVMSharing: sharing}
-	if sharing == dsl.JavaVuserJVMSharingShared {
-		java.VUsersPerJVM = perJVM
-	}
 	call := func(method string) []dsl.Action {
 		return []dsl.Action{{Name: method, Type: "java_vuser_run", Target: target, Params: map[string]any{"method": method, "lr_parameters": map[string]any{"Endpoint": endpoint}}}}
 	}
-	script := &dsl.Script{ID: "java-shared-jvm-bench", Name: "Java shared JVM bench", Protocol: "java_vuser", Config: dsl.ScriptConfig{JavaVuser: java}, Init: call("init"), Actions: call("action"), Teardown: call("end")}
+	script := &dsl.Script{ID: "java-shared-jvm-bench", Name: "Java shared JVM bench", Protocol: "java_vuser", Init: call("init"), Actions: call("action"), Teardown: call("end")}
+	configure(script, sharing, perJVM, classpath, vmArgs, paceMS)
+	err = execute(out, script, vusers, duration, rampUp, warmup)
+	out.SUTRequests = requests()
+	return err
+}
+
+// runScriptFile runs the APEX java_vuser DSL script in a JSON file, such as
+// an imported script, with the flags' sharing and overrides.
+func runScriptFile(out *summary, path, sharing string, vusers, perJVM int, duration, rampUp, warmup time.Duration, classpath, vmArgs []string, paceMS int, waitReady time.Duration) error {
+	script, err := dsl.ParseFile(path)
+	if err != nil {
+		return err
+	}
+	configure(script, sharing, perJVM, classpath, vmArgs, paceMS)
+	if err := waitForRunner(os.Getenv("APEXLOAD_JAVA_VUSER_RUNNER_URL"), waitReady); err != nil {
+		return err
+	}
+	return execute(out, script, vusers, duration, rampUp, warmup)
+}
+
+// configure applies the run's JVM sharing and any classpath, VM parameters
+// and pacing the flags give to script, keeping the script's own otherwise.
+func configure(script *dsl.Script, sharing string, perJVM int, classpath, vmArgs []string, paceMS int) {
+	java := &script.Config.JavaVuser
+	java.JVMSharing = sharing
+	if sharing != dsl.JavaVuserJVMSharingShared {
+		java.VUsersPerJVM = 0 // only valid with shared JVMs
+	} else if perJVM > 0 {
+		java.VUsersPerJVM = perJVM
+	}
+	if len(classpath) > 0 {
+		// Uploaded jar bindings name entries of the replaced classpath.
+		java.Classpath, java.ClasspathAssets = classpath, nil
+	}
+	if len(vmArgs) > 0 {
+		java.AdditionalVMParameters = vmArgs
+	}
 	if paceMS > 0 {
 		script.Config.Pacing = dsl.PacingConfig{Type: "fixed_interval", IntervalMs: paceMS}
 	}
+}
+
+// execute runs script through the engine and fills out with its outcome,
+// whole-run latency of successful business transactions, and the sampled
+// JVM memory and CPU.
+func execute(out *summary, script *dsl.Script, vusers int, duration, rampUp, warmup time.Duration) error {
 	// Every successful business transaction's duration, for whole-run
 	// percentiles (the final metrics snapshot covers only its last window).
 	var mu sync.Mutex
 	var start time.Time
 	var latencies []time.Duration
+	var failed int64
 	var initialized int
 	var allInitialized time.Time
 	e, err := engine.New(engine.Config{Script: script, VUsers: vusers, Duration: duration, RampUp: rampUp, TerminationMode: dsl.TerminationDuration,
 		TimingObserver: func(timing engine.ResultTiming) {
-			if !timing.BusinessTransaction || !timing.Success {
+			if !timing.BusinessTransaction {
 				return
 			}
 			mu.Lock()
+			defer mu.Unlock()
+			if !timing.Success {
+				failed++
+				return
+			}
 			if !timing.StartTime.Before(start.Add(warmup)) {
 				latencies = append(latencies, timing.Duration)
 			}
-			mu.Unlock()
 		},
 		InitializationObserver: func(int) {
 			mu.Lock()
@@ -152,10 +209,10 @@ func run(out *summary, sharing string, vusers, perJVM int, duration, rampUp, war
 	result, runErr := e.Run(context.Background())
 	out.RunSeconds = time.Since(start).Seconds()
 	sampler.stop(out)
-	out.SUTRequests = requests()
 	out.MeasuredFrom = warmup.Seconds()
 	mu.Lock()
 	defer mu.Unlock()
+	out.FailedTx = failed
 	if !allInitialized.IsZero() {
 		out.AllInitSeconds = allInitialized.Sub(start).Seconds()
 	}
