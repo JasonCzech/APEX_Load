@@ -93,21 +93,6 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      # TEMPORARY diagnostic (Windows native analytics lane): times the
-      # worker executable snapshot's copy, launch and removal and the engine's
-      # busy window after each operation, as "SPIKE" log lines.
-      - name: Native analytics Windows diagnostic
-        if: runner.os == 'Windows'
-        shell: bash
-        env:
-          CGO_ENABLED: '1'
-          APEXLOAD_NATIVE_WINDOWS_SPIKE: '1'
-        run: |
-          set -euo pipefail
-          powershell -NoProfile -Command "Get-MpComputerStatus | Select-Object AMServiceEnabled,RealTimeProtectionEnabled,OnAccessProtectionEnabled | Format-List" || true
-          go test -count=1 -v -timeout 20m -tags analytics_duckdb ./pkg/analysis/duckdb -run '^TestWindowsNativeWorkerSpike' 2>&1 | tee native-spike.log || true
-          grep 'SPIKE ' native-spike.log || true
-
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
