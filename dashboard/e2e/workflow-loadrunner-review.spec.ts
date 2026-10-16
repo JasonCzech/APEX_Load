@@ -137,7 +137,9 @@ for (const scenario of [
       const reviewText = await readFile((await savedDownload.path())!, 'utf8')
       const review = JSON.parse(reviewText)
       expect(review.script.actions.length).toBeGreaterThanOrEqual(2)
-      expect(reviewText).not.toContain('test-only-cookie')
+      expect(reviewText).not.toContain('test-only-token')
+      // A cookie is state the script recorded, not a credential: it stays as imported.
+      expect(reviewText).toContain('session=test-only-cookie')
       expect(JSON.stringify(result.summary)).not.toContain('Anypoint Client ID Enforcement')
     }
     if (scenario.file === 'truclient-review.zip') {
@@ -217,11 +219,18 @@ test('LoadRunner batch saves ready scripts, stays on import, and accepts another
   if (!(await page.locator('.lr-completed-setup').getAttribute('open') === '')) await page.locator('.lr-completed-setup > summary').click()
   await page.getByRole('button', { name: 'Validate 4 Scripts', exact: true }).click()
   await expect(page.locator('.lr-file-row.validated')).toHaveCount(1)
+  // The same LoadRunner project imported again updates the newest script an
+  // earlier import saved, as a new version, unless the review asks for a copy.
+  const importedBefore = page.getByRole('region', { name: 'Imported before' })
+  await expect(importedBefore).toContainText('This source was imported before.')
+  await expect(importedBefore.getByRole('combobox', { name: /^On save for / })).toHaveValue('update')
   const nextSave = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
   await page.locator('.script-import-review-actions').getByRole('button', { name: 'Save reviewed drafts', exact: true }).click()
-  expect((await json(await nextSave)).scripts).toHaveLength(1)
+  const updated = (await json(await nextSave)).scripts as { id: string }[]
+  expect(updated).toHaveLength(1)
+  expect(updated[0].id).toBe(scripts[1].id)
   await expect(page.getByRole('button', { name: 'Import More Files', exact: true })).toBeVisible()
-  expect((await json(await request.get(`/api/v1/scripts?project_id=${workspace.projectId}`))).scripts).toHaveLength(3)
+  expect((await json(await request.get(`/api/v1/scripts?project_id=${workspace.projectId}`))).scripts).toHaveLength(2)
   await page.getByRole('button', { name: 'Import More Files', exact: true }).scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath('batch-import-saved.png'), fullPage: true })
   await page.getByRole('button', { name: `Open ${scripts[0].name} in Visual Editor`, exact: true }).click()
@@ -529,7 +538,7 @@ test('LoadRunner credentials edit and apply in place while preserving protected 
   const validatedResult = await json(validatedResponse)
   await page.getByRole('tab', { name: /^Credentials(,|$)/ }).click()
   const review = page.locator('.secret-binding-review')
-  await expect(review).not.toContainText('test-only-cookie')
+  await expect(review).not.toContainText('test-only-token')
   await expect(review.locator('.credential-inline-current')).toContainText('Preserved · hidden')
   await expect(review.locator('input[type=password]')).not.toBeVisible()
   await review.getByRole('button', { name: 'Edit credentials', exact: true }).click()
@@ -557,7 +566,7 @@ test('LoadRunner credentials edit and apply in place while preserving protected 
   expect(response.ok(), await response.text()).toBeTruthy()
   const updated = await json(response)
   expect(JSON.stringify(updated.script)).toContain('{{secret.INLINE_IMPORT_TOKEN}}')
-  expect(JSON.stringify((updated.script as ScriptDefinition).actions)).not.toContain('test-only-cookie')
+  expect(JSON.stringify((updated.script as ScriptDefinition).actions)).not.toContain('test-only-token')
   expect((updated.script as ScriptDefinition).metadata?.import?.preserved?.source_review).toEqual((validatedResult.script as ScriptDefinition).metadata?.import?.preserved?.source_review)
   await expect(page.getByRole('tab', { name: /^Credentials(,|$)/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('button', { name: 'Cancel credentials', exact: true })).toHaveCount(0)
@@ -568,7 +577,7 @@ test('LoadRunner credentials edit and apply in place while preserving protected 
   const savedResult = await json(savedResponse)
   expect(JSON.stringify(savedResult.scripts)).toContain('{{secret.INLINE_IMPORT_TOKEN}}')
   const savedScript = (savedResult.scripts as { script: ScriptDefinition }[])[0].script
-  expect(JSON.stringify(savedScript.actions)).not.toContain('test-only-cookie')
+  expect(JSON.stringify(savedScript.actions)).not.toContain('test-only-token')
 })
 
 test('LoadRunner percentage think time shows source bounds and saves edited percentages', async ({ page }, testInfo) => {
