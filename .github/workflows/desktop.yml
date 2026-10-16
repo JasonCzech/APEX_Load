@@ -41,7 +41,8 @@ jobs:
   desktop:
     name: Desktop package (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    # The slowest leg (macOS Intel) needs the time for the native analytics suite under -race.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -142,8 +143,9 @@ jobs:
           CGO_ENABLED: '1'
         run: |
           set -euo pipefail
-          go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
-          go test -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'
+          # The native worker suite outlasts go test's 10-minute default on slower hosted runners.
+          go test -timeout 30m -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
+          go test -timeout 45m -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'
           python3 -m unittest discover -s scripts -p 'test_native_worker_startup_test.py'
           controller="native-controller"
           if [[ "${RUNNER_OS}" == Windows ]]; then controller="${controller}.exe"; fi
@@ -610,8 +612,9 @@ jobs:
           CGO_ENABLED: '1'
         run: |
           set -euo pipefail
-          go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
-          go test -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'
+          # The native worker suite outlasts go test's 10-minute default on slower hosted runners.
+          go test -timeout 30m -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
+          go test -timeout 45m -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'
           python3 -m unittest discover -s scripts -p 'test_native_worker_startup_test.py'
           controller="native-controller"
           if [[ "${RUNNER_OS}" == Windows ]]; then controller="${controller}.exe"; fi
