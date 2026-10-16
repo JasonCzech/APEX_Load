@@ -177,6 +177,10 @@ type harNamespace struct {
 }
 
 func lockHARNamespace(ctx context.Context, dir string) (*harNamespace, error) {
+	if !NativeHARSupported() {
+		// Refused before anything is opened, so no staging is created here.
+		return nil, errHARPlatformUnsupported
+	}
 	n := &harNamespace{}
 	harNamespaceOwners.Lock()
 	if len(harNamespaceOwners.owners) >= 128 {

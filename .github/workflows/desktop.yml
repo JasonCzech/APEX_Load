@@ -93,6 +93,21 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      # Native HAR ownership is not qualified on Windows
+      # (docs/guides/BROWSER_HAR_WORKING_OWNERSHIP.md): a HAR-recording browser
+      # VUser must run without a HAR and say why, against real Chromium, and a
+      # replay asked to record one must be refused.
+      - name: Native HAR platform gate
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          APEXLOAD_BROWSER_TESTS: require
+        run: |
+          set -euo pipefail
+          go run github.com/mxschmitt/playwright-go/cmd/playwright@v0.6100.0 install chromium
+          go test -count=1 -v ./pkg/protocol/browser -run '^(TestNativeHARSupportedMatchesPlatform|TestUnsupportedPlatform.+)$'
+          go test -count=1 -v ./pkg/api -run '^(TestBrowserReplayRecordHARRefusedWithoutNativeHAR|TestNativeHARRecordsItsEvidenceGeneration)$'
+
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
