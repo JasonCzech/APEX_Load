@@ -37,7 +37,8 @@ describe('TimezoneSelect', () => {
     expect(input.placeholder).toBe('America/Chicago')
     const options = Array.from(document.getElementById(input.getAttribute('list')!)!.querySelectorAll('option'))
     expect(options[0].value).toBe('America/Chicago')
-    expect(options.find(option => option.value === 'UTC')?.label).toBe('UTC+00:00 · 12:34 now')
+    // A host running in UTC (CI) also marks UTC as the viewer's zone.
+    expect(options.find(option => option.value === 'UTC')?.label).toMatch(/^UTC\+00:00 · 12:34 now( · your zone)?$/)
     expect(options.find(option => option.value === 'America/Chicago')?.label).toMatch(/^UTC-05:00 · 07:34 now/)
     expect(options.some(option => option.value === 'Africa/Abidjan')).toBe(true)
     expect(document.getElementById(input.getAttribute('aria-describedby')!)?.textContent).toMatch(/^UTC-05:00 · 07:34 now/)
