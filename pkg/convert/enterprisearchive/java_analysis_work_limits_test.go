@@ -22,7 +22,7 @@ func TestJavaCombinedMappableEntriesBoundsVariableScopeSnapshots(t *testing.T) {
 	)
 	started := time.Now()
 	collection := collectJavaCombinedMappableEntries(program)
-	if elapsed := time.Since(started); elapsed > 5*time.Second {
+	if elapsed := time.Since(started); elapsed > javaAnalysisTimeBudget(5*time.Second) {
 		t.Fatalf("bounded mappable-entry collection took %s", elapsed)
 	}
 	if !strings.Contains(collection.blocker, "variable-scope analysis") {
@@ -111,7 +111,7 @@ func TestJavaOverloadWorkGuardCountsEnumConstructorResolution(t *testing.T) {
 	}
 	started := time.Now()
 	analysis := analyzeJavaOverloadResolutionWork(program)
-	if elapsed := time.Since(started); elapsed > 5*time.Second {
+	if elapsed := time.Since(started); elapsed > javaAnalysisTimeBudget(5*time.Second) {
 		t.Fatalf("enum overload preflight took %s", elapsed)
 	}
 	if !strings.Contains(analysis.blocker, "candidate-comparison limit") {
@@ -165,7 +165,7 @@ func TestJavaLRBindingCachesBoundMaximumImportScope(t *testing.T) {
 			t.Fatalf("static LR parts at iteration %d = %#v, want one", iteration, parts)
 		}
 	}
-	if elapsed := time.Since(started); elapsed > 5*time.Second {
+	if elapsed := time.Since(started); elapsed > javaAnalysisTimeBudget(5*time.Second) {
 		t.Fatalf("cached maximum-import LR binding took %s", elapsed)
 	}
 	if len(index.importScopes) != 1 {

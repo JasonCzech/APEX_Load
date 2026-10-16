@@ -64,6 +64,9 @@ func TestNativeJavaScriptRealWorkerLiteralInputsAndData(t *testing.T) {
 	if !NativeJavaScriptAvailable() {
 		t.Skip("real worker requires Linux hard limits")
 	}
+	if raceDetectorEnabled {
+		t.Skip("the worker re-executes this test binary under 256 MiB data and 2 s CPU limits, which a race-instrumented binary can exceed")
+	}
 	for _, profile := range []livetable.Profile{livetable.ProfileNative, livetable.ProfileVTS} {
 		t.Run(string(profile), func(t *testing.T) {
 			vu, _ := nativeTestVU(t, profile, "push", "pop")

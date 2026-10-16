@@ -523,7 +523,7 @@ public enum Generated {
 	}
 	started := time.Now()
 	analysis := analyzeJavaOverloadResolutionWork(program)
-	if elapsed := time.Since(started); elapsed > javaPreflightTimeBudget() {
+	if elapsed := time.Since(started); elapsed > javaAnalysisTimeBudget(5*time.Second) {
 		t.Fatalf("cached enum preflight took %s", elapsed)
 	}
 	if analysis.blocker != "" {
@@ -553,7 +553,7 @@ public enum Actions {
 	program := mustParseJavaTestProgram(t, files)
 	started := time.Now()
 	reachability := buildJavaVuserRuntimeReachability(program)
-	if elapsed := time.Since(started); elapsed > 5*time.Second {
+	if elapsed := time.Since(started); elapsed > javaAnalysisTimeBudget(5*time.Second) {
 		t.Fatalf("cached enum reachability took %s", elapsed)
 	}
 	if builds := len(reachability.evidenceIndex.hierarchyFieldTypes); builds != 1 {
@@ -576,7 +576,7 @@ public enum Actions {
 	if err != nil {
 		t.Fatalf("ConvertJava: %v", err)
 	}
-	if elapsed := time.Since(started); elapsed > 5*time.Second {
+	if elapsed := time.Since(started); elapsed > javaAnalysisTimeBudget(5*time.Second) {
 		t.Fatalf("full cached enum conversion took %s", elapsed)
 	}
 	blockers := strings.Join(
@@ -625,7 +625,7 @@ func TestJavaMemberReceiverLookupUsesDirectFieldIndexAndWorkCap(t *testing.T) {
 		qualifier.String(),
 		map[string]string{"root": "Node"},
 	)
-	if elapsed := time.Since(started); elapsed > 5*time.Second {
+	if elapsed := time.Since(started); elapsed > javaAnalysisTimeBudget(5*time.Second) {
 		t.Fatalf("indexed member-chain lookup took %s", elapsed)
 	}
 	if exceeded || !archived || !exact || resolved.Name != "Node" {
@@ -902,7 +902,7 @@ func TestJavaOverloadPreflightChargesStaticWildcardImportFanout(t *testing.T) {
 	)
 	started := time.Now()
 	analysis := analyzeJavaOverloadResolutionWork(program)
-	if elapsed := time.Since(started); elapsed > 5*time.Second {
+	if elapsed := time.Since(started); elapsed > javaAnalysisTimeBudget(5*time.Second) {
 		t.Fatalf("static-import fan-out preflight took %s", elapsed)
 	}
 	if !strings.Contains(analysis.blocker, "candidate-comparison limit") {
@@ -929,7 +929,7 @@ func TestJavaOverloadPreflightChargesStaticWildcardImportFanout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConvertJava: %v", err)
 	}
-	if elapsed := time.Since(started); elapsed > 5*time.Second {
+	if elapsed := time.Since(started); elapsed > javaAnalysisTimeBudget(5*time.Second) {
 		t.Fatalf(
 			"guarded static-import conversion repeated fan-out work and took %s",
 			elapsed,

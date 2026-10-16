@@ -1393,7 +1393,7 @@ func TestJavaRuntimeReachabilityMemoizesDiamondCallGraph(t *testing.T) {
 	}
 	started := time.Now()
 	reachability := buildJavaVuserRuntimeReachability(program)
-	if elapsed := time.Since(started); elapsed > 2*time.Second {
+	if elapsed := time.Since(started); elapsed > javaAnalysisTimeBudget(2*time.Second) {
 		t.Fatalf("diamond reachability took %s; completed-method memoization is not bounding traversal", elapsed)
 	}
 	if len(reachability.unresolved) != 0 {
@@ -1511,7 +1511,7 @@ func TestJavaCombinedMappingIndexBoundsLargeUnusedArchive(t *testing.T) {
 	}
 	result := &ConvertResult{}
 	appendJavaCombinedSourceMappings(result, program, nil, reachability)
-	if elapsed := time.Since(started); elapsed > javaPreflightTimeBudget() {
+	if elapsed := time.Since(started); elapsed > javaAnalysisTimeBudget(5*time.Second) {
 		t.Fatalf("4096-class mapping/index pass took %s; per-entry archive scans are not bounded", elapsed)
 	}
 	if got, want := len(entries), 3+(classCount-1)*4; got != want {
@@ -1684,7 +1684,7 @@ func TestConvertJavaOverloadWorkGuardBoundsCandidateAmplification(t *testing.T) 
 	program := mustParseJavaTestProgram(t, map[string]string{"Actions.java": source.String()})
 	started := time.Now()
 	analysis := analyzeJavaOverloadResolutionWork(program)
-	if elapsed := time.Since(started); elapsed > 2*time.Second {
+	if elapsed := time.Since(started); elapsed > javaAnalysisTimeBudget(2*time.Second) {
 		t.Fatalf("overload work preflight took %s; candidate work was not bounded", elapsed)
 	}
 	if !strings.Contains(analysis.blocker, "candidate-comparison limit") {
@@ -1711,7 +1711,7 @@ func TestConvertJavaOverloadWorkGuardBoundsCandidateAmplification(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ConvertJava: %v", err)
 	}
-	if elapsed := time.Since(started); elapsed > 3*time.Second {
+	if elapsed := time.Since(started); elapsed > javaAnalysisTimeBudget(3*time.Second) {
 		t.Fatalf("bounded overload conversion took %s", elapsed)
 	}
 	assertCombinedJavaImport(t, result)
@@ -1811,7 +1811,7 @@ func TestJavaOverloadWorkGuardBoundsInterfaceDispatchCandidates(t *testing.T) {
 
 	started := time.Now()
 	analysis := analyzeJavaOverloadResolutionWork(program)
-	if elapsed := time.Since(started); elapsed > 2*time.Second {
+	if elapsed := time.Since(started); elapsed > javaAnalysisTimeBudget(2*time.Second) {
 		t.Fatalf("interface-dispatch work preflight took %s", elapsed)
 	}
 	if !strings.Contains(analysis.blocker, "candidate-comparison limit") {

@@ -721,10 +721,13 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 		return nil, sourceErr
 	}
 	defer func() { runErr = errors.Join(runErr, sourceSamplers.close()) }()
+	// Stop copies the groups under mu, and may run while the run is starting.
+	mge.mu.Lock()
 	for i := range mge.groups {
 		mge.groups[i].sourceParameters = sourceState
 		mge.groups[i].sourceSamplers = sourceSamplers
 	}
+	mge.mu.Unlock()
 	if err := mge.preflightRuntimeAtStart(ctx); err != nil {
 		return nil, err
 	}

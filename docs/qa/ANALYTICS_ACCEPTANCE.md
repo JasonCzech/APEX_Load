@@ -68,8 +68,9 @@ NA-5 names five prebuilt targets. Each is a lane of `.github/workflows/desktop.y
 
 Every lane runs, in order:
 
-- Native analytics contracts: `go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'`
-- Worker race checks: `go test -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'`
+- Native analytics contracts: `go test -timeout 30m -tags analytics_duckdb ./pkg/analysis/... -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'`
+- API native analytics contracts: `go test -timeout 30m -tags analytics_duckdb ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'`
+- Worker race checks: `go test -timeout 45m -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'`
 - Controller build with DuckDB: `go build -tags analytics_duckdb -o "${controller}" ./cmd/controller`
 - Controller native worker startup: `python3 scripts/test_native_worker_startup.py --binary "${controller}"`
 - CGO-free build reports unavailable: `CGO_ENABLED=0 go test ./pkg/analysis/duckdb`
