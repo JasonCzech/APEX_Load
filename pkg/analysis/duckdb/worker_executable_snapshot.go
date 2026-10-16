@@ -26,6 +26,12 @@ func workerExecutableSnapshotName() string {
 // Launch reopens only this private, permission-protected immutable copy, hashed
 // from an exact retained source descriptor and checked against startup approval.
 // Platform DLL/rpath/code-signing behavior still requires packaged acceptance.
+//
+// The copy is not fsynced. It is hashed while it is written, closed before
+// launch and removed with the attempt's scratch, so no later run reads it back
+// after a crash; the loader reads the same pages the copy wrote. Copying and
+// flushing a 56 MiB worker took about half a second per attempt on Windows
+// runners.
 func workerSnapshotExecutable(a *workerAttempt, sourcePath, expected string) (string, error) {
 	if workerContextError(a.ctx) != nil {
 		return "", errWorkerOwnership
@@ -53,10 +59,9 @@ func workerSnapshotExecutable(a *workerAttempt, sourcePath, expected string) (st
 	digest := sha256.New()
 	n, copyErr := workerCopyContext(a.ctx, io.MultiWriter(output, digest), io.LimitReader(source, before.Size()+1))
 	after, statErr := source.Stat()
-	syncErr := output.Sync()
 	closeErr := a.closeDescriptor(output)
 	sourceCloseErr := a.closeDescriptor(source)
-	if errors.Join(copyErr, statErr, syncErr, closeErr, sourceCloseErr) != nil || n != before.Size() || after == nil || !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) || hex.EncodeToString(digest.Sum(nil)) != expected {
+	if errors.Join(copyErr, statErr, closeErr, sourceCloseErr) != nil || n != before.Size() || after == nil || !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) || hex.EncodeToString(digest.Sum(nil)) != expected {
 		return "", errWorkerOwnership
 	}
 	if workerContextError(a.ctx) != nil {
