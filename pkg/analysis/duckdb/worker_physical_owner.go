@@ -160,6 +160,11 @@ func (a *workerAttempt) release() error {
 func (a *workerAttempt) cleanupPhysical() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	// Windows refuses to delete a file that an exiting worker, an indexer or
+	// antivirus still holds for a moment. Retry the scratch removal with a
+	// short backoff so one such refusal does not outlast release's bounded
+	// waiter, which a full ticker period always would.
+	removeRetry := 25 * time.Millisecond
 	for {
 		a.mu.Lock()
 		ready := a.parentOperations == 0 && a.readers == 0 && (!a.started || a.reaped && a.pipesJoined) && a.descriptorsJoinedLocked(true)
@@ -177,10 +182,13 @@ func (a *workerAttempt) cleanupPhysical() {
 			a.mu.Unlock()
 			if closed {
 				if path != "" && os.RemoveAll(path) != nil {
+					retry := time.NewTimer(removeRetry)
 					select {
-					case <-ticker.C:
+					case <-retry.C:
 					case <-a.physicalWake:
 					}
+					retry.Stop()
+					removeRetry = min(2*removeRetry, time.Second)
 					continue
 				}
 				a.mu.Lock()
