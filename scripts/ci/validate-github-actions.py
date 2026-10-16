@@ -322,7 +322,7 @@ def check_authoritative_ci_fork_policy(
                 )
         uses_lines = [line.strip() for line in block if re.match(r"^\s*(?:-\s*)?uses:", line)]
         expected_checkout = (
-            "uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2"
+            "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1"
         )
         if uses_lines != [expected_checkout]:
             errors.append(
