@@ -3,6 +3,8 @@
 package duckdb
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -10,9 +12,14 @@ import (
 )
 
 func workerContainerHeadroom(required int64) error {
-	// Fixed kernel files, never an environment/client-selected path. Resolve
-	// the current v2 membership and all visible ancestor limits conservatively.
-	body, err := os.ReadFile("/proc/self/cgroup")
+	// Fixed kernel files, never an environment/client-selected path.
+	return workerCgroupHeadroom("/proc/self/cgroup", "/sys/fs/cgroup", required)
+}
+
+// workerCgroupHeadroom resolves the current v2 membership and all visible
+// ancestor limits conservatively.
+func workerCgroupHeadroom(membershipFile, root string, required int64) error {
+	body, err := os.ReadFile(membershipFile)
 	if err != nil {
 		return errWorkerResourceLimit
 	}
@@ -25,12 +32,24 @@ func workerContainerHeadroom(required int64) error {
 	if member == "" {
 		return errWorkerResourceLimit
 	} // unsupported v1 needs explicit profile
-	root := "/sys/fs/cgroup"
+	if _, err := os.Stat(filepath.Join(root, "cgroup.controllers")); err != nil {
+		return errWorkerResourceLimit
+	}
 	directory := filepath.Join(root, strings.TrimPrefix(filepath.Clean(member), "/"))
 	for {
+		if info, err := os.Stat(directory); err != nil || !info.IsDir() {
+			return errWorkerResourceLimit
+		}
+		// A level without the memory controller (always the host's root
+		// cgroup) has no memory.max and imposes no limit; host memory is
+		// checked separately. Inside a cgroup namespace the visible root is
+		// the container's own cgroup, which normally has one.
 		limit, limitErr := os.ReadFile(filepath.Join(directory, "memory.max"))
+		if errors.Is(limitErr, fs.ErrNotExist) {
+			limit, limitErr = []byte("max"), nil
+		}
 		used, usedErr := os.ReadFile(filepath.Join(directory, "memory.current"))
-		if limitErr != nil || usedErr != nil {
+		if limitErr != nil || (usedErr != nil && strings.TrimSpace(string(limit)) != "max") {
 			return errWorkerResourceLimit
 		}
 		if strings.TrimSpace(string(limit)) != "max" {

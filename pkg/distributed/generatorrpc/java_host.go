@@ -178,7 +178,7 @@ func javaHostPreparedSpare(a assignedTest) int64 {
 	return spare
 }
 func reservedAssignmentVUsers(a assignedTest) int32 {
-	return int32(min(int64(maxGeneratorVUsers), int64(a.vuserCount)+javaHostPreparedSpare(a)))
+	return int32(min(maxGeneratorVUsers, int64(a.vuserCount)+javaHostPreparedSpare(a)))
 }
 func (s *Service) capacityVUsers64Locked() int64 {
 	total := s.activeVUsers64Locked()

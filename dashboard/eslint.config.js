@@ -33,7 +33,7 @@ const legacyA11yWarningRules = Object.fromEntries(
 legacyA11yWarningRules['jsx-a11y/label-has-associated-control'] = ['warn', {
   labelComponents: [],
   labelAttributes: [],
-  controlComponents: ['SecondsFromMillisecondsInput', 'ActionBodyTextarea', 'TimezoneSelect', 'IntegerField'],
+  controlComponents: ['SecondsFromMillisecondsInput', 'ActionBodyTextarea', 'TimezoneSelect', 'IntegerField', 'ListInput'],
   assert: 'either',
   depth: 25,
 }]
@@ -42,6 +42,14 @@ legacyA11yWarningRules['jsx-a11y/no-noninteractive-tabindex'] = ['warn', {
   // Adjustable separators and keyboard-navigable regions intentionally enter
   // the tab order and provide their own key handlers.
   roles: ['tabpanel', 'separator', 'region'],
+  // As in the recommended configuration: a computed tabIndex (a disabled
+  // button's focusable tooltip anchor) is decided at runtime.
+  allowExpressionValues: true,
+}]
+// A table cell's disclosure keeps its label in the summary, three levels down.
+legacyA11yWarningRules['jsx-a11y/control-has-associated-label'] = ['warn', {
+  ...jsxA11y.flatConfigs.recommended.rules['jsx-a11y/control-has-associated-label'][1],
+  depth: 3,
 }]
 
 const includeLegacyA11yWarnings = process.env.APEXLOAD_A11Y_LEGACY === '1'

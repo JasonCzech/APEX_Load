@@ -30,6 +30,8 @@ func TestNativeNormalizeSnapshotsMutableInputsBeforeHashAndStage(t *testing.T) {
 	go func() { result, err := e.Normalize(ctx, input); done <- outcome{result, err} }()
 	select {
 	case <-entered:
+	case got := <-done:
+		t.Fatal("normalization returned before the admitted hash barrier", got.err)
 	case <-ctx.Done():
 		t.Fatal("normalization never reached admitted hash barrier")
 	}

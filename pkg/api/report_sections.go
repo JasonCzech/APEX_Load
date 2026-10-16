@@ -1170,7 +1170,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				return
 			}
 			for _, pattern := range d.Report.ErrorPatterns {
-				*lines = append(*lines, fmt.Sprintf("- %s (%s)", pattern.Sample, reportCountNoun(int64(pattern.Count), "occurrence", "occurrences")))
+				*lines = append(*lines, fmt.Sprintf("- %s (%s)", pattern.Sample, reportCountNoun(pattern.Count, "occurrence", "occurrences")))
 			}
 			*lines = append(*lines, "")
 		},

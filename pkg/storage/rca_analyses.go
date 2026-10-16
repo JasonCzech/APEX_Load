@@ -194,6 +194,10 @@ func pruneRCAEvidenceRevisionsTx(tx *storeTx, test string) error {
 			prunable = append(prunable, revision)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
 	if err := rows.Close(); err != nil {
 		return err
 	}
@@ -424,6 +428,10 @@ func (s *SQLiteStore) LatestRCAAnalyses(project string, tests []string) (map[str
 		entry := out[analysis.TestID]
 		entry.Latest = analysis
 		out[analysis.TestID] = entry
+	}
+	if err := latest.Err(); err != nil {
+		latest.Close()
+		return nil, err
 	}
 	if err := latest.Close(); err != nil {
 		return nil, err

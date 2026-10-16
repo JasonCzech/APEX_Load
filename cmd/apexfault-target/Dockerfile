@@ -1,5 +1,5 @@
 # This standard-library-only command does not need the dashboard or application dependencies.
-FROM golang:1.26.5-alpine3.24@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
+FROM golang:1.26.9-alpine3.24@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade AS builder
 WORKDIR /src
 COPY cmd/apexfault-target/*.go ./
 RUN CGO_ENABLED=0 GO111MODULE=off go build -trimpath -ldflags='-s -w' -o /apexfault-target .

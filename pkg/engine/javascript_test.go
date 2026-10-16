@@ -64,6 +64,9 @@ func TestNativeJavaScriptRealWorkerLiteralInputsAndData(t *testing.T) {
 	if !NativeJavaScriptAvailable() {
 		t.Skip("real worker requires Linux hard limits")
 	}
+	if raceDetectorEnabled {
+		t.Skip("the worker re-executes this test binary under 256 MiB data and 2 s CPU limits, which a race-instrumented binary can exceed")
+	}
 	for _, profile := range []livetable.Profile{livetable.ProfileNative, livetable.ProfileVTS} {
 		t.Run(string(profile), func(t *testing.T) {
 			vu, _ := nativeTestVU(t, profile, "push", "pop")
@@ -102,6 +105,9 @@ func TestNativeJavaScriptRealWorkerLimitsAndNoAmbientCapabilities(t *testing.T) 
 		{"unknown authority", `apex.data.call({alias:"work",operation:"push",client_id:"forged",values:{id:"bad"}});return {};`, 5000, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.success && raceDetectorEnabled {
+				t.Skip("the worker re-executes this test binary under 256 MiB data and 2 s CPU limits, which a race-instrumented binary can exceed")
+			}
 			start := time.Now()
 			err := vu.executeNativeJavaScript(context.Background(), dsl.Action{Type: "native_javascript", Params: map[string]any{"source": tc.source, "timeout_ms": tc.timeout, "result_prefix": "result"}})
 			if (err == nil) != tc.success {

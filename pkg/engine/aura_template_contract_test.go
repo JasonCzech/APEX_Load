@@ -52,7 +52,7 @@ func TestAuraTemplateContractInvertsOnlyOldOccurrences(t *testing.T) {
 				if vu.bodyResolutionError != nil {
 					t.Fatal(vu.bodyResolutionError)
 				}
-				wire := []byte(resolved.Body)
+				wire := resolved.Body
 				decoded, encodedBody, err := dsl.DecodeBodyEncoding(string(resolved.Body), resolved.BodyEncoding, aurapayload.MaxBodyBytes)
 				if err != nil || resolved.BodyEncoding != encoding {
 					t.Fatalf("resolved body encoding changed or failed: encoding=%q err=%v", resolved.BodyEncoding, err)
@@ -123,7 +123,7 @@ func TestAuraPromotionPreservesEscapedLiteralOccurrences(t *testing.T) {
 				var calls int
 				vu := &VUser{Script: script, Variables: variables, SecretResolver: SecretResolverFunc(func(string) (string, bool) { calls++; return "must-not-resolve", true })}
 				resolved := vu.resolveAction(script.Actions[0])
-				wire := []byte(resolved.Body)
+				wire := resolved.Body
 				decoded, encodedBody, err := dsl.DecodeBodyEncoding(string(resolved.Body), resolved.BodyEncoding, aurapayload.MaxBodyBytes)
 				if err != nil || resolved.BodyEncoding != encoding {
 					t.Fatalf("resolved body encoding changed or failed: encoding=%q err=%v", resolved.BodyEncoding, err)

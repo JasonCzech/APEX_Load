@@ -261,7 +261,9 @@ func TestAnalyzeVariableReadinessCountsLiveTableResultsAfterTheirStep(t *testing
 	table := func(name, prefix string) dsl.Action {
 		return dsl.Action{Name: name, Type: "live_table", Params: map[string]any{"alias": "jobs", "operation": "lease", "result_prefix": prefix}}
 	}
-	use := func(name, ref string) dsl.Action { return dsl.Action{Name: name, Type: "http_request", Target: "/jobs/{{var." + ref + "}}"} }
+	use := func(name, ref string) dsl.Action {
+		return dsl.Action{Name: name, Type: "http_request", Target: "/jobs/{{var." + ref + "}}"}
+	}
 	script := &dsl.Script{Actions: []dsl.Action{
 		use("before", "job.values.id"),
 		table("lease", "job"),

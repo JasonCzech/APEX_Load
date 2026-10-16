@@ -91,8 +91,7 @@ func evaluatePrometheusRule(rule MonitorRule, points []MetricPoint, start, end t
 		}
 		first := anchor
 		if first.Before(from) {
-			n := from.Sub(anchor) / step
-			first = anchor.Add(n * step)
+			first = anchor.Add(from.Sub(anchor).Truncate(step))
 			if first.Before(from) {
 				first = first.Add(step)
 			}

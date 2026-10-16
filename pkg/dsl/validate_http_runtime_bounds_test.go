@@ -254,4 +254,3 @@ func TestHTTPStatusAssertionTakesAReference(t *testing.T) {
 		}
 	}
 }
-

@@ -139,6 +139,7 @@ import {
   readNewTestQueueAttempt,
   type NewTestQueueAttempt,
 } from './newTestQueueAttempt'
+import { insideRowDisclosure } from './rowDisclosure'
 
 interface Props {
   activeApplication: Application | null
@@ -3432,7 +3433,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                             className={rowOverridden ? 'new-test-script-row overridden' : 'new-test-script-row'}
                             tabIndex={0}
                             aria-label={`Edit run settings for ${group.name || group.script_name || 'script group'}`}
-                            onClick={() => openGroupEditor(sourceGroup)}
+                            onClick={event => { if (!insideRowDisclosure(event)) openGroupEditor(sourceGroup) }}
                             onKeyDown={event => {
                               if (event.currentTarget !== event.target) return
                               if (event.key === 'Enter' || event.key === ' ') {
@@ -3455,7 +3456,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                             </td>
                             <td className="new-test-runtime-cell">
                               <p>{formatGroupPlacement(override, sourceGroup)}</p>
-                              <details onClick={event => event.stopPropagation()}><summary>Runtime details</summary>
+                              <details><summary>Runtime details</summary>
                                 <dl><dt>Iterations</dt><dd>{runtimeValues.iterations}</dd><dt>Pacing</dt><dd>{runtimeValues.pacing}</dd><dt>Think time</dt><dd>{runtimeValues.thinkTime}</dd><dt>Log level</dt><dd>{runtimeValues.logLevel}</dd><dt>Auto transactions</dt><dd>{runtimeValues.autoTransactions}</dd><dt>Error handling</dt><dd>{runtimeValues.errorHandling}</dd></dl>
                               </details>
                             </td>

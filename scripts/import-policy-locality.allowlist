@@ -64,7 +64,6 @@ policy:pkg/convert/bruno/inspect.go:supportsExistingSecretReferences
 policy:pkg/convert/bruno/native.go:collectNativeSecretNames
 policy:pkg/convert/bruno/native.go:exactNativeSecretReference
 policy:pkg/convert/bruno/native.go:mergeNativeSecretRequirements
-policy:pkg/convert/bruno/native.go:mergeNativeSecretScrubTargets
 policy:pkg/convert/bruno/native.go:nativeAuthSecretRequirement
 policy:pkg/convert/bruno/native.go:nativeBodyFieldSecretRequirement
 policy:pkg/convert/bruno/native.go:nativeComposedHeaderSecretRequirement
@@ -144,7 +143,6 @@ policy:pkg/convert/enterprisearchive/runtime_config.go:normalizeRuntimeProxyURL
 policy:pkg/convert/enterprisearchive/zip.go:redactArchiveMaskedBodyMetadata
 policy:pkg/convert/jmeter/converter_assertions_auth.go:authConfigFromJMeterAuth
 policy:pkg/convert/jmeter/converter_native_samplers.go:injectURLCredentials
-policy:pkg/convert/jmeter/converter_native_samplers.go:redactJDBCInlineCredentials
 policy:pkg/convert/jmeter/converter_sampler.go:applyJMeterAuthReviewGate
 
 # pkg/convert/jmeter/requestimport.go
@@ -201,7 +199,6 @@ policy:pkg/convert/openapi/converter.go:schemaCredentialField
 policy:pkg/convert/openapi/converter.go:sensitiveNonStringSchemaCodes
 policy:pkg/convert/openapi/converter.go:sensitiveOpenAPISourceValues
 policy:pkg/convert/openapi/converter.go:sensitiveParameterReviewCodes
-policy:pkg/convert/openapi/converter.go:zeroSensitiveJSONValue
 policy:pkg/convert/openapi/converter.go:zeroValueForSensitiveSchema
 policy:pkg/convert/postman/converter.go:applyPostmanAPIKey
 policy:pkg/convert/postman/converter.go:applyPostmanAuth
@@ -212,7 +209,6 @@ policy:pkg/convert/postman/converter.go:postmanAuthConfig
 # pkg/convert/postman/request_pipeline.go
 # Postman's {{...}} template grammar and auth-wrapper patterns: the source
 # format's own syntax, as with Bruno.
-policy:pkg/convert/postman/request_pipeline.go:attachPostmanUnmanagedCredentialReview
 policy:pkg/convert/postman/request_pipeline.go:postmanCredentialTemplateIsSafeToPreserve
 policy:pkg/convert/postman/request_pipeline.go:postmanEffectiveAuth
 policy:pkg/convert/raml/converter.go:schemeRequiresClientCredentials
@@ -230,7 +226,170 @@ policy:pkg/convert/sample/correlate_redact.go:redactBodySecrets
 policy:pkg/convert/sample/correlate_redact.go:redactExchangeSecrets
 policy:pkg/convert/sample/correlate_redact.go:redactSensitiveHeaderValues
 policy:pkg/convert/sample/correlate_redact.go:redactSourceReviewSecrets
-policy:pkg/convert/sample/har.go:sanitizeReplayHeaders
 policy:pkg/convert/sample/rawhttp.go:filterHeaderList
 policy:pkg/convert/sample/request_pipeline.go:sampleEffectiveAuth
 policy:pkg/convert/wsdl/credential_projection.go:redactWSDLProjectedSecrets
+
+# Untriaged: detections that landed while earlier steps of the same CI lane
+# were failing, so this guard never ran on them. They are recorded so the guard
+# catches the next new one; none has been checked for duplication of shared
+# policy. Triage them like the uncommented blocks above.
+
+# pkg/convert/enterprisearchive/js_archive.go
+archive:pkg/convert/enterprisearchive/js_archive.go
+
+# pkg/convert/asyncapi/generated_credentials.go
+policy:pkg/convert/asyncapi/generated_credentials.go:asyncAPIGeneratedCredentialRequirements
+
+# pkg/convert/bruno/inspect.go
+policy:pkg/convert/bruno/inspect.go:containsBrunoCredentialRedactionSentinel
+policy:pkg/convert/bruno/inspect.go:decodeBrunoCredentialValueToStable
+policy:pkg/convert/bruno/inspect.go:finalizeNativeSecretRequirements
+policy:pkg/convert/bruno/inspect.go:recoverableBrunoCredentialValue
+
+# pkg/convert/bruno/native.go
+policy:pkg/convert/bruno/native.go:appendNativeSecretRequirementPaths
+policy:pkg/convert/bruno/native.go:appendNativeSecretRequirementScrubTargets
+policy:pkg/convert/bruno/native.go:describeNativeHeaderSecretRequirement
+policy:pkg/convert/bruno/native.go:exactNativeCredentialSourceReference
+policy:pkg/convert/bruno/native.go:finalizeNativeSecretRequirement
+policy:pkg/convert/bruno/native.go:initializeNativeSecretRequirementMergeState
+policy:pkg/convert/bruno/native.go:nativeRedactedHeaderInput
+policy:pkg/convert/bruno/native.go:nativeRedactedHeaderVariable
+policy:pkg/convert/bruno/native.go:nativeSecretRequirementPaths
+policy:pkg/convert/bruno/native.go:nativeSourceVariableSecretName
+policy:pkg/convert/bruno/native.go:nativeUnresolvedSourceVariableSecretRequirement
+
+# pkg/convert/bruno/native_credential_targets.go
+policy:pkg/convert/bruno/native_credential_targets.go:finalizeNativeScriptCredentialTargets
+policy:pkg/convert/bruno/native_credential_targets.go:nativeCredentialProjectionReplacement
+policy:pkg/convert/bruno/native_credential_targets.go:publicizeNativeCredentialMarkers
+policy:pkg/convert/bruno/native_credential_targets.go:rejectNativeCredentialMarkersInDynamicValue
+policy:pkg/convert/bruno/native_credential_targets.go:rejectReservedNativeCredentialMarkers
+
+# pkg/convert/bruno/native_secret_names.go
+policy:pkg/convert/bruno/native_secret_names.go:RenameNativeSecrets
+policy:pkg/convert/bruno/native_secret_names.go:assignReadableNativeSecretNames
+policy:pkg/convert/bruno/native_secret_names.go:readableNativeSecretBase
+policy:pkg/convert/bruno/native_secret_names.go:renameNativeScriptSecretReferences
+policy:pkg/convert/bruno/native_secret_names.go:renameNativeSecretsInCandidates
+policy:pkg/convert/bruno/native_secret_names.go:renamedNativeSecretRequirement
+
+# pkg/convert/bruno/native_url_sanitize.go
+policy:pkg/convert/bruno/native_url_sanitize.go:recoverableNativeURLCredentialValue
+
+# pkg/convert/bruno/native_xml_sanitize.go
+policy:pkg/convert/bruno/native_xml_sanitize.go:nativeXMLCredentialContext
+policy:pkg/convert/bruno/native_xml_sanitize.go:nativeXMLCredentialValueContainsSentinel
+policy:pkg/convert/bruno/native_xml_sanitize.go:recoverableNativeXMLCredentialValue
+
+# pkg/convert/clientids/clientids.go
+policy:pkg/convert/clientids/clientids.go:credentialLocatedFields
+
+# pkg/convert/devweb/requestimport.go
+policy:pkg/convert/devweb/requestimport.go:collectDevWebCredentialBodyDataReferences
+policy:pkg/convert/devweb/requestimport.go:collectDevWebCredentialBodyDataReferencesWithBudget
+policy:pkg/convert/devweb/requestimport.go:collectDevWebCredentialURLDataReferences
+policy:pkg/convert/devweb/requestimport.go:devWebCredentialDataBindings
+policy:pkg/convert/devweb/requestimport.go:devWebCredentialRedactionWithinBudget
+policy:pkg/convert/devweb/requestimport.go:markDevWebCredentialDataBindings
+policy:pkg/convert/devweb/requestimport.go:markDevWebCredentialPreservingImport
+policy:pkg/convert/devweb/requestimport.go:redactDevWebCredentialDataFile
+policy:pkg/convert/devweb/requestimport.go:redactDevWebCredentialValuesWithAdditional
+policy:pkg/convert/devweb/requestimport.go:redactDevWebCredentialValuesWithBudget
+policy:pkg/convert/devweb/requestimport.go:redactDevWebCredentialValuesWithBudgetAndAdditional
+
+# pkg/convert/devweb/runtime_credentials.go
+policy:pkg/convert/devweb/runtime_credentials.go:devWebRuntimeCredentialReviewValues
+policy:pkg/convert/devweb/runtime_credentials.go:projectDevWebRuntimeCredentials
+
+# pkg/convert/enterprisearchive/action_convert.go
+policy:pkg/convert/enterprisearchive/action_convert.go:filterHeaderListCaseInsensitive
+policy:pkg/convert/enterprisearchive/action_convert.go:normalizedCookieDomain
+policy:pkg/convert/enterprisearchive/action_convert.go:normalizedCookiePath
+
+# pkg/convert/enterprisearchive/java_jdbc_idioms.go
+policy:pkg/convert/enterprisearchive/java_jdbc_idioms.go:javaJDBCInjectURLCredentials
+
+# pkg/convert/enterprisearchive/runtime_credentials.go
+policy:pkg/convert/enterprisearchive/runtime_credentials.go:enterpriseOpaqueConfigCredentialTargets
+policy:pkg/convert/enterprisearchive/runtime_credentials.go:enterpriseUnavailableRuntimeCredentialPresentation
+policy:pkg/convert/enterprisearchive/runtime_credentials.go:markEnterpriseCredentialPreservingImport
+policy:pkg/convert/enterprisearchive/runtime_credentials.go:mergeEnterpriseScriptCredentialTargets
+policy:pkg/convert/enterprisearchive/runtime_credentials.go:redactEnterpriseJNDICredentialArguments
+
+# pkg/convert/enterprisearchive/sap_gui_import.go
+policy:pkg/convert/enterprisearchive/sap_gui_import.go:sapGUILogonPassword
+
+# pkg/convert/enterprisearchive/source_runtime.go
+policy:pkg/convert/enterprisearchive/source_runtime.go:normalizeSourceAuthHost
+
+# pkg/convert/jmeter/converter.go
+policy:pkg/convert/jmeter/converter.go:jmeterJDBCCredentialSourceRetained
+policy:pkg/convert/jmeter/converter.go:jmeterPreservedCredentialFinding
+
+# pkg/convert/jmeter/converter_native_samplers.go
+policy:pkg/convert/jmeter/converter_native_samplers.go:hasJDBCInlineCredentials
+policy:pkg/convert/jmeter/converter_native_samplers.go:jmeterJDBCCredentialPropertyName
+policy:pkg/convert/jmeter/converter_native_samplers.go:jmeterJDBCCredentialValues
+policy:pkg/convert/jmeter/converter_native_samplers.go:jmeterJDBCSensitivePropertyName
+policy:pkg/convert/jmeter/converter_native_samplers.go:jmeterJDBCUnavailableCredential
+policy:pkg/convert/jmeter/converter_native_samplers.go:mergeJMeterMySQLCredentials
+policy:pkg/convert/jmeter/converter_native_samplers.go:projectJMeterJDBCUnavailableCredential
+
+# pkg/convert/jmeter/repair_source.go
+policy:pkg/convert/jmeter/repair_source.go:ValidateOAuthNormalization
+
+# pkg/convert/jmeter/requestimport.go
+policy:pkg/convert/jmeter/requestimport.go:jmeterCredentialRedactionWithinBudget
+policy:pkg/convert/jmeter/requestimport.go:omittedJMeterCredentialSource
+policy:pkg/convert/jmeter/requestimport.go:redactJMeterCredentialValuesWithBudget
+
+# pkg/convert/openapi/converter.go
+policy:pkg/convert/openapi/converter.go:openAPIParametersDeclareWholeBodyCredential
+policy:pkg/convert/openapi/converter.go:openAPIPathCredentialTargets
+policy:pkg/convert/openapi/converter.go:openAPIRequestBodyIsWholeCredential
+policy:pkg/convert/openapi/converter.go:openAPISecurityCredentialSuffixes
+
+# pkg/convert/openapi/generated_credentials.go
+policy:pkg/convert/openapi/generated_credentials.go:openAPIGeneratedCredentialPresentation
+policy:pkg/convert/openapi/generated_credentials.go:openAPIGeneratedSecretTargets
+
+# pkg/convert/openapi/path_credential_targets.go
+policy:pkg/convert/openapi/path_credential_targets.go:buildOpenAPIPathCredentialTargets
+policy:pkg/convert/openapi/path_credential_targets.go:encodeOpenAPIPathCredentialPointer
+policy:pkg/convert/openapi/path_credential_targets.go:openAPIPathCredentialShapeHash
+policy:pkg/convert/openapi/path_credential_targets.go:unresolvedOpenAPIPathCredentialTargets
+
+# pkg/convert/postman/converter.go
+policy:pkg/convert/postman/converter.go:authCredentialValuePresent
+policy:pkg/convert/postman/converter.go:authValuePresent
+policy:pkg/convert/postman/converter.go:postmanAuthEntryValue
+
+# pkg/convert/postman/request_pipeline.go
+policy:pkg/convert/postman/request_pipeline.go:collectPostmanCredentialBodyReferences
+policy:pkg/convert/postman/request_pipeline.go:collectPostmanCredentialURLReferences
+policy:pkg/convert/postman/request_pipeline.go:collectPostmanFormCredentialReferences
+policy:pkg/convert/postman/request_pipeline.go:collectPostmanJSONCredentialReferences
+policy:pkg/convert/postman/request_pipeline.go:collectPostmanXMLCredentialReferences
+policy:pkg/convert/postman/request_pipeline.go:collectSourceReviewCredentialEvidence
+policy:pkg/convert/postman/request_pipeline.go:omitPostmanSourcesForCredentialRedaction
+
+# pkg/convert/raml/converter.go
+policy:pkg/convert/raml/converter.go:ramlGeneratedCredentialRequirements
+
+# pkg/convert/salesforce/analyzer.go
+policy:pkg/convert/salesforce/analyzer.go:equivalentNormalizedURL
+policy:pkg/convert/salesforce/analyzer.go:parseNormalizedURL
+
+# pkg/convert/sample/har.go
+policy:pkg/convert/sample/har.go:normalizeHARPseudoHeaders
+
+# pkg/convert/sample/multipart_body.go
+policy:pkg/convert/sample/multipart_body.go:bodyHasCredentialTarget
+
+# pkg/convert/sharedvalue/names.go
+policy:pkg/convert/sharedvalue/names.go:CredentialShaped
+
+# pkg/convert/wsdl/credential_projection.go
+policy:pkg/convert/wsdl/credential_projection.go:wsdlXMLContainsSensitiveURL

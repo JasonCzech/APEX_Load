@@ -22,7 +22,12 @@ func TestProbeHTTP3CompletesAHandshakeWithoutARequest(t *testing.T) {
 	if n := fixture.Ledger.Count(func(h3fixture.Attempt) bool { return true }); n != 0 {
 		t.Fatalf("the probe sent %d requests", n)
 	}
-	// The probe's connection is closed; the session holds none open.
+	// The probe's connection is closed; the session holds none open. The
+	// transport drops a closed connection from its count asynchronously.
+	deadline := time.Now().Add(2 * time.Second)
+	for h.http3.openConnections() != 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
 	if open := h.http3.openConnections(); open != 0 {
 		t.Fatalf("probe left %d connections open", open)
 	}

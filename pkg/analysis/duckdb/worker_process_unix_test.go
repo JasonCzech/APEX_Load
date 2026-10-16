@@ -45,6 +45,10 @@ func (e workerFixtureExecutor) execute(ctx context.Context, a *workerAttempt, r 
 	if e.mode == "exit" {
 		os.Exit(19)
 	}
+	if e.mode == "exit-clean" {
+		// A successful exit after taking the request but before any result.
+		os.Exit(0)
+	}
 	if e.mode == "cancel" || e.mode == "ack-hang" {
 		file, err := a.root.OpenFile("helper-operation-started", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 		if err != nil {
@@ -153,7 +157,7 @@ func TestWorkerActualSubprocessHappyPathReapsJoinsAndRetainsPublicationLease(t *
 	}
 }
 func TestWorkerActualCrashExitAndMalformedProtocolPreserveParent(t *testing.T) {
-	for _, mode := range []string{"panic", "exit", "invalid-frame"} {
+	for _, mode := range []string{"panic", "exit", "exit-clean", "invalid-frame"} {
 		t.Run(mode, func(t *testing.T) {
 			a, admission := workerRuntimeTestAttempt(t, context.Background())
 			launch := workerRuntimeTestLaunch(t, a, mode)

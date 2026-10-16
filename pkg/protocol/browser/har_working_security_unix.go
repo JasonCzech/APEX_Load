@@ -24,5 +24,9 @@ func persistentHARIdentity(info os.FileInfo) (harPersistentIdentity, error) {
 	if !ok || stat.Uid != uint32(os.Geteuid()) {
 		return harPersistentIdentity{}, errHAROwnershipUnproven
 	}
-	return harPersistentIdentity{Device: uint64(stat.Dev), Inode: uint64(stat.Ino), UID: stat.Uid}, nil
+	return harPersistentIdentity{Device: widenStatDevice(stat.Dev), Inode: stat.Ino, UID: stat.Uid}, nil
 }
+
+// widenStatDevice reads Stat_t.Dev, which is an int32 on Darwin and a uint64
+// on Linux.
+func widenStatDevice[T ~int32 | ~uint64](device T) uint64 { return uint64(device) }

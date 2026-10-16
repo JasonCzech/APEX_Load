@@ -182,7 +182,8 @@ jobs:
       - name: Lint tracked shell scripts
         run: |
           set -euo pipefail
-          mapfile -d '' scripts < <(git ls-files -z -- '*.sh')
+          # _retired/ holds hash-pinned snapshots that are never executed.
+          mapfile -d '' scripts < <(git ls-files -z -- '*.sh' ':!:_retired/**')
           if (( ${#scripts[@]} > 0 )); then
             "${RUNNER_TEMP}/bin/shellcheck" --external-sources "${scripts[@]}"
           fi
@@ -209,7 +210,8 @@ jobs:
         if: github.server_url == 'https://github.com'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev
+          # ripgrep: the import policy locality check below requires it.
+          sudo apt-get install -y libgtk-3-dev ripgrep
 
       - name: Check formatting
         run: |
@@ -264,10 +266,35 @@ jobs:
         run: python3 scripts/check-docs.py
 
   go-tests:
-    name: Go race tests
+    name: Go tests (${{ matrix.lane }})
     if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.id == github.event.repository.id && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'apexload-ci-unprivileged' }}
     timeout-minutes: 75
+    # pkg/api (about 6,300 tests) and pkg/storage run on the pure-Go SQLite
+    # driver, which the race detector slows past any single job: pkg/api alone
+    # needs hours under -race. Every other package runs under -race in one
+    # leg; those two run without it in deterministic shards.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: race
+          - lane: api 1 of 3
+            package: ./pkg/api
+            shard: 0
+            shards: 3
+          - lane: api 2 of 3
+            package: ./pkg/api
+            shard: 1
+            shards: 3
+          - lane: api 3 of 3
+            package: ./pkg/api
+            shard: 2
+            shards: 3
+          - lane: storage
+            package: ./pkg/storage
+            shard: 0
+            shards: 1
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -289,12 +316,13 @@ jobs:
           java-version: "21"
 
       - name: Install desktop development headers for script tests
-        if: github.server_url == 'https://github.com'
+        if: github.server_url == 'https://github.com' && matrix.lane == 'race'
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
 
       - name: Install gotestsum
+        if: matrix.lane == 'race'
         run: go install gotest.tools/gotestsum@v1.13.0
 
       - name: Install Playwright browser runtimes for Go integration tests
@@ -310,21 +338,38 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Require real React recording and replay
+        if: matrix.lane == 'race'
         env:
           APEXLOAD_BROWSER_TESTS: require
         run: go test -count=1 -timeout=2m ./pkg/recorder/browser -run '^TestRecordAndReplayReact(SPAWithPollingAndDynamicAuraSelectors|AuraWithSessionCorrelation)$'
 
       - name: Require owned HAR SDK completion contract
+        if: matrix.lane == 'race'
         run: go test -race -count=1 github.com/mxschmitt/playwright-go -run '^TestAPEXOwnedHAR'
 
       - name: Run race tests
+        if: matrix.lane == 'race'
         run: |
           set -euo pipefail
           mkdir -p test-results
+          # Capture the listing first so a go list failure fails the step.
+          listing=$(go list ./...)
+          mapfile -t packages < <(grep -v -x \
+            -e 'github.com/jasonczech/apexload/pkg/api' \
+            -e 'github.com/jasonczech/apexload/pkg/storage' <<<"${listing}")
           gotestsum --junitfile test-results/go-junit.xml -- \
-            -race -shuffle=on -count=1 -timeout=20m -coverprofile=test-results/coverage.out ./...
+            -race -shuffle=on -count=1 -timeout=20m -coverprofile=test-results/coverage.out "${packages[@]}"
+
+      - name: Run ${{ matrix.lane }} tests
+        if: matrix.lane != 'race'
+        env:
+          TEST_PACKAGE: ${{ matrix.package }}
+          TEST_SHARD: ${{ matrix.shard }}
+          TEST_SHARDS: ${{ matrix.shards }}
+        run: scripts/ci/go-test-shard.sh "${TEST_PACKAGE}" "${TEST_SHARD}" "${TEST_SHARDS}" -shuffle=on -count=1 -timeout=40m
 
       - name: Coverage ratchet
+        if: matrix.lane == 'race'
         # REPORTING ONLY FOR NOW — see the sequence below before removing
         # continue-on-error.
         #
@@ -350,8 +395,11 @@ jobs:
           COVERAGE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: |
           set -euo pipefail
+          # pkg/api and pkg/storage run in the shard legs, outside this profile.
           go list -f '{{.ImportPath}}{{"\t"}}{{if or (gt (len .TestGoFiles) 0) (gt (len .XTestGoFiles) 0)}}true{{else}}false{{end}}' ./... \
-            | grep -v '/node_modules/' > test-results/packages.txt
+            | grep -v '/node_modules/' \
+            | awk -F'\t' '$1 != "github.com/jasonczech/apexload/pkg/api" && $1 != "github.com/jasonczech/apexload/pkg/storage"' \
+            > test-results/packages.txt
           python3 scripts/coverage_baseline_report.py \
             test-results/coverage.out \
             test-results/coverage-current.json \
@@ -368,7 +416,7 @@ jobs:
           fi
 
       - name: Upload Go test evidence
-        if: always()
+        if: always() && matrix.lane == 'race'
         uses: ./.github/actions/upload-artifact
         with:
           name: go-test-evidence
@@ -491,10 +539,17 @@ jobs:
           done
 
   dashboard:
-    name: Dashboard quality and browser smoke
+    name: Dashboard quality and browser smoke (${{ matrix.profile }})
     if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.id == github.event.repository.id && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'apexload-ci-unprivileged' }}
-    timeout-minutes: 40
+    # Each auth profile's workflow regressions run in their own leg; the
+    # profile-independent checks run once, on the dev-admin leg. local-auth
+    # takes about 3.5x as long as dev-admin (35 vs 10 minutes locally).
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [dev-admin, local-auth]
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -522,28 +577,34 @@ jobs:
           npm ci --ignore-scripts
 
       - name: Audit all dependencies
+        if: matrix.profile == 'dev-admin'
         working-directory: dashboard
         run: npm audit --audit-level=high
 
       - name: Type check
+        if: matrix.profile == 'dev-admin'
         working-directory: dashboard
         run: npm run typecheck
 
       - name: Lint
+        if: matrix.profile == 'dev-admin'
         working-directory: dashboard
         run: npm run lint
 
       - name: Accessibility regression gate
+        if: matrix.profile == 'dev-admin'
         working-directory: dashboard
         run: npm run lint:a11y
 
       - name: Unit tests
+        if: matrix.profile == 'dev-admin'
         working-directory: dashboard
         run: |
           npm test
           npm run test:node-version
 
       - name: Bundle checker tests
+        if: matrix.profile == 'dev-admin'
         working-directory: dashboard
         run: npm run test:bundle-budget
 
@@ -564,11 +625,14 @@ jobs:
         run: ./node_modules/.bin/playwright install chromium
 
       - name: User workflow regressions against the embedded controller dashboard
+        env:
+          APEXLOAD_E2E_PROFILES: ${{ matrix.profile }}
         run: |
           set -euo pipefail
           scripts/run-dashboard-workflows.sh
 
       - name: Bundle budgets
+        if: matrix.profile == 'dev-admin'
         working-directory: dashboard
         run: npm run bundle:check
 
@@ -576,7 +640,7 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-artifact
         with:
-          name: dashboard-browser-evidence
+          name: dashboard-browser-evidence-${{ matrix.profile }}
           path: |
             dashboard/test-results/
             dashboard/playwright-report/
@@ -738,6 +802,7 @@ jobs:
           APEXLOAD_CONTROLLER_WORKLOAD_IDENTITY_CLIENT_ID: 00000000-0000-0000-0000-000000000001
           APEXLOAD_GENERATOR_WORKLOAD_IDENTITY_CLIENT_ID: 00000000-0000-0000-0000-000000000002
           APEXLOAD_IMAGE_TAG: ci
+          APEXLOAD_FLEET_ID: ci-aks-render
         run: |
           set -euo pipefail
           scripts/render-aks-manifests.sh --output "${RUNNER_TEMP}/apexload-aks-rendered.yaml"
@@ -1132,9 +1197,15 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
           queries: security-extended
+          # go/bad-redirect-check exceeds CodeQL's 2 GiB result-set limit on this
+          # codebase and fails the whole analysis. Open redirects (CWE-601) stay
+          # covered by go/unvalidated-url-redirection.
           config: |
             paths-ignore:
               - _retired/**
+            query-filters:
+              - exclude:
+                  id: go/bad-redirect-check
 
       - name: Build Go for CodeQL
         if: matrix.language == 'go'

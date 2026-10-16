@@ -273,6 +273,37 @@ func TestWorkerFailedOutputReaderCloseRetainsExactReaderAndFile(t *testing.T) {
 	workerWaitPhysicalRelease(t, a)
 }
 
+func TestWorkerReleaseRetriesTransientScratchRemovalWithinWaiter(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permissions do not bind root")
+	}
+	a, admission := workerRuntimeTestAttempt(t, context.Background())
+	// A non-writable subdirectory makes RemoveAll fail, standing in for a file
+	// Windows briefly refuses to delete after the worker exits.
+	blocked := filepath.Join(a.path, "held")
+	if err := os.Mkdir(blocked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(blocked, "file"), []byte("held"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(blocked, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blocked, 0o700) })
+	unblocked := time.AfterFunc(150*time.Millisecond, func() { _ = os.Chmod(blocked, 0o700) })
+	defer unblocked.Stop()
+	if err := a.release(); err != nil {
+		t.Fatalf("release after a transient removal failure: %v", err)
+	}
+	if _, err := os.Stat(a.path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("scratch survived release", err)
+	}
+	if admission.releases.Load() != 1 {
+		t.Fatal("admission not released once")
+	}
+}
+
 func TestWorkerReleaseCallbackCannotTrapLifecycleMutex(t *testing.T) {
 	a, admission := workerRuntimeTestAttempt(t, context.Background())
 	entered, resume := make(chan struct{}), make(chan struct{})

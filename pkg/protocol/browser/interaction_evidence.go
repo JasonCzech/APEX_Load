@@ -329,6 +329,9 @@ func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protoco
 			interaction.UnavailableReason = protocol.InteractionUnavailableChildFrame
 		default:
 			target, reason := b.browserInteractionTarget(ctx, action, start, navigated)
+			if reason == protocol.InteractionUnavailableTarget && b.documentChangedSince(ctx, generation, start) {
+				reason = protocol.InteractionUnavailableDocumentChanged
+			}
 			interaction.Target = target
 			if interaction.UnavailableReason == "" {
 				interaction.UnavailableReason = reason
@@ -336,6 +339,19 @@ func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protoco
 		}
 	}
 	b.recordBrowserInteraction(interaction)
+}
+
+// documentChangedSince reports whether the page now holds a different
+// document from the one the gesture began in. A load wait can return before a
+// form submit's navigation starts, so the post-gesture read may still see the
+// old document while the target read then fails mid-navigation: the target is
+// gone with its document, not unresolved in it.
+func (b *Browser) documentChangedSince(ctx context.Context, generation string, start *browserInteractionStart) bool {
+	if start == nil || !start.read || start.page.Doc == "" || ctx.Err() != nil {
+		return false
+	}
+	var now browserInteractionPage
+	return b.drainBrowserInteractionPageAs(ctx, generation, true, &now) == nil && now.Doc != "" && now.Doc != start.page.Doc
 }
 
 // syntheticGesture reports whether the runtime dispatches kind as synthetic

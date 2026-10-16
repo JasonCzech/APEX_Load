@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hamba/avro/v2/ocf"
+	"github.com/iskorotkov/avro/v2/ocf"
 	"github.com/jasonczech/apexload/pkg/convert/asyncapi"
 	"github.com/jasonczech/apexload/pkg/convert/brokerconfig"
 	"github.com/jasonczech/apexload/pkg/convert/bruno"

@@ -287,7 +287,7 @@ func (c *Client) Collect(ctx context.Context, s Selection, from, to time.Time, r
 			}
 			end := current.Add(time.Duration(chunkSteps-1) * step)
 			if end.After(to) {
-				end = current.Add(time.Duration(to.Sub(current)/step) * step)
+				end = current.Add(to.Sub(current).Truncate(step))
 			}
 			params := url.Values{"query": {rendered.Expression}, "start": {unixSeconds(current)}, "end": {unixSeconds(end)}, "step": {strconv.Itoa(s.StepSeconds)}}
 			if c.cfg.BackendProfile != BackendAzureManaged {

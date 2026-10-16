@@ -175,12 +175,12 @@ func hasReportAcceptanceCriteria(config *GoalConfig) bool {
 func reportConditionalConcerns(report *RunArchiveReport) []string {
 	concerns := make([]string, 0, 3)
 	if t := report.Overview.Telemetry; t != nil && (t.DegradedIntervals > 0 || t.BreachedIntervals > 0) {
-		concerns = append(concerns, "telemetry was degraded for "+reportCountNoun(int64(t.DegradedIntervals+t.BreachedIntervals), "interval", "intervals"))
+		concerns = append(concerns, "telemetry was degraded for "+reportCountNoun(t.DegradedIntervals+t.BreachedIntervals, "interval", "intervals"))
 	}
 	// Unscored telemetry is never healthy: whether it met its budget is
 	// unknown, so it cannot leave a run passing outright.
 	if t := report.Overview.Telemetry; t != nil && t.UnscoredIntervals > 0 {
-		concerns = append(concerns, "telemetry could not be scored for "+reportCountNoun(int64(t.UnscoredIntervals), "interval", "intervals"))
+		concerns = append(concerns, "telemetry could not be scored for "+reportCountNoun(t.UnscoredIntervals, "interval", "intervals"))
 	}
 	if attainment := report.Overview.GoalAttainment; attainment != nil {
 		if off := attainment.OverWindows + attainment.UnderWindows; off > 0 {
@@ -189,7 +189,7 @@ func reportConditionalConcerns(report *RunArchiveReport) []string {
 				attainment.OverWindows, attainment.UnderWindows))
 		}
 	} else if report.Overview.ThroughputMissedIntervals > 0 {
-		concerns = append(concerns, "throughput missed its target in "+reportCountNoun(int64(report.Overview.ThroughputMissedIntervals), "interval", "intervals"))
+		concerns = append(concerns, "throughput missed its target in "+reportCountNoun(report.Overview.ThroughputMissedIntervals, "interval", "intervals"))
 	}
 	if status := strings.ToLower(strings.TrimSpace(report.Completeness.Status)); status != "" && status != "complete" && status != "ok" {
 		concerns = append(concerns, fmt.Sprintf("data completeness was %.0f%% (%s)", report.Completeness.ScorePct, report.Completeness.Status))
@@ -236,7 +236,7 @@ func deriveReportFindings(report *RunArchiveReport) []ReportFinding {
 			Title:    "Recurring error pattern",
 			Severity: severity,
 			Observed: fmt.Sprintf("%q occurred %s (first seen %s, latest %s).",
-				pattern.Sample, reportCountNoun(int64(pattern.Count), "time", "times"), formatReportClock(pattern.FirstSeen), formatReportClock(pattern.LatestSeen)),
+				pattern.Sample, reportCountNoun(pattern.Count, "time", "times"), formatReportClock(pattern.FirstSeen), formatReportClock(pattern.LatestSeen)),
 			Evidence: evidence,
 		})
 	}
@@ -271,7 +271,7 @@ func deriveReportFindings(report *RunArchiveReport) []ReportFinding {
 			Title:    "Throughput below target",
 			Severity: "minor",
 			Observed: fmt.Sprintf("Throughput missed its target in %s; peak gap %.1f%% against a %.1f TPS target.",
-				reportCountNoun(int64(report.Overview.ThroughputMissedIntervals), "interval", "intervals"), report.Overview.MaxThroughputGapPct, report.Overview.PeakTargetTPS),
+				reportCountNoun(report.Overview.ThroughputMissedIntervals, "interval", "intervals"), report.Overview.MaxThroughputGapPct, report.Overview.PeakTargetTPS),
 		})
 	}
 

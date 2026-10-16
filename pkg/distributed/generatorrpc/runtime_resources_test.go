@@ -103,7 +103,7 @@ func TestValidRuntimeResourceClaimRejectsMalformedAndZeroIntents(t *testing.T) {
 		{name: "negative peak", edit: func(c *pb.RuntimeResourceClaim) { c.PeakVusers = -1 }},
 		{name: "zero processors", edit: func(c *pb.RuntimeResourceClaim) { c.Requested.Processors = 0; c.Requested.Workers = 0 }},
 		{name: "negative processors", edit: func(c *pb.RuntimeResourceClaim) { c.Requested.Processors = -1 }},
-		{name: "oversized processors", edit: func(c *pb.RuntimeResourceClaim) { c.Requested.Processors = int64(maxGeneratorVUsers) + 1 }},
+		{name: "oversized processors", edit: func(c *pb.RuntimeResourceClaim) { c.Requested.Processors = maxGeneratorVUsers + 1 }},
 		{name: "wrong worker charge", edit: func(c *pb.RuntimeResourceClaim) { c.Requested.Workers-- }},
 		{name: "missing partition ceiling", edit: func(c *pb.RuntimeResourceClaim) { c.Requested.MaxPartitionsPerProcessor = 0 }},
 		{name: "oversized partition ceiling", edit: func(c *pb.RuntimeResourceClaim) { c.Requested.MaxPartitionsPerProcessor = 33 }},

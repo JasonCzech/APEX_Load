@@ -114,6 +114,18 @@ func StartStrongProcessTree(cmd *exec.Cmd) error {
 	return err
 }
 
+// WaitProcessTree waits for a command started through StartProcessTree, then
+// terminates whatever its tree left behind, and returns the command's Wait
+// error and KillProcessTree's containment error. On Linux the tree's members
+// are recorded after the root exits but before Wait reaps it, while the exited
+// root still pins its process group: a descendant it orphaned before the
+// descendant poll saw it is still found and killed.
+func WaitProcessTree(cmd *exec.Cmd) (waitErr, containmentErr error) {
+	recordProcessTreeAtRootExit(cmd)
+	waitErr = cmd.Wait()
+	return waitErr, KillProcessTree(cmd)
+}
+
 // KillProcessTree terminates cmd and any native descendants that still belong
 // to its isolated process tree. It is safe to call after Wait so successful
 // JVM invocations cannot leave helper processes behind.

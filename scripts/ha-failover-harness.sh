@@ -86,9 +86,9 @@ ts() { python3 -c 'import time;print(f"{time.time():.1f}")'; }
 log() { echo "$(ts) $*" | tee -a "$RUN/timeline.log"; }
 
 # --- postgres
-docker run -d --rm --name "$PG" -e POSTGRES_PASSWORD=p0 -e POSTGRES_DB=apexload -p 127.0.0.1:$PG_PORT:5432 postgres:16-alpine >/dev/null || { log "PostgreSQL container startup failed"; exit 1; }
+docker run -d --rm --name "$PG" -e POSTGRES_PASSWORD=p0 -e POSTGRES_DB=apexload -p "127.0.0.1:$PG_PORT:5432" postgres:16-alpine >/dev/null || { log "PostgreSQL container startup failed"; exit 1; }
 PG_CREATED=1
-for i in $(seq 1 30); do docker exec "$PG" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
+for _ in $(seq 1 30); do docker exec "$PG" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
 sleep 2
 DBURL="postgres://postgres:p0@127.0.0.1:$PG_PORT/apexload?sslmode=disable"
 
@@ -104,7 +104,7 @@ for n in 1 2; do
   (cd "$RUN/g$n" && APEXLOAD_ENV=development APEXLOAD_GENERATOR_ID=p0-g$n \
     APEXLOAD_GENERATOR_LISTEN_ADDR=127.0.0.1:1909$n APEXLOAD_GENERATOR_HEALTH_ADDR=127.0.0.1:1919$n \
     APEXLOAD_GENERATOR_STATE_DIR="$RUN/g$n/state" APEXLOAD_ARCHIVE_DIR="$RUN/g$n/archives" exec "${GENERATOR_BIN:-$P0/bin/generator}") > "$RUN/g$n.log" 2>&1 &
-  GPID[$n]=$!; PIDS+=($!)
+  GPID[n]=$!; PIDS+=($!)
 done
 sleep 2
 
@@ -116,14 +116,14 @@ start_controller() {
   (cd "$RUN/c$n" && APEXLOAD_ENV=development APEXLOAD_CONTROLLER_HA=true APEXLOAD_STORE=postgres APEXLOAD_WRAPPING_MASTER_KEY="$WRAP_KEY" APEXLOAD_ADDR=127.0.0.1:1808$n APEXLOAD_ARCHIVE_DIR="$RUN/c$n/archives" \
     APEXLOAD_DATABASE_URL="$DBURL" APEXLOAD_GENERATORS=127.0.0.1:19091,127.0.0.1:19092 \
     exec "$P0/bin/controller") >> "$RUN/c$n.log" 2>&1 &
-  CPID[$n]=$!; PIDS+=($!)
+  CPID[n]=$!; PIDS+=($!)
 }
 for n in 1 2; do
   start_controller $n
   sleep 4   # c1 boots first and should win the lease
 done
 for n in 1 2; do
-  for i in $(seq 1 40); do curl -sf "http://127.0.0.1:1808$n/api/v1/health" >/dev/null 2>&1 && break; sleep 1; done
+  for _ in $(seq 1 40); do curl -sf "http://127.0.0.1:1808$n/api/v1/health" >/dev/null 2>&1 && break; sleep 1; done
 done
 sleep 5
 LEADER=""

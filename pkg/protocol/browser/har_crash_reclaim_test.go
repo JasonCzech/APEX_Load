@@ -429,8 +429,11 @@ func testHAROwnershipReclaimsKilledNativeRecording(t *testing.T, engine string) 
 	}
 	_ = child.Wait()
 	// The orphaned driver notices its closed pipe and exits; until it has,
-	// the generation is not reclaimable.
-	for deadline := time.Now().Add(20 * time.Second); !harProcessGone(host, driverIdentity, harProcessStart); time.Sleep(50 * time.Millisecond) {
+	// the generation is not reclaimable. On stdin close the driver closes its
+	// browsers gracefully and only force-exits after 30 seconds
+	// (gracefullyProcessExitDoNotHang), which a loaded runner closing WebKit
+	// can reach.
+	for deadline := time.Now().Add(45 * time.Second); !harProcessGone(host, driverIdentity, harProcessStart); time.Sleep(50 * time.Millisecond) {
 		if len(PlanRuntimeHARWorkingCleanup(dir, 128)) != 0 {
 			t.Fatal("planned while the native writer lives")
 		}

@@ -41,7 +41,8 @@ jobs:
   desktop:
     name: Desktop package (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    # The slowest leg (macOS Intel) needs the time for the native analytics suite under -race.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -68,6 +69,18 @@ jobs:
             artifact: apexload-desktop-windows-amd64
 
     steps:
+      # Committed Playwright evidence under docs/qa/reviews has paths longer
+      # than Windows' 260-character MAX_PATH once checked out. Text fixtures and
+      # golden files must also keep their committed LF endings, which the
+      # runner's default CRLF conversion would rewrite.
+      - name: Allow long checkout paths and keep LF line endings
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git config --system core.longpaths true
+          git config --system core.autocrlf false
+          git config --system core.eol lf
+
       - name: Checkout Code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -135,8 +148,12 @@ jobs:
           CGO_ENABLED: '1'
         run: |
           set -euo pipefail
-          go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
-          go test -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'
+          # The native worker suite outlasts go test's 10-minute default on slower
+          # hosted runners. It refuses work when memory runs low, so pkg/api (a
+          # multi-gigabyte compile) gets its own run instead of sharing the machine.
+          go test -timeout 30m -tags analytics_duckdb ./pkg/analysis/... -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
+          go test -timeout 30m -tags analytics_duckdb ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
+          go test -timeout 45m -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'
           python3 -m unittest discover -s scripts -p 'test_native_worker_startup_test.py'
           controller="native-controller"
           if [[ "${RUNNER_OS}" == Windows ]]; then controller="${controller}.exe"; fi
@@ -603,8 +620,12 @@ jobs:
           CGO_ENABLED: '1'
         run: |
           set -euo pipefail
-          go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
-          go test -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'
+          # The native worker suite outlasts go test's 10-minute default on slower
+          # hosted runners. It refuses work when memory runs low, so pkg/api (a
+          # multi-gigabyte compile) gets its own run instead of sharing the machine.
+          go test -timeout 30m -tags analytics_duckdb ./pkg/analysis/... -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
+          go test -timeout 30m -tags analytics_duckdb ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
+          go test -timeout 45m -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'
           python3 -m unittest discover -s scripts -p 'test_native_worker_startup_test.py'
           controller="native-controller"
           if [[ "${RUNNER_OS}" == Windows ]]; then controller="${controller}.exe"; fi

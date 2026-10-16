@@ -2476,10 +2476,12 @@ func (s *Server) runProcessAcquired(ctx context.Context, prepared preparedRuntim
 	cmd.Stderr = stderr
 	startErr := javarunner.StartProcessTree(cmd)
 	err := startErr
+	var cleanupErr error
 	if startErr == nil {
-		err = cmd.Wait()
+		err, cleanupErr = javarunner.WaitProcessTree(cmd)
+	} else {
+		cleanupErr = javarunner.KillProcessTree(cmd)
 	}
-	cleanupErr := javarunner.KillProcessTree(cmd)
 	failedStartCapture := errors.Is(startErr, javarunner.ErrProcessContainmentFailed)
 	if failedStartCapture {
 		s.trackFailedStartReap(cmd, func() { _ = os.Remove(eventPath) })

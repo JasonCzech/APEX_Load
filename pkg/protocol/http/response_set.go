@@ -70,7 +70,7 @@ func (c *responseSetCollector) addHop(resp *http.Response) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	size := int64(flattenedHeadersByteSize(hop.headers))
+	size := flattenedHeadersByteSize(hop.headers)
 	if len(c.hops)+len(c.resources) >= maxResponseSetEntries || c.bytes+size > maxResponseSetBytes {
 		return
 	}
@@ -85,7 +85,7 @@ func recordResourceResponse(ctx context.Context, url string, status int, headers
 	if !ok || c == nil || !c.wantResources || headers == nil {
 		return
 	}
-	size := int64(flattenedHeadersByteSize(headers)) + int64(len(body))
+	size := flattenedHeadersByteSize(headers) + int64(len(body))
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.hops)+len(c.resources) >= maxResponseSetEntries || c.bytes+size > maxResponseSetBytes {

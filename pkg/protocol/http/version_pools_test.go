@@ -109,7 +109,6 @@ func TestHTTPVersionPoolsShareCookiesPartitionCacheAndIsolateVUsers(t *testing.T
 			t.Fatalf("clear lost: %s", r.ResponseBody)
 		}
 	}
-	_ = calls
 }
 
 type versionCountedConn struct {

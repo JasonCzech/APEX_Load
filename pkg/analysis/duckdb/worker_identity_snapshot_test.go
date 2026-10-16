@@ -42,6 +42,8 @@ func TestNativeIdentityMappingSnapshotsBeforeHashBarrier(t *testing.T) {
 	}()
 	select {
 	case <-entered:
+	case got := <-done:
+		t.Fatal("native identity normalization returned before the hash barrier", got.err)
 	case <-ctx.Done():
 		t.Fatal("native identity hash barrier not reached")
 	}
@@ -102,6 +104,8 @@ func TestNativeSeriesFiltersSnapshotBeforeHashBarrier(t *testing.T) {
 	}()
 	select {
 	case <-entered:
+	case got := <-done:
+		t.Fatal("series query returned before the hash barrier", got.err)
 	case <-ctx.Done():
 		t.Fatal("series hash barrier not reached")
 	}

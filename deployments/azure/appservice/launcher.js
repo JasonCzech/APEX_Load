@@ -24,14 +24,17 @@ if (!fs.existsSync(binPath)) {
 
 // On Linux verify ELF magic and x86-64 machine type before exec so that
 // a wrong-arch build gives a clear error rather than a cryptic ENOEXEC.
+// A "#!" script has no machine type, so it is exec'd as is (the tests' stub
+// controller is one).
 if (process.platform === "linux") {
   const fd = fs.openSync(binPath, "r");
   const header = Buffer.alloc(20);
   fs.readSync(fd, header, 0, 20, 0);
   fs.closeSync(fd);
+  const isScript = header[0] === 0x23 && header[1] === 0x21; // "#!"
   const isElf = header[0] === 0x7f && header.slice(1, 4).toString() === "ELF";
   const isX64 = header.readUInt16LE(18) === 0x003e; // e_machine EM_X86_64
-  if (!isElf || !isX64) {
+  if (!isScript && (!isElf || !isX64)) {
     console.error(
       `[launcher] binary at ${binPath} is not a linux/amd64 ELF executable.\n` +
         `  Rebuild with: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o deployments/azure/appservice/bin/controller ./cmd/controller`

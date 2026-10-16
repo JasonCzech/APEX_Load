@@ -264,7 +264,7 @@ func telemetryAcceptanceReportStageOf(stage TelemetryStageDistribution) telemetr
 		return fmt.Sprintf("%.1f", *value)
 	}
 	row := telemetryAcceptanceReportStage{Stage: stage.Stage, Availability: stage.Availability, Samples: fmt.Sprint(stage.Samples),
-		AvailabilityLabel: reportTokenLabel(stage.Availability), SamplesLabel: formatReportCount(int64(stage.Samples)),
+		AvailabilityLabel: reportTokenLabel(stage.Availability), SamplesLabel: formatReportCount(stage.Samples),
 		P50: format(stage.P50Ms), P95: format(stage.P95Ms), P99: format(stage.P99Ms), Max: format(stage.MaxMs)}
 	if stage.Advisory {
 		row.Availability += " (advisory)"

@@ -73,7 +73,7 @@ func NewRuntimeResourceClaim(script *dsl.Script, initStrategy string, peakVUsers
 	return claim, err
 }
 func buildRuntimeResourceClaim(script *dsl.Script, initStrategy string, peakVUsers int) (*pb.RuntimeResourceClaim, bool, error) {
-	if peakVUsers < 0 || int64(peakVUsers) > int64(maxGeneratorVUsers) {
+	if peakVUsers < 0 || int64(peakVUsers) > maxGeneratorVUsers {
 		return nil, false, fmt.Errorf("invalid runtime resource peak")
 	}
 	plan, err := engine.NewRuntimeResourcePlan(script, initStrategy)
@@ -96,11 +96,11 @@ func validateRuntimeResourceClaim(claim *pb.RuntimeResourceClaim, initial int32)
 	if claim == nil {
 		return nil
 	}
-	if claim.Contract != FeatureRuntimeResourceReservationsV1 || claim.Protocol != "eventhubs" || claim.PeakVusers < initial || claim.PeakVusers < 0 || int64(claim.PeakVusers) > int64(maxGeneratorVUsers) || claim.Requested == nil {
+	if claim.Contract != FeatureRuntimeResourceReservationsV1 || claim.Protocol != "eventhubs" || claim.PeakVusers < initial || claim.PeakVusers < 0 || int64(claim.PeakVusers) > maxGeneratorVUsers || claim.Requested == nil {
 		return fmt.Errorf("invalid runtime resource contract or immutable peak")
 	}
 	d := claim.Requested
-	if d.Processors <= 0 || d.Processors > int64(maxGeneratorVUsers) || d.MaxPartitionsPerProcessor < 1 || d.MaxPartitionsPerProcessor > 32 || d.Workers != d.Processors*d.MaxPartitionsPerProcessor {
+	if d.Processors <= 0 || d.Processors > maxGeneratorVUsers || d.MaxPartitionsPerProcessor < 1 || d.MaxPartitionsPerProcessor > 32 || d.Workers != d.Processors*d.MaxPartitionsPerProcessor {
 		return fmt.Errorf("invalid Event Hubs runtime resource demand")
 	}
 	return nil

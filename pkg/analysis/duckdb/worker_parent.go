@@ -311,7 +311,8 @@ func runWorkerParentOwned(a *workerAttempt, request workerRequest, options worke
 	var terminateC, killC, proofC <-chan time.Time
 	cancelRequested := false
 	closeWritesOnce := sync.Once{}
-	closeWrites := func() { closeWritesOnce.Do(func() { close(writes) }) }
+	writesClosed := false
+	closeWrites := func() { closeWritesOnce.Do(func() { writesClosed = true; close(writes) }) }
 	beginCancellation := func(why error, reason string) {
 		if cause == nil {
 			cause = why
@@ -323,7 +324,9 @@ func runWorkerParentOwned(a *workerAttempt, request workerRequest, options worke
 		cancelRequested = true
 		cancelStarted = time.Now()
 		if state.stage == "running" {
-			if state.cancel(1) == nil {
+			// The command channel closes once the child is reaped, possibly
+			// before its result: a late cancellation then has no one to tell.
+			if state.cancel(1) == nil && !writesClosed {
 				writes <- workerFrame{Identity: a.bootstrap.Identity, Kind: "cancel", Cancel: &workerCancel{Sequence: 1, Reason: reason}}
 			}
 		}
@@ -406,7 +409,8 @@ func runWorkerParentOwned(a *workerAttempt, request workerRequest, options worke
 					startupTimer.Stop()
 					startupC = nil
 					if !cancelRequested {
-						if state.begin(request) != nil {
+						if state.begin(request) != nil || writesClosed {
+							// A hello read after the child was reaped cannot take a request.
 							beginCancellation(errWorkerProtocol, "cancelled")
 						} else {
 							writes <- workerFrame{Identity: a.bootstrap.Identity, Kind: "request", Request: state.request}

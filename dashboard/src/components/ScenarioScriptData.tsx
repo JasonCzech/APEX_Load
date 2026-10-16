@@ -22,7 +22,7 @@ function SourcePreview({ source }: { source: ScriptDataSource }) {
       {source.type === 'file' && <div><dt>Encoding</dt><dd>{source.encoding || 'Text (default)'}</dd></div>}
       {!!source.columns?.length && <div><dt>Columns</dt><dd>{source.columns.join(', ')}</dd></div>}
     </dl>
-    {preview ? <><p>Data preview · first 10 lines, up to 4,000 characters. Values may contain sensitive test data.</p><pre tabIndex={0} aria-label={`Data preview for ${source.name}`}>{preview}</pre></>
+    {preview ? <><p>Data preview · first 10 lines, up to 4,000 characters. Values may contain sensitive test data.</p><pre role="region" tabIndex={0} aria-label={`Data preview for ${source.name}`}>{preview}</pre></>
       : source.staged_asset ? <p>The staged asset takes precedence over the script’s inline copy. Its contents are not loaded here.</p>
         : isInline ? <p>Encoded file contents are not previewed here.</p>
           : <p>External data contents are not loaded here. Availability is checked before execution.</p>}

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
 )
 
 // avroSerde encodes/decodes Kafka record values as Confluent-framed Avro binary.

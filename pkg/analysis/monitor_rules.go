@@ -187,8 +187,8 @@ func EvaluateMonitorRule(rule MonitorRule, points []MetricPoint, start, end time
 	// their returned timeframe as the bucket origin, so count expected full
 	// buckets on that grid rather than silently dropping a boundary bucket.
 	windowFrom := identity.Provider.BucketStart
-	windowFrom = windowFrom.Add(-(windowFrom.Sub(from) / resolution) * resolution)
-	windowEnd := windowFrom.Add((until.Sub(windowFrom) / resolution) * resolution)
+	windowFrom = windowFrom.Add(-windowFrom.Sub(from).Truncate(resolution))
+	windowEnd := windowFrom.Add(until.Sub(windowFrom).Truncate(resolution))
 	if identity.Provider.QueryWindow {
 		windowFrom, windowEnd = from, until
 	}

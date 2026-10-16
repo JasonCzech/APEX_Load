@@ -1,6 +1,6 @@
 ARG PLAYWRIGHT_DRIVER_VERSION=1.61.1
 
-FROM node:26.10.0-alpine3.23@sha256:c3c6e314fd42e41962360b2482fc18d150beb47976c3aa7b8b9689d7ef42a5c2 AS dashboard-builder
+FROM node:22.22.0-alpine3.23@sha256:e4bf2a82ad0a4037d28035ae71529873c069b13eb0455466ae0bc13363826e34 AS dashboard-builder
 
 ARG PLAYWRIGHT_DRIVER_VERSION
 ARG VERSION=dev
@@ -39,7 +39,7 @@ COPY dashboard/ ./dashboard/
 RUN APEXLOAD_UX_VERSION="${VERSION}" APEXLOAD_UX_BUILD_TIME="${BUILD_TIME}" \
 	npm --prefix dashboard run build
 
-FROM golang:1.27.1-alpine3.24@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS builder
+FROM golang:1.26.9-alpine3.24@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade AS builder
 
 WORKDIR /src
 COPY go.mod go.sum ./

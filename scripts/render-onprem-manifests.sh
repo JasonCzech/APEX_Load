@@ -51,6 +51,7 @@ TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/apexload-onprem.XXXXXX")"
 STAGED_OUTPUT=""
 trap 'rm -rf "$TMP_DIR"; [[ -z "$STAGED_OUTPUT" ]] || rm -f "$STAGED_OUTPUT"' EXIT
 kubectl kustomize "$OVERLAY_DIR" > "$TMP_DIR/rendered.yaml"
+# shellcheck disable=SC2016 # the literal placeholder, not an expansion
 if ! grep -Fq '${APEXLOAD_FLEET_ID}' "$TMP_DIR/rendered.yaml"; then
   echo "on-prem overlay lacks the required fleet ID placeholder" >&2
   exit 1

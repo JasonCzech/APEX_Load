@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hamba/avro/v2/ocf"
+	"github.com/iskorotkov/avro/v2/ocf"
 )
 
 // TestConvertCaptureBase64EncodesBinaryBody covers eventhubs-3 (import half): a

@@ -1,6 +1,6 @@
 module github.com/jasonczech/apexload
 
-go 1.26.5
+go 1.26.9
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/messaging/azeventhubs/v2 v2.0.2
@@ -20,8 +20,8 @@ require (
 	github.com/google/cel-go v0.29.2
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
-	github.com/hamba/avro/v2 v2.31.0
 	github.com/invopop/jsonschema v0.14.0
+	github.com/iskorotkov/avro/v2 v2.33.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jmespath/go-jmespath v0.4.0
 	github.com/mxschmitt/playwright-go v0.6100.0
@@ -33,13 +33,13 @@ require (
 	github.com/wailsapp/wails/v2 v2.16.0
 	github.com/xitongsys/parquet-go v1.6.2
 	github.com/xitongsys/parquet-go-source v0.0.0-20241021075129-b732d2ac9c9b
-	github.com/xuri/excelize/v2 v2.11.0
+	github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
 	github.com/zalando/go-keyring v0.2.8
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.46.0
 	gocloud.dev v0.46.0
-	golang.org/x/mod v0.38.0
-	golang.org/x/net v0.58.0
+	golang.org/x/mod v0.41.0
+	golang.org/x/net v0.60.0
 	golang.org/x/oauth2 v0.36.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
@@ -83,10 +83,10 @@ require (
 	github.com/prometheus/common v0.71.0
 	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/prometheus/prometheus v0.315.0
-	github.com/richardlehane/mscfb v1.0.7 // indirect
+	github.com/richardlehane/mscfb v1.0.8 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
-	github.com/xuri/efp v0.0.1 // indirect
+	github.com/xuri/efp v0.0.2 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.46.0 // indirect
@@ -94,8 +94,8 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.6 // indirect
 	golang.org/x/exp v0.0.0-20260709172345-9ea1abe57597 // indirect
-	golang.org/x/telemetry v0.0.0-20260708182218-49f421fb7959 // indirect
-	golang.org/x/tools v0.48.0 // indirect
+	golang.org/x/telemetry v0.0.0-20260811182544-a038080d80e5 // indirect
+	golang.org/x/tools v0.49.0 // indirect
 	modernc.org/opt v0.2.0 // indirect
 	modernc.org/sortutil v1.2.1 // indirect
 	modernc.org/strutil v1.2.1 // indirect
@@ -123,7 +123,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.55.0 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/apache/arrow/go/arrow v0.0.0-20200730104253-651201b0f516 // indirect
-	github.com/apache/thrift v0.23.0
+	github.com/apache/thrift v0.24.0
 	github.com/aws/aws-sdk-go-v2 v1.46.0
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.11 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.33.3
@@ -211,11 +211,11 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/crypto v0.56.0
-	golang.org/x/image v0.41.0
-	golang.org/x/sync v0.22.0
-	golang.org/x/sys v0.47.0
-	golang.org/x/text v0.41.0
+	golang.org/x/crypto v0.57.0
+	golang.org/x/image v0.45.0
+	golang.org/x/sync v0.23.0
+	golang.org/x/sys v0.48.0
+	golang.org/x/text v0.42.0
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/api v0.297.0 // indirect

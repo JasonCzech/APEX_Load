@@ -89,6 +89,7 @@ func startLinuxProcessTree(cmd *exec.Cmd, requireStrong bool) error {
 	configureProcessTree(cmd)
 	tree := &managedLinuxProcessTree{
 		known:      make(map[int]linuxProcessIdentity),
+		root:       noLinuxProcessIdentity(),
 		cgroupPath: createPrivateCgroupForProcess(),
 	}
 	var cgroupDir *os.File
@@ -430,6 +431,33 @@ func probeStrongLinuxProcessContainment() bool {
 	return ok && status.Signaled() && status.Signal() == syscall.SIGKILL
 }
 
+// recordProcessTreeAtRootExit blocks until cmd's root exits, leaving it
+// unreaped (WNOWAIT) so its PID and process group stay reserved, and records
+// the tree's surviving members by parentage and process group. Their pidfds
+// keep the later kill bound to these exact processes after Wait reaps the root.
+func recordProcessTreeAtRootExit(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil || cmd.ProcessState != nil {
+		return
+	}
+	rawTree, ok := managedLinuxProcessTrees.Load(cmd)
+	if !ok {
+		return
+	}
+	var info unix.Siginfo
+	for {
+		err := unix.Waitid(unix.P_PID, cmd.Process.Pid, &info, unix.WEXITED|unix.WNOWAIT, nil)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, unix.EINTR) {
+			return
+		}
+	}
+	tree := rawTree.(*managedLinuxProcessTree)
+	tree.discoverKnownDescendants()
+	tree.rememberProcessGroupMembers()
+}
+
 func waitForLinuxContainmentProbe(waitDone <-chan error, timeout time.Duration) (error, bool) {
 	if timeout <= 0 {
 		timeout = linuxProcessTreeKillTimeout
@@ -533,7 +561,7 @@ func (t *managedLinuxProcessTree) closeKnownIdentities() {
 		closeLinuxProcessIdentity(identity)
 		delete(t.known, pid)
 	}
-	t.root = linuxProcessIdentity{}
+	t.root = noLinuxProcessIdentity()
 }
 
 func (t *managedLinuxProcessTree) killCgroupMembersUntilEmpty(deadline time.Time) (bool, error) {
@@ -615,29 +643,29 @@ func killProcessTree(cmd *exec.Cmd) error {
 func readLinuxProcessIdentity(pid int) (linuxProcessIdentity, error) {
 	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
 	if err != nil {
-		return linuxProcessIdentity{}, err
+		return noLinuxProcessIdentity(), err
 	}
 	// comm is parenthesized and may itself contain spaces or parentheses. The
 	// final ')' is followed by state (field 3); starttime is field 22.
 	closeParen := strings.LastIndexByte(string(data), ')')
 	if closeParen < 0 || closeParen+2 >= len(data) {
-		return linuxProcessIdentity{}, fmt.Errorf("malformed /proc/%d/stat", pid)
+		return noLinuxProcessIdentity(), fmt.Errorf("malformed /proc/%d/stat", pid)
 	}
 	fields := strings.Fields(string(data[closeParen+1:]))
 	if len(fields) <= 19 {
-		return linuxProcessIdentity{}, fmt.Errorf("short /proc/%d/stat", pid)
+		return noLinuxProcessIdentity(), fmt.Errorf("short /proc/%d/stat", pid)
 	}
 	parentPID, err := strconv.Atoi(fields[1])
 	if err != nil {
-		return linuxProcessIdentity{}, err
+		return noLinuxProcessIdentity(), err
 	}
 	processGroup, err := strconv.Atoi(fields[2])
 	if err != nil {
-		return linuxProcessIdentity{}, err
+		return noLinuxProcessIdentity(), err
 	}
 	startTime, err := strconv.ParseUint(fields[19], 10, 64)
 	if err != nil {
-		return linuxProcessIdentity{}, err
+		return noLinuxProcessIdentity(), err
 	}
 	return linuxProcessIdentity{
 		pid: pid, parentPID: parentPID, processGroup: processGroup,
@@ -648,7 +676,7 @@ func readLinuxProcessIdentity(pid int) (linuxProcessIdentity, error) {
 func captureLinuxProcessIdentity(pid int) (linuxProcessIdentity, error) {
 	identity, err := readLinuxProcessIdentity(pid)
 	if err != nil {
-		return linuxProcessIdentity{}, err
+		return noLinuxProcessIdentity(), err
 	}
 	pidfd, err := unix.PidfdOpen(pid, 0)
 	if err == nil {
@@ -656,6 +684,11 @@ func captureLinuxProcessIdentity(pid int) (linuxProcessIdentity, error) {
 	}
 	return identity, nil
 }
+
+// noLinuxProcessIdentity owns no descriptor. A zero value would claim fd 0:
+// closing it after a failed capture closed whatever held that number, such as
+// another identity's pidfd, which later failed to signal with EBADF.
+func noLinuxProcessIdentity() linuxProcessIdentity { return linuxProcessIdentity{pidfd: -1} }
 
 func closeLinuxProcessIdentity(identity linuxProcessIdentity) {
 	if identity.pidfd >= 0 {
@@ -673,7 +706,7 @@ func sameLinuxProcess(identity linuxProcessIdentity) bool {
 
 func signalLinuxProcess(identity linuxProcessIdentity, signal syscall.Signal) error {
 	if identity.pidfd >= 0 {
-		err := unix.PidfdSendSignal(identity.pidfd, unix.Signal(signal), nil, 0)
+		err := unix.PidfdSendSignal(identity.pidfd, signal, nil, 0)
 		if err == nil || errors.Is(err, unix.ESRCH) {
 			return nil
 		}

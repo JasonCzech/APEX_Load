@@ -65,7 +65,7 @@ func liveTableVariants() []ActionVariant {
 		},
 		{
 			Value: "read_column", Label: "Read a column", Group: "Read",
-			Summary: "Reads the cells of one column.",
+			Summary:  "Reads the cells of one column.",
 			Required: []string{"params.columns"}, Counts: map[string]int{"params.columns": 1},
 			Allowed:   allowed("params.columns", "params.position", "params.limit", "params.on_empty"),
 			TableKind: liveTableKindSharedColumns,
@@ -78,7 +78,7 @@ func liveTableVariants() []ActionVariant {
 		},
 		{
 			Value: "update", Label: "Update a row", Group: "Change", Mutates: true,
-			Summary: "Changes a row's values, if it still has the version (or, by position, the cells) you expect.",
+			Summary:  "Changes a row's values, if it still has the version (or, by position, the cells) you expect.",
 			Required: []string{"params.values"},
 			Choices:  [][]string{{"params.record_id", "params.expected_version"}, {"params.position"}},
 			Allowed:  allowed("params.record_id", "params.position", "params.values", "params.expected", "params.expected_version", "params.on_condition"),

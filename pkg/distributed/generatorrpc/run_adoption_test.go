@@ -30,6 +30,7 @@ func startAdoptableRun(t *testing.T, grace, epochTTL time.Duration) (*Service, [
 // stages an ordinary run.
 func startAdoptableRunWithLease(t *testing.T, grace, epochTTL, runLeaseTTL time.Duration, archiveSourceTargets ...string) (*Service, []byte) {
 	t.Helper()
+	epochTTL, runLeaseTTL = adoptionTestWindow(epochTTL), adoptionTestWindow(runLeaseTTL)
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
@@ -80,6 +81,16 @@ func startAdoptableRunWithLease(t *testing.T, grace, epochTTL, runLeaseTTL time.
 		t.Fatalf("CommitWork = (%+v, %v)", ack, err)
 	}
 	return service, token
+}
+
+// adoptionTestWindow widens a sub-second epoch or run-lease lifetime under the
+// race detector, which can stretch the setup above past it: the lease then
+// lapses before the run is committed. Every caller's wait budget allows 1 s.
+func adoptionTestWindow(window time.Duration) time.Duration {
+	if raceDetectorEnabled && window > 0 && window < time.Second {
+		return time.Second
+	}
+	return window
 }
 
 func runAssignment(service *Service) (assignedTest, bool) {

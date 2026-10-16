@@ -321,7 +321,7 @@ From `dashboard/`, run:
 npm run test:cycle
 ```
 
-This runs TypeScript checks, strict lint, all Vitest tests, a fresh production build, and both browser profiles. CI runs these checks in its existing dashboard job and invokes the same `scripts/run-dashboard-workflows.sh` entry point. Both browser profiles execute even if the first fails; either failure makes the command fail. There are no automatic test retries.
+This runs TypeScript checks, strict lint, all Vitest tests, a fresh production build, and both browser profiles. CI's dashboard job invokes the same `scripts/run-dashboard-workflows.sh` entry point, with one matrix leg per profile (`APEXLOAD_E2E_PROFILES=dev-admin` or `local-auth`); the profile-independent checks run on the dev-admin leg only. Locally, both browser profiles execute even if the first fails; either failure makes the command fail. There are no automatic test retries.
 
 Prerequisites: the repository's Go toolchain, Node version from `dashboard/package.json`, installed dashboard dependencies, and Chromium (`dashboard/node_modules/.bin/playwright install chromium`). The controller uses ports 18081 and 18082 by default; override with `APEXLOAD_E2E_PORT` and `APEXLOAD_E2E_AUTH_PORT`. A port that another process already listens on (a local controller left running, another run) is refused before the build, and once the controller answers the runner checks that the process it started is the one listening, so a run never tests a server it did not start.
 

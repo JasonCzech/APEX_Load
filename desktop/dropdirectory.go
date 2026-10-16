@@ -37,6 +37,7 @@ var droppedJunkDirectories = map[string]bool{
 type readDirectoryGrant struct {
 	canonical string
 	identity  os.FileInfo
+	stamp     directoryStamp
 }
 
 type droppedDirectoryFile struct {
@@ -72,7 +73,7 @@ func (a *App) rememberDroppedDirectory(path string) {
 	if a.readGrantChanged == nil {
 		a.readGrantChanged = make(chan struct{})
 	}
-	a.readDirectories[key] = readDirectoryGrant{canonical: canonical, identity: info}
+	a.readDirectories[key] = readDirectoryGrant{canonical: canonical, identity: info, stamp: directoryStampOf(canonical, info)}
 	close(a.readGrantChanged)
 	a.readGrantChanged = make(chan struct{})
 }
@@ -96,7 +97,7 @@ func (a *App) ReadDroppedDirectory(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !os.SameFile(grant.identity, info) {
+	if !os.SameFile(grant.identity, info) || !sameDirectoryStamp(grant.stamp, directoryStampOf(grant.canonical, info)) {
 		return "", fmt.Errorf("refusing to read %s because the dropped folder was replaced", path)
 	}
 	// One reply carries the whole folder. Its files share a single bridge

@@ -269,5 +269,5 @@ func (s *Server) handleAcknowledgeThresholdIncident(w http.ResponseWriter, r *ht
 		writeError(w, 500, "failed to read updated alert")
 		return
 	}
-	writeJSON(w, 200, storage.ThresholdIncident(*saved))
+	writeJSON(w, 200, *saved)
 }

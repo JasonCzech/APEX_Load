@@ -21,7 +21,7 @@ const (
 	// FieldKindInt64 is a signed 64-bit integer written either as a JSON number
 	// or as a canonical decimal string, so editors never round it through a
 	// float (JavaScript numbers lose precision past 2^53).
-	FieldKindInt64 FieldKind = "int64"
+	FieldKindInt64  FieldKind = "int64"
 	FieldKindFloat  FieldKind = "float"
 	FieldKindBool   FieldKind = "bool"
 	FieldKindEnum   FieldKind = "enum"

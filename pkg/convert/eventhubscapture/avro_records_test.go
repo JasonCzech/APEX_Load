@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hamba/avro/v2"
-	"github.com/hamba/avro/v2/ocf"
+	"github.com/iskorotkov/avro/v2"
+	"github.com/iskorotkov/avro/v2/ocf"
 )
 
 // userDataSchema mirrors the widely shared Kylo "userdata*.avro" samples: a

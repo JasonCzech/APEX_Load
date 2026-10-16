@@ -34,6 +34,16 @@ type dynamicCallRule struct {
 	Reason         string
 }
 
+// Device capture runs in the paired Recording Agent: its bridge mux
+// (pkg/api/browser_recording_bridge.go) serves these routes and the controller
+// does not, so the controller's OpenAPI document cannot describe them.
+var recordingAgentOnlyRoutes = []routeKey{
+	{Method: "GET", Path: "/api/v1/device-capture"},
+	{Method: "POST", Path: "/api/v1/device-capture"},
+	{Method: "POST", Path: "/api/v1/device-capture/stop"},
+	{Method: "GET", Path: "/api/v1/device-capture/qr.svg"},
+}
+
 // These are the only controller calls in dashboard API hooks whose route cannot
 // be recovered directly from the first argument. Generic transport helpers are
 // allowed only when their concrete wrapper call sites are scanned separately.
@@ -203,12 +213,27 @@ func TestDashboardHookRoutesHaveGeneratedOpenAPIBindings(t *testing.T) {
 	if len(calls) < 300 {
 		t.Fatalf("dashboard route scanner found only %d calls; expected the API hook inventory", len(calls))
 	}
+	bridgeSource := string(mustReadFile(t, filepath.Join(root, "pkg", "api", "browser_recording_bridge.go")))
+	agentOnly := make(map[routeKey]bool, len(recordingAgentOnlyRoutes))
+	for _, route := range recordingAgentOnlyRoutes {
+		if _, exists := openAPIRoutes[route]; exists {
+			t.Errorf("Recording Agent route %s %s is in the controller OpenAPI document; drop it from recordingAgentOnlyRoutes", route.Method, route.Path)
+		}
+		if !strings.Contains(bridgeSource, `"`+route.Method+" "+route.Path+`"`) {
+			t.Errorf("Recording Agent route %s %s is not registered by the agent bridge", route.Method, route.Path)
+		}
+		agentOnly[route] = false
+	}
 	usedRules := make(map[int]bool)
 	for _, call := range calls {
 		if call.Path != "" {
 			key := routeKey{Method: call.Method, Path: call.Path}
 			if located, exists := openAPIRoutes[key]; exists {
 				assertGeneratedPathBinding(t, generatedContract, located)
+				continue
+			}
+			if _, listed := agentOnly[key]; listed && call.File == "deviceCaptureApi.ts" {
+				agentOnly[key] = true
 				continue
 			}
 		}
@@ -228,6 +253,11 @@ func TestDashboardHookRoutesHaveGeneratedOpenAPIBindings(t *testing.T) {
 				continue
 			}
 			assertGeneratedPathBinding(t, generatedContract, located)
+		}
+	}
+	for route, used := range agentOnly {
+		if !used {
+			t.Errorf("stale Recording Agent route %s %s: no dashboard hook calls it", route.Method, route.Path)
 		}
 	}
 	for index, rule := range dynamicDashboardCallRules {

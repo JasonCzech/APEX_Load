@@ -1024,10 +1024,12 @@ func (j *JavaVuser) executeOneShot(ctx context.Context, action *protocol.Action,
 	cmd.Stderr = stderr
 	startErr := startRunnerCommand(runCtx, cmd, j.cfg.StartupTimeout)
 	err = startErr
+	var containmentErr error
 	if startErr == nil {
-		err = cmd.Wait()
+		err, containmentErr = javarunner.WaitProcessTree(cmd)
+	} else {
+		containmentErr = javarunner.KillProcessTree(cmd)
 	}
-	containmentErr := javarunner.KillProcessTree(cmd)
 	failedStartCapture := errors.Is(startErr, javarunner.ErrProcessContainmentFailed)
 	if failedStartCapture {
 		j.trackFailedStartReap(cmd, cleanupEventFile)
@@ -1214,11 +1216,12 @@ func (j *JavaVuser) Teardown(ctx context.Context) error {
 				// The action already reported its invocation failure, but a
 				// distinct containment failure means capacity was quarantined
 				// and the generator is terminal. Never hide that teardown fact.
+				// Keep the kill's own error: it names the containment step that failed.
 				teardownErrs = append(
 					teardownErrs,
 					fmt.Errorf(
 						"java_vuser persistent runner teardown failed (process_containment_unavailable): %w",
-						javarunner.ErrProcessContainmentFailed,
+						closeErr,
 					),
 				)
 			}
@@ -1866,8 +1869,7 @@ func (j *JavaVuser) validateRuntimeTarget(ctx context.Context, className, method
 		}
 		return fmt.Errorf("validation runner failed to start")
 	}
-	waitErr := cmd.Wait()
-	containmentErr := javarunner.KillProcessTree(cmd)
+	waitErr, containmentErr := javarunner.WaitProcessTree(cmd)
 	if containmentErr != nil {
 		finishLocalProcessCapacity(release, containmentErr)
 		releasePending = false
@@ -2426,10 +2428,12 @@ func probeLocalHarnessCapabilities(ctx context.Context, cfg configuration) (runn
 	cmd.Stderr = stderr
 	startErr := javarunner.StartProcessTree(cmd)
 	err = startErr
+	var containmentErr error
 	if startErr == nil {
-		err = cmd.Wait()
+		err, containmentErr = javarunner.WaitProcessTree(cmd)
+	} else {
+		containmentErr = javarunner.KillProcessTree(cmd)
 	}
-	containmentErr := javarunner.KillProcessTree(cmd)
 	if errors.Is(startErr, javarunner.ErrProcessContainmentFailed) {
 		probe.trackFailedStartReap(cmd, nil)
 		containmentErr = errors.Join(containmentErr, startErr)

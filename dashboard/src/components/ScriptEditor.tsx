@@ -6912,7 +6912,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       <button className="btn btn-secondary" onClick={returnToSource}>{returnTarget.label}</button>
       {returnTarget.description && <span>{returnTarget.description}</span>}
     </div>}
-<div className="script-editor" ref={editorElementRef} data-author-pane={narrowAuthorPane} onKeyDown={event => {
+<div className="script-editor" ref={editorElementRef} data-author-pane={narrowAuthorPane} role="presentation" onKeyDown={event => {
       if (workspaceTab !== 'author' || jsonDirty || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z' || (event.target as Element).closest('.cm-editor')) return
       event.preventDefault()
       if (event.shiftKey) redoEditorChange(); else undoEditorChange()
