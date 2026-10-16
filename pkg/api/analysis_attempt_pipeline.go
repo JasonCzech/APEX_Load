@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -185,6 +186,8 @@ func (s *Server) normalizeAnalysisImportOwned(parent context.Context, store stor
 		return err
 	}
 	if err = run(); err != nil && !errors.Is(err, storage.ErrAnalysisPublicationUnknown) {
+		// The stored error is a generic, user-facing message; keep the cause.
+		slog.Warn("analysis normalization failed", "dataset_id", in.ID, "project_id", in.ProjectID, "error", err)
 		failureCtx, stop := context.WithTimeout(context.WithoutCancel(parent), 10*time.Second)
 		defer stop()
 		// Failure never overwrites cancellation/replacement/ready. Exact output
