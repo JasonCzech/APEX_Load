@@ -25,7 +25,7 @@ func fixtureHARJoinedRetirement(t *testing.T, dir string) (*harCaptureOwner, *ha
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := persistentHARIdentity(o.identity)
+	id, err := persistentHARIdentityAt(n.work, o.generation, o.identity)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			id, err := persistentHARIdentity(info)
+			id, err := persistentHARIdentityAt(n.root, name, info)
 			if err != nil {
 				t.Fatal(err)
 			}

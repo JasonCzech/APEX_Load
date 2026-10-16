@@ -47,7 +47,7 @@ func openHARPublishedRoot(dir string) (string, *os.Root, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	before, err := os.Lstat(abs)
+	before, err := lstatHARPath(abs)
 	if err != nil {
 		return "", nil, err
 	}
@@ -58,12 +58,15 @@ func openHARPublishedRoot(dir string) (string, *os.Root, error) {
 	if err != nil {
 		return "", nil, err
 	}
+	if err := validateHARVolume(canonical); err != nil {
+		return "", nil, err
+	}
 	root, err := os.OpenRoot(canonical)
 	if err != nil {
 		return "", nil, err
 	}
 	opened, statErr := root.Stat(".")
-	after, afterErr := os.Lstat(abs)
+	after, afterErr := lstatHARPath(abs)
 	if statErr != nil || afterErr != nil || !os.SameFile(before, opened) || !os.SameFile(after, opened) || after.Mode()&os.ModeSymlink != 0 {
 		_ = root.Close()
 		return "", nil, fmt.Errorf("HAR artifact root changed while opening")
@@ -71,13 +74,19 @@ func openHARPublishedRoot(dir string) (string, *os.Root, error) {
 	return canonical, root, nil
 }
 
+// validHARComponent admits one plain path component: no separator, no
+// alternate data stream (':') and no dot names.
+func validHARComponent(name string) bool {
+	return name != "" && name != "." && name != ".." && name == filepath.Base(name) && !strings.ContainsAny(name, `/\\:`)
+}
+
 func openHARPrivateChild(parent *os.Root, name string, create bool) (*os.Root, error) {
-	if name == "" || name == "." || name == ".." || name != filepath.Base(name) || strings.ContainsAny(name, `/\\`) {
+	if !validHARComponent(name) {
 		return nil, fmt.Errorf("invalid HAR directory component")
 	}
 	info, err := parent.Lstat(name)
 	if os.IsNotExist(err) && create {
-		if err = parent.Mkdir(name, 0o700); err != nil && !os.IsExist(err) {
+		if err = createHARPrivateDir(parent, name); err != nil && !os.IsExist(err) {
 			return nil, err
 		}
 		info, err = parent.Lstat(name)
@@ -85,11 +94,8 @@ func openHARPrivateChild(parent *os.Root, name string, create bool) (*os.Root, e
 	if err != nil {
 		return nil, err
 	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return nil, fmt.Errorf("HAR staging directory is not private")
-	}
-	if err := validateHARPrivateInfo(info, false); err != nil {
-		return nil, err
 	}
 	child, err := parent.OpenRoot(name)
 	if err != nil {
@@ -101,11 +107,24 @@ func openHARPrivateChild(parent *os.Root, name string, create bool) (*os.Root, e
 		_ = child.Close()
 		return nil, fmt.Errorf("HAR staging directory changed while opening")
 	}
+	if err := validateHARPrivateRoot(child); err != nil {
+		_ = child.Close()
+		return nil, errors.Join(fmt.Errorf("HAR staging directory is not private"), err)
+	}
 	return child, nil
 }
 
+// validateHARPrivateRoot proves the directory root holds open private.
+func validateHARPrivateRoot(root *os.Root) error {
+	directory, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	return errors.Join(validateHARPrivate(directory, false), directory.Close())
+}
+
 func openHARRegular(root *os.Root, name string, create bool) (*os.File, error) {
-	if name == "" || name != filepath.Base(name) || name == "." || name == ".." || strings.ContainsAny(name, `/\\`) {
+	if !validHARComponent(name) {
 		return nil, fmt.Errorf("invalid HAR file name")
 	}
 	info, err := root.Lstat(name)
@@ -113,6 +132,9 @@ func openHARRegular(root *os.Root, name string, create bool) (*os.File, error) {
 	if os.IsNotExist(err) && create {
 		file, createErr := root.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 		if createErr == nil {
+			if err := validateHARPrivate(file, true); err != nil {
+				return nil, errors.Join(fmt.Errorf("HAR file is not private and regular"), err, file.Close())
+			}
 			return file, nil
 		}
 		if !os.IsExist(createErr) {
@@ -123,11 +145,8 @@ func openHARRegular(root *os.Root, name string, create bool) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 		return nil, fmt.Errorf("HAR file is not private and regular")
-	}
-	if err := validateHARPrivateInfo(info, true); err != nil {
-		return nil, err
 	}
 	file, err := root.OpenFile(name, flags, 0)
 	if err != nil {
@@ -138,6 +157,9 @@ func openHARRegular(root *os.Root, name string, create bool) (*os.File, error) {
 	if openErr != nil || afterErr != nil || !os.SameFile(info, opened) || !os.SameFile(after, opened) || after.Mode()&os.ModeSymlink != 0 {
 		_ = file.Close()
 		return nil, fmt.Errorf("HAR file changed while opening")
+	}
+	if err := validateHARPrivate(file, true); err != nil {
+		return nil, errors.Join(fmt.Errorf("HAR file is not private and regular"), err, file.Close())
 	}
 	return file, nil
 }
@@ -151,15 +173,7 @@ func verifyHARLease(root *os.Root, name string, file *os.File) error {
 	if err != nil || !os.SameFile(entry, opened) {
 		return fmt.Errorf("HAR lease identity changed")
 	}
-	return validateHARPrivateInfo(entry, true)
-}
-
-func syncHARRoot(root *os.Root) error {
-	f, err := root.Open(".")
-	if err != nil {
-		return err
-	}
-	return errors.Join(f.Sync(), f.Close())
+	return validateHARPrivate(file, true)
 }
 
 var harNamespaceOwners = struct {
@@ -221,14 +235,14 @@ func (n *harNamespace) verify() error {
 		return errHAROwnershipUnproven
 	}
 	parent, parentErr := n.root.Stat(".")
-	currentParent, pathErr := os.Lstat(n.path)
+	currentParent, pathErr := lstatHARPath(n.path)
 	openedWork, workErr := n.work.Stat(".")
 	currentWork, childErr := n.root.Lstat(runtimeHARWorkingDirectory)
 	if parentErr != nil || pathErr != nil || workErr != nil || childErr != nil {
 		return errors.Join(parentErr, pathErr, workErr, childErr, errHAROwnershipUnproven)
 	}
 	if currentParent.Mode()&os.ModeSymlink != 0 || !os.SameFile(parent, currentParent) ||
-		currentWork.Mode()&os.ModeSymlink != 0 || !os.SameFile(openedWork, currentWork) || validateHARPrivateInfo(currentWork, false) != nil {
+		currentWork.Mode()&os.ModeSymlink != 0 || !os.SameFile(openedWork, currentWork) || validateHARPrivateRoot(n.work) != nil {
 		return errHAROwnershipUnproven
 	}
 	return errors.Join(verifyHARLease(n.work, "namespace.lock", n.file))
@@ -282,6 +296,9 @@ func writeHARPrivateDurable(root *os.Root, name string, data []byte) error {
 	f, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
+	}
+	if err := validateHARPrivate(f, true); err != nil {
+		return errors.Join(err, f.Close())
 	}
 	count, err := f.Write(data)
 	if err == nil && count != len(data) {
