@@ -954,6 +954,53 @@ func TestEncryptedStoreProjectDeletionRacesCrossStorePutWithoutLeavingArtifact(t
 	}
 }
 
+func TestPutPublishesObjectDirectoriesUnderWriterLock(t *testing.T) {
+	store := newEncryptedArtifactTestStore(t)
+	unlock, err := store.lockEncryptedObjectWrites()
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked := true
+	defer func() {
+		if locked {
+			_ = unlock()
+		}
+	}()
+	done := make(chan error, 1)
+	go func() {
+		_, err := store.Put(context.Background(), "project-locked", "raw", strings.NewReader("source"), 1024)
+		done <- err
+	}()
+	// A sweep holding the lock must never meet a directory being published.
+	projectRoot := filepath.Join(store.root, "bruno", projectDigest("project-locked")[:16])
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(projectRoot); err == nil {
+			t.Fatal("Put created the project directory while another writer held the lock")
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("Put finished while the writer lock was held: %v", err)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	locked = false
+	if err := unlock(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Put after the lock was released: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Put did not finish after the lock was released")
+	}
+	if _, err := os.Stat(projectRoot); err != nil {
+		t.Fatal("project directory missing after Put", err)
+	}
+}
+
 func TestDeleteProjectSkipsDurableDirectoryStaging(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can read a directory without read permission")

@@ -349,14 +349,18 @@ func (s *EncryptedStore) putKnown(ctx context.Context, projectID, kind string, s
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	if err := mkdirAllDurably(filepath.Dir(target), 0o700); err != nil {
-		return nil, s.projectWriteError(projectID, err)
-	}
 	unlockEncryptedWrites, err := s.lockEncryptedObjectWrites()
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = unlockEncryptedWrites() }()
+	// Publish the object's directories under the writer lock that DeleteProject
+	// and the stale-temp sweep hold while they walk the tree. On Windows a
+	// directory that is being renamed into place cannot be opened, so a sweep
+	// that met one would fail.
+	if err := mkdirAllDurably(filepath.Dir(target), 0o700); err != nil {
+		return nil, s.projectWriteError(projectID, err)
+	}
 	dek := make([]byte, 32)
 	defer clear(dek)
 	if _, err := io.ReadFull(rand.Reader, dek); err != nil {
@@ -2390,9 +2394,8 @@ func (s *EncryptedStore) projectWriteError(projectID string, writeErr error) err
 }
 
 // durableDirectoryPendingPrefix names the staging directories that the
-// Windows mkdirAllDurably renames into place. They are empty by construction,
-// and writers create them before taking the encrypted-write lock, so a sweep
-// can meet one mid-rename; Windows then refuses to open it. Sweeps skip them.
+// Windows mkdirAllDurably renames into place. They are empty by construction;
+// one a sweep finds was left by an interrupted publication, so sweeps skip it.
 const durableDirectoryPendingPrefix = ".apexload-durable-dir-"
 
 func isDurableDirectoryPending(entry os.DirEntry) bool {
