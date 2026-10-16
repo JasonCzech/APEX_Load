@@ -35,6 +35,15 @@ func workerLoadedImageFixtureHash(path string) (digest string, err error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
+// workerLoadedImageWriteMarker publishes a marker by rename: the peer polls
+// for it every millisecond and must never read a created-but-unwritten file.
+func workerLoadedImageWriteMarker(path string, body []byte) error {
+	if err := os.WriteFile(path+".tmp", body, 0600); err != nil {
+		return err
+	}
+	return os.Rename(path+".tmp", path)
+}
+
 func workerLoadedImageWaitMarker(ctx context.Context, path string) ([]byte, error) {
 	tick := time.NewTicker(time.Millisecond)
 	defer tick.Stop()
@@ -70,7 +79,7 @@ func TestWorkerLinuxLoadedImageFixtureProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = os.WriteFile(filepath.Join(directory, "ready"), []byte(approved), 0600); err != nil {
+	if err = workerLoadedImageWriteMarker(filepath.Join(directory, "ready"), []byte(approved)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = workerLoadedImageWaitMarker(ctx, filepath.Join(directory, "continue")); err != nil {
@@ -103,7 +112,7 @@ func TestWorkerLinuxLoadedImageFixtureProcess(t *testing.T) {
 	if err = a.release(); err != nil || admission.releases.Load() != 1 {
 		t.Fatal("snapshot descriptor/scratch ownership did not join once", err)
 	}
-	if err = os.WriteFile(filepath.Join(directory, "result"), []byte(actual+"\n"+privateDigest), 0600); err != nil {
+	if err = workerLoadedImageWriteMarker(filepath.Join(directory, "result"), []byte(actual+"\n"+privateDigest)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -179,7 +188,7 @@ func TestWorkerLinuxApprovalAndSnapshotSurviveInstallerUnlinkAndReplacement(t *t
 	if err = os.WriteFile(installer, []byte("replacement is not the mapped executable"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err = os.WriteFile(filepath.Join(directory, "continue"), []byte("replaced"), 0600); err != nil {
+	if err = workerLoadedImageWriteMarker(filepath.Join(directory, "continue"), []byte("replaced")); err != nil {
 		t.Fatal(err)
 	}
 	select {
