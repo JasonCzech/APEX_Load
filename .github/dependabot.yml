@@ -60,6 +60,21 @@ updates:
       time: "08:30"
       timezone: Etc/UTC
     open-pull-requests-limit: 5
+    # The golang and node images must match go.mod and .nvmrc: CI tests with
+    # go.mod's toolchain, image builds run check:node (an exact .nvmrc match),
+    # and scripts/*_test.go assert the image tags. A minor or major jump is a
+    # migration of all of those together, so it is not proposed here. Patch
+    # and digest updates still are; a patch PR must bump go.mod or .nvmrc and
+    # the image tests in the same change before it can pass.
+    ignore:
+      - dependency-name: golang
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
     labels:
       - dependencies
       - containers
