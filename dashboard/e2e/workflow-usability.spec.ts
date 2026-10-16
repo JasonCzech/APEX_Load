@@ -146,7 +146,7 @@ for (const status of [200,503]) {
   await expect(page.locator('.debugger-live-strip')).toContainText(status===503?'Failed':'Passed')
   const panes=page.getByRole('group',{name:'Debug panes'})
   if(await panes.isVisible()) await panes.getByRole('button',{name:'Outline',exact:true}).click()
-  await page.getByRole('region',{name:'Debugger actions'}).locator('.debugger-action-row-main').filter({hasText:'orders'}).click()
+  await page.getByRole('complementary',{name:'Actions',exact:true}).getByRole('treeitem',{name:'orders'}).click()
   const evidence=page.getByRole('region',{name:'Response evidence'})
   await expect(evidence).toContainText(`Actual response: ${status}`)
   if(status===503){

@@ -124,7 +124,7 @@ function getSelectedParameterHeaderDetails(
 export interface ParameterDataDialogProps {
   onAddDataset?: () => void
   onInspectUsage?: (path: string) => void
-  /** Show every use of the named parameter in Source. */
+  /** Show every use of the named parameter in DSL. */
   onShowUsesInSource?: (name: string) => void
   /** Further workspace tools (scans, imported parameter files), after Add Parameter. */
   toolbarActions?: ReactNode
@@ -297,7 +297,7 @@ export function ParameterDataDialog(props: ParameterDataDialogProps) {
           </div>
           {(onClose || (props.onShowUsesInSource && selectedParameter?.name)) && (
             <div className="parameter-dialog-actions">
-              {props.onShowUsesInSource && selectedParameter?.name && <button type="button" className="btn btn-sm btn-secondary" onClick={() => props.onShowUsesInSource?.(selectedParameter.name)}>Show uses in Source</button>}
+              {props.onShowUsesInSource && selectedParameter?.name && <button type="button" className="btn btn-sm btn-secondary" onClick={() => props.onShowUsesInSource?.(selectedParameter.name)}>Show uses in DSL</button>}
               {onClose && <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>}
             </div>
           )}

@@ -75,6 +75,30 @@ export interface ScriptOutlineSelection {
   stepPath?: string[]
 }
 
+export type OutlineRunStatus = 'pass' | 'fail' | 'current' | 'not-run'
+
+export interface OutlineBreakpoint {
+  /** Set, set but disabled, set only on steps inside the block, or not set. */
+  state: 'active' | 'disabled' | 'partial' | 'none'
+  /** What clicking the dot does, for its tooltip and accessible name. */
+  title: string
+}
+
+/**
+ * What the Debug workspace adds to the outline: a breakpoint dot in each
+ * breakable row's gutter (click, double-click the row or F9 to toggle) and each
+ * row's run status.
+ */
+export interface OutlineDebug {
+  /** Null for rows that take no breakpoint (phases, transaction groups, nested blocks). */
+  breakpoint: (row: OutlineRow) => OutlineBreakpoint | null
+  onToggleBreakpoint: (row: OutlineRow) => void
+  status: (row: OutlineRow) => OutlineRunStatus | null
+}
+
+const STATUS_TEXT: Record<OutlineRunStatus, string> = { pass: 'Passed', fail: 'Failed', current: 'Current', 'not-run': 'Not run' }
+const BREAKPOINT_TEXT: Record<OutlineBreakpoint['state'], string> = { active: 'Breakpoint', disabled: 'Breakpoint disabled', partial: 'Breakpoints inside', none: '' }
+
 interface Props {
   model: OutlineModel
   /** Changes when another script opens, so expansion starts over. */
@@ -90,6 +114,8 @@ interface Props {
   onShowMarkersChange: (show: boolean) => void
   /** Set to a function giving the width every row's whole name needs, for the column's "fit to content". */
   naturalWidthRef?: { current: (() => number) | null }
+  /** Debug only: breakpoint gutter and run status. */
+  debug?: OutlineDebug
 }
 
 function selectsSame(item: DebugRailRenderRow | undefined, selection: ScriptOutlineSelection) {
@@ -103,7 +129,7 @@ function selectsSame(item: DebugRailRenderRow | undefined, selection: ScriptOutl
  * tree. A long outline renders only the rows in view, and names are cut at the
  * end on a word boundary to fit, never inside an identifier.
  */
-export default function ScriptOutlineTree({ model, resetKey, query, expandedContainers, onToggleContainer, selection, onSelect, hasBreakpoint, hasIssue, showMarkers, onShowMarkersChange, naturalWidthRef }: Props) {
+export default function ScriptOutlineTree({ model, resetKey, query, expandedContainers, onToggleContainer, selection, onSelect, hasBreakpoint, hasIssue, showMarkers, onShowMarkersChange, naturalWidthRef, debug }: Props) {
   const id = useId()
   const treeRef = useRef<HTMLDivElement>(null)
   const [expansion, setExpansion] = useState(() => ({ key: resetKey, state: freshExpansion(model) }))
@@ -133,11 +159,13 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
     })
   }, [selectedActionKey])
 
+  const debugging = Boolean(debug)
   const rows = useMemo(() => visibleOutlineRows(model, {
     isExpanded: key => expandedIn(state, key),
     expandedContainers,
     query,
-  }), [expandedContainers, model, query, state])
+    allRequestsRows: debugging,
+  }), [debugging, expandedContainers, model, query, state])
 
   const selectedKey = useMemo(() => {
     if (!selection) return null
@@ -245,6 +273,10 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
         case ' ':
           activate(row)
           return true
+        case 'F9':
+          if (!debug?.breakpoint(row)) return false
+          debug.onToggleBreakpoint(row)
+          return true
         default:
           return false
       }
@@ -276,14 +308,21 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
     return () => { document.removeEventListener('keydown', dismiss); tree?.removeEventListener('scroll', onScroll) }
   }, [tip])
 
-  const rowFlags = (row: OutlineRow) => ({
-    breakpoint: row.kind === 'phase' ? false : row.rows.some(item => hasBreakpoint(debugSequenceKey(item.phase, item.actionIndex))) || (row.kind === 'nested' && hasBreakpoint(row.key)),
+  const rowDebug = (row: OutlineRow) => debug ? {
+    breakpoint: debug.breakpoint(row),
+    status: debug.status(row),
+  } : null
+  const rowFlags = (row: OutlineRow, gutter: OutlineBreakpoint | null = null) => ({
+    // A row with a breakpoint gutter shows its own breakpoint there; the flag
+    // stays for groups, which hold the breakpoints of the steps inside them.
+    breakpoint: row.kind === 'phase' || gutter ? false : row.rows.some(item => hasBreakpoint(debugSequenceKey(item.phase, item.actionIndex))) || (row.kind === 'nested' && hasBreakpoint(row.key)),
     issue: row.kind !== 'phase' && row.rows.some(hasIssue),
   })
   // A row's width besides its name: indent, toggle, occurrence, badge, flags, the
   // 6px gaps between them and its end padding (as ScriptEditor.css lays it out),
   // and a margin for the font's character variants, which canvas ignores.
-  const rowChrome = (row: OutlineRow, flags: { breakpoint: boolean; issue: boolean }) => (row.level - 1) * INDENT + 16 + 6 + 6 + 8
+  const rowChrome = (row: OutlineRow, flags: { breakpoint: boolean; issue: boolean }, status: OutlineRunStatus | null = null) => (row.level - 1) * INDENT + 16 + 6 + 6 + 8
+    + (debug ? 16 + 6 : 0) + (status ? 8 + 6 : 0)
     + (row.occurrence ? measure('small', `#${row.occurrence}`) + 6 : 0)
     + (row.badge ? measure('small', row.badge) + 6 : 0)
     + (flags.breakpoint ? 13 : 0) + (flags.issue ? 13 : 0)
@@ -291,20 +330,27 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
   // The width every row's whole name needs, measured only when the column is fit to content.
   useEffect(() => {
     if (!naturalWidthRef) return undefined
-    naturalWidthRef.current = () => width > 0 ? Math.ceil(rows.reduce((widest, row) => Math.max(widest, rowChrome(row, rowFlags(row)) + measure(fontOf(row), row.label)), 0)) : 0
+    naturalWidthRef.current = () => width > 0 ? Math.ceil(rows.reduce((widest, row) => {
+      const state = rowDebug(row)
+      return Math.max(widest, rowChrome(row, rowFlags(row, state?.breakpoint), state?.status) + measure(fontOf(row), row.label))
+    }, 0)) : 0
     return () => { naturalWidthRef.current = null }
   })
 
   const renderRow = (row: OutlineRow, index: number, style?: CSSProperties) => {
     const indent = (row.level - 1) * INDENT
     const occurrence = row.occurrence ? `#${row.occurrence}` : ''
-    const { breakpoint, issue } = rowFlags(row)
+    const state = rowDebug(row)
+    const gutter = state?.breakpoint ?? null
+    const status = state?.status ?? null
+    const { breakpoint, issue } = rowFlags(row, gutter)
     const selected = row.key === selectedKey
     const group = row.kind === 'phase' || row.kind === 'transaction' || row.kind === 'subtransaction'
-    const room = width - rowChrome(row, { breakpoint, issue })
+    const room = width - rowChrome(row, { breakpoint, issue }, status)
     const shown = width > 0 ? fitOutlineName(row.label, room, text => measure(fontOf(row), text), row.short) : row.label
     // The name read out is the whole one, whatever fits on screen.
-    const spoken = [row.label, occurrence, row.badge, breakpoint ? 'Breakpoint' : '', issue ? 'Needs attention' : ''].filter(Boolean).join(' ')
+    const spoken = [row.label, occurrence, row.badge, breakpoint ? 'Breakpoint' : '', gutter ? BREAKPOINT_TEXT[gutter.state] : '', status ? STATUS_TEXT[status] : '', issue ? 'Needs attention' : ''].filter(Boolean).join(' ')
+    const toggleBreakpoint = () => { if (gutter) debug?.onToggleBreakpoint(row) }
     return (
       <div
         key={row.key}
@@ -320,9 +366,11 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
         aria-setsize={row.setSize}
         aria-expanded={row.expandable ? row.expanded : undefined}
         aria-selected={row.select ? selected : undefined}
+        aria-current={status === 'current' ? 'step' : undefined}
+        aria-keyshortcuts={gutter ? 'F9' : undefined}
         aria-describedby={tip?.key === row.key ? `${id}-tip` : undefined}
         tabIndex={row.key === tabStop ? 0 : -1}
-        className={`script-outline-row kind-${row.kind}${group ? ' group' : ''}${selected ? ' selected' : ''}${row.measuredAs ? ' measured' : ''}`}
+        className={`script-outline-row kind-${row.kind}${group ? ' group' : ''}${selected ? ' selected' : ''}${row.measuredAs ? ' measured' : ''}${status === 'current' ? ' current' : ''}`}
         style={{ ...style, paddingLeft: indent, ['--outline-level' as string]: row.level }}
         onClick={event => {
           setFocusKey(row.key)
@@ -330,16 +378,33 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
           if (row.expandable && (event.target as HTMLElement).closest('.script-outline-toggle')) toggleRow(row)
           else activate(row)
         }}
+        // Not on the chevron: opening and closing a block quickly is two clicks there.
+        onDoubleClick={gutter ? event => { if (!(event.target as HTMLElement).closest('.script-outline-toggle')) toggleBreakpoint() } : undefined}
         onKeyDown={onKeyDown}
         onFocus={event => { if (event.target === event.currentTarget) { setFocusKey(row.key); showTip(row, shown, event.currentTarget, true) } }}
         onBlur={() => setTip(null)}
         onMouseEnter={event => showTip(row, shown, event.currentTarget, false)}
         onMouseLeave={() => setTip(null)}
       >
+        {debug && (gutter ? (
+          // The row is the keyboard stop (F9 toggles); the dot is for the pointer.
+          <button
+            type="button"
+            tabIndex={-1}
+            className={`script-outline-gutter ${gutter.state}`}
+            title={gutter.title}
+            aria-label={gutter.title}
+            onClick={event => { event.stopPropagation(); toggleBreakpoint() }}
+            onDoubleClick={event => event.stopPropagation()}
+          >
+            <span className="script-outline-breakpoint-dot" />
+          </button>
+        ) : <span className="script-outline-gutter" aria-hidden="true" />)}
         <span className="script-outline-toggle" aria-hidden="true">{row.expandable ? (row.expanded ? '▾' : '▸') : ''}</span>
         <span className="script-outline-name">{shown}</span>
         {occurrence && <span className="script-outline-occurrence">{occurrence}</span>}
         {row.badge && <small>{row.badge}</small>}
+        {status && <span className={`script-outline-status ${status}`} aria-hidden="true" />}
         {breakpoint && <span className="script-outline-flag breakpoint" aria-hidden="true" />}
         {issue && <span className="script-outline-flag attention" aria-hidden="true" />}
       </div>

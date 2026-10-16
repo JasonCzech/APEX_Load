@@ -158,11 +158,12 @@ open an existing one in the **Script Editor**, clone one, or import from an exte
 format.
 
 In **Author**, select a step in the outline to edit its properties in the main
-**Action editor**. The outline is a tree of transactions and steps: a
+**Action editor**. Selecting a step keeps whichever tab is open, so **DSL** and
+**Source Mapping** follow the selection. The outline is a tree of transactions and steps: a
 sub-transaction around one request folds into that request's row, under the name
 of what it measures (Salesforce Aura calls read as `Class.method`), and a script
 with more than 200 steps opens with its transactions collapsed. The editor opens on the first problem, or on the first action when
-there is none. Rename the script in place in the top bar. **Source**, **Runtime
+there is none. Rename the script in place in the top bar. **DSL**, **Runtime
 Settings**, **Parameters**, and, for imports, **Source Mapping** are always available
 as tabs above the editor. **Overview & bulk** exposes multi-step selection and reusable
 block tools. **Add Action** stages a new action or block: choose its phase and
@@ -183,7 +184,7 @@ separately from saved state; an earlier debug result does not validate later edi
 The request body editor supports JSON, XML, and plain text, with syntax checks,
 find, explicit formatting, template completion, and selection parameterization.
 Its masked template preview does not execute requests or resolve runtime values.
-In **Source**, use **Edit in Full Script JSON** for whole-document editing, then
+In **DSL**, use **Edit in Full Script JSON** for whole-document editing, then
 **Apply changes** or **Discard JSON edits**. Invalid JSON keeps recovery controls
 available and cannot be applied.
 
@@ -554,7 +555,12 @@ Before you run a script at scale, prove it works for a single user.
 The replay debugger gives you:
 
 - **Breakpoints** on a phase and action index, including structured control-flow leaves
-  such as `loop[0]`, `then[0]`, or `requests[1]`.
+  such as `loop[0]`, `then[0]`, or `requests[1]`. Debug's left sidebar is the Author
+  outline with a breakpoint dot in each step's gutter: click the dot, double-click the
+  step or press `F9` on it. An open sequence starts with **All requests**, which sets or
+  clears a breakpoint on every request. Each step shows whether it passed, failed or is
+  running, and the bottom dock's **Timeline** lists every execution, loop passes included.
+  The **Parameters** section below the outline opens a parameter's uses and captured values.
 - **Stepping** in three modes:
   - `into` — run one leaf action, then pause.
   - `over` — run through the current container or sub-request scope, then pause before

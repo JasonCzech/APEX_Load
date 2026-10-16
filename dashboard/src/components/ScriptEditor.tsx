@@ -25,6 +25,7 @@ import type { StepPosition } from './referenceScopeModel'
 import type { ResponseActions } from './ScriptReplayDebuggerView'
 import { templateStepNames, type TemplateSpot } from './sharedDataTemplates'
 import { useDeferredScriptInspectorFocus } from './useDeferredScriptInspectorFocus'
+import { startPointerDrag } from './pointerDrag'
 import { actionBreadcrumb, dedupeAuthorIssues, insertAuthorAction, remapInsertedBreakpoints, changedDocumentLines, type InsertPosition } from './authorExperience'
 import { captureScript, type DebugRunRecord } from './debuggerExperience'
 import { preserveMappingBindings, withMappingReviewState } from './sourceMappingReviewState'
@@ -240,6 +241,7 @@ import {
   formatDebugLeafSuffix,
   humanizeStepSegment,
   normalizeDebugPhase,
+  withSequenceRequestBreakpoints,
   replayNetworkEntriesForConversion,
   safeParseReplayVariables,
   upsertReplayActivity,
@@ -886,7 +888,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     parameterCandidates,
     pendingParameterDraft,
     replayActivity: retainedReplayActivity,
-    replayEventRefs,
     replayOptions,
     replayReport: retainedReplayReport,
     replayScreenshotSelection,
@@ -1270,11 +1271,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const centerTabDescriptors = useMemo<CenterWorkbenchTabDescriptor[]>(() => {
     const descriptors: CenterWorkbenchTabDescriptor[] = [
       { id: ACTION_LIST_TAB_ID, label: 'Action editor', title: 'Action editor', closeable: false },
-      { id: SCRIPT_JSON_TAB_ID, label: 'Source', title: 'Source JSON', closeable: false },
+      { id: SCRIPT_JSON_TAB_ID, label: 'DSL', title: 'DSL', closeable: false },
       ...(isBrowserScript ? [{ id: BROWSER_REPLAY_TAB_ID, label: 'Browser Replay', title: 'Browser Replay Cockpit', closeable: false }] : []),
       { id: 'runtime-settings', label: 'Runtime Settings', title: 'Runtime Settings', closeable: false },
       { id: 'parameter-data', label: 'Parameters', title: 'Parameters', closeable: false },
-      // The full imported metadata JSON is not a tab: Source opens it on
+      // The full imported metadata JSON is not a tab: DSL opens it on
       // demand, so its multi-MB read-only editor never mounts unasked.
       ...(importMetadata ? [{ id: 'imported-metadata' as const, label: 'Source Mapping', title: 'Source Mapping', closeable: false }] : []),
       ...(objectDescriptorReview.rows.length > 0 ? [{ id: 'object-descriptors' as const, label: 'Object Descriptors', title: 'Object Descriptors', closeable: false }] : []),
@@ -2090,9 +2091,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     selectAuthorAction(index)
   }
 
-  const selectAuthorPhaseAction = (row: ScriptPhaseActionRow) => {
+  // The outline selects in place (keepCenterTab): the open tab stays, so DSL
+  // and Source Mapping follow the selection. Links to a step from elsewhere,
+  // such as a problem or a data usage, open the Action editor.
+  const selectAuthorPhaseAction = (row: ScriptPhaseActionRow, { keepCenterTab = false } = {}) => {
     setAuthorOverview(false)
-    openCenterTab(ACTION_LIST_TAB_ID)
+    if (!keepCenterTab) openCenterTab(ACTION_LIST_TAB_ID)
     setInspectorFocusSection('request')
     setNarrowAuthorPane('editor')
     requestInspectorFocus({ phase: row.phase, actionIndex: row.actionIndex })
@@ -2108,9 +2112,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const selectAuthorPhaseActionRef = useRef(selectAuthorPhaseAction)
   selectAuthorPhaseActionRef.current = selectAuthorPhaseAction
 
-  const focusNestedStep = (phase: ScriptActionPhase, actionIndex: number, stepPath: string[], key: string, label: string) => {
+  const focusNestedStep = (phase: ScriptActionPhase, actionIndex: number, stepPath: string[], key: string, label: string, { keepCenterTab = false } = {}) => {
     setAuthorOverview(false)
-    openCenterTab(ACTION_LIST_TAB_ID)
+    if (!keepCenterTab) openCenterTab(ACTION_LIST_TAB_ID)
     setInspectorFocusSection('request')
     setNarrowAuthorPane('editor')
     requestInspectorFocus({ phase, actionIndex, stepPath })
@@ -2121,11 +2125,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setAuthorCodeFocus({ phase, actionIndex, stepPath, key, label })
     setShowFullScriptJson(false)
   }
-  const selectAuthorNestedItem = (item: Extract<DebugRailRenderRow, { kind: 'container' | 'leaf' }>) => {
+  const selectAuthorNestedItem = (item: Extract<DebugRailRenderRow, { kind: 'container' | 'leaf' }>, options?: { keepCenterTab?: boolean }) => {
     const label = item.kind === 'leaf'
       ? item.childAction.name || item.name || humanizeStepSegment(item.stepPath[item.stepPath.length - 1] || '')
       : item.name
-    focusNestedStep(item.row.phase, item.row.actionIndex, item.stepPath, item.key, label)
+    focusNestedStep(item.row.phase, item.row.actionIndex, item.stepPath, item.key, label, options)
   }
 
   const [followExecution, setFollowExecution] = useState(true)
@@ -2533,16 +2537,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }, [activeReplaySessionId, replayStartPending, admitRuntimeSession, publishRuntimeAdmission, setActiveReplaySessionId, setBrowserReplaySession, setDebugBreakpoints, setDebugDetailCollapsed, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayOptions, setReplayReport, setReplaying])
 
   useWebSocket({ onMessage: handleReplaySocketMessage, projectId })
-
-  useEffect(() => {
-    if (expandedReplayEvent === null) return
-    const node = replayEventRefs.current[expandedReplayEvent]
-    if (!node) return
-    node.scrollIntoView({
-      block: 'nearest',
-      behavior: activeReplaySessionId ? 'smooth' : 'auto',
-    })
-  }, [activeReplaySessionId, expandedReplayEvent, replayEventRefs])
 
   const updateField = (path: string, value: unknown) => {
     setScript(prev => {
@@ -3704,6 +3698,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       ? debugStepPathKey(bp.phase, bp.action_index, bp.step_path)
       : debugBreakpointKey(bp.phase, bp.action_index, bp.request_index), [])
   const debugBreakpointKeys = useMemo(() => new Set(debugBreakpoints.map(breakpointEntryKey)), [debugBreakpoints, breakpointEntryKey])
+  // The outline flags a step, and the transaction around it, for a breakpoint
+  // anywhere in it: on the step, or on a request or step inside its block.
+  const outlineBreakpointKeys = useMemo(() => new Set([...debugBreakpointKeys, ...debugBreakpoints.map(bp => debugSequenceKey(bp.phase, bp.action_index))]), [debugBreakpointKeys, debugBreakpoints])
 
   // pushDebugBreakpoints commits a new breakpoint set to state and, when a
   // session is live, PATCHes it so changes apply mid-run.
@@ -3746,14 +3743,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
 
   // Set or clear breakpoints on every sub-request of a sequence at once.
   const setSequenceChildBreakpoints = useCallback(async (phase: string, actionIndex: number, requestCount: number, enabled: boolean) => {
-    const normalizedPhase = normalizeDebugPhase(phase)
-    const withoutChildren = debugBreakpoints.filter(bp => !(bp.phase === normalizedPhase && bp.action_index === actionIndex && bp.request_index != null))
-    if (!enabled) {
-      await pushDebugBreakpoints(withoutChildren)
-      return
-    }
-    const children: ScriptDebugBreakpoint[] = Array.from({ length: requestCount }, (_, i) => ({ phase: normalizedPhase, action_index: actionIndex, request_index: i }))
-    await pushDebugBreakpoints([...withoutChildren, ...children])
+    await pushDebugBreakpoints(withSequenceRequestBreakpoints(debugBreakpoints, phase, actionIndex, requestCount, enabled))
   }, [debugBreakpoints, pushDebugBreakpoints])
 
   const handleDownloadBrowserReplayExport = async () => {
@@ -4068,25 +4058,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // panel content overflow its grid track.
   const clampAuthorRail = (px: number) => Math.max(200, Math.min(620, Math.round(px)))
 
-  const startAuthorRailDrag = (event: React.MouseEvent) => {
-    event.preventDefault()
+  const startAuthorRailDrag = (event: React.PointerEvent<HTMLElement>) => {
     const startX = event.clientX
     const startW = authorRailRef.current?.offsetWidth ?? authorRailWidth ?? 240
-    setAuthorRailResizing(true)
-    const onMove = (ev: globalThis.MouseEvent) => setAuthorRailWidth(clampAuthorRail(startW + (ev.clientX - startX)))
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      window.removeEventListener('blur', onUp)
-      document.body.style.userSelect = ''
-      document.body.style.cursor = ''
-      setAuthorRailResizing(false)
-    }
-    document.body.style.userSelect = 'none'
-    document.body.style.cursor = 'col-resize'
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    window.addEventListener('blur', onUp)
+    const started = startPointerDrag(event, {
+      cursor: 'col-resize',
+      onMove: ev => setAuthorRailWidth(clampAuthorRail(startW + (ev.clientX - startX))),
+      onEnd: () => setAuthorRailResizing(false),
+    })
+    if (started) setAuthorRailResizing(true)
   }
 
   useEffect(() => {
@@ -5770,14 +5750,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       <div className="center-document-header">
         <div>
           <h3 className="panel-title">{title}</h3>
-          <p>Structured editing is paused until the Source JSON parses again.</p>
+          <p>Structured editing is paused until the DSL JSON parses again.</p>
         </div>
         <button type="button" className="btn btn-sm btn-secondary" onClick={() => selectCenterTab(SCRIPT_JSON_TAB_ID)}>
-          Open Source
+          Open DSL
         </button>
       </div>
       <div className="center-document-blocked-body">
-        <strong>Source JSON is invalid</strong>
+        <strong>DSL JSON is invalid</strong>
         <span>{jsonParseMessage || 'The current JSON draft could not be parsed.'}</span>
       </div>
     </section>
@@ -5900,7 +5880,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     const path = `$.script.${collection}[${actionIndex}]${jsonPathForActionStepPath(inspectorStepPath)}${request.field.map(segment => typeof segment === 'number' ? `[${segment}]` : formatJsonPathKey(segment)).join('')}`
     const occurrence = findJsonStringOccurrences(jsonText, request.value).find(item => item.path === path)
     if (!occurrence) {
-      setError('That value could not be found in the script JSON; select it in Source to make it a parameter.')
+      setError('That value could not be found in the script JSON; select it in DSL to make it a parameter.')
       return
     }
     // A value written with JSON escapes is taken whole; the offsets of a part would not match.
@@ -6546,8 +6526,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           jumpToLineRequest: jsonLineJumpRequest,
           parameterMatchRanges: safeParameterMatchRanges,
           resolvedValues: workspaceTab === 'debug' && hasReplayVariableInspectorData ? replayVariableInspector : null,
-          ariaLabel: 'Source',
-          title: 'Source',
+          ariaLabel: 'DSL',
+          title: 'DSL',
           onApply: handleApplyJsonDraft,
           onChange: handleCodePaneChange,
           onCopy: () => void navigator.clipboard?.writeText(jsonText),
@@ -7279,7 +7259,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             copiedReplaySnapshotSection={copiedReplaySnapshotSection}
             debugActionRows={debugActionRows}
             debugOutline={outlineModel}
+            outlineSelection={selectedOutlineParameterName ? null : authorCodeFocus}
+            outlineResetKey={scriptId || 'draft'}
+            outlineHasIssue={row => (actionIssueBuckets[row.phase]?.[row.actionIndex] || []).length > 0}
+            outlineShowMarkers={outlineShowMarkers}
+            onOutlineShowMarkersChange={changeOutlineShowMarkers}
             debugBreakpointKeys={debugBreakpointKeys}
+            outlineBreakpointKeys={outlineBreakpointKeys}
             debugDetailHost={!isBrowserScript && centerTabsState.activeTabId === ACTION_LIST_TAB_ID ? centerTabPanelElements[ACTION_LIST_TAB_ID] : null}
             debuggerWorkbench={renderCenterWorkbench('debugger-code-center', 'Debugger center workbench', 'debug')}
             error={error}
@@ -7299,11 +7285,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               openCenterTab(ACTION_LIST_TAB_ID)
               selectAuthorPhaseAction(row)
             }}
-            parameterReferenceCounts={parameterReferenceCounts}
             problemCount={problemCount}
             projectId={projectId}
             replayActivity={replayActivity}
-            replayEventRefs={replayEventRefs}
             replayFailingEvent={replayFailingEvent}
             replayFailingEventIndex={replayFailingEventIndex}
             replaying={replaying}
@@ -7363,6 +7347,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             selectedOutlineParameterName={selectedOutlineParameterName}
             onEditParameterDefinition={name => { activateWorkspaceTab('author'); const index = (script.parameters || []).findIndex(parameter => parameter.name === name); if (index >= 0) selectParameterData(index); openEditorSection('parameter-data') }}
             selectOutlineParameter={selectOutlineParameter}
+            parameterReferenceCounts={parameterReferenceCounts}
             onSelectDebugItem={(item, hasEvidence) => {
               changeFollowExecution(false)
               if (item.kind === 'leaf' || (item.kind === 'container' && item.depth > 0)) selectAuthorNestedItem(item)
@@ -7605,8 +7590,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                     expandedContainers={expandedAuthorContainers}
                     onToggleContainer={toggleAuthorContainer}
                     selection={selectedOutlineParameterName ? null : authorCodeFocus}
-                    onSelect={item => item.kind === 'leaf' || (item.kind === 'container' && item.depth > 0) ? selectAuthorNestedItem(item) : selectAuthorPhaseAction(item.row)}
-                    hasBreakpoint={key => debugBreakpointKeys.has(key)}
+                    onSelect={item => item.kind === 'leaf' || (item.kind === 'container' && item.depth > 0) ? selectAuthorNestedItem(item, { keepCenterTab: true }) : selectAuthorPhaseAction(item.row, { keepCenterTab: true })}
+                    hasBreakpoint={key => outlineBreakpointKeys.has(key)}
                     hasIssue={row => (actionIssueBuckets[row.phase]?.[row.actionIndex] || []).length > 0}
                     showMarkers={outlineShowMarkers}
                     onShowMarkersChange={changeOutlineShowMarkers}
@@ -7824,7 +7809,6 @@ function ReplayScreenshotDialog({ alt, onClose, src }: ReplayScreenshotDialogPro
 function useScriptEditorState(initialScript?: ScriptData | null) {
   const [state, dispatch] = useReducer(scriptEditorReducer, initialScript, createScriptEditorState)
   const baselineJsonRef = useRef(formatScriptJson(initialScript || { ...EMPTY_SCRIPT }))
-  const replayEventRefs = useRef<Record<number, HTMLDivElement | null>>({})
   const dispatchers = useMemo(() => createScriptEditorDispatchers(dispatch), [dispatch])
   const historyFieldRef = useRef<{ element: Element | null; group: number }>({ element: null, group: 0 })
   const setScript = useCallback((update: React.SetStateAction<ScriptData>) => {
@@ -7871,7 +7855,6 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     closeParameterDialog,
     hydrateEditorState,
     markBaseline,
-    replayEventRefs,
     ...dispatchers,
     setScript,
     restoreScript: dispatchers.setScript,

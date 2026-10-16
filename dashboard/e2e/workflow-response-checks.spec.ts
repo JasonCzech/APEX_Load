@@ -68,7 +68,7 @@ test('a status check, a text check and a saved value are made from a replayed re
     await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
     await page.locator('.topbar-debug-action-run').click()
     await expectDebugOutcome(page, 'passed')
-    await page.getByRole('complementary', { name: 'Actions', exact: true }).locator('.debugger-action-row-main').filter({ hasText: 'Open cart' }).click()
+    await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: 'Open cart' }).click()
 
     // From the response: its status, text in it, and that text used by the later step.
     await page.getByRole('button', { name: 'Check that the status is 200', exact: true }).click()
@@ -78,10 +78,10 @@ test('a status check, a text check and a saved value are made from a replayed re
     // A selection belongs to its event: another one starts afresh.
     const rail = page.getByRole('complementary', { name: 'Actions', exact: true })
     await selectInResponse(page, 'c-5571')
-    await rail.locator('.debugger-action-row-main').filter({ hasText: 'List orders' }).click()
+    await rail.getByRole('treeitem', { name: 'List orders' }).click()
     await expect(page.getByRole('group', { name: 'Use the selected text' })).toHaveCount(0)
     await expect(page.locator('.response-selection-done')).toHaveCount(0)
-    await rail.locator('.debugger-action-row-main').filter({ hasText: 'Open cart' }).click()
+    await rail.getByRole('treeitem', { name: 'Open cart' }).click()
     await selectInResponse(page, 'c-5571')
     await page.getByRole('button', { name: 'Check that the response contains this', exact: true }).click()
     await expect(page.locator('.response-selection-done')).toHaveText('Added the check “Response contains c-5571”.')

@@ -254,6 +254,22 @@ describe('visibleOutlineRows', () => {
     ])
   })
 
+  it('opens the blocks on the way to a request or step that a search matches', () => {
+    const model = modelOf([
+      { name: 'Login', type: 'GET', target: '/login' },
+      { name: 'Retry', type: 'control_loop', control: { count: 2, steps: [
+        { name: 'Poll', type: 'GET', target: '/poll' },
+        { name: 'Pay', type: 'http_sequence', params: { requests: [{ name: 'Authorize', method: 'POST', target: '/authorize' }, { name: 'Capture', method: 'POST', target: '/capture' }] } },
+      ] } },
+    ])
+    const found = visibleOutlineRows(model, { isExpanded: () => false, expandedContainers: new Set(), query: 'capture' })
+    expect(found.map(row => [row.label, row.level, row.expanded])).toEqual([
+      ['Actions', 1, true], ['Retry', 2, true], ['Poll', 3, false], ['Pay', 3, true], ['Authorize', 4, false], ['Capture', 4, false],
+    ])
+    // Nothing inside matches: the block stays as the reader left it.
+    expect(visibleOutlineRows(model, { isExpanded: () => true, expandedContainers: new Set(), query: 'login' }).map(row => row.label)).toEqual(['Actions', 'Login'])
+  })
+
   it('keeps an empty Init out and shows Actions even when empty', () => {
     expect(visibleOutlineRows(modelOf([]), { isExpanded: () => true, expandedContainers: new Set(), query: '' }).map(row => row.label)).toEqual(['Actions'])
     expect(visibleOutlineRows(modelOf([], {}, [{ name: 'login', type: 'POST' }]), { isExpanded: () => true, expandedContainers: new Set(), query: '' }).map(row => row.label)).toEqual(['Init', 'login', 'Actions'])

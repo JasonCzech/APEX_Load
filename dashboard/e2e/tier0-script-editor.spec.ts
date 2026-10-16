@@ -105,8 +105,8 @@ test('[U21] the imported script editor preserves tab state and saved changes acr
 
   // The Source pane is intentionally read-only. Switching through it and back
   // must not discard the editable runtime draft.
-  await workbench.getByRole('tab', { name: 'Source', exact: true }).click()
-  await expect(workbench.getByRole('tabpanel', { name: 'Source', exact: true })).toBeVisible()
+  await workbench.getByRole('tab', { name: 'DSL', exact: true }).click()
+  await expect(workbench.getByRole('tabpanel', { name: 'DSL', exact: true })).toBeVisible()
   await runtimeTab.click()
   await expect(workbench.getByRole('textbox', { name: 'Base URL' })).toHaveValue(editedBaseURL)
   await actionListTab.click()

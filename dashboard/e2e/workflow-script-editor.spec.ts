@@ -108,7 +108,7 @@ test('authored script goals survive an unrelated editor save and canonical reope
     await page.reload()
     await workbench.getByRole('tab', { name: 'Runtime Settings' }).click()
     await expect(baseURL).toHaveValue('http://127.0.0.1:2')
-    await workbench.getByRole('tab', { name: 'Source' }).click()
+    await workbench.getByRole('tab', { name: 'DSL' }).click()
     await expect.poll(() => {
       if (metadataFetchError) throw metadataFetchError
       return metadataFetched
@@ -440,7 +440,7 @@ test('reapply preserves own JSON header keys and explicit deletions across a rea
   await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   const workbench = page.getByRole('region', { name: 'Author center workbench' })
-  await workbench.getByRole('tab', { name: 'Source', exact: true }).click()
+  await workbench.getByRole('tab', { name: 'DSL', exact: true }).click()
   const code = page.locator('.script-code-pane')
   await code.getByRole('button', { name: 'Edit JSON', exact: true }).click()
   const local = JSON.parse(JSON.stringify(original)) as ScriptDefinition

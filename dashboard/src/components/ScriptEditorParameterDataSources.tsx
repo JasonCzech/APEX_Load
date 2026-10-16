@@ -1,6 +1,7 @@
 import { isSensitiveCredentialPreviewName } from './credentialPreviewPolicy'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { useRoomToPaneBottom } from './useRoomToPaneBottom'
 import type {
   ScriptDefinition,
   ScriptDataSource,
@@ -653,6 +654,7 @@ export function ParameterDataEditor({
       return sortState.direction === 'asc' ? comparison : -comparison
     })
   const gridScrollRef = useRef<HTMLDivElement | null>(null)
+  useRoomToPaneBottom(gridScrollRef, dataEditorMode === 'grid')
   const virtualizeRows = filteredRows.length > 100
   const rowVirtualizer = useVirtualizer({
     count: filteredRows.length,
