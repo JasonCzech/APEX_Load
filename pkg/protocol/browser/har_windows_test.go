@@ -113,8 +113,9 @@ func TestWindowsHARRefusesUnsafeWorkingDirectoryACLs(t *testing.T) {
 	}
 }
 
-// An elevated token's default owner (Administrators) owns what this process
-// creates, and that owner is accepted.
+// What an elevated process creates is owned by its token's default owner
+// (the Administrators group, or the user itself as on hosted runners), and
+// that owner is accepted.
 func TestWindowsHARAcceptsElevatedTokenOwner(t *testing.T) {
 	if !windows.GetCurrentProcessToken().IsElevated() {
 		t.Skip("the token is not elevated")
@@ -190,7 +191,8 @@ func TestWindowsHARRemoveCountsDeletePendingAsRemoved(t *testing.T) {
 }
 
 // 200 owners in a row create a generation, publish a scrubbed HAR and
-// retire both, leaving only the namespace lease behind.
+// retire both, leaving only the namespace lease and the retirement ledger
+// behind.
 func TestWindowsHARCreatePublishRetireStress(t *testing.T) {
 	if testing.Short() {
 		t.Skip("stress loop")

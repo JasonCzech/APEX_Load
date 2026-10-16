@@ -154,12 +154,19 @@ func makeHARDirAlias(t *testing.T, kind, target, alias string) {
 	}
 }
 
-// harPrivatePath reports why path is not private to this user, or nil.
+// harPrivatePath reports why path is not private to this user, or nil. It
+// holds path as a scan would (sharing everything, os.Open does not share
+// delete) and does not follow a reparse point.
 func harPrivatePath(path string, dir bool) error {
-	f, err := os.Open(path)
+	pathPtr, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return err
 	}
+	handle, err := windows.CreateFile(pathPtr, windows.READ_CONTROL|windows.FILE_READ_ATTRIBUTES, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	f := os.NewFile(uintptr(handle), path)
 	defer f.Close()
 	return winfs.CheckPrivate(f, !dir)
 }

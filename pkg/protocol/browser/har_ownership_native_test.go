@@ -51,7 +51,9 @@ func TestHAROwnershipNativeContextFlushAndJoin(t *testing.T) {
 			if o == nil {
 				t.Fatal("native context has no private capture owner")
 			}
-			before, err := os.Stat(o.path)
+			// lstatHARPath fixes the identity at the call (on Windows
+			// os.Stat reads it later, at os.SameFile).
+			before, err := lstatHARPath(o.path)
 			if err != nil || harPrivatePath(o.path, false) != nil {
 				t.Fatal("native writer admitted without a private raw file", err)
 			}
@@ -82,7 +84,7 @@ func TestHAROwnershipNativeContextFlushAndJoin(t *testing.T) {
 			if !errors.Is(err, errHAROwnershipUnproven) || o.retiredSuccessfully() {
 				t.Fatal("blocked native callback was reported as a completed join", err)
 			}
-			if current, err := os.Stat(o.path); err != nil || !os.SameFile(before, current) || harPrivatePath(o.path, false) != nil {
+			if current, err := lstatHARPath(o.path); err != nil || !os.SameFile(before, current) || harPrivatePath(o.path, false) != nil {
 				t.Fatal("blocked native flush lost its exact private file", err)
 			}
 			if len(harArtifacts(t, dir)) != 0 || len(PlanRuntimeHARWorkingCleanup(dir, 128)) != 0 {

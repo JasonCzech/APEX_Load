@@ -180,7 +180,9 @@ func TestHAROwnershipJoinedCandidateCarriesBoundedActualSize(t *testing.T) {
 
 func TestHAROwnershipRawFileIsPrivateBeforeNativeWriterEnters(t *testing.T) {
 	o := fixtureHAROwner(t, t.TempDir())
-	info, err := os.Lstat(o.path)
+	// lstatHARPath fixes the identity at the call (on Windows os.Lstat reads
+	// it later, at os.SameFile).
+	info, err := lstatHARPath(o.path)
 	if err != nil || !info.Mode().IsRegular() || harPrivatePath(o.path, false) != nil || info.Size() != 0 {
 		t.Fatal("raw path was not privately reserved before native writer admission", err)
 	}
@@ -189,7 +191,7 @@ func TestHAROwnershipRawFileIsPrivateBeforeNativeWriterEnters(t *testing.T) {
 	if err := os.WriteFile(o.path, []byte(ownedHARFixture), 0o666); err != nil {
 		t.Fatal(err)
 	}
-	after, err := os.Lstat(o.path)
+	after, err := lstatHARPath(o.path)
 	if err != nil || !os.SameFile(info, after) || harPrivatePath(o.path, false) != nil {
 		t.Fatal("native-style truncate replaced private file identity or mode", err)
 	}
