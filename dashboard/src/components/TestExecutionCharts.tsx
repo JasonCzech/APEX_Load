@@ -1209,7 +1209,9 @@ export default function TestExecutionCharts({
           />
         )}
         labelStyle={{ display: showTimeLabel ? undefined : 'none' }}
-        labelFormatter={(value) => showTimeLabel ? formatXAxisLabel(value) : ''}
+        // recharts 3.10 types the label as any ReactNode; axis labels are
+        // the x values themselves.
+        labelFormatter={(value) => showTimeLabel && (typeof value === 'string' || typeof value === 'number') ? formatXAxisLabel(value) : ''}
         formatter={(value, name, item) => [formatGraphOverlayMetricValue(rawTooltipMetricValue(value, item)), name]}
         itemSorter={preserveChartItemOrder}
         isAnimationActive={false}
