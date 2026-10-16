@@ -89,6 +89,7 @@ func startLinuxProcessTree(cmd *exec.Cmd, requireStrong bool) error {
 	configureProcessTree(cmd)
 	tree := &managedLinuxProcessTree{
 		known:      make(map[int]linuxProcessIdentity),
+		root:       noLinuxProcessIdentity(),
 		cgroupPath: createPrivateCgroupForProcess(),
 	}
 	var cgroupDir *os.File
@@ -560,7 +561,7 @@ func (t *managedLinuxProcessTree) closeKnownIdentities() {
 		closeLinuxProcessIdentity(identity)
 		delete(t.known, pid)
 	}
-	t.root = linuxProcessIdentity{}
+	t.root = noLinuxProcessIdentity()
 }
 
 func (t *managedLinuxProcessTree) killCgroupMembersUntilEmpty(deadline time.Time) (bool, error) {
@@ -642,29 +643,29 @@ func killProcessTree(cmd *exec.Cmd) error {
 func readLinuxProcessIdentity(pid int) (linuxProcessIdentity, error) {
 	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
 	if err != nil {
-		return linuxProcessIdentity{}, err
+		return noLinuxProcessIdentity(), err
 	}
 	// comm is parenthesized and may itself contain spaces or parentheses. The
 	// final ')' is followed by state (field 3); starttime is field 22.
 	closeParen := strings.LastIndexByte(string(data), ')')
 	if closeParen < 0 || closeParen+2 >= len(data) {
-		return linuxProcessIdentity{}, fmt.Errorf("malformed /proc/%d/stat", pid)
+		return noLinuxProcessIdentity(), fmt.Errorf("malformed /proc/%d/stat", pid)
 	}
 	fields := strings.Fields(string(data[closeParen+1:]))
 	if len(fields) <= 19 {
-		return linuxProcessIdentity{}, fmt.Errorf("short /proc/%d/stat", pid)
+		return noLinuxProcessIdentity(), fmt.Errorf("short /proc/%d/stat", pid)
 	}
 	parentPID, err := strconv.Atoi(fields[1])
 	if err != nil {
-		return linuxProcessIdentity{}, err
+		return noLinuxProcessIdentity(), err
 	}
 	processGroup, err := strconv.Atoi(fields[2])
 	if err != nil {
-		return linuxProcessIdentity{}, err
+		return noLinuxProcessIdentity(), err
 	}
 	startTime, err := strconv.ParseUint(fields[19], 10, 64)
 	if err != nil {
-		return linuxProcessIdentity{}, err
+		return noLinuxProcessIdentity(), err
 	}
 	return linuxProcessIdentity{
 		pid: pid, parentPID: parentPID, processGroup: processGroup,
@@ -675,7 +676,7 @@ func readLinuxProcessIdentity(pid int) (linuxProcessIdentity, error) {
 func captureLinuxProcessIdentity(pid int) (linuxProcessIdentity, error) {
 	identity, err := readLinuxProcessIdentity(pid)
 	if err != nil {
-		return linuxProcessIdentity{}, err
+		return noLinuxProcessIdentity(), err
 	}
 	pidfd, err := unix.PidfdOpen(pid, 0)
 	if err == nil {
@@ -683,6 +684,11 @@ func captureLinuxProcessIdentity(pid int) (linuxProcessIdentity, error) {
 	}
 	return identity, nil
 }
+
+// noLinuxProcessIdentity owns no descriptor. A zero value would claim fd 0:
+// closing it after a failed capture closed whatever held that number, such as
+// another identity's pidfd, which later failed to signal with EBADF.
+func noLinuxProcessIdentity() linuxProcessIdentity { return linuxProcessIdentity{pidfd: -1} }
 
 func closeLinuxProcessIdentity(identity linuxProcessIdentity) {
 	if identity.pidfd >= 0 {
