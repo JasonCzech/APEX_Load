@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"unsafe"
 
 	"github.com/jasonczech/apexload/pkg/internal/winfs"
 	"golang.org/x/sys/windows"
@@ -32,7 +31,13 @@ func TestWindowsHARWorkingDirectoryDACLIsPrivate(t *testing.T) {
 	o := fixtureHAROwner(t, dir)
 	work := filepath.Join(dir, runtimeHARWorkingDirectory)
 	user := harTestUser(t)
-	if got, want := harTestDescriptor(t, work, windows.DACL_SECURITY_INFORMATION).String(), winfs.PrivateDirectorySDDL(user); got != want {
+	// Compare descriptors as Windows renders them (the built-in
+	// Administrator prints as LA, not as its SID).
+	want, err := windows.SecurityDescriptorFromString(winfs.PrivateDirectorySDDL(user))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := harTestDescriptor(t, work, windows.DACL_SECURITY_INFORMATION).String(); got != want.String() {
 		t.Fatalf("%s DACL %s, want %s", runtimeHARWorkingDirectory, got, want)
 	}
 	for _, path := range []string{work, filepath.Dir(o.path)} {
@@ -54,33 +59,9 @@ func TestWindowsHARWorkingDirectoryDACLIsPrivate(t *testing.T) {
 // test, or skips when the token does not hold it.
 func enableHARTestPrivilege(t *testing.T, name string) {
 	t.Helper()
-	var token windows.Token
-	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &token); err != nil {
-		t.Fatal(err)
+	if !setHARTestPrivilege(t, name, true) {
+		t.Skipf("%s is not held by this token", name)
 	}
-	defer token.Close()
-	var luid windows.LUID
-	namePtr, _ := windows.UTF16PtrFromString(name)
-	if err := windows.LookupPrivilegeValue(nil, namePtr, &luid); err != nil {
-		t.Fatal(err)
-	}
-	set := func(attributes uint32) error {
-		privileges := windows.Tokenprivileges{PrivilegeCount: 1}
-		privileges.Privileges[0] = windows.LUIDAndAttributes{Luid: luid, Attributes: attributes}
-		return windows.AdjustTokenPrivileges(token, false, &privileges, uint32(unsafe.Sizeof(privileges)), nil, nil)
-	}
-	if err := set(windows.SE_PRIVILEGE_ENABLED); err != nil || errors.Is(windows.GetLastError(), windows.ERROR_NOT_ALL_ASSIGNED) {
-		t.Skipf("%s is not held by this token: %v", name, err)
-	}
-	t.Cleanup(func() {
-		var token windows.Token
-		if windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &token) == nil {
-			privileges := windows.Tokenprivileges{PrivilegeCount: 1}
-			privileges.Privileges[0] = windows.LUIDAndAttributes{Luid: luid}
-			_ = windows.AdjustTokenPrivileges(token, false, &privileges, uint32(unsafe.Sizeof(privileges)), nil, nil)
-			_ = token.Close()
-		}
-	})
 }
 
 // Every unsafe working directory is refused before anything is created in

@@ -33,7 +33,40 @@ func fixtureHARJoinedRetirement(t *testing.T, dir string) (*harCaptureOwner, *ha
 	if err := registerHARRetirement(n.work, r); err != nil {
 		t.Fatal(err)
 	}
+	// Retirement releases and closes the generation's lease and root before
+	// renaming it (Windows cannot rename a directory whose files are open).
+	if err := o.closeGeneration(); err != nil {
+		t.Fatal(err)
+	}
 	return o, n, r
+}
+
+// openHARTombstone reopens a renamed generation the way retirement does,
+// to unlink its files.
+func openHARTombstone(t *testing.T, n *harNamespace, tomb string) *os.Root {
+	t.Helper()
+	retired, err := openHARPrivateChild(n.work, tomb, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return retired
+}
+
+// writeHARPublishedFixture publishes data as name in the HAR directory the
+// way the owner does: written privately in staging, then linked out, so it
+// keeps the private file's ownership and ACL.
+func writeHARPublishedFixture(t *testing.T, n *harNamespace, name string, data []byte) {
+	t.Helper()
+	staged := ".fixture-" + name + ".part"
+	if err := writeHARPrivateDurable(n.work, staged, data); err != nil {
+		t.Fatal(err)
+	}
+	if err := n.root.Link(filepath.Join(runtimeHARWorkingDirectory, staged), name); err != nil {
+		t.Fatal(err)
+	}
+	if err := n.work.Remove(staged); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestHAROwnershipRetirementRecoversEveryUnlinkBoundary(t *testing.T) {
@@ -48,13 +81,17 @@ func TestHAROwnershipRetirementRecoversEveryUnlinkBoundary(t *testing.T) {
 			// These are exact persisted production retirement stages, deliberately
 			// interrupted before any subsequent stage. No PID/age inference.
 			names := []string{"working.har", "scrubbed.part", "owner.lock", "writer-joined.json", "manifest.json"}
+			retired := openHARTombstone(t, n, tomb)
 			for i, name := range names {
 				if i >= step {
 					break
 				}
-				if err := o.root.Remove(name); err != nil && !os.IsNotExist(err) {
+				if err := retired.Remove(name); err != nil && !os.IsNotExist(err) {
 					t.Fatal(err)
 				}
+			}
+			if err := retired.Close(); err != nil {
+				t.Fatal(err)
 			}
 			if step == 6 {
 				if err := n.work.Remove(tomb); err != nil {
@@ -104,10 +141,14 @@ func TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger(t *testing.
 				t.Fatal(err)
 			}
 			if kind == "absent_payload" {
+				retired := openHARTombstone(t, n, tomb)
 				for _, name := range []string{"working.har", "owner.lock", "writer-joined.json", "manifest.json"} {
-					if err := o.root.Remove(name); err != nil {
+					if err := retired.Remove(name); err != nil {
 						t.Fatal(err)
 					}
+				}
+				if err := retired.Close(); err != nil {
+					t.Fatal(err)
 				}
 				if err := n.work.Remove(tomb); err != nil {
 					t.Fatal(err)
@@ -175,9 +216,7 @@ func TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval(t *testing.T) {
 				t.Fatal(err)
 			}
 			name := "apexload_browser_" + gen + "_scrubbed.har"
-			if err := writeHARPrivateDurable(n.root, name, []byte(ownedHARFixture)); err != nil {
-				t.Fatal(err)
-			}
+			writeHARPublishedFixture(t, n, name, []byte(ownedHARFixture))
 			info, err := n.root.Stat(name)
 			if err != nil {
 				t.Fatal(err)
