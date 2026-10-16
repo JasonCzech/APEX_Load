@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -544,15 +545,18 @@ func TestEncryptedStoreSessionClaimRetainsAndRecoversPayload(t *testing.T) {
 		t.Fatalf("ClaimSession payload = %q, err = %v", payload, err)
 	}
 	clear(payload)
-	if _, _, err := store.Open(ctx, OpenRequest{
+	// Close every reader: Windows cannot delete a file that is still open.
+	retained, _, err := store.Open(ctx, OpenRequest{
 		BackendKey: descriptor.BackendKey,
 		ProjectID:  descriptor.ProjectID,
 		Kind:       "session",
 		SHA256:     descriptor.SHA256,
 		SizeBytes:  descriptor.SizeBytes,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("claimed encrypted payload was deleted: %v", err)
 	}
+	_ = retained.Close()
 	if _, _, err := store.OpenSession(ctx, sessionID, "project-a", "actor-a"); err == nil ||
 		!strings.Contains(err.Error(), "already being consumed") {
 		t.Fatalf("fresh claimed session open error = %v", err)
@@ -1409,15 +1413,17 @@ func TestDeleteExpiredSessionsSerializesSharedPayloadClaimTransition(t *testing.
 	case <-time.After(5 * time.Second):
 		t.Fatal("expiry sweep did not resume after claim transition")
 	}
-	if _, _, err := store.Open(ctx, OpenRequest{
+	sharedPayload, _, err := store.Open(ctx, OpenRequest{
 		BackendKey: shared.BackendKey,
 		ProjectID:  shared.ProjectID,
 		Kind:       "session",
 		SHA256:     shared.SHA256,
 		SizeBytes:  shared.SizeBytes,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("active claim's shared payload was deleted: %v", err)
 	}
+	_ = sharedPayload.Close()
 	if err := store.renameDurably(activeClaimPath, activePath); err != nil {
 		t.Fatal(err)
 	}
@@ -1558,6 +1564,10 @@ func TestDurableNamespaceHelpersSyncAfterMutation(t *testing.T) {
 		t.Fatalf("directory sync calls = %d, want at least one per namespace mutation", syncCalls)
 	}
 
+	// The Windows create-only publish moves its source instead of linking it.
+	if err := os.WriteFile(source, []byte("payload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	uncertainTarget := filepath.Join(directory, "uncertain-target")
 	syncFailure := errors.New("simulated directory sync failure")
 	store.syncDirectoryFn = func(string) error { return syncFailure }
@@ -1593,8 +1603,36 @@ func TestInitializeWritableStoreRootSyncsNewDirectoryChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o700 {
+	// Windows reports directories as 0777; it has no Unix permission bits.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o700 {
 		t.Fatalf("artifact root mode = %o, want 700", info.Mode().Perm())
+	}
+}
+
+func TestRemoveDurablyKeepsNonEmptyDirectory(t *testing.T) {
+	store := newEncryptedArtifactTestStore(t)
+	directory := filepath.Join(store.root, "shared-directory")
+	entry := filepath.Join(directory, "other-project.json")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(entry, []byte("kept"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.removeDurably(directory); err == nil {
+		t.Fatal("removeDurably removed a non-empty directory")
+	}
+	if data, err := os.ReadFile(entry); err != nil || string(data) != "kept" {
+		t.Fatalf("directory entry after refused removal = %q, %v", data, err)
+	}
+	if err := os.Remove(entry); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.removeDurably(directory); err != nil {
+		t.Fatalf("remove empty directory: %v", err)
+	}
+	if _, err := os.Stat(directory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("empty directory stat error = %v", err)
 	}
 }
 

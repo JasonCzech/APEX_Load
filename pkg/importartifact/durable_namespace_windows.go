@@ -191,8 +191,17 @@ func moveFileWriteThrough(oldPath, newPath string, replace bool) error {
 }
 
 func removeWriteThrough(root, targetPath string) error {
-	if _, err := os.Lstat(targetPath); err != nil {
+	info, err := os.Lstat(targetPath)
+	if err != nil {
 		return err
+	}
+	// Callers prune directories expecting rmdir semantics: a directory that
+	// still holds entries (another project's sessions, sibling objects) must
+	// stay. A tombstone move would take those entries with it, so directories
+	// use RemoveDirectoryW, which refuses a non-empty directory atomically. An
+	// empty directory carries no payload whose absence must be write-through.
+	if info.IsDir() {
+		return os.Remove(targetPath)
 	}
 	tombstoneRoot := filepath.Join(root, durableTombstoneDirectory)
 	if err := mkdirAllDurably(tombstoneRoot, 0o700); err != nil {
