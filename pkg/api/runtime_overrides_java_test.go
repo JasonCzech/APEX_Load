@@ -334,6 +334,22 @@ func TestJavaVuserOverrideChangedExecutableSurface(t *testing.T) {
 		t.Fatal("VM parameter change must be flagged")
 	}
 
+	// Shared JVMs stay re-blessable; moving into LoadRunner thread mode, where
+	// libraries and native code share a JVM, needs the script approved again.
+	shared := cloneScriptForStoredGroup(base)
+	shared.Config.JavaVuser.JVMSharing = dsl.JavaVuserJVMSharingShared
+	if javaVuserOverrideChangedExecutableSurface(base, shared) {
+		t.Fatal("a shared-JVM override must stay re-blessable")
+	}
+	threads := cloneScriptForStoredGroup(base)
+	threads.Config.JavaVuser.JVMSharing = dsl.JavaVuserJVMSharingThreads
+	if !javaVuserOverrideChangedExecutableSurface(base, threads) {
+		t.Fatal("an override into thread mode must be flagged")
+	}
+	if javaVuserOverrideChangedExecutableSurface(threads, shared) || javaVuserOverrideChangedExecutableSurface(threads, threads) {
+		t.Fatal("leaving or keeping an approved thread mode must not be flagged")
+	}
+
 	// Action rewrite (the {{env}}-template vector: class/method/source ref) → flagged.
 	act := cloneScriptForStoredGroup(base)
 	act.Actions[0].Params["method"] = "attacker_entrypoint"

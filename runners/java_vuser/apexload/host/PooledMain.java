@@ -87,6 +87,25 @@ public final class PooledMain {
         synchronized long dropped() { return dropped; }
     }
 
+    private static boolean isSlotClosed(Throwable failure) {
+        // Java 8 wraps a dependent stage's failure in CompletionException.
+        while (failure instanceof java.util.concurrent.CompletionException && failure.getCause() != null) failure = failure.getCause();
+        return failure instanceof IllegalStateException && "slot_closed".equals(failure.getMessage());
+    }
+
+    /** The class and message of a script's exception, bounded and on one line. */
+    static String scriptError(Throwable failure) {
+        Throwable cause = failure;
+        while (cause instanceof java.util.concurrent.CompletionException && cause.getCause() != null) cause = cause.getCause();
+        String text = cause.getClass().getName() + (cause.getMessage() == null ? "" : ": " + cause.getMessage());
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < text.length() && out.length() < 2048; i++) {
+            char c = text.charAt(i);
+            out.append(Character.isISOControl(c) || Character.isSurrogate(c) ? ' ' : c);
+        }
+        return out.toString();
+    }
+
     private void reply(PooledWire.Frame request, String code, Map<String,String> fields) {
         try {
             // Interrupting peers can finish their futures before the triggering
@@ -138,6 +157,16 @@ public final class PooledMain {
             }
             host.invoke(generation, f.slot, f.sequence, f.request, method, parameters, "v1".equals(f.fields.get("native_services")) ? (seq,payload)->nativeCall(f,seq.longValue(),payload) : null).whenComplete((value, failure) -> {
                 Map<String,String> result = new HashMap<String,String>();
+                // In LoadRunner thread mode a script's exception is that VUser's
+                // failed call, reported with its text, never a host failure.
+                if (failure != null && host.loadRunnerThreads() && !closing.contains(f.slot) && !host.requiresReap() && !isSlotClosed(failure)) {
+                    result.put("return_code", "-1");
+                    result.put("event_fallback", "false");
+                    result.put("event_truncated", "false");
+                    result.put("error", scriptError(failure));
+                    reply(f, "ok", result);
+                    return;
+                }
                 if (failure == null) {
                     result.put("return_code", Integer.toString(value.returnCode));
                     result.put("event_fallback", Boolean.toString(value.eventFallback));
@@ -217,10 +246,16 @@ public final class PooledMain {
             URL[] scripts = new URL[scriptCount];
             for (int i = 0; i < scriptCount; i++) scripts[i] = local(args[pos++]);
             int dependencyCount = Integer.parseInt(args[pos++]);
-            if (dependencyCount < 0 || dependencyCount > 256 || args.length != pos + dependencyCount)
+            if (dependencyCount < 0 || dependencyCount > 256 || args.length != pos + dependencyCount && args.length != pos + dependencyCount + 1)
                 throw new IllegalArgumentException();
             URL[] dependencies = new URL[dependencyCount];
             for (int i = 0; i < dependencyCount; i++) dependencies[i] = local(args[pos++]);
+            // An optional last argument selects LoadRunner thread mode.
+            boolean threads = false;
+            if (pos < args.length) {
+                if (!"loadrunner_threads".equals(args[pos])) throw new IllegalArgumentException();
+                threads = true;
+            }
 
             byte[] secret = new byte[32];
             bootstrap.readFully(secret);
@@ -234,7 +269,7 @@ public final class PooledMain {
             output.write(proof);
             output.flush();
             final DataInputStream control = new DataInputStream(controlSocket.getInputStream());
-            PooledMain main = new PooledMain(new PooledHost(generation, capacity, shim, scripts, dependencies, target),
+            PooledMain main = new PooledMain(new PooledHost(generation, capacity, shim, scripts, dependencies, target, threads),
                 capacity, generation, Boolean.parseBoolean(cleanup), secret, diagnostics);
             Thread writer = new Thread(() -> {
                 try {

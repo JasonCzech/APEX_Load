@@ -30,6 +30,10 @@ type PooledLaunchSpec struct {
 	HarnessJar, ShimJar, TargetClass, WorkDir      string
 	ScriptClasspath, SharedClasspath, VMParameters []string
 	QualifiedCleanup                               bool
+	// LoadRunnerThreads is LoadRunner thread mode: SharedClasspath holds
+	// libraries loaded once, and the runtime may be any the runner resolved.
+	// Omitted when false, so other modes keep their configuration digests.
+	LoadRunnerThreads bool `json:",omitempty"`
 }
 
 var pooledTargetClass = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_.$]*$`)
@@ -43,7 +47,7 @@ func buildPooledCommand(spec PooledLaunchSpec, a HostAllocation, port int, runti
 	if err != nil || len(digest) != 32 || spec.ConfigurationSHA256 != a.Binding.ConfigurationSHA256 || !pooledID(a.ID, false) || len(a.SlotIDs) < 1 || len(a.SlotIDs) > MaxPooledSlotsPerHost || port < 1 || port > 65535 {
 		return invalid()
 	}
-	if !runtimeSupported(spec.JDK) || !filepath.IsAbs(spec.JDK.JavaBin) || !filepath.IsAbs(spec.JDK.Home) || spec.JDK.Version == "" || !filepath.IsAbs(spec.WorkDir) || !ValidPooledTargetClass(spec.TargetClass) {
+	if !sharedRuntimeSupported(spec, runtimeSupported) || !filepath.IsAbs(spec.JDK.JavaBin) || !filepath.IsAbs(spec.JDK.Home) || spec.JDK.Version == "" || !filepath.IsAbs(spec.WorkDir) || !ValidPooledTargetClass(spec.TargetClass) {
 		return invalid()
 	}
 	if base := strings.ToLower(filepath.Base(spec.JDK.JavaBin)); base != "java" && base != "java.exe" {
@@ -78,6 +82,9 @@ func buildPooledCommand(spec PooledLaunchSpec, a HostAllocation, port int, runti
 	args = append(args, spec.ScriptClasspath...)
 	args = append(args, strconv.Itoa(len(spec.SharedClasspath)))
 	args = append(args, spec.SharedClasspath...)
+	if spec.LoadRunnerThreads {
+		args = append(args, "loadrunner_threads")
+	}
 	plan, err := BuildCommand(CommandSpec{JavaMajor: spec.JDK.Major, VMFamily: spec.JDK.VMFamily, VMParameters: spec.VMParameters, HarnessJar: spec.HarnessJar, ScriptClasspath: spec.ScriptClasspath, SharedClasspath: spec.SharedClasspath, DedicatedClassLoader: true, HarnessMain: "apexload.host.PooledMain", HarnessArgs: args})
 	if err != nil {
 		return nil, err

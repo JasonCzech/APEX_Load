@@ -2415,9 +2415,10 @@ type RuntimeJavaVuserOverride struct {
 	UseXBootClasspath       *bool    `json:"use_xbootclasspath,omitempty"`
 	DedicatedClassLoader    *bool    `json:"dedicated_class_loader,omitempty"`
 	SkipParameterEvaluation *bool    `json:"skip_parameter_evaluation,omitempty"`
-	// JVMSharing ("dedicated" or "shared") and VUsersPerJVM override the
-	// script's shared-JVM opt-in for this group. Switching to dedicated also
-	// clears VUsersPerJVM, which applies only to shared JVMs.
+	// JVMSharing ("dedicated", "shared" or "threads") and VUsersPerJVM
+	// override the script's shared-JVM opt-in for this group. Switching to
+	// dedicated also clears VUsersPerJVM, which applies only to shared JVMs.
+	// Switching into thread mode needs the script's approval again.
 	JVMSharing   string `json:"jvm_sharing,omitempty"`
 	VUsersPerJVM int    `json:"vusers_per_jvm,omitempty"`
 }

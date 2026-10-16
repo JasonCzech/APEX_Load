@@ -54,7 +54,7 @@ type summary struct {
 }
 
 func main() {
-	sharing := flag.String("sharing", "shared", "dedicated or shared")
+	sharing := flag.String("sharing", "shared", "dedicated, shared or threads (LoadRunner thread mode)")
 	vusers := flag.Int("vusers", 25, "VUsers in the group")
 	perJVM := flag.Int("vusers-per-jvm", 0, "VUsers per shared JVM (0 keeps the script's value, else the runner's)")
 	duration := flag.Duration("duration", time.Minute, "steady run length")
@@ -73,8 +73,8 @@ func main() {
 	out := summary{Sharing: *sharing, VUsers: *vusers}
 	var err error
 	switch {
-	case *sharing != dsl.JavaVuserJVMSharingShared && *sharing != dsl.JavaVuserJVMSharingDedicated:
-		err = errors.New("sharing must be dedicated or shared")
+	case *sharing != dsl.JavaVuserJVMSharingDedicated && !dsl.JavaVuserSharesJVMs(*sharing):
+		err = errors.New("sharing must be dedicated, shared or threads")
 	case *scriptPath != "" && targetSet:
 		err = errors.New("-target names the built-in fixture's class; a -script script names its own")
 	case *scriptPath != "":
@@ -145,8 +145,8 @@ func runScriptFile(out *summary, path, sharing string, vusers, perJVM int, durat
 func configure(script *dsl.Script, sharing string, perJVM int, classpath, vmArgs []string, paceMS int) {
 	java := &script.Config.JavaVuser
 	java.JVMSharing = sharing
-	if sharing != dsl.JavaVuserJVMSharingShared {
-		java.VUsersPerJVM = 0 // only valid with shared JVMs
+	if !dsl.JavaVuserSharesJVMs(sharing) {
+		java.VUsersPerJVM = 0 // only valid when VUsers share JVMs
 	} else if perJVM > 0 {
 		java.VUsersPerJVM = perJVM
 	}

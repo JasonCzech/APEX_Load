@@ -16,7 +16,7 @@ func TestPrepareSharedJVMRuntimeDropsUnsafeLabels(t *testing.T) {
 	t.Setenv(config.EnvJavaVuserRunnerURL, "http://127.0.0.1:18098")
 	t.Setenv(config.EnvJavaVuserRunnerAuthToken, "token-0123456789abcdef")
 	cfg := map[string]any{"group_name": strings.Repeat("g", 257), "scenario_id": "scenario\nid", "java_vuser_additional_vm_parameters": []string{"-Xmx1g"}}
-	rt, reason, err := PrepareSharedJVMRuntime(context.Background(), cfg, " Actions ", strings.Repeat("a", 64), 0)
+	rt, reason, err := PrepareSharedJVMRuntime(context.Background(), cfg, " Actions ", strings.Repeat("a", 64), 0, false)
 	if err != nil || reason != "" {
 		t.Fatalf("prepare %q %v", reason, err)
 	}
@@ -27,11 +27,11 @@ func TestPrepareSharedJVMRuntimeDropsUnsafeLabels(t *testing.T) {
 		t.Fatalf("runtime %+v", rt.Claim.Runtime)
 	}
 	cfg["group_name"], cfg["scenario_id"] = "Checkout", "scenario-1"
-	if rt, _, _ = PrepareSharedJVMRuntime(context.Background(), cfg, "Actions", strings.Repeat("a", 64), 0); rt.Claim.GroupName != "Checkout" || rt.Claim.ScenarioID != "scenario-1" {
+	if rt, _, _ = PrepareSharedJVMRuntime(context.Background(), cfg, "Actions", strings.Repeat("a", 64), 0, false); rt.Claim.GroupName != "Checkout" || rt.Claim.ScenarioID != "scenario-1" {
 		t.Fatalf("labels %+v", rt.Claim)
 	}
 	t.Setenv(config.EnvJavaVuserRunnerMode, config.JavaVuserRunnerModeLocal)
-	if _, reason, _ := PrepareSharedJVMRuntime(context.Background(), cfg, "Actions", strings.Repeat("a", 64), 0); reason != SharedJVMReasonNeedsSidecar {
+	if _, reason, _ := PrepareSharedJVMRuntime(context.Background(), cfg, "Actions", strings.Repeat("a", 64), 0, false); reason != SharedJVMReasonNeedsSidecar {
 		t.Fatalf("local runner reason %q", reason)
 	}
 }

@@ -150,7 +150,9 @@ func jarHoldsEntry(path, entry string) (holds, ok bool) {
 // complete static native scan with no indicators; every other workload returns
 // a stable reason and stays on dedicated JVMs. The scan does not prove absence
 // of dynamic native loading or background work: that residual risk is the
-// operator's when enabling the shared-JVM policy.
+// operator's when enabling the shared-JVM policy. In LoadRunner thread mode
+// (request.Launch.LoadRunnerThreads) any resolved HotSpot/OpenJ9 runtime
+// qualifies and native is the scan of the per-slot jars alone.
 func QualifySharedAutomatically(ctx context.Context, request PooledQualificationRequest, native NativeInspection) (PooledSelection, string, error) {
 	s := PooledSelection{decision: PooledQualificationDecision{Mode: "dedicated", SlotsPerHost: 1}}
 	if err := ctx.Err(); err != nil {
@@ -159,7 +161,7 @@ func QualifySharedAutomatically(ctx context.Context, request PooledQualification
 	if request.Resources.SlotsPerHost < 2 || request.Resources.SlotsPerHost > MaxPooledSlotsPerHost {
 		return s, SharedJVMReasonCapacity, nil
 	}
-	if !pooledRuntimeSupported(request.Launch.JDK) {
+	if !sharedRuntimeSupported(request.Launch, pooledRuntimeSupported) {
 		return s, SharedJVMReasonRuntime, nil
 	}
 	if !native.Complete || native.Assessment == "incomplete" {

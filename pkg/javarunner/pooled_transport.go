@@ -6,8 +6,11 @@ import (
 	"errors"
 	"io"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 var ErrPooledHostReaped = errors.New("pooled_host_reaped")
@@ -133,6 +136,13 @@ func (t *PooledTransport) writeLoop() {
 		}
 	}
 }
+
+// validPooledScriptError bounds a script exception's text: one line of valid
+// UTF-8.
+func validPooledScriptError(text string) bool {
+	return text != "" && len(text) <= 4096 && utf8.ValidString(text) && strings.IndexFunc(text, unicode.IsControl) < 0
+}
+
 func validPooledReply(f PooledFrame) bool {
 	if f.Fields["reap"] != "true" && f.Fields["reap"] != "false" {
 		return false
@@ -148,8 +158,13 @@ func validPooledReply(f PooledFrame) bool {
 	allowed := map[string]bool{"code": true, "reap": true}
 	switch f.Operation {
 	case "invoke":
-		for _, key := range []string{"return_code", "event_fallback", "event_truncated", "exit_option", "exit_status"} {
+		for _, key := range []string{"return_code", "event_fallback", "event_truncated", "exit_option", "exit_status", "error"} {
 			allowed[key] = true
+		}
+		// A LoadRunner thread-mode host reports a script's exception as a
+		// failed call with its class and message.
+		if text, ok := f.Fields["error"]; ok && (!validPooledScriptError(text) || f.Fields["return_code"] == "0") {
+			return false
 		}
 		if _, err := strconv.ParseInt(f.Fields["return_code"], 10, 32); err != nil {
 			return false

@@ -401,11 +401,18 @@ func TestJavaVuserHelmSharedJVMIsOptIn(t *testing.T) {
 		t.Fatal("Java Vuser runner container not found")
 	}
 	for _, item := range runner.Env {
-		if strings.Contains(item.Name, "SHARED_JVM") || item.Name == config.EnvJavaVuserJVMMemoryBudgetMB {
+		if strings.Contains(item.Name, "SHARED_JVM") || item.Name == config.EnvJavaVuserJVMMemoryBudgetMB || item.Name == config.EnvJavaVuserThreadMode {
 			t.Fatalf("default chart sets %s", item.Name)
 		}
 	}
 	runner = findJavaVuserContainer(renderJavaVuserHelmWith(t, true, "javaVuser.runner.sharedJVM.enabled=true", "javaVuser.runner.sharedJVM.vusersPerJVM=500", "javaVuser.runner.sharedJVM.memoryBudgetMB=6144"), "java-vuser-runner")
+	if got := envValue(runner.Env, config.EnvJavaVuserThreadMode); got != "" {
+		t.Fatalf("thread mode is a separate opt-in, got %q", got)
+	}
+	threads := findJavaVuserContainer(renderJavaVuserHelmWith(t, true, "javaVuser.runner.sharedJVM.enabled=true", "javaVuser.runner.sharedJVM.threadMode=true"), "java-vuser-runner")
+	if got := envValue(threads.Env, config.EnvJavaVuserThreadMode); got != "true" {
+		t.Fatalf("%s = %q, want true", config.EnvJavaVuserThreadMode, got)
+	}
 	for name, want := range map[string]string{
 		config.EnvJavaVuserSharedJVM:             "true",
 		config.EnvJavaVuserSharedJVMVUsersPerJVM: "500",

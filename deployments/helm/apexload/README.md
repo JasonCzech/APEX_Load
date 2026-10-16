@@ -196,6 +196,9 @@ runner with that delegated containment; the stock sidecar keeps one JVM per
 VUser and the run manifest says why. With `memoryBudgetMB: 0` the runner caps
 its JVM budget at the container's memory limit, so size
 `javaVuser.runner.resources.limits.memory` for the shared JVMs it should hold.
+`javaVuser.runner.sharedJVM.threadMode` also admits LoadRunner thread mode
+(`jvm_sharing: threads`), where libraries and their native code load once per
+JVM as in LoadRunner.
 
 The runner is released only in the `standard` coordinate: an empty
 `javaVuser.runner.image.tag` derives

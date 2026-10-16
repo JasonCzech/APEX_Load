@@ -250,6 +250,10 @@ spec:
 {{- if .enabled }}
             - name: APEXLOAD_JAVA_VUSER_SHARED_JVM
               value: "true"
+{{- if .threadMode }}
+            - name: APEXLOAD_JAVA_VUSER_THREAD_MODE
+              value: "true"
+{{- end }}
             - name: APEXLOAD_JAVA_VUSER_SHARED_JVM_VUSERS_PER_JVM
               value: {{ .vusersPerJVM | quote }}
             - name: APEXLOAD_JAVA_VUSER_SHARED_JVM_HEAP_MB

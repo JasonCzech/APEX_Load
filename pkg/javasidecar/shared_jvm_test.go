@@ -50,6 +50,11 @@ type sharedJVMFixture struct {
 
 func newSharedJVMFixture(t *testing.T, major int) *sharedJVMFixture {
 	t.Helper()
+	return newSharedJVMFixtureWith(t, major, false)
+}
+
+func newSharedJVMFixtureWith(t *testing.T, major int, threadMode bool) *sharedJVMFixture {
+	t.Helper()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +78,7 @@ func newSharedJVMFixture(t *testing.T, major int) *sharedJVMFixture {
 	f.library = writeTestJar(t, filepath.Join(dir, "library.jar"), map[string][]byte{"lib/Client.class": minimalClassBytes})
 	f.native = writeTestJar(t, filepath.Join(dir, "native.jar"), map[string][]byte{"lib/libnative.so": []byte("elf")})
 	operator := config.JavaVuserOperatorConfig{Enabled: true, AuthToken: testSidecarAuthToken, MaxProcesses: 4, HarnessJar: filepath.Join(dir, "harness.jar"), WorkDir: dir,
-		SharedJVM: config.JavaVuserSharedJVMConfig{Enabled: true, VUsersPerJVM: 100, HeapMB: 256, DedicatedJVMMemoryMB: 128, SlotAPIJar: api, SlotShimJar: shim}}
+		SharedJVM: config.JavaVuserSharedJVMConfig{Enabled: true, ThreadMode: threadMode, VUsersPerJVM: 100, HeapMB: 256, DedicatedJVMMemoryMB: 128, SlotAPIJar: api, SlotShimJar: shim}}
 	policy, admission, err := NewSharedJVMPolicy(operator)
 	if err != nil {
 		t.Fatal(err)
@@ -367,5 +372,80 @@ func TestSharedJVMClaimFencedOwnerSkipsQualification(t *testing.T) {
 	}
 	if calls != 0 || len(f.server.selectedPooledRuns(nil)) != 0 {
 		t.Fatalf("fenced claim qualified (%d JDK resolutions) or opened a run", calls)
+	}
+}
+
+func TestLoadRunnerThreadsClaimSharesLibrariesNativeCodeIncluded(t *testing.T) {
+	f := newSharedJVMFixtureWith(t, 8, true)
+	// A class whose constant pool names lrapi/lr, like a LoadRunner helper
+	// superclass that calls the lr API.
+	callsLR := append([]byte{0xca, 0xfe, 0xba, 0xbe, 0, 0, 0, 52, 0, 2, 1, 0, 8}, []byte("lrapi/lr")...)
+	callsLR = append(callsLR, 0, 0x21, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	infra := writeTestJar(t, filepath.Join(f.dir, "infra.jar"), map[string][]byte{"infra/BasicClient.class": callsLR})
+	claim := sharedClaim(f.script, infra, f.library, f.native)
+	claim.LoadRunnerThreads = true
+	run, _, err := f.client.OpenSharedClientRun(context.Background(), SharedClientOptions{ExecutionID: "execution", GroupID: "group", Claim: claim})
+	if err != nil {
+		t.Fatalf("a Java 8 thread-mode claim with a native library was refused: %v", err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = run.Close(ctx)
+	}()
+	if d := run.Decision(); d.Mode != javarunner.SharedJVMMode || d.ProfileID != javarunner.SharedJVMProfileID {
+		t.Fatalf("decision %+v", d)
+	}
+	// The script and the jar calling the lr API load per slot; libraries,
+	// the native one included, load once.
+	spec := sharedLaunchSpec(t, f, claim)
+	if !spec.LoadRunnerThreads || strings.Join(spec.ScriptClasspath, ",") != f.script+","+infra || strings.Join(spec.SharedClasspath, ",") != f.library+","+f.native {
+		t.Fatalf("thread-mode launch private=%v shared=%v threads=%v", spec.ScriptClasspath, spec.SharedClasspath, spec.LoadRunnerThreads)
+	}
+
+	// Native code in a per-slot jar still keeps the group dedicated.
+	nativeScript := writeTestJar(t, filepath.Join(f.dir, "native-script.jar"), map[string][]byte{"example/Actions.class": minimalClassBytes, "lib/libscript.so": []byte("elf")})
+	claim = sharedClaim(nativeScript, f.library)
+	claim.LoadRunnerThreads = true
+	_, _, err = f.client.OpenSharedClientRun(context.Background(), SharedClientOptions{ExecutionID: "execution-2", GroupID: "group", Claim: claim})
+	var remote *RemoteError
+	if !errors.As(err, &remote) || remote.Code != javarunner.SharedJVMReasonNative {
+		t.Fatalf("native per-slot jar: %v", err)
+	}
+}
+
+func TestLoadRunnerThreadsClaimNeedsTheOperatorSwitch(t *testing.T) {
+	f := newSharedJVMFixtureWith(t, 21, false)
+	claim := sharedClaim(f.script, f.library)
+	claim.LoadRunnerThreads = true
+	_, _, err := f.client.OpenSharedClientRun(context.Background(), SharedClientOptions{ExecutionID: "execution", GroupID: "group", Claim: claim})
+	var remote *RemoteError
+	if !errors.As(err, &remote) || remote.Code != javarunner.SharedJVMReasonLoadRunnerThreads || !SharedJVMClaimErrorCode(remote.Code) {
+		t.Fatalf("thread mode without the operator switch: %v", err)
+	}
+	// The isolated shared mode is unaffected by the switch.
+	if _, _, reason, err := f.server.sharedJVMSelection(context.Background(), sharedClaim(f.script, f.library)); err != nil || reason != "" {
+		t.Fatalf("isolated claim: %q %v", reason, err)
+	}
+}
+
+func TestPooledInvocationFrameCarriesAThreadModeScriptError(t *testing.T) {
+	q := PooledControlRequest{Sequence: 3, Method: "init", HostID: "host-1", SlotID: "slot-1"}
+	frame := func(fields map[string]string) javarunner.PooledFrame {
+		base := map[string]string{"code": "ok", "reap": "false", "return_code": "-1", "event_fallback": "false", "event_truncated": "false"}
+		for key, value := range fields {
+			base[key] = value
+		}
+		return javarunner.PooledFrame{Generation: "host-1", Slot: "slot-1", Operation: "invoke", Sequence: 3, Request: "3", Fields: base}
+	}
+	result, err := pooledInvocationFrame(q, frame(map[string]string{"error": "java.lang.InternalError: no security server"}))
+	if err != nil || result.ReturnCode != -1 || result.Error != "java.lang.InternalError: no security server" {
+		t.Fatalf("result %+v err %v", result, err)
+	}
+	if _, err := pooledInvocationFrame(q, frame(map[string]string{"error": "x", "return_code": "0"})); err == nil {
+		t.Fatal("a successful call must not carry an error")
+	}
+	if _, err := pooledInvocationFrame(q, frame(map[string]string{"extra": "x"})); err == nil {
+		t.Fatal("unknown fields must still be refused")
 	}
 }

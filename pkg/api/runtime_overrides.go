@@ -640,7 +640,7 @@ func applyJavaVuserRuntimeOverride(dst *dsl.JavaVuserConfig, src *RuntimeJavaVus
 	}
 	if src.JVMSharing != "" {
 		dst.JVMSharing = src.JVMSharing
-		if src.JVMSharing != dsl.JavaVuserJVMSharingShared {
+		if !dsl.JavaVuserSharesJVMs(src.JVMSharing) {
 			dst.VUsersPerJVM = 0
 		}
 	}
@@ -686,7 +686,7 @@ func mergeJavaVuserRuntimeOverride(base *RuntimeJavaVuserOverride, group *Runtim
 	}
 	if group.JVMSharing != "" {
 		merged.JVMSharing = group.JVMSharing
-		if group.JVMSharing != dsl.JavaVuserJVMSharingShared {
+		if !dsl.JavaVuserSharesJVMs(group.JVMSharing) {
 			merged.VUsersPerJVM = 0
 		}
 	}

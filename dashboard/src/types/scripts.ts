@@ -654,7 +654,7 @@ export interface JavaVuserConfig {
   dedicated_class_loader?: boolean
   skip_parameter_evaluation?: boolean
   /** "shared" runs many VUsers of the group in each JVM when the runner allows it; unset means one JVM per VUser. */
-  jvm_sharing?: 'dedicated' | 'shared'
+  jvm_sharing?: 'dedicated' | 'shared' | 'threads'
   /** Lowers the runner's VUsers per shared JVM (2–1,024); unset keeps the runner's value. */
   vusers_per_jvm?: number
   // Custom parameter delimiters (.usr ParamLeftBrace/ParamRightBrace); unset means { and }.

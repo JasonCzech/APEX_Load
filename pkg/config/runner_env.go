@@ -59,6 +59,13 @@ const (
 	// in, and the runner qualifies it (Java 17/21, jar classpath, clean native
 	// scan) before staging. Disabled, every Java VUser keeps its own JVM.
 	EnvJavaVuserSharedJVM = "APEXLOAD_JAVA_VUSER_SHARED_JVM"
+	// EnvJavaVuserThreadMode additionally lets scripts run in LoadRunner thread
+	// mode (jvm_sharing "threads"): VUsers share each JVM's libraries, native
+	// code included, and Java 8 runtimes qualify under the legacy opt-in. Only
+	// a script's own classes stay per VUser, so one VUser's crash or global
+	// state reaches its JVM's peers, as in LoadRunner. It requires
+	// EnvJavaVuserSharedJVM.
+	EnvJavaVuserThreadMode = "APEXLOAD_JAVA_VUSER_THREAD_MODE"
 	// EnvJavaVuserSharedJVMVUsersPerJVM is the default lifetime slots per JVM
 	// (2-1024); a script may request fewer.
 	EnvJavaVuserSharedJVMVUsersPerJVM = "APEXLOAD_JAVA_VUSER_SHARED_JVM_VUSERS_PER_JVM"
@@ -162,6 +169,7 @@ type JavaVuserOperatorConfig struct {
 // memory limit less a reserve for the runner itself.
 type JavaVuserSharedJVMConfig struct {
 	Enabled              bool
+	ThreadMode           bool // admits LoadRunner thread mode; see EnvJavaVuserThreadMode
 	VUsersPerJVM         int
 	HeapMB               int
 	MemoryBudgetMB       int
@@ -221,6 +229,7 @@ func LoadJavaVuserOperatorConfig() JavaVuserOperatorConfig {
 func loadJavaVuserSharedJVMConfig(harnessJar string) JavaVuserSharedJVMConfig {
 	shared := JavaVuserSharedJVMConfig{
 		Enabled:              envBool(EnvJavaVuserSharedJVM),
+		ThreadMode:           envBool(EnvJavaVuserThreadMode),
 		VUsersPerJVM:         envInt(EnvJavaVuserSharedJVMVUsersPerJVM, DefaultJavaVuserSharedJVMVUsersPerJVM),
 		HeapMB:               envInt(EnvJavaVuserSharedJVMHeapMB, DefaultJavaVuserSharedJVMHeapMB),
 		MemoryBudgetMB:       envInt(EnvJavaVuserJVMMemoryBudgetMB, 0),

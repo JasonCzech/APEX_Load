@@ -694,6 +694,9 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		}
 		if strongContainment && s.hostAdmission != nil && s.sharedJVM != nil {
 			response.Features = append(response.Features, FeatureSharedJVMV1)
+			if s.sharedJVM.threadMode {
+				response.Features = append(response.Features, FeatureLoadRunnerThreadsV1)
+			}
 			response.SharedJVM = s.sharedJVMCapabilities()
 		}
 		if s.pooledControlProfiles != nil && len(s.pooledControlProfiles.profiles) > 0 && s.hostAdmission != nil {

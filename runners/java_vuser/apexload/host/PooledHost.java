@@ -24,12 +24,19 @@ public final class PooledHost {
     private final URL[] scripts;
     private final String target;
     private final URLClassLoader shared;
+    /** LoadRunner thread mode: a VUser's failed init or exception ends that
+     * VUser alone, as in LoadRunner, instead of reaping its peers. */
+    private final boolean threads;
     private final Map<String,SlotWorker> slots = new LinkedHashMap<String,SlotWorker>();
     private final Set<String> closing = new HashSet<String>();
     private boolean committed, sealed, reapRequired, resourcesClosed;
     private String reapRequest = "";
 
     public PooledHost(String generation, int capacity, URL shim, URL[] scripts, URL[] dependencies, String target) {
+        this(generation, capacity, shim, scripts, dependencies, target, false);
+    }
+
+    public PooledHost(String generation, int capacity, URL shim, URL[] scripts, URL[] dependencies, String target, boolean threads) {
         if (generation == null || !generation.matches("[A-Za-z0-9_-]{1,128}") || capacity < 1 || capacity > MAX_SLOTS
                 || shim == null || scripts == null || scripts.length == 0 || scripts.length > 256
                 || dependencies == null || dependencies.length > 256 || target == null
@@ -38,7 +45,7 @@ public final class PooledHost {
         for (URL url : scripts) requireLocal(url);
         for (URL url : dependencies) requireLocal(url);
         this.generation = generation; this.capacity = capacity; this.shim = shim;
-        this.scripts = scripts.clone(); this.target = target;
+        this.scripts = scripts.clone(); this.target = target; this.threads = threads;
         shared = new URLClassLoader(dependencies.clone(), PooledHost.class.getClassLoader());
     }
 
@@ -52,7 +59,7 @@ public final class PooledHost {
             checkGeneration(expectedGeneration);
             if (committed || sealed || slots.size() >= capacity || slots.containsKey(id))
                 throw new IllegalStateException("host_admission_closed");
-            SlotWorker worker = new SlotWorker(id, shim, scripts, shared, target, context);
+            SlotWorker worker = new SlotWorker(id, shim, scripts, shared, target, context, threads);
             slots.put(id, worker);
         }
     }
@@ -82,6 +89,9 @@ public final class PooledHost {
         // Callback registration can synchronously execute if invocation already
         // completed. Never register it under the host's control lock.
         return result.whenComplete((value, failure) -> {
+            // In thread mode no script failure reaches the VUser's peers: a
+            // failed init closes only its own slot.
+            if (threads) return;
             if (failure == null && "init".equals(method) && value.returnCode != 0) { requestReap(request); return; }
             if (failure != null) {
                 boolean expectedClosure;
@@ -129,6 +139,7 @@ public final class PooledHost {
     }
 
     public boolean isSealed() { synchronized (lock) { return sealed; } }
+    public boolean loadRunnerThreads() { return threads; }
     public boolean requiresReap() { synchronized (lock) { return reapRequired; } }
 
     /** The first failing invocation is recorded before any peer is interrupted. */

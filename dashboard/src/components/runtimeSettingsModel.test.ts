@@ -126,6 +126,7 @@ describe('runtimeSettingsModel', () => {
     expect(formatJavaVuserSummary({ jvm_sharing: 'shared', vusers_per_jvm: 200 })).toBe('shared JVMs (200 per JVM)')
     expect(formatJavaVuserSummary({ jvm_sharing: 'shared' })).toBe('shared JVMs')
     expect(formatJavaVuserSummary({ jvm_sharing: 'dedicated' })).toBe('one JVM per VUser')
+    expect(formatJavaVuserSummary({ jvm_sharing: 'threads', vusers_per_jvm: 50 })).toBe('LoadRunner threads (50 per JVM)')
     const override = { java_vuser: { jvm_sharing: 'shared' as const, vusers_per_jvm: 300 } }
     const draft = runtimeDraftFromOverride(override)
     expect(draft?.java_vuser).toEqual(override.java_vuser)

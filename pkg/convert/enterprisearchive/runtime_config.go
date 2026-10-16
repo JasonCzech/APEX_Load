@@ -127,6 +127,7 @@ type RuntimeConfig struct {
 	JavaVMUseXBootClasspathRaw       string
 	JavaVMUseXBootParseError         string
 	JavaVMDedicatedClassLoader       *bool
+	JavaVMUseThreads                 bool // [General] UseThreads=1: VUsers ran as threads of one JVM
 	JavaVMDedicatedClassLoaderRaw    string
 	JavaVMDedicatedParseError        string
 	JavaVMClasspath                  []string
@@ -696,6 +697,9 @@ func parseRuntimeJavaVMSettings(rc *RuntimeConfig, sections map[string]map[strin
 	// applying that normalization here would concatenate separately quoted JVM
 	// arguments and could silently change the imported command line.
 	rawJavaVMSection := findMergedSection(parseRawRuntimeConfigSections(content), javaVMSectionAliases...)
+	if value, ok := sectionValueCaseInsensitive(findSection(sections, "General"), "UseThreads"); ok {
+		rc.JavaVMUseThreads, _ = parseBoolExplicit(value)
+	}
 	javaVMJDKSelectionExplicit := false
 	if selection, ok := sectionValueCaseInsensitive(javaVMSection, "use_jdk", "UseJdk", "jdk_selection", "UseSpecifiedJdk", "UseExternalJVM"); ok {
 		javaVMJDKSelectionExplicit = true

@@ -44,6 +44,8 @@ type PooledRun struct {
 	// groupLabel/scenarioLabel replace the opaque IDs in slot environments
 	// when a shared claim supplied the dedicated-mode labels.
 	groupLabel, scenarioLabel string
+	// loadRunnerThreads keeps a VUser's failed init to that VUser.
+	loadRunnerThreads bool
 }
 
 // OpenPooledRun accepts only a frozen, operator-qualified selection. No user
@@ -60,8 +62,12 @@ func (s *Server) OpenPooledRun(ctx context.Context, ownerID, epoch, execution, g
 	}
 	backend = backend.WithCredentialCheck(s.credentialCheck)
 	d := selection.Decision()
-	return s.openPooledRun(ctx, ownerID, epoch, execution, group, budget, d.ConfigurationSHA256,
+	run, err := s.openPooledRun(ctx, ownerID, epoch, execution, group, budget, d.ConfigurationSHA256,
 		javarunner.HostProfile{SlotsPerHost: d.SlotsPerHost, MemoryBytesPerHost: d.HostMemoryBytes}, backend)
+	if run != nil {
+		run.loadRunnerThreads = d.SharingProfile == sharedJVMProfileLoadRunnerThreads
+	}
+	return run, err
 }
 
 // The backend seam is private: external callers cannot bypass qualification by

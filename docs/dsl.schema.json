@@ -9031,7 +9031,8 @@
         "jvm_sharing": {
           "enum": [
             "dedicated",
-            "shared"
+            "shared",
+            "threads"
           ],
           "type": "string"
         },

@@ -1024,3 +1024,36 @@ func TestAddJavaVuserScriptClassesEntryIsIdempotentAndRespectsTheEntryLimit(t *t
 		t.Fatal("only Java Vuser drafts take the entry")
 	}
 }
+
+func TestConvertZipJavaVuserThatRanAsThreadsImportsInThreadMode(t *testing.T) {
+	for name, tc := range map[string]struct {
+		general, javaVM string
+		want            string
+	}{
+		"threads":               {"UseThreads=1\n", "", dsl.JavaVuserJVMSharingThreads},
+		"processes":             {"UseThreads=0\n", "", ""},
+		"unset":                 {"", "", ""},
+		"per-VUser classloader": {"UseThreads=1\n", "enable_CL_per_vuser=1\n", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var archive bytes.Buffer
+			writer := zip.NewWriter(&archive)
+			addJavaZipFile(t, writer, "JavaVM/JavaVM.usr", "[General]\nType=Java Vuser\nScriptLanguage=JAVA\nRuntimeSettings=default.cfg\n[Actions]\nAction=Actions.java\n")
+			addJavaZipFile(t, writer, "JavaVM/default.cfg", "[General]\n"+tc.general+"[JavaVM:Options]\n"+tc.javaVM)
+			addJavaZipFile(t, writer, "JavaVM/Actions.java", "public class Actions {\n  public int action() throws Throwable { return 0; }\n}")
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			result, err := ConvertZip(archive.Bytes(), ConvertOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := result.Script.Config.JavaVuser.JVMSharing; got != tc.want {
+				t.Fatalf("jvm_sharing = %q, want %q", got, tc.want)
+			}
+			if stringSliceContains(result.Warnings, loadRunnerThreadModeWarning) != (tc.want != "") {
+				t.Fatalf("warnings = %v", result.Warnings)
+			}
+		})
+	}
+}

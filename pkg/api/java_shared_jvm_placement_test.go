@@ -87,6 +87,15 @@ func TestJavaVuserOverrideSharingRules(t *testing.T) {
 	if applied.JVMSharing != dsl.JavaVuserJVMSharingShared || applied.VUsersPerJVM != 40 {
 		t.Fatalf("count override %+v", applied)
 	}
+	// Thread mode also shares JVMs, so the per-JVM count carries over.
+	applied = script
+	applyJavaVuserRuntimeOverride(&applied, &RuntimeJavaVuserOverride{JVMSharing: dsl.JavaVuserJVMSharingThreads})
+	if applied.JVMSharing != dsl.JavaVuserJVMSharingThreads || applied.VUsersPerJVM != 120 {
+		t.Fatalf("thread mode override %+v", applied)
+	}
+	if merged := mergeJavaVuserRuntimeOverride(&RuntimeJavaVuserOverride{VUsersPerJVM: 80}, &RuntimeJavaVuserOverride{JVMSharing: dsl.JavaVuserJVMSharingThreads}); merged.JVMSharing != dsl.JavaVuserJVMSharingThreads || merged.VUsersPerJVM != 80 {
+		t.Fatalf("thread mode merge %+v", merged)
+	}
 	merged := mergeJavaVuserRuntimeOverride(&RuntimeJavaVuserOverride{JVMSharing: dsl.JavaVuserJVMSharingShared, VUsersPerJVM: 80}, &RuntimeJavaVuserOverride{JVMSharing: dsl.JavaVuserJVMSharingDedicated})
 	if merged.JVMSharing != dsl.JavaVuserJVMSharingDedicated || merged.VUsersPerJVM != 0 {
 		t.Fatalf("merge %+v", merged)

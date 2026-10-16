@@ -215,8 +215,17 @@ export function JavaEnvSettingsFields({
             />
             <span>Shared JVMs</span>
           </label>
+          <label className="checkbox-label">
+            <input
+              type="radio"
+              name={`${idPrefix}-jvm-sharing`}
+              checked={value.jvm_sharing === 'threads'}
+              onChange={() => patch({ jvm_sharing: 'threads' })}
+            />
+            <span>LoadRunner threads</span>
+          </label>
         </div>
-        {value.jvm_sharing === 'shared' && (
+        {(value.jvm_sharing === 'shared' || value.jvm_sharing === 'threads') && (
           <div className="form-grid">
             <label>
               <span>VUsers per JVM</span>
@@ -239,9 +248,12 @@ export function JavaEnvSettingsFields({
         <div className="cell-muted">
           Shared JVMs run many VUsers of this group in each JVM, so one load generator holds thousands of Java VUsers instead of about 25. Each VUser keeps its own Actions instance, script classes, lr context and thread. They need a runner with shared JVMs enabled, Java 17 or 21, jar-only classpaths, exactly one init, action and end call, and no native code. Otherwise the group runs one JVM per VUser and the run manifest says why.
         </div>
+        <div className="cell-muted">
+          LoadRunner threads run VUsers the way LoadRunner does with Run Vuser as a thread: libraries, their static state and native code load once per JVM, and only the script's own classes stay per VUser. That admits Java 8 middleware and native client libraries that shared JVMs refuse, but one VUser's crash or global change reaches the others in its JVM. It needs a runner whose operator enabled LoadRunner thread mode; otherwise the group runs one JVM per VUser.
+        </div>
         {!listOverrideInherits && (
           <div className="cell-muted" role="note">
-            Saving this on an approved Java script needs a new authoring approval. A scenario group can choose JVM sharing for its runs without one.
+            Saving this on an approved Java script needs a new authoring approval. A scenario group can choose JVM sharing for its runs without one, except LoadRunner threads, which needs the script approved again.
           </div>
         )}
       </div>
@@ -272,7 +284,7 @@ export function JavaEnvSettingsFields({
           onChange={values => patch({ classpath: values })}
         />
         <div className="cell-muted">
-          Paths must already exist on every assigned runner and load in listed order, unless a JAR is attached below. Imported LoadRunner classpath entries are prepopulated here; Java source is not compiled.
+          Paths must already exist on every assigned runner and load in listed order, unless a JAR is attached below. Imported LoadRunner classpath entries are prepopulated here; the script's own classes go in apexload-script-classes.jar, compiled from its source in the import review.
         </div>
         {classpathAssets.length > 0 && (
           <div className="java-env-classpath-assets" role="list" aria-label="Attached classpath JARs">

@@ -82,5 +82,8 @@ describe('materializeRuntimeSettingsForApply', () => {
     expect(dedicated?.java_vuser).toEqual({ jvm_sharing: 'dedicated', classpath: ['/app.jar'] })
     const resized = materializeRuntimeSettingsForApply(undefined, script, { log_level: '', auto_transactions: '', java_vuser: { vusers_per_jvm: 40 } })
     expect(resized?.java_vuser).toEqual({ jvm_sharing: 'shared', vusers_per_jvm: 40, classpath: ['/app.jar'] })
+    // Thread mode shares JVMs too, so the per-JVM count carries over.
+    const threads = materializeRuntimeSettingsForApply(undefined, script, { log_level: '', auto_transactions: '', java_vuser: { jvm_sharing: 'threads' } })
+    expect(threads?.java_vuser).toEqual({ jvm_sharing: 'threads', vusers_per_jvm: 120, classpath: ['/app.jar'] })
   })
 })

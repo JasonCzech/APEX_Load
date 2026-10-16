@@ -34,8 +34,9 @@ type SharedJVMRuntime struct {
 // PrepareSharedJVMRuntime resolves cfg like a dedicated VUser's Init without
 // claiming an owner. A non-empty reason means the generator's runner cannot
 // host shared JVMs and the group stays dedicated; an error means cfg would be
-// rejected by dedicated execution too.
-func PrepareSharedJVMRuntime(ctx context.Context, cfg map[string]any, target, scriptSHA256 string, vusersPerJVM int) (SharedJVMRuntime, string, error) {
+// rejected by dedicated execution too. loadRunnerThreads asks for LoadRunner
+// thread mode.
+func PrepareSharedJVMRuntime(ctx context.Context, cfg map[string]any, target, scriptSHA256 string, vusersPerJVM int, loadRunnerThreads bool) (SharedJVMRuntime, string, error) {
 	// Decide from operator configuration first: a local runner would otherwise
 	// resolve a JDK and harness for a mode this group cannot use.
 	operator := config.LoadJavaVuserOperatorConfig()
@@ -62,12 +63,13 @@ func PrepareSharedJVMRuntime(ctx context.Context, cfg map[string]any, target, sc
 	return SharedJVMRuntime{
 		Client: client,
 		Claim: javasidecar.SharedJVMClaim{
-			Runtime:      j.sidecarRuntimeSettings(),
-			TargetClass:  strings.TrimSpace(target),
-			ScriptSHA256: scriptSHA256,
-			VUsersPerJVM: vusersPerJVM,
-			GroupName:    label("group_name"),
-			ScenarioID:   label("scenario_id"),
+			Runtime:           j.sidecarRuntimeSettings(),
+			TargetClass:       strings.TrimSpace(target),
+			ScriptSHA256:      scriptSHA256,
+			VUsersPerJVM:      vusersPerJVM,
+			GroupName:         label("group_name"),
+			ScenarioID:        label("scenario_id"),
+			LoadRunnerThreads: loadRunnerThreads,
 		},
 		ActionTimeout: j.cfg.ActionTimeout,
 	}, "", nil

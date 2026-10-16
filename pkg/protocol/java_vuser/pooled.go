@@ -150,6 +150,9 @@ func (p *PooledSlotProtocol) ExecuteStream(ctx context.Context, a *protocol.Acti
 	envelope := runnerEnvelope{Contract: javarunner.PooledIPCContract, Kind: "result", RequestID: invocation.EventRequestID, Success: success, ClassName: p.target, Method: method, DurationMS: invocation.DurationMS, EventsTruncated: invocation.EventsTruncated}
 	if !success {
 		envelope.Error = "pooled_return_code_nonzero"
+		if invocation.Error != "" {
+			envelope.Error = invocation.Error
+		}
 		if method == "init" {
 			p.terminal.Store(true)
 		}

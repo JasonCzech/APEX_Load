@@ -3075,7 +3075,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 		if conflict := tr.javaVuserApprovalConflict(script.Script); conflict == "" {
 			if evidence, ok := readJavaVuserAuthoringApproval(script.Script); ok {
 				if javaVuserOverrideChangedExecutableSurface(script.Script, &scriptCopy) {
-					return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: runtime overrides changed the approved Java Vuser classpath, JDK, VM parameters, or actions; apply these changes in the script and re-approve it through authoring review before launch", index)
+					return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: runtime overrides changed the approved Java Vuser classpath, JDK, VM parameters, or actions, or moved it into LoadRunner thread mode; apply these changes in the script and re-approve it through authoring review before launch", index)
 				}
 				if detached := cloneScriptForStoredGroup(&scriptCopy); detached != nil {
 					scriptCopy = *detached

@@ -97,7 +97,7 @@ var consumedRuntimeKeys = map[string]map[string]string{
 var nonApplicableRuntimeKeys = map[string]map[string]string{
 	"general": {
 		"replay64bit":     "VuGen replay-process bitness; APEX runs its own engine.",
-		"usethreads":      "mdrv threading model; APEX VUsers are goroutines.",
+		"usethreads":      "mdrv threading model; APEX VUsers are goroutines. A Java Vuser that ran as threads imports with jvm_sharing threads.",
 		"xlbridgetimeout": "VuGen Excel-bridge tooling timeout.",
 	},
 	"logging": {

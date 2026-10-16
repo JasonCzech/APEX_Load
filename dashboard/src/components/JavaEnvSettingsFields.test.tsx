@@ -43,10 +43,16 @@ describe('JavaEnvSettingsFields JVM sharing', () => {
     expect(radio('Shared JVMs').checked).toBe(false)
     expect(container.querySelector('[aria-label="VUsers per JVM"]')).toBeNull()
     expect(container.textContent).not.toContain("Use the script's setting")
-    expect(container.textContent).toContain('A scenario group can choose JVM sharing for its runs without one.')
+    expect(container.textContent).toContain('A scenario group can choose JVM sharing for its runs without one, except LoadRunner threads')
 
     await act(async () => radio('Shared JVMs').click())
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ jvm_sharing: 'shared' }))
+
+    await act(async () => radio('LoadRunner threads').click())
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ jvm_sharing: 'threads' }))
+    await render({ jvm_sharing: 'threads', vusers_per_jvm: 20 }, onChange)
+    expect(radio('LoadRunner threads').checked).toBe(true)
+    expect(container.querySelector<HTMLInputElement>('[aria-label="VUsers per JVM"]')!.value).toBe('20')
 
     await render({ jvm_sharing: 'shared', vusers_per_jvm: 50 }, onChange)
     const count = container.querySelector<HTMLInputElement>('[aria-label="VUsers per JVM"]')!

@@ -223,11 +223,12 @@ func InspectPooledQualification(ctx context.Context, r PooledQualificationReques
 	if !canonicalQualificationPath(r.Launch.WorkDir) || !canonicalQualificationPath(r.Launch.JDK.Home) || !canonicalQualificationPath(r.Launch.JDK.JavaBin) {
 		return "", ErrPooledQualification
 	}
-	rel, err := filepath.Rel(r.Launch.JDK.Home, r.Launch.JDK.JavaBin)
+	root := qualificationRuntimeRoot(r.Launch.JDK)
+	rel, err := filepath.Rel(root, r.Launch.JDK.JavaBin)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", ErrPooledQualification
 	}
-	for _, path := range []string{r.Launch.JDK.JavaBin, filepath.Join(r.Launch.JDK.Home, "release")} {
+	for _, path := range []string{r.Launch.JDK.JavaBin, filepath.Join(root, "release")} {
 		info, err := os.Lstat(path)
 		if err != nil || !info.Mode().IsRegular() {
 			return "", ErrPooledQualification
@@ -235,6 +236,19 @@ func InspectPooledQualification(ctx context.Context, r PooledQualificationReques
 	}
 	scan := qualificationScanner{ctx: ctx}
 	runtimeFiles := []qualificationFile{}
+	// The identity covers the runtime the JVM loads (its home) and, when the
+	// launcher and release file sit above it, those two files.
+	if root != r.Launch.JDK.Home {
+		for _, path := range []string{r.Launch.JDK.JavaBin, filepath.Join(root, "release")} {
+			f, err := scan.file(path)
+			if err != nil {
+				return "", qualificationError(ctx)
+			}
+			f.Path, _ = filepath.Rel(root, path)
+			f.Path = filepath.ToSlash(f.Path)
+			runtimeFiles = append(runtimeFiles, f)
+		}
+	}
 	err = filepath.WalkDir(r.Launch.JDK.Home, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return ErrPooledQualification
@@ -252,14 +266,14 @@ func InspectPooledQualification(ctx context.Context, r PooledQualificationReques
 		var f qualificationFile
 		var err error
 		if entry.Type()&fs.ModeSymlink != 0 {
-			f, err = runtimeLink(r.Launch.JDK.Home, path)
+			f, err = runtimeLink(r.Launch.JDK.Home, path, r.Launch.LoadRunnerThreads)
 		} else {
 			f, err = scan.file(path)
 		}
 		if err != nil {
 			return err
 		}
-		f.Path, err = filepath.Rel(r.Launch.JDK.Home, path)
+		f.Path, err = filepath.Rel(root, path)
 		if err != nil {
 			return ErrPooledQualification
 		}
@@ -273,6 +287,7 @@ func InspectPooledQualification(ctx context.Context, r PooledQualificationReques
 	artifacts := []qualificationFile{}
 	paths := []string{r.Launch.HarnessJar, r.Launch.ShimJar, r.SourceArchive}
 	paths = append(paths, r.Launch.ScriptClasspath...)
+	libraries := len(paths)
 	paths = append(paths, r.Launch.SharedClasspath...)
 	for i, path := range paths {
 		f, err := scan.file(path)
@@ -280,8 +295,13 @@ func InspectPooledQualification(ctx context.Context, r PooledQualificationReques
 			return "", qualificationError(ctx)
 		}
 		// The source archive is an identity input, not a JVM classpath entry.
+		// Thread mode loads shared libraries once, under their own checks.
+		validate := validateQualificationJar
+		if r.Launch.LoadRunnerThreads && i >= libraries {
+			validate = validateThreadLibraryJar
+		}
 		if i != 2 {
-			if err := validateQualificationJar(ctx, path); err != nil {
+			if err := validate(ctx, path); err != nil {
 				return "", qualificationError(ctx)
 			}
 		}
@@ -300,6 +320,18 @@ func InspectPooledQualification(ctx context.Context, r PooledQualificationReques
 	}
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// qualificationRuntimeRoot is the directory holding a runtime's launcher and
+// release file. Java 8 reports java.home as the jre directory inside its JDK,
+// whose java launcher and release file sit one level up.
+func qualificationRuntimeRoot(jdk ResolvedJDK) string {
+	if jdk.Major == 8 && filepath.Base(jdk.Home) == "jre" {
+		if info, err := os.Lstat(filepath.Join(filepath.Dir(jdk.Home), "release")); err == nil && info.Mode().IsRegular() {
+			return filepath.Dir(jdk.Home)
+		}
+	}
+	return jdk.Home
 }
 
 func canonicalDigest(s string) bool {
@@ -335,7 +367,11 @@ type qualificationFile struct {
 // runtimeLink accepts a symlink inside the JDK home only when it resolves to
 // a regular file that is also inside the home, as JDK builds link their
 // per-module legal notices to java.base. Anything else is refused.
-func runtimeLink(home, path string) (qualificationFile, error) {
+// runtimeLink records an in-home runtime symlink to a regular file. With
+// directories, as in LoadRunner thread mode, an in-home link to a directory
+// qualifies too: full JDKs link man-page locales, and the directory's files
+// are hashed under their own path.
+func runtimeLink(home, path string, directories bool) (qualificationFile, error) {
 	target, err := os.Readlink(path)
 	if err != nil || target == "" || len(target) > 4096 || !utf8.ValidString(target) || strings.ContainsAny(target, "\x00\r\n") {
 		return qualificationFile{}, ErrPooledQualification
@@ -349,7 +385,7 @@ func runtimeLink(home, path string) (qualificationFile, error) {
 		return qualificationFile{}, ErrPooledQualification
 	}
 	info, err := os.Lstat(resolved)
-	if err != nil || !info.Mode().IsRegular() {
+	if err != nil || !info.Mode().IsRegular() && !(directories && info.IsDir()) {
 		return qualificationFile{}, ErrPooledQualification
 	}
 	return qualificationFile{Mode: uint32(fs.ModeSymlink), Link: target}, nil

@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/javarunner"
 	"github.com/jasonczech/apexload/pkg/javasidecar"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	javaadapter "github.com/jasonczech/apexload/pkg/protocol/java_vuser"
@@ -64,6 +65,7 @@ type javaSharedGroup struct {
 	group, scenario string
 	script          *dsl.Script
 	target, digest  string
+	threads         bool // LoadRunner thread mode
 	vusersPerJVM    int
 	prepared        int
 	offset          int
@@ -88,7 +90,7 @@ type javaSharedGroup struct {
 }
 
 func javaSharedRequested(script *dsl.Script) bool {
-	return script != nil && strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") && script.Config.JavaVuser.JVMSharing == dsl.JavaVuserJVMSharingShared
+	return script != nil && strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") && dsl.JavaVuserSharesJVMs(script.Config.JavaVuser.JVMSharing)
 }
 
 // javaSharedScriptReason mirrors the slot adapter's contract: one exact
@@ -99,7 +101,7 @@ func javaSharedScriptReason(script *dsl.Script) (target, reason string) {
 		return "", JavaSharedReasonOpen
 	}
 	logic := script.Config.RunLogic
-	if len(logic.ActionSequence) != 0 || len(logic.Blocks) != 0 || logic.BlockScheduling != "" && logic.BlockScheduling != "sequential" {
+	if !lifecycleOnlySequence(logic.ActionSequence) || len(logic.Blocks) != 0 || logic.BlockScheduling != "" && logic.BlockScheduling != "sequential" {
 		return "", JavaSharedReasonRunLogic
 	}
 	limit := script.Config.ThinkTime.LimitMs
@@ -146,6 +148,22 @@ func javaSharedScriptReason(script *dsl.Script) (target, reason string) {
 	return target, ""
 }
 
+// lifecycleOnlySequence reports an action sequence that at most restates the
+// init, action, end order, as an imported LoadRunner script's
+// [vuser_init, action, vuser_end] does; the slot adapter runs that order.
+func lifecycleOnlySequence(sequence []string) bool {
+	rank := map[string]int{"init": 0, "vuser_init": 0, "action": 1, "teardown": 2, "vuser_end": 2}
+	last := -1
+	for _, step := range sequence {
+		current, ok := rank[strings.ToLower(strings.TrimSpace(step))]
+		if !ok || current <= last {
+			return false
+		}
+		last = current
+	}
+	return true
+}
+
 // newJavaSharedGroup returns nil when the group did not ask for shared JVMs.
 // A script shape the slot adapter cannot run yields a group that is already
 // dedicated, so the run records why without contacting the runner.
@@ -153,7 +171,7 @@ func newJavaSharedGroup(group GroupConfig, prepared int) (*javaSharedGroup, erro
 	if !javaSharedRequested(group.Script) {
 		return nil, nil
 	}
-	g := &javaSharedGroup{group: group.Name, scenario: group.ScenarioID, script: group.Script, vusersPerJVM: group.Script.Config.JavaVuser.VUsersPerJVM, prepared: prepared, offset: group.VUserIDOffset, taken: map[int]bool{}}
+	g := &javaSharedGroup{group: group.Name, scenario: group.ScenarioID, script: group.Script, threads: group.Script.Config.JavaVuser.JVMSharing == dsl.JavaVuserJVMSharingThreads, vusersPerJVM: group.Script.Config.JavaVuser.VUsersPerJVM, prepared: prepared, offset: group.VUserIDOffset, taken: map[int]bool{}}
 	target, reason := javaSharedScriptReason(group.Script)
 	if reason == "" && groupLifecycleAtOnce(group) {
 		reason = JavaSharedReasonAtOnce
@@ -251,7 +269,7 @@ func (g *javaSharedGroup) stage(ctx context.Context, secrets SecretResolver) jav
 	deadline := time.Now().Add(JavaSharedPrepareTimeout)
 	cfg := buildProtoConfigForRunModeWithSecretResolver(g.script, "load", secrets)
 	cfg["group_name"], cfg["scenario_id"] = g.group, g.scenario
-	rt, reason, err := javaadapter.PrepareSharedJVMRuntime(ctx, cfg, g.target, g.digest, g.vusersPerJVM)
+	rt, reason, err := javaadapter.PrepareSharedJVMRuntime(ctx, cfg, g.target, g.digest, g.vusersPerJVM, g.threads)
 	if err != nil {
 		return failed(fmt.Errorf("java_vuser shared JVM runtime: %s", scrubSensitiveText(err.Error())))
 	}
@@ -267,6 +285,9 @@ func (g *javaSharedGroup) stage(ctx context.Context, secrets SecretResolver) jav
 	}
 	if !protocol.RuntimeFeaturesSatisfy(caps.Features, javasidecar.FeatureSharedJVMV1) {
 		return javaSharedStaged{reason: javaadapter.SharedJVMReasonUnavailable}
+	}
+	if g.threads && !protocol.RuntimeFeaturesSatisfy(caps.Features, javasidecar.FeatureLoadRunnerThreadsV1) {
+		return javaSharedStaged{reason: javarunner.SharedJVMReasonLoadRunnerThreads}
 	}
 	open := func(part int) (*javasidecar.PooledClientRun, []string, error) {
 		id := g.id
@@ -576,7 +597,7 @@ func (g *javaSharedGroup) adapter(id int) (protocol.Protocol, error) {
 func (g *javaSharedGroup) placement() JavaVMPlacement {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	p := JavaVMPlacement{Group: g.group, Requested: dsl.JavaVuserJVMSharingShared, Mode: "dedicated", Reason: g.reason, Warnings: append([]string(nil), g.warnings...)}
+	p := JavaVMPlacement{Group: g.group, Requested: g.script.Config.JavaVuser.JVMSharing, Mode: "dedicated", Reason: g.reason, Warnings: append([]string(nil), g.warnings...)}
 	switch g.state {
 	case javaSharedActive:
 		p.Mode, p.Reason, p.JVMs, p.VUsersPerJVM = "shared", "", g.jvms, g.slotsPer

@@ -188,19 +188,30 @@ const (
 	maxJavaVuserVUsersPerJVM     = 1024
 )
 
+// JavaVuserJVMSharingThreads runs a group's VUsers as threads of shared JVMs
+// the way LoadRunner does: libraries load once per JVM, including native code
+// and Java 8 middleware the isolated shared mode refuses. Only the script's own
+// classes stay per VUser.
+const JavaVuserJVMSharingThreads = "threads"
+
+// JavaVuserSharesJVMs reports a sharing mode that runs many VUsers per JVM.
+func JavaVuserSharesJVMs(mode string) bool {
+	return mode == JavaVuserJVMSharingShared || mode == JavaVuserJVMSharingThreads
+}
+
 func validateJavaVuserJVMSharing(cfg JavaVuserConfig) []string {
 	var issues []string
 	switch cfg.JVMSharing {
-	case "", JavaVuserJVMSharingDedicated, JavaVuserJVMSharingShared:
+	case "", JavaVuserJVMSharingDedicated, JavaVuserJVMSharingShared, JavaVuserJVMSharingThreads:
 	default:
-		issues = append(issues, "config.java_vuser.jvm_sharing must be dedicated or shared")
+		issues = append(issues, "config.java_vuser.jvm_sharing must be dedicated, shared or threads")
 	}
 	if cfg.VUsersPerJVM != 0 {
 		if cfg.VUsersPerJVM < 2 || cfg.VUsersPerJVM > maxJavaVuserVUsersPerJVM {
 			issues = append(issues, fmt.Sprintf("config.java_vuser.vusers_per_jvm must be between 2 and %d", maxJavaVuserVUsersPerJVM))
 		}
-		if cfg.JVMSharing != JavaVuserJVMSharingShared {
-			issues = append(issues, "config.java_vuser.vusers_per_jvm requires jvm_sharing shared")
+		if !JavaVuserSharesJVMs(cfg.JVMSharing) {
+			issues = append(issues, "config.java_vuser.vusers_per_jvm requires jvm_sharing shared or threads")
 		}
 	}
 	return issues

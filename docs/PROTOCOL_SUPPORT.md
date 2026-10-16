@@ -817,7 +817,7 @@ below; the stock compose service and chart sidecar lack it). The runner image
 ships the slot jars they load, and the runner sizes its JVM memory budget from
 its container's memory limit unless the operator sets one. They apply to
 scripts with exactly one `init`, `action` and `end` call on one target class,
-string parameters, a closed workload and sequential run logic. The runner also requires Java 17 or 21, a
+string parameters, a closed workload and sequential run logic (an imported `[vuser_init, action, vuser_end]` sequence counts as sequential). The runner also requires Java 17 or 21, a
 jar-only classpath and a clean native-code scan. When any of these does not
 hold, the group runs with one JVM per VUser and the run reports the reason
 (`apexctl run` prints it next to the results). An unexplained runner error, or
@@ -827,10 +827,36 @@ outcome: its shared JVM count, or the reason it used one JVM per VUser.
 
 A scenario group can choose shared or dedicated JVMs, and the VUsers per JVM,
 in its Java Env runtime overrides without re-approving the script. Changing
-these settings on an approved script itself needs a new authoring approval.
+these settings on an approved script itself needs a new authoring approval, and
+so does a group override into LoadRunner thread mode.
 
 All of a group's VUsers are staged before the run starts, and a VUser's slot is
 never reused, so a schedule cannot grow a shared group past its staged VUsers.
+
+#### LoadRunner thread mode
+
+`jvm_sharing: threads` runs VUsers the way LoadRunner does with Run Vuser as a
+thread and no per-VUser class loader: libraries, their static state and their
+native code load once per JVM, and only the jars holding the script's own
+classes (the target class, or any class that calls the `lr` API) load per
+VUser. A LoadRunner Java Vuser imported with `UseThreads=1` and without
+`enable_CL_per_vuser=1` gets this setting. Because libraries load once, thread
+mode admits what shared JVMs refuse: native code in libraries, Java 8 runtimes
+under `APEXLOAD_JAVA_VUSER_ALLOW_LEGACY_JAVA`, library jars with up to 65,535
+entries, and manifest `Class-Path` references that name no existing file (full
+WebLogic client jars have both). The per-VUser jars keep every shared-JVM check.
+
+As in LoadRunner, a VUser's exception fails only that VUser's call, reported
+with the exception's class and message; a failed `init` ends that VUser without
+its `end` call, and an `action` exception fails the iteration while the VUser
+keeps running. One
+VUser's crash or global change (system properties, a static initializer that
+failed) reaches the other VUsers in its JVM.
+
+The operator enables it on the runner with `APEXLOAD_JAVA_VUSER_THREAD_MODE=true`
+in addition to shared JVMs (Helm: `javaVuser.runner.sharedJVM.threadMode`).
+Elsewhere a threads group runs with one JVM per VUser and reports
+`shared_jvm_loadrunner_threads_disabled`.
 
 ### Backends and preflight
 
@@ -894,6 +920,7 @@ The relevant environment variables are:
 - `APEXLOAD_JAVA_VUSER_WORK_DIR`
 - `APEXLOAD_JAVA_VUSER_MAX_PROCESSES`
 - `APEXLOAD_JAVA_VUSER_SHARED_JVM` (runner sidecar, Linux only: enables shared JVMs, where many VUsers of one group share a JVM; see [Java VUser pooling](JAVA_VUSER_POOLING_IMPLEMENTATION.md#shared-jvms-runner-qualified))
+- `APEXLOAD_JAVA_VUSER_THREAD_MODE` (runner sidecar, with shared JVMs: also admits LoadRunner thread mode, `jvm_sharing: threads`)
 - `APEXLOAD_JAVA_VUSER_SHARED_JVM_VUSERS_PER_JVM` (default 250, 2–1,024), `APEXLOAD_JAVA_VUSER_SHARED_JVM_HEAP_MB` (default 1,024)
 - `APEXLOAD_JAVA_VUSER_JVM_MEMORY_BUDGET_MB` (runner-wide JVM memory budget shared by shared and dedicated JVMs) and `APEXLOAD_JAVA_VUSER_DEDICATED_JVM_MEMORY_MB` (default 256)
 - `APEXLOAD_JAVA_VUSER_SLOT_API_JAR`, `APEXLOAD_JAVA_VUSER_SLOT_SHIM_JAR` (default: `apexload-slot-api.jar` and `apexload-slot-shim.jar` beside the harness jar)

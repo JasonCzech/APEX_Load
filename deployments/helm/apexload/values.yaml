@@ -207,6 +207,10 @@ javaVuser:
     # memoryBudgetMB sets the budget explicitly.
     sharedJVM:
       enabled: false
+      # threadMode also admits LoadRunner thread mode (jvm_sharing: threads):
+      # libraries, native code included, load once per JVM as in LoadRunner,
+      # and Java 8 runtimes qualify where the runner allows legacy Java.
+      threadMode: false
       vusersPerJVM: 250
       heapMB: 1024
       # 0 derives the budget from maxProcesses and the container memory limit.

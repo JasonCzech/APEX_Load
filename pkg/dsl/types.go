@@ -389,11 +389,13 @@ type JavaVuserConfig struct {
 	// ParamRightBrace); both empty means LoadRunner's default "{" and "}".
 	ParamLeftBrace  string `json:"param_left_brace,omitempty" jsonschema:"maxLength=8"`
 	ParamRightBrace string `json:"param_right_brace,omitempty" jsonschema:"maxLength=8"`
-	// JVMSharing chooses one JVM per VUser ("dedicated", the default) or shared
-	// JVMs ("shared"), where many VUsers of this group run in one JVM. Shared
-	// JVMs need a runner whose operator enabled them; otherwise, or when the
-	// runner refuses the script, the group runs dedicated and the run records why.
-	JVMSharing string `json:"jvm_sharing,omitempty" jsonschema:"enum=dedicated,enum=shared"`
+	// JVMSharing chooses one JVM per VUser ("dedicated", the default), shared
+	// JVMs ("shared"), where many VUsers of this group run in one JVM with
+	// isolated libraries, or LoadRunner thread mode ("threads"), where they run
+	// as threads of shared JVMs whose libraries load once. Both shared modes
+	// need a runner whose operator enabled them; otherwise, or when the runner
+	// refuses the script, the group runs dedicated and the run records why.
+	JVMSharing string `json:"jvm_sharing,omitempty" jsonschema:"enum=dedicated,enum=shared,enum=threads"`
 	// VUsersPerJVM lowers the runner's VUsers per shared JVM; zero keeps it.
 	VUsersPerJVM int `json:"vusers_per_jvm,omitempty" jsonschema:"minimum=0,maximum=1024"`
 }

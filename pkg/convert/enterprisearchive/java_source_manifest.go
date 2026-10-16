@@ -247,3 +247,26 @@ func addJavaVuserScriptClassesEntry(result *ConvertResult, files map[string]stri
 		result.ReviewArtifact.NextActions = appendUnique(result.ReviewArtifact.NextActions, javaVuserScriptClassesNextAction)
 	}
 }
+
+const loadRunnerThreadModeWarning = "LoadRunner ran this Java Vuser's VUsers as threads of one JVM (UseThreads=1), so it imports in LoadRunner thread mode (jvm_sharing threads): VUsers share each JVM's libraries, as in LoadRunner. Thread mode runs only on a runner whose operator enabled it; elsewhere each VUser gets its own JVM and the run says why."
+
+// applyLoadRunnerThreadMode keeps LoadRunner's VUser model for a Java Vuser
+// that ran as threads of one JVM with one class loader. A per-VUser class
+// loader (enable_CL_per_vuser=1) or an explicit sharing choice is left alone.
+func applyLoadRunnerThreadMode(result *ConvertResult, runtimeCfg *RuntimeConfig) {
+	if result == nil || runtimeCfg == nil || !runtimeCfg.JavaVMUseThreads || runtimeCfg.JavaVMDedicatedClassLoader != nil && *runtimeCfg.JavaVMDedicatedClassLoader {
+		return
+	}
+	applied := false
+	scripts := append([]*dsl.Script{result.Script}, result.Scripts...)
+	for index, script := range scripts {
+		if script == nil || slices.Contains(scripts[:index], script) || !strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") || script.Config.JavaVuser.JVMSharing != "" {
+			continue
+		}
+		script.Config.JavaVuser.JVMSharing = dsl.JavaVuserJVMSharingThreads
+		applied = true
+	}
+	if applied {
+		result.Warnings = append(result.Warnings, loadRunnerThreadModeWarning)
+	}
+}

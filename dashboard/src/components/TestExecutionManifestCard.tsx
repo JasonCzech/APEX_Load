@@ -147,6 +147,7 @@ const JAVA_VM_REASONS: Record<string, string> = {
   shared_jvm_vm_parameter_invalid: 'a VM parameter is not allowed in shared JVMs',
   shared_jvm_qualification_failed: 'script could not be qualified for shared JVMs',
   shared_jvm_capacity_invalid: 'runner shared-JVM sizing is invalid',
+  shared_jvm_loadrunner_threads_disabled: 'runner does not allow LoadRunner thread mode',
 }
 
 function describeJavaVMOutcome(vm: JavaVMShardOutcome): string {

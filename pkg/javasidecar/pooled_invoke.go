@@ -27,6 +27,8 @@ type PooledInvocationResult struct {
 	Events          string      `json:"events,omitempty"`
 	EventsTruncated bool        `json:"events_truncated,omitempty"`
 	DurationMS      int64       `json:"duration_ms"`
+	// Error is a LoadRunner thread-mode script exception's class and message.
+	Error string `json:"error,omitempty"`
 }
 
 // Invocation identities are deterministic per slot and monotonically advance.
@@ -147,7 +149,10 @@ func (run *PooledRun) invokeControl(ctx context.Context, q PooledControlRequest,
 		capture.initialized = result.ReturnCode == 0
 		if !capture.initialized {
 			capture.ended = true
-			_ = run.ledger.FailHost(q.HostID, "pooled_invocation_failed")
+			// In LoadRunner thread mode a failed init ends only this VUser.
+			if !run.loadRunnerThreads {
+				_ = run.ledger.FailHost(q.HostID, "pooled_invocation_failed")
+			}
 		}
 	}
 	if q.Method == "end" {
@@ -175,7 +180,7 @@ func pooledInvocationFrame(q PooledControlRequest, f javarunner.PooledFrame) (*P
 			return fail()
 		}
 	}
-	r := &PooledInvocationResult{Sequence: q.Sequence, Method: q.Method, EventRequestID: f.Request, ReturnCode: int32(rc), EventsTruncated: f.Fields["event_fallback"] == "true" || f.Fields["event_truncated"] == "true"}
+	r := &PooledInvocationResult{Sequence: q.Sequence, Method: q.Method, EventRequestID: f.Request, ReturnCode: int32(rc), EventsTruncated: f.Fields["event_fallback"] == "true" || f.Fields["event_truncated"] == "true", Error: f.Fields["error"]}
 	option, hasOption := f.Fields["exit_option"]
 	status, hasStatus := f.Fields["exit_status"]
 	if hasOption != hasStatus {
@@ -191,10 +196,19 @@ func pooledInvocationFrame(q PooledControlRequest, f javarunner.PooledFrame) (*P
 		}
 		o, _ := strconv.Atoi(option)
 		r.Exit = &PooledExit{Option: o, Status: int32(n)}
-		if len(f.Fields) != 7 {
+	}
+	fields := 5
+	if hasOption {
+		fields = 7
+	}
+	// Only a failed call carries a thread-mode script's exception text.
+	if _, hasError := f.Fields["error"]; hasError {
+		if r.ReturnCode == 0 {
 			return fail()
 		}
-	} else if len(f.Fields) != 5 {
+		fields++
+	}
+	if len(f.Fields) != fields {
 		return fail()
 	}
 	return r, nil

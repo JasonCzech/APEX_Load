@@ -183,14 +183,15 @@ func TestPooledIPCRealJVM(t *testing.T) {
 			}
 		})
 	}
-	startSized := func(t *testing.T, cleanup bool, slots int) *javarunner.PooledTransport {
+	startHost := func(t *testing.T, cleanup bool, slots int, target, scriptDir string, extra ...string) *javarunner.PooledTransport {
 		t.Helper()
 		qualified := "false"
 		if cleanup {
 			qualified = "true"
 		}
 		listener, port := listen(t)
-		cmd := exec.Command(java, "-XX:+IgnoreUnrecognizedVMOptions", "-XX:FlightRecorderOptions=repository="+t.TempDir(), "-cp", api, "apexload.host.PooledMain", "gen-1", strconv.Itoa(slots), shim, "WireActions", qualified, port, "1", script, "0")
+		args := []string{"-XX:+IgnoreUnrecognizedVMOptions", "-XX:FlightRecorderOptions=repository=" + t.TempDir(), "-cp", api, "apexload.host.PooledMain", "gen-1", strconv.Itoa(slots), shim, target, qualified, port, "1", scriptDir, "0"}
+		cmd := exec.Command(java, append(args, extra...)...)
 		cmd.Stdout = io.Discard
 		cmd.Stderr = io.Discard
 		output, e := cmd.StdinPipe()
@@ -225,6 +226,9 @@ func TestPooledIPCRealJVM(t *testing.T) {
 			t.Fatal(e)
 		}
 		return transport
+	}
+	startSized := func(t *testing.T, cleanup bool, slots int) *javarunner.PooledTransport {
+		return startHost(t, cleanup, slots, "WireActions", script)
 	}
 	start := func(t *testing.T, cleanup bool) *javarunner.PooledTransport { return startSized(t, cleanup, 2) }
 	call := func(t *testing.T, tr *javarunner.PooledTransport, slot, op string, fields map[string]string) javarunner.PooledFrame {
@@ -417,6 +421,44 @@ func TestPooledIPCRealJVM(t *testing.T) {
 			t.Fatal("unqualified cleanup retained peer")
 		}
 	})
+	// LoadRunner thread mode: a script's exception fails that VUser's call,
+	// with its text, and never its peers. A failed init ends that VUser; an
+	// action's exception fails the iteration and the VUser keeps its slot.
+	t.Run("loadrunner_threads_isolate_script_failures", func(t *testing.T) {
+		threadScripts := filepath.Join(dir, "threads")
+		if err := os.MkdirAll(threadScripts, 0700); err != nil {
+			t.Fatal(err)
+		}
+		threadSource := filepath.Join(dir, "ThreadActions.java")
+		if err := os.WriteFile(threadSource, []byte(pooledThreadActions), 0600); err != nil {
+			t.Fatal(err)
+		}
+		run("--release", "8", "-cp", shim, "-d", threadScripts, threadSource)
+		tr := startHost(t, true, 2, "ThreadActions", threadScripts, "loadrunner_threads")
+		call(t, tr, "a", "open", map[string]string{"APEXLOAD_VUSER_ID": "1"})
+		call(t, tr, "b", "open", map[string]string{"APEXLOAD_VUSER_ID": "2"})
+		call(t, tr, "", "commit", nil)
+		f := invoke(t, tr, "a", "init", map[string]string{"mode": "fail"})
+		if f.Fields["return_code"] != "-1" || f.Fields["error"] != "java.lang.IllegalStateException: init failure details" || f.Fields["reap"] != "false" {
+			t.Fatalf("failed init reply %v", f.Fields)
+		}
+		invoke(t, tr, "b", "init", nil)
+		f = invoke(t, tr, "b", "action", map[string]string{"mode": "fail"})
+		if f.Fields["return_code"] != "-1" || f.Fields["error"] != "java.lang.IllegalStateException: action failure details" {
+			t.Fatalf("failed action reply %v", f.Fields)
+		}
+		if f = invoke(t, tr, "b", "action", map[string]string{"mode": "ok"}); f.Fields["return_code"] != "0" {
+			t.Fatalf("the VUser must keep its slot after a failed action: %v", f.Fields)
+		}
+		call(t, tr, "a", "close", nil)
+		invoke(t, tr, "b", "end", nil)
+		call(t, tr, "b", "close", nil)
+		select {
+		case <-tr.Done():
+			t.Fatal("a script failure retired the host")
+		default:
+		}
+	})
 	t.Run("preserve_triggering_failure", func(t *testing.T) {
 		tr := start(t, true)
 		prepare(t, tr)
@@ -455,6 +497,15 @@ func TestPooledIPCRealJVM(t *testing.T) {
 		}
 	})
 }
+
+const pooledThreadActions = `
+import lrapi.lr;
+public class ThreadActions {
+  public int init() { if ("fail".equals(lr.eval_string("{mode}"))) throw new IllegalStateException("init failure details"); return 0; }
+  public int action() { if ("fail".equals(lr.eval_string("{mode}"))) throw new IllegalStateException("action failure details"); return 0; }
+  public int end() { return 0; }
+}
+`
 
 const pooledWireActions = `
 import lrapi.lr;

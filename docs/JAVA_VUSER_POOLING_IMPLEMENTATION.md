@@ -117,6 +117,58 @@ Healthy runners advertise `java_vuser_shared_jvm_v1` and a `shared_jvm`
 capacity envelope (slots per JVM, JVM reservation, maximum and available
 VUsers) on `/v1/capabilities`.
 
+## LoadRunner thread mode
+
+LoadRunner runs a Java Vuser script's VUsers as threads of one JVM with one
+class loader (`UseThreads=1`, `enable_CL_per_vuser=0`). Scripts written for
+that model, such as clients of full WebLogic 9.2 and vendor libraries with
+native code, fail every shared-JVM check above: they need Java 8, their
+libraries call native code, and the WebLogic client jar has 34,254 entries and a
+manifest `Class-Path`. Thread mode (`jvm_sharing: threads`) keeps LoadRunner's
+model on the same host:
+
+- `APEXLOAD_JAVA_VUSER_THREAD_MODE=true` admits it on a runner with shared JVMs
+  (`javaVuser.runner.sharedJVM.threadMode` in Helm). The runner advertises
+  `java_vuser_loadrunner_threads_v1`; a threads claim to a runner without it is
+  refused with `shared_jvm_loadrunner_threads_disabled` and the group runs
+  dedicated. A scenario override into thread mode needs the script approved
+  again.
+- Per VUser: the jar holding the target class and every jar whose class files
+  name `lrapi/`, since each slot has its own `lr`. With the script's dedicated
+  class loader setting, every jar. The rest are libraries loaded once.
+- Per-VUser jars keep every check (bounds, no manifest `Class-Path`, a complete
+  native scan with no indicators). Library jars are not scanned for native code,
+  may hold up to 65,535 entries, and may carry a manifest `Class-Path` as long as
+  nothing it names exists, so the hashed jars are still all that loads.
+- Any HotSpot or OpenJ9 runtime the runner resolved qualifies, Java 8 included
+  under `APEXLOAD_JAVA_VUSER_ALLOW_LEGACY_JAVA`. A Java 8 home reported as the
+  JDK's `jre` directory is hashed with the launcher and release file above it,
+  and in-home directory links (JDK man-page locales) join the identity.
+- The sharing profile is `shared-auto-lr-threads`, and the launch spec's
+  thread-mode flag is part of the configuration digest (omitted when unset, so
+  other modes keep their digests). The host receives `loadrunner_threads` as its
+  last argument.
+- A script exception fails only its VUser's call: the host answers with return
+  code -1 and the exception's class and message (one line, at most 2,048
+  characters) instead of reaping the JVM. A failed `init` ends that VUser
+  without its `end` call; an `action` exception fails the iteration and the slot
+  stays usable.
+
+Measured on Docker Desktop (Apple silicon, Temurin 8u504, 4 CPUs, 512 MB heap
+per shared JVM) with a synthetic script that loads 400 classes from each of a
+WebLogic 9.2 client classpath's seven jars and then idles 500 ms per iteration:
+
+| VUsers | Mode | JVMs | JVM memory (PSS) | Errors |
+| --- | --- | --- | --- | --- |
+| 10 | One JVM per VUser | 10 | 1,260 MB | 0 |
+| 10 | LoadRunner threads | 1 | 297 MB | 0 |
+| 100 | LoadRunner threads | 1 | 486 MB | 0 |
+
+The imported scripts themselves qualified on the same runner and ran their real
+`init` in one JVM: offline, the first VUser's vendor login failed with its own
+error and the others reported the shared class's failed initialization, as
+LoadRunner reports it, without ending each other's VUsers.
+
 ## Shared JVMs across generators
 
 A generator whose runner hosts shared JVMs reports a `shared_jvm` envelope on

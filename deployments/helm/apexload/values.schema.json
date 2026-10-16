@@ -321,6 +321,7 @@
               "additionalProperties": false,
               "properties": {
                 "enabled": { "type": "boolean" },
+                "threadMode": { "type": "boolean" },
                 "vusersPerJVM": { "type": "integer", "minimum": 2, "maximum": 1024 },
                 "heapMB": { "type": "integer", "minimum": 64 },
                 "memoryBudgetMB": { "type": "integer", "minimum": 0 },

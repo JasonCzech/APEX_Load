@@ -627,3 +627,73 @@ func TestJavaDurationDrainCoversTheLongestActionTimeout(t *testing.T) {
 		t.Fatal("non-Java script drained")
 	}
 }
+
+func TestJavaSharedLoadRunnerThreadsClaimsThreadMode(t *testing.T) {
+	p := newSharedPeer(t, config.JavaVuserRunnerModeSidecar)
+	p.features = append(p.features, javasidecar.FeatureLoadRunnerThreadsV1)
+	script := sharedTestScript()
+	script.Config.JavaVuser.JVMSharing = dsl.JavaVuserJVMSharingThreads
+	e, err := New(Config{Script: script, VUsers: 2, TerminationMode: dsl.TerminationIterations})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := e.Run(context.Background())
+	if err != nil || result.TotalErrors != 0 || result.CompletedIterations != 2 {
+		t.Fatalf("result %+v err %v", result, err)
+	}
+	placement := result.JavaVMPlacements[0]
+	if placement.Mode != "shared" || placement.Requested != dsl.JavaVuserJVMSharingThreads {
+		t.Fatalf("placement %+v", placement)
+	}
+	p.mu.Lock()
+	claim := p.claims[0]
+	p.mu.Unlock()
+	if !claim.LoadRunnerThreads {
+		t.Fatal("a threads group must claim LoadRunner thread mode")
+	}
+}
+
+func TestJavaSharedLoadRunnerThreadsFallsBackWithoutTheRunnerFeature(t *testing.T) {
+	p := newSharedPeer(t, config.JavaVuserRunnerModeSidecar)
+	script := sharedTestScript()
+	script.Config.JavaVuser.JVMSharing = dsl.JavaVuserJVMSharingThreads
+	g, err := newJavaSharedGroup(GroupConfig{Name: script.Name, Script: script}, 2)
+	if err != nil || g == nil {
+		t.Fatalf("group %v %v", g, err)
+	}
+	if err := g.prepare(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	placement := g.placement()
+	if placement.Mode != "dedicated" || placement.Reason != javarunner.SharedJVMReasonLoadRunnerThreads || placement.Requested != dsl.JavaVuserJVMSharingThreads {
+		t.Fatalf("placement %+v", placement)
+	}
+	p.mu.Lock()
+	claimed := len(p.claims)
+	p.mu.Unlock()
+	if claimed != 0 {
+		t.Fatal("a runner without thread mode must not be claimed")
+	}
+}
+
+func TestJavaSharedAcceptsAnImportedLifecycleSequence(t *testing.T) {
+	for name, tc := range map[string]struct {
+		sequence []string
+		reason   string
+	}{
+		"LoadRunner lifecycle": {[]string{"vuser_init", "action", "vuser_end"}, ""},
+		"action only":          {[]string{"action"}, ""},
+		"init and teardown":    {[]string{"init", "action", "teardown"}, ""},
+		"repeated action":      {[]string{"vuser_init", "action", "action", "vuser_end"}, JavaSharedReasonRunLogic},
+		"out of order":         {[]string{"action", "vuser_init"}, JavaSharedReasonRunLogic},
+		"unknown step":         {[]string{"vuser_init", "checkout"}, JavaSharedReasonRunLogic},
+	} {
+		t.Run(name, func(t *testing.T) {
+			script := sharedTestScript()
+			script.Config.RunLogic.ActionSequence = tc.sequence
+			if _, reason := javaSharedScriptReason(script); reason != tc.reason {
+				t.Fatalf("reason %q, want %q", reason, tc.reason)
+			}
+		})
+	}
+}

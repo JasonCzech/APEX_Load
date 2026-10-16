@@ -345,7 +345,9 @@ func writeJavaVuserAuthoringApproval(script *dsl.Script, evidence javaVuserAppro
 // java_vuser_run class_name/method/source_archive_ref — also the {{env}}
 // template substitution vector) or the code-selecting Java Env config fields
 // (classpath, classpath asset bindings, JDK home/selection, additional VM
-// parameters). Runtime-safe toggles (skip_parameter_evaluation,
+// parameters), or a move into LoadRunner thread mode, where the script's
+// libraries and native code share a JVM with other VUsers. Runtime-safe
+// toggles (skip_parameter_evaluation,
 // use_xbootclasspath, dedicated_class_loader) and non-Java runtime sections
 // (pacing, logging, think time, …) are NOT code-selecting and are intentionally
 // excluded, so those overrides remain re-blessable under the existing authoring
@@ -368,7 +370,8 @@ func javaVuserOverrideChangedExecutableSurface(approved, candidate *dsl.Script) 
 		// changes the bytes loaded into the JVM, so it must invalidate an
 		// existing authoring approval and force re-approval.
 		!reflect.DeepEqual(a.ClasspathAssets, c.ClasspathAssets) ||
-		!reflect.DeepEqual(a.AdditionalVMParameters, c.AdditionalVMParameters)
+		!reflect.DeepEqual(a.AdditionalVMParameters, c.AdditionalVMParameters) ||
+		c.JVMSharing == dsl.JavaVuserJVMSharingThreads && a.JVMSharing != dsl.JavaVuserJVMSharingThreads
 }
 
 // javaScriptClassesEntryUnbound reports a classpath that keeps the importer's

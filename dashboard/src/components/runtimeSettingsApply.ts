@@ -116,10 +116,10 @@ function mergeJavaVuserLayer(base?: MaterializedJavaVuser, override?: Materializ
   if (override.dedicated_class_loader !== undefined) merged.dedicated_class_loader = override.dedicated_class_loader
   if (override.skip_parameter_evaluation !== undefined) merged.skip_parameter_evaluation = override.skip_parameter_evaluation
   // Mirrors applyJavaVuserRuntimeOverride: choosing dedicated also drops the
-  // per-JVM count, which applies only to shared JVMs.
+  // per-JVM count, which applies only to shared JVMs and thread mode.
   if (override.jvm_sharing) {
     merged.jvm_sharing = override.jvm_sharing
-    if (override.jvm_sharing !== 'shared') delete merged.vusers_per_jvm
+    if (override.jvm_sharing === 'dedicated') delete merged.vusers_per_jvm
   }
   if (override.vusers_per_jvm) merged.vusers_per_jvm = override.vusers_per_jvm
   return merged

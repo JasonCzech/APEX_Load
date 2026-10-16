@@ -136,9 +136,12 @@ export function formatJavaVuserSummary(java?: RuntimeJavaVuserSettings): string 
   if (java.skip_parameter_evaluation !== undefined) parts.push(java.skip_parameter_evaluation ? 'skip param eval' : 'no skip param eval')
   if (java.use_xbootclasspath !== undefined) parts.push(java.use_xbootclasspath ? 'xboot' : 'no xboot')
   if (java.jvm_sharing) {
+    const perJVM = java.vusers_per_jvm ? ` (${java.vusers_per_jvm} per JVM)` : ''
     parts.push(java.jvm_sharing === 'shared'
-      ? `shared JVMs${java.vusers_per_jvm ? ` (${java.vusers_per_jvm} per JVM)` : ''}`
-      : 'one JVM per VUser')
+      ? `shared JVMs${perJVM}`
+      : java.jvm_sharing === 'threads'
+        ? `LoadRunner threads${perJVM}`
+        : 'one JVM per VUser')
   }
   return parts.length > 0 ? parts.join(' · ') : null
 }

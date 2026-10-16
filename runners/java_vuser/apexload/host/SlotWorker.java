@@ -47,6 +47,9 @@ public final class SlotWorker {
     private final ClassLoader parent;
     private final String target;
     private final Map<String,String> context;
+    /** LoadRunner thread mode: an exception in action or end fails that call
+     * and the VUser keeps its slot, as LoadRunner and dedicated JVMs do. */
+    private final boolean threads;
     private final Thread thread;
     private State state = State.PREPARED;
     private long lastSequence;
@@ -55,12 +58,18 @@ public final class SlotWorker {
 
     public SlotWorker(String slotId, URL shim, URL[] scripts, ClassLoader parent,
                       String target, Map<String,String> context) {
+        this(slotId, shim, scripts, parent, target, context, false);
+    }
+
+    public SlotWorker(String slotId, URL shim, URL[] scripts, ClassLoader parent,
+                      String target, Map<String,String> context, boolean threads) {
         if (slotId == null || !slotId.matches("[A-Za-z0-9_-]{1,128}") || shim == null
                 || scripts == null || scripts.length == 0 || parent == null
                 || target == null || !target.matches("[A-Za-z_$][A-Za-z0-9_.$]*") || context == null)
             throw new IllegalArgumentException("invalid slot configuration");
         this.shim = shim; this.scripts = scripts.clone(); this.parent = parent; this.target = target;
         this.context = Collections.unmodifiableMap(new HashMap<String,String>(context));
+        this.threads = threads;
         thread = new Thread(new Runnable() { public void run() { work(); } }, "apexload-slot-" + slotId);
         thread.setDaemon(true);
         thread.start();
@@ -172,7 +181,9 @@ public final class SlotWorker {
                 } catch (Throwable thrown) { invocationFailure = thrown; }
                 synchronized (lock) {
                     current = null;
-                    if (invocationFailure != null || ("init".equals(job.method) && result.returnCode != 0)) state = State.CLOSING;
+                    boolean closes = "init".equals(job.method) ? invocationFailure != null || result.returnCode != 0
+                        : invocationFailure != null && !threads;
+                    if (closes) state = State.CLOSING;
                     else {
                         if ("init".equals(job.method)) initialized = true;
                         if ("end".equals(job.method)) ended = true;

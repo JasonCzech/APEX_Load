@@ -31,6 +31,13 @@ const (
 	sharedJVMProfileDedicatedLoader = "shared-auto-dedicated-loader"
 )
 
+// LoadRunner thread mode: its sharing profile, and the feature meaning the
+// runner also qualifies claims in it (SharedJVMClaim.LoadRunnerThreads).
+const (
+	sharedJVMProfileLoadRunnerThreads = "shared-auto-lr-threads"
+	FeatureLoadRunnerThreadsV1        = "java_vuser_loadrunner_threads_v1"
+)
+
 var ErrSharedJVMConfig = errors.New("shared_jvm_configuration_invalid")
 
 // sharedJVMRunnerReserveBytes is kept out of a derived budget for the runner
@@ -62,7 +69,7 @@ var sharedJVMRuntimeCodes = map[string]bool{
 var sharedJVMClaimErrorCodes = map[string]bool{
 	SharedJVMDisabled: true, sharedJVMRuntimeRejected: true, sharedJVMVMParameterRejected: true, sharedJVMQualificationFailed: true,
 	javarunner.SharedJVMReasonRuntime: true, javarunner.SharedJVMReasonClasspath: true, javarunner.SharedJVMReasonNative: true,
-	javarunner.SharedJVMReasonIncomplete: true, javarunner.SharedJVMReasonInputs: true, javarunner.SharedJVMReasonCapacity: true,
+	javarunner.SharedJVMReasonIncomplete: true, javarunner.SharedJVMReasonInputs: true, javarunner.SharedJVMReasonCapacity: true, javarunner.SharedJVMReasonLoadRunnerThreads: true,
 }
 
 // SharedJVMClaimErrorCode reports whether code is a claim_shared refusal that
@@ -95,6 +102,9 @@ type SharedJVMClaim struct {
 	// APEXLOAD_GROUP_NAME/APEXLOAD_SCENARIO_ID. Empty uses the opaque run IDs.
 	GroupName  string `json:"group_name,omitempty"`
 	ScenarioID string `json:"scenario_id,omitempty"`
+	// LoadRunnerThreads asks for LoadRunner thread mode: libraries load once
+	// per JVM and only the script's own jars load per VUser.
+	LoadRunnerThreads bool `json:"loadrunner_threads,omitempty"`
 }
 
 // SharedJVMCapabilities is the runner's shared-JVM admission envelope. Usage
@@ -115,6 +125,7 @@ type SharedJVMPolicy struct {
 	heapBytes               int64
 	hostMemoryBytes         int64
 	slotAPIJar, slotShimJar string
+	threadMode              bool
 }
 
 // NewSharedJVMPolicy validates the operator policy and builds the one shared
@@ -157,7 +168,7 @@ func NewSharedJVMPolicy(operator config.JavaVuserOperatorConfig) (*SharedJVMPoli
 	if err != nil {
 		return nil, nil, ErrSharedJVMConfig
 	}
-	return &SharedJVMPolicy{vusersPerJVM: shared.VUsersPerJVM, heapBytes: heap, hostMemoryBytes: hostMemory, slotAPIJar: shared.SlotAPIJar, slotShimJar: shared.SlotShimJar}, admission, nil
+	return &SharedJVMPolicy{vusersPerJVM: shared.VUsersPerJVM, heapBytes: heap, hostMemoryBytes: hostMemory, slotAPIJar: shared.SlotAPIJar, slotShimJar: shared.SlotShimJar, threadMode: shared.ThreadMode}, admission, nil
 }
 
 func validSharedJVMClaim(c *SharedJVMClaim) bool {
@@ -218,6 +229,10 @@ func (s *Server) sharedJVMCapabilities() *SharedJVMCapabilities {
 // is a stable, value-free code; the caller keeps the workload dedicated.
 func (s *Server) sharedJVMSelection(ctx context.Context, claim SharedJVMClaim) (javarunner.PooledSelection, []string, string, error) {
 	p := s.sharedJVM
+	threads := claim.LoadRunnerThreads
+	if threads && !p.threadMode {
+		return javarunner.PooledSelection{}, nil, javarunner.SharedJVMReasonLoadRunnerThreads, nil
+	}
 	prepared, failure := s.prepareRuntime(ctx, claim.Runtime)
 	if err := ctx.Err(); err != nil {
 		return javarunner.PooledSelection{}, nil, "", err
@@ -254,12 +269,26 @@ func (s *Server) sharedJVMSelection(ctx context.Context, claim SharedJVMClaim) (
 		return javarunner.PooledSelection{}, nil, javarunner.SharedJVMReasonInputs, nil
 	}
 	jdk.Home, jdk.JavaBin = home, javaBin
-	private, scriptShared, reason := javarunner.SplitSharedClasspath(script, claim.TargetClass, prepared.dedicatedLoader)
+	var private, scriptShared []string
+	var reason string
+	if threads {
+		private, scriptShared, reason = javarunner.SplitThreadModeClasspath(ctx, script, claim.TargetClass, prepared.dedicatedLoader)
+	} else {
+		private, scriptShared, reason = javarunner.SplitSharedClasspath(script, claim.TargetClass, prepared.dedicatedLoader)
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return javarunner.PooledSelection{}, nil, "", ctxErr
+	}
 	if reason != "" {
 		return javarunner.PooledSelection{}, nil, reason, nil
 	}
-	application := append(append([]string(nil), private...), scriptShared...)
-	native, err := javarunner.InspectApplicationNative(ctx, application)
+	// Thread mode loads libraries once, as LoadRunner does, so only the
+	// per-slot jars must be free of native code.
+	scanned := append(append([]string(nil), private...), scriptShared...)
+	if threads {
+		scanned = private
+	}
+	native, err := javarunner.InspectApplicationNative(ctx, scanned)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return javarunner.PooledSelection{}, nil, "", ctxErr
 	}
@@ -280,7 +309,10 @@ func (s *Server) sharedJVMSelection(ctx context.Context, claim SharedJVMClaim) (
 		warnings = append(warnings, WarningSharedJVMHeapIgnored)
 	}
 	sharing := sharedJVMProfileTargetPrivate
-	if prepared.dedicatedLoader {
+	switch {
+	case threads:
+		sharing = sharedJVMProfileLoadRunnerThreads
+	case prepared.dedicatedLoader:
 		sharing = sharedJVMProfileDedicatedLoader
 	}
 	request := javarunner.PooledQualificationRequest{
@@ -295,6 +327,7 @@ func (s *Server) sharedJVMSelection(ctx context.Context, claim SharedJVMClaim) (
 			SharedClasspath:    append(scriptShared, operatorShared...),
 			VMParameters:       args,
 			QualifiedCleanup:   true,
+			LoadRunnerThreads:  threads,
 		},
 		SourceArchive:  private[0],
 		SharingProfile: sharing,
