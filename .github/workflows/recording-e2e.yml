@@ -107,12 +107,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb
-          go run github.com/mxschmitt/playwright-go/cmd/playwright@v0.6100.0 install --with-deps chromium
+          # The Go driver also replays phone and tablet recordings in WebKit.
+          go run github.com/mxschmitt/playwright-go/cmd/playwright@v0.6100.0 install --with-deps chromium webkit
           dashboard/node_modules/.bin/playwright install --with-deps chromium
       - name: Install browsers from GHES mirror
         if: github.server_url != 'https://github.com'
         run: |
-          go run github.com/mxschmitt/playwright-go/cmd/playwright@v0.6100.0 install chromium
+          go run github.com/mxschmitt/playwright-go/cmd/playwright@v0.6100.0 install chromium webkit
           dashboard/node_modules/.bin/playwright install chromium
           command -v xvfb-run
       - name: Validate test-only launch boundary

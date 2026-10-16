@@ -49,14 +49,16 @@ test.describe('agent recovery',()=>{
     await page.getByLabel('Agent address',{exact:true}).fill(`http://127.0.0.1:${await freePort()}`)
     await page.getByRole('button',{name:'Connect',exact:true}).click()
     await expect(page.locator('.rec-bridge-status')).toHaveClass(/error/)
-    const agent=await pairAgent(page,h,info)
-    await stopProcess(agent)
-    await page.getByLabel('Start URL scheme',{exact:true}).selectOption('http://')
-    await page.getByLabel('Start URL address',{exact:true}).fill(h.target.url.replace('http://',''))
-    await page.getByRole('button',{name:'Start browser recording',exact:true}).click()
-    await expect(page.locator('.rec-feedback.error')).toBeVisible()
+    // Disconnecting hands recording back to the controller, disabled here.
+    const disconnected=await pairAgent(page,h,info)
     await page.getByRole('button',{name:'Disconnect',exact:true}).click()
     await expect(page.getByTestId('browser-recorder-unavailable')).toContainText('disabled via APEXLOAD_BROWSER_RECORDER')
+    await stopProcess(disconnected)
+    // The studio's status poll notices a stopped agent and swaps the start form
+    // for setup; wait for that rather than racing it to the form.
+    const stopped=await pairAgent(page,h,info)
+    await stopProcess(stopped)
+    await expect(page.locator('.rec-bridge-status')).toHaveText('The Recording Agent is not responding')
     await pairAgent(page,h,info)
     const rec=await startRecording(page,h,true)
     try{

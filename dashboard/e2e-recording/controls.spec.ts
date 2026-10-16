@@ -194,6 +194,10 @@ test('capture modern web surfaces and preserve conversion warnings', async ({ pa
     await inputCDP.detach()
     await target.frameLocator('#frame').getByRole('button',{name:'Frame action'}).click()
     await target.locator('#shadow').getByRole('button',{name:'Shadow action'}).click()
+    // The recorder accepts the dialog and records it. Without a listener this
+    // Playwright connection would auto-dismiss it too, and whichever side loses
+    // fails with "No dialog is showing".
+    target.on('dialog',()=>{})
     await target.getByRole('button',{name:'Dialog action',exact:true}).click()
     const popupPromise=target.waitForEvent('popup')
     await target.getByRole('button',{name:'Open popup',exact:true}).click()
