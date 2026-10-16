@@ -13,7 +13,7 @@ func TestNativeAnalyticsBuildProfiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(data)
-	for _, fragment := range []string{"CGO_ENABLED=1", "analytics_duckdb", "golang:1.26.9-bookworm@sha256:", "FROM debian:bookworm-slim@sha256:", "libstdc++6", "node:22.22.0-bookworm-slim@sha256:", "COPY --from=dashboard-builder /usr/local/bin/node /usr/bin/node", "test \"${BINARY}\" = controller"} {
+	for _, fragment := range []string{"CGO_ENABLED=1", "analytics_duckdb", "golang:1.26.9-bookworm@sha256:", "FROM debian:trixie-slim@sha256:", "libstdc++6", "node:22.22.0-bookworm-slim@sha256:", "COPY --from=dashboard-builder /usr/local/bin/node /usr/bin/node", "test \"${BINARY}\" = controller"} {
 		if !strings.Contains(s, fragment) {
 			t.Fatalf("controller native profile missing %q", fragment)
 		}
