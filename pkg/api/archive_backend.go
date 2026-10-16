@@ -1804,7 +1804,7 @@ func syncArchiveDirectory(path string) error {
 		return err
 	}
 	defer dir.Close()
-	return dir.Sync()
+	return syncArchiveDirectoryHandle(dir)
 }
 
 func atomicReplaceArchiveDirectory(tempRoot, finalRoot string) error {

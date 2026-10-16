@@ -286,7 +286,7 @@ func syncArchiveTransferDirectory(path string) error {
 	if err != nil {
 		return err
 	}
-	syncErr, closeErr := dir.Sync(), dir.Close()
+	syncErr, closeErr := syncArchiveDirectoryHandle(dir), dir.Close()
 	if isIgnorableArchiveDirectorySyncError(syncErr) {
 		syncErr = nil
 	}

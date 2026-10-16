@@ -104,7 +104,7 @@ func analysisObjectWrite(ctx context.Context, key string, input io.Reader) (retD
 		return "", err
 	}
 	owner.TrackOwner(dir)
-	syncErr = dir.Sync()
+	syncErr = syncArchiveDirectoryHandle(dir)
 	closeErr = owner.CloseOwner(dir)
 	if isIgnorableArchiveDirectorySyncError(syncErr) {
 		syncErr = nil

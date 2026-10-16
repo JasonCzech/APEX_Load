@@ -109,7 +109,7 @@ func writeMonitorArtifact(ctx context.Context, key string, data []byte) error {
 		return err
 	}
 	defer dir.Close()
-	if err := dir.Sync(); !isIgnorableArchiveDirectorySyncError(err) {
+	if err := syncArchiveDirectoryHandle(dir); !isIgnorableArchiveDirectorySyncError(err) {
 		return err
 	}
 	return nil
