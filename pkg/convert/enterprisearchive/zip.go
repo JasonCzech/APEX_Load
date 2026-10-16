@@ -600,6 +600,12 @@ func applyJavaVMRuntimeSettingsReview(result *ConvertResult, runtimeCfg *Runtime
 			rawValue:    runtimeCfg.JavaVMParametersRaw,
 		})
 	}
+	if runtimeCfg.JavaVMParameterHistoryRows > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"LoadRunner kept %d earlier Additional VM Parameters value(s) as Java_VM_Params_extra_arg_N history rows; they were not applied. Only the active Java_VM_Params value runs, so add any earlier option the script still needs.",
+			runtimeCfg.JavaVMParameterHistoryRows,
+		))
+	}
 	if runtimeCfg.JavaVMClasspathParseError != "" {
 		issues = append(issues, reviewIssue{
 			blocker:     javaVMClasspathReviewBlocker,
@@ -2296,16 +2302,6 @@ func preservedJavaVMSettings(runtimeCfg *RuntimeConfig) map[string]any {
 	}
 	if runtimeCfg.JavaVMParametersRaw != "" {
 		settings["additional_vm_parameters_raw"] = executableJavaVMParameterRow(runtimeCfg.JavaVMParametersRaw)
-	}
-	// LoadRunner spills a long parameter line across numbered companion keys, so
-	// the single raw value above cannot round-trip the source. Preserve every
-	// row in command-line order alongside it.
-	if len(runtimeCfg.JavaVMParameterRows) > 1 {
-		rows := make([]string, len(runtimeCfg.JavaVMParameterRows))
-		for index, row := range runtimeCfg.JavaVMParameterRows {
-			rows[index] = executableJavaVMParameterRow(row)
-		}
-		settings["additional_vm_parameter_rows"] = rows
 	}
 	if len(runtimeCfg.JavaVMClasspath) > 0 {
 		settings["classpath"] = append([]string(nil), runtimeCfg.JavaVMClasspath...)

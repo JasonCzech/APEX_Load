@@ -62,8 +62,8 @@ type runtimeSettingMatcher struct {
 	keyAliases     []string
 	values         []string
 	// keyPredicate matches keys that no fixed alias can express, such as the
-	// numbered Java_VM_Params_extra_arg_N rows LoadRunner emits when one
-	// setting spills across several lines. It is consulted after keyAliases.
+	// numbered Java_VM_Params_extra_arg_N history rows VuGen keeps for a
+	// drop-down field. It is consulted after keyAliases.
 	keyPredicate func(string) bool
 }
 
@@ -528,11 +528,24 @@ var javaVuserRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Concept: "Additional JVM parameters",
 			Fields:  []string{"config.java_vuser.additional_vm_parameters"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Parameters are imported with quote-aware tokenization, including the numbered Java_VM_Params_extra_arg_N rows LoadRunner writes when the line is long, and execute as exact argv tokens after structural safety validation; no shell is involved.",
+			Notes:   "The active Java_VM_Params value is imported with quote-aware tokenization and executes as exact argv tokens after structural safety validation; no shell is involved.",
+		},
+		matchers: []runtimeSettingMatcher{matcher(
+			[]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings", "Java:Options"},
+			javaVMParameterKeyAliases,
+		)},
+	},
+	{
+		entry: RuntimeSettingSupportEntry{
+			ID:      "java_vm_parameter_history",
+			Area:    "Java VM",
+			Concept: "Earlier Additional VM Parameters values",
+			Status:  RuntimeSettingStatusNonApplicable,
+			Notes:   "VuGen keeps the field's earlier values as numbered Java_VM_Params_extra_arg_N rows for its drop-down; LoadRunner never adds them to the command line, so they are not applied.",
 		},
 		matchers: []runtimeSettingMatcher{matcherWithKeyPredicate(
 			[]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings", "Java:Options"},
-			javaVMParameterKeyAliases,
+			nil,
 			func(key string) bool {
 				_, ok := javaVMParameterExtraArgIndex(key)
 				return ok
@@ -923,7 +936,7 @@ func runtimeSectionsMatch(sections map[string]map[string]string, matcher runtime
 		if !matcher.matchesSection(sectionName) {
 			continue
 		}
-		if len(matcher.keyAliases) == 0 {
+		if len(matcher.keyAliases) == 0 && matcher.keyPredicate == nil {
 			return len(keys) > 0
 		}
 		for key, value := range keys {

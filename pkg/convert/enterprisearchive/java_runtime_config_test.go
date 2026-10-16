@@ -161,63 +161,85 @@ Java_Env_ClassPath="C:\fixtures\folder;with-semicolon\actions.jar";D:\shared\hel
 	}
 }
 
-func TestParseRuntimeCfgImportsNumberedJavaVMParameterRowsInOrder(t *testing.T) {
-	// LoadRunner spills a long "Additional VM Parameters" line across numbered
-	// companion keys. Reading only the base key dropped every argument past the
-	// first row, and an ASCII key sort would place _extra_arg_10 before _2.
+func TestParseRuntimeCfgRunsOnlyTheActiveJavaVMParameterRow(t *testing.T) {
+	// VuGen keeps earlier "Additional VM Parameters" values as numbered
+	// history rows (a real LoadRunner 24.3 Java default.cfg: _extra_arg_1
+	// repeats the active value, later rows hold older, truncated variants with
+	// broken quoting). LoadRunner never runs them, and neither may the import.
 	runtimeCfg := ParseRuntimeCfg(`[JavaVM:Options]
 Java_VM_Params=-Dbase=true
-Java_VM_Params_extra_arg_10=-Dlast=true
-Java_VM_Params_extra_arg_2=-Dlabel="hello world" -Dsecond=true
-Java_VM_Params_extra_arg_1=-Xmx512m
+Java_VM_Params_extra_arg_1=-Dbase=true
+Java_VM_Params_extra_arg_2=-Dold.home="C:\legacy -D -Dother="C:
+Java_VM_Params_extra_arg_10=-Xmx512m
 `)
 
-	wantArguments := []string{"-Dbase=true", "-Xmx512m", "-Dlabel=hello world", "-Dsecond=true", "-Dlast=true"}
-	if !reflect.DeepEqual(runtimeCfg.JavaVMAdditionalParameters, wantArguments) {
-		t.Fatalf("VM arguments = %#v, want %#v", runtimeCfg.JavaVMAdditionalParameters, wantArguments)
+	if want := []string{"-Dbase=true"}; !reflect.DeepEqual(runtimeCfg.JavaVMAdditionalParameters, want) {
+		t.Fatalf("VM arguments = %#v, want only the active row %#v", runtimeCfg.JavaVMAdditionalParameters, want)
 	}
-	if runtimeCfg.JavaVMParametersParseError != "" {
-		t.Fatalf("VM parameter parse error = %q", runtimeCfg.JavaVMParametersParseError)
+	if runtimeCfg.JavaVMParametersParseError != "" || len(runtimeCfg.javaVMParameterRejections) != 0 {
+		t.Fatalf("history rows were parsed: error %q, rejections %#v", runtimeCfg.JavaVMParametersParseError, runtimeCfg.javaVMParameterRejections)
 	}
-	// The base row stays the correctable source line named by review evidence.
-	if runtimeCfg.JavaVMParametersRaw != "-Dbase=true" {
-		t.Fatalf("raw VM parameters = %q, want the base row", runtimeCfg.JavaVMParametersRaw)
+	if want := []string{"-Dbase=true"}; !reflect.DeepEqual(runtimeCfg.JavaVMParameterRows, want) {
+		t.Fatalf("VM parameter rows = %#v, want %#v", runtimeCfg.JavaVMParameterRows, want)
 	}
-	wantRows := []string{"-Dbase=true", "-Xmx512m", `-Dlabel="hello world" -Dsecond=true`, "-Dlast=true"}
-	if !reflect.DeepEqual(runtimeCfg.JavaVMParameterRows, wantRows) {
-		t.Fatalf("VM parameter rows = %#v, want %#v", runtimeCfg.JavaVMParameterRows, wantRows)
+	// _extra_arg_1 repeats the active value; the other two differ.
+	if runtimeCfg.JavaVMParameterHistoryRows != 2 {
+		t.Fatalf("history rows = %d, want 2", runtimeCfg.JavaVMParameterHistoryRows)
 	}
 }
 
-func TestParseRuntimeCfgImportsNumberedJavaVMParameterRowsWithoutBaseKey(t *testing.T) {
+// Case-variant history rows that disagree are not a conflict that could
+// discard the active parameters: neither row is executable.
+func TestParseRuntimeCfgConflictingHistoryRowsKeepTheActiveParameters(t *testing.T) {
+	runtimeCfg := ParseRuntimeCfg(`[JavaVM:Options]
+Java_VM_Params=-Dbase=true
+Java_VM_Params_extra_arg_1=-Dold=one
+java_vm_params_EXTRA_ARG_1=-Dold=two
+`)
+
+	if want := []string{"-Dbase=true"}; !reflect.DeepEqual(runtimeCfg.JavaVMAdditionalParameters, want) {
+		t.Fatalf("VM arguments = %#v, want %#v", runtimeCfg.JavaVMAdditionalParameters, want)
+	}
+	for _, issue := range runtimeCfg.RuntimeIssues {
+		if issue.ID == "java_vm_parameters" {
+			t.Fatalf("history conflict raised a VM parameter issue: %#v", issue)
+		}
+	}
+}
+
+func TestParseRuntimeCfgIgnoresJavaVMParameterHistoryWithoutAnActiveRow(t *testing.T) {
 	runtimeCfg := ParseRuntimeCfg(`[JavaVM:Options]
 java_vm_params_EXTRA_ARG_2=-Dsecond=true
 java_vm_params_EXTRA_ARG_1=-Xmx256m
 `)
 
-	wantArguments := []string{"-Xmx256m", "-Dsecond=true"}
-	if !reflect.DeepEqual(runtimeCfg.JavaVMAdditionalParameters, wantArguments) {
-		t.Fatalf("VM arguments = %#v, want %#v", runtimeCfg.JavaVMAdditionalParameters, wantArguments)
+	if runtimeCfg.JavaVMAdditionalParameters != nil || runtimeCfg.JavaVMParametersRaw != "" {
+		t.Fatalf("VM arguments = %#v, raw %q, want none", runtimeCfg.JavaVMAdditionalParameters, runtimeCfg.JavaVMParametersRaw)
+	}
+	if runtimeCfg.JavaVMParameterHistoryRows != 2 {
+		t.Fatalf("history rows = %d, want 2", runtimeCfg.JavaVMParameterHistoryRows)
 	}
 }
 
-func TestParseRuntimeCfgFailsClosedOnMalformedNumberedJavaVMParameterRow(t *testing.T) {
-	// A partial command line is more dangerous than an unimported one, so one
-	// bad row discards the whole set and the error names the row to correct.
+func TestParseRuntimeCfgFailsClosedOnMalformedActiveJavaVMParameterRow(t *testing.T) {
+	// A partial command line is more dangerous than an unimported one, so a
+	// malformed active row imports nothing and the error names the row.
 	runtimeCfg := ParseRuntimeCfg(`[JavaVM:Options]
-Java_VM_Params=-Dbase=true
-Java_VM_Params_extra_arg_1="-Dlabel=unterminated
+Java_VM_Params="-Dlabel=unterminated
 `)
 
 	if runtimeCfg.JavaVMAdditionalParameters != nil {
 		t.Fatalf("VM arguments = %#v, want none imported", runtimeCfg.JavaVMAdditionalParameters)
 	}
-	if !strings.Contains(runtimeCfg.JavaVMParametersParseError, "Java_VM_Params_extra_arg_1") {
+	if !strings.Contains(runtimeCfg.JavaVMParametersParseError, "Java_VM_Params") {
 		t.Fatalf("parse error = %q, want the offending row named", runtimeCfg.JavaVMParametersParseError)
+	}
+	if want := []string{`"-Dlabel=unterminated`}; !reflect.DeepEqual(runtimeCfg.JavaVMParameterRows, want) {
+		t.Fatalf("VM parameter rows = %#v, want the malformed row kept verbatim %#v", runtimeCfg.JavaVMParameterRows, want)
 	}
 }
 
-func TestParseRuntimeCfgSurvivesNonASCIIKeysNearTheSpillMarker(t *testing.T) {
+func TestParseRuntimeCfgSurvivesNonASCIIKeysNearTheHistoryMarker(t *testing.T) {
 	// strings.ToLower is not byte-length preserving (U+023A is 2 bytes, its
 	// lowercase U+2C65 is 3), so locating the "_extra_arg_" marker in the
 	// lowercased key and then slicing the ORIGINAL key panics. Any uploaded
@@ -228,33 +250,6 @@ func TestParseRuntimeCfgSurvivesNonASCIIKeysNearTheSpillMarker(t *testing.T) {
 	wantArguments := []string{"-Xmx1g"}
 	if !reflect.DeepEqual(runtimeCfg.JavaVMAdditionalParameters, wantArguments) {
 		t.Fatalf("VM arguments = %#v, want %#v (unrecognized key ignored, not fatal)", runtimeCfg.JavaVMAdditionalParameters, wantArguments)
-	}
-}
-
-func TestParseRuntimeCfgKeepsEveryRowAsProvenanceWhenOneFailsToParse(t *testing.T) {
-	// The argv list is discarded on a parse error, so JavaVMParameterRows is the
-	// only remaining record of what the archive configured. Truncating it at the
-	// malformed row would silently erase the rows after it from the review and
-	// round-trip evidence.
-	runtimeCfg := ParseRuntimeCfg(`[JavaVM:Options]
-Java_VM_Params=-Dbase=true
-Java_VM_Params_extra_arg_1=-Xmx512m
-Java_VM_Params_extra_arg_2="-Dbroken
-Java_VM_Params_extra_arg_3=-Dlast=true
-`)
-
-	if runtimeCfg.JavaVMAdditionalParameters != nil {
-		t.Fatalf("VM arguments = %#v, want none imported (fail closed)", runtimeCfg.JavaVMAdditionalParameters)
-	}
-	if !strings.Contains(runtimeCfg.JavaVMParametersParseError, "Java_VM_Params_extra_arg_2") {
-		t.Fatalf("parse error = %q, want the offending row named", runtimeCfg.JavaVMParametersParseError)
-	}
-	// The malformed row is retained verbatim rather than replaced by the
-	// redaction sentinel: it is the only remaining record of what the archive
-	// configured, and the reviewer has to see the broken quoting to fix it.
-	wantRows := []string{"-Dbase=true", "-Xmx512m", `"-Dbroken`, "-Dlast=true"}
-	if !reflect.DeepEqual(runtimeCfg.JavaVMParameterRows, wantRows) {
-		t.Fatalf("VM parameter rows = %#v, want every row position preserved exactly %#v", runtimeCfg.JavaVMParameterRows, wantRows)
 	}
 }
 
@@ -270,27 +265,23 @@ Java_VM_Params_extra_arg_x=-Dnotanumber=true
 	if !reflect.DeepEqual(runtimeCfg.JavaVMAdditionalParameters, wantArguments) {
 		t.Fatalf("VM arguments = %#v, want %#v", runtimeCfg.JavaVMAdditionalParameters, wantArguments)
 	}
+	if runtimeCfg.JavaVMParameterHistoryRows != 0 {
+		t.Fatalf("history rows = %d, want 0 for keys that are not numbered history", runtimeCfg.JavaVMParameterHistoryRows)
+	}
 }
 
-func TestRTSParityCoversNumberedJavaVMParameterRows(t *testing.T) {
-	// Without the numbered-key predicate, a cfg that carries only spill rows
-	// reports no java_vm_parameters coverage even though the arguments import.
+func TestRTSParityReportsJavaVMParameterHistoryAsNotApplied(t *testing.T) {
 	runtimeSections := map[string]map[string]map[string]string{
 		"default.cfg": {
-			"JavaVM:Options": {"Java_VM_Params_extra_arg_1": "-Xmx512m"},
+			"JavaVM:Options": {"Java_VM_Params": "-Xmx512m", "Java_VM_Params_extra_arg_1": "-Xmx256m"},
 		},
 	}
-	entries := buildRTSParityReportForProtocol(runtimeSections, "java_vuser")
-
-	found := false
-	for _, entry := range entries {
-		if entry.ID == "java_vm_parameters" {
-			found = true
-			break
-		}
+	statuses := map[string]RuntimeSettingStatus{}
+	for _, entry := range buildRTSParityReportForProtocol(runtimeSections, "java_vuser") {
+		statuses[entry.ID] = entry.Status
 	}
-	if !found {
-		t.Fatalf("parity entries = %#v, want java_vm_parameters coverage", entries)
+	if statuses["java_vm_parameters"] == "" || statuses["java_vm_parameter_history"] != RuntimeSettingStatusNonApplicable {
+		t.Fatalf("parity statuses = %#v, want java_vm_parameters plus non-applicable history", statuses)
 	}
 }
 
@@ -546,6 +537,7 @@ func TestJavaVMRuntimeSupportDefinitionsRemainProtocolScoped(t *testing.T) {
 use_jdk=specified_jdk
 jdk_home=/opt/jdk-21
 Java_VM_Params=-Xmx512m
+Java_VM_Params_extra_arg_1=-Xmx256m
 Use_Xboot=1
 enable_CL_per_vuser=0
 skip_param_eval=1
@@ -556,6 +548,7 @@ Java_Env_ClassPath=C:\fixtures\actions.jar
 	wantStatuses := map[string]RuntimeSettingStatus{
 		"java_vm_jdk":                       RuntimeSettingStatusExecuted,
 		"java_vm_parameters":                RuntimeSettingStatusExecuted,
+		"java_vm_parameter_history":         RuntimeSettingStatusNonApplicable,
 		"java_vm_classpath":                 RuntimeSettingStatusExecuted,
 		"java_vm_dedicated_class_loader":    RuntimeSettingStatusExecuted,
 		"java_vm_xbootclasspath":            RuntimeSettingStatusCompatibilityOnly,

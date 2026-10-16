@@ -63,8 +63,7 @@ func preservedJavaVMRows(t *testing.T, value any) []string {
 func TestDurableImportedJavaVMParameterRowsSurviveThePersistenceBoundary(t *testing.T) {
 	const canary = "durable-jvm-row-password-canary"
 	archive := buildJavaVMParameterRowArchive(t, "[JavaVM:Options]\n"+
-		"Java_VM_Params=-Xmx512m -Dservice.password="+canary+"\n"+
-		"Java_VM_Params_extra_arg_1=-Dservice.token="+canary+"-two\n")
+		"Java_VM_Params=-Xmx512m -Dservice.password="+canary+" -Dservice.token="+canary+"-two\n")
 
 	result, err := enterprisearchive.ConvertZip(archive, enterprisearchive.ConvertOptions{})
 	if err != nil {
@@ -86,13 +85,10 @@ func TestDurableImportedJavaVMParameterRowsSurviveThePersistenceBoundary(t *test
 	if got := preservedJavaVMRows(t, settings["additional_vm_parameters"]); !reflect.DeepEqual(got, wantArgv) {
 		t.Fatalf("durable preserved additional_vm_parameters = %#v, want %#v", got, wantArgv)
 	}
-	wantRows := []string{"-Xmx512m -Dservice.password=" + canary, "-Dservice.token=" + canary + "-two"}
-	if got := preservedJavaVMRows(t, settings["additional_vm_parameter_rows"]); !reflect.DeepEqual(got, wantRows) {
-		t.Fatalf("durable preserved additional_vm_parameter_rows = %#v, want the exact source rows %#v", got, wantRows)
-	}
+	wantRaw := "-Xmx512m -Dservice.password=" + canary + " -Dservice.token=" + canary + "-two"
 	raw, _ := settings["additional_vm_parameters_raw"].(string)
-	if raw != wantRows[0] {
-		t.Fatalf("durable preserved additional_vm_parameters_raw = %q, want the exact source row %q", raw, wantRows[0])
+	if raw != wantRaw {
+		t.Fatalf("durable preserved additional_vm_parameters_raw = %q, want the exact source row %q", raw, wantRaw)
 	}
 	if strings.Contains(raw, maskedScriptSecret) {
 		t.Fatalf("durable preserved additional_vm_parameters_raw was redacted: %q", raw)

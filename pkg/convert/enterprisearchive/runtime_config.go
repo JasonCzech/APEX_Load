@@ -117,8 +117,9 @@ type RuntimeConfig struct {
 	JavaVMJDKHome                    string
 	JavaVMAdditionalParameters       []string
 	JavaVMParametersRaw              string
-	JavaVMParameterRows              []string // verbatim source rows, in command-line order; see orderedJavaVMParameterRows
+	JavaVMParameterRows              []string // the verbatim active source row; see orderedJavaVMParameterRows
 	JavaVMParametersParseError       string
+	JavaVMParameterHistoryRows       int // VuGen Java_VM_Params_extra_arg_N history rows differing from the active value
 	javaVMParameterSourceRows        []string
 	javaVMParameterRejections        []javaVMParameterRejection
 	javaVMParameterExposureReviews   []javaVMParameterRejection
@@ -713,18 +714,17 @@ func parseRuntimeJavaVMSettings(rc *RuntimeConfig, sections map[string]map[strin
 	if !javaVMJDKSelectionExplicit && rc.JavaVMJDKHome != "" {
 		rc.JavaVMJDKSelection = "specified"
 	}
+	rc.JavaVMParameterHistoryRows = javaVMParameterHistoryRowCount(rawJavaVMSection)
 	if rows := orderedJavaVMParameterRows(rawJavaVMSection); len(rows) > 0 {
 		for index := range rows {
 			rows[index].line = runtimeConfigSourceSettingLine(content, rows[index].key, rows[index].value)
 		}
-		// The base row remains JavaVMParametersRaw so the review-artifact
-		// evidence still names one correctable source line; every row is kept
-		// in order on JavaVMParameterRows.
+		// The base row is JavaVMParametersRaw so the review-artifact evidence
+		// names the correctable source line.
 		rc.JavaVMParametersRaw = executableJavaVMParameterRow(rows[0].value)
-		// Provenance is recorded for EVERY row before any parsing, because a
-		// malformed row must not erase the evidence of the rows after it: the
-		// argv list is discarded on a parse error, so these strings are the only
-		// remaining record of what the archive configured.
+		// Provenance is recorded before any parsing: the argv list is discarded
+		// on a parse error, so these strings are the only remaining record of
+		// what the archive configured.
 		for _, row := range rows {
 			rc.javaVMParameterSourceRows = append(
 				rc.javaVMParameterSourceRows,
@@ -1584,9 +1584,9 @@ func runtimeConfigOccurrenceIdentity(section, key string) string {
 	}
 	if canonicalSection == "javavm" {
 		if index, ok := javaVMParameterExtraArgIndex(key); ok {
-			// Long Java VM argument lists are split over semantically numbered
-			// rows. Different base aliases with the same row index name one
-			// executable argv fragment and must conflict rather than concatenate.
+			// Numbered rows are VuGen history for the field; keep each history
+			// position distinct from the active row so they never conflict
+			// with it.
 			canonicalKey = fmt.Sprintf("javavmparameterextraarg:%09d", index)
 		}
 	}
@@ -2842,6 +2842,7 @@ func resetRuntimeSupportedConflict(rc *RuntimeConfig, id string, conflict runtim
 		rc.JavaVMParametersRaw = ""
 		rc.JavaVMParameterRows = nil
 		rc.JavaVMParametersParseError = ""
+		rc.JavaVMParameterHistoryRows = 0
 	case "java_vm_classpath":
 		rc.JavaVMClasspath = nil
 		rc.JavaVMClasspathRaw = ""
@@ -2927,54 +2928,44 @@ type javaVMParameterTokenProvenance struct {
 }
 
 // javaVMParameterKeyAliases lists the base keys that carry the "Additional VM
-// Parameters" line. LoadRunner spills a long line across numbered companion
-// keys (Java_VM_Params_extra_arg_1, _extra_arg_2, ...), so reading only the
-// base key silently drops every argument past the first row.
-//
-// Like the other Java VM aliases in this file, the non-canonical spellings and
-// the numbered suffix are documented best guesses pending a real LR Java
-// default.cfg sample; the forgiving list costs nothing when a key is absent.
+// Parameters" line. The non-canonical spellings are documented best guesses;
+// the forgiving list costs nothing when a key is absent.
 var javaVMParameterKeyAliases = []string{"Java_VM_Params", "java_vm_parameters", "AdditionalVmParams", "ExtraVmParams", "VmParams"}
 
-// orderedJavaVMParameterRows returns the base row followed by the numbered
-// spill rows in source order. sectionValueCaseInsensitive matches whole keys
-// with EqualFold, so the base lookup cannot swallow a numbered key and the
-// numbered scan cannot swallow the base one.
+// orderedJavaVMParameterRows returns the active "Additional VM Parameters" row.
+// VuGen keeps the field's earlier values beside it as numbered
+// Java_VM_Params_extra_arg_N rows, its drop-down history: in real LoadRunner
+// 24.3 Java scripts _extra_arg_1 repeats the active value and later rows hold
+// older, sometimes truncated, variants. Those rows are never part of the
+// command line, so only the base row is returned.
 func orderedJavaVMParameterRows(section map[string]string) []javaVMParameterRow {
-	rows := make([]javaVMParameterRow, 0, 1)
 	if key, value, ok := sectionEntryCaseInsensitive(section, javaVMParameterKeyAliases...); ok {
-		rows = append(rows, javaVMParameterRow{key: key, value: value})
+		return []javaVMParameterRow{{key: key, value: value}}
 	}
+	return nil
+}
 
-	type indexedRow struct {
-		index int
-		row   javaVMParameterRow
+// javaVMParameterHistoryRowCount counts the VuGen history rows that hold a
+// value other than the active one, so review can say earlier values exist.
+func javaVMParameterHistoryRowCount(section map[string]string) int {
+	active := ""
+	if _, value, ok := sectionEntryCaseInsensitive(section, javaVMParameterKeyAliases...); ok {
+		active = strings.TrimSpace(value)
 	}
-	indexed := make([]indexedRow, 0, len(section))
+	count := 0
 	for key, value := range section {
-		trimmedKey := strings.TrimSpace(key)
-		index, ok := javaVMParameterExtraArgIndex(trimmedKey)
-		if !ok {
+		if _, ok := javaVMParameterExtraArgIndex(strings.TrimSpace(key)); !ok {
 			continue
 		}
-		indexed = append(indexed, indexedRow{index: index, row: javaVMParameterRow{key: trimmedKey, value: value}})
-	}
-	// Sort on the parsed number, not the key text: an ASCII sort would place
-	// _extra_arg_10 before _extra_arg_2 and reorder the command line.
-	sort.Slice(indexed, func(left, right int) bool {
-		if indexed[left].index != indexed[right].index {
-			return indexed[left].index < indexed[right].index
+		if trimmed := strings.TrimSpace(value); trimmed != "" && trimmed != active {
+			count++
 		}
-		return indexed[left].row.key < indexed[right].row.key
-	})
-	for _, item := range indexed {
-		rows = append(rows, item.row)
 	}
-	return rows
+	return count
 }
 
 // javaVMParameterExtraArgIndex reports the 1-based row number for a numbered
-// spill key such as Java_VM_Params_extra_arg_3.
+// VuGen history key such as Java_VM_Params_extra_arg_3.
 func javaVMParameterExtraArgIndex(key string) (int, bool) {
 	const marker = "_extra_arg_"
 	// Index the lowercased form consistently. strings.ToLower is NOT

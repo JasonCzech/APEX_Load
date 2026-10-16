@@ -57,10 +57,9 @@ Java_VM_Params=-Xmx512m -Dservice.password=` + passwordCanary,
 			sensitive: true,
 		},
 		{
-			name: "api key in numbered alias row",
+			name: "api key beside another option",
 			content: `[JavaVM:Options]
-Java_VM_Params=-Xmx512m
-AdditionalVmParams_extra_arg_1=-Dapi.key=` + apiKeyCanary,
+Java_VM_Params=-Xmx512m -Dapi.key=` + apiKeyCanary,
 			canary:    apiKeyCanary,
 			sensitive: true,
 		},
@@ -676,8 +675,7 @@ RuntimeSettings=default.cfg
 Action=Actions.java
 `)
 	addJavaZipFile(t, writer, "JavaSecure/default.cfg", `[JavaVM:Options]
-Java_VM_Params=-Xmx512m -Dservice.password=`+passwordCanary+`
-AdditionalVmParams_extra_arg_1=-Dapi.key=`+apiKeyCanary+`
+Java_VM_Params=-Xmx512m -Dservice.password=`+passwordCanary+` -Dapi.key=`+apiKeyCanary+`
 `)
 	addJavaZipFile(t, writer, "JavaSecure/Actions.java", `public class Actions {
   public int action() throws Throwable { return 0; }
