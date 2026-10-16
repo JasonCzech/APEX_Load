@@ -62,6 +62,15 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 932, height: 1096
 
 test('[U24] recorder startup failure preserves the target and exposes recovery', async ({ page, request }) => {
   const workspace = await createWorkspace(request)
+  // The start form is for a controller that can open a browser. A controller
+  // without a display (a Linux CI runner) offers the Recording Agent instead,
+  // so the spec says the browser is available; the start itself is refused below.
+  await page.route('**/api/v1/recorder/status**', async route => {
+    const response = await route.fetch()
+    if (!response.ok()) return route.fulfill({ response })
+    const status = await response.json()
+    await route.fulfill({ response, json: { ...status, browser: { ...status.browser, availability: { available: true } } } })
+  })
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   await page.getByRole('button', { name: 'Record', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'HTTP proxy recorder' })).toBeHidden()
@@ -76,7 +85,8 @@ test('[U24] recorder startup failure preserves the target and exposes recovery',
   await page.route('**/api/v1/**', async route => {
     if (route.request().method() === 'POST' && new URL(route.request().url()).pathname === '/api/v1/browser-recorder/sessions')
       await route.fulfill({ status: 503, json: { error: 'Recording service unavailable. Reconnect and retry.' } })
-    else await route.continue()
+    // Fall back, not continue, so the recorder status keeps its availability.
+    else await route.fallback()
   })
   await page.getByRole('button', { name: 'Start browser recording', exact: true }).click()
   await expect(page.getByText('Recording service unavailable. Reconnect and retry.', { exact: false }).first()).toBeVisible()

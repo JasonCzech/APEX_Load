@@ -162,10 +162,11 @@ http:
   await controls.locator('input[type="file"]').first().setInputFiles({ name: 'Secrets_Collection.zip', mimeType: 'application/zip', buffer: archive })
   await controls.getByRole('button', { name: 'Inspect & review' }).click()
   await controls.getByRole('tab', { name: /^Credentials(,|$)/ }).click()
-  await expect(controls.getByRole('button', { name: 'Credentials: 2 missing', exact: true })).toBeVisible()
+  await expect(controls.getByRole('button', { name: 'Credentials: 2 not configured', exact: true })).toBeVisible()
+  // Each secret is named for what it holds; a new project holds neither name.
   const names = await controls.getByRole('textbox', { name: /Secret reference name/ }).evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value))
-  const password = names.find(name => name.startsWith('PASSWORD_'))!
-  expect(password).toBeTruthy()
+  expect(names.sort()).toEqual(['PASSWORD', 'USERNAME'])
+  const password = 'PASSWORD'
   await controls.getByRole('button', { name: 'Open Secrets', exact: true }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Shared assets · Secrets' })
@@ -179,5 +180,5 @@ http:
 
   // Back in the review, which has checked its secrets again.
   await expect(dialog).toBeHidden()
-  await expect(controls.getByRole('button', { name: 'Credentials: 1 missing', exact: true })).toBeVisible()
+  await expect(controls.getByRole('button', { name: 'Credentials: 1 not configured', exact: true })).toBeVisible()
 })

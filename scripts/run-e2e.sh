@@ -9,6 +9,10 @@
 #
 # The controller is started on a dedicated port with a throwaway database and
 # archive directory, so a run never touches the developer's own apexload.db.
+# Its recording proxy listens on a port the OS picks: on the default
+# 127.0.0.1:8081, a developer's own controller would hold the port, the proxy
+# could not start, and Recording Studio would rightly hide the HTTP proxy
+# recorder that specs exercise.
 #
 # A run only ever tests the controller it started. A port that something else
 # already listens on (a long-running local controller, another run) is refused
@@ -127,6 +131,7 @@ start_controller() {
   APEXLOAD_ADDR="127.0.0.1:${port}" \
     APEXLOAD_DB="$workdir/apexload-e2e.db" \
     APEXLOAD_ARCHIVE_DIR="$workdir/archives" \
+    APEXLOAD_RECORDER_PROXY_ADDR="127.0.0.1:0" \
     APEXLOAD_WRAPPING_MASTER_KEY="${APEXLOAD_WRAPPING_MASTER_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}" \
     "$controller_bin" >>"$controller_log" 2>&1 &
   pid=$!
