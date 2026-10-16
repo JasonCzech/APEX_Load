@@ -954,6 +954,46 @@ func TestEncryptedStoreProjectDeletionRacesCrossStorePutWithoutLeavingArtifact(t
 	}
 }
 
+func TestDeleteProjectSkipsDurableDirectoryStaging(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read a directory without read permission")
+	}
+	store := newEncryptedArtifactTestStore(t)
+	ctx := context.Background()
+	if _, err := store.Put(ctx, "project-staging", "raw", strings.NewReader("source"), 1024); err != nil {
+		t.Fatal(err)
+	}
+	// A staging directory that cannot be opened stands in for one a concurrent
+	// Windows writer is renaming into place.
+	projectRoot := filepath.Join(store.root, "bruno", projectDigest("project-staging")[:16])
+	staging := filepath.Join(projectRoot, durableDirectoryPendingPrefix+"in-flight")
+	if err := os.Mkdir(staging, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(staging, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(staging, 0o700) })
+	if err := store.DeleteProject(ctx, "project-staging"); err != nil {
+		t.Fatalf("DeleteProject: %v", err)
+	}
+	walkErr := filepath.WalkDir(projectRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() && path != projectRoot && entry.Name() == filepath.Base(staging) {
+			return filepath.SkipDir
+		}
+		if !entry.IsDir() {
+			t.Errorf("retained artifact %s", path)
+		}
+		return nil
+	})
+	if walkErr != nil {
+		t.Fatal(walkErr)
+	}
+}
+
 func TestEncryptedStoreProjectDeletionRacesSessionDescriptorRename(t *testing.T) {
 	first := newEncryptedArtifactTestStore(t)
 	second, err := NewEncryptedStore(StoreOptions{RootDir: first.root, Wrapper: first.wrapper})

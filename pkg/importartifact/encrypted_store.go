@@ -1937,6 +1937,9 @@ func (s *EncryptedStore) DeleteProject(ctx context.Context, projectID string) er
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if isDurableDirectoryPending(entry) {
+			return filepath.SkipDir
+		}
 		if entry.IsDir() {
 			return nil
 		}
@@ -2386,6 +2389,16 @@ func (s *EncryptedStore) projectWriteError(projectID string, writeErr error) err
 	return writeErr
 }
 
+// durableDirectoryPendingPrefix names the staging directories that the
+// Windows mkdirAllDurably renames into place. They are empty by construction,
+// and writers create them before taking the encrypted-write lock, so a sweep
+// can meet one mid-rename; Windows then refuses to open it. Sweeps skip them.
+const durableDirectoryPendingPrefix = ".apexload-durable-dir-"
+
+func isDurableDirectoryPending(entry os.DirEntry) bool {
+	return entry.IsDir() && strings.HasPrefix(entry.Name(), durableDirectoryPendingPrefix)
+}
+
 func (s *EncryptedStore) removeEmptyTreeDurably(path, stop string) {
 	path = filepath.Clean(path)
 	stop = filepath.Clean(stop)
@@ -2437,6 +2450,9 @@ func (s *EncryptedStore) pruneStaleEncryptedTemps() error {
 				return nil
 			}
 			return walkErr
+		}
+		if isDurableDirectoryPending(entry) {
+			return filepath.SkipDir
 		}
 		if entry.IsDir() || !strings.HasPrefix(entry.Name(), ".encrypted-") {
 			return nil

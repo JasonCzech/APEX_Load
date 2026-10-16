@@ -142,7 +142,7 @@ func directoryExists(path string) bool {
 
 func durableDirectoryPendingPath(destination string) string {
 	digest := sha256.Sum256([]byte(strings.ToLower(filepath.Clean(destination))))
-	return filepath.Join(filepath.Dir(destination), ".apexload-durable-dir-"+hex.EncodeToString(digest[:12]))
+	return filepath.Join(filepath.Dir(destination), durableDirectoryPendingPrefix+hex.EncodeToString(digest[:12]))
 }
 
 func validateWindowsVolume(driveType uint32, filesystem string) error {
