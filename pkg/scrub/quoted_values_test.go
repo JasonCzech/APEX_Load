@@ -97,7 +97,9 @@ func TestRedactQuotedValuesDoubledQuoteInputIsBounded(t *testing.T) {
 	}
 	budget := 2 * time.Second
 	if raceDetectorEnabled {
-		budget *= 5
+		// The race leg's instrumented scan of one MiB has taken over 10 s on a
+		// busy runner; quadratic work would take orders of magnitude longer.
+		budget = 30 * time.Second
 	}
 	if elapsed := time.Since(start); elapsed > budget {
 		t.Fatalf("quoted-value scan exceeded bounded-work budget: %s", elapsed)
