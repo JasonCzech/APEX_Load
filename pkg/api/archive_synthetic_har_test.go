@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -284,6 +285,12 @@ func TestReplaySyntheticHARUsesEachEventsEntries(t *testing.T) {
 // recorded, so the archive's synthetic HAR leaves that context out; a
 // malformed one is recorded as unknown, and a declared one must be valid.
 func TestNativeHARRecordsItsEvidenceGeneration(t *testing.T) {
+	// Native HAR staging needs private-ownership checks that exist only on
+	// darwin and linux (pkg/protocol/browser/har_working_security_*.go); other
+	// platforms refuse it by design, so the archive omits the HAR there.
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("native HAR staging is unavailable on " + runtime.GOOS)
+	}
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
 	writer, err := newRunArchiveWriter(&ManagedTest{ID: "evidence-generation-run", Name: "local"}, RunArchiveProvenance{})
