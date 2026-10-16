@@ -28,9 +28,9 @@ func withNativeHARUnsupported(t *testing.T) {
 	t.Cleanup(func() { nativeHARSupported = previous })
 }
 
-// Native HAR ownership is qualified on darwin and linux only.
+// Native HAR ownership is qualified on darwin, linux and windows only.
 func TestNativeHARSupportedMatchesPlatform(t *testing.T) {
-	want := runtime.GOOS == "darwin" || runtime.GOOS == "linux"
+	want := runtime.GOOS == "darwin" || runtime.GOOS == "linux" || runtime.GOOS == "windows"
 	if got := NativeHARSupported(); got != want {
 		t.Fatalf("NativeHARSupported() on %s = %v, want %v", runtime.GOOS, got, want)
 	}
