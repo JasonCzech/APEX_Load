@@ -194,28 +194,51 @@ func setSourceReviewFullText(file *sourceview.SourceFile, digest, text string) {
 }
 
 func (s *Server) sourceReviewTextObjectKey(projectID, digest string) (string, error) {
+	return s.projectTextObjectKey(sourceReviewTextKind, projectID, digest)
+}
+
+func (s *Server) sourceReviewTextPath(projectID, digest string) (string, error) {
+	return s.projectTextPath(sourceReviewTextKind, projectID, digest)
+}
+
+func (s *Server) storeSourceReviewText(ctx context.Context, projectID, digest, text string) error {
+	return s.storeProjectText(ctx, sourceReviewTextKind, projectID, digest, text)
+}
+
+func (s *Server) sourceReviewTextExists(ctx context.Context, projectID, digest string) (bool, error) {
+	return s.projectTextExists(ctx, sourceReviewTextKind, projectID, digest)
+}
+
+func (s *Server) loadSourceReviewText(ctx context.Context, projectID, digest string) (string, error) {
+	return s.loadProjectText(ctx, sourceReviewTextKind, projectID, digest)
+}
+
+// Project texts are content-addressed per project and kind beside the import
+// assets. Only the source-review kind is served to readers.
+
+func (s *Server) projectTextObjectKey(kind, projectID, digest string) (string, error) {
 	namespace, err := fileasset.ProjectAssetNamespace(projectID)
 	if err != nil {
 		return "", err
 	}
-	return joinArchiveURI(currentArchiveBackend().Prefix, "import-assets", "v1", namespace, sourceReviewTextKind, digest), nil
+	return joinArchiveURI(currentArchiveBackend().Prefix, "import-assets", "v1", namespace, kind, digest), nil
 }
 
-func (s *Server) sourceReviewTextPath(projectID, digest string) (string, error) {
+func (s *Server) projectTextPath(kind, projectID, digest string) (string, error) {
 	dir, err := fileasset.ProjectAssetDir(s.importAssetDir, projectID)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, sourceReviewTextKind, digest[:2], digest), nil
+	return filepath.Join(dir, kind, digest[:2], digest), nil
 }
 
-func (s *Server) storeSourceReviewText(ctx context.Context, projectID, digest, text string) error {
+func (s *Server) storeProjectText(ctx context.Context, kind, projectID, digest, text string) error {
 	if !sourceReviewTextDigest.MatchString(digest) {
 		return fmt.Errorf("invalid source text digest")
 	}
 	backend := currentArchiveBackend()
 	if backend.Backend != archiveBackendFilesystem {
-		key, err := s.sourceReviewTextObjectKey(projectID, digest)
+		key, err := s.projectTextObjectKey(kind, projectID, digest)
 		if err != nil {
 			return err
 		}
@@ -229,7 +252,7 @@ func (s *Server) storeSourceReviewText(ctx context.Context, projectID, digest, t
 		}
 		return bucket.WriteAll(ctx, key, []byte(text), &blob.WriterOptions{ContentType: "text/plain; charset=utf-8"})
 	}
-	path, err := s.sourceReviewTextPath(projectID, digest)
+	path, err := s.projectTextPath(kind, projectID, digest)
 	if err != nil {
 		return err
 	}
@@ -261,15 +284,15 @@ func (s *Server) storeSourceReviewText(ctx context.Context, projectID, digest, t
 	return nil
 }
 
-// sourceReviewTextExists reports whether the project holds the text, without
+// projectTextExists reports whether the project holds the text, without
 // reading it.
-func (s *Server) sourceReviewTextExists(ctx context.Context, projectID, digest string) (bool, error) {
+func (s *Server) projectTextExists(ctx context.Context, kind, projectID, digest string) (bool, error) {
 	if !sourceReviewTextDigest.MatchString(digest) {
 		return false, nil
 	}
 	backend := currentArchiveBackend()
 	if backend.Backend != archiveBackendFilesystem {
-		key, err := s.sourceReviewTextObjectKey(projectID, digest)
+		key, err := s.projectTextObjectKey(kind, projectID, digest)
 		if err != nil {
 			return false, err
 		}
@@ -280,7 +303,7 @@ func (s *Server) sourceReviewTextExists(ctx context.Context, projectID, digest s
 		defer bucket.Close()
 		return bucket.Exists(ctx, key)
 	}
-	path, err := s.sourceReviewTextPath(projectID, digest)
+	path, err := s.projectTextPath(kind, projectID, digest)
 	if err != nil {
 		return false, err
 	}
@@ -291,14 +314,14 @@ func (s *Server) sourceReviewTextExists(ctx context.Context, projectID, digest s
 	return err == nil && info.Mode().IsRegular(), err
 }
 
-func (s *Server) loadSourceReviewText(ctx context.Context, projectID, digest string) (string, error) {
+func (s *Server) loadProjectText(ctx context.Context, kind, projectID, digest string) (string, error) {
 	if !sourceReviewTextDigest.MatchString(digest) {
 		return "", errSourceReviewTextNotFound
 	}
 	var data []byte
 	backend := currentArchiveBackend()
 	if backend.Backend != archiveBackendFilesystem {
-		key, err := s.sourceReviewTextObjectKey(projectID, digest)
+		key, err := s.projectTextObjectKey(kind, projectID, digest)
 		if err != nil {
 			return "", err
 		}
@@ -321,7 +344,7 @@ func (s *Server) loadSourceReviewText(ctx context.Context, projectID, digest str
 			return "", err
 		}
 	} else {
-		path, err := s.sourceReviewTextPath(projectID, digest)
+		path, err := s.projectTextPath(kind, projectID, digest)
 		if err != nil {
 			return "", err
 		}

@@ -278,7 +278,7 @@ export function JavaEnvSettingsFields({
           <div className="java-env-classpath-assets" role="list" aria-label="Attached classpath JARs">
             {classpathAssets.map(asset => (
               <div className="java-env-classpath-asset-chip" role="listitem" key={`${asset.entry}:${asset.sha256}`}>
-                <span className="chip-file" title={asset.entry}>{asset.file_name || asset.entry}</span>
+                <span className="chip-file" title={asset.entry}>{asset.compiled_from ? `${asset.entry} (compiled from the reviewed source)` : (asset.file_name || asset.entry)}</span>
                 <span className="chip-sha" title={asset.sha256}>{asset.sha256.slice(0, 8)}</span>
                 <span className="chip-entry">→ {asset.entry}</span>
                 <button

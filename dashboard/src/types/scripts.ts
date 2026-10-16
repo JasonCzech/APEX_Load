@@ -633,6 +633,8 @@ export interface JavaClasspathAsset {
   content_type?: string
   storage_ref?: string
   staged_asset?: string
+  /** Digest of the reviewed source manifest the server compiled this jar from. */
+  compiled_from?: string
 }
 
 export interface JavaVuserConfig {

@@ -718,6 +718,9 @@ func (s *Server) newEnterpriseArchiveImportResponse(r *http.Request, result *ent
 	if len(scripts) == 0 && result.Script != nil {
 		scripts = []*dsl.Script{result.Script}
 	}
+	if r != nil {
+		s.retainJavaSourceTexts(r.Context(), enterpriseArchiveDraftProjectID(scripts), result.JavaSourceTexts)
+	}
 	parameterization := buildImportParameterization(result.Script, nil)
 	if len(scripts) > 1 {
 		parameterization = buildMultiScriptParameterization(scripts)

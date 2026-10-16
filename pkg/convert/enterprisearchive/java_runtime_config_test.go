@@ -3,11 +3,14 @@ package enterprisearchive
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/javarunner"
 )
 
 func TestParseRuntimeCfgMapsCanonicalJavaVMOptionsCaseInsensitively(t *testing.T) {
@@ -365,7 +368,7 @@ Java_Env_ClassPath=C:\fixtures\actions.jar;D:\shared\helpers.jar
 	config := result.Script.Config.JavaVuser
 	if config.JDKSelection != "specified" || config.JDKHome != "/opt/java/jdk-21" ||
 		!reflect.DeepEqual(config.AdditionalVMParameters, []string{"-Xmx512m", "-Dlabel=hello world"}) ||
-		!reflect.DeepEqual(config.Classpath, []string{`C:\fixtures\actions.jar`, `D:\shared\helpers.jar`}) {
+		!reflect.DeepEqual(config.Classpath, []string{JavaVuserScriptClassesEntry, `C:\fixtures\actions.jar`, `D:\shared\helpers.jar`}) {
 		t.Fatalf("Java VM config = %#v", config)
 	}
 	if config.HarnessJar == "" || config.MaxProcesses != 25 || config.ActionTimeoutMs != 30000 {
@@ -461,7 +464,7 @@ Java_Env_ClassPath="C:\fixtures\unterminated;D:\shared\helpers.jar
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if len(result.Script.Config.JavaVuser.Classpath) != 0 {
+	if !reflect.DeepEqual(result.Script.Config.JavaVuser.Classpath, []string{JavaVuserScriptClassesEntry}) {
 		t.Fatalf("partially imported classpath = %#v", result.Script.Config.JavaVuser.Classpath)
 	}
 	if result.ReviewArtifact == nil || result.ReviewArtifact.Metadata["java_vm_classpath_raw"] != `"C:\fixtures\unterminated;D:\shared\helpers.jar` {
@@ -949,5 +952,75 @@ USE_JDK=search_jdk
 		if !ok || !strings.Contains(issue.Notes, "Conflicting") {
 			t.Fatalf("JDK conflict issue = %#v, want review-required ambiguity", issue)
 		}
+	}
+}
+
+func TestConvertZipJavaVuserAddsTheScriptClassesEntryAndKeepsTheSources(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	addJavaZipFile(t, writer, "JavaVM/JavaVM.usr", "[General]\nType=Java Vuser\nScriptLanguage=JAVA\nRuntimeSettings=default.cfg\n[Actions]\nAction=Actions.java\n")
+	addJavaZipFile(t, writer, "JavaVM/default.cfg", "[JavaVM:Options]\nJava_Env_ClassPath=C:\\lib\\client.jar\n")
+	actions := "public class Actions extends infra.Base {\n  public int action() throws Throwable { return 0; }\n}"
+	base := "package infra;\npublic class Base {}\n"
+	addJavaZipFile(t, writer, "JavaVM/Actions.java", actions)
+	addJavaZipFile(t, writer, "JavaVM/Infra/Base.java", base)
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ConvertZip(archive.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Script.Config.JavaVuser.Classpath; !reflect.DeepEqual(got, []string{JavaVuserScriptClassesEntry, `C:\lib\client.jar`}) {
+		t.Fatalf("classpath = %#v, want the script classes entry first", got)
+	}
+	manifest := BuildJavaVuserSourceManifest(result.JavaSourceTexts)
+	if manifest == nil || manifest.FileCount != 2 {
+		t.Fatalf("kept sources = %v", result.JavaSourceTexts)
+	}
+	recorded, err := DecodeJavaVuserSourceManifest(result.ReviewArtifact.Metadata[JavaVuserSourceManifestMetadataKey])
+	if err != nil || recorded.Digest != manifest.Digest {
+		t.Fatalf("kept sources do not match the reviewed manifest: %v", err)
+	}
+	if !stringSliceContains(result.ReviewArtifact.NextActions, javaVuserScriptClassesNextAction) {
+		t.Fatalf("next actions = %v", result.ReviewArtifact.NextActions)
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for key := range fields {
+		if strings.Contains(strings.ToLower(key), "source_text") || strings.Contains(strings.ToLower(key), "sourcetext") {
+			t.Fatalf("kept sources must stay out of converter JSON: %s", key)
+		}
+	}
+}
+
+func TestAddJavaVuserScriptClassesEntryIsIdempotentAndRespectsTheEntryLimit(t *testing.T) {
+	files := map[string]string{"Actions.java": "public class Actions {}"}
+	script := &dsl.Script{Protocol: "java_vuser"}
+	script.Config.JavaVuser.Classpath = []string{JavaVuserScriptClassesEntry, "lib.jar"}
+	result := &ConvertResult{Script: script, Scripts: []*dsl.Script{script}}
+	addJavaVuserScriptClassesEntry(result, files)
+	if !reflect.DeepEqual(script.Config.JavaVuser.Classpath, []string{JavaVuserScriptClassesEntry, "lib.jar"}) || len(result.JavaSourceTexts) != 1 {
+		t.Fatalf("classpath = %v sources = %v", script.Config.JavaVuser.Classpath, result.JavaSourceTexts)
+	}
+	full := &dsl.Script{Protocol: "java_vuser"}
+	for index := 0; index < javarunner.MaxClasspathEntries; index++ {
+		full.Config.JavaVuser.Classpath = append(full.Config.JavaVuser.Classpath, fmt.Sprintf("lib%d.jar", index))
+	}
+	result = &ConvertResult{Script: full}
+	addJavaVuserScriptClassesEntry(result, files)
+	if len(full.Config.JavaVuser.Classpath) != javarunner.MaxClasspathEntries || result.JavaSourceTexts != nil || len(result.Warnings) != 1 {
+		t.Fatalf("a full classpath must be left alone with a warning: %d entries, %v", len(full.Config.JavaVuser.Classpath), result.Warnings)
+	}
+	other := &ConvertResult{Script: &dsl.Script{Protocol: "http"}}
+	addJavaVuserScriptClassesEntry(other, files)
+	if other.JavaSourceTexts != nil || len(other.Script.Config.JavaVuser.Classpath) != 0 {
+		t.Fatal("only Java Vuser drafts take the entry")
 	}
 }

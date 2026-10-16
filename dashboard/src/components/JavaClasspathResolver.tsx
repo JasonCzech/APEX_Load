@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 
+import { JavaCompileError } from '../hooks/api/useScriptApi'
+import type { JavaCompileDiagnostic } from '../types/scriptImports'
 import type { JavaClasspathAsset } from '../types/scripts'
+
+/** The classpath entry an imported Java Vuser's own compiled classes take. */
+export const JAVA_SCRIPT_CLASSES_ENTRY = 'apexload-script-classes.jar'
 
 export interface JavaClasspathResolverProps {
   /** Exact classpath entries declared by the imported Java Vuser. */
@@ -10,7 +15,28 @@ export interface JavaClasspathResolverProps {
   onChange: (assets: JavaClasspathAsset[]) => void
   /** Uploads one JAR for a classpath entry and resolves to its binding. */
   onUpload: (file: File, entry: string) => Promise<JavaClasspathAsset>
+  /** The entry the script's own compiled classes take. */
+  compileEntry?: string
+  /** Compiles the reviewed source into a jar for compileEntry. */
+  onCompile?: () => Promise<JavaClasspathAsset>
+  /**
+   * Classpath entries the compiler could not see when it built the jar now
+   * bound to compileEntry. The caller keeps this: a new binding remounts the
+   * panel.
+   */
+  compiledWithout?: string[]
   disabled?: boolean
+}
+
+interface CompileFailure {
+  message: string
+  diagnostics: JavaCompileDiagnostic[]
+  unavailable: string[]
+}
+
+function formatDiagnostic(diagnostic: JavaCompileDiagnostic): string {
+  const where = diagnostic.file ? `${diagnostic.file}${diagnostic.line ? `:${diagnostic.line}` : ''}: ` : ''
+  return `${where}${diagnostic.message}`
 }
 
 /**
@@ -30,10 +56,12 @@ function classpathUploadErrorMessage(uploadError: unknown): string {
   return message || 'Failed to upload JAR'
 }
 
-export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, disabled }: JavaClasspathResolverProps) {
+export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, compileEntry, onCompile, compiledWithout, disabled }: JavaClasspathResolverProps) {
   const [busyEntry, setBusyEntry] = useState<string | null>(null)
+  const [compiling, setCompiling] = useState(false)
   const [dragEntry, setDragEntry] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [compileFailure, setCompileFailure] = useState<CompileFailure | null>(null)
   const uploadInFlight = useRef(false)
   const mounted = useRef(true)
   const disabledRef = useRef(disabled)
@@ -71,6 +99,35 @@ export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, d
     }
   }
 
+  // Compiling shares the serialized-upload invariant: it merges into the same
+  // captured `assets` list, so no other attach or remove may run meanwhile.
+  const handleCompile = async (entry: string) => {
+    if (!onCompile || disabledRef.current || uploadInFlight.current) return
+    uploadInFlight.current = true
+    setError('')
+    setCompileFailure(null)
+    setBusyEntry(entry)
+    setCompiling(true)
+    try {
+      const asset = await onCompile()
+      if (!mounted.current) return
+      onChange([...assets.filter(existing => existing.entry !== entry), asset])
+    } catch (compileError: unknown) {
+      if (!mounted.current) return
+      if (compileError instanceof JavaCompileError) {
+        setCompileFailure({ message: compileError.message, diagnostics: compileError.diagnostics, unavailable: compileError.unavailableClasspath })
+      } else {
+        setError(compileError instanceof Error && compileError.message ? compileError.message : 'Failed to compile the script source')
+      }
+    } finally {
+      uploadInFlight.current = false
+      if (mounted.current) {
+        setBusyEntry(null)
+        setCompiling(false)
+      }
+    }
+  }
+
   const removeAsset = (entry: string) => {
     if (disabledRef.current || uploadInFlight.current) return
     onChange(assets.filter(asset => asset.entry !== entry))
@@ -92,6 +149,7 @@ export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, d
       <ul className="java-classpath-resolver-list">
         {classpath.map((entry, index) => {
           const asset = assetForEntry(entry)
+          const compilable = Boolean(onCompile) && entry === compileEntry
           // Dropping is refused under the same conditions as the Attach button
           // so the serialized-upload invariant above holds for both paths.
           const dropRefused = Boolean(disabled) || busyEntry !== null || Boolean(asset)
@@ -126,7 +184,7 @@ export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, d
               <code className="entry-path" title={entry}>{entry}</code>
               {asset ? (
                 <span className="entry-asset attached">
-                  <span className="chip-file">{asset.file_name || 'dependency.jar'}</span>
+                  <span className="chip-file">{asset.compiled_from ? 'Compiled from the reviewed source' : (asset.file_name || 'dependency.jar')}</span>
                   <span className="chip-sha" title={asset.sha256}>{asset.sha256.slice(0, 8)}</span>
                   <button
                     type="button"
@@ -154,13 +212,23 @@ export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, d
                       event.target.value = ''
                     }}
                   />
+                  {compilable && (
+                    <button
+                      type="button"
+                      className="row-add"
+                      disabled={disabled || busyEntry !== null}
+                      onClick={() => void handleCompile(entry)}
+                    >
+                      {compiling ? 'Compiling…' : 'Compile source'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="row-add"
                     disabled={disabled || busyEntry !== null}
                     onClick={() => inputs.current[entry]?.click()}
                   >
-                    {busyEntry === entry ? 'Uploading…' : 'Drop or attach JAR'}
+                    {busyEntry === entry && !compiling ? 'Uploading…' : 'Drop or attach JAR'}
                   </button>
                 </span>
               )}
@@ -168,6 +236,26 @@ export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, d
           )
         })}
       </ul>
+      {compiledWithout && compiledWithout.length > 0 && !compileFailure && (
+        <p className="cell-muted java-compile-outcome" role="status">
+          The source compiled without these classpath entries, which the Java runner could not provide. Attach them unless every runner provides them: {compiledWithout.join(', ')}
+        </p>
+      )}
+      {compileFailure && (
+        <div className="cell-error java-compile-outcome" role="alert">
+          <p>{compileFailure.message}</p>
+          {compileFailure.diagnostics.length > 0 && (
+            <ul className="java-compile-diagnostics">
+              {compileFailure.diagnostics.map((diagnostic, index) => (
+                <li key={index}><code>{formatDiagnostic(diagnostic)}</code></li>
+              ))}
+            </ul>
+          )}
+          {compileFailure.unavailable.length > 0 && (
+            <p>These classpath entries were not available to the compiler. Attach them, then compile again: {compileFailure.unavailable.join(', ')}</p>
+          )}
+        </div>
+      )}
       {error && <div className="cell-error" role="alert">{error}</div>}
     </div>
   )

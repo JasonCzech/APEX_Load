@@ -328,6 +328,7 @@ func convertZip(zipData []byte, opts ConvertOptions, projectFile *string) (*Conv
 		}
 		mergeJavaVuserRuntimeSettingsIntoResult(result, opts.RuntimeSettings)
 		applyJavaVMRuntimeSettingsReview(result, runtimeCfg, files)
+		addJavaVuserScriptClassesEntry(result, files)
 		if err := finalizeEnterpriseArchiveImportResult(result, archiveFinalizationContext{
 			Files:              files,
 			ProjectFileName:    projectFileName,

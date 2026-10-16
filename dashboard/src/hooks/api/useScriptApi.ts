@@ -46,7 +46,7 @@ export interface ScriptRecordingStatus {
   sensitivity?: string
   captured_at?: string
 }
-import { type ApplyImportTransportRequest, type ApplyImportTransportResponse, type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type ApplySharedValuesRequest, type ApplySharedValuesResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixResponse, type CommitAsyncAPIImportBatchRequest, type CommitAsyncAPIImportBatchResponse, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitGenericImportBatchRequest, type CommitGenericImportBatchResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JavaClasspathAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveEnterpriseArchiveImportRequest, type SaveEnterpriseArchiveImportResponse, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyImportTransportRequest, type ApplyImportTransportResponse, type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type ApplySharedValuesRequest, type ApplySharedValuesResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixResponse, type CommitAsyncAPIImportBatchRequest, type CommitAsyncAPIImportBatchResponse, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitGenericImportBatchRequest, type CommitGenericImportBatchResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JavaClasspathAssetUploadResponse, type JavaCompileDiagnostic, type JavaCompileRequest, type JavaCompileResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveEnterpriseArchiveImportRequest, type SaveEnterpriseArchiveImportResponse, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { type JsonRequestBody } from '../../types/generated/openapi'
 import { ApiError, REQUEST_ID_HEADER, apiFetch, request, requestWithResponse } from '../apiClient'
 import { type ApiCallOptions, withCallOptions } from './requestOptions'
@@ -304,6 +304,19 @@ export type BrowserToHTTPPreviewResponse = {
     duration: string
     groups: Array<{ name: string; script_id: string; protocol: string; vusers: number; purpose: string; claim_policy?: string }>
     notes?: string[]
+  }
+}
+
+/** A compile the server refused or javac failed, with javac's messages. */
+export class JavaCompileError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly diagnostics: JavaCompileDiagnostic[],
+    readonly unavailableClasspath: string[],
+  ) {
+    super(message)
+    this.name = 'JavaCompileError'
   }
 }
 
@@ -1005,6 +1018,28 @@ export function useScriptApi() {
     [],
   )
 
+  const compileJavaSource = useCallback(
+    async (importId: string, body: JavaCompileRequest): Promise<JavaCompileResponse> => {
+      const query = `?project_id=${encodeURIComponent(body.project_id)}`
+      const res = await apiFetch(`/scripts/import/${encodeURIComponent(importId)}/java-compile${query}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const failure = await res.json().catch(() => null) as { error?: string; code?: string; diagnostics?: JavaCompileDiagnostic[]; unavailable_classpath?: string[] } | null
+        throw new JavaCompileError(
+          failure?.error || `Compile failed (${res.status})`,
+          failure?.code || '',
+          failure?.diagnostics || [],
+          failure?.unavailable_classpath || [],
+        )
+      }
+      return res.json() as Promise<JavaCompileResponse>
+    },
+    [],
+  )
+
   const importDevWeb = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<DevWebImportResult> => {
       const formData = new FormData()
@@ -1673,6 +1708,7 @@ export function useScriptApi() {
       importSample,
       uploadImportAsset,
       uploadJavaClasspathJar,
+      compileJavaSource,
       importDevWeb,
 		importK6,
 		importCloudTest,
@@ -1797,6 +1833,7 @@ export function useScriptApi() {
       importSample,
       uploadImportAsset,
       uploadJavaClasspathJar,
+      compileJavaSource,
       importDevWeb,
       importK6,
       importCloudTest,

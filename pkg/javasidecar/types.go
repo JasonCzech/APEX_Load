@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+	"github.com/jasonczech/apexload/pkg/javarunner"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -18,6 +19,10 @@ const (
 	// transport bounded while allowing every independently bounded stream.
 	MaxResponseBytes int64 = 5 << 20
 	MaxCaptureBytes        = 256 << 10
+	// MaxCompileRequestBytes and MaxCompileResponseBytes bound /v1/compile,
+	// whose sources and jar travel base64-encoded in JSON.
+	MaxCompileRequestBytes  int64 = 24 << 20
+	MaxCompileResponseBytes int64 = 24 << 20
 	// MaxHarnessErrorBytes matches the v2 Harness error-envelope budget and
 	// prevents a version-skewed runner from duplicating an oversized diagnostic
 	// into the sidecar response.
@@ -45,6 +50,10 @@ const (
 
 	WarningModernXBootClasspathFallback = "java_vuser_xbootclasspath_modern_fallback"
 )
+
+// FeatureSourceCompileV1 means the runner compiles Java Vuser source on
+// /v1/compile.
+const FeatureSourceCompileV1 = "java_vuser_source_compile_v1"
 
 func boundedHarnessError(value string) string {
 	if len(value) <= MaxHarnessErrorBytes {
@@ -167,6 +176,38 @@ type ValidateResponse struct {
 	Issues       []ValidationIssue `json:"issues,omitempty"`
 	WarningCodes []string          `json:"warning_codes,omitempty"`
 	JavaMajor    int               `json:"java_major,omitempty"`
+}
+
+// CompileRequest asks the runner to compile a Java Vuser's source with the
+// runtime its settings select, against its classpath and the lr API.
+type CompileRequest struct {
+	Contract    string              `json:"contract"`
+	Runtime     RuntimeSettings     `json:"runtime"`
+	TargetClass string              `json:"target_class"`
+	Sources     []CompileSourceFile `json:"sources"`
+}
+
+// CompileSourceFile is one .java file. Content is raw bytes (base64 in JSON)
+// because LoadRunner source is often windows-1252, not UTF-8.
+type CompileSourceFile struct {
+	Path    string `json:"path"`
+	Content []byte `json:"content"`
+}
+
+// CompileResponse carries the jar on success, or ErrorCode and javac's
+// diagnostics on a failed compile. UnavailableClasspath lists the script
+// classpath entries (by index) the runner could not provide; the compile ran
+// without them.
+type CompileResponse struct {
+	Contract             string                         `json:"contract"`
+	ErrorCode            string                         `json:"error_code,omitempty"`
+	Jar                  []byte                         `json:"jar,omitempty"`
+	SHA256               string                         `json:"sha256,omitempty"`
+	Classes              []string                       `json:"classes,omitempty"`
+	Diagnostics          []javarunner.CompileDiagnostic `json:"diagnostics,omitempty"`
+	CompilerVersion      string                         `json:"compiler_version,omitempty"`
+	Release              int                            `json:"release,omitempty"`
+	UnavailableClasspath []int                          `json:"unavailable_classpath,omitempty"`
 }
 
 type ClaimOwnerRequest struct {

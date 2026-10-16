@@ -84,6 +84,7 @@ type Server struct {
 	credentialCheck       func() error
 	slots                 chan struct{}
 	probeSlots            chan struct{}
+	compileSlots          chan struct{} // one /v1/compile at a time; javac is memory-heavy
 	hostAdmission         *javarunner.DedicatedHostAdmission
 	pooledMu              sync.Mutex
 	pooledRuns            map[pooledRunKey]*PooledRun
@@ -199,6 +200,7 @@ func NewServer(options ServerOptions) *Server {
 		credentialCheck:                  credentialCheck,
 		slots:                            make(chan struct{}, limit),
 		probeSlots:                       make(chan struct{}, 1),
+		compileSlots:                     make(chan struct{}, 1),
 		hostAdmission:                    options.HostAdmission,
 		pooledRuns:                       make(map[pooledRunKey]*PooledRun),
 		captureDescriptorLimit:           pooledCaptureDescriptorCeiling(hostnet.ProcessOpenFileLimit()),
@@ -570,6 +572,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleValidate(w, r)
+	case r.URL.Path == "/v1/compile":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		s.handleCompile(w, r)
 	case r.URL.Path == "/v1/owner/renew":
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w, http.MethodPost)
@@ -724,6 +732,7 @@ func capabilityFeatures(strongProcessContainment bool) []string {
 		FeatureDedicatedClassloader,
 		FeatureValidationOnly,
 		FeatureOwnerFencingV1,
+		FeatureSourceCompileV1,
 	}
 	if strongProcessContainment {
 		features = append(features, FeaturePhaseLifecycleV1, FeaturePersistentLifecycleV1, FeatureSessionFrameTokenV1)
@@ -2060,6 +2069,7 @@ type preparedRuntime struct {
 	startupTimeoutMS int64
 	workDir          string
 	warningCodes     []string
+	missingClasspath []int // script classpath entries a compile left out
 }
 
 type safeFailure struct {
@@ -2072,6 +2082,13 @@ func (f *safeFailure) issue() ValidationIssue {
 }
 
 func (s *Server) prepareRuntime(ctx context.Context, settings RuntimeSettings) (preparedRuntime, *safeFailure) {
+	return s.prepareRuntimeFor(ctx, settings, false)
+}
+
+// prepareRuntimeFor resolves a runtime as a session would. For a compile,
+// script classpath entries the runner cannot provide are left out and listed
+// rather than failing the whole request.
+func (s *Server) prepareRuntimeFor(ctx context.Context, settings RuntimeSettings, compile bool) (preparedRuntime, *safeFailure) {
 	if err := s.credentialCheck(); err != nil {
 		return preparedRuntime{}, &safeFailure{code: "ambient_credentials_detected"}
 	}
@@ -2155,8 +2172,14 @@ func (s *Server) prepareRuntime(ctx context.Context, settings RuntimeSettings) (
 	if failure != nil {
 		return preparedRuntime{}, failure
 	}
-	scriptClasspath, failure := resolveClasspath(materializedClasspath, workDir)
-	if failure != nil {
+	var scriptClasspath []string
+	var unavailable []int
+	if compile {
+		var issue *javarunner.ClasspathValidationIssue
+		if scriptClasspath, unavailable, issue = javarunner.ResolveCompileClasspath(materializedClasspath, workDir); issue != nil {
+			return preparedRuntime{}, classpathIssueFailure(issue)
+		}
+	} else if scriptClasspath, failure = resolveClasspath(materializedClasspath, workDir); failure != nil {
 		return preparedRuntime{}, failure
 	}
 	sharedClasspath, failure := resolveClasspath(s.operator.Classpath, workDir)
@@ -2175,6 +2198,7 @@ func (s *Server) prepareRuntime(ctx context.Context, settings RuntimeSettings) (
 		dedicatedLoader:  settings.DedicatedClassLoader,
 		startupTimeoutMS: settings.StartupTimeoutMS,
 		workDir:          workDir,
+		missingClasspath: unavailable,
 	}
 	if settings.UseXBootClasspath {
 		prepared.warningCodes = []string{WarningModernXBootClasspathFallback}
@@ -2794,6 +2818,12 @@ func resolveClasspath(entries []string, workDir string) ([]string, *safeFailure)
 	if issue == nil {
 		return resolved, nil
 	}
+	return nil, classpathIssueFailure(issue)
+}
+
+// classpathIssueFailure is the stable, value-free failure for a classpath
+// issue.
+func classpathIssueFailure(issue *javarunner.ClasspathValidationIssue) *safeFailure {
 	failure := &safeFailure{code: "classpath_entry_invalid"}
 	if issue.Index >= 0 {
 		failure.index = intPointer(issue.Index)
@@ -2804,7 +2834,7 @@ func resolveClasspath(entries []string, workDir string) ([]string, *safeFailure)
 	case javarunner.ClasspathUnavailable:
 		failure.code = "classpath_entry_unavailable"
 	}
-	return nil, failure
+	return failure
 }
 
 func validateTarget(target Target) *safeFailure {
@@ -2973,7 +3003,11 @@ func readCappedFile(path string, max int) (string, bool) {
 }
 
 func decodeRequest(w http.ResponseWriter, r *http.Request, destination any) bool {
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxRequestBytes))
+	return decodeRequestLimited(w, r, destination, MaxRequestBytes)
+}
+
+func decodeRequestLimited(w http.ResponseWriter, r *http.Request, destination any, limit int64) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(destination); err != nil {
 		var tooLarge *http.MaxBytesError

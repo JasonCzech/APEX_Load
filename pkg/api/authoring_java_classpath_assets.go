@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/javarunner"
@@ -105,6 +106,7 @@ func (s *Server) validateAuthoringJavaClasspathAssets(script *dsl.Script, classp
 	}
 	seen := make(map[string]bool)
 	var total int64
+	manifestDigest := scriptJavaSourceManifestDigest(script)
 	for _, asset := range script.Config.JavaVuser.ClasspathAssets {
 		if !entries[asset.Entry] || seen[asset.Entry] || asset.StagedAsset != "" || asset.SizeBytes < 4 || asset.SizeBytes > fileasset.MaxJarBytes || asset.SizeBytes > maxJavaClasspathReviewTotalBytes-total {
 			return fmt.Errorf("Java classpath attachment does not match an exact declared entry or exceeds its limits")
@@ -112,6 +114,17 @@ func (s *Server) validateAuthoringJavaClasspathAssets(script *dsl.Script, classp
 		seen[asset.Entry] = true
 		total += asset.SizeBytes
 		if err := s.verifyAuthoringJavaClasspathCapability(script.ProjectID, asset); err != nil {
+			return err
+		}
+		if asset.CompiledFrom == "" {
+			continue
+		}
+		// A compiled jar is the script's own classes, built from the source
+		// manifest this draft was reviewed with.
+		if asset.Entry != enterprisearchive.JavaVuserScriptClassesEntry || manifestDigest != "" && asset.CompiledFrom != manifestDigest {
+			return fmt.Errorf("Java classpath attachment was compiled from different source than this script's")
+		}
+		if err := verifyJavaCompiledProvenance(asset); err != nil {
 			return err
 		}
 	}

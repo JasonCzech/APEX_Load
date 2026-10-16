@@ -327,6 +327,7 @@ var lifecycleImportRoutes = map[string]lifecycleImportRoute{
 	"/api/v1/scripts/import/browser-recorder/attest":            {"assets", "Recording", []string{"browser_recorder_bridge_import_test.go"}},
 	"/api/v1/scripts/import/{id}/assets/upload":                 {"assets", "Every import launcher", []string{"handlers_import_assets_test.go"}},
 	"/api/v1/scripts/import/{id}/java-classpath/upload":         {"assets", "Every import launcher", []string{"workflow-loadrunner-review.spec.ts"}},
+	"/api/v1/scripts/import/{id}/java-compile":                  {"assets", "Every import launcher", []string{"handlers_import_java_compile_test.go"}},
 }
 
 func TestLifecycleParityImportLaunchersAreInventoried(t *testing.T) {

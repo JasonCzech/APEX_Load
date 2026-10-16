@@ -1264,6 +1264,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/import/sample", cors(log(auth(http.HandlerFunc(s.handleImportSample)))))
 	s.mux.Handle("POST /api/v1/scripts/import/{id}/assets/upload", cors(log(auth(http.HandlerFunc(s.handleUploadImportAsset)))))
 	s.mux.Handle("POST /api/v1/scripts/import/{id}/java-classpath/upload", cors(log(auth(http.HandlerFunc(s.handleUploadJavaClasspathJar)))))
+	s.mux.Handle("POST /api/v1/scripts/import/{id}/java-compile", cors(log(auth(http.HandlerFunc(s.handleCompileJavaSource)))))
 	s.mux.Handle("POST /api/v1/scripts/import/k6", cors(log(auth(http.HandlerFunc(s.handleImportK6)))))
 	s.mux.Handle("POST /api/v1/scripts/export/k6", cors(log(auth(http.HandlerFunc(s.handleExportK6)))))
 	s.mux.Handle("GET /api/v1/scripts/import/k6/support-matrix", cors(log(auth(http.HandlerFunc(s.handleK6SupportMatrix)))))

@@ -34,6 +34,10 @@ type ConvertResult struct {
 	// ProtectedRequirements is a one-shot, in-memory handoff for source runtime
 	// credential values. It is deliberately excluded from converter JSON.
 	ProtectedRequirements credentialpolicy.ProtectedRequirements `json:"-"`
+	// JavaSourceTexts holds a Java Vuser's complete .java files keyed by their
+	// source manifest path, for the API to keep so the reviewed source can be
+	// compiled later. It is excluded from converter JSON.
+	JavaSourceTexts map[string]string `json:"-"`
 
 	// flowWarned deduplicates control-flow translation warnings per distinct
 	// condition/loop source text during one conversion.

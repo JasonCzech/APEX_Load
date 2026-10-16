@@ -1,5 +1,5 @@
 import type { StoredScenario, StoredScript } from './storedContent'
-import { type ReplayPreflight, type ScriptDataSource, type SourceReview, type ScriptDefinition } from './scripts'
+import { type JavaClasspathAsset, type ReplayPreflight, type ScriptDataSource, type SourceReview, type ScriptDefinition } from './scripts'
 import type { components as GeneratedOpenAPIComponents, operations as GeneratedOpenAPIOperations } from './generated/openapi'
 
 type BrunoAPISchemas = GeneratedOpenAPIComponents['schemas']
@@ -430,6 +430,36 @@ export interface JavaClasspathAssetUploadResponse {
   sha256: string
   storage_ref: string
   uploaded_at: string
+}
+
+export interface JavaCompileDiagnostic {
+  file?: string
+  line?: number
+  kind: string
+  message: string
+}
+
+/** The jar compiled from an imported Java Vuser's reviewed source. */
+export interface JavaCompileResponse extends JavaClasspathAssetUploadResponse {
+  compiled_from: string
+  classes: string[]
+  diagnostics?: JavaCompileDiagnostic[]
+  /** Classpath entries the Java runner could not provide to the compiler. */
+  unavailable_classpath?: string[]
+  compiler_version?: string
+  release?: number
+}
+
+export interface JavaCompileRequest {
+  project_id: string
+  target_class: string
+  source_manifest: unknown
+  java_vuser: {
+    jdk_selection?: string
+    jdk_home?: string
+    classpath: string[]
+    classpath_assets?: JavaClasspathAsset[]
+  }
 }
 
 export interface DetectedSourceProtocol {

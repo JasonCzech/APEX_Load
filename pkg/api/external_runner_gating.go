@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -234,6 +236,19 @@ func (tr *TestRunner) javaVuserRunnerLaunchConflictsForTestLocked(test *ManagedT
 			}
 		}
 
+		// The importer reserves apexload-script-classes.jar for the script's own
+		// classes. Unbound, it names a file no runner has, and the run would fail
+		// on the runner with an anonymous classpath_entry_unavailable.
+		if javaScriptClassesEntryUnbound(group.script) {
+			return []LaunchConflict{{
+				Code:       "java_vuser_script_classes_missing",
+				Severity:   "blocking",
+				Source:     "protocol_runtime",
+				ResourceID: firstNonEmpty(strings.TrimSpace(group.Name), "java_vuser"),
+				Message:    "This Java Vuser's classpath reserves " + enterprisearchive.JavaVuserScriptClassesEntry + " for its compiled classes, but nothing is attached to it. Compile the script source or attach a jar of its classes in the import review, or remove the entry if every runner provides the classes another way.",
+			}}
+		}
+
 		available := false
 		if backend, ok := tr.execution.(*distributedExecutionBackend); ok {
 			if test != nil {
@@ -354,6 +369,17 @@ func javaVuserOverrideChangedExecutableSurface(approved, candidate *dsl.Script) 
 		// existing authoring approval and force re-approval.
 		!reflect.DeepEqual(a.ClasspathAssets, c.ClasspathAssets) ||
 		!reflect.DeepEqual(a.AdditionalVMParameters, c.AdditionalVMParameters)
+}
+
+// javaScriptClassesEntryUnbound reports a classpath that keeps the importer's
+// script-classes entry with no jar bound to it.
+func javaScriptClassesEntryUnbound(script *dsl.Script) bool {
+	if script == nil || !slices.Contains(script.Config.JavaVuser.Classpath, enterprisearchive.JavaVuserScriptClassesEntry) {
+		return false
+	}
+	return !slices.ContainsFunc(script.Config.JavaVuser.ClasspathAssets, func(asset dsl.JavaClasspathAsset) bool {
+		return asset.Entry == enterprisearchive.JavaVuserScriptClassesEntry
+	})
 }
 
 func scriptHasJavaClasspathAssets(script *dsl.Script) bool {

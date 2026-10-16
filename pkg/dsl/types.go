@@ -410,6 +410,10 @@ type JavaClasspathAsset struct {
 	ContentType string `json:"content_type,omitempty"` // sniffed/declared content type
 	StorageRef  string `json:"storage_ref,omitempty"`  // file://… controller/local-reachable source
 	StagedAsset string `json:"staged_asset,omitempty"` // set by distributed staging; empty for local
+	// CompiledFrom is the digest of the reviewed Java source manifest the
+	// server compiled this jar from; empty for an uploaded jar. The server
+	// keeps it beside the jar and verifies it when the binding is saved.
+	CompiledFrom string `json:"compiled_from,omitempty"`
 }
 
 type WebSocketConfig struct {

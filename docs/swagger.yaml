@@ -52933,6 +52933,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                compiled_from:
+                                  type: string
                                 content_type:
                                   type: string
                                 entry:
@@ -276195,6 +276197,182 @@ paths:
       tags:
         - Scripts
       x-handler: handleUploadJavaClasspathJar
+  /api/v1/scripts/import/{id}/java-compile:
+    post:
+      summary: Compile Java Source
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
+      operationId: handleCompileJavaSource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                java_vuser:
+                  type: object
+                  properties:
+                    classpath:
+                      type: array
+                      items:
+                        type: string
+                    classpath_assets:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          compiled_from:
+                            type: string
+                          content_type:
+                            type: string
+                          entry:
+                            type: string
+                          file_name:
+                            type: string
+                          sha256:
+                            type: string
+                          size_bytes:
+                            type: integer
+                            format: int64
+                          staged_asset:
+                            type: string
+                          storage_ref:
+                            type: string
+                    jdk_home:
+                      type: string
+                    jdk_selection:
+                      type: string
+                project_id:
+                  type: string
+                source_manifest:
+                  type: object
+                  description: 'Go type: enterprisearchive.JavaVuserSourceManifest'
+                  additionalProperties: true
+                  nullable: true
+                target_class:
+                  type: string
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  classes:
+                    type: array
+                    items:
+                      type: string
+                  compiled_from:
+                    type: string
+                  compiler_version:
+                    type: string
+                  content_type:
+                    type: string
+                  diagnostics:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: javarunner.CompileDiagnostic'
+                      additionalProperties: true
+                  entry:
+                    type: string
+                  file_name:
+                    type: string
+                  import_id:
+                    type: string
+                  release:
+                    type: integer
+                    format: int64
+                  sha256:
+                    type: string
+                  size_bytes:
+                    type: integer
+                    format: int64
+                  storage_ref:
+                    type: string
+                  unavailable_classpath:
+                    type: array
+                    items:
+                      type: string
+                  uploaded_at:
+                    type: string
+                    format: date-time
+                required:
+                  - classes
+                  - compiled_from
+                  - file_name
+                  - import_id
+                  - sha256
+                  - size_bytes
+                  - storage_ref
+                  - uploaded_at
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Scripts
+      x-handler: handleCompileJavaSource
   /api/v1/scripts/import/asyncapi:
     post:
       summary: Import AsyncAPI

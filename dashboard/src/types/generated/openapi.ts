@@ -28595,6 +28595,105 @@ export interface operations {
       };
     };
   };
+  "handleCompileJavaSource": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "project_id"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "java_vuser"?: {
+            "classpath"?: Array<string>;
+            "classpath_assets"?: Array<{
+              "compiled_from"?: string;
+              "content_type"?: string;
+              "entry"?: string;
+              "file_name"?: string;
+              "sha256"?: string;
+              "size_bytes"?: number;
+              "staged_asset"?: string;
+              "storage_ref"?: string;
+            }>;
+            "jdk_home"?: string;
+            "jdk_selection"?: string;
+          };
+          "project_id"?: string;
+          "source_manifest"?: (Record<string, unknown>) | null;
+          "target_class"?: string;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": {
+            "classes": Array<string>;
+            "compiled_from": string;
+            "compiler_version"?: string;
+            "content_type"?: string;
+            "diagnostics"?: Array<Record<string, unknown>>;
+            "entry"?: string;
+            "file_name": string;
+            "import_id": string;
+            "release"?: number;
+            "sha256": string;
+            "size_bytes": number;
+            "storage_ref": string;
+            "unavailable_classpath"?: Array<string>;
+            "uploaded_at": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "502": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleConfigDefaults": {
     parameters?: never;
     requestBody?: never;
@@ -28853,6 +28952,7 @@ export interface operations {
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "classpath_assets"?: Array<{
+                  "compiled_from"?: string;
                   "content_type"?: string;
                   "entry": string;
                   "file_name"?: string;
@@ -183413,6 +183513,9 @@ export interface paths {
   };
   "/api/v1/scripts/import/{id}/java-classpath/upload": {
     "post": operations["handleUploadJavaClasspathJar"];
+  };
+  "/api/v1/scripts/import/{id}/java-compile": {
+    "post": operations["handleCompileJavaSource"];
   };
   "/api/v1/scripts/replay": {
     "post": operations["handleReplayDraftScript"];

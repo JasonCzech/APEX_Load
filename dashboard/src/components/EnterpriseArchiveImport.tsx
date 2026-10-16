@@ -23,7 +23,7 @@ import DropIngestOverlay from './DropIngestOverlay'
 import { describeAccepted, describeReading, useDropIngestFeedback } from './dropIngestFeedback'
 import { readDroppedImportSources } from './droppedImportSources'
 import ImportCoverageButton from './ImportCoverageButton'
-import { JavaClasspathResolver } from './JavaClasspathResolver'
+import { JAVA_SCRIPT_CLASSES_ENTRY, JavaClasspathResolver } from './JavaClasspathResolver'
 import { JavaDependencyInventory } from './JavaDependencyInventory'
 import { javaDependencyInventory } from './javaDependencyInventoryModel'
 import { bindJavaClasspathAssets, javaClasspathReviewKey } from './javaClasspathBindings'
@@ -949,6 +949,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   // each imported Java script keeps its own attachments. Merged into the script
   // config at save time. A ref mirrors it for the async save handler.
   const [classpathAssetsByKey, setClasspathAssetsByKey] = useState<Record<string, JavaClasspathAsset[]>>({})
+  // Classpath entries each compiled jar was built without, by review key and
+  // jar hash, so the note survives the panel remount a new binding causes.
+  const [javaCompileGaps, setJavaCompileGaps] = useState<Record<string, { sha256: string; unavailable: string[] }>>({})
   const classpathAssetsByKeyRef = useRef(classpathAssetsByKey)
   classpathAssetsByKeyRef.current = classpathAssetsByKey
   const [classpathUploadInProgress, setClasspathUploadInProgress] = useState(false)
@@ -1742,6 +1745,60 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       }
     }
   }
+  // The reviewed source compiles into the entry the importer reserved for the
+  // script's own classes; the server reads the source by its manifest.
+  const currentJavaSourceManifest = reviewArtifact?.metadata?.java_source_manifest
+  const currentJavaTarget = importedScript?.protocol === 'java_vuser'
+    ? [...(importedScript.init ?? []), ...(importedScript.actions ?? [])].find(action => action.type === 'java_vuser_run')?.target
+    : undefined
+  const javaSourceCompilable = Boolean(currentJavaSourceManifest && currentJavaTarget && currentClasspathEntries.includes(JAVA_SCRIPT_CLASSES_ENTRY))
+  const handleCompileJavaSource = async (): Promise<JavaClasspathAsset> => {
+    if (!projectId || !classpathReviewIsCurrent() || sourceMutationLockedRef.current
+      || workingMode !== null || classpathUploadInFlightRef.current || !javaSourceCompilable) {
+      throw new Error('Finish the current import operation before compiling the source.')
+    }
+    const scope = {}
+    const operationGeneration = operationGenerationRef.current
+    classpathUploadInFlightRef.current = scope
+    setClasspathUploadInProgress(true)
+    try {
+      const javaVuser = importedScript?.config?.java_vuser
+      const response = await api.compileJavaSource(selectedItem!.id, {
+        project_id: projectId,
+        target_class: currentJavaTarget!,
+        source_manifest: currentJavaSourceManifest,
+        java_vuser: {
+          jdk_selection: javaVuser?.jdk_selection,
+          jdk_home: javaVuser?.jdk_home,
+          classpath: currentClasspathEntries,
+          classpath_assets: currentClasspathAssets.filter(asset => currentClasspathEntries.includes(asset.entry)),
+        },
+      })
+      if (operationGenerationRef.current !== operationGeneration || !classpathReviewIsCurrent()) {
+        throw new Error('The import review changed during the compile. Compile again in the current review.')
+      }
+      const key = currentClasspathKey
+      setJavaCompileGaps(gaps => ({ ...gaps, [key]: { sha256: response.sha256, unavailable: response.unavailable_classpath ?? [] } }))
+      return {
+        entry: response.entry || JAVA_SCRIPT_CLASSES_ENTRY,
+        file_name: response.file_name,
+        sha256: response.sha256,
+        size_bytes: response.size_bytes,
+        content_type: response.content_type,
+        storage_ref: response.storage_ref,
+        compiled_from: response.compiled_from,
+      }
+    } finally {
+      if (classpathUploadInFlightRef.current === scope) {
+        classpathUploadInFlightRef.current = null
+        setClasspathUploadInProgress(false)
+      }
+    }
+  }
+  const currentCompileGap = javaCompileGaps[currentClasspathKey]
+  const currentCompiledWithout = currentCompileGap && currentClasspathAssets.some(asset => asset.entry === JAVA_SCRIPT_CLASSES_ENTRY && asset.sha256 === currentCompileGap.sha256)
+    ? currentCompileGap.unavailable
+    : undefined
   const importedEditorAvailable = Boolean(onEdit) && !combinedJavaVuserGate
   const protocolGateName = detectedProtocol?.display_name || detectedProtocol?.canonical_source_protocol || 'This protocol'
   const protocolGateRunnerRequirement = detectedProtocol?.runner_requirement || reviewArtifact?.protocol?.runner_requirement || ''
@@ -5228,6 +5285,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                     assets={currentClasspathAssets}
                     onChange={setCurrentClasspathAssets}
                     onUpload={handleUploadClasspathJar}
+                    compileEntry={JAVA_SCRIPT_CLASSES_ENTRY}
+                    onCompile={javaSourceCompilable ? handleCompileJavaSource : undefined}
+                    compiledWithout={currentCompiledWithout}
                     disabled={!projectId || sourceMutationLocked || workingMode !== null || internalReviewBusy || guidedRepairBusy}
                   />
                 </div>

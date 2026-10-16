@@ -6,8 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/javarunner"
 )
 
 const (
@@ -32,9 +36,10 @@ type JavaVuserSourceManifestFile struct {
 	SHA256 string `json:"sha256"`
 }
 
-// BuildJavaVuserSourceManifest hashes every complete Java source byte before
-// sourceview applies redaction, file-count limits, or per-file truncation.
-func BuildJavaVuserSourceManifest(files map[string]string) *JavaVuserSourceManifest {
+// JavaVuserSourceTexts returns every complete .java file keyed by its source
+// manifest path, or nil when a name cannot be canonicalized or two names
+// collide; the manifest is then absent too.
+func JavaVuserSourceTexts(files map[string]string) map[string]string {
 	javaFiles := make(map[string]string)
 	for originalName, content := range files {
 		separatorNormalized := strings.ReplaceAll(strings.TrimSpace(originalName), "\\", "/")
@@ -52,6 +57,16 @@ func BuildJavaVuserSourceManifest(files map[string]string) *JavaVuserSourceManif
 		}
 		javaFiles[name] = content
 	}
+	if len(javaFiles) == 0 {
+		return nil
+	}
+	return javaFiles
+}
+
+// BuildJavaVuserSourceManifest hashes every complete Java source byte before
+// sourceview applies redaction, file-count limits, or per-file truncation.
+func BuildJavaVuserSourceManifest(files map[string]string) *JavaVuserSourceManifest {
+	javaFiles := JavaVuserSourceTexts(files)
 	names := make([]string, 0, len(javaFiles))
 	for name := range javaFiles {
 		names = append(names, name)
@@ -188,4 +203,47 @@ func validSHA256Reference(value string) bool {
 	}
 	decoded, err := hex.DecodeString(strings.TrimPrefix(value, "sha256:"))
 	return err == nil && len(decoded) == sha256.Size
+}
+
+// JavaVuserScriptClassesEntry is the classpath entry an imported Java Vuser's
+// own classes take. VuGen compiles a script's .java files before replay and
+// puts the script directory on the classpath; APEX puts a jar here instead,
+// compiled from the reviewed source or attached by the user. Unbound, the
+// entry fails closed at launch like any other missing classpath entry.
+const JavaVuserScriptClassesEntry = "apexload-script-classes.jar"
+
+const javaVuserScriptClassesNextAction = "Compile the script's Java source under Resolve Java Dependencies, or attach a jar of its compiled classes to the " + JavaVuserScriptClassesEntry + " classpath entry."
+
+// addJavaVuserScriptClassesEntry puts the script-classes entry first on each
+// Java Vuser draft's classpath and keeps the complete sources for a compile.
+func addJavaVuserScriptClassesEntry(result *ConvertResult, files map[string]string) {
+	texts := JavaVuserSourceTexts(files)
+	if result == nil || len(texts) == 0 {
+		return
+	}
+	added := false
+	scripts := append([]*dsl.Script{result.Script}, result.Scripts...)
+	for index, script := range scripts {
+		if script == nil || slices.Contains(scripts[:index], script) || !strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") {
+			continue
+		}
+		classpath := script.Config.JavaVuser.Classpath
+		if slices.Contains(classpath, JavaVuserScriptClassesEntry) {
+			added = true
+			continue
+		}
+		if len(classpath) >= javarunner.MaxClasspathEntries {
+			result.Warnings = append(result.Warnings, "The Java classpath already holds the maximum number of entries, so no entry was added for the script's own classes; replace an entry with a jar of the compiled script classes.")
+			continue
+		}
+		script.Config.JavaVuser.Classpath = append([]string{JavaVuserScriptClassesEntry}, classpath...)
+		added = true
+	}
+	if !added {
+		return
+	}
+	result.JavaSourceTexts = texts
+	if result.ReviewArtifact != nil {
+		result.ReviewArtifact.NextActions = appendUnique(result.ReviewArtifact.NextActions, javaVuserScriptClassesNextAction)
+	}
 }

@@ -4,7 +4,8 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { JavaClasspathResolver } from './JavaClasspathResolver'
+import { JAVA_SCRIPT_CLASSES_ENTRY, JavaClasspathResolver } from './JavaClasspathResolver'
+import { JavaCompileError } from '../hooks/api/useScriptApi'
 import type { JavaClasspathAsset } from '../types/scripts'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -54,6 +55,48 @@ describe('JavaClasspathResolver', () => {
       removeButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(onChange).toHaveBeenCalledWith([])
+  })
+
+  it('compiles the script source into the script classes entry', async () => {
+    const onChange = vi.fn()
+    const compiled: JavaClasspathAsset = { entry: JAVA_SCRIPT_CLASSES_ENTRY, file_name: 'Actions-compiled.jar', sha256: 'c0ffee00c0ffee00', compiled_from: 'sha256:abc' }
+    const onCompile = vi.fn().mockResolvedValue(compiled)
+    render({ classpath: [JAVA_SCRIPT_CLASSES_ENTRY, 'lib/weblogic.jar'], assets: [], onChange, onUpload: vi.fn(), compileEntry: JAVA_SCRIPT_CLASSES_ENTRY, onCompile })
+
+    const compileButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).filter(button => button.textContent === 'Compile source')
+    expect(compileButtons.length).toBe(1)
+    await act(async () => {
+      compileButtons[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onCompile).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledWith([compiled])
+
+    // The caller remounts the panel with the new binding and the entries the
+    // compile went without.
+    render({ classpath: [JAVA_SCRIPT_CLASSES_ENTRY, 'lib/weblogic.jar'], assets: [compiled], onChange, onUpload: vi.fn(), compileEntry: JAVA_SCRIPT_CLASSES_ENTRY, onCompile, compiledWithout: ['lib/weblogic.jar'] })
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('lib/weblogic.jar')
+  })
+
+  it('labels a compiled jar and lists javac errors from a failed compile', async () => {
+    const compiled: JavaClasspathAsset = { entry: JAVA_SCRIPT_CLASSES_ENTRY, file_name: 'Actions-compiled.jar', sha256: 'c0ffee00c0ffee00', compiled_from: 'sha256:abc' }
+    render({ classpath: [JAVA_SCRIPT_CLASSES_ENTRY], assets: [compiled], onChange: vi.fn(), onUpload: vi.fn(), compileEntry: JAVA_SCRIPT_CLASSES_ENTRY, onCompile: vi.fn() })
+    expect(container.textContent).toContain('Compiled from the reviewed source')
+
+    const onCompile = vi.fn().mockRejectedValue(new JavaCompileError('The source did not compile.', 'compile_failed', [{ file: 'Actions.java', line: 12, kind: 'error', message: 'cannot find symbol' }], ['C:\\lib\\vendor-client.jar']))
+    render({ classpath: [JAVA_SCRIPT_CLASSES_ENTRY], assets: [], onChange: vi.fn(), onUpload: vi.fn(), compileEntry: JAVA_SCRIPT_CLASSES_ENTRY, onCompile })
+    const compile = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Compile source')
+    await act(async () => {
+      compile!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('The source did not compile.')
+    expect(alert?.textContent).toContain('Actions.java:12: cannot find symbol')
+    expect(alert?.textContent).toContain('vendor-client.jar')
+  })
+
+  it('offers no compile control on other entries or without a compile handler', () => {
+    render({ classpath: [JAVA_SCRIPT_CLASSES_ENTRY, 'a.jar'], assets: [], onChange: vi.fn(), onUpload: vi.fn(), compileEntry: JAVA_SCRIPT_CLASSES_ENTRY })
+    expect(container.textContent).not.toContain('Compile source')
   })
 
   it('shows a friendly message when there are no classpath entries', () => {

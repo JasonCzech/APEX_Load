@@ -88,6 +88,7 @@ Every script import route that accepts a POST has a row; a route without one fai
 | `/api/v1/scripts/import/wsdl` | launcher | Every import launcher | `handlers_web_api_imports_test.go` |
 | `/api/v1/scripts/import/{id}/assets/upload` | assets | Every import launcher | `handlers_import_assets_test.go` |
 | `/api/v1/scripts/import/{id}/java-classpath/upload` | assets | Every import launcher | `workflow-loadrunner-review.spec.ts` |
+| `/api/v1/scripts/import/{id}/java-compile` | assets | Every import launcher | `handlers_import_java_compile_test.go` |
 
 ## AUTH-2 rows
 

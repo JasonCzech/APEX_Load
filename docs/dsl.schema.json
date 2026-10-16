@@ -8910,6 +8910,9 @@
     "JavaClasspathAsset": {
       "additionalProperties": false,
       "properties": {
+        "compiled_from": {
+          "type": "string"
+        },
         "content_type": {
           "type": "string"
         },

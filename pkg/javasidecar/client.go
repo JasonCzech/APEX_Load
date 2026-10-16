@@ -138,6 +138,16 @@ func (c *Client) Validate(ctx context.Context, request ValidateRequest) (Validat
 	return response, err
 }
 
+// Compile asks the runner to compile Java Vuser source. A compile that ran
+// and failed is a response with ErrorCode and diagnostics, not an error; a
+// refused request is a *RemoteError carrying the runner's code.
+func (c *Client) Compile(ctx context.Context, request CompileRequest) (CompileResponse, error) {
+	request.Contract = ContractVersion
+	var response CompileResponse
+	err := c.doLimited(ctx, http.MethodPost, "/v1/compile", request, &response, MaxCompileRequestBytes, MaxCompileResponseBytes, http.StatusUnprocessableEntity)
+	return response, err
+}
+
 func (c *Client) ClaimOwner(ctx context.Context, ownerID string) (ClaimOwnerResponse, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	if !executionIDPattern.MatchString(ownerID) {
@@ -279,13 +289,19 @@ func (c *Client) CloseSession(ctx context.Context, sessionID string) (CloseSessi
 }
 
 func (c *Client) do(ctx context.Context, method, path string, payload any, destination any) error {
+	return c.doLimited(ctx, method, path, payload, destination, MaxRequestBytes, MaxResponseBytes, 0)
+}
+
+// doLimited is do with explicit size bounds. A response with resultStatus
+// (when non-zero) decodes into destination like a success.
+func (c *Client) doLimited(ctx context.Context, method, path string, payload any, destination any, maxRequest, maxResponse int64, resultStatus int) error {
 	var body io.Reader
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
 		if err != nil {
 			return requestFailure("encode Java runner sidecar request", false)
 		}
-		if int64(len(encoded)) > MaxRequestBytes {
+		if int64(len(encoded)) > maxRequest {
 			return requestFailure("Java runner sidecar request exceeds the size limit", false)
 		}
 		body = bytes.NewReader(encoded)
@@ -303,19 +319,19 @@ func (c *Client) do(ctx context.Context, method, path string, payload any, desti
 	if payload != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	response, err := javarunner.DoNativeHTTP(c.httpClient, request, MaxResponseBytes)
+	response, err := javarunner.DoNativeHTTP(c.httpClient, request, maxResponse)
 	if err != nil {
 		return requestFailure("Java runner sidecar is unavailable", true)
 	}
 	defer response.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(response.Body, MaxResponseBytes+1))
+	data, err := io.ReadAll(io.LimitReader(response.Body, maxResponse+1))
 	if err != nil {
 		return requestFailure("read Java runner sidecar response", true)
 	}
-	if int64(len(data)) > MaxResponseBytes {
+	if int64(len(data)) > maxResponse {
 		return requestFailure("Java runner sidecar response exceeds the size limit", true)
 	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
+	if (response.StatusCode < 200 || response.StatusCode >= 300) && (resultStatus == 0 || response.StatusCode != resultStatus) {
 		var remote ErrorResponse
 		if json.Unmarshal(data, &remote) != nil || remote.Contract != ContractVersion || remote.ErrorCode == "" {
 			return requestFailure("Java runner sidecar returned an invalid error response", true)
@@ -357,6 +373,8 @@ func responseContract(response any) (string, error) {
 	case *CloseSessionResponse:
 		return value.Contract, nil
 	case *PooledControlResponse:
+		return value.Contract, nil
+	case *CompileResponse:
 		return value.Contract, nil
 	default:
 		return "", fmt.Errorf("unsupported response type")

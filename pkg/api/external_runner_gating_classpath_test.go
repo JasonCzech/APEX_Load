@@ -3,6 +3,7 @@ package api
 import (
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -64,5 +65,24 @@ func TestLaunchConflictNoAssetConflictWithoutAssets(t *testing.T) {
 	codes := conflictCodes(conflicts)
 	if codes["java_vuser_classpath_asset_unresolved"] || codes["java_vuser_classpath_asset_distributed_unsupported"] {
 		t.Fatalf("no classpath-asset conflict expected without assets, got %#v", conflicts)
+	}
+}
+
+func TestLaunchConflictUnboundScriptClassesEntry(t *testing.T) {
+	t.Setenv("APEXLOAD_JAVA_VUSER_CLASSPATH_UPLOAD_ENABLED", "true")
+	group := javaVuserGroupWithClasspathAsset()
+	group.script.Config.JavaVuser.Classpath = []string{enterprisearchive.JavaVuserScriptClassesEntry, "app.jar"}
+	tr := &TestRunner{}
+	if !conflictCodes(tr.javaVuserRunnerLaunchConflictsForTestLocked(nil, []TestGroup{group}))["java_vuser_script_classes_missing"] {
+		t.Fatal("an unbound script classes entry must block the launch")
+	}
+	group.script.Config.JavaVuser.ClasspathAssets = append(group.script.Config.JavaVuser.ClasspathAssets, dsl.JavaClasspathAsset{Entry: enterprisearchive.JavaVuserScriptClassesEntry, SHA256: "def", StorageRef: "file:///assets/classes.jar"})
+	if conflictCodes(tr.javaVuserRunnerLaunchConflictsForTestLocked(nil, []TestGroup{group}))["java_vuser_script_classes_missing"] {
+		t.Fatal("a bound script classes entry must not block the launch")
+	}
+	group.script.Config.JavaVuser.Classpath = []string{"app.jar"}
+	group.script.Config.JavaVuser.ClasspathAssets = nil
+	if conflictCodes(tr.javaVuserRunnerLaunchConflictsForTestLocked(nil, []TestGroup{group}))["java_vuser_script_classes_missing"] {
+		t.Fatal("a classpath without the entry must not block the launch")
 	}
 }

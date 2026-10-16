@@ -37,6 +37,12 @@ const (
 	// 8-targeted harness jar — see `make java-vuser-runner-legacy`.
 	EnvJavaVuserAllowLegacyJava = "APEXLOAD_JAVA_VUSER_ALLOW_LEGACY_JAVA"
 
+	// EnvJavaVuserCompilerJDKHome names a JDK whose javac compiles imported
+	// Java Vuser source when the runtime a script selects has no compiler of
+	// its own (a JRE). It must be the runtime's Java version or newer; javac
+	// then targets the runtime with --release.
+	EnvJavaVuserCompilerJDKHome = "APEXLOAD_JAVA_VUSER_COMPILER_JDK_HOME"
+
 	// EnvJavaVuserClasspathUploadEnabled opts an operator into honoring
 	// user-uploaded classpath JARs for imported Java Vusers. When unset, the
 	// upload endpoint is disabled and any attached classpath assets are ignored
@@ -130,6 +136,9 @@ type JavaVuserOperatorConfig struct {
 	// middleware. See EnvJavaVuserAllowLegacyJava; it also requires a Java
 	// 8-targeted harness jar, since the shipped one is compiled --release 17.
 	AllowLegacyJava bool
+	// CompilerJDKHome is the JDK that compiles Java Vuser source when the
+	// selected runtime has no javac. See EnvJavaVuserCompilerJDKHome.
+	CompilerJDKHome string
 	HarnessJar      string
 	Classpath       []string
 	WorkDir         string
@@ -191,6 +200,7 @@ func LoadJavaVuserOperatorConfig() JavaVuserOperatorConfig {
 		RunnerURL:              firstNonEmptyEnv(EnvJavaVuserRunnerURL, DefaultJavaVuserRunnerURL),
 		DefaultJDKHome:         strings.TrimSpace(os.Getenv(EnvJavaVuserDefaultJDKHome)),
 		AllowLegacyJava:        envBool(EnvJavaVuserAllowLegacyJava),
+		CompilerJDKHome:        strings.TrimSpace(os.Getenv(EnvJavaVuserCompilerJDKHome)),
 		HarnessJar:             strings.TrimSpace(os.Getenv(EnvJavaVuserHarnessJar)),
 		Classpath:              splitClasspath(os.Getenv(EnvJavaVuserClasspath)),
 		WorkDir:                strings.TrimSpace(os.Getenv(EnvJavaVuserWorkDir)),

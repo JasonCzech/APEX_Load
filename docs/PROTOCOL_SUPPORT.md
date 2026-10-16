@@ -759,7 +759,7 @@ JDK resolution is cached for about 30 seconds, so a flag change takes effect on 
 
 Runtime validation limits count and size and rejects launcher takeover, classpath/module overrides, raw Xboot options, Java/native agents, custom system class loaders, terminal/dry-run options, command-triggering error handlers, reserved `-Dapexload.*` properties, template expressions, and properties whose names indicate credentials such as passwords, tokens, or secrets. JVM arguments are visible in operating-system process metadata, so secret references are deliberately left unresolved and rejected instead of being copied into the Java command line. Pass sensitive values through governed LR parameters/action data rather than `additional_vm_parameters`. Diagnostics identify only the token index and category, not its value.
 
-Script classpath entries identify precompiled classes or JARs already present on the selected executor. Script entries precede operator shared entries. APEX Load never compiles imported source. Every assigned executor verifies the referenced paths before assignment commit.
+Script classpath entries identify precompiled classes or JARs already present on the selected executor. Script entries precede operator shared entries. Every assigned executor verifies the referenced paths before assignment commit.
 
 #### Attaching classpath JARs
 
@@ -772,6 +772,15 @@ The feature is fail-closed and needs both sides enabled:
 - A local (same-host) sidecar additionally needs `APEXLOAD_JAVA_VUSER_CLASSPATH_ASSET_DIR` pointing at the controller's import asset root.
 
 Attached JARs are supported on a local runner only. A distributed run that carries them is blocked at launch (`java_vuser_classpath_asset_distributed_unsupported`); provision those dependencies on the executors instead.
+
+#### Compiling the script source
+
+VuGen compiles a Java Vuser's `.java` files before replay and puts the script directory on the classpath. An imported Java Vuser therefore gets an `apexload-script-classes.jar` entry first on its classpath, for its own compiled classes. While nothing is bound to that entry, a launch is blocked (`java_vuser_script_classes_missing`); remove the entry if every runner provides the classes another way. In the import review, **Compile source** on that entry compiles the reviewed `.java` files on the operator's Java runner (the loopback sidecar, or a contained child of the controller in local mode) and binds the jar to the entry like an attached one. **Drop or attach JAR** still accepts a jar built elsewhere.
+
+- The compile uses the script's own Java runtime, as VuGen does: its JDK selection and home. When that runtime is a JRE, the operator's `APEXLOAD_JAVA_VUSER_COMPILER_JDK_HOME` (the same Java version or newer) compiles for it with `--release`. The standard runner image ships a JRE, so set that variable or use a JDK-based runner image before compiling there.
+- It compiles against the APEX `lr` API, the script's classpath (attached JARs included) and the operator's shared classpath. Entries the runner cannot provide are left out and listed with javac's errors, so you can see which JARs to attach.
+- javac runs with annotation processing off, the one way it executes code from its classpath, under the runner's process containment and a two-minute deadline, one compile at a time. Source that is not valid UTF-8 is read as windows-1252, VuGen's encoding.
+- The server keeps the import's complete `.java` files (by content hash, never served back) only while `APEXLOAD_JAVA_VUSER_CLASSPATH_UPLOAD_ENABLED` is on, and compiles only those files. The binding records the source manifest digest it was compiled from (`compiled_from`); saving verifies it against the server's record and the draft's own reviewed manifest, so a compiled jar cannot be passed off as another script's. Like any attached JAR, it requires approval before launch.
 
 ### Xboot and dedicated loading
 
@@ -878,6 +887,7 @@ The relevant environment variables are:
 - `APEXLOAD_JAVA_VUSER_DEFAULT_JDK_HOME`
 - `APEXLOAD_JAVA_VUSER_ALLOW_LEGACY_JAVA` (lowers the Java floor from 17 to 8; requires the Java 8-targeted harness jar)
 - `APEXLOAD_JAVA_VUSER_HARNESS_JAR`
+- `APEXLOAD_JAVA_VUSER_COMPILER_JDK_HOME` (JDK that compiles imported source when the script's runtime has no javac)
 - `APEXLOAD_JAVA_VUSER_CLASSPATH`
 - `APEXLOAD_JAVA_VUSER_CLASSPATH_UPLOAD_ENABLED` (honors user-uploaded classpath JARs; fail-closed when unset)
 - `APEXLOAD_JAVA_VUSER_CLASSPATH_ASSET_DIR` (same-host import asset root a local sidecar reads uploaded JAR bytes from)

@@ -912,11 +912,11 @@ test('LoadRunner Java JAR attachment follows policy and survives review-session 
       entry: 'client.jar', file_name: asset.file_name, content_type: asset.content_type,
       size_bytes: asset.size_bytes, sha256: asset.sha256, storage_ref: asset.storage_ref,
     }
-    await expect(resolver).toContainText('1/1 attached')
+    await expect(resolver).toContainText('1/2 attached')
   } else {
     expect(uploaded.status()).toBe(404)
     await expect(resolver.getByRole('alert')).toContainText('APEXLOAD_JAVA_VUSER_CLASSPATH_UPLOAD_ENABLED')
-    await expect(resolver).toContainText('0/1 attached')
+    await expect(resolver).toContainText('0/2 attached')
   }
   const savedResponse = mutation(page, 'POST', '/api/v1/scripts/authoring/sessions')
   await page.getByRole('button', { name: /^Save (combined Java draft for approval|review artifact instead)$/ }).click()
@@ -924,7 +924,8 @@ test('LoadRunner Java JAR attachment follows policy and survives review-session 
   const reopened = await json(await request.get(`/api/v1/scripts/authoring/sessions/${saved.id}`))
   const reopenedJava = (reopened.draft as ScriptDefinition).config.java_vuser
   expect(reopenedJava?.enabled ?? false).toBe(false) // Go omits the disabled zero value.
-  expect(reopenedJava?.classpath).toEqual(['client.jar'])
+  // The importer reserves the first entry for the script's own compiled classes.
+  expect(reopenedJava?.classpath).toEqual(['apexload-script-classes.jar', 'client.jar'])
   if (binding) expect(reopenedJava?.classpath_assets).toEqual([binding])
   else expect(reopenedJava?.classpath_assets ?? []).toEqual([])
   // Reload the library so Resume consumes durable session data, not import state.

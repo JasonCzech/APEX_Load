@@ -121,7 +121,7 @@ func TestConvertZipJavaDependencyInventorySurvivesFinalizationAndDraftSerializat
 	if strings.Contains(string(raw), "binary-canary") {
 		t.Fatal("binary bytes exposed in serialized draft")
 	}
-	if len(saved.Config.JavaVuser.Classpath) != 0 {
+	if !reflect.DeepEqual(saved.Config.JavaVuser.Classpath, []string{JavaVuserScriptClassesEntry}) {
 		t.Fatal("asset inventory provisioned executable classpath")
 	}
 }
