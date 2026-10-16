@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"time"
 	"unsafe"
 
@@ -76,6 +77,14 @@ func RemoveIfSame(dir *os.File, name string, want ID) error {
 	if want.IsZero() {
 		return errors.New("expected identity is required")
 	}
+	return removeAt(dir, name, &want)
+}
+
+// RemoveAt removes name from dir like RemoveIfSame, whatever object it
+// names.
+func RemoveAt(dir *os.File, name string) error { return removeAt(dir, name, nil) }
+
+func removeAt(dir *os.File, name string, want *ID) error {
 	object, err := openAt(dir, name, windows.DELETE, false)
 	if errors.Is(err, windows.STATUS_DELETE_PENDING) {
 		return nil
@@ -84,12 +93,14 @@ func RemoveIfSame(dir *os.File, name string, want ID) error {
 		return &os.PathError{Op: "remove", Path: name, Err: ntErrno(err)}
 	}
 	defer object.Close()
-	id, err := FileID(object)
-	if err != nil {
-		return err
-	}
-	if id != want {
-		return &os.PathError{Op: "remove", Path: name, Err: ErrIdentityChanged}
+	if want != nil {
+		id, err := FileID(object)
+		if err != nil {
+			return err
+		}
+		if id != *want {
+			return &os.PathError{Op: "remove", Path: name, Err: ErrIdentityChanged}
+		}
 	}
 	handle := windows.Handle(object.Fd())
 	disposition := fileDispositionInformationEx{Flags: windows.FILE_DISPOSITION_DELETE | windows.FILE_DISPOSITION_POSIX_SEMANTICS | windows.FILE_DISPOSITION_IGNORE_READONLY_ATTRIBUTE}
@@ -97,7 +108,7 @@ func RemoveIfSame(dir *os.File, name string, want ID) error {
 	err = windows.NtSetInformationFile(handle, &iosb, (*byte)(unsafe.Pointer(&disposition)), uint32(unsafe.Sizeof(disposition)), windows.FileDispositionInformationEx)
 	if errors.Is(err, statusInvalidInfoClass) || errors.Is(err, windows.STATUS_INVALID_PARAMETER) || errors.Is(err, windows.STATUS_NOT_SUPPORTED) {
 		deleteFile := byte(1)
-		return windows.SetFileInformationByHandle(handle, windows.FileDispositionInfo, &deleteFile, 1)
+		err = windows.SetFileInformationByHandle(handle, windows.FileDispositionInfo, &deleteFile, 1)
 	}
 	if err != nil {
 		return &os.PathError{Op: "remove", Path: name, Err: ntErrno(err)}
@@ -120,13 +131,13 @@ func Transient(err error) bool {
 // RetryInterval is the backoff between attempts of Retry.
 const RetryInterval = 25 * time.Millisecond
 
-// Retry runs op until it succeeds, fails with an error that is not
-// Transient, or ctx ends; then it returns op's last error (joined with the
-// context's when ctx ended first).
-func Retry(ctx context.Context, op func() error) error {
+// Retry runs op until it succeeds, fails with an error that is neither
+// Transient nor one of also, or ctx ends; then it returns op's last error
+// (joined with the context's when ctx ended first).
+func Retry(ctx context.Context, op func() error, also ...error) error {
 	for {
 		err := op()
-		if err == nil || !Transient(err) {
+		if err == nil || !Transient(err) && !slices.ContainsFunc(also, func(e error) bool { return errors.Is(err, e) }) {
 			return err
 		}
 		timer := time.NewTimer(RetryInterval)

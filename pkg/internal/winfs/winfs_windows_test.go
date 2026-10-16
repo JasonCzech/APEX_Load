@@ -115,6 +115,21 @@ func openDir(t *testing.T, path string) *os.File {
 	return f
 }
 
+// openShareAll opens path for reading while sharing read, write and delete,
+// as antivirus and indexing scans do (os.Open does not share delete).
+func openShareAll(t *testing.T, path string) *os.File {
+	t.Helper()
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := windows.CreateFile(p, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return os.NewFile(uintptr(h), path)
+}
+
 func TestCreatePrivateDirAtIsPrivateAndInherited(t *testing.T) {
 	user, err := CurrentUserSID()
 	if err != nil {
@@ -137,8 +152,14 @@ func TestCreatePrivateDirAtIsPrivateAndInherited(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := sd.String(), PrivateDirectorySDDL(user); got != want {
-		t.Fatalf("DACL %s, want %s", got, want)
+	// Compare as Windows renders both: it prints a well-known account's SID
+	// by its alias (LA for the built-in Administrator).
+	want, err := windows.SecurityDescriptorFromString(PrivateDirectorySDDL(user))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sd.String() != want.String() {
+		t.Fatalf("DACL %s, want %s", sd.String(), want.String())
 	}
 	if _, err := CreatePrivateDirAt(parent, ".private"); !errors.Is(err, fs.ErrExist) {
 		t.Fatalf("a second create = %v, want fs.ErrExist", err)
@@ -366,14 +387,20 @@ func TestRenameAtNeverReplaces(t *testing.T) {
 	if data, _ := os.ReadFile(filepath.Join(dir, "taken")); string(data) != "taken" {
 		t.Fatal("a create-only rename replaced its target")
 	}
-	// A held share-all reader does not block the rename.
-	reader, err := os.Open(filepath.Join(dir, "source"))
+	// A reader that does not share delete (os.Open) blocks the rename with a
+	// transient sharing violation; a share-all reader (a scan) does not.
+	blocking, err := os.Open(filepath.Join(dir, "source"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := RenameAt(parent, "source", "renamed"); !Transient(err) {
+		t.Fatalf("rename with an os.Open reader = %v, want a transient sharing violation", err)
+	}
+	_ = blocking.Close()
+	reader := openShareAll(t, filepath.Join(dir, "source"))
 	defer reader.Close()
 	if err := RenameAt(parent, "source", "renamed"); err != nil {
-		t.Fatalf("rename with a reader open = %v", err)
+		t.Fatalf("rename with a share-all reader open = %v", err)
 	}
 	if err := RenameAt(parent, "generation", ".retired-generation"); err != nil {
 		t.Fatalf("directory rename = %v", err)
@@ -395,10 +422,7 @@ func TestRemoveIfSame(t *testing.T) {
 	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	f := openShareAll(t, path)
 	id, err := FileID(f)
 	if err != nil {
 		t.Fatal(err)
@@ -468,6 +492,22 @@ func TestRetry(t *testing.T) {
 	if !errors.Is(err, windows.ERROR_LOCK_VIOLATION) || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Retry past its deadline = %v", err)
 	}
+	// Errors named in also are retried like transient ones; others are not.
+	attempts = 0
+	err = Retry(context.Background(), func() error {
+		attempts++
+		if attempts < 2 {
+			return &os.PathError{Op: "remove", Path: "x", Err: windows.ERROR_DIR_NOT_EMPTY}
+		}
+		return nil
+	}, windows.ERROR_DIR_NOT_EMPTY)
+	if err != nil || attempts != 2 {
+		t.Fatalf("Retry with also = %v after %d attempts", err, attempts)
+	}
+	attempts = 0
+	if err := Retry(context.Background(), func() error { attempts++; return windows.ERROR_DIR_NOT_EMPTY }, windows.ERROR_ACCESS_DENIED); !errors.Is(err, windows.ERROR_DIR_NOT_EMPTY) || attempts != 1 {
+		t.Fatalf("an error outside also was retried: %v after %d", err, attempts)
+	}
 	for _, transient := range []error{windows.ERROR_SHARING_VIOLATION, windows.ERROR_LOCK_VIOLATION, windows.ERROR_DELETE_PENDING, windows.STATUS_DELETE_PENDING} {
 		if !Transient(transient) {
 			t.Errorf("%v is not transient", transient)
@@ -501,5 +541,37 @@ func TestSyncDirAndOwner(t *testing.T) {
 	}
 	if OwnedByCurrentToken("") {
 		t.Fatal("an empty SID counts as this token's owner")
+	}
+}
+
+// A name another handle left delete-pending (legacy delete semantics)
+// counts as removed.
+func TestRemoveAtCountsDeletePendingAsRemoved(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pending")
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pathPtr, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder, err := windows.CreateFile(pathPtr, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(holder)
+	deleter, err := windows.CreateFile(pathPtr, windows.DELETE, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleteFile := byte(1)
+	if err := windows.SetFileInformationByHandle(deleter, windows.FileDispositionInfo, &deleteFile, 1); err != nil {
+		t.Fatal(err)
+	}
+	_ = windows.CloseHandle(deleter)
+	parent := openDir(t, dir)
+	if err := RemoveAt(parent, "pending"); err != nil {
+		t.Fatalf("removing a delete-pending name = %v", err)
 	}
 }
