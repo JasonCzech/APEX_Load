@@ -181,7 +181,7 @@ func TestHAROwnershipJoinedCandidateCarriesBoundedActualSize(t *testing.T) {
 func TestHAROwnershipRawFileIsPrivateBeforeNativeWriterEnters(t *testing.T) {
 	o := fixtureHAROwner(t, t.TempDir())
 	info, err := os.Lstat(o.path)
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 || info.Size() != 0 {
+	if err != nil || !info.Mode().IsRegular() || harPrivatePath(o.path, false) != nil || info.Size() != 0 {
 		t.Fatal("raw path was not privately reserved before native writer admission", err)
 	}
 	// The pinned local SDK uses ordinary writeFile/truncate, which preserves
@@ -190,7 +190,7 @@ func TestHAROwnershipRawFileIsPrivateBeforeNativeWriterEnters(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, err := os.Lstat(o.path)
-	if err != nil || !os.SameFile(info, after) || after.Mode().Perm() != 0o600 {
+	if err != nil || !os.SameFile(info, after) || harPrivatePath(o.path, false) != nil {
 		t.Fatal("native-style truncate replaced private file identity or mode", err)
 	}
 	if _, err := finishFixtureHAR(t, o, true); err != nil {

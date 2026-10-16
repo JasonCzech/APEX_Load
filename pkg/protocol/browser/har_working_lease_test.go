@@ -52,8 +52,7 @@ func TestHAROwnershipPrivateGenerationAndDurablePublication(t *testing.T) {
 	if !validHARGeneration(o.generation) || !strings.Contains(o.path, runtimeHARWorkingDirectory) || strings.HasSuffix(o.path, ".har.tmp") {
 		t.Fatal("raw capture escaped private generation")
 	}
-	info, err := os.Stat(filepath.Dir(o.path))
-	if err != nil || info.Mode().Perm() != 0o700 {
+	if err := harPrivatePath(filepath.Dir(o.path), true); err != nil {
 		t.Fatal("generation is not private", err)
 	}
 	artifact, err := finishFixtureHAR(t, o, true)
@@ -253,28 +252,26 @@ func TestHAROwnershipLateOldLimiterCannotCloseNewGeneration(t *testing.T) {
 }
 
 func TestHAROwnershipRejectsUnsafeRootsAndLockAliases(t *testing.T) {
-	for _, kind := range []string{"root_symlink", "work_symlink", "work_permissions", "lock_hardlink", "lock_symlink"} {
+	kinds := []string{"work_permissions", "lock_hardlink", "lock_symlink"}
+	for _, alias := range harDirAliasKinds {
+		kinds = append(kinds, "root_"+alias, "work_"+alias)
+	}
+	for _, kind := range kinds {
 		t.Run(kind, func(t *testing.T) {
 			dir := t.TempDir()
 			other := t.TempDir()
-			if kind == "root_symlink" {
+			work := filepath.Join(dir, runtimeHARWorkingDirectory)
+			switch {
+			case strings.HasPrefix(kind, "root_"):
 				p := filepath.Join(dir, "alias")
-				if err := os.Symlink(other, p); err != nil {
-					t.Fatal(err)
-				}
+				makeHARDirAlias(t, strings.TrimPrefix(kind, "root_"), other, p)
 				dir = p
-			} else if kind == "work_symlink" {
-				if err := os.Symlink(other, filepath.Join(dir, runtimeHARWorkingDirectory)); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				work := filepath.Join(dir, runtimeHARWorkingDirectory)
-				mode := os.FileMode(0o700)
+			case strings.HasPrefix(kind, "work_") && kind != "work_permissions":
+				makeHARDirAlias(t, strings.TrimPrefix(kind, "work_"), other, work)
+			default:
+				makeHARPrivateDir(t, work)
 				if kind == "work_permissions" {
-					mode = 0o755
-				}
-				if err := os.Mkdir(work, mode); err != nil {
-					t.Fatal(err)
+					makeHARUnsafe(t, work)
 				}
 				if strings.HasPrefix(kind, "lock_") {
 					target := filepath.Join(other, "target")
