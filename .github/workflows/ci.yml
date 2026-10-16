@@ -1088,12 +1088,41 @@ jobs:
           output-file: sbom-${{ matrix.binary }}-${{ matrix.profile }}.spdx.json
           upload-artifact: false
 
-      - name: Scan image for fixable high-severity vulnerabilities
+      # Image vulnerability gate, the same at every scan site
+      # (scripts/image_scan_policy_test.go): every HIGH/CRITICAL OS finding is
+      # listed; OS findings block once the distribution has shipped a fix (the
+      # images apply every released fix at build time, so one means a stale
+      # base or package); application libraries are ours to update, so their
+      # findings block whether or not upstream has fixed them.
+      - name: List high-severity OS vulnerabilities, fixed or not
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: apexload-${{ matrix.binary }}:ci-${{ matrix.profile }}
           format: table
           severity: HIGH,CRITICAL
+          vuln-type: os
+          ignore-unfixed: false
+          exit-code: "0"
+          timeout: 10m0s
+
+      - name: Block fixable high-severity OS vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: apexload-${{ matrix.binary }}:ci-${{ matrix.profile }}
+          format: table
+          severity: HIGH,CRITICAL
+          vuln-type: os
+          ignore-unfixed: true
+          exit-code: "1"
+          timeout: 10m0s
+
+      - name: Block high-severity library vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: apexload-${{ matrix.binary }}:ci-${{ matrix.profile }}
+          format: table
+          severity: HIGH,CRITICAL
+          vuln-type: library
           ignore-unfixed: false
           exit-code: "1"
           timeout: 10m0s

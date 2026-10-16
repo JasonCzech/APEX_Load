@@ -160,8 +160,12 @@ then:
 2. Packages Linux controller-side tools, the App Service zip, Helm chart, and
    signed desktop clients.
 3. Builds standard and enterprise controller/generator images once for amd64
-   and arm64, generates SPDX SBOMs, blocks HIGH/CRITICAL findings, signs their
-   exact multi-platform digests, and verifies portable SBOM attestations.
+   and arm64, generates SPDX SBOMs, blocks fixable HIGH/CRITICAL findings, signs
+   their exact multi-platform digests, and verifies portable SBOM attestations.
+   The gate, the same in CI and on-prem publishing, blocks every
+   application-library finding, fixed upstream or not, and every OS-package
+   finding the distribution has shipped a fix for. OS findings with no
+   distribution fix are listed in the log without blocking.
    GitHub.com hosted provenance is also emitted when the explicit capability
    flag and protected attestation token are configured.
 4. Creates `release-manifest.json` schema version 2, a single `SHA256SUMS`, and

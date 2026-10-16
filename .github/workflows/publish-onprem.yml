@@ -240,7 +240,33 @@ jobs:
             printf 'arm64-digest=%s\n' "$arm64_digest"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Scan exact internal linux-amd64 digest
+      # Image vulnerability gate, the same at every scan site
+      # (scripts/image_scan_policy_test.go): every HIGH/CRITICAL OS finding is
+      # listed; OS findings block once the distribution has shipped a fix (the
+      # images apply every released fix at build time, so one means a stale
+      # base or package); application libraries are ours to update, so their
+      # findings block whether or not upstream has fixed them.
+      - name: List exact internal linux-amd64 OS findings
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.candidate.outputs.repository }}@${{ steps.candidate.outputs.amd64-digest }}
+          format: table
+          exit-code: "0"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          vuln-type: os
+
+      - name: Block fixable OS findings in the exact internal linux-amd64 digest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.candidate.outputs.repository }}@${{ steps.candidate.outputs.amd64-digest }}
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os
+
+      - name: Block library findings in the exact internal linux-amd64 digest
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ steps.candidate.outputs.repository }}@${{ steps.candidate.outputs.amd64-digest }}
@@ -248,9 +274,29 @@ jobs:
           exit-code: "1"
           severity: HIGH,CRITICAL
           ignore-unfixed: false
-          vuln-type: os,library
+          vuln-type: library
 
-      - name: Scan exact internal linux-arm64 digest
+      - name: List exact internal linux-arm64 OS findings
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.candidate.outputs.repository }}@${{ steps.candidate.outputs.arm64-digest }}
+          format: table
+          exit-code: "0"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          vuln-type: os
+
+      - name: Block fixable OS findings in the exact internal linux-arm64 digest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.candidate.outputs.repository }}@${{ steps.candidate.outputs.arm64-digest }}
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os
+
+      - name: Block library findings in the exact internal linux-arm64 digest
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ steps.candidate.outputs.repository }}@${{ steps.candidate.outputs.arm64-digest }}
@@ -258,7 +304,7 @@ jobs:
           exit-code: "1"
           severity: HIGH,CRITICAL
           ignore-unfixed: false
-          vuln-type: os,library
+          vuln-type: library
 
       - name: Validate internal signing identity mode
         env:
