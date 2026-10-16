@@ -455,8 +455,12 @@ func TestBrowserReplayHARPruneInitFailureAndDownloadSlots(t *testing.T) {
 // Directories left by ended processes are removed.
 func TestReplayHARStoreManagedRoot(t *testing.T) {
 	tmp := t.TempDir()
+	// os.TempDir reads TMPDIR on Unix and TMP (then TEMP) on Windows.
 	t.Setenv("TMPDIR", tmp)
+	t.Setenv("TMP", tmp)
+	t.Setenv("TEMP", tmp)
 	root := filepath.Join(tmp, replayHARRootName)
+	makeReplayHARRootPrivate(t, root)
 	if err := os.MkdirAll(filepath.Join(root, "manager-ended"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -503,12 +507,8 @@ func TestReplayHARStoreManagedRoot(t *testing.T) {
 	if err := os.Remove(root); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(root, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(root, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	makeReplayHARRootPrivate(t, root)
+	makeReplayHARRootShared(t, root)
 	var shared replayHARStore
 	copied, err = shared.write(&BrowserReplaySession{ID: "c"}, strings.NewReader("{}"), 2)
 	if err != nil || strings.HasPrefix(copied, root+string(os.PathSeparator)) {
@@ -518,9 +518,7 @@ func TestReplayHARStoreManagedRoot(t *testing.T) {
 
 	// A live manager keeps its directory fresh, and makes it again if another
 	// process removed it.
-	if err := os.Chmod(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	makeReplayHARRootPrivateAgain(t, root)
 	var live replayHARStore
 	first, err := live.write(&BrowserReplaySession{ID: "d"}, strings.NewReader("{}"), 2)
 	if err != nil {

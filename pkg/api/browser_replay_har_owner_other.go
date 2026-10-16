@@ -1,10 +1,17 @@
-//go:build !darwin && !linux
+//go:build !darwin && !linux && !windows
 
 package api
 
-import "os"
+import (
+	"errors"
+	"os"
+)
 
-// replayHAROwnedByProcess cannot prove ownership here, so the managed root is
-// never adopted (native replay HARs need the browser's HAR ownership, which
-// only darwin and linux provide).
-func replayHAROwnedByProcess(os.FileInfo) bool { return false }
+// ensurePrivateReplayHARRoot cannot prove ownership here, so the managed root
+// is never adopted (native replay HARs need the browser's HAR ownership,
+// which this platform does not provide).
+func ensurePrivateReplayHARRoot(string) error {
+	return errors.New("the managed replay HAR root is unavailable on this platform")
+}
+
+func privateReplayHARTempDir() (string, error) { return os.MkdirTemp("", "apexload-replay-har-") }

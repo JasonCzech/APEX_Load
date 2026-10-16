@@ -149,7 +149,7 @@ func (s *replayHARStore) openLocked() error {
 	if err != nil {
 		// Not this process's to manage (another user's, a link, other
 		// permissions): a private directory of its own, without the sweep.
-		if dir, err = os.MkdirTemp("", "apexload-replay-har-"); err != nil {
+		if dir, err = privateReplayHARTempDir(); err != nil {
 			return err
 		}
 	}
@@ -163,15 +163,8 @@ func (s *replayHARStore) openLocked() error {
 // a link (which would steer the sweep elsewhere) or another user's.
 func openManagedReplayHARDir() (string, error) {
 	root := filepath.Join(os.TempDir(), replayHARRootName)
-	if err := os.MkdirAll(root, 0o700); err != nil {
+	if err := ensurePrivateReplayHARRoot(root); err != nil {
 		return "", err
-	}
-	info, err := os.Lstat(root)
-	if err != nil {
-		return "", err
-	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o700 || !replayHAROwnedByProcess(info) {
-		return "", errors.New("the managed replay HAR root is not a private directory")
 	}
 	dir, err := os.MkdirTemp(root, "manager-")
 	if err != nil {

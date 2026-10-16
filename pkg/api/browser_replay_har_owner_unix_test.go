@@ -32,3 +32,27 @@ func TestReplayHAROwnedByProcess(t *testing.T) {
 		t.Fatal("a directory without ownership information was adopted")
 	}
 }
+
+// makeReplayHARRootPrivate creates root as the managed root must be: 0700.
+func makeReplayHARRootPrivate(t *testing.T, root string) {
+	t.Helper()
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// makeReplayHARRootShared grants other users access to root.
+func makeReplayHARRootShared(t *testing.T, root string) {
+	t.Helper()
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// makeReplayHARRootPrivateAgain withdraws that access.
+func makeReplayHARRootPrivateAgain(t *testing.T, root string) {
+	t.Helper()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+}
