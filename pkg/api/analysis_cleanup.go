@@ -26,19 +26,25 @@ func (s *Server) retryAnalysisCleanup(ctx context.Context) error {
 			return err
 		}
 	}
+	// One job's failure never stops the sweep: jobs that tie on not_before
+	// (a coarse wall clock, as on Windows, gives a dataset and its attempts
+	// one timestamp) are ordered by resource ID, so a failing job could
+	// otherwise keep every job behind it from ever running.
+	var failures []error
 	for _, j := range jobs {
+		if err := ctx.Err(); err != nil {
+			failures = append(failures, err)
+			break
+		}
 		err := s.retryAnalysisCleanupJob(ctx, store, j)
 		if errors.Is(err, errAnalysisCleanupPhysical) {
-			if err = deferBlockedAnalysisCleanup(s.store, j); err != nil {
-				return err
-			}
-			continue
+			err = deferBlockedAnalysisCleanup(s.store, j)
 		}
 		if err != nil {
-			return err
+			failures = append(failures, err)
 		}
 	}
-	return nil
+	return errors.Join(failures...)
 }
 
 // Logical cleanup jobs retire only after the exact deletion operation and
