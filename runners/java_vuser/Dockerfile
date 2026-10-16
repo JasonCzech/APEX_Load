@@ -39,7 +39,11 @@ RUN mkdir -p /slot-api /slot-shim \
 
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
-RUN apk add --no-cache ca-certificates curl openjdk21-jre-headless \
+# A JDK, not just the runtime: the runner compiles imported Java Vuser source
+# (/v1/compile) with the script's runtime, as VuGen does. The jmods serve only
+# jlink, so they are dropped (about 80 MB).
+RUN apk add --no-cache ca-certificates curl openjdk21-jdk \
+    && rm -rf /usr/lib/jvm/java-21-openjdk/jmods \
     && mkdir -p /opt/apexload/java-vuser /opt/java /tmp \
     && ln -s /usr/lib/jvm/java-21-openjdk /opt/java/openjdk \
     && chown -R 65532:65532 /opt/apexload /tmp
