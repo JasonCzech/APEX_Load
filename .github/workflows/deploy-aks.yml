@@ -30,7 +30,7 @@ jobs:
         run: printf 'KUBECONFIG=%s\n' "$RUNNER_TEMP/apexload-kubeconfig" >> "$GITHUB_ENV"
 
       - name: Checkout trusted tag verifier from protected main
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/heads/main
           fetch-depth: 0
@@ -66,7 +66,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Checkout verified signed deployment tooling
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.verified.outputs.commit }}
           fetch-depth: 0
@@ -74,7 +74,7 @@ jobs:
 
       - name: Setup kubectl
         if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
-        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
+        uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
         with:
           version: v1.34.9
 
@@ -133,7 +133,7 @@ jobs:
 
       - name: Authenticate to Azure with environment identity
         if: vars.AZURE_AUTH_MODE != 'managed-identity'
-        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -141,7 +141,7 @@ jobs:
 
       - name: Authenticate with Azure managed identity for private GHES
         if: vars.AZURE_AUTH_MODE == 'managed-identity'
-        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           auth-type: IDENTITY
           client-id: ${{ vars.AZURE_CLIENT_ID }}

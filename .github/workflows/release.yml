@@ -28,7 +28,7 @@ jobs:
       commit: ${{ steps.verified.outputs.commit }}
     steps:
       - name: Checkout trusted verification tooling from protected main
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/heads/main
           fetch-depth: 0
@@ -109,7 +109,7 @@ jobs:
       source-epoch: ${{ steps.metadata.outputs.source-epoch }}
     steps:
       - name: Checkout release source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
           fetch-depth: 0
@@ -142,7 +142,7 @@ jobs:
     environment: registry-release
     steps:
       - name: Checkout the protected action release
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           persist-credentials: false
@@ -375,7 +375,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout release source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           persist-credentials: false
@@ -387,7 +387,7 @@ jobs:
           cache: true
 
       - name: Setup Node 22
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.22.0
           cache: npm
@@ -471,7 +471,7 @@ jobs:
             default_runner: '["windows-2025"]'
     steps:
       - name: Checkout release source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           persist-credentials: false
@@ -483,7 +483,7 @@ jobs:
           cache: false
 
       - name: Setup Node 22
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.22.0
 
@@ -884,13 +884,13 @@ jobs:
             binary: generator
     steps:
       - name: Checkout release source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           persist-credentials: false
 
       - name: Install pinned cross-architecture emulation
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           image: docker.io/tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
           platforms: ${{ runner.arch == 'ARM64' && 'amd64' || 'arm64' }}
@@ -977,7 +977,7 @@ jobs:
 
       - name: Build and push once
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           builder: apexload-release-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.component }}-${{ matrix.profile }}
           context: .
@@ -1021,7 +1021,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Generate linux-amd64 SPDX SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ steps.image.outputs.repository }}@${{ steps.platforms.outputs.amd64-digest }}
           format: spdx-json
@@ -1029,7 +1029,7 @@ jobs:
           upload-artifact: false
 
       - name: Generate linux-arm64 SPDX SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ steps.image.outputs.repository }}@${{ steps.platforms.outputs.arm64-digest }}
           format: spdx-json
@@ -1208,7 +1208,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout release tooling
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           persist-credentials: false
@@ -1297,7 +1297,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout release verification tooling
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           fetch-depth: 0
@@ -1513,7 +1513,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout release publication tooling
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           fetch-depth: 0
@@ -1573,7 +1573,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout stable release commit
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           fetch-depth: 0
