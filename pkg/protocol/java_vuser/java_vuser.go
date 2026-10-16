@@ -1216,11 +1216,12 @@ func (j *JavaVuser) Teardown(ctx context.Context) error {
 				// The action already reported its invocation failure, but a
 				// distinct containment failure means capacity was quarantined
 				// and the generator is terminal. Never hide that teardown fact.
+				// Keep the kill's own error: it names the containment step that failed.
 				teardownErrs = append(
 					teardownErrs,
 					fmt.Errorf(
 						"java_vuser persistent runner teardown failed (process_containment_unavailable): %w",
-						javarunner.ErrProcessContainmentFailed,
+						closeErr,
 					),
 				)
 			}
