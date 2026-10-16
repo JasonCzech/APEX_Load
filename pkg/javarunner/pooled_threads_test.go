@@ -220,8 +220,10 @@ func TestQualifyLoadRunnerThreadsCoversAJava8JDKAboveItsJRE(t *testing.T) {
 	}
 }
 
-// A full JDK links a man-page locale to a directory inside its home. Thread
-// mode qualifies it; the isolated mode keeps refusing directory links.
+// A full JDK links a man-page locale to a directory inside its home, which
+// thread mode qualifies as the isolated mode does
+// (TestPooledQualificationRuntimeSymlinks); a directory link leaving the home
+// does not.
 func TestQualifyLoadRunnerThreadsAcceptsInHomeDirectoryLinks(t *testing.T) {
 	r := threadModeFixture(t)
 	home := r.Launch.JDK.Home
@@ -236,12 +238,6 @@ func TestQualifyLoadRunnerThreadsAcceptsInHomeDirectoryLinks(t *testing.T) {
 	}
 	if _, err := InspectPooledQualification(context.Background(), r); err != nil {
 		t.Fatalf("thread mode refused an in-home directory link: %v", err)
-	}
-	isolated := r
-	isolated.Launch.LoadRunnerThreads = false
-	isolated.Launch.JDK.Major = 17
-	if _, err := InspectPooledQualification(context.Background(), isolated); err == nil {
-		t.Fatal("the isolated mode must keep refusing directory links")
 	}
 	outside := t.TempDir()
 	if err := os.Remove(filepath.Join(home, "man", "ja")); err != nil {

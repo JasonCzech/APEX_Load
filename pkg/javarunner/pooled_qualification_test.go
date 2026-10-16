@@ -554,19 +554,89 @@ func TestPooledQualificationRuntimeSymlinks(t *testing.T) {
 	if err != nil || retargeted == linked {
 		t.Fatalf("retargeted link kept the identity: %v", err)
 	}
-	outside := filepath.Join(filepath.Dir(home), "outside.txt")
-	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
+	// An in-home link to a directory or to the home itself, as Alpine's
+	// jre -> . link, qualifies: what it reaches is hashed under its own path.
+	if err := os.Symlink(".", filepath.Join(home, "jre")); err != nil {
 		t.Fatal(err)
 	}
-	for name, target := range map[string]string{"escaping": outside, "dangling": "../java.base/absent", "directory": "../java.base"} {
+	relink := func(target string) {
+		t.Helper()
 		if err := os.Remove(link); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Symlink(target, link); err != nil {
 			t.Fatal(err)
 		}
+	}
+	relink("../java.base")
+	if _, err := InspectPooledQualification(context.Background(), request); err != nil {
+		t.Fatalf("in-home directory and home links refused: %v", err)
+	}
+	outside := filepath.Join(filepath.Dir(home), "outside.txt")
+	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A hop outside the home could be repointed to another in-home file
+	// without changing the recorded target.
+	hop := filepath.Join(filepath.Dir(home), "hop")
+	if err := os.Symlink(filepath.Join(home, "legal", "java.base", "LICENSE"), hop); err != nil {
+		t.Fatal(err)
+	}
+	for name, target := range map[string]string{"escaping": outside, "escaping directory": filepath.Dir(home), "round trip": hop, "dangling": "../java.base/absent"} {
+		relink(target)
 		if _, err := InspectPooledQualification(context.Background(), request); err == nil {
 			t.Fatalf("%s runtime link qualified", name)
+		}
+	}
+}
+
+// Distribution JDKs link their trust store to the system CA bundle outside
+// the home. The bundle's content joins the identity; no other runtime file may
+// link out of the home, and the trust store must link to a regular file.
+func TestPooledQualificationTrustStoreLink(t *testing.T) {
+	request := qualificationFixture(t)
+	home := request.Launch.JDK.Home
+	bundle := filepath.Join(filepath.Dir(home), "ca-bundle")
+	if err := os.WriteFile(bundle, []byte("trusted roots"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, "lib", "security"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store := filepath.Join(home, "lib", "security", "cacerts")
+	if err := os.Symlink(bundle, store); err != nil {
+		t.Fatal(err)
+	}
+	linked, err := InspectPooledQualification(context.Background(), request)
+	if err != nil {
+		t.Fatalf("trust store linked to the system bundle refused: %v", err)
+	}
+	if err := os.WriteFile(bundle, []byte("other roots"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := InspectPooledQualification(context.Background(), request)
+	if err != nil || changed == linked {
+		t.Fatalf("a changed trust store kept the identity: %v", err)
+	}
+	other := filepath.Join(home, "lib", "security", "blocked.certs")
+	if err := os.Symlink(bundle, other); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InspectPooledQualification(context.Background(), request); err == nil {
+		t.Fatal("a runtime file other than the trust store linked out of the home")
+	}
+	if err := os.Remove(other); err != nil {
+		t.Fatal(err)
+	}
+	for name, target := range map[string]string{"directory": filepath.Dir(home), "dangling": filepath.Join(filepath.Dir(home), "absent")} {
+		if err := os.Remove(store); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, store); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := InspectPooledQualification(context.Background(), request); err == nil {
+			t.Fatalf("trust store linked to a %s target qualified", name)
 		}
 	}
 }

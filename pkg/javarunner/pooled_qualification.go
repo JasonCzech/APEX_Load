@@ -190,8 +190,9 @@ func cloneQualificationRequest(r PooledQualificationRequest) PooledQualification
 // InspectPooledQualification calculates an identity for subsequent operator
 // review; it does NOT approve it. Runtime hashing covers the entire JDK tree,
 // including modules/native implementation libraries, not only java and release.
-// Symlinks/special files are conservatively rejected. These scans cannot detect
-// every application JNI use or prove that background work can be attributed.
+// Special files are rejected, as are symlinks qualificationScanner.link refuses.
+// These scans cannot detect every application JNI use or prove that background
+// work can be attributed.
 func InspectPooledQualification(ctx context.Context, r PooledQualificationRequest) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -266,7 +267,7 @@ func InspectPooledQualification(ctx context.Context, r PooledQualificationReques
 		var f qualificationFile
 		var err error
 		if entry.Type()&fs.ModeSymlink != 0 {
-			f, err = runtimeLink(r.Launch.JDK.Home, path, r.Launch.LoadRunnerThreads)
+			f, err = scan.link(r.Launch.JDK.Home, path)
 		} else {
 			f, err = scan.file(path)
 		}
@@ -359,19 +360,27 @@ type qualificationFile struct {
 	Path, SHA256 string
 	Size         int64
 	Mode         uint32
-	// Link is a runtime symlink's target. Its file is hashed under its own
-	// path, so a link only adds where it points.
+	// Link is a runtime symlink's target. What an in-home link reaches is
+	// hashed under its own path, so the link adds only where it points; a
+	// trust store linked out of the home also carries its content's hash.
 	Link string `json:",omitempty"`
 }
 
-// runtimeLink accepts a symlink inside the JDK home only when it resolves to
-// a regular file that is also inside the home, as JDK builds link their
-// per-module legal notices to java.base. Anything else is refused.
-// runtimeLink records an in-home runtime symlink to a regular file. With
-// directories, as in LoadRunner thread mode, an in-home link to a directory
-// qualifies too: full JDKs link man-page locales, and the directory's files
-// are hashed under their own path.
-func runtimeLink(home, path string, directories bool) (qualificationFile, error) {
+// runtimeTrustStore is the one runtime file that may link out of the JDK
+// home: distribution packages such as Alpine's link it to the system CA
+// bundle.
+const runtimeTrustStore = "lib/security/cacerts"
+
+// link records a runtime symlink by its target. A link whose target and
+// resolution both lie inside the home, at a regular file, a directory or the
+// home itself, adds only where it points, since what it reaches is hashed
+// under its own path: JDK builds link per-module legal notices to java.base,
+// Alpine links jre to its home, and full JDKs link man-page locales. A link
+// that leaves the home and comes back is refused, since only its outside
+// target would be recorded. The trust store may link out of the home; its
+// content, which the JVM reads as its own, joins the identity. Any other link
+// is refused.
+func (s *qualificationScanner) link(home, path string) (qualificationFile, error) {
 	target, err := os.Readlink(path)
 	if err != nil || target == "" || len(target) > 4096 || !utf8.ValidString(target) || strings.ContainsAny(target, "\x00\r\n") {
 		return qualificationFile{}, ErrPooledQualification
@@ -380,15 +389,33 @@ func runtimeLink(home, path string, directories bool) (qualificationFile, error)
 	if err != nil {
 		return qualificationFile{}, ErrPooledQualification
 	}
-	rel, err := filepath.Rel(home, resolved)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-		return qualificationFile{}, ErrPooledQualification
+	hop := target
+	if !filepath.IsAbs(hop) {
+		hop = filepath.Join(filepath.Dir(path), hop)
+	}
+	if !withinHome(home, hop) || !withinHome(home, resolved) {
+		name, err := filepath.Rel(home, path)
+		if err != nil || filepath.ToSlash(name) != runtimeTrustStore {
+			return qualificationFile{}, ErrPooledQualification
+		}
+		f, err := s.file(resolved)
+		if err != nil {
+			return qualificationFile{}, err
+		}
+		f.Mode, f.Link = uint32(fs.ModeSymlink), target
+		return f, nil
 	}
 	info, err := os.Lstat(resolved)
-	if err != nil || !info.Mode().IsRegular() && !(directories && info.IsDir()) {
+	if err != nil || !info.Mode().IsRegular() && !info.IsDir() {
 		return qualificationFile{}, ErrPooledQualification
 	}
 	return qualificationFile{Mode: uint32(fs.ModeSymlink), Link: target}, nil
+}
+
+// withinHome reports whether path is the home or lies inside it.
+func withinHome(home, path string) bool {
+	rel, err := filepath.Rel(home, path)
+	return err == nil && !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 type qualificationScanner struct {

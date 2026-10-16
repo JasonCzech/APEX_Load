@@ -101,9 +101,14 @@ then qualifies the workload itself:
   `load` (`Properties.load`, `KeyStore.load`, `ServiceLoader.load`) do not
   count. The scan does not prove the absence of dynamic native loading or
   background work; enabling the policy is the operator's acceptance of that.
-- The JDK home is hashed file by file. Symlinks inside it, such as the
-  per-module legal notices JDK builds link to `java.base`, count only when they
-  resolve to a regular file inside the home; their targets join the identity.
+- The JDK home is hashed file by file. A symlink inside it counts when its
+  target and its resolution both lie inside the home, at a regular file, a
+  directory or the home itself: the per-module legal notices JDK builds link to
+  `java.base`, the `jre -> .` link of Alpine's packages, the man-page locales of
+  full JDKs. Its target joins the identity. The one link allowed out of the
+  home is the trust store `lib/security/cacerts`, which distribution packages
+  such as Alpine's link to the system CA bundle; the bundle's content joins the
+  identity. Any other link is refused.
 - Script heap sizing (`-Xmx`, `-Xms`, `-XX:MaxRAM*` and similar) is dropped and
   reported as `shared_jvm_script_heap_ignored`; the operator heap applies. Other
   VM parameters pass through unchanged.
