@@ -108,6 +108,7 @@ jobs:
           go run github.com/mxschmitt/playwright-go/cmd/playwright@v0.6100.0 install chromium
           go test -count=1 -v -timeout 15m ./pkg/protocol/browser -run '^TestWindowsHARSpike' 2>&1 | tee spike.log
           grep 'SPIKE ' spike.log
+          go test -count=1 -v ./pkg/internal/winfs ./pkg/importartifact
 
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
