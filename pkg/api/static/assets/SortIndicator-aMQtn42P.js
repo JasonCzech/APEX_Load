@@ -1,0 +1,1 @@
+import{lt as e}from"./vendor-D87kGJ0s.js";var t=e();function n({active:e,direction:n}){return(0,t.jsx)(`span`,{className:e?`sort-icon active`:`sort-icon`,"aria-label":e?n===`asc`?`sorted ascending`:`sorted descending`:`not sorted`,children:e?n===`asc`?`↑`:`↓`:`↕`})}export{n as t};
