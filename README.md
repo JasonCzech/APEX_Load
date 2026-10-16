@@ -73,7 +73,7 @@ The current controller can run in either local or distributed mode without chang
 ## Requirements
 
 - Go `1.26+`
-- Node.js `22.22.0` (pinned by `.nvmrc`, CI, the production builder, and dashboard `engines`)
+- Node.js `22.23.3` (pinned by `.nvmrc`, CI, the production builder, and dashboard `engines`)
 - Windows local utility: Windows PowerShell `5.1+` or PowerShell `7+`
 
 ## Quick Start
