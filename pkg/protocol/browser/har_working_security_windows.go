@@ -63,9 +63,10 @@ func validHARPersistentIdentity(id harPersistentIdentity) bool {
 	return (id.Inode != 0 || id.FileIDHigh != 0) && id.UID == 0 && winfs.OwnedByCurrentToken(id.Owner)
 }
 
-// lstatHARPath stats a path through a handle, so its identity is the object
-// the path named at the call (os.Lstat reads it later, at os.SameFile).
-func lstatHARPath(path string) (os.FileInfo, error) { return winfs.Lstat(path) }
+// pinHARPathIdentity re-stats path through a handle, so the identity is the
+// object the path names now: os.Lstat reads the file ID lazily, at
+// os.SameFile, from whatever the path names by then.
+func pinHARPathIdentity(path string, _ os.FileInfo) (os.FileInfo, error) { return winfs.Lstat(path) }
 
 // validateHARVolume admits only a local fixed NTFS volume.
 func validateHARVolume(path string) error { return winfs.ValidateLocalVolume(path) }

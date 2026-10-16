@@ -17,7 +17,7 @@ func persistentHARIdentityAt(*os.Root, string, os.FileInfo) (harPersistentIdenti
 
 func validHARPersistentIdentity(harPersistentIdentity) bool { return false }
 
-func lstatHARPath(path string) (os.FileInfo, error) { return os.Lstat(path) }
+func pinHARPathIdentity(_ string, info os.FileInfo) (os.FileInfo, error) { return info, nil }
 
 func validateHARVolume(string) error { return errHARPrivacyUnqualified }
 

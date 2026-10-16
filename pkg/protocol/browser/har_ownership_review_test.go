@@ -178,6 +178,16 @@ func TestHAROwnershipJoinedCandidateCarriesBoundedActualSize(t *testing.T) {
 	}
 }
 
+// lstatHARPath stats path with its identity fixed at the call, as the
+// namespace checks do.
+func lstatHARPath(path string) (os.FileInfo, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	return pinHARPathIdentity(path, info)
+}
+
 func TestHAROwnershipRawFileIsPrivateBeforeNativeWriterEnters(t *testing.T) {
 	o := fixtureHAROwner(t, t.TempDir())
 	// lstatHARPath fixes the identity at the call (on Windows os.Lstat reads

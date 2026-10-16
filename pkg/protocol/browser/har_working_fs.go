@@ -47,7 +47,10 @@ func openHARPublishedRoot(dir string) (string, *os.Root, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	before, err := lstatHARPath(abs)
+	before, err := os.Lstat(abs)
+	if err == nil {
+		before, err = pinHARPathIdentity(abs, before)
+	}
 	if err != nil {
 		return "", nil, err
 	}
@@ -66,7 +69,10 @@ func openHARPublishedRoot(dir string) (string, *os.Root, error) {
 		return "", nil, err
 	}
 	opened, statErr := root.Stat(".")
-	after, afterErr := lstatHARPath(abs)
+	after, afterErr := os.Lstat(abs)
+	if afterErr == nil {
+		after, afterErr = pinHARPathIdentity(abs, after)
+	}
 	if statErr != nil || afterErr != nil || !os.SameFile(before, opened) || !os.SameFile(after, opened) || after.Mode()&os.ModeSymlink != 0 {
 		_ = root.Close()
 		return "", nil, fmt.Errorf("HAR artifact root changed while opening")
@@ -235,7 +241,10 @@ func (n *harNamespace) verify() error {
 		return errHAROwnershipUnproven
 	}
 	parent, parentErr := n.root.Stat(".")
-	currentParent, pathErr := lstatHARPath(n.path)
+	currentParent, pathErr := os.Lstat(n.path)
+	if pathErr == nil {
+		currentParent, pathErr = pinHARPathIdentity(n.path, currentParent)
+	}
 	openedWork, workErr := n.work.Stat(".")
 	currentWork, childErr := n.root.Lstat(runtimeHARWorkingDirectory)
 	if parentErr != nil || pathErr != nil || workErr != nil || childErr != nil {

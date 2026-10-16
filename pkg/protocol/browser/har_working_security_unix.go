@@ -53,7 +53,9 @@ func validHARPersistentIdentity(id harPersistentIdentity) bool {
 // on Linux.
 func widenStatDevice[T ~int32 | ~uint64](device T) uint64 { return uint64(device) }
 
-func lstatHARPath(path string) (os.FileInfo, error) { return os.Lstat(path) }
+// pinHARPathIdentity returns info, whose identity os.Lstat already read at
+// the call.
+func pinHARPathIdentity(_ string, info os.FileInfo) (os.FileInfo, error) { return info, nil }
 
 func validateHARVolume(string) error { return nil }
 
