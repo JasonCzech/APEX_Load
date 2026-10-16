@@ -34,6 +34,8 @@ const workspaceSharedModuleSuffixes = [
   '/src/components/ErrorDiagnostic.tsx',
   '/src/components/Logo.tsx',
   '/src/hooks/useWebSocket.ts',
+  '/src/components/ux/LoadingState.tsx',
+  '/src/utils/dateTime.ts',
 ]
 
 // The shell's active-run summaries and the execution route share these pure
@@ -58,6 +60,29 @@ const sharedApiModuleChunks = new Map([
   ['/src/hooks/api/useTestApi.ts', 'api-tests'],
   ['/src/hooks/api/useDynatraceConnectionsApi.ts', 'api-dynatrace-connections'],
   ['/src/hooks/api/useAppDynamicsConnectionsApi.ts', 'api-appdynamics-connections'],
+  ['/src/hooks/api/useProjectApi.ts', 'api-projects'],
+  ['/src/hooks/api/useScriptApi.ts', 'api-scripts'],
+  ['/src/hooks/api/useDashboardDefinitionsApi.ts', 'api-dashboard-definitions'],
+  ['/src/hooks/api/useELKConnectionsApi.ts', 'api-elk-connections'],
+])
+
+// The shell and lazy routes share these modules too, each with the shell-held
+// modules it imports, so a route that needs one never imports the shell entry:
+// the app-wide navigation guard (also mounted by dialogs) and the desktop
+// close guard behind it; desktop-aware file saving; and script and scenario
+// authoring revisions with the script API's import paths.
+const sharedRouteModuleChunks = new Map([
+  ['/src/hooks/NavigationGuardRoot.tsx', 'navigation-guard'],
+  ['/src/components/UnsavedChangesModal.tsx', 'navigation-guard'],
+  ['/src/desktop/useDesktopCloseGuard.ts', 'navigation-guard'],
+  ['/src/desktop/reloadPage.ts', 'navigation-guard'],
+  ['/src/desktop/wailsRuntime.ts', 'navigation-guard'],
+  ['/src/desktop/desktopFiles.ts', 'desktop-files'],
+  ['/src/utils/fileUtils.ts', 'desktop-files'],
+  ['/src/utils/authoringRevision.ts', 'script-authoring'],
+  ['/src/utils/scriptAuthoringRevision.ts', 'script-authoring'],
+  ['/src/utils/scenarioAuthoringRevision.ts', 'script-authoring'],
+  ['/src/importLogicalPath.ts', 'script-authoring'],
 ])
 
 export function chunkNameForModule(id) {
@@ -75,6 +100,9 @@ export function chunkNameForModule(id) {
   }
   if (!id.includes('node_modules')) {
     for (const [suffix, name] of sharedApiModuleChunks) {
+      if (id.endsWith(suffix)) return name
+    }
+    for (const [suffix, name] of sharedRouteModuleChunks) {
       if (id.endsWith(suffix)) return name
     }
     if (workspaceSharedModuleSuffixes.some(suffix => id.endsWith(suffix))) {
@@ -105,4 +133,35 @@ export function chunkNameForModule(id) {
     return 'vendor-codemirror-core'
   }
   return 'vendor'
+}
+
+// Claim order, highest priority first. Rolldown adds a captured module's
+// dependencies to the group that captures it, so with one group a module
+// visited early could claim modules mapped to other chunks (React itself has
+// landed in an app chunk that way). Generic vendor code is claimed first, so
+// the specialized vendor chunks keep only their own packages; then the shared
+// app chunks, each before the route-shared chunks that import it.
+export const chunkGroupOrder = Object.freeze([
+  'vendor',
+  'vendor-virtual',
+  'vendor-three',
+  'vendor-recharts',
+  'vendor-codemirror-languages',
+  'vendor-codemirror-parser',
+  'vendor-codemirror-core',
+  'vite-preload-helper',
+  'http-version-model',
+  'workspace-shared',
+  'execution-metrics-model',
+  ...new Set(sharedApiModuleChunks.values()),
+  ...new Set(sharedRouteModuleChunks.values()),
+])
+
+// One Rolldown codeSplitting group per chunk name, in claim order.
+export function chunkGroups() {
+  return chunkGroupOrder.map((name, index) => ({
+    name,
+    priority: chunkGroupOrder.length - index,
+    test: (id) => chunkNameForModule(id) === name,
+  }))
 }

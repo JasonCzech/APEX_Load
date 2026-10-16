@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 
-import { chunkNameForModule } from './scripts/chunk-strategy.mjs'
+import { chunkGroups } from './scripts/chunk-strategy.mjs'
 import { parseVitestWorkers } from './scripts/vitest-workers.mjs'
 
 const require = createRequire(import.meta.url)
@@ -53,13 +53,12 @@ export default defineConfig({
     cssMinify: 'lightningcss',
     rolldownOptions: {
       output: {
-        // Rolldown deprecated `output.manualChunks` (and its `advancedChunks`
-        // successor) in favour of `output.codeSplitting`. A single name-function
-        // group is exactly what Rolldown's compatibility shim built from the old
-        // hook, so the emitted chunks are unchanged. The classification itself
-        // lives in scripts/chunk-strategy.mjs so it can be unit tested.
+        // One prioritized group per chunk name (scripts/chunk-strategy.mjs,
+        // where the classification is unit tested). A single name-function
+        // group let whichever module Rolldown visited first claim the others'
+        // dependencies, so chunk membership drifted as the app changed.
         codeSplitting: {
-          groups: [{ name: (moduleId) => chunkNameForModule(moduleId) }],
+          groups: chunkGroups(),
         },
       },
     },
