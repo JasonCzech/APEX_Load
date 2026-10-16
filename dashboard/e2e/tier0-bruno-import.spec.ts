@@ -72,7 +72,7 @@ http:
 
   await expect(controls.getByRole('button', { name: 'Inputs: 1 unresolved', exact: true })).toBeVisible()
   await controls.getByRole('tab', { name: /^Data & parameters(,|$)/ }).click()
-  await controls.getByRole('textbox', { name: 'Literal value for env', exact: true }).fill('qa')
+  await controls.getByRole('textbox', { name: 'Value for env', exact: true }).fill('qa')
   await expect(controls.getByRole('button', { name: /Inputs: .* unresolved/ })).toHaveCount(0)
   await controls.getByRole('button', { name: /^APIs .*change selection/ }).click()
   await controls.getByRole('searchbox', { name: 'Find API', exact: true }).fill('UnsupportedHook')
