@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/harsynth"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/browser"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -285,11 +286,10 @@ func TestReplaySyntheticHARUsesEachEventsEntries(t *testing.T) {
 // recorded, so the archive's synthetic HAR leaves that context out; a
 // malformed one is recorded as unknown, and a declared one must be valid.
 func TestNativeHARRecordsItsEvidenceGeneration(t *testing.T) {
-	// Native HAR staging needs private-ownership checks that exist only on
-	// darwin and linux (pkg/protocol/browser/har_working_security_*.go); other
-	// platforms refuse it by design, so the archive omits the HAR there.
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("native HAR staging is unavailable on " + runtime.GOOS)
+	// A platform without native HAR ownership refuses the HAR directory's
+	// namespace, so the archive omits the HAR there.
+	if !browser.NativeHARSupported() {
+		t.Skip("native HAR capture is not supported on " + runtime.GOOS)
 	}
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
