@@ -68,10 +68,11 @@ jobs:
           mkdir -p flake-results
           COUNT="$COUNT_INPUT"
           PKGS="$PACKAGES_INPUT"
+          read -r -a pkg_args <<< "$PKGS"
           echo "Running $PKGS with -count=$COUNT -shuffle=on -race"
           # No pipefail-driven early exit: a failure here is the finding, not an
           # error, and the log must be preserved either way.
-          go test $PKGS -race -shuffle=on -count="$COUNT" -timeout=170m \
+          go test "${pkg_args[@]}" -race -shuffle=on -count="$COUNT" -timeout=170m \
             > flake-results/flake-hunt.log 2>&1 || true
 
       - name: Summarize

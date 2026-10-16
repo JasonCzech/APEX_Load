@@ -1511,7 +1511,7 @@ func TestJavaCombinedMappingIndexBoundsLargeUnusedArchive(t *testing.T) {
 	}
 	result := &ConvertResult{}
 	appendJavaCombinedSourceMappings(result, program, nil, reachability)
-	if elapsed := time.Since(started); elapsed > 5*time.Second {
+	if elapsed := time.Since(started); elapsed > javaPreflightTimeBudget() {
 		t.Fatalf("4096-class mapping/index pass took %s; per-entry archive scans are not bounded", elapsed)
 	}
 	if got, want := len(entries), 3+(classCount-1)*4; got != want {

@@ -9,8 +9,8 @@ import (
 	"io"
 	"math"
 
-	"github.com/hamba/avro/v2"
-	"github.com/hamba/avro/v2/ocf"
+	"github.com/iskorotkov/avro/v2"
+	"github.com/iskorotkov/avro/v2/ocf"
 	"github.com/klauspost/compress/zstd"
 )
 

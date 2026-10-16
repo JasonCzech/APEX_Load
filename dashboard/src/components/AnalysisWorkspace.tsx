@@ -221,7 +221,7 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
             <legend>Query dataset</legend>
             {selectedMappingDisclosureError && <p role="alert">{selectedMappingDisclosureError} This stored mapping is retained; querying its mapped source values is unavailable.</p>}
             {selectedIdentityUnsupported && <p role="alert">This dataset requires imported identity schema 2. Querying is unavailable on this controller; its mapping and labels remain unchanged.</p>}
-            <label>Metric<input list="analysis-metric-names" value={metric} onChange={e => setMetric(e.target.value)} /><datalist id="analysis-metric-names">{analysisMetricNames(selected.mapping).map(name => <option key={name} value={name} />)}</datalist></label>
+            <label>Metric<input list="analysis-metric-names" value={metric} onChange={e => setMetric(e.target.value)} /></label><datalist id="analysis-metric-names">{analysisMetricNames(selected.mapping).map(name => <option key={name} value={name}>{name}</option>)}</datalist>
             <label>From (UTC)<input type="datetime-local" step="1" value={from} onChange={e => setFrom(e.target.value)} /></label>
             <label>To (UTC)<input type="datetime-local" step="1" value={to} onChange={e => setTo(e.target.value)} /></label>
             <label>Bucket (seconds, optional)<input type="number" min={1} max={86400} step={1} placeholder="automatic" value={bucket} onChange={e => setBucket(e.target.value)} /></label>

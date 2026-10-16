@@ -42,7 +42,7 @@ GENERATORS = ('generator-1', 'generator-2', 'generator-3')
 # Dependency images. The init image matches the repository compose.yaml pin;
 # SeaweedFS matches the image the node-fault harness qualified.
 DEPENDENCY_IMAGES = {
-    'MP_INIT_IMAGE': 'alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b',
+    'MP_INIT_IMAGE': 'alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6',
     'MP_POSTGRES_IMAGE': 'postgres:16-alpine',
     'MP_REDIS_IMAGE': 'redis:7-alpine',
     'MP_ROUTER_IMAGE': 'haproxy:3.2-alpine',

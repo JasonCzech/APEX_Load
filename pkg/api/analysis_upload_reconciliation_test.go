@@ -313,7 +313,7 @@ func TestAnalysisUploadCursorMetadataBarrierRechecksRevisionAndActualDeadline(t 
 				barrier = &nativeQueryMetadataBarrier{SQLiteStore: store, entered: make(chan struct{}), release: make(chan struct{}), blockProject: stage == "project-deadline", blockDataset: stage != "project-deadline"}
 				return barrier
 			})
-			ctx := context.Context(t.Context())
+			ctx := t.Context()
 			if stage != "revision" {
 				ctx = nativeQueryDetachedDeadline{Context: ctx, deadline: time.Now().Add(time.Second)}
 			}
@@ -446,7 +446,7 @@ func TestAnalysisUploadLateResolutionCannotAdmitNewCompletion(t *testing.T) {
 				owner.endRequest()
 				waitUploadOwnerReleased(t, owner)
 			})
-			ctx := context.Context(t.Context())
+			ctx := t.Context()
 			if strings.HasPrefix(boundary, "actual-deadline") {
 				ctx = nativeQueryDetachedDeadline{Context: context.Background(), deadline: time.Now().Add(time.Second)}
 			}

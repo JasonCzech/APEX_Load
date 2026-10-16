@@ -92,6 +92,11 @@ func TestEngineDispatchCoversCatalogEngineActions(t *testing.T) {
 				}
 				continue
 			}
+			if raceDetectorEnabled {
+				// The worker re-executes this test binary under 256 MiB data and
+				// 2 s CPU limits, which a race-instrumented binary can exceed.
+				continue
+			}
 			if got := vu.Variables["catalog_native.value"]; got != "catalog-dispatch" {
 				t.Errorf("native_javascript worker result = %q, want catalog-dispatch", got)
 			}

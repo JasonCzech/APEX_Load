@@ -71,7 +71,7 @@ func bucketPrometheusSeries(points []MetricPoint, from, to time.Time, seconds in
 		}
 		// Retain the original grid phase even if the first selected observation
 		// occurs after a missing point. Expected cells remain independent of data.
-		gridStart := first.TimestampUTC.Add(start.Sub(first.TimestampUTC) / step * step)
+		gridStart := first.TimestampUTC.Add(start.Sub(first.TimestampUTC).Truncate(step))
 		if gridStart.Before(start) {
 			gridStart = gridStart.Add(step)
 		}

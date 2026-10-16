@@ -61,7 +61,7 @@ func TestProcessorLimitsOnlyLowerAtStartup(t *testing.T) {
 }
 func TestProcessorPoolAtomicallyReservesBothResourceAxes(t *testing.T) {
 	p := testProcessorPool(t, processorLimits{4, 32, 32})
-	for _, bad := range []protocol.RuntimeResourceDemand{{1, 32, 33}, {math.MaxInt64, 1, 2}, {1, 1, 2}, {-1, 0, 0}} {
+	for _, bad := range []protocol.RuntimeResourceDemand{demand(1, 32, 33), demand(math.MaxInt64, 1, 2), demand(1, 1, 2), demand(-1, 0, 0)} {
 		if _, err := p.reserve(context.Background(), bad); err == nil {
 			t.Fatal("invalid demand accepted", bad)
 		}
@@ -76,7 +76,7 @@ func TestProcessorPoolAtomicallyReservesBothResourceAxes(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			r, err := p.reserve(context.Background(), protocol.RuntimeResourceDemand{1, 8, 8})
+			r, err := p.reserve(context.Background(), demand(1, 8, 8))
 			if err == nil {
 				mu.Lock()
 				accepted = append(accepted, r)
@@ -102,20 +102,20 @@ func TestProcessorPoolAtomicallyReservesBothResourceAxes(t *testing.T) {
 	}
 	p = testProcessorPool(t, processorLimits{4, 8, 32})
 	r := reserveProcessorTest(t, p, 1, 8)
-	if _, err := p.reserve(context.Background(), protocol.RuntimeResourceDemand{1, 1, 1}); !errors.Is(err, ErrProcessorResourceCapacity) {
+	if _, err := p.reserve(context.Background(), demand(1, 1, 1)); !errors.Is(err, ErrProcessorResourceCapacity) {
 		t.Fatal("worker axis not enforced", err)
 	}
 	r.Release()
 	p = testProcessorPool(t, processorLimits{1, 32, 32})
 	reserveProcessorTest(t, p, 1, 1)
-	if _, err := p.reserve(context.Background(), protocol.RuntimeResourceDemand{1, 1, 1}); !errors.Is(err, ErrProcessorResourceCapacity) {
+	if _, err := p.reserve(context.Background(), demand(1, 1, 1)); !errors.Is(err, ErrProcessorResourceCapacity) {
 		t.Fatal("processor axis not enforced", err)
 	}
 }
 func TestProcessorReservationOwnershipAndOperationContexts(t *testing.T) {
 	p := testProcessorPool(t, processorLimits{4, 32, 32})
 	ctx, cancel := context.WithCancel(context.Background())
-	r, err := p.reserve(ctx, protocol.RuntimeResourceDemand{1, 8, 8})
+	r, err := p.reserve(ctx, demand(1, 8, 8))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestProcessorResizeAndReleaseRetainLiveWorkers(t *testing.T) {
 	if c := p.snapshot(); c.ReservedWorkers != 16 || c.ActiveWorkers != 1 {
 		t.Fatal("child double charged", c)
 	}
-	if err = r.Resize(context.Background(), protocol.RuntimeResourceDemand{1, 8, 8}); err != nil {
+	if err = r.Resize(context.Background(), demand(1, 8, 8)); err != nil {
 		t.Fatal(err)
 	}
 	if c := p.snapshot(); c.ReservedProcessors != 2 || c.DrainingProcessors != 1 || c.AvailableWorkers != 16 {
@@ -184,7 +184,7 @@ func TestProcessorResizeAndReleaseRetainLiveWorkers(t *testing.T) {
 	if c := p.snapshot(); c.ReservedProcessors != 1 {
 		t.Fatal(c)
 	}
-	if err = r.Resize(context.Background(), protocol.RuntimeResourceDemand{0, 0, 8}); err != nil {
+	if err = r.Resize(context.Background(), demand(0, 0, 8)); err != nil {
 		t.Fatal(err)
 	}
 	first.release()
@@ -197,7 +197,7 @@ func TestProcessorResizeAndReleaseRetainLiveWorkers(t *testing.T) {
 	if c := p.snapshot(); c.ReservedWorkers != 0 || c.ActiveWorkers != 0 {
 		t.Fatal(c)
 	}
-	if err = r.Resize(context.Background(), protocol.RuntimeResourceDemand{1, 8, 8}); err == nil {
+	if err = r.Resize(context.Background(), demand(1, 8, 8)); err == nil {
 		t.Fatal("released reservation resized")
 	}
 }
@@ -205,17 +205,17 @@ func TestProcessorResizeIsAtomicAndCeilingImmutable(t *testing.T) {
 	p := testProcessorPool(t, processorLimits{4, 16, 32})
 	r := reserveProcessorTest(t, p, 1, 8)
 	other := reserveProcessorTest(t, p, 1, 8)
-	if err := r.Resize(context.Background(), protocol.RuntimeResourceDemand{2, 16, 8}); !errors.Is(err, ErrProcessorResourceCapacity) {
+	if err := r.Resize(context.Background(), demand(2, 16, 8)); !errors.Is(err, ErrProcessorResourceCapacity) {
 		t.Fatal(err)
 	}
 	if r.Demand().Processors != 1 {
 		t.Fatal("failed resize mutated demand")
 	}
-	if err := r.Resize(context.Background(), protocol.RuntimeResourceDemand{1, 4, 4}); err == nil {
+	if err := r.Resize(context.Background(), demand(1, 4, 4)); err == nil {
 		t.Fatal("ceiling changed")
 	}
 	other.Release()
-	if err := r.Resize(context.Background(), protocol.RuntimeResourceDemand{2, 16, 8}); err != nil {
+	if err := r.Resize(context.Background(), demand(2, 16, 8)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -291,7 +291,7 @@ func TestProcessorReservationCapabilityMatchesBuild(t *testing.T) {
 		t.Fatal(c, advertised)
 	}
 	if !realEventHubsAvailable {
-		if _, err := e.ReserveRuntimeResources(context.Background(), protocol.RuntimeResourceDemand{1, 1, 1}); err == nil {
+		if _, err := e.ReserveRuntimeResources(context.Background(), demand(1, 1, 1)); err == nil {
 			t.Fatal("unsupported provider admitted")
 		}
 	}
@@ -343,7 +343,7 @@ func TestProcessorZeroResizeIsTerminalAndCannotRetainDormantRegistry(t *testing.
 		if err := r.Adopt(context.Background()); err == nil {
 			t.Fatal("zero parent reactivated")
 		}
-		if err := r.Resize(context.Background(), protocol.RuntimeResourceDemand{1, 2, 2}); err == nil {
+		if err := r.Resize(context.Background(), demand(1, 2, 2)); err == nil {
 			t.Fatal("zero parent regrew")
 		}
 	}
@@ -383,4 +383,8 @@ func TestProcessorActivationReportsRetainedDrainingEntitlement(t *testing.T) {
 		t.Fatal(err)
 	}
 	replacement.release()
+}
+
+func demand(processors, workers, maxPartitionsPerProcessor int64) protocol.RuntimeResourceDemand {
+	return protocol.RuntimeResourceDemand{Processors: processors, Workers: workers, MaxPartitionsPerProcessor: maxPartitionsPerProcessor}
 }

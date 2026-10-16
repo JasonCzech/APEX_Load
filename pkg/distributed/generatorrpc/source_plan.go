@@ -63,7 +63,7 @@ func validateSourcePlanAssignment(a *pb.WorkAssignment) error {
 			}
 		}
 	}
-	if sourcePlanUsers(m) > int64(maxGeneratorVUsers) {
+	if sourcePlanUsers(m) > maxGeneratorVUsers {
 		return fmt.Errorf("source-plan population exceeds generator limit")
 	}
 	if !found {

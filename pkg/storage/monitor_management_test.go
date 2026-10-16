@@ -901,7 +901,7 @@ func TestManagementTransactionQueryHonorsCancellation(t *testing.T) {
 	defer tx.Rollback()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if rows, err := tx.QueryContext(ctx, `SELECT ?`, 1); !errors.Is(err, context.Canceled) {
+	if rows, err := tx.QueryContext(ctx, `SELECT ?`, 1); !errors.Is(err, context.Canceled) { //nolint:rowserrcheck // never iterated: the query must fail
 		if rows != nil {
 			rows.Close()
 		}

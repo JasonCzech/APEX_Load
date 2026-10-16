@@ -2012,10 +2012,12 @@ describe('ScriptEditor', () => {
     expect(document.activeElement).toBe(row('Checkout'))
     await press('End')
     expect(document.activeElement).toBe(row('Pay'))
-    await press('Enter')
-    expect(row('Pay').getAttribute('aria-selected')).toBe('true')
     await press('Home')
     expect(document.activeElement?.getAttribute('data-tooltip')).toBe('Actions')
+    // Selecting moves focus to the inspector on the next frame, so Enter comes last.
+    await act(async () => { row('Pay').focus() })
+    await press('Enter')
+    expect(row('Pay').getAttribute('aria-selected')).toBe('true')
   })
 
   it('folds a sub-transaction into the request it measures, and renames or removes it from the inspector', async () => {

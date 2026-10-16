@@ -222,6 +222,9 @@ func TestRCAHistoryFollowsTheRunTheProjectAndTheArchive(t *testing.T) {
 			_ = rows.Scan(&state)
 			states[state]++
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
 		rows.Close()
 		var critiques, revisions int
 		_ = s.db.QueryRow(`SELECT COUNT(*) FROM rca_critiques WHERE test_id = ?`, "rca-run").Scan(&critiques)

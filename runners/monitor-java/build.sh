@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 output=${1:-"$root/../../bin/apexload-monitor-helper.jar"}
 classes=$(mktemp -d)
 trap 'rm -rf "$classes"' EXIT HUP INT TERM

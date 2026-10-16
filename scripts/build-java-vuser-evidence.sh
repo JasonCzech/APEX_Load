@@ -8,7 +8,7 @@ output_dir="$repo_dir/bin/java_vuser/evidence"
 make -C "$repo_dir" java-vuser-runner
 # These directories contain only this script's generated output. Starting clean
 # prevents an old shim or a stale dependency version entering the fixture JAR.
-rm -rf -- "$output_dir/classes" "$output_dir/lib"
+rm -rf -- "${output_dir:?}/classes" "${output_dir:?}/lib"
 mkdir -p "$output_dir/classes" "$output_dir/lib"
 mvn -q -f "$fixture_dir/pom.xml" org.apache.maven.plugins:maven-dependency-plugin:3.6.1:copy-dependencies "-DoutputDirectory=$output_dir/lib"
 fixture_classpath="$repo_dir/bin/java_vuser/apexload-java-vuser-runner.jar"

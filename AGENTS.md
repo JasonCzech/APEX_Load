@@ -49,6 +49,7 @@ pkg/
   storage/       — SQLite (default) / PostgreSQL persistence layer
   recorder/      — HTTP recording + HAR conversion + browser recording
   recordingprofile/ — Project recording profiles (VuGen-style recording options) shared by the recorders and HAR import
+  qrcode/        — Dependency-free QR code drawing for short texts (the Recording Agent phone setup URL)
   convert/       — Multi-format import hub (LR archive, Bruno, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient, SAP GUI, Java-family imports)
   selector/      — Shared element-selector model (CSS/XPath/role/text) + replay self-heal
   scrub/         — PII/credential redaction for recorder artifacts and HAR exports

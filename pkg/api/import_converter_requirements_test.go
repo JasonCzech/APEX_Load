@@ -226,7 +226,7 @@ func TestReferencedImportSecretsAreNamedByTheirRequest(t *testing.T) {
 	const pathCredential = "path-credential-canary-7c41"
 	script := &dsl.Script{
 		Name: "Recorded HTTP", Version: "1", Protocol: "http",
-		Config: dsl.ScriptConfig{BaseURL: "https://www.example.test"},
+		Config:   dsl.ScriptConfig{BaseURL: "https://www.example.test"},
 		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "har"}},
 		Actions: []dsl.Action{
 			{Name: "beacon", Type: "request", Method: "POST", Target: "https://telemetry.example.test/ctp?session=abc", Body: "{{secret.SAMPLE_RAW_BODY_1EE1A2332399}}"},

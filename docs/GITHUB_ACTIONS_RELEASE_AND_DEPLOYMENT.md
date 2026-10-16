@@ -515,7 +515,7 @@ choose an uploader for consumer repositories.
 - Pin the base runner image by digest and verify required `skopeo`, Azure CLI,
   Helm, kubectl, OpenSSL, jq, and CA bundle versions during runner bootstrap.
 - The base image also needs GitHub CLI, GNU coreutils/find, Bash 5, Python 3,
-  Node 22, Docker, Buildx 0.34.1, Cosign, Go 1.26.5, JDK 21, npm, Terraform 1.15.8,
+  Node 22, Docker, Buildx 0.34.1, Cosign, Go 1.26.9, JDK 21, npm, Terraform 1.15.8,
   and the platform tools used by its lane. Trivy/Syft, Azure CLI, native Wails
   dependencies, and browser dependencies are required only by their matching
   scan/deploy/client/dashboard lanes. Fail runner-image validation if an exact

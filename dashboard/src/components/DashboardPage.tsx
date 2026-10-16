@@ -37,6 +37,7 @@ import { RECENT_AVERAGE_LABEL, RECENT_AVERAGE_WINDOW, recentMetricAverages, type
 import { formatFixed } from '../utils/numberFormat'
 import { metricHeader } from '../metricLabels'
 import { formatDateTime as formatSharedDateTime } from '../utils/dateTime'
+import { insideRowDisclosure } from './rowDisclosure'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -1805,7 +1806,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     {sortedRecentTests.map(test => {
                       const runtimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
                       return (
-                        <tr key={test.id} onClick={() => onSelectTest(test.id)}>
+                        <tr key={test.id} onClick={event => { if (!insideRowDisclosure(event)) onSelectTest(test.id) }}>
                           <td>
                             <button
                               type="button"
@@ -1820,7 +1821,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                             </button>
                             <span className="trend-run-meta dashboard-run-reference">{runReference(test)}</span>
                             <span className="dashboard-evidence" title={test.archive ? 'A saved archive is available. Acceptance is assessed separately.' : 'Saved archive unavailable; publication progress is unknown.'}>{test.archive ? 'Archive available' : 'Archive unavailable'} · Acceptance: {dashboardAcceptance(test, archiveReports)}{dashboardRootCauseText(archiveReports[test.id])}</span>
-                            <details className="dashboard-run-details" onClick={event => event.stopPropagation()}>
+                            <details className="dashboard-run-details">
                               <summary>Run details<span className="dashboard-sr-only"> for {test.name} ({runReference(test)})</span></summary>
                               <dl><div><dt>Configured VUsers</dt><dd>{test.total_vusers}</dd></div><div><dt>Configured duration</dt><dd>{formatDurationDisplay(test.duration) || 'Not recorded'}</dd></div><div><dt>Archive records</dt><dd>{test.archive ? test.archive.transaction_count.toLocaleString() : 'Unavailable — publication progress unknown'}</dd></div></dl>
                             </details>

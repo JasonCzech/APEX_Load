@@ -562,7 +562,9 @@ func TestRunArchiveBrowserInteractionsUnreadableEvidence(t *testing.T) {
 	if err := os.WriteFile(interactions, append(line, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	rewrite(func(m *RunArchiveManifest) { m.BrowserInteractionsFile, m.BrowserInteractionRecordCount = browserInteractionsFileName, 1 })
+	rewrite(func(m *RunArchiveManifest) {
+		m.BrowserInteractionsFile, m.BrowserInteractionRecordCount = browserInteractionsFileName, 1
+	})
 	analysis, err := server.runArchiveBrowserInteractions(context.Background(), "e4-unreadable")
 	if err != nil || len(analysis.Limitations) == 0 || !strings.HasPrefix(analysis.Limitations[0], "document_evidence_unreadable") || analysis.Heatmaps[0].Engine != "unknown" || !strings.Contains(strings.Join(analysis.Heatmaps[0].Notes, " "), "document evidence could not be read") {
 		t.Fatalf("unreadable documents = %+v %v", analysis, err)

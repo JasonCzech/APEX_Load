@@ -15,7 +15,7 @@ func TestKafkaInitRejectsUnsupportedIsolationBeforeClientCreation(t *testing.T) 
 		name  string
 		value any
 	}{
-		{"misspelled", "read_commited"},
+		{"misspelled", "read_commited"}, //nolint:misspell // the misspelled value under test
 		{"unsupported", "snapshot"},
 		{"unsupported_normalized", "  READ_SERIALIZABLE  "},
 		{"literal_default", "default"},

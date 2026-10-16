@@ -30,7 +30,7 @@ describe('sidebar navigation and session context', () => {
   it('moves focus through visible rows and preserves text-input arrow keys', () => {
     const host = document.createElement('div'); document.body.append(host)
     const root = createRoot(host)
-    act(() => root.render(<nav onKeyDown={handleOutlineKeys}><input /><button className="debugger-action-row-main">First</button><button className="debugger-action-row-main" hidden>Filtered out</button><button className="debugger-action-row-main">Last</button></nav>))
+    act(() => root.render(<div role="presentation" onKeyDown={handleOutlineKeys}><input /><button className="debugger-action-row-main">First</button><button className="debugger-action-row-main" hidden>Filtered out</button><button className="debugger-action-row-main">Last</button></div>))
     const buttons = Array.from(host.querySelectorAll('button'))
     for (const button of buttons) {
       vi.spyOn(button, 'getClientRects').mockReturnValue((button.hidden ? [] : [{}]) as unknown as DOMRectList)

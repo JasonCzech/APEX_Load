@@ -41,14 +41,14 @@ func TestHTMLLevelHTTPScriptReplaysWithoutHiddenFieldCorrelation(t *testing.T) {
 		switch r.URL.Path {
 		case "/login":
 			// The hidden token rotates on every page load.
-			token := "TOKEN-" + string(rune('A'+issued.Add(1)))
+			token := "TOKEN-" + string('A'+issued.Add(1))
 			io.WriteString(w, `<html><a href="/help">Help</a><form method="post" action="/session"><input type="hidden" name="token" value="`+token+`"><input name="user"><input type="submit" name="go" value="Sign in"></form></html>`)
 		case "/session":
 			if r.Referer() != "http://"+r.Host+"/login" {
 				t.Errorf("Referer = %q, want the live page", r.Referer())
 			}
 			body, _ := io.ReadAll(r.Body)
-			want := "token=TOKEN-" + string(rune('A'+issued.Load())) + "&user=ada&go=Sign+in"
+			want := "token=TOKEN-" + string('A'+issued.Load()) + "&user=ada&go=Sign+in"
 			if string(body) != want {
 				t.Errorf("login body = %q, want %q", body, want)
 				w.WriteHeader(http.StatusForbidden)

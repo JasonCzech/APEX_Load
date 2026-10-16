@@ -148,7 +148,7 @@ func TestNativePreviewFinalMetadataBarrierRefusesConcurrentRevisionAndLateReply(
 				return owner
 			})
 			owner.armed.Store(true)
-			ctx := context.Context(t.Context())
+			ctx := t.Context()
 			if stage != "revision" {
 				ctx = nativeQueryDetachedDeadline{Context: t.Context(), deadline: time.Now().Add(time.Second)}
 			}

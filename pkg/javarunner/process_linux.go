@@ -430,6 +430,33 @@ func probeStrongLinuxProcessContainment() bool {
 	return ok && status.Signaled() && status.Signal() == syscall.SIGKILL
 }
 
+// recordProcessTreeAtRootExit blocks until cmd's root exits, leaving it
+// unreaped (WNOWAIT) so its PID and process group stay reserved, and records
+// the tree's surviving members by parentage and process group. Their pidfds
+// keep the later kill bound to these exact processes after Wait reaps the root.
+func recordProcessTreeAtRootExit(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil || cmd.ProcessState != nil {
+		return
+	}
+	rawTree, ok := managedLinuxProcessTrees.Load(cmd)
+	if !ok {
+		return
+	}
+	var info unix.Siginfo
+	for {
+		err := unix.Waitid(unix.P_PID, cmd.Process.Pid, &info, unix.WEXITED|unix.WNOWAIT, nil)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, unix.EINTR) {
+			return
+		}
+	}
+	tree := rawTree.(*managedLinuxProcessTree)
+	tree.discoverKnownDescendants()
+	tree.rememberProcessGroupMembers()
+}
+
 func waitForLinuxContainmentProbe(waitDone <-chan error, timeout time.Duration) (error, bool) {
 	if timeout <= 0 {
 		timeout = linuxProcessTreeKillTimeout
@@ -673,7 +700,7 @@ func sameLinuxProcess(identity linuxProcessIdentity) bool {
 
 func signalLinuxProcess(identity linuxProcessIdentity, signal syscall.Signal) error {
 	if identity.pidfd >= 0 {
-		err := unix.PidfdSendSignal(identity.pidfd, unix.Signal(signal), nil, 0)
+		err := unix.PidfdSendSignal(identity.pidfd, signal, nil, 0)
 		if err == nil || errors.Is(err, unix.ESRCH) {
 			return nil
 		}

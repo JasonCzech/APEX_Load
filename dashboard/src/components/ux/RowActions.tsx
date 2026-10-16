@@ -26,7 +26,7 @@ export default function RowActions({ children, className = '', label }: { childr
     return () => menu?.removeEventListener('click', onActionClick, true)
   }, [close, open, panelRef])
 
-  return <div ref={element => { containerRef.current = element }} className={`ux-row-actions ${className}`} data-open={open || undefined} onClick={event => event.stopPropagation()}>
+  return <div ref={element => { containerRef.current = element }} className={`ux-row-actions ${className}`} data-open={open || undefined} role="presentation" onClick={event => event.stopPropagation()}>
     <button
       ref={triggerRef}
       type="button"

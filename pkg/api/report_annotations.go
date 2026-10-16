@@ -448,7 +448,7 @@ func defaultRiskComment(report *RunArchiveReport) string {
 	}
 	if len(report.ErrorPatterns) > 0 {
 		top := report.ErrorPatterns[0]
-		risks = append(risks, fmt.Sprintf("%s observed; the most frequent was %q (%s).", reportCountNoun(int64(len(report.ErrorPatterns)), "distinct error pattern was", "distinct error patterns were"), top.Sample, reportCountNoun(int64(top.Count), "occurrence", "occurrences")))
+		risks = append(risks, fmt.Sprintf("%s observed; the most frequent was %q (%s).", reportCountNoun(int64(len(report.ErrorPatterns)), "distinct error pattern was", "distinct error patterns were"), top.Sample, reportCountNoun(top.Count, "occurrence", "occurrences")))
 	} else {
 		risks = append(risks, "No significant error patterns were recorded during the run. Absence of recorded errors does not establish low risk.")
 	}

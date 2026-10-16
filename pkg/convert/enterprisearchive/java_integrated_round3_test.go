@@ -523,7 +523,7 @@ public enum Generated {
 	}
 	started := time.Now()
 	analysis := analyzeJavaOverloadResolutionWork(program)
-	if elapsed := time.Since(started); elapsed > 5*time.Second {
+	if elapsed := time.Since(started); elapsed > javaPreflightTimeBudget() {
 		t.Fatalf("cached enum preflight took %s", elapsed)
 	}
 	if analysis.blocker != "" {

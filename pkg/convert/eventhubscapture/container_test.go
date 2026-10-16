@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hamba/avro/v2/ocf"
+	"github.com/iskorotkov/avro/v2/ocf"
 )
 
 // ocfHeader returns the header (magic, metadata, sync marker) of an empty

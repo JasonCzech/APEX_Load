@@ -95,7 +95,11 @@ func TestRedactQuotedValuesDoubledQuoteInputIsBounded(t *testing.T) {
 	if changed || projected != source {
 		t.Fatal("credential-free adversarial input changed")
 	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
+	budget := 2 * time.Second
+	if raceDetectorEnabled {
+		budget *= 5
+	}
+	if elapsed := time.Since(start); elapsed > budget {
 		t.Fatalf("quoted-value scan exceeded bounded-work budget: %s", elapsed)
 	}
 }

@@ -1374,7 +1374,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
               </>
             )}
             {/* One compact line: reference, then History (attribution is inside it). */}
-            {(test || externalImport) && <span onClick={event => event.stopPropagation()}><ObjectHistory compact projectId={test?.project_id || externalImport?.project_id} resourceType={test ? 'test' : 'external_result_import'} resourceId={(test || externalImport)!.id} activity={test?.activity || externalImport?.activity} /></span>}
+            {(test || externalImport) && <span role="presentation" onClick={event => event.stopPropagation()}><ObjectHistory compact projectId={test?.project_id || externalImport?.project_id} resourceType={test ? 'test' : 'external_result_import'} resourceId={(test || externalImport)!.id} activity={test?.activity || externalImport?.activity} /></span>}
           </div>
         </td>
         <td>

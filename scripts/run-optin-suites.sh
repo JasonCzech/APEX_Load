@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Suite preconditions are single-quoted strings that run_suite evals later.
+# shellcheck disable=SC2016
+#
 # Run the test suites that `go test ./...` excludes.
 #
 # The default suite skips every build-tag- and environment-gated suite. Dedicated
@@ -15,7 +18,7 @@
 set -uo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "${repo_root}"
+cd "${repo_root}" || exit 1
 
 run_all=0
 list_only=0

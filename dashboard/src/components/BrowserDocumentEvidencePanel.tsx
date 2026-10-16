@@ -44,7 +44,7 @@ export default function BrowserDocumentEvidencePanel({ summary, observations, su
     {model.issue && <p role="status">{model.issue}</p>}
     {model.incomplete === true && <p role="status">Document evidence is incomplete. {model.droppedObservations?.toLocaleString('en-US')} observations were dropped.</p>}
     {model.incomplete === false && model.droppedObservations !== null && <p>{model.droppedObservations.toLocaleString('en-US')} dropped observations reported.</p>}
-    {!!model.rows.length && <div className="browser-document-table-scroll" tabIndex={0} aria-label="Document metric populations">
+    {!!model.rows.length && <div className="browser-document-table-scroll" role="region" tabIndex={0} aria-label="Document metric populations">
       <table className="tx-table browser-document-populations"><thead><tr><th>Metric</th><th>Captured cohort</th><th>Frame</th><th>Lifecycle</th><th>Qualified final</th><th>Unavailable final</th><th>Unqualified final</th><th>Censored</th><th>{provisionalLabel}</th><th>Final mean</th><th>Final min</th><th>Final max</th><th>Evidence</th></tr></thead>
         <tbody>{model.rows.map((row, i) => {
           const m = row.summary
@@ -74,7 +74,7 @@ export default function BrowserDocumentEvidencePanel({ summary, observations, su
     {model.observationsTruncated === true && <p role="status">The retained display reached its cap. Additional source observations are excluded from this view.</p>}
     {model.observationsTruncated === null && <p>Retained display completeness was not supplied.</p>}
     {model.observationIssue && <p role="status">{model.observationIssue}</p>}
-    {!!model.observations.length && <div className="browser-document-table-scroll" tabIndex={0} aria-label="Retained document measurements"><table className="tx-table browser-document-observations"><thead><tr><th>Metric</th><th>State</th><th>Observed value</th><th>Qualification</th><th>Source window</th><th>Identity and runtime</th></tr></thead><tbody>{model.observations.map((row, i) => {
+    {!!model.observations.length && <div className="browser-document-table-scroll" role="region" tabIndex={0} aria-label="Retained document measurements"><table className="tx-table browser-document-observations"><thead><tr><th>Metric</th><th>State</th><th>Observed value</th><th>Qualification</th><th>Source window</th><th>Identity and runtime</th></tr></thead><tbody>{model.observations.map((row, i) => {
       const o = row.observation
       if (!o) return <tr key={row.key}><td colSpan={6}>Observation {i + 1} unavailable: {row.issue}</td></tr>
       return <tr key={`${row.key}/${i}`}><td>{o.metric.toUpperCase()}</td><td>{o.state} · {o.boundary}</td>

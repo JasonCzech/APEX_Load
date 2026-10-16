@@ -57,12 +57,13 @@ export type DeviceCaptureStartRequest = {
 // The device capture calls go to the paired Recording Agent; saving a
 // reviewed script goes to this dashboard's controller.
 export function deviceCaptureApi(connection: BrowserRecorderBridgeConnection) {
-  const json = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) })
+  // Each call spells out its method so the dashboard route contract test can
+  // match it to the OpenAPI operation.
   return {
     getState: () => bridgeRequest<DeviceCaptureState>(connection, '/device-capture'),
     start: (req: DeviceCaptureStartRequest) =>
-      bridgeRequest<{ capture: DeviceCapture }>(connection, '/device-capture', json(req)),
-    stop: () => bridgeRequest<{ capture: DeviceCapture }>(connection, '/device-capture/stop', json({})),
+      bridgeRequest<{ capture: DeviceCapture }>(connection, '/device-capture', { method: 'POST', body: JSON.stringify(req) }),
+    stop: () => bridgeRequest<{ capture: DeviceCapture }>(connection, '/device-capture/stop', { method: 'POST', body: JSON.stringify({}) }),
     // The QR code of the setup page, as an SVG the caller shows as an image.
     qrCode: async (): Promise<Blob> => {
       const res = await bridgeFetch(connection, '/device-capture/qr.svg')
@@ -70,13 +71,13 @@ export function deviceCaptureApi(connection: BrowserRecorderBridgeConnection) {
       return res.blob()
     },
     startTransaction: (sessionId: string, name: string) =>
-      bridgeRequest(connection, `/recorder/${encodeURIComponent(sessionId)}/transactions/start`, json({ name })),
+      bridgeRequest(connection, `/recorder/${encodeURIComponent(sessionId)}/transactions/start`, { method: 'POST', body: JSON.stringify({ name }) }),
     endTransaction: (sessionId: string, name: string) =>
-      bridgeRequest(connection, `/recorder/${encodeURIComponent(sessionId)}/transactions/end`, json({ name })),
+      bridgeRequest(connection, `/recorder/${encodeURIComponent(sessionId)}/transactions/end`, { method: 'POST', body: JSON.stringify({ name }) }),
     addNote: (sessionId: string, text: string) =>
-      bridgeRequest(connection, `/recorder/${encodeURIComponent(sessionId)}/notes`, json({ text })),
+      bridgeRequest(connection, `/recorder/${encodeURIComponent(sessionId)}/notes`, { method: 'POST', body: JSON.stringify({ text }) }),
     previewConversion: (sessionId: string, name: string) =>
-      bridgeRequest<RecorderImportResult>(connection, `/recorder/${encodeURIComponent(sessionId)}/convert/preview`, json({ name })),
+      bridgeRequest<RecorderImportResult>(connection, `/recorder/${encodeURIComponent(sessionId)}/convert/preview`, { method: 'POST', body: JSON.stringify({ name }) }),
     exportHAR: (sessionId: string) => bridgeFetch(connection, `/recorder/${encodeURIComponent(sessionId)}/export`),
   }
 }

@@ -120,11 +120,35 @@ jq -e '
   (.warning_codes | index("java_vuser_xbootclasspath_modern_fallback") != null)
 ' "${workdir}/validate-response.json" >/dev/null
 
+# Every execution runs under a runtime lease the current owner claims first.
 jq -n --arg owner_id "${owner_id}" --arg owner_epoch "${owner_epoch}" '{
+  contract: "apexload-java-vuser-runner.v1",
+  owner_id: $owner_id,
+  owner_epoch: $owner_epoch
+}' >"${workdir}/lease-request.json"
+docker exec -i "${name}" curl --silent --show-error --fail \
+  --header "X-Apexload-Java-Runner-Token: ${auth_token}" \
+  --header 'Content-Type: application/json' \
+  --data-binary @- \
+  "${base_url}/v1/runtime-leases/claim" \
+  <"${workdir}/lease-request.json" >"${workdir}/lease-response.json"
+lease_id=$(jq -er '
+  select(
+    .contract == "apexload-java-vuser-runner.v1" and
+    .claimed == true and
+    (.lease_token | type == "string" and length > 0)
+  ) | .lease_id | select(type == "string" and length > 0)
+' "${workdir}/lease-response.json")
+lease_token=$(jq -er '.lease_token' "${workdir}/lease-response.json")
+
+jq -n --arg owner_id "${owner_id}" --arg owner_epoch "${owner_epoch}" \
+  --arg lease_id "${lease_id}" --arg lease_token "${lease_token}" '{
   contract: "apexload-java-vuser-runner.v1",
   execution_id: "ci-container-smoke",
   owner_id: $owner_id,
   owner_epoch: $owner_epoch,
+  runtime_lease_id: $lease_id,
+  runtime_lease_token: $lease_token,
   runtime: {
     classpath: ["/opt/apexload/java-vuser/smoke"],
     additional_vm_parameters: ["-Djava_vuser.smoke=ci"],
