@@ -80,7 +80,7 @@ jobs:
 
       - name: Setup Helm
         if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
-        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v3.21.3
 
@@ -125,7 +125,7 @@ jobs:
           fi
 
       - name: Authenticate to the release registry
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ vars.APEXLOAD_RELEASE_REGISTRY || 'ghcr.io' }}
           username: ${{ vars.APEXLOAD_RELEASE_REGISTRY_USERNAME || github.actor }}
@@ -133,7 +133,7 @@ jobs:
 
       - name: Authenticate to Azure with environment identity
         if: vars.AZURE_AUTH_MODE != 'managed-identity'
-        uses: azure/login@eec3c95657c1536435858eda1f3ff5437fee8474 # v2.3.0
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -141,7 +141,7 @@ jobs:
 
       - name: Authenticate with Azure managed identity for private GHES
         if: vars.AZURE_AUTH_MODE == 'managed-identity'
-        uses: azure/login@eec3c95657c1536435858eda1f3ff5437fee8474 # v2.3.0
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
         with:
           auth-type: IDENTITY
           client-id: ${{ vars.AZURE_CLIENT_ID }}

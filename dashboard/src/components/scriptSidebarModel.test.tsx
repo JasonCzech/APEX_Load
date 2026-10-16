@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_REPLAY_OPTIONS } from './scriptEditorState'
-import { parameterUsageLabel, debugContinuesAfterFailure, debugOverrideCount, debugRunIdError, handleOutlineKeys, sessionVariablesError } from './scriptSidebarModel'
+import { parameterUsageLabel, debugContinuesAfterFailure, debugOverrideCount, debugRunIdError, sessionVariablesError } from './scriptSidebarModel'
 import { DebugParameterInspector } from './DebugParameterInspector'
 import type { BrowserReplayEvent } from '../types/replay'
 import type { ScriptDefinition } from '../types/scripts'
@@ -27,25 +27,7 @@ describe('sidebar navigation and session context', () => {
     expect(debugOverrideCount({ ...DEFAULT_REPLAY_OPTIONS, variablesText: '{  }' })).toBe(0)
     expect(debugOverrideCount({ ...DEFAULT_REPLAY_OPTIONS, logLevel: 'debug', startPaused: true, variablesText: '{"token":"x"}' })).toBe(3)
   })
-  it('moves focus through visible rows and preserves text-input arrow keys', () => {
-    const host = document.createElement('div'); document.body.append(host)
-    const root = createRoot(host)
-    act(() => root.render(<div role="presentation" onKeyDown={handleOutlineKeys}><input /><button className="debugger-action-row-main">First</button><button className="debugger-action-row-main" hidden>Filtered out</button><button className="debugger-action-row-main">Last</button></div>))
-    const buttons = Array.from(host.querySelectorAll('button'))
-    for (const button of buttons) {
-      vi.spyOn(button, 'getClientRects').mockReturnValue((button.hidden ? [] : [{}]) as unknown as DOMRectList)
-      button.scrollIntoView = vi.fn()
-    }
-    buttons[0].focus()
-    buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-    expect(document.activeElement).toBe(buttons[2])
-    buttons[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
-    expect(document.activeElement).toBe(buttons[0])
-    host.querySelector('input')!.focus()
-    host.querySelector('input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-    expect(document.activeElement).toBe(host.querySelector('input'))
-    act(() => root.unmount()); host.remove()
-  })
+
   it('never treats a seeded variable as a captured parameter and masks explicit captures', () => {
     const host = document.createElement('div'); document.body.append(host); const root = createRoot(host)
     const script = { name: 'example', config: {}, protocol: 'http', actions: [], parameters: [{ name: 'password', type: 'list', values: ['draft-secret'] }] } as unknown as ScriptDefinition

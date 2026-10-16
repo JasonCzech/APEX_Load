@@ -1,28 +1,6 @@
 import type { ScriptDefinition } from '../types/scripts'
-import type { KeyboardEvent } from 'react'
 import { parseReplayVariablesText } from './scriptEditorUtils'
 import { DEFAULT_REPLAY_OPTIONS, type ReplayOptionsState } from './scriptEditorState'
-
-export function handleOutlineKeys(event: KeyboardEvent<HTMLElement>) {
-  if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key) || (event.target instanceof HTMLElement && event.target.matches('input, textarea, select'))) return
-  const rows = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('.debugger-action-row-main')).filter(row => row.getClientRects().length > 0 && !row.disabled)
-  if (!rows.length) return
-  event.preventDefault()
-  const current = rows.indexOf(event.target as HTMLButtonElement)
-  const next = event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1)))
-  rows[next].focus()
-  rows[next].scrollIntoView({ block: 'nearest' })
-}
-
-/** F9 toggles the breakpoint of the focused debugger row, as in VuGen. */
-export function toggleFocusedRowBreakpoint(event: KeyboardEvent<HTMLElement>): boolean {
-  if (event.key !== 'F9' || !(event.target instanceof HTMLElement)) return false
-  const gutter = event.target.closest('.debugger-action-row')?.querySelector<HTMLButtonElement>('button.debugger-gutter')
-  if (!gutter || gutter.disabled) return false
-  event.preventDefault()
-  gutter.click()
-  return true
-}
 
 export function sessionVariablesError(text: string): string | null {
   try { parseReplayVariablesText(text); return null }

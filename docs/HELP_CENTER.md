@@ -34,7 +34,7 @@ Save as sample_target.py and run `python3 sample_target.py`. Keep it running unt
 
 ### Create and prove the script
 
-Open [Scripts](#/scripts), choose **Script builder** › **Create** › **Blank & assisted editors**, open the **API Visual Editor**, and paste the example below into the editor's **Source** tab. The editor accepts the wrapped form shown here (`{"script": {...}}`, the shape API requests use) or the bare script object. Save it in the selected project. The example sends only one GET per iteration and includes explicit response checks.
+Open [Scripts](#/scripts), choose **Script builder** › **Create** › **Blank & assisted editors**, open the **API Visual Editor**, and paste the example below into the editor's **DSL** tab. The editor accepts the wrapped form shown here (`{"script": {...}}`, the shape API requests use) or the bare script object. Save it in the selected project. The example sends only one GET per iteration and includes explicit response checks.
 
 ```json
 {

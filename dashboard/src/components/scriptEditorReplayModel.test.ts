@@ -1,4 +1,4 @@
-import { replayEvidenceIndex, mergeReplayEvent } from './scriptEditorReplayModel'
+import { replayEvidenceIndex, mergeReplayEvent, withSequenceRequestBreakpoints } from './scriptEditorReplayModel'
 import { describe, expect, it } from 'vitest'
 import type {
   BrowserReplayEvent,
@@ -225,4 +225,22 @@ it('merges delayed replay deltas without holes, duplicates or lost earlier evide
   events=mergeReplayEvent(events,replayEvent({action_name:'third updated'}),2)
   expect(events.map(e=>e.event_index)).toEqual([0,1,2])
   expect(events.map(e=>e.action_name)).toEqual(['first','second','third updated'])
+})
+
+describe('withSequenceRequestBreakpoints', () => {
+  const kept = { phase: 'action', action_index: 2, request_index: 0, hit_count: 12, disabled: true }
+  const runTo = { phase: 'action', action_index: 2, request_index: 1, once: true }
+  const elsewhere = { phase: 'action', action_index: 5 }
+
+  it('adds only the missing requests, keeping existing settings and the Run-to target', () => {
+    expect(withSequenceRequestBreakpoints([kept, runTo, elsewhere], 'actions', 2, 3, true)).toEqual([
+      kept, runTo, elsewhere,
+      { phase: 'action', action_index: 2, request_index: 1 },
+      { phase: 'action', action_index: 2, request_index: 2 },
+    ])
+  })
+
+  it('clears the requests\' own breakpoints and leaves the Run-to target and other actions', () => {
+    expect(withSequenceRequestBreakpoints([kept, runTo, elsewhere], 'action', 2, 3, false)).toEqual([runTo, elsewhere])
+  })
 })

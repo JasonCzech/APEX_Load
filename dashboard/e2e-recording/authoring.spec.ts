@@ -163,8 +163,8 @@ test('debugger steps a recorded HTTP script, diagnoses failure and repairs it',a
   // Following execution moves the view on to the next action; the stepped
   // action keeps its evidence.
   await expect(page.getByRole('status').filter({hasText:'Paused before: Use customer'})).toBeVisible()
-  const actions=page.getByRole('region',{name:'Debugger actions'})
-  await actions.getByRole('button',{name:/^Action 1 Get customer/}).click()
+  const actions=page.getByRole('complementary',{name:'Actions',exact:true})
+  await actions.getByRole('treeitem',{name:/^Get customer/}).click()
   await expect(page.getByRole('region',{name:'Response evidence'})).toContainText('Body captured')
   await page.getByRole('button',{name:'Continue',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'Paused after failure: Use customer'})).toBeVisible()
@@ -174,7 +174,7 @@ test('debugger steps a recorded HTTP script, diagnoses failure and repairs it',a
   await expect(page.getByRole('tabpanel',{name:'Problems'})).toContainText('1 runtime failures')
   await page.getByRole('button',{name:'Continue',exact:true}).click()
   await expectDebugOutcome(page, false)
-  await actions.getByRole('button',{name:/^Action 2 Use customer/}).click()
+  await actions.getByRole('treeitem',{name:/^Use customer/}).click()
   await page.getByRole('button',{name:'Edit this action',exact:true}).click()
   await page.getByLabel('Check 1 status',{exact:true}).fill('200')
   await page.locator('.topbar-debug-action-run').click()
@@ -200,7 +200,7 @@ test('debugger steps a recorded HTTP script, diagnoses failure and repairs it',a
   await page.locator('.topbar-debug-action-stop').click()
   await expect(page.locator('.topbar-debug-action-stop')).toHaveCount(0)
   await page.getByRole('button',{name:'Add breakpoint on Finish',exact:true}).click()
-  await page.getByRole('region',{name:'Debugger actions'}).getByRole('button',{name:/Action 2.*Use customer/}).click()
+  await page.getByRole('complementary',{name:'Actions',exact:true}).getByRole('treeitem',{name:/^Use customer/}).click()
   const before=h.target.events.length
   await page.getByRole('button',{name:'Run to selected action',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'Paused before: Use customer'})).toBeVisible()

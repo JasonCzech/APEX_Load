@@ -146,7 +146,7 @@ test('HTTP/3 authoring: QUIC settings, field validation, capability note and the
     await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
     await page.locator('.topbar-debug-action-run').click()
     await expectDebugOutcome(page, 'passed')
-    await page.locator('.debugger-action-row-main').filter({ hasText: 'Home' }).click()
+    await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: 'Home' }).click()
     const disclosure = page.locator('details.replay-protocol-evidence')
     if (!await disclosure.evaluate(element => (element as HTMLDetailsElement).open)) await disclosure.locator('summary').click()
     const offer = page.getByRole('group', { name: 'Switch to auto+h3' })

@@ -1,1 +1,0 @@
-function e(e){let t=e.target instanceof Element?e.target.closest(`details`):null;return!!t&&e.currentTarget.contains(t)}export{e as t};

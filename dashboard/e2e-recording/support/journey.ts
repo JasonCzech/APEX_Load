@@ -106,7 +106,7 @@ export async function editor(page: Page, h: Harness, id: string) {
 }
 export async function editSource(page: Page, script: Script) {
   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Author', exact: true }).click()
-  await page.getByRole('tab', { name: 'Source', exact: true }).click()
+  await page.getByRole('tab', { name: 'DSL', exact: true }).click()
   const fullSource = page.getByRole('button', { name: 'Edit in Full Script JSON', exact: true })
   if (await fullSource.isVisible()) await fullSource.click()
   await page.getByRole('button', { name: 'Edit JSON', exact: true }).click()
