@@ -46,6 +46,29 @@ updates:
         update-types:
           - minor
           - patch
+      # react-dom pins its react peer to the same release, so a major split
+      # across two PRs cannot install on its own. Propose them together.
+      react-major:
+        patterns:
+          - react
+          - react-dom
+          - "@types/react"
+          - "@types/react-dom"
+        update-types:
+          - major
+    # @types/node tracks the Node.js line pinned in .nvmrc, not the newest
+    # release. eslint 10 waits on eslint-plugin-jsx-a11y, whose peer range
+    # stops at eslint 9 and which drives the accessibility lint gate.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: eslint
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@eslint/js"
+        update-types:
+          - version-update:semver-major
     labels:
       - dependencies
       - dashboard
