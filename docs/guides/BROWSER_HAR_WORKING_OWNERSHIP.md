@@ -385,23 +385,26 @@ aggregate active-writer reservation and the memory bound are the
 generator-wide evidence budget (Feature completion Wave 1, D3); the per-HAR
 limiter still cannot observe all native in-memory buffering.
 
-This implementation uses Linux/macOS owner identity checks and Go's secure
-os.Root operations. Other platforms reject native HAR ownership until their
-private ACL, lock and durable publication behavior is qualified; Windows stays
-rejected. `browser.NativeHARSupported()` gives each platform's answer. Where
-it is false, a HAR-recording browser session runs without a native HAR and
-reports `browser_har_unavailable_har_platform_unsupported` once per context,
-as an exhausted HAR budget does; nothing creates, cleans or reads a HAR
-directory's staging (published-artifact reads fail with "native HAR capture
-is not supported"); and a browser replay asked for `record_har: true` is
-refused with 422 before it starts. The coordinated local runtime acceptance
-host is macOS, where the ownership, crash-reclamation and real-driver tests
-run; results are recorded separately in the QA bundle. The same ownership and crash-reclamation tests
-also pass as a static Linux binary in a container without browsers, so the
-real-driver crash test has not run on Linux. Windows acceptance must not be
-inferred from either. The filesystems and peer processes must honor the
-existing descriptor-lock contract. Only scrubbed, completed HARs leave a
-generator; raw working files never do.
+This implementation uses Go's secure os.Root operations with each platform's
+owner identity checks: Linux/macOS owner UIDs and modes, and on Windows
+security descriptors and handle file IDs (Windows qualification is in
+progress: see the [Windows record](../qa/reviews/windows-native-har-2026-10-16/README.md)).
+Other platforms reject native HAR ownership until their private ACL, lock and
+durable publication behavior is qualified. `browser.NativeHARSupported()`
+gives each platform's answer. Where it is false, a HAR-recording browser
+session runs without a native HAR and reports
+`browser_har_unavailable_har_platform_unsupported` once per context, as an
+exhausted HAR budget does; nothing creates, cleans or reads a HAR directory's
+staging (published-artifact reads fail with "native HAR capture is not
+supported"); and a browser replay asked for `record_har: true` is refused
+with 422 before it starts. The coordinated local runtime acceptance host is
+macOS, where the ownership, crash-reclamation and real-driver tests run;
+results are recorded separately in the QA bundle. The same ownership and
+crash-reclamation tests also pass as a static Linux binary in a container
+without browsers, so the real-driver crash test has not run on Linux. Windows
+acceptance must not be inferred from either. The filesystems and peer
+processes must honor the existing descriptor-lock contract. Only scrubbed,
+completed HARs leave a generator; raw working files never do.
 
 Crash reclamation changed the on-disk generation format one way:
 `writer-entered.json` and version 2 manifests with `processes`. A build from
