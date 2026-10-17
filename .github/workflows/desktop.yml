@@ -167,7 +167,13 @@ jobs:
         run: |
           set -euo pipefail
           go test -count=1 ./pkg/internal/archiveingest ./pkg/importartifact ./pkg/convert/...
-          go test -count=1 ./pkg/api -run '^(TestWriteProtectedImportStoreErrorIsActionableAndDisclosureSafe|TestProtectedImportStoreMarkerPreservesSemanticSessionErrors|TestSharedImportWriterPreservesSemanticSessionFailureStatus|TestConfiguredProtectedImportStoreFailureNeverFallsBackToMemory|TestCrossPlatformGenericImporterBatchContractMatrix|TestSharedImportCommitPreservesJSONBodyWireBytesAcrossLegacyRoutes|TestCommitAsyncAPIImportBatchRestoresOpaqueDraftsWithEmbeddedFolderAndReplaysCompletedReceipt|TestHandleSaveEnterpriseArchiveImportRestoresAttestedCredentialInEmbeddedFolder|TestJMeterAttestedSaveRestoresCredentialUsesSelectedFolderAndReplays|TestBrunoNativeBatchInspectCommitAndIdempotentRetry|TestBrunoNativeInspectExposesSuppliedHeaderCredentialMetadata)$'
+          # pkg/api's test binary does not fit a 7 GB arm64 macOS runner; the
+          # script says which legs run it instead.
+          if scripts/ci/pkg-api-test-build-fits.sh; then
+            go test -count=1 ./pkg/api -run '^(TestWriteProtectedImportStoreErrorIsActionableAndDisclosureSafe|TestProtectedImportStoreMarkerPreservesSemanticSessionErrors|TestSharedImportWriterPreservesSemanticSessionFailureStatus|TestConfiguredProtectedImportStoreFailureNeverFallsBackToMemory|TestCrossPlatformGenericImporterBatchContractMatrix|TestSharedImportCommitPreservesJSONBodyWireBytesAcrossLegacyRoutes|TestCommitAsyncAPIImportBatchRestoresOpaqueDraftsWithEmbeddedFolderAndReplaysCompletedReceipt|TestHandleSaveEnterpriseArchiveImportRestoresAttestedCredentialInEmbeddedFolder|TestJMeterAttestedSaveRestoresCredentialUsesSelectedFolderAndReplays|TestBrunoNativeBatchInspectCommitAndIdempotentRetry|TestBrunoNativeInspectExposesSuppliedHeaderCredentialMetadata)$'
+          elif (($? != 3)); then
+            exit 1
+          fi
           cd dashboard
           npm test -- --run src/importLogicalPath.test.ts src/App.brunoImportDetection.test.ts src/hooks/api/useScriptApi.test.tsx
 
@@ -179,9 +185,14 @@ jobs:
           set -euo pipefail
           # The native worker suite outlasts go test's 10-minute default on slower
           # hosted runners. It refuses work when memory runs low, so pkg/api (a
-          # multi-gigabyte compile) gets its own run instead of sharing the machine.
+          # multi-gigabyte compile) gets its own run instead of sharing the machine,
+          # and none on a runner too small to compile it.
           go test -timeout 30m -tags analytics_duckdb ./pkg/analysis/... -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
-          go test -timeout 30m -tags analytics_duckdb ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
+          if scripts/ci/pkg-api-test-build-fits.sh; then
+            go test -timeout 30m -tags analytics_duckdb ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
+          elif (($? != 3)); then
+            exit 1
+          fi
           go test -timeout 45m -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'
           python3 -m unittest discover -s scripts -p 'test_native_worker_startup_test.py'
           controller="native-controller"
@@ -651,9 +662,14 @@ jobs:
           set -euo pipefail
           # The native worker suite outlasts go test's 10-minute default on slower
           # hosted runners. It refuses work when memory runs low, so pkg/api (a
-          # multi-gigabyte compile) gets its own run instead of sharing the machine.
+          # multi-gigabyte compile) gets its own run instead of sharing the machine,
+          # and none on a runner too small to compile it.
           go test -timeout 30m -tags analytics_duckdb ./pkg/analysis/... -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
-          go test -timeout 30m -tags analytics_duckdb ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
+          if scripts/ci/pkg-api-test-build-fits.sh; then
+            go test -timeout 30m -tags analytics_duckdb ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
+          elif (($? != 3)); then
+            exit 1
+          fi
           go test -timeout 45m -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'
           python3 -m unittest discover -s scripts -p 'test_native_worker_startup_test.py'
           controller="native-controller"
