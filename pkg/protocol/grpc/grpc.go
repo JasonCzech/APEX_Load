@@ -16,7 +16,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
-	"github.com/jmespath/go-jmespath"
 	googlegrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -888,33 +887,21 @@ func extractJSONPath(expr string, body []byte) (string, error) {
 }
 
 func extractJMESPath(expr string, body []byte) (string, error) {
-	var current any
-	if err := json.Unmarshal(body, &current); err != nil {
-		return "", fmt.Errorf("invalid JSON response: %w", err)
+	result, err := jsonextract.JMESPathValue(expr, body)
+	var failure *jsonextract.JMESPathError
+	if errors.As(err, &failure) {
+		if failure.Kind == jsonextract.JMESPathInvalidJSON {
+			return "", fmt.Errorf("invalid JSON response: %w", failure.Err)
+		}
+		return "", fmt.Errorf("invalid JMESPath expression: %w", failure.Err)
 	}
-	result, err := jmespath.Search(expr, current)
 	if err != nil {
-		return "", fmt.Errorf("invalid JMESPath expression: %w", err)
+		return "", err
 	}
 	if result == nil {
 		return "", protocol.MarkExtractionMiss(fmt.Errorf("no match for JMESPath %q", expr))
 	}
-	return stringifyExtraction(result)
-}
-
-func stringifyExtraction(value any) (string, error) {
-	switch typed := value.(type) {
-	case string:
-		return typed, nil
-	case []any, map[string]any:
-		encoded, err := json.Marshal(typed)
-		if err != nil {
-			return "", fmt.Errorf("marshal extraction result: %w", err)
-		}
-		return string(encoded), nil
-	default:
-		return fmt.Sprintf("%v", typed), nil
-	}
+	return jsonextract.FormatValue(result), nil
 }
 
 func intValue(value any) (int, bool) {

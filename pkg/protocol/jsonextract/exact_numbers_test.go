@@ -64,18 +64,22 @@ func TestJMESPathRetainsNumericOperators(t *testing.T) {
 	}
 }
 
-func TestJMESPathFormatsNumbersAsJSON(t *testing.T) {
+// A JMESPath selection keeps each number's source token, exactly as HTTP
+// extraction does, so a correlated value is replayed byte for byte.
+func TestJMESPathKeepsSourceNumberTokens(t *testing.T) {
 	for _, tc := range []struct{ raw, want string }{
 		{"1234567", "1234567"},
 		{"-1234567", "-1234567"},
 		{"1234567.25", "1234567.25"},
-		{"1.2300", "1.23"},
+		{"1.2300", "1.2300"},
 		{"0", "0"},
 		{"-0", "-0"},
 		{"0.000001", "0.000001"},
-		{"0.0000001", "1e-7"},
+		{"0.0000001", "0.0000001"},
 		{"100000000000000000000", "100000000000000000000"},
-		{"1000000000000000000000", "1e+21"},
+		{"1000000000000000000000", "1000000000000000000000"},
+		{"9007199254740993", "9007199254740993"},
+		{"1234567890123456789", "1234567890123456789"},
 	} {
 		t.Run(tc.raw, func(t *testing.T) {
 			for _, expression := range []string{"id", "ids[0]"} {

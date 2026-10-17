@@ -3,7 +3,6 @@ package websocket
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -21,7 +20,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
-	"github.com/jmespath/go-jmespath"
 )
 
 const (
@@ -813,22 +811,25 @@ func extractJSONPath(expr string, body []byte) (string, error) {
 }
 
 func extractJMESPath(expr string, body []byte) (string, error) {
-	var current any
-	if err := json.Unmarshal(body, &current); err != nil {
-		return "", fmt.Errorf("invalid JSON message: %w", err)
+	result, err := jsonextract.JMESPathValue(expr, body)
+	var failure *jsonextract.JMESPathError
+	if errors.As(err, &failure) {
+		switch failure.Kind {
+		case jsonextract.JMESPathInvalidJSON:
+			return "", fmt.Errorf("invalid JSON message: %w", failure.Err)
+		case jsonextract.JMESPathInvalidExpression:
+			return "", fmt.Errorf("invalid JMESPath expression: %w", failure.Err)
+		default:
+			return "", fmt.Errorf("evaluate JMESPath expression: %w", failure.Err)
+		}
 	}
-	compiled, err := compileJMESPathCached(expr)
 	if err != nil {
-		return "", fmt.Errorf("invalid JMESPath expression: %w", err)
-	}
-	result, err := compiled.Search(current)
-	if err != nil {
-		return "", fmt.Errorf("evaluate JMESPath expression: %w", err)
+		return "", err
 	}
 	if result == nil {
 		return "", protocol.MarkExtractionMiss(fmt.Errorf("no match for JMESPath %q", expr))
 	}
-	return stringifyExtraction(result)
+	return jsonextract.FormatValue(result), nil
 }
 
 func extractRegex(expr string, body []byte) (string, error) {
@@ -847,7 +848,6 @@ func extractRegex(expr string, body []byte) (string, error) {
 }
 
 var regexCache = boundedcache.NewStringCache[*regexp.Regexp](0, 0, 0)
-var jmesPathCache = boundedcache.NewStringCache[*jmespath.JMESPath](0, 0, 0)
 
 func compileRegexCached(expr string) (*regexp.Regexp, error) {
 	if cached, ok := regexCache.Load(expr); ok {
@@ -858,18 +858,6 @@ func compileRegexCached(expr string) (*regexp.Regexp, error) {
 		return nil, err
 	}
 	actual, _ := regexCache.LoadOrStore(expr, re)
-	return actual, nil
-}
-
-func compileJMESPathCached(expr string) (*jmespath.JMESPath, error) {
-	if cached, ok := jmesPathCache.Load(expr); ok {
-		return cached, nil
-	}
-	compiled, err := jmespath.Compile(expr)
-	if err != nil {
-		return nil, err
-	}
-	actual, _ := jmesPathCache.LoadOrStore(expr, compiled)
 	return actual, nil
 }
 
@@ -889,21 +877,6 @@ func extractBoundary(expr string, body []byte) (string, error) {
 		return "", protocol.MarkExtractionMiss(fmt.Errorf("right boundary %q not found", parts[1]))
 	}
 	return text[start : start+right], nil
-}
-
-func stringifyExtraction(value any) (string, error) {
-	switch typed := value.(type) {
-	case string:
-		return typed, nil
-	case []any, map[string]any:
-		encoded, err := json.Marshal(typed)
-		if err != nil {
-			return "", fmt.Errorf("marshal extraction result: %w", err)
-		}
-		return string(encoded), nil
-	default:
-		return fmt.Sprintf("%v", typed), nil
-	}
 }
 
 func evaluate(assertion protocol.Assertion, result *protocol.Result, body []byte) error {

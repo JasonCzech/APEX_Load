@@ -14,8 +14,6 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/jmespath/go-jmespath"
-
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 )
 
@@ -120,20 +118,18 @@ func splitPathToken(token string) (string, []int, error) {
 	return key, indexes, nil
 }
 
-// JMESPath evaluates a JMESPath expression against a JSON body.
+// JMESPath evaluates a JMESPath expression against a JSON body without
+// rounding its numbers (see JMESPathValue) and renders the selection with
+// FormatValue, matching HTTP extraction.
 func JMESPath(expr string, body []byte) (string, error) {
-	var current any
-	if err := json.Unmarshal(body, &current); err != nil {
-		return "", err
-	}
-	value, err := jmespath.Search(expr, current)
+	value, err := JMESPathValue(expr, body)
 	if err != nil {
 		return "", err
 	}
 	if value == nil {
 		return "", fmt.Errorf("%w: jmespath %q", ErrNotFound, expr)
 	}
-	return Stringify(value), nil
+	return FormatValue(value), nil
 }
 
 // Regex returns the first submatch (group 1 if present, else the whole match) of
