@@ -18,6 +18,12 @@ type archivePopulationAccumulator struct {
 	total  float64
 }
 
+// newArchiveGatePopulationAccumulator returns a population accumulator whose
+// percentiles can decide a release gate.
+func newArchiveGatePopulationAccumulator(budget *archiveQuantileBudget) *archivePopulationAccumulator {
+	return &archivePopulationAccumulator{digest: archiveQuantileAccumulator{gate: true, budget: budget}}
+}
+
 func archiveEventPopulation(tx TransactionEvent) string {
 	return eventPopulation(tx.Population, tx.BusinessTransaction, tx.DependencyType)
 }

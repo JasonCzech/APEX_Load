@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-
-	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 type transactionSLAAccumulator struct {
@@ -26,7 +24,7 @@ type transactionSLAAccumulator struct {
 	durationTotal   float64
 	durationMin     float64
 	durationMax     float64
-	durations       *engine.TDigest
+	durations       *archiveQuantileAccumulator
 }
 
 // applyTransactionSLARules evaluates exact-name rules only after the complete
@@ -52,6 +50,9 @@ func applyTransactionSLARules(root string, manifest *RunArchiveManifest) error {
 
 	// Rule indexes keep scope intersections exact and the working set bounded.
 	stats := make([]*transactionSLAAccumulator, len(rules))
+	// The same accumulator as the report's per-transaction percentiles, so a
+	// rule's verdict and the report table read one quantile definition.
+	quantileBudget := newArchiveQuantileBudget()
 	protocols := map[string]string{}
 	for _, group := range manifest.Provenance.Groups {
 		protocols[group.Name] = group.Protocol
@@ -75,7 +76,7 @@ func applyTransactionSLARules(root string, manifest *RunArchiveManifest) error {
 			}
 			a := stats[i]
 			if a == nil {
-				a = &transactionSLAAccumulator{durationMin: math.Inf(1), durations: engine.NewTDigest(100)}
+				a = &transactionSLAAccumulator{durationMin: math.Inf(1), durations: newArchiveGateQuantileAccumulator(quantileBudget)}
 				stats[i] = a
 			}
 			a.count++

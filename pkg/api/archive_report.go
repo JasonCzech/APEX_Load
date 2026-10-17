@@ -92,7 +92,8 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	actionSummaryBuckets := make(map[string][]archiveActionSummaryBucket)
 	errorPatterns := make(map[string]*RunArchiveErrorPattern)
 	errorPatternActions := make(map[string]map[string]struct{})
-	overallQuantiles := &archiveQuantileAccumulator{}
+	gateQuantileBudget := newArchiveQuantileBudget()
+	overallQuantiles := newArchiveGateQuantileAccumulator(gateQuantileBudget)
 	actionQuantiles := make(map[string]*archiveQuantileAccumulator)
 	groupQuantiles := make(map[string]*archiveQuantileAccumulator)
 	soapOperationQuantiles := make(map[string]*archiveQuantileAccumulator)
@@ -120,10 +121,17 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		return quantiles, nil
 	}
 
+	// Transactions and requests are the populations transaction SLA rules and
+	// the report's SLA compliance rows judge, so their percentiles use the
+	// same gate accumulators as those verdicts.
 	namedTransactions := make(map[string]*archivePopulationAccumulator)
 	requests := make(map[string]*archivePopulationAccumulator)
 	unknownRecords := make(map[string]*archivePopulationAccumulator)
-	populations := map[string]*archivePopulationAccumulator{"action": {}, "transaction": {}, "unknown": {}}
+	populations := map[string]*archivePopulationAccumulator{
+		"action":      newArchiveGatePopulationAccumulator(gateQuantileBudget),
+		"transaction": newArchiveGatePopulationAccumulator(gateQuantileBudget),
+		"unknown":     {},
+	}
 	var totalDuration float64
 	transactionIndex := 0
 	validityResults := newValidityResultCounter(archiveValidityIntervals(manifest, summaries))
@@ -147,7 +155,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 				if len(requests) >= maxArchiveAnalysisDimensions {
 					return fmt.Errorf("archive exceeds request dimension limit")
 				}
-				requests[tx.ActionName] = &archivePopulationAccumulator{}
+				requests[tx.ActionName] = newArchiveGatePopulationAccumulator(gateQuantileBudget)
 			}
 			requests[tx.ActionName].add(tx)
 		}
@@ -156,7 +164,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 				if len(namedTransactions) >= maxArchiveAnalysisDimensions {
 					return fmt.Errorf("archive exceeds named transaction dimension limit")
 				}
-				namedTransactions[tx.ActionName] = &archivePopulationAccumulator{}
+				namedTransactions[tx.ActionName] = newArchiveGatePopulationAccumulator(gateQuantileBudget)
 			}
 			namedTransactions[tx.ActionName].add(tx)
 		}
