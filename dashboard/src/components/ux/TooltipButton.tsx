@@ -16,7 +16,7 @@ const TooltipButton = forwardRef<HTMLButtonElement, TooltipButtonProps>(function
   const id = useId()
   const anchor = useRef<HTMLButtonElement | null>(null)
   const popup = useRef<HTMLDivElement>(null)
-  const timer = useRef<ReturnType<typeof setTimeout>>()
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState({ left: 0, top: 0 })
   const cancel = () => clearTimeout(timer.current)

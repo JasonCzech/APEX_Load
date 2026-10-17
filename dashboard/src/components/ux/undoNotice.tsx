@@ -27,7 +27,7 @@ function mount(notice: ReactElement) {
 // eslint-disable-next-line react-refresh/only-export-components
 function UndoNotice({ message, undoLabel, onUndo }: { message: string; undoLabel: string; onUndo?: () => Promise<void> }) {
   const [state, setState] = useState<{ busy: boolean; error: string }>({ busy: false, error: '' })
-  const timer = useRef<number>()
+  const timer = useRef<number | undefined>(undefined)
   useEffect(() => {
     timer.current = window.setTimeout(close, UNDO_WINDOW_MS)
     return () => window.clearTimeout(timer.current)

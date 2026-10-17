@@ -138,7 +138,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
       .then(result => { if (active) { inspection.delivered = true; setReview(result); onReviewRef.current?.(result) } }).catch(e => { if (active) { inspection.delivered = true; setError(String(e.message || e)) } }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [candidate, projectId, inspectionPaused])
-  const lastFocus = useRef<number>()
+  const lastFocus = useRef<number | undefined>(undefined)
   useEffect(() => {
     if (!focusPath || lastFocus.current === focusRequest) return
     const issue = issues.find(i => i.findings.some(f => f.action_path === focusPath))

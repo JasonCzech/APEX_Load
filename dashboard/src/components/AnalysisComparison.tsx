@@ -41,7 +41,7 @@ export default function AnalysisComparison({ projectId, dataset, datasets, canEd
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [saveName, setSaveName] = useState('')
-  const operation = useRef<AbortController>()
+  const operation = useRef<AbortController | undefined>(undefined)
   const identityAvailable = analysisImportedIdentityAvailable(importedIdentityVersion)
   const retainedImportedFilters = leftFilters.source_id !== '' || leftFilters.host !== '' || leftFilters.service !== '' || leftFilters.dimensions.length > 0 || target !== 'run' && (rightFilters.source_id !== '' || rightFilters.host !== '' || rightFilters.service !== '' || rightFilters.dimensions.length > 0)
   const identityDisclosureError = analysisMappingDisclosureError(dataset.mapping) || target !== 'run' && analysisMappingDisclosureError(datasets.find(item => item.id === target)?.mapping)

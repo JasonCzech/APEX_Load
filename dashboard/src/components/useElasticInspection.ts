@@ -7,11 +7,11 @@ export function useElasticInspection(projectId?: string) {
   const [operation, setOperation] = useState<ElasticInspection>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const requestController = useRef<AbortController>()
+  const requestController = useRef<AbortController | undefined>(undefined)
   const generation = useRef(0)
   // Keep ownership independent of the rendered result: a failed status read
   // must not lose the ID needed to cancel work in its original project.
-  const ownedOperation = useRef<{ projectId: string; operation: ElasticInspection }>()
+  const ownedOperation = useRef<{ projectId: string; operation: ElasticInspection } | undefined>(undefined)
   const invalidateRequests = useCallback(() => {
     generation.current++
     requestController.current?.abort()

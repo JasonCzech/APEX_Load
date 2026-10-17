@@ -40,7 +40,7 @@ export default function RunManagementEvidence({ projectId, testId }: { projectId
   const [source, setSource] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const operation = useRef<AbortController>()
+  const operation = useRef<AbortController | undefined>(undefined)
   useEffect(() => {
     const abort = new AbortController()
     setAvailable(false); setPage(undefined); setSource(''); setError(''); setBusy(false)
