@@ -148273,6 +148273,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -149789,6 +149794,11 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

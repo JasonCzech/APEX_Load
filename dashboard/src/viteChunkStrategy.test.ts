@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { chunkNameForModule } from '../scripts/chunk-strategy.mjs'
+import { chunkGroupOrder, chunkGroups, chunkNameForModule } from '../scripts/chunk-strategy.mjs'
 
-// vite.config.ts feeds this classifier to Rolldown as the single
-// `build.rolldownOptions.output.codeSplitting` group. The route budgets in
+// vite.config.ts feeds this classifier to Rolldown as one prioritized
+// `build.rolldownOptions.output.codeSplitting` group per chunk name
+// (chunkGroups). The route budgets in
 // scripts/check-bundle-budget.mjs forbid CodeMirror and Three.js assets on the
 // initial shell and the execution route, so the split below is a shipping
 // invariant rather than a cosmetic preference.
@@ -37,6 +38,8 @@ describe('chunkNameForModule', () => {
     'components/ErrorDiagnostic.tsx',
     'components/Logo.tsx',
     'hooks/useWebSocket.ts',
+    'components/ux/LoadingState.tsx',
+    'utils/dateTime.ts',
   ])('separates the shared workspace module %s from the shell entry', suffix => {
     expect(chunkNameForModule(`/repo/dashboard/src/${suffix}`)).toBe('workspace-shared')
   })
@@ -58,6 +61,10 @@ describe('chunkNameForModule', () => {
     ['useSystemApi', 'api-system'],
     ['useTestApi', 'api-tests'],
     ['useDynatraceConnectionsApi', 'api-dynatrace-connections'],
+    ['useProjectApi', 'api-projects'],
+    ['useScriptApi', 'api-scripts'],
+    ['useDashboardDefinitionsApi', 'api-dashboard-definitions'],
+    ['useELKConnectionsApi', 'api-elk-connections'],
   ])('keeps the measured shared API facade %s independent of its siblings', (name, chunk) => {
     expect(chunkNameForModule(`/repo/dashboard/src/hooks/api/${name}.ts`)).toBe(chunk)
   })
@@ -76,7 +83,6 @@ describe('chunkNameForModule', () => {
     'hooks/ProjectProvider.tsx',
     'hooks/ApplicationProvider.tsx',
     'hooks/DevViewProvider.tsx',
-    'hooks/NavigationGuardRoot.tsx',
     'hooks/TopbarContributionRoot.tsx',
     'hooks/KeyboardShortcutRoot.tsx',
     'components/ScriptEditor.tsx',
@@ -86,6 +92,64 @@ describe('chunkNameForModule', () => {
     'components/LiveRunMenu.tsx',
   ])('leaves stateful roots and feature surfaces such as %s to automatic chunking', suffix => {
     expect(chunkNameForModule(`/repo/dashboard/src/${suffix}`)).toBeUndefined()
+  })
+
+  // The shell and lazy routes share these with the shell-held modules they
+  // import, so a route that needs one never imports the shell entry.
+  it.each([
+    ['hooks/NavigationGuardRoot.tsx', 'navigation-guard'],
+    ['components/UnsavedChangesModal.tsx', 'navigation-guard'],
+    ['desktop/useDesktopCloseGuard.ts', 'navigation-guard'],
+    ['desktop/reloadPage.ts', 'navigation-guard'],
+    ['desktop/wailsRuntime.ts', 'navigation-guard'],
+    ['desktop/desktopFiles.ts', 'desktop-files'],
+    ['utils/fileUtils.ts', 'desktop-files'],
+    ['utils/authoringRevision.ts', 'script-authoring'],
+    ['utils/scriptAuthoringRevision.ts', 'script-authoring'],
+    ['utils/scenarioAuthoringRevision.ts', 'script-authoring'],
+    ['importLogicalPath.ts', 'script-authoring'],
+  ])('keeps the route-shared module %s out of the shell entry', (suffix, chunk) => {
+    expect(chunkNameForModule(`/repo/dashboard/src/${suffix}`)).toBe(chunk)
+  })
+
+  it('claims generic vendor code first and each shared app chunk before the route-shared chunks', () => {
+    const groups = chunkGroups()
+    expect(groups.map(group => group.name)).toEqual([...chunkGroupOrder])
+    expect(new Set(chunkGroupOrder).size).toBe(chunkGroupOrder.length)
+    // Higher priority claims first; Rolldown adds a captured module's
+    // dependencies to its group, so the order decides contested modules.
+    const priorities = groups.map(group => group.priority)
+    expect(priorities).toEqual([...priorities].sort((a, b) => b - a))
+    const rank = (name: string) => chunkGroupOrder.indexOf(name)
+    expect(rank('vendor')).toBe(0)
+    for (const name of ['vendor-virtual', 'vendor-three', 'vendor-recharts', 'vendor-codemirror-core', 'workspace-shared']) {
+      expect(rank('vendor')).toBeLessThan(rank(name))
+    }
+    for (const name of ['navigation-guard', 'desktop-files', 'script-authoring', 'api-scripts']) {
+      expect(rank('workspace-shared')).toBeLessThan(rank(name))
+    }
+  })
+
+  it('gives every chunk name the classifier returns a group, and a group only its own modules', () => {
+    const samples = [
+      modulePath('react-dom/client.js'),
+      modulePath('three/build/three.module.js'),
+      modulePath('@lezer/highlight/dist/index.js'),
+      '\u0000vite/preload-helper.js',
+      '/repo/dashboard/src/components/httpVersionModel.ts',
+      '/repo/dashboard/src/hooks/useApi.ts',
+      '/repo/dashboard/src/components/latencySeries.ts',
+      '/repo/dashboard/src/hooks/api/useScriptApi.ts',
+      '/repo/dashboard/src/hooks/NavigationGuardRoot.tsx',
+      '/repo/dashboard/src/utils/fileUtils.ts',
+      '/repo/dashboard/src/utils/authoringRevision.ts',
+    ]
+    const groups = chunkGroups()
+    for (const id of samples) {
+      const name = chunkNameForModule(id)
+      expect(groups.filter(group => group.test(id)).map(group => group.name)).toEqual([name])
+    }
+    expect(groups.some(group => group.test('/repo/dashboard/src/App.tsx'))).toBe(false)
   })
 
   it('matches shared workspace modules by their complete path, excluding dependency code', () => {

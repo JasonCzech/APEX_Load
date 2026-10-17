@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -48,6 +49,14 @@ const (
 )
 
 var errReplayHARStoreClosed = errors.New("the replay HAR store is closed")
+
+// browserNativeHARSupported is whether a replay can record a native HAR on
+// this platform; tests replace it.
+var browserNativeHARSupported = browser.NativeHARSupported
+
+// errReplayHARPlatformUnsupported refuses record_har where native HAR
+// capture is unavailable.
+var errReplayHARPlatformUnsupported = errors.New("record_har is not available: native HAR capture is not supported on " + runtime.GOOS + "; start the replay without record_har to get the synthetic HAR built from its network entries")
 
 // replayHARStore holds the native HAR copies of a manager's replay sessions.
 type replayHARStore struct {

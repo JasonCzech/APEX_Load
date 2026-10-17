@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -133,6 +134,17 @@ func (b *Browser) applyHARCaptureOptions(contextOptions *playwright.BrowserNewCo
 	b.mu.Unlock()
 	if previous != nil && !previous.retiredSuccessfully() {
 		return errHAROwnershipUnproven
+	}
+	if !NativeHARSupported() {
+		// As with an exhausted budget, the session runs on without HAR; the
+		// platform's answer never changes, so it is logged once.
+		b.mu.Lock()
+		b.harUnavailableReason = harUnavailablePlatform
+		b.mu.Unlock()
+		harPlatformUnsupportedLogged.Do(func() {
+			logEvidenceEvent("browser HAR capture is not supported on this platform; browser sessions run without HAR", "reason", harUnavailablePlatform, "platform", runtime.GOOS)
+		})
+		return nil
 	}
 	purgeInactiveRuntimeHARWorkingFiles(b.harDir)
 	if reason := browserEvidenceBudget.reserveHARWriter(b, b.harDir); reason != "" {
