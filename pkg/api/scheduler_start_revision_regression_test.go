@@ -22,8 +22,8 @@ import (
 // coherent scheduler start is fenced and transparently retries with a newer
 // nonzero revision.
 type scheduleStartRevisionRaceStore struct {
-	*storage.SQLiteStore
-	runner *TestRunner
+	SQLiteStore *storage.SQLiteStore
+	runner      *TestRunner
 
 	mutateOnce         sync.Once
 	mutationErr        error
@@ -34,10 +34,10 @@ type scheduleStartRevisionRaceStore struct {
 }
 
 type blockedMaterializedOccurrenceStore struct {
-	*storage.SQLiteStore
-	blocked chan struct{}
-	release chan struct{}
-	once    sync.Once
+	SQLiteStore *storage.SQLiteStore
+	blocked     chan struct{}
+	release     chan struct{}
+	once        sync.Once
 }
 
 func (s *blockedMaterializedOccurrenceStore) CompareAndSwapScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurrence, expectedRevision int64) (bool, error) {
@@ -110,7 +110,7 @@ func TestRecurringScheduleStartUsesRevisionedDurableEvidence(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = base.Close() })
 	store := &scheduleStartRevisionRaceStore{SQLiteStore: base}
-	runner := NewTestRunner(2, NewHub(), store)
+	runner := NewTestRunner(2, NewHub(), sqliteOverlay(store))
 	store.runner = runner
 	backend := &durableScheduleStartBackend{
 		store: base, started: make(chan string, 2), status: make(chan string, 2),
@@ -194,7 +194,7 @@ func TestRecurringScheduleStartUsesRevisionedDurableEvidence(t *testing.T) {
 	// A successor controller reconstructs the durable schedule and test rows.
 	// It may fail-close the interrupted INITIALIZING runtime, but it must not
 	// reinterpret the already-advanced occurrence as another launch.
-	restarted := NewTestRunner(2, NewHub(), store)
+	restarted := NewTestRunner(2, NewHub(), sqliteOverlay(store))
 	store.runner = restarted
 	restartBackend := &durableScheduleStartBackend{
 		store: base, started: make(chan string, 1), status: make(chan string, 1),
@@ -908,7 +908,7 @@ func TestRecurringScheduleStopDuringOccurrenceCommitCannotLeaveFalseMaterializat
 		blocked:     make(chan struct{}),
 		release:     make(chan struct{}),
 	}
-	runner := NewTestRunner(2, NewHub(), store)
+	runner := NewTestRunner(2, NewHub(), sqliteOverlay(store))
 	backend := &durableScheduleStartBackend{
 		store: base, started: make(chan string, 1), status: make(chan string, 1),
 	}

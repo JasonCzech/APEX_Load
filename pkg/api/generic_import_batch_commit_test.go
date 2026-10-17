@@ -439,7 +439,7 @@ func TestCommitGenericImportBatchRecoversCommittedRecorderBaselineWithoutLiveSes
 	}
 	defer base.Close()
 	store := &failOnceDirectImportReceiptStore{SQLiteStore: base, failComplete: true}
-	server := NewServer(ServerConfig{Store: store})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	masked, sessionID := genericRecorderBatchPreview(t, server, "recorder-baseline-recovery-session")
 	payload := map[string]any{
 		"operation_id":                 "recorder-baseline-recovery-operation",
@@ -529,7 +529,7 @@ func TestCommitGenericImportBatchRecoversCommittedRecorderBaselineWithoutLiveSes
 	// A restarted controller has neither the source session nor the local
 	// one-shot credential/lineage attestation. Recovery must happen from the
 	// exact durable receipt, deterministic script ID, and bound baseline.
-	restarted := NewServer(ServerConfig{Store: store})
+	restarted := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	recovered := postGenericImportBatch(t, restarted, payload)
 	if recovered.Code != http.StatusCreated {
 		t.Fatalf("recovery status = %d body=%s", recovered.Code, recovered.Body.String())

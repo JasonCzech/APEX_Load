@@ -1,0 +1,4 @@
+Error: values don't meet the specifications of the schema(s) in the following chart(s):
+apexload:
+- at '/networkPolicy/egress': missing properties 'dns', 'targets', 'controllerExtraRules', 'generatorExtraRules'
+

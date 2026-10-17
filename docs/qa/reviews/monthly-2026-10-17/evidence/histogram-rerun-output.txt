@@ -1,0 +1,8 @@
+--- FAIL: TestMonthlyReviewHistogramWindowBoundaries (2.19s)
+    --- FAIL: TestMonthlyReviewHistogramWindowBoundaries/overlapping_count_windows (1.11s)
+        monthly_review_histogram_test.go:33: inexact histogram reported as valid: value=120 timestamp=2023-11-14 22:14:00 +0000 UTC
+    --- FAIL: TestMonthlyReviewHistogramWindowBoundaries/histogram_extends_past_query_end (1.09s)
+        monthly_review_histogram_test.go:33: inexact histogram reported as valid: value=60 timestamp=2023-11-14 22:14:00 +0000 UTC
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/analysis/duckdb	2.621s
+FAIL

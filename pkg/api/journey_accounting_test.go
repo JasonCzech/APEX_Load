@@ -424,8 +424,8 @@ func TestJourneyEndpointRefusesWhatItCannotAnswer(t *testing.T) {
 
 // journeyPolicyLookupStore is a store whose policy lookups fail with err.
 type journeyPolicyLookupStore struct {
-	*storage.SQLiteStore
-	err error
+	SQLiteStore *storage.SQLiteStore
+	err         error
 }
 
 func (s journeyPolicyLookupStore) GetAnalysisDefinition(string, string, int64) (*storage.AnalysisDefinition, error) {
@@ -442,7 +442,7 @@ func TestJourneyPolicyLookupFailureIsNotAMissingPolicy(t *testing.T) {
 		err    error
 		status int
 	}{{sql.ErrNoRows, http.StatusNotFound}, {errors.New("database is locked"), http.StatusServiceUnavailable}} {
-		_, _, _, status, err := resolveJourneyPolicy(journeyPolicyLookupStore{err: tc.err}, "default", manifest, "checkout", "")
+		_, _, _, status, err := resolveJourneyPolicy(sqliteOverlay(journeyPolicyLookupStore{err: tc.err}), "default", manifest, "checkout", "")
 		if status != tc.status || err == nil || (tc.status == http.StatusServiceUnavailable && !errors.Is(err, tc.err)) {
 			t.Fatalf("lookup error %v: status %d, %v", tc.err, status, err)
 		}
@@ -450,7 +450,7 @@ func TestJourneyPolicyLookupFailureIsNotAMissingPolicy(t *testing.T) {
 	server, store := baselineTestServer(t)
 	pin := saveJourneyPolicy(t, store, "journeys", 1, journeyFixturePolicy(false))
 	journeyArchive(t, server, store, "pinned", journeyFixtureRows(), &pin)
-	server.store = journeyPolicyLookupStore{SQLiteStore: store, err: errors.New("database is locked")}
+	server.store = sqliteOverlay(journeyPolicyLookupStore{SQLiteStore: store, err: errors.New("database is locked")})
 	if code, _, body := getJourneys(t, server, "pinned", ""); code != http.StatusServiceUnavailable || strings.Contains(body, "locked") {
 		t.Fatalf("store failure: %d %s", code, body)
 	}

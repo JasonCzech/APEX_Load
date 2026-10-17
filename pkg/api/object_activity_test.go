@@ -123,7 +123,7 @@ func TestActivityProjectionContainsOnlyChangedFields(t *testing.T) {
 	}
 }
 
-type activityFailureStore struct{ *storage.SQLiteStore }
+type activityFailureStore struct{ SQLiteStore *storage.SQLiteStore }
 
 func (s *activityFailureStore) SaveObjectActivity(*storage.ObjectActivityEvent) error {
 	return errors.New("activity disk unavailable")
@@ -134,7 +134,7 @@ func TestObjectActivityFailureDoesNotRejectMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	server := NewServer(ServerConfig{Store: &activityFailureStore{store}, MaxConcurrent: 2})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(&activityFailureStore{store}), MaxConcurrent: 2})
 	r := httptest.NewRequest("POST", "/api/v1/scripts", strings.NewReader(`{"script":{"name":"Saved", "protocol":"http","version":"1","config":{"base_url":"https://example.com"},"actions":[{"name":"Get","type":"request","method":"GET","target":"/"}]}}`))
 	w := httptest.NewRecorder()
 	server.mux.ServeHTTP(w, r)
@@ -555,8 +555,8 @@ func TestScenarioAndScriptSettingsActivityCoverage(t *testing.T) {
 }
 
 type archiveRefreshRaceStore struct {
-	*storage.SQLiteStore
-	runner *TestRunner
+	SQLiteStore *storage.SQLiteStore
+	runner      *TestRunner
 }
 
 func (s *archiveRefreshRaceStore) advanceReadRevision() {
@@ -593,7 +593,7 @@ func TestArchiveRefreshSurvivesConcurrentCatalogReadRevision(t *testing.T) {
 				id, version = scenario.ID, scenario.UpdatedAt
 			}
 			raceStore := &archiveRefreshRaceStore{SQLiteStore: store, runner: server.runner}
-			server.runner.scriptStore, server.runner.scenarioStore = raceStore, raceStore
+			server.runner.scriptStore, server.runner.scenarioStore = sqliteOverlay(raceStore), sqliteOverlay(raceStore)
 			for _, action := range []string{"archive", "restore"} {
 				body, _ := json.Marshal(ObjectArchiveRequest{UpdatedAt: version})
 				r := httptest.NewRequest(http.MethodPost, "/api/v1/"+kind+"s/"+id+"/"+action, bytes.NewReader(body))

@@ -11,7 +11,7 @@ export default function PrometheusQueryPresets({ projectId, connectionID, querie
   const [presetID, setPresetID] = useState(prometheusPresets[0].id)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const active = useRef<AbortController>()
+  const active = useRef<AbortController | undefined>(undefined)
   useEffect(() => () => active.current?.abort(), [])
   useEffect(() => {
     if (!operation || !['pending', 'queued', 'running'].includes(operation.status)) return

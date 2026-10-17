@@ -255,6 +255,9 @@ type generatedCollector struct {
 
 type generatedGroup struct {
 	suggestion Suggestion
+	// occurrences counts substitutions, separately from deduplicated fields.
+	// Several copies in one body/header must still produce the same value.
+	occurrences int
 	// confident stays true while every occurrence sits in a field named for a
 	// per-request identifier or time stamp.
 	confident bool
@@ -270,7 +273,7 @@ func newGeneratedCollector(names *nameRegistry, claimed map[string]bool) *genera
 
 // add records one occurrence of value in field. place describes the field
 // for the rationale ("idp-trace-id header", "messageId body field").
-func (c *generatedCollector) add(rule, value, key, place, section string, index int, action *dsl.Action, field string) {
+func (c *generatedCollector) add(rule, value, key, place, section string, index int, action *dsl.Action, field string, occurrences int) {
 	for literal := range c.claimed {
 		// A value inside a correlated or secret literal belongs to that pass.
 		if strings.Contains(literal, value) {
@@ -291,6 +294,10 @@ func (c *generatedCollector) add(rule, value, key, place, section string, index 
 	case generatedRuleTimestamp:
 		confident = role.timeStamp
 	}
+	if group := c.grouped[value]; group != nil {
+		// Even two occurrences in one field can have different roles.
+		group.confident = group.confident && confident
+	}
 	locationKey := fmt.Sprintf("%s|%s|%d|%s", value, section, index, field)
 	if c.seen[locationKey] {
 		return
@@ -301,7 +308,7 @@ func (c *generatedCollector) add(rule, value, key, place, section string, index 
 		SearchText: value,
 	}
 	if group, ok := c.grouped[value]; ok {
-		group.confident = group.confident && confident
+		group.occurrences += occurrences
 		group.suggestion.Locations = append(group.suggestion.Locations, location)
 		return
 	}
@@ -310,10 +317,11 @@ func (c *generatedCollector) add(rule, value, key, place, section string, index 
 		base = map[string]string{generatedRuleUUID: "generated_id", generatedRuleHex: "generated_id", generatedRuleTimestamp: "generated_time"}[rule]
 	}
 	c.grouped[value] = &generatedGroup{
-		confident: confident,
-		key:       key,
-		place:     place,
-		base:      base,
+		occurrences: occurrences,
+		confident:   confident,
+		key:         key,
+		place:       place,
+		base:        base,
 		suggestion: Suggestion{
 			Kind:         KindGenerated,
 			LiteralValue: value,
@@ -347,7 +355,7 @@ func (c *generatedCollector) suggestions() []Suggestion {
 	eachUse := map[generatedEachUseKey][]*generatedGroup{}
 	ordinals := map[*generatedGroup]int{}
 	kindOf := func(group *generatedGroup) (generatedEachUseKey, bool) {
-		if len(group.suggestion.Locations) != 1 {
+		if group.occurrences != 1 {
 			return generatedEachUseKey{}, false
 		}
 		shape := generatedParameter(group.suggestion.RuleID, "", group.suggestion.LiteralValue)
@@ -532,7 +540,7 @@ func generatedSuggestions(script *dsl.Script, names *nameRegistry, claimed map[s
 	// classifies a value unless the value names its part (a cookie's sid=).
 	// leave is the rest of the field, outside text, where a value must not
 	// also appear: a replacement rewrites the whole field.
-	scan := func(text, leave, headerName, kind, section string, index int, action *dsl.Action, field string) {
+	scan := func(text, leave, headerName, kind, section string, index int, action *dsl.Action, field string, replacementTexts []string) {
 		if scanErr != nil {
 			return
 		}
@@ -540,6 +548,10 @@ func generatedSuggestions(script *dsl.Script, names *nameRegistry, claimed map[s
 		if err != nil {
 			scanErr = err
 			return
+		}
+		counts := map[string]int{}
+		if replacementTexts == nil {
+			replacementTexts = []string{text}
 		}
 		for _, token := range tokens {
 			if leave != "" && strings.Contains(leave, text[token.start:token.end]) {
@@ -557,25 +569,74 @@ func generatedSuggestions(script *dsl.Script, names *nameRegistry, claimed map[s
 			default:
 				place = map[string]string{"query": key + " query parameter", "body": key + " body field"}[kind]
 			}
-			collector.add(token.rule, text[token.start:token.end], key, place, section, index, action, field)
+			value := text[token.start:token.end]
+			count, counted := counts[value]
+			if !counted {
+				// Apply replaces every literal outside templates, including a
+				// second copy that is not a separately recognized token, and
+				// every occurrence in same-name ordered headers.
+				for _, replacementText := range replacementTexts {
+					if err := budget.chargeSearchBytes(len(replacementText)); err != nil {
+						scanErr = err
+						return
+					}
+					start := 0
+					for _, span := range templateSpans(replacementText) {
+						count += strings.Count(replacementText[start:span[0]], value)
+						start = span[1]
+					}
+					count += strings.Count(replacementText[start:], value)
+				}
+				counts[value] = count
+			}
+			collector.add(token.rule, value, key, place, section, index, action, field, count)
 		}
 	}
 	forEachAction(script, func(section string, index int, action *dsl.Action) {
+		headerFields := map[string]string{}
+		headerTexts := generatedHeaderReplacementTexts(action)
 		for _, header := range actionHeaders(action, nil) {
 			if credential.ImportCredentialHeader(header.name) {
 				continue
 			}
-			scan(header.value, "", header.name, "header", section, index, action, "headers."+header.name)
+			name := strings.ToLower(strings.TrimSpace(header.name))
+			field := headerFields[name]
+			if field == "" {
+				field = "headers." + header.name
+				headerFields[name] = field
+			}
+			scan(header.value, "", header.name, "header", section, index, action, field, headerTexts[name])
 		}
 		if query := strings.Index(action.Target, "?"); query >= 0 {
 			// Path segments name resources, so only the query is read, and a
 			// value the path also holds stays as recorded.
-			scan(action.Target[query:], action.Target[:query], "", "query", section, index, action, "target")
+			scan(action.Target[query:], action.Target[:query], "", "query", section, index, action, "target", nil)
 		}
-		scan(action.Body, "", "", "body", section, index, action, "body")
+		scan(action.Body, "", "", "body", section, index, action, "body", nil)
 	})
 	if scanErr != nil {
 		return nil, scanErr
 	}
 	return collector.suggestions(), nil
+}
+
+// A header location replaces every same-name value. Count the authoritative
+// ordered list without deduplicating equal entries; its compatibility map is
+// only a mirror. Index once per action, falling back to map values only for
+// names without ordered entries, so token-free headers do not cause rescans.
+func generatedHeaderReplacementTexts(action *dsl.Action) map[string][]string {
+	values := make(map[string][]string, len(action.HeaderList)+len(action.Headers))
+	orderedNames := make(map[string]bool, len(action.HeaderList))
+	for _, header := range action.HeaderList {
+		name := strings.ToLower(strings.TrimSpace(header.Name))
+		orderedNames[name] = true
+		values[name] = append(values[name], header.Value)
+	}
+	for _, key := range sortedKeys(action.Headers) {
+		name := strings.ToLower(strings.TrimSpace(key))
+		if !orderedNames[name] {
+			values[name] = append(values[name], action.Headers[key])
+		}
+	}
+	return values
 }

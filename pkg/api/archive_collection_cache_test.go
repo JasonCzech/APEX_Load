@@ -201,8 +201,8 @@ func TestCollectionCacheUsageCancellationAndDepth(t *testing.T) {
 }
 
 type fenceCollectionCacheStore struct {
-	*storage.SQLiteStore
-	reject bool
+	SQLiteStore *storage.SQLiteStore
+	reject      bool
 }
 
 func (s *fenceCollectionCacheStore) SaveRunArchiveCollectionSource(id, token, target string, source storage.RunArchiveCollectionSource, lease, owner string) (bool, error) {
@@ -215,7 +215,7 @@ func TestCollectionCacheRecoversSyncedButUnanchoredSource(t *testing.T) {
 	tr, store, run, b := collectionCacheFixture(t, "a", "lost")
 	delete(run.remoteClientsByTarget, "lost")
 	fenced := &fenceCollectionCacheStore{SQLiteStore: store, reject: true}
-	tr.testStore = fenced
+	tr.testStore = sqliteOverlay(fenced)
 	if _, err := b.stageRemoteArchive(tr, run, "FAILED", "", time.Now(), true); err == nil {
 		t.Fatal("fenced anchor accepted")
 	}

@@ -525,7 +525,8 @@ func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q 
 			if lineage, err = analysis.SummaryBucketDerivation(statistic, windowSeconds, q.BucketSeconds); err != nil {
 				return err
 			}
-			if querySQL, err = nativeSummaryAggregationSQL(table, q, statistic, windowSeconds); err != nil {
+			identity := nativeWindowIdentityFilter(source, host, service, dimensionsJSON)
+			if querySQL, err = nativeSummaryAggregationSQL(table, q, statistic, windowSeconds, identity); err != nil {
 				return err
 			}
 		} else {

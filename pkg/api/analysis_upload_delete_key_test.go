@@ -172,11 +172,11 @@ func TestAnalysisDatasetDeletionPlanBoundsEmptyChunkFileIDBeforeAllocation(t *te
 // The barrier is after the durable revocation write, before its caller can
 // admit physical deletion. It does not replace the real SQL cleanup proof.
 type analysisDeletionBackendBarrier struct {
-	*storage.SQLiteStore
-	armed   atomic.Bool
-	entered chan struct{}
-	release chan struct{}
-	once    sync.Once
+	SQLiteStore *storage.SQLiteStore
+	armed       atomic.Bool
+	entered     chan struct{}
+	release     chan struct{}
+	once        sync.Once
 }
 
 func (s *analysisDeletionBackendBarrier) SaveAnalysisImport(in storage.AnalysisImport, revision int64) (*storage.AnalysisImport, error) {
@@ -194,7 +194,7 @@ func TestAnalysisDeletionPinsBackendBeforeMetadataMutation(t *testing.T) {
 	var barrier *analysisDeletionBackendBarrier
 	server, store, in := nativeUploadCursorFixture(t, func(store *storage.SQLiteStore) storage.Store {
 		barrier = &analysisDeletionBackendBarrier{SQLiteStore: store, entered: make(chan struct{}), release: make(chan struct{})}
-		return barrier
+		return sqliteOverlay(barrier)
 	})
 	if err := ensureAnalysisBackend(server.store); err != nil {
 		t.Fatal(err)

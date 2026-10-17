@@ -58,7 +58,7 @@ func TestNativeDatasetSeriesHandlerRefusesLateInitialMetadataReply(t *testing.T)
 	var owner *nativeQueryMetadataBarrier
 	server, _, in := nativeQueryAuthorityFixture(t, func(store *storage.SQLiteStore) storage.Store {
 		owner = &nativeQueryMetadataBarrier{SQLiteStore: store, entered: make(chan struct{}), release: make(chan struct{}), blockDataset: true}
-		return owner
+		return sqliteOverlay(owner)
 	})
 	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", in.ProjectID)
 	owner.armed.Store(true)
@@ -103,7 +103,7 @@ func TestNativeOverlayWriterRetainsSnapshotThroughLateAnnotationAndMetadataReads
 			var owner *nativeQueryMetadataBarrier
 			server, store, in := nativeQueryAuthorityFixture(t, func(store *storage.SQLiteStore) storage.Store {
 				owner = &nativeQueryMetadataBarrier{SQLiteStore: store, entered: make(chan struct{}), release: make(chan struct{}), blockDataset: true}
-				return owner
+				return sqliteOverlay(owner)
 			})
 			if err := store.SaveTest(&storage.TestRecord{ID: "other", Name: "other", ProjectID: in.ProjectID, Status: "COMPLETE"}); err != nil {
 				t.Fatal(err)

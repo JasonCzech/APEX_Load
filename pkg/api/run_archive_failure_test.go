@@ -82,10 +82,10 @@ func TestRunArchiveFailureReadbackAndScopedEvent(t *testing.T) {
 }
 
 type interceptedArchiveFailureStore struct {
-	*storage.SQLiteStore
-	rejected   bool
-	substitute *storage.RunArchiveFailure
-	reads      int
+	SQLiteStore *storage.SQLiteStore
+	rejected    bool
+	substitute  *storage.RunArchiveFailure
+	reads       int
 }
 
 func (s *interceptedArchiveFailureStore) SaveRunArchiveFailure(f *storage.RunArchiveFailure, name, owner string) (bool, error) {
@@ -122,7 +122,7 @@ func TestRunArchiveFailureRejectsFencedAndReusedReadback(t *testing.T) {
 				wrapped.substitute = f
 			}
 			hub := NewHub()
-			runner := NewTestRunner(1, hub, wrapped)
+			runner := NewTestRunner(1, hub, sqliteOverlay(wrapped))
 			runner.tests[run.ID] = run
 			runner.recordRemoteArchiveFailure(run, storage.RunArchiveFailureRemoteCollection)
 			if wrapped.rejected && wrapped.reads != 0 {

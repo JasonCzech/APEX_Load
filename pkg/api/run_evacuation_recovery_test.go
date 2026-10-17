@@ -23,7 +23,7 @@ type evacuationFenceFakeClient struct {
 }
 
 type flakyEvacuationArchiveStore struct {
-	*storage.SQLiteStore
+	SQLiteStore  *storage.SQLiteStore
 	blockArchive atomic.Bool
 }
 
@@ -441,7 +441,7 @@ func TestInterruptedEvacuationTerminalCleanupDoesNotReclaimGenerators(t *testing
 	}
 	flaky := &flakyEvacuationArchiveStore{SQLiteStore: store}
 	flaky.blockArchive.Store(true)
-	tr.testStore = flaky
+	tr.testStore = sqliteOverlay(flaky)
 	if err := tr.recoverInterruptedRunEvacuation(test); err == nil || !strings.Contains(err.Error(), "archive failure store unavailable") {
 		t.Fatalf("terminal archive failure did not request a retry: %v", err)
 	}

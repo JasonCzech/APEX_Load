@@ -11,7 +11,7 @@ import (
 )
 
 type interruptedArchiveManifestStore struct {
-	*storage.SQLiteStore
+	SQLiteStore     *storage.SQLiteStore
 	failUpdate      bool
 	failPreparation string
 }
@@ -51,16 +51,16 @@ func TestArchiveManifestPreparationSurvivesCommitBoundaries(t *testing.T) {
 			if mode == "after preparation" {
 				store.failPreparation = "after"
 			}
-			test, record := createArchiveFinalizationTest(t, store, "prepared-run", root)
+			test, record := createArchiveFinalizationTest(t, sqliteOverlay(store), "prepared-run", root)
 			original, err := os.ReadFile(record.ManifestPath)
 			if err != nil {
 				t.Fatal(err)
 			}
-			runner := NewTestRunner(1, NewHub(), store)
+			runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 			if err := runner.finalizeRunArchiveDurably(context.Background(), test, record, true); err == nil {
 				t.Fatal("interruption ignored")
 			}
-			job, err := store.GetArchiveFinalizationJob(test.ID)
+			job, err := store.SQLiteStore.GetArchiveFinalizationJob(test.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -103,8 +103,8 @@ func TestArchiveManifestPreparationRejectsChangedArtifact(t *testing.T) {
 	}
 	defer sqlite.Close()
 	store := &interruptedArchiveManifestStore{SQLiteStore: sqlite, failPreparation: "after"}
-	test, record := createArchiveFinalizationTest(t, store, "prepared-corrupt", root)
-	runner := NewTestRunner(1, NewHub(), store)
+	test, record := createArchiveFinalizationTest(t, sqliteOverlay(store), "prepared-corrupt", root)
+	runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 	if err := runner.finalizeRunArchiveDurably(context.Background(), test, record, true); err == nil {
 		t.Fatal("interruption ignored")
 	}

@@ -224,9 +224,9 @@ func TestScriptAuthoringAPIConcurrentCreateAndDurableCacheBypass(t *testing.T) {
 
 // Capability and fault delegates keep all persistence against real SQLite.
 // Overrides isolate optional-interface admission and commit/audit uncertainty.
-type scriptRevisionUnsupportedStore struct{ storage.Store }
+type scriptRevisionUnsupportedStore struct{ Store storage.Store }
 type scriptAuthoringFaultStore struct {
-	*storage.SQLiteStore
+	SQLiteStore             *storage.SQLiteStore
 	auditCalls, failAuditAt int
 	beforeMutation          func()
 	postCommitError         bool
@@ -266,7 +266,7 @@ func TestScriptAuthoringAPIUnsupportedStoreCannotBypassStrictPolicy(t *testing.T
 	if err := store.SaveProject(project); err != nil {
 		t.Fatal(err)
 	}
-	server := NewServer(ServerConfig{Store: scriptRevisionUnsupportedStore{Store: store}})
+	server := NewServer(ServerConfig{Store: storeOverlay(scriptRevisionUnsupportedStore{Store: store})})
 	// Legacy startup may backfill a missing reference key. Capture mutation
 	// authority after setup, immediately before the requests under test.
 	before, err := store.GetScriptAuthoringSnapshot(script.ID)
@@ -312,7 +312,7 @@ func TestScriptAuthoringAPIRequiredAuditFailuresAndUnknownCommit(t *testing.T) {
 				t.Fatal(err)
 			}
 			fault := &scriptAuthoringFaultStore{SQLiteStore: base, failAuditAt: tc.failAt, postCommitError: tc.postCommit}
-			server := NewServer(ServerConfig{Store: fault})
+			server := NewServer(ServerConfig{Store: sqliteOverlay(fault)})
 			before, _ := requireAuthoringAPIProjection(t, server, "audit-fault")
 			candidate := authoringAPIScript("audit-fault")
 			candidate.Name = "Committed candidate"
@@ -352,7 +352,7 @@ func TestScriptAuthoringAPIFinalCASRefusesConcurrentSecretBindingChange(t *testi
 		t.Fatal(err)
 	}
 	fault := &scriptAuthoringFaultStore{SQLiteStore: base}
-	server := NewServer(ServerConfig{Store: fault})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(fault)})
 	_, tag := requireAuthoringAPIProjection(t, server, original.ID)
 	fault.beforeMutation = func() {
 		winner := cloneScriptDefinition(original)

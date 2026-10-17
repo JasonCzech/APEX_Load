@@ -1,0 +1,24 @@
+--- src/components/ScriptEditor.test.tsx
++++ src/components/ScriptEditor.test.tsx
+@@ -2108,6 +2108,21 @@
+     } finally {
+       Object.defineProperty(HTMLElement.prototype, 'offsetHeight', height)
+     }
++  })
++
++  it('Monthly review blocks saving when a catalog field has an invalid draft', async () => {
++    setCachedDslActionCatalog({ protocols: ['http'], common_fields: [], actions: [LIVE_TABLE_SPEC] })
++    try {
++      const tableScript = { ...initialScript, actions: [{ name: 'Increment count', type: 'live_table', target: '', params: { alias: 'work', operation: 'increment', position: 1, columns: ['count'], delta: '1' } }] } as unknown as ScriptDefinition
++      await act(async () => { root.render(<ScriptEditor initialScript={tableScript} projectId="project-1" />) })
++      await flushReact()
++      const form = container.querySelector<HTMLElement>('.catalog-action-form')!
++      const delta = Array.from(form.querySelectorAll('label')).find(label => label.querySelector('span')?.textContent?.startsWith('Add') && label.querySelector('input[type="text"]'))!.querySelector<HTMLInputElement>('input')!
++      await act(async () => { changeInputValue(delta, '1.5') })
++      expect(delta.getAttribute('aria-invalid')).toBe('true')
++      await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click(); await Promise.resolve() })
++      expect(apiMock.createScript).not.toHaveBeenCalled()
++    } finally { setCachedDslActionCatalog(null) }
+   })
+ 
+   it('edits a live-table action from the catalog, never with HTTP fields, and its JSON keeps the keys in order', async () => {

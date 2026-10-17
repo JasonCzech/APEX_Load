@@ -2,8 +2,10 @@ package api
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -36,13 +38,26 @@ func TestAnalysisNamespaceCleanupIsScoped(t *testing.T) {
 }
 
 type analysisCleanupReadFailureStore struct {
-	*storage.SQLiteStore
-	failRead  bool
-	completed int
+	SQLiteStore *storage.SQLiteStore
+	failRead    bool
+	completed   int
 }
 
+// ListAnalysisCleanupJobs lists the dataset job first, as a wall clock too
+// coarse to tell its not_before from its attempts' (Windows) orders it.
 func (s *analysisCleanupReadFailureStore) ListAnalysisCleanupJobs(now time.Time, limit int) ([]storage.AnalysisCleanupJob, error) {
-	return s.SQLiteStore.ListAnalysisCleanupJobs(now.Add(time.Hour), limit)
+	jobs, err := s.SQLiteStore.ListAnalysisCleanupJobs(now.Add(time.Hour), limit)
+	slices.SortStableFunc(jobs, func(a, b storage.AnalysisCleanupJob) int {
+		return cmp.Compare(boolRank(a.Kind != "dataset"), boolRank(b.Kind != "dataset"))
+	})
+	return jobs, err
+}
+
+func boolRank(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }
 func (s *analysisCleanupReadFailureStore) GetAnalysisImport(id string) (*storage.AnalysisImport, error) {
 	if s.failRead {
@@ -61,17 +76,17 @@ func TestAnalysisCleanupRetriesMetadataReadFailure(t *testing.T) {
 	_, durable := newTimeslotServer(t)
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	store := &analysisCleanupReadFailureStore{SQLiteStore: durable.(*storage.SQLiteStore)}
-	in, err := store.SaveAnalysisImport(storage.AnalysisImport{ID: "00000000-0000-0000-0000-000000000003", ProjectID: "proj-a", Name: "data", State: "uploading", Files: []storage.AnalysisImportFile{{ID: "f", RelativePath: "f.parquet", Size: 12, Uploaded: 12}}}, 0)
+	in, err := store.SQLiteStore.SaveAnalysisImport(storage.AnalysisImport{ID: "00000000-0000-0000-0000-000000000003", ProjectID: "proj-a", Name: "data", State: "uploading", Files: []storage.AnalysisImportFile{{ID: "f", RelativePath: "f.parquet", Size: 12, Uploaded: 12}}}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	in = publishAnalysisAPIFixture(t, store, in, nil)
+	in = publishAnalysisAPIFixture(t, sqliteOverlay(store), in, nil)
 	in.State = "deleting"
-	in, err = store.SaveAnalysisImport(*in, in.Revision)
+	in, err = store.SQLiteStore.SaveAnalysisImport(*in, in.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := &Server{store: store}
+	server := &Server{store: sqliteOverlay(store)}
 	store.failRead = true
 	if err = server.retryAnalysisCleanup(context.Background()); err == nil || store.completed != 0 {
 		t.Fatalf("metadata failure lost retry: completed=%d error=%v", store.completed, err)

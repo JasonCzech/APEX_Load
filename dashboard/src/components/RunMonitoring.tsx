@@ -55,7 +55,7 @@ export function RunMonitorSources({ projectId, canManage = false, showEnableHint
   const [busy, setBusy] = useState(false)
   const [refresh, setRefresh] = useState(0)
   const [sourceValidation, setSourceValidation] = useState('')
-  const operation = useRef<AbortController>()
+  const operation = useRef<AbortController | undefined>(undefined)
   useEffect(() => {
     operation.current?.abort(); setDraft(emptySource()); setCollectors([]); setError(''); setBusy(false)
   }, [projectId])
@@ -141,7 +141,7 @@ export function ScenarioMonitorBindings({ projectId, scenarioId, canEdit, scenar
   const [bindings, setBindings] = useState<Bindings>({ revision: 0, sources: [] })
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  const operation = useRef<AbortController>()
+  const operation = useRef<AbortController | undefined>(undefined)
   const path = `/scenarios/${encodeURIComponent(scenarioId)}/monitor-bindings`
   useEffect(() => {
     const c = new AbortController()
@@ -172,7 +172,7 @@ export function RunMonitorTimeline({ projectId, testId, history }: { projectId?:
   const [evidenceSelection, setEvidenceSelection] = useState<Record<string, unknown>>({})
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const controller = useRef<AbortController>()
+  const controller = useRef<AbortController | undefined>(undefined)
   const [loadedSelection, setLoadedSelection] = useState('')
   const selectionKey = JSON.stringify([testId, source, metric, dimensions, window])
   const selectedJob = jobs.find(job => job.source.id === source)

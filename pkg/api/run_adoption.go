@@ -1156,7 +1156,13 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 	if resume == nil {
 		return
 	}
-	defer tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: resume.ownerID, generation: resume.generation})
+	rendezvousTerm := executionLeaseTerm{ownerID: resume.ownerID, generation: resume.generation}
+	rendezvousTransferred := false
+	defer func() {
+		if !rendezvousTransferred {
+			tr.dropRunRendezvous(test.ID, rendezvousTerm)
+		}
+	}()
 	if !ok || !active || executionCtx == nil {
 		return
 	}
@@ -1276,6 +1282,8 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	tr.mu.Unlock()
 
+	tr.retainRunRendezvousUntil(lifecycleCtx, test.ID, rendezvousTerm)
+	rendezvousTransferred = true
 	tr.broadcastEvent("test_adopted", eventSnapshot)
 	for _, target := range orderedMetricsTargets(streams, b.configuredTargets()) {
 		go b.consumeMetrics(lifecycleCtx, tr, test, target, streams[target])

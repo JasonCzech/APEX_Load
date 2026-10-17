@@ -212,6 +212,36 @@ func (tr *TestRunner) dropRunRendezvous(run string, term executionLeaseTerm) {
 		}
 	}
 }
+
+// retainRunRendezvousUntil transfers the prepared coordinators from a launcher
+// to the remote run's lifetime. That context outlives a graceful Stop and ends
+// when remote resources close, leadership is lost, or the controller shuts down.
+// Capture the exact runtimes: a late callback from an earlier lifetime must not
+// close replacement coordinators, even when they use the same lease term.
+func (tr *TestRunner) retainRunRendezvousUntil(ctx context.Context, run string, term executionLeaseTerm) {
+	tr.rendezvousMu.Lock()
+	owned := make(map[string]*runGroupRendezvous)
+	for key, rt := range tr.rendezvousGroups {
+		if strings.HasPrefix(key, run+"\x00") && rt.term == term {
+			owned[key] = rt
+		}
+	}
+	tr.rendezvousMu.Unlock()
+	if len(owned) == 0 {
+		return
+	}
+	context.AfterFunc(ctx, func() {
+		tr.rendezvousMu.Lock()
+		defer tr.rendezvousMu.Unlock()
+		for key, rt := range owned {
+			rt.closed.Store(true)
+			if tr.rendezvousGroups[key] == rt {
+				delete(tr.rendezvousGroups, key)
+			}
+		}
+	})
+}
+
 func (tr *TestRunner) rendezvousClient(run, group string, allowed []rendezvous.MemberRange) rendezvous.Client {
 	rt := tr.rendezvousRuntime(run, group)
 	if rt == nil {

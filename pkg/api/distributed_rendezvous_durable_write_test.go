@@ -11,12 +11,12 @@ import (
 )
 
 type rendezvousGaugeStore struct {
-	*storage.SQLiteStore
-	runner    *TestRunner
-	operation string
-	failure   error
-	gauge     int64
-	calls     int
+	SQLiteStore *storage.SQLiteStore
+	runner      *TestRunner
+	operation   string
+	failure     error
+	gauge       int64
+	calls       int
 }
 
 func (s *rendezvousGaugeStore) observe(operation string) error {
@@ -69,7 +69,7 @@ func TestDistributedRendezvousDurableWritesPublishAndReleaseGauge(t *testing.T) 
 					t.Fatal(err)
 				}
 				observed := &rendezvousGaugeStore{SQLiteStore: store, runner: runner}
-				runner.testStore = observed
+				runner.testStore = sqliteOverlay(observed)
 				shards := []GeneratorShardSummary{{Group: group.Name, VUsers: group.VUsers}}
 				if operation != "initialize" {
 					if err := runner.prepareGroupRendezvous(ctx, test, group, shards, false, term); err != nil {

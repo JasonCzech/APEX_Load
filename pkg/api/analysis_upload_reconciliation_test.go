@@ -19,10 +19,10 @@ import (
 )
 
 type uploadReceiptOutageStore struct {
-	*storage.SQLiteStore
-	outage  atomic.Bool
-	entered chan struct{}
-	once    sync.Once
+	SQLiteStore *storage.SQLiteStore
+	outage      atomic.Bool
+	entered     chan struct{}
+	once        sync.Once
 }
 
 func (s *uploadReceiptOutageStore) ResolveAnalysisUploadWriter(ctx context.Context, project, importID, id string) (*storage.AnalysisUploadWriter, error) {
@@ -49,9 +49,9 @@ func TestAnalysisUploadExactCompletionSurvivesServerReplacementAndSealsIO(t *tes
 	shutdownUploadFixtureServer(t, initial)
 	fault := &uploadReceiptOutageStore{SQLiteStore: base.(*storage.SQLiteStore), entered: make(chan struct{})}
 	fault.outage.Store(true)
-	server := NewServer(ServerConfig{Store: fault, MaxConcurrent: 2})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(fault), MaxConcurrent: 2})
 	t.Cleanup(func() { shutdownUploadFixtureServer(t, server) })
-	in, err := fault.SaveAnalysisImport(storage.AnalysisImport{ID: uuid.NewString(), ProjectID: "proj-a", Name: "retained upload", State: "uploading", UploadWriterVersion: storage.AnalysisUploadWriterVersion, Files: []storage.AnalysisImportFile{{ID: uuid.NewString(), RelativePath: "data.parquet", Size: 12}}}, 0)
+	in, err := fault.SQLiteStore.SaveAnalysisImport(storage.AnalysisImport{ID: uuid.NewString(), ProjectID: "proj-a", Name: "retained upload", State: "uploading", UploadWriterVersion: storage.AnalysisUploadWriterVersion, Files: []storage.AnalysisImportFile{{ID: uuid.NewString(), RelativePath: "data.parquet", Size: 12}}}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestAnalysisUploadExactCompletionSurvivesServerReplacementAndSealsIO(t *tes
 	defer end()
 	data := []byte("PAR1dataPAR1")
 	digest := sha256.Sum256(data)
-	server.runAnalysisUploadChunk(ctx, fault, owner, *in, in.Files[0], 0, data, hex.EncodeToString(digest[:]))
+	server.runAnalysisUploadChunk(ctx, sqliteOverlay(fault), owner, *in, in.Files[0], 0, data, hex.EncodeToString(digest[:]))
 	end()
 	owner.endRequest()
 	select {
@@ -96,7 +96,7 @@ func TestAnalysisUploadExactCompletionSurvivesServerReplacementAndSealsIO(t *tes
 	if _, ok := analysisUploadOwners.Load(owner.id); !ok {
 		t.Fatal("Server shutdown discarded retry owner")
 	}
-	second, err := storage.NewSQLiteStore(fault.BackendInfo().DSN)
+	second, err := storage.NewSQLiteStore(fault.SQLiteStore.BackendInfo().DSN)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +311,7 @@ func TestAnalysisUploadCursorMetadataBarrierRechecksRevisionAndActualDeadline(t 
 			var barrier *nativeQueryMetadataBarrier
 			server, store, in := nativeUploadCursorFixture(t, func(store *storage.SQLiteStore) storage.Store {
 				barrier = &nativeQueryMetadataBarrier{SQLiteStore: store, entered: make(chan struct{}), release: make(chan struct{}), blockProject: stage == "project-deadline", blockDataset: stage != "project-deadline"}
-				return barrier
+				return sqliteOverlay(barrier)
 			})
 			ctx := t.Context()
 			if stage != "revision" {
@@ -366,7 +366,7 @@ func TestAnalysisUploadCursorMetadataBarrierRechecksRevisionAndActualDeadline(t 
 }
 
 type uploadResolveBarrierStore struct {
-	*storage.SQLiteStore
+	SQLiteStore          *storage.SQLiteStore
 	armed                atomic.Bool
 	entered, release     chan struct{}
 	completeCalls        atomic.Int32
@@ -394,7 +394,7 @@ func TestAnalysisUploadLateResolutionCannotAdmitNewCompletion(t *testing.T) {
 			var fault *uploadResolveBarrierStore
 			server, store, in := nativeUploadCursorFixture(t, func(store *storage.SQLiteStore) storage.Store {
 				fault = &uploadResolveBarrierStore{SQLiteStore: store, entered: make(chan struct{}), release: make(chan struct{})}
-				return fault
+				return sqliteOverlay(fault)
 			})
 			// Stop automatic retry inventory before constructing this controlled
 			// exact metadata owner. This fixture opens no body/artifact descriptor.
@@ -502,9 +502,9 @@ func TestAnalysisUploadLateResolutionCannotAdmitNewCompletion(t *testing.T) {
 }
 
 type uploadBeginPanicStore struct {
-	*storage.SQLiteStore
-	mu     sync.Mutex
-	intent *storage.AnalysisUploadWriter
+	SQLiteStore *storage.SQLiteStore
+	mu          sync.Mutex
+	intent      *storage.AnalysisUploadWriter
 }
 
 func (s *uploadBeginPanicStore) BeginAnalysisUploadWriter(ctx context.Context, request storage.AnalysisUploadRequest) (*storage.AnalysisUploadWriter, error) {
@@ -525,7 +525,7 @@ func TestAnalysisUploadWriterPanicRetainsUnknownOuterOwnerAndJournal(t *testing.
 	var fault *uploadBeginPanicStore
 	server, store, in := nativeUploadCursorFixture(t, func(store *storage.SQLiteStore) storage.Store {
 		fault = &uploadBeginPanicStore{SQLiteStore: store}
-		return fault
+		return sqliteOverlay(fault)
 	})
 	owner, ok := acquireAnalysisUploadOwner()
 	if !ok {
@@ -550,7 +550,7 @@ func TestAnalysisUploadWriterPanicRetainsUnknownOuterOwnerAndJournal(t *testing.
 	digest := sha256.Sum256(data)
 	ctx := context.WithValue(t.Context(), analysisUploadOwnerKey{}, owner)
 	w := httptest.NewRecorder()
-	server.writeAnalysisUploadChunk(w, httptest.NewRequest("PUT", "/", nil).WithContext(ctx), fault, *in, in.Files[0], 0, data, hex.EncodeToString(digest[:]))
+	server.writeAnalysisUploadChunk(w, httptest.NewRequest("PUT", "/", nil).WithContext(ctx), sqliteOverlay(fault), *in, in.Files[0], 0, data, hex.EncodeToString(digest[:]))
 	owner.endRequest()
 	if w.Code != 503 || owner.physicalJoined() || owner.sealPhysical() {
 		t.Fatal("constructor panic became no-writer physical proof", w.Code, w.Body.String())
@@ -579,8 +579,8 @@ func TestAnalysisUploadWriterPanicRetainsUnknownOuterOwnerAndJournal(t *testing.
 }
 
 type uploadForeignAdapterStore struct {
-	*storage.SQLiteStore
-	begins atomic.Int32
+	SQLiteStore *storage.SQLiteStore
+	begins      atomic.Int32
 }
 
 func (s *uploadForeignAdapterStore) BeginAnalysisUploadWriter(ctx context.Context, request storage.AnalysisUploadRequest) (*storage.AnalysisUploadWriter, error) {
@@ -600,7 +600,7 @@ func TestAnalysisUploadForeignSameDatabaseAdapterRefusedBeforePhysicalAdmission(
 	w := httptest.NewRecorder()
 	data := []byte("PAR1dataPAR1")
 	digest := sha256.Sum256(data)
-	server.writeAnalysisUploadChunk(w, httptest.NewRequest("PUT", "/", nil).WithContext(ctx), foreign, *in, in.Files[0], 0, data, hex.EncodeToString(digest[:]))
+	server.writeAnalysisUploadChunk(w, httptest.NewRequest("PUT", "/", nil).WithContext(ctx), sqliteOverlay(foreign), *in, in.Files[0], 0, data, hex.EncodeToString(digest[:]))
 	owner.mu.Lock()
 	operations, descriptors, intent := owner.operations, len(owner.descriptors), owner.intent
 	owner.mu.Unlock()
@@ -610,8 +610,8 @@ func TestAnalysisUploadForeignSameDatabaseAdapterRefusedBeforePhysicalAdmission(
 }
 
 type uploadWrongImportIDStore struct {
-	*storage.SQLiteStore
-	armed atomic.Bool
+	SQLiteStore *storage.SQLiteStore
+	armed       atomic.Bool
 }
 
 func (s *uploadWrongImportIDStore) GetAnalysisImport(id string) (*storage.AnalysisImport, error) {
@@ -628,7 +628,7 @@ func TestAnalysisUploadCursorRefusesForeignReturnedImportIdentity(t *testing.T) 
 	var fault *uploadWrongImportIDStore
 	server, _, in := nativeUploadCursorFixture(t, func(store *storage.SQLiteStore) storage.Store {
 		fault = &uploadWrongImportIDStore{SQLiteStore: store}
-		return fault
+		return sqliteOverlay(fault)
 	})
 	fault.armed.Store(true)
 	r := httptest.NewRequest("PUT", "/", nil).WithContext(t.Context())

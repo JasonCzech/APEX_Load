@@ -1,0 +1,5 @@
+Error: values don't meet the specifications of the schema(s) in the following chart(s):
+apexload:
+- at '/archiveStaging/persistence': missing properties 'existingClaim', 'accessModes', 'storageClassName', 'size'
+- at '/networkPolicy/egress': missing properties 'dns', 'targets', 'controllerExtraRules', 'generatorExtraRules'
+

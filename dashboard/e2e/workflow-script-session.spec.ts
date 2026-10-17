@@ -1,5 +1,75 @@
-import { test, expect, idOf, json, login } from './support/workflow'
+import { test, expect, idOf, json, login, mutation } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
+
+test('catalog drafts block stale saves and live-table fields preserve explicit empty strings', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: {
+    project_id: workspace.projectId,
+    script: {
+      name: 'Catalog field drafts', version: '1.0', protocol: 'http', config: { base_url: 'http://127.0.0.1:1' },
+      actions: [
+        { name: 'Increment count', type: 'live_table', params: { alias: 'jobs', operation: 'increment', position: 1, columns: ['count'], delta: '1' } },
+        { name: 'Update row', type: 'live_table', params: { alias: 'jobs', operation: 'update', position: 1, expected: { count: '1' }, values: { count: '2' } } },
+        { name: 'Publish status', type: 'live_table', params: { alias: 'jobs', operation: 'push', values: { status: 'new' } } },
+      ],
+    },
+  } })))
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  const save = page.getByRole('button', { name: 'Save script', exact: true })
+  const delta = page.locator('.catalog-action-form').getByLabel(/^Add/)
+  await delta.fill('1.5')
+  await expect(delta).toHaveAttribute('aria-invalid', 'true')
+  await expect(save).toBeDisabled()
+  await page.getByRole('treeitem', { name: 'Update row Live Table', exact: true }).click()
+  await expect(page.getByRole('alert').filter({ hasText: 'Fix action fields before saving' })).toBeVisible()
+  await expect(save).toBeDisabled()
+  await page.getByRole('treeitem', { name: 'Increment count Live Table', exact: true }).click()
+  await expect(delta).toHaveValue('1.5')
+  await delta.fill('9007199254740993')
+
+  await page.getByRole('treeitem', { name: 'Update row Live Table', exact: true }).click()
+  const expected = page.getByRole('group', { name: 'Only when the row has', exact: true })
+  const values = page.locator('.catalog-values').filter({ has: page.getByRole('table', { name: 'Values', exact: true }) })
+  await expected.getByRole('button', { name: 'Set status empty, row 1', exact: true }).click()
+  await expect(expected.getByRole('textbox', { name: 'status, row 1', exact: true })).toBeFocused()
+  await values.getByRole('button', { name: 'Set status empty, row 1', exact: true }).click()
+  await expect(values.getByRole('textbox', { name: 'status, row 1', exact: true })).toBeFocused()
+  const saved = mutation(page, 'PUT', `/api/v1/scripts/${id}`)
+  await save.click()
+  expect((await saved).ok()).toBe(true)
+  const stored = await json(await request.get(`/api/v1/scripts/${id}`)) as { script: { actions: Array<{ params: Record<string, unknown> }> } }
+  expect(stored.script.actions[0].params.delta).toBe('9007199254740993')
+  expect(stored.script.actions[1].params.expected).toEqual({ count: '1', status: '' })
+  expect(stored.script.actions[1].params.values).toEqual({ count: '2', status: '' })
+})
+
+test('catalog JSON is validated before blur and keyboard Save includes the focused field draft', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: {
+    project_id: workspace.projectId,
+    script: { name: 'Catalog JSON draft', version: '1.0', protocol: 'kafka', config: { kafka: { mock: true, brokers: ['127.0.0.1:9092'], topic: 'orders' } }, actions: [{ name: 'Publish order', type: 'kafka_produce', target: 'orders', body: 'order', headers: { source: 'old' } }] },
+  } })))
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  const headers = page.locator('.catalog-action-form').getByLabel(/^Headers/)
+  await headers.fill('{"source":')
+  await expect(headers).toHaveAttribute('aria-invalid', 'true')
+  await expect(page.getByRole('button', { name: 'Save script', exact: true })).toBeDisabled()
+  await headers.fill('{"source":"keyboard"}')
+  await expect(headers).toBeFocused()
+  const saved = mutation(page, 'PUT', `/api/v1/scripts/${id}`)
+  await headers.press('ControlOrMeta+s')
+  expect((await saved).ok()).toBe(true)
+  const stored = await json(await request.get(`/api/v1/scripts/${id}`)) as { script: { actions: Array<{ headers: Record<string, string> }> } }
+  expect(stored.script.actions[0].headers).toEqual({ source: 'keyboard' })
+})
 
 // The script session binds a validation result to the exact draft it was
 // issued for. A result that arrives after a further edit is dropped; the next

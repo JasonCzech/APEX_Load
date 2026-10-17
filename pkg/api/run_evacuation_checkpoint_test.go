@@ -502,7 +502,7 @@ func TestRunEvacuationStagingRejectsInvalidProgress(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "write-failure":
-				tr.testStore = &evacuationCheckpointFaultStore{SQLiteStore: store, reject: true}
+				tr.testStore = sqliteOverlay(&evacuationCheckpointFaultStore{SQLiteStore: store, reject: true})
 			case "canceled":
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
@@ -560,7 +560,7 @@ func TestRunEvacuationReplacementTargets(t *testing.T) {
 }
 
 type evacuationCheckpointFaultStore struct {
-	*storage.SQLiteStore
+	SQLiteStore *storage.SQLiteStore
 	before      func()
 	reject      bool
 	rejectWrite func(string) bool
@@ -585,7 +585,7 @@ func TestRunEvacuationCheckpointRejectsUnavailableOwnershipAndStorage(t *testing
 			ctx := context.Background()
 			switch fault {
 			case "store":
-				tr.testStore = &evacuationCheckpointFaultStore{SQLiteStore: store, reject: true}
+				tr.testStore = sqliteOverlay(&evacuationCheckpointFaultStore{SQLiteStore: store, reject: true})
 			case "terminal":
 				now := time.Now()
 				if err := store.UpdateTestStatus(test.ID, "FAILED", &now, "stopped"); err != nil {
@@ -645,7 +645,7 @@ func TestRunEvacuationCheckpointRejectedCompletionRemainsUnarmed(t *testing.T) {
 		t.Fatal("changed policy falsely acknowledged completion")
 	}
 	test.Assignment.FailoverPolicy = "continue"
-	tr.testStore = &evacuationCheckpointFaultStore{SQLiteStore: store, reject: true}
+	tr.testStore = sqliteOverlay(&evacuationCheckpointFaultStore{SQLiteStore: store, reject: true})
 	if err := tr.writeRunContinuity(context.Background(), test, generation, owner, token, next, guard); err == nil {
 		t.Fatal("failed completion accepted")
 	}
@@ -719,7 +719,7 @@ func TestRunEvacuationSourceFenceRejectsStaleOrUnownedProgress(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "write-failure":
-				tr.testStore = &evacuationCheckpointFaultStore{SQLiteStore: store, reject: true}
+				tr.testStore = sqliteOverlay(&evacuationCheckpointFaultStore{SQLiteStore: store, reject: true})
 			case "canceled":
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
@@ -791,7 +791,7 @@ func TestRunEvacuationReplacementCommitRejectsInvalidProgress(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "write-failure":
-				tr.testStore = &evacuationCheckpointFaultStore{SQLiteStore: store, reject: true}
+				tr.testStore = sqliteOverlay(&evacuationCheckpointFaultStore{SQLiteStore: store, reject: true})
 			case "canceled":
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
@@ -808,7 +808,7 @@ func TestRunEvacuationReplacementCommitRejectsInvalidProgress(t *testing.T) {
 	}
 }
 
-type unavailableArchiveFailureStore struct{ *storage.SQLiteStore }
+type unavailableArchiveFailureStore struct{ SQLiteStore *storage.SQLiteStore }
 
 func (*unavailableArchiveFailureStore) SaveRunArchiveFailure(*storage.RunArchiveFailure, string, string) (bool, error) {
 	return false, errors.New("injected archive failure store outage")
@@ -824,7 +824,7 @@ func TestRunEvacuationCheckpointRecoveryDefersArchiveMarkerWhenCleanupIsUnproven
 	if err != nil || record.ContinuityCheckpoint != guard {
 		t.Fatalf("guard = %+v, %v", record, err)
 	}
-	tr.testStore = &unavailableArchiveFailureStore{store}
+	tr.testStore = sqliteOverlay(&unavailableArchiveFailureStore{store})
 	restored := &ManagedTest{ID: test.ID, Status: "RUNNING", Assignment: test.Assignment,
 		CreatedAt: record.StartTime, ProjectID: record.ProjectID}
 	setContinuityCheckpointLocked(restored, guard)
@@ -878,11 +878,11 @@ func TestRunContinuityCASDoesNotOverwriteConcurrentEvacuationIntent(t *testing.T
 	tr, store, test, generation, owner, token, previous, _ := evacuationCheckpointFixture(t)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
 	const concurrent = `{"version":2,"source":"gen-a"}`
-	tr.testStore = &evacuationCheckpointFaultStore{SQLiteStore: store, before: func() {
+	tr.testStore = sqliteOverlay(&evacuationCheckpointFaultStore{SQLiteStore: store, before: func() {
 		if _, err := store.UpdateTestContinuityCheckpointIfLeaseHeld(test.ID, concurrent, executionLeaseName, owner); err != nil {
 			t.Fatal(err)
 		}
-	}}
+	}})
 	if err := tr.writeRunContinuity(context.Background(), test, generation, owner, token, previous, ""); err == nil {
 		t.Fatal("stale arm overwrote concurrent intent")
 	}

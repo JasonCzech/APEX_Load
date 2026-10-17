@@ -441,7 +441,7 @@ func TestTelemetryReevaluationRefusesForeignOrInvalidInputs(t *testing.T) {
 	}
 	// A policy store that fails is a dependency to retry, not a missing policy.
 	working := server.store
-	server.store = failingPolicyStore{store}
+	server.store = sqliteOverlay(failingPolicyStore{store})
 	if reply := create(storage.DefaultProjectID, `{"runs":["reeval-a"],"policy":{"id":"common","revision":1}}`); reply.Code != http.StatusServiceUnavailable {
 		t.Fatalf("failing policy store: %d %s", reply.Code, reply.Body)
 	}
@@ -459,7 +459,7 @@ func TestTelemetryReevaluationRefusesForeignOrInvalidInputs(t *testing.T) {
 }
 
 // failingPolicyStore fails every policy revision lookup with a storage error.
-type failingPolicyStore struct{ *storage.SQLiteStore }
+type failingPolicyStore struct{ SQLiteStore *storage.SQLiteStore }
 
 func (failingPolicyStore) GetAnalysisDefinition(string, string, int64) (*storage.AnalysisDefinition, error) {
 	return nil, errors.New("database is locked")

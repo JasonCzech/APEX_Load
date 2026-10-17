@@ -27,7 +27,7 @@ type errorBeforeCommitExecutionPlanRunStore struct {
 }
 
 type casMissReloadErrorExecutionPlanRunStore struct {
-	*storage.SQLiteStore
+	SQLiteStore *storage.SQLiteStore
 }
 
 func (s *casMissReloadErrorExecutionPlanRunStore) CompareAndSwapExecutionPlanRun(*storage.ExecutionPlanRun, int64) (bool, error) {
@@ -345,7 +345,7 @@ func TestExecutionPlanCASMissWithReloadFailureRemainsRetryable(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	runner := NewTestRunner(1, NewHub(), store)
-	runner.execPlanRunStore = &casMissReloadErrorExecutionPlanRunStore{SQLiteStore: store}
+	runner.execPlanRunStore = sqliteOverlay(&casMissReloadErrorExecutionPlanRunStore{SQLiteStore: store})
 	run := &storage.ExecutionPlanRun{ID: "run-retry", PlanID: "plan", RunMode: "sequential", Status: "running", Revision: 1, UpdatedAt: time.Now()}
 	err = runner.persistExecutionPlanRunDurable(run)
 	if !errors.Is(err, errExecutionPlanRunCommitUnknown) || errors.Is(err, errExecutionPlanRunConflict) {

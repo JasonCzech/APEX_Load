@@ -49,10 +49,10 @@ func TestIdleEpochRecoveryWaitsForTerminalArchiveWork(t *testing.T) {
 // The release uses a real lease store but pauses at the database boundary, where
 // liveness must be able to use its bounded snapshot while the runner is locked.
 type blockedIdleEpochReleaseStore struct {
-	*storage.SQLiteStore
-	entered chan struct{}
-	resume  chan struct{}
-	fail    bool
+	SQLiteStore *storage.SQLiteStore
+	entered     chan struct{}
+	resume      chan struct{}
+	fail        bool
 }
 
 func (s *blockedIdleEpochReleaseStore) ReleaseSchedulerLeaseTermIfTestsIdle(name, owner string, generation uint64) (bool, error) {
@@ -73,7 +73,7 @@ func TestIdleEpochRecoveryKeepsBoundedHealthBypassDuringDatabaseRelease(t *testi
 		t.Run(name, func(t *testing.T) {
 			tr, store, generation, owner := idleEpochRecoveryRunner(t)
 			blocked := &blockedIdleEpochReleaseStore{SQLiteStore: store, entered: make(chan struct{}), resume: make(chan struct{}), fail: fail}
-			tr.leadership.store = blocked
+			tr.leadership.store = sqliteOverlay(blocked)
 			server := &Server{runner: tr}
 			server.healthSnapshot.Store(&healthCheckSnapshot{publishedAt: time.Now()})
 			done := make(chan bool, 1)

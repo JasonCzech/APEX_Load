@@ -3,11 +3,56 @@
 package duckdb
 
 import (
+	"context"
+	"errors"
+	"io"
+	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"unicode/utf16"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
+
+// The worker runs detached from any console, so no console host
+// (conhost.exe) joins its job: the job's only process is the worker, and none
+// is active once the worker is reaped. A child that exits mid-request is then
+// reaped and joined like one that crashes slowly, instead of leaving its
+// ownership unresolved.
+func TestWorkerWindowsJobHoldsOnlyTheWorker(t *testing.T) {
+	a, admission := workerRuntimeTestAttempt(t, context.Background())
+	launch := workerRuntimeTestLaunch(t, a, "exit")
+	var mu sync.Mutex
+	var accounting workerWindowsJobAccounting
+	accounted := false
+	a.mu.Lock()
+	a.closeDescriptorHook = func(d io.Closer) error {
+		if owner, ok := d.(*workerProcessCloseOwner); ok {
+			owner.process.mu.Lock()
+			mu.Lock()
+			accounted = windows.QueryInformationJobObject(owner.process.job, windows.JobObjectBasicAccountingInformation, uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil) == nil
+			mu.Unlock()
+			owner.process.mu.Unlock()
+		}
+		return d.Close()
+	}
+	a.mu.Unlock()
+	_, err := runWorkerParent(a, workerRequest{Preview: &workerPreviewOperation{InputHandle: a.bootstrap.Handles[0].Handle}}, workerRunOptions{probe: func(*workerAttempt, *os.Process) error { return nil }, testLaunch: launch})
+	if err == nil || errors.Is(err, errWorkerOwnership) {
+		t.Fatalf("a child that exited mid-request: %v", err)
+	}
+	if !a.reaped || !a.pipesJoined || admission.releases.Load() != 0 {
+		t.Fatal("the exited child was not reaped and joined, or its lease was released")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !accounted || accounting.TotalProcesses != 1 || accounting.ActiveProcesses != 0 {
+		t.Fatalf("the worker's job held %+v (accounted %v)", accounting, accounted)
+	}
+}
 
 func TestWorkerWindowsEnvironmentStrictSortedPrivateBlock(t *testing.T) {
 	for _, tc := range []struct {

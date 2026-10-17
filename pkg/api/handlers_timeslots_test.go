@@ -39,7 +39,7 @@ func newTimeslotServer(t *testing.T) (*Server, storage.Store) {
 // method set, forcing the handler's non-atomic compatibility path even when the
 // wrapped SQLite store supports atomic capacity approval.
 type capacityApprovalFallbackStore struct {
-	storage.Store
+	Store storage.Store
 }
 
 func timeslotRequest(t *testing.T, server *Server, method, path string, body any) *httptest.ResponseRecorder {
@@ -313,7 +313,7 @@ func TestCapacityReservationApprovalCountsSettingsReservations(t *testing.T) {
 			t.Run("global envelope", func(t *testing.T) {
 				server, store := newTimeslotServer(t)
 				if mode.fallback {
-					server.store = capacityApprovalFallbackStore{Store: store}
+					server.store = storeOverlay(capacityApprovalFallbackStore{Store: store})
 				}
 				start := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 				end := start.Add(2 * time.Hour)
@@ -337,7 +337,7 @@ func TestCapacityReservationApprovalCountsSettingsReservations(t *testing.T) {
 				server, store := newTimeslotServer(t)
 				seedFleetPool(t, store, "pool-static", 10)
 				if mode.fallback {
-					server.store = capacityApprovalFallbackStore{Store: store}
+					server.store = storeOverlay(capacityApprovalFallbackStore{Store: store})
 				}
 				start := time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
 				end := start.Add(2 * time.Hour)
@@ -361,7 +361,7 @@ func TestCapacityReservationApprovalCountsSettingsReservations(t *testing.T) {
 				seedFleetPool(t, store, "pool-target", 3)
 				seedFleetPool(t, store, "pool-other", 1)
 				if mode.fallback {
-					server.store = capacityApprovalFallbackStore{Store: store}
+					server.store = storeOverlay(capacityApprovalFallbackStore{Store: store})
 				}
 				start := time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC)
 				end := start.Add(2 * time.Hour)
@@ -392,7 +392,7 @@ func TestCapacityReservationApprovalRejectsKnownEmptyPool(t *testing.T) {
 			server, store := newTimeslotServer(t)
 			seedFleetPool(t, store, "empty-pool", 0)
 			if mode.fallback {
-				server.store = capacityApprovalFallbackStore{Store: store}
+				server.store = storeOverlay(capacityApprovalFallbackStore{Store: store})
 			}
 			start := time.Date(2026, 10, 5, 9, 0, 0, 0, time.UTC)
 			id := createCapacityTimeslotForApproval(t, server, start, start.Add(time.Hour), 1, "empty-pool")

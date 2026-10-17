@@ -173,7 +173,7 @@ func TestArchiveSharedStagingProcessHelper(t *testing.T) {
 		t.Fatal("invalid helper mode")
 	}
 	failing := &failingArchiveCatalogStore{SQLiteStore: store, failCatalog: true}
-	if err := NewTestRunner(1, NewHub(), failing).processArchiveFinalizationJob(context.Background(), job); err == nil {
+	if err := NewTestRunner(1, NewHub(), sqliteOverlay(failing)).processArchiveFinalizationJob(context.Background(), job); err == nil {
 		t.Fatal("catalog interruption not injected")
 	}
 	release, err := lockArchivePublicationSource(context.Background(), id)

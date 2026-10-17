@@ -187,8 +187,8 @@ func TestExpiredEpochRecoveryCancellationWhileRenewalIsBlocked(t *testing.T) {
 }
 
 type uncertainIdleReleaseStore struct {
-	*storage.SQLiteStore
-	commit bool
+	SQLiteStore *storage.SQLiteStore
+	commit      bool
 }
 
 func (s *uncertainIdleReleaseStore) ReleaseSchedulerLeaseTermIfTestsIdle(name, owner string, generation uint64) (bool, error) {
@@ -203,7 +203,7 @@ func TestIdleEpochRecoveryStepsDownOnAmbiguousCommit(t *testing.T) {
 	for _, committed := range []bool{false, true} {
 		t.Run(fmt.Sprint(committed), func(t *testing.T) {
 			tr, s, generation, owner := idleEpochRecoveryRunner(t)
-			tr.leadership.store = &uncertainIdleReleaseStore{SQLiteStore: s, commit: committed}
+			tr.leadership.store = sqliteOverlay(&uncertainIdleReleaseStore{SQLiteStore: s, commit: committed})
 			epoch, cancel := tr.leadership.operationContext(context.Background())
 			defer cancel()
 			if !tr.recoverExpiredGeneratorEpoch(context.Background(), generation, owner, expiredEpochError(generation)) || tr.leadership.IsLeader() {

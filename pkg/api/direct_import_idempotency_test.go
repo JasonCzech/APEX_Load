@@ -20,7 +20,7 @@ import (
 )
 
 type directImportRollbackTestStore struct {
-	*storage.SQLiteStore
+	SQLiteStore *storage.SQLiteStore
 
 	renewStarted  chan struct{}
 	renewContinue chan struct{}
@@ -93,7 +93,7 @@ func (s *directImportRollbackTestStore) setFailScriptDelete(fail bool) {
 }
 
 type failOnceDirectImportReceiptStore struct {
-	*storage.SQLiteStore
+	SQLiteStore     *storage.SQLiteStore
 	claims          int
 	failComplete    bool
 	releaseStarted  chan struct{}
@@ -321,7 +321,7 @@ func TestDirectImportRollbackKeepsClaimsLeasedUntilReceiptRenewal(t *testing.T) 
 		renewStarted:  make(chan struct{}),
 		renewContinue: make(chan struct{}),
 	}
-	server := NewServer(ServerConfig{Store: store})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	attempt, replay, err := server.claimDirectImportAttempt(
 		storage.DefaultProjectID,
 		"jmeter",
@@ -411,7 +411,7 @@ func TestDirectImportRollbackAbandonsReceiptAfterClaimReleaseError(t *testing.T)
 	}
 	defer base.Close()
 	store := &directImportRollbackTestStore{SQLiteStore: base}
-	server := NewServer(ServerConfig{Store: store})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	attempt, replay, err := server.claimDirectImportAttempt(
 		storage.DefaultProjectID,
 		"jmeter",
@@ -479,7 +479,7 @@ func TestDirectImportRollbackRetainsReceiptAfterAssetCompensationFailure(t *test
 	}
 	defer base.Close()
 	store := &directImportRollbackTestStore{SQLiteStore: base}
-	server := NewServer(ServerConfig{Store: store})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	attempt, replay, err := server.claimDirectImportAttempt(
 		storage.DefaultProjectID,
 		"jmeter",
@@ -536,7 +536,7 @@ func TestDirectImportRollbackRetainsReceiptAfterAssetCompensationFailure(t *test
 	}
 
 	store.setFailScriptDelete(false)
-	replacement := NewServer(ServerConfig{Store: store})
+	replacement := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	if err := replacement.recoverExpiredLibraryImportClaims(); err != nil {
 		t.Fatalf("recover retained failed compensation: %v", err)
 	}
@@ -567,7 +567,7 @@ func TestStaleDirectImportAdoptionWaitsForUncommittedClaims(t *testing.T) {
 		releaseStarted:  make(chan struct{}),
 		releaseContinue: make(chan struct{}),
 	}
-	first := NewServer(ServerConfig{Store: store})
+	first := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	const (
 		operationID   = "stale-adoption-live-claims"
 		requestDigest = "stale-adoption-request-digest"
@@ -605,7 +605,7 @@ func TestStaleDirectImportAdoptionWaitsForUncommittedClaims(t *testing.T) {
 	// The first owner is stalled after its final create. The receipt clock is
 	// advanced by the test store so a retry can take it over without waiting,
 	// while the first owner's claim heartbeat remains live in real time.
-	second := NewServer(ServerConfig{Store: store})
+	second := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	secondAttempt, replay, err := second.claimDirectImportAttempt(
 		storage.DefaultProjectID,
 		"jmeter",
@@ -679,7 +679,7 @@ func TestStaleDirectImportAdoptionWaitsForUncommittedClaims(t *testing.T) {
 		t.Fatalf("terminal old-owner claims remain: %#v", claims)
 	}
 
-	third := NewServer(ServerConfig{Store: store})
+	third := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	thirdAttempt, replay, err := third.claimDirectImportAttempt(
 		storage.DefaultProjectID,
 		"jmeter",
@@ -748,7 +748,7 @@ func TestLostUnmutatedClaimsCannotDeleteCompletedDirectImportAsset(t *testing.T)
 	}
 	defer base.Close()
 	store := &failOnceDirectImportReceiptStore{SQLiteStore: base}
-	first := NewServer(ServerConfig{Store: store})
+	first := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	const (
 		operationID   = "unmutated-claim-completed-asset"
 		requestDigest = "unmutated-claim-request-digest"
@@ -786,7 +786,7 @@ func TestLostUnmutatedClaimsCannotDeleteCompletedDirectImportAsset(t *testing.T)
 		t.Fatal(err)
 	}
 
-	second := NewServer(ServerConfig{Store: store})
+	second := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	secondAttempt, replay, err := second.claimDirectImportAttempt(
 		storage.DefaultProjectID,
 		"jmeter",
@@ -941,7 +941,7 @@ func TestJMeterRetryHealsAssetsCommittedBeforeReceiptCompletion(t *testing.T) {
 	store := &failOnceDirectImportReceiptStore{
 		SQLiteStore: base, failComplete: true,
 	}
-	server := NewServer(ServerConfig{Store: store})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	body := []byte(`{"scripts":[{
 		"name":"Crash_Recovery","version":"1","protocol":"http",
 		"generated_by":"jmeter-import","generated_from":"jmeter",
@@ -979,7 +979,7 @@ func TestJMeterRetryHealsCredentialedAssetsAcrossServerRestart(t *testing.T) {
 		SQLiteStore:  base,
 		failComplete: true,
 	}
-	firstServer := NewServer(ServerConfig{Store: store})
+	firstServer := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	const credential = "jmeter-restart-exact-password"
 	body := jmeterRestartAttestedSaveBody(
 		t,
@@ -1004,7 +1004,7 @@ func TestJMeterRetryHealsCredentialedAssetsAcrossServerRestart(t *testing.T) {
 	// The preview capability lives only in the first process. Recovery must use
 	// the stale durable receipt and its deterministic assets, not require that
 	// ephemeral token to survive controller restart.
-	restarted := NewServer(ServerConfig{Store: store})
+	restarted := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	retry := postJSON(t, restarted, "/api/v1/scripts/import/jmeter/save", body, "")
 	if retry.Code != http.StatusCreated {
 		t.Fatalf("restart recovery status = %d, want 201 body=%s",
@@ -1081,7 +1081,7 @@ func TestJMeterRestartRecoveryRejectsChangedCommittedAsset(t *testing.T) {
 		SQLiteStore:  base,
 		failComplete: true,
 	}
-	firstServer := NewServer(ServerConfig{Store: store})
+	firstServer := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	body := jmeterRestartAttestedSaveBody(
 		t,
 		firstServer,
@@ -1113,7 +1113,7 @@ func TestJMeterRestartRecoveryRejectsChangedCommittedAsset(t *testing.T) {
 		t.Fatalf("edit committed script: updated=%v err=%v", updated, updateErr)
 	}
 
-	restarted := NewServer(ServerConfig{Store: store})
+	restarted := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	retry := postJSON(t, restarted, "/api/v1/scripts/import/jmeter/save", body, "")
 	if retry.Code != http.StatusConflict {
 		t.Fatalf("changed-asset restart recovery status = %d, want 409 body=%s",

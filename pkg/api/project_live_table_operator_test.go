@@ -321,7 +321,7 @@ func TestProjectLiveTableOperatorRejectsLeasedRow(t *testing.T) {
 }
 
 type projectReadAuditHookStore struct {
-	*storage.SQLiteStore
+	SQLiteStore *storage.SQLiteStore
 	onCompleted func()
 }
 
@@ -351,7 +351,7 @@ func TestProjectLiveTableReadRechecksOwnerAndCredentialsAfterAudit(t *testing.T)
 					t.Fatal(err)
 				}
 			}
-			server.store = &projectReadAuditHookStore{SQLiteStore: store, onCompleted: func() {
+			server.store = sqliteOverlay(&projectReadAuditHookStore{SQLiteStore: store, onCompleted: func() {
 				if change == "owner" {
 					server.runner.stopProjectLiveTableLeadership()
 				} else {
@@ -359,7 +359,7 @@ func TestProjectLiveTableReadRechecksOwnerAndCredentialsAfterAudit(t *testing.T)
 						t.Fatal(err)
 					}
 				}
-			}}
+			}})
 			path := "/api/v1/projects/" + d.ProjectID + "/live-tables/" + d.ID + "/export?instance_id=" + d.CurrentInstanceID + "&revision=" + first.Result.Revision
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			if change == "credential" {

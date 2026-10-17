@@ -21,13 +21,13 @@ func TestProducerArchiveRetryPreservesNewerDurableManifest(t *testing.T) {
 	}
 	defer sqlite.Close()
 	store := &failingArchiveCatalogStore{SQLiteStore: sqlite, failCatalog: true}
-	test, record := createArchiveFinalizationTest(t, store, "producer-retry", root)
-	runner := NewTestRunner(1, NewHub(), store)
+	test, record := createArchiveFinalizationTest(t, sqliteOverlay(store), "producer-retry", root)
+	runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 	if err := runner.finalizeRunArchiveDurably(context.Background(), test, record, true); err == nil {
 		t.Fatal("catalog failure ignored")
 	}
 	stale := *record
-	job, err := store.GetArchiveFinalizationJob(test.ID)
+	job, err := store.SQLiteStore.GetArchiveFinalizationJob(test.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestProducerArchiveRetryPreservesNewerDurableManifest(t *testing.T) {
 	if err := runner.processArchiveFinalizationJob(context.Background(), job); err == nil {
 		t.Fatal("catalog failure ignored")
 	}
-	newer, err := store.GetArchiveFinalizationJob(test.ID)
+	newer, err := store.SQLiteStore.GetArchiveFinalizationJob(test.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestProducerArchiveRetryPreservesNewerDurableManifest(t *testing.T) {
 	if newer.IntentToken != token {
 		t.Fatal("background retry changed intent")
 	}
-	catalog, err := store.GetRunArchive(test.ID)
+	catalog, err := store.SQLiteStore.GetRunArchive(test.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestProducerArchiveRetryPreservesNewerDurableManifest(t *testing.T) {
 	if catalog.ManifestSHA256 != sha256BytesHex(manifest) || stale.ManifestSHA256 != catalog.ManifestSHA256 {
 		t.Fatal("current trust anchor was lost")
 	}
-	if _, err := store.GetArchiveFinalizationJob(test.ID); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.SQLiteStore.GetArchiveFinalizationJob(test.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("pending job after success: %v", err)
 	}
 	// A still older producer retry after publication must return the committed
@@ -74,7 +74,7 @@ func TestProducerArchiveRetryPreservesNewerDurableManifest(t *testing.T) {
 	if record.ManifestSHA256 != before {
 		t.Fatal("completed catalog was overwritten")
 	}
-	if _, err := store.GetArchiveFinalizationJob(test.ID); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.SQLiteStore.GetArchiveFinalizationJob(test.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("completed intent recreated: %v", err)
 	}
 }

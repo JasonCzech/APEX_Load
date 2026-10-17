@@ -14,7 +14,7 @@ import (
 )
 
 type accessFailAuditStore struct {
-	storage.Store
+	Store storage.Store
 	calls int
 }
 
@@ -93,7 +93,7 @@ func TestAccessActivityCompleteHistory(t *testing.T) {
 			t.Fatalf("invalid range: %d", r.Code)
 		}
 	}
-	server.store = &accessFailAuditStore{Store: store}
+	server.store = storeOverlay(&accessFailAuditStore{Store: store})
 	failed := httptest.NewRecorder()
 	server.mux.ServeHTTP(failed, httptest.NewRequest("GET", "/api/v1/auth/user-activity/export?all=true", nil))
 	if failed.Code != 500 || strings.Contains(failed.Body.String(), "event-1004") || strings.Contains(failed.Header().Get("Content-Type"), "csv") {

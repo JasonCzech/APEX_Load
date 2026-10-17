@@ -25,9 +25,9 @@ type collectionRetryArchiveClient struct {
 }
 
 type archiveFailureRepairProbeStore struct {
-	*storage.SQLiteStore
-	calls int
-	fail  bool
+	SQLiteStore *storage.SQLiteStore
+	calls       int
+	fail        bool
 }
 
 func (s *archiveFailureRepairProbeStore) ReconcileExhaustedRunArchiveFailures(_, _ string, limit int) (int64, error) {
@@ -45,7 +45,7 @@ func TestArchiveCollectionRetryRepairsHistoricalExhaustionBeforeListing(t *testi
 	tr, store, _, backend := collectionCacheFixture(t, "a")
 	tr.setExecutionBackend(backend)
 	probe := &archiveFailureRepairProbeStore{SQLiteStore: store}
-	tr.testStore = probe
+	tr.testStore = sqliteOverlay(probe)
 	if err := tr.retryRunArchiveCollections(context.Background(), time.Now()); err != nil || probe.calls != 1 {
 		t.Fatalf("repair pass = %d, %v", probe.calls, err)
 	}
@@ -468,7 +468,7 @@ func TestArchiveCollectionRetryFencesRunChangedBeforePublication(t *testing.T) {
 	}
 	changed := &changedOrphanRunStore{SQLiteStore: store}
 	tr := NewTestRunner(1, nil, nil)
-	tr.testStore, tr.archiveStore = changed, changed
+	tr.testStore, tr.archiveStore = sqliteOverlay(changed), sqliteOverlay(changed)
 	var reads, closes atomic.Int32
 	tr.setExecutionBackend(newDistributedExecutionBackend(nil, time.Second, func(context.Context, string) (generatorClient, error) {
 		return &collectionRetryArchiveClient{source: run.remoteClientsByTarget["a"], reads: &reads, closes: &closes}, nil

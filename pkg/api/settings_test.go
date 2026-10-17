@@ -975,7 +975,7 @@ func TestSourceSecretMigrationPolicyRequiresDurableAudit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		server.store = &selectiveAuditFailureStore{Store: store, action: "system.settings.update", status: "pending"}
+		server.store = storeOverlay(&selectiveAuditFailureStore{Store: store, action: "system.settings.update", status: "pending"})
 		request := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
 		withCurrentSystemSettingsIfMatch(request, server)
 		response := httptest.NewRecorder()
@@ -1001,7 +1001,7 @@ func TestSourceSecretMigrationPolicyRequiresDurableAudit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		server.store = &selectiveAuditFailureStore{Store: store, action: "system.settings.update", status: "success"}
+		server.store = storeOverlay(&selectiveAuditFailureStore{Store: store, action: "system.settings.update", status: "success"})
 		request := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
 		withCurrentSystemSettingsIfMatch(request, server)
 		response := httptest.NewRecorder()
@@ -1042,7 +1042,7 @@ func TestNotificationCredentialRotationRequiresDurableSecretFreeAudit(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.store = &selectiveAuditFailureStore{Store: store, action: "system.settings.update", status: "pending"}
+	server.store = storeOverlay(&selectiveAuditFailureStore{Store: store, action: "system.settings.update", status: "pending"})
 	request := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
 	withCurrentSystemSettingsIfMatch(request, server)
 	response := httptest.NewRecorder()

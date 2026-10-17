@@ -287,8 +287,8 @@ func TestAnalysisCleanupMissingRootDoesNotRetainTypedNilDescriptor(t *testing.T)
 }
 
 type analysisCleanupCountingStore struct {
-	*storage.SQLiteStore
-	completed atomic.Int32
+	SQLiteStore *storage.SQLiteStore
+	completed   atomic.Int32
 }
 
 func (s *analysisCleanupCountingStore) ListAnalysisCleanupJobs(now time.Time, limit int) ([]storage.AnalysisCleanupJob, error) {
@@ -302,19 +302,19 @@ func TestAnalysisCleanupRootCloseFailurePreservesDurableJobAndFairRetry(t *testi
 	t.Setenv(config.EnvArchiveDir, t.TempDir())
 	_, durable := newTimeslotServer(t)
 	store := &analysisCleanupCountingStore{SQLiteStore: durable.(*storage.SQLiteStore)}
-	in, err := store.SaveAnalysisImport(storage.AnalysisImport{ID: uuid.NewString(), ProjectID: "proj-a", Name: "cancelled completed fixture", State: "uploading", Files: []storage.AnalysisImportFile{{ID: uuid.NewString(), RelativePath: "data.parquet", Size: 12, Uploaded: 12}}}, 0)
+	in, err := store.SQLiteStore.SaveAnalysisImport(storage.AnalysisImport{ID: uuid.NewString(), ProjectID: "proj-a", Name: "cancelled completed fixture", State: "uploading", Files: []storage.AnalysisImportFile{{ID: uuid.NewString(), RelativePath: "data.parquet", Size: 12, Uploaded: 12}}}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// This fixture has no physical writer. Seal its already-complete legacy
 	// cursor before cancellation so it does not manufacture unknown-writer proof.
 	in.State = "mapped"
-	in, err = store.SaveAnalysisImport(*in, in.Revision)
+	in, err = store.SQLiteStore.SaveAnalysisImport(*in, in.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
 	in.State = "cancelled"
-	if _, err = store.SaveAnalysisImport(*in, in.Revision); err != nil {
+	if _, err = store.SQLiteStore.SaveAnalysisImport(*in, in.Revision); err != nil {
 		t.Fatal(err)
 	}
 	backend := currentArchiveBackend()
@@ -331,7 +331,7 @@ func TestAnalysisCleanupRootCloseFailurePreservesDurableJobAndFairRetry(t *testi
 	ops := defaultAnalysisCleanupPhysicalOps
 	ops.openRoot = func(string) (analysisCleanupRoot, error) { return fault, nil }
 	ctx, registry := cleanupOwnerContext(t, 1, ops)
-	server := &Server{store: store}
+	server := &Server{store: sqliteOverlay(store)}
 	before, err := store.ListAnalysisCleanupJobs(time.Now(), 50)
 	if err != nil || len(before) != 1 {
 		t.Fatal("missing cancellation cleanup job", before, err)

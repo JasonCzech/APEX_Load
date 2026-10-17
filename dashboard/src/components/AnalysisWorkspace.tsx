@@ -53,7 +53,7 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
   const [bucket, setBucket] = useState('')
   const [aggregation, setAggregation] = useState('avg')
   const [identityFilters, setIdentityFilters] = useState(emptyAnalysisIdentityFilters)
-  const operation = useRef<AbortController>()
+  const operation = useRef<AbortController | undefined>(undefined)
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     if (!projectId) return

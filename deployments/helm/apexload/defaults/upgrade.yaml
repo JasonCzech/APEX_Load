@@ -1,0 +1,37 @@
+# Template fallbacks for --reuse-values. A parity test keeps these sections
+# aligned with values.yaml; explicit release values always take precedence.
+http3:
+  enabled: false
+  preflight: report
+  quic:
+    initialStreamReceiveWindow: 0
+    maxStreamReceiveWindow: 0
+    initialConnectionReceiveWindow: 0
+    maxConnectionReceiveWindow: 0
+    maxResponseHeaderBytes: 0
+    initialPacketSize: 0
+    disablePathMTUDiscovery: false
+archiveStaging:
+  persistence:
+    enabled: false
+    existingClaim: ""
+    accessModes: [ReadWriteMany]
+    storageClassName: ""
+    size: 256Gi
+networkPolicy:
+  enabled: true
+  ingressNamespace: app-routing-system
+  monitoringNamespace: monitoring
+  egress:
+    enabled: false
+    dns:
+      namespace: kube-system
+      podLabels:
+        k8s-app: kube-dns
+    targets:
+      cidrs: [0.0.0.0/0, "::/0"]
+      exceptCidrs: []
+      tcpPorts: [80, 443]
+      udpPorts: [443]
+    controllerExtraRules: []
+    generatorExtraRules: []

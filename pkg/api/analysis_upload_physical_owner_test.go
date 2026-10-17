@@ -248,7 +248,7 @@ func TestAnalysisUploadPipelinePublishesDurableCursorAfterExactObjectClosure(t *
 // missing-row response. The real store still owns the committed journal; only
 // its later scope-fenced resolution can release that exact owner.
 type uploadUnfencedMissingStore struct {
-	*storage.SQLiteStore
+	SQLiteStore     *storage.SQLiteStore
 	calls           atomic.Int32
 	entered, permit chan struct{}
 	enteredOnce     sync.Once
@@ -287,7 +287,7 @@ func TestAnalysisUploadUnfencedMissingRowCannotReleaseAmbiguousBeginOwner(t *tes
 		t.Fatal(err)
 	}
 	stop()
-	server = NewServer(ServerConfig{Store: writers, MaxConcurrent: 2})
+	server = NewServer(ServerConfig{Store: sqliteOverlay(writers), MaxConcurrent: 2})
 	t.Cleanup(func() {
 		ctx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 		defer stop()
@@ -305,7 +305,7 @@ func TestAnalysisUploadUnfencedMissingRowCannotReleaseAmbiguousBeginOwner(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.runAnalysisUploadChunk(t.Context(), writers, owner, *in, in.Files[0], 0, []byte("PAR1dataPAR1"), strings.Repeat("a", 64))
+	server.runAnalysisUploadChunk(t.Context(), sqliteOverlay(writers), owner, *in, in.Files[0], 0, []byte("PAR1dataPAR1"), strings.Repeat("a", 64))
 	end()
 	owner.endRequest()
 	select {

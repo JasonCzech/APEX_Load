@@ -10,8 +10,8 @@ import (
 )
 
 type liveAuditFaultStore struct {
-	*storage.SQLiteStore
-	failAction string
+	SQLiteStore *storage.SQLiteStore
+	failAction  string
 }
 
 func (s *liveAuditFaultStore) SaveAuditEvent(event *storage.AuditEvent) error {
@@ -26,7 +26,7 @@ func TestLiveTableAutomaticFinalizationRequiresAuditAndRetriesOutcome(t *testing
 		t.Run(stage, func(t *testing.T) {
 			runner, store, test := newLiveRuntimeFixture(t, "memory", "write_back")
 			fault := &liveAuditFaultStore{SQLiteStore: store, failAction: "live_table.finalize." + stage}
-			runner.auditStore = fault
+			runner.auditStore = sqliteOverlay(fault)
 			id := liveTableID(test.ID, "work")
 			if _, err := runner.liveClient(test.ID, "local").Execute(context.Background(), id, livetable.Request{ClientID: "worker", Sequence: 1, Operation: livetable.OpPop}); err != nil {
 				t.Fatal(err)
