@@ -379,7 +379,13 @@ func TestHAROwnershipCrossProcessCleaner(t *testing.T) {
 		}
 		o.beginWriter()
 		o.bindWriter(file.Close)
-		if err := os.WriteFile(filepath.Join(dir, "ready"), []byte(o.generation), 0o600); err != nil {
+		// Publish by rename: the parent polls and must never read a created
+		// but still-empty marker.
+		staged := filepath.Join(dir, "ready.tmp")
+		if err := os.WriteFile(staged, []byte(o.generation), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(staged, filepath.Join(dir, "ready")); err != nil {
 			t.Fatal(err)
 		}
 		var command [1]byte
@@ -422,7 +428,9 @@ func TestHAROwnershipCrossProcessCleaner(t *testing.T) {
 			if err := cmd.Start(); err != nil {
 				t.Fatal(err)
 			}
-			deadline := time.Now().Add(3 * time.Second)
+			// Restarting the race-built test binary can take seconds on a busy
+			// runner; the child's own context allows 10.
+			deadline := time.Now().Add(8 * time.Second)
 			var token []byte
 			for time.Now().Before(deadline) {
 				token, err = os.ReadFile(filepath.Join(dir, "ready"))
