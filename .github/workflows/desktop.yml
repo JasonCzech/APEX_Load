@@ -29,6 +29,16 @@ on:
       - '.github/workflows/desktop.yml'
   workflow_dispatch:
 
+# Every leg needs a scarce macOS or Windows runner, so only the newest commit
+# on a branch is worth building. A new push to a pull request cancels the run
+# in progress. Main never cancels a running build; GitHub keeps one pending
+# run per group and drops older pending ones, so the newest main commit is
+# still always built. Release packaging runs in release.yml and does not read
+# these runs.
+concurrency:
+  group: client-packages-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   GOTOOLCHAIN: local
   GOPROXY: ${{ vars.GO_MODULE_PROXY || 'https://proxy.golang.org,direct' }}
