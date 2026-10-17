@@ -293,10 +293,15 @@ too; that is PR #230's subject.
 
 ### Repeat runs
 
-The Windows HAR step must pass three runs in a row on the final code
-(b10a9e6a4 and later). Each run is recorded here as it completes.
+The Windows HAR step must pass three runs in a row on the final code.
+Each run is recorded here as it completes. Runs 1 and 2 passed on the HAR
+code as of b10a9e6a4. `main` then changed one HAR test,
+`TestHAROwnershipCrossProcessCleaner` (#234: it now publishes its ready
+marker by rename and allows a slow child 8 s). So three more runs on the
+merged code follow.
 
 | # | Run, job | Commit | HAR step |
 | --- | --- | --- | --- |
 | 1 | 38986149129, 117257968307 | b10a9e6a4 | passed: `winfs`, the browser package (40.1 s), `pkg/api` (39.0 s); 345 tests; the completed-batch subtests ran and passed; one skip, WebKit's waterfall comparison |
+| 2 | 38994746174, 117284707561 | 8e6dbdea1 (the record and a main merge; no Go changes) | passed: `winfs`, the browser package (39.7 s), `pkg/api` (35.3 s); 345 tests; one skip, WebKit's waterfall comparison |
 
