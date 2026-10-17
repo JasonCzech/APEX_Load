@@ -1,0 +1,8 @@
+Error: apexload/templates/generator.yaml:98:3
+  executing "apexload/templates/generator.yaml" at <include "apexload.http3Env" .>:
+    error calling include:
+apexload/templates/_helpers.tpl:98:19
+  executing "apexload.http3Env" at <.Values.http3.enabled>:
+    nil pointer evaluating interface {}.enabled
+
+Use --debug flag to render out invalid YAML

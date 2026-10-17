@@ -1316,7 +1316,13 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		failStartup("initialize live tables: " + err.Error())
 		return
 	}
-	defer tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: executionLeaseOwnerID, generation: executionGeneration})
+	rendezvousTerm := executionLeaseTerm{ownerID: executionLeaseOwnerID, generation: executionGeneration}
+	rendezvousTransferred := false
+	defer func() {
+		if !rendezvousTransferred {
+			tr.dropRunRendezvous(test.ID, rendezvousTerm)
+		}
+	}()
 	activeGroupShards := make(map[string][]GeneratorShardSummary, len(peakGroupShards))
 	initialLoadByTarget := make(map[string]generatorLoadSnapshot, len(loadByTarget))
 	for target, snapshot := range loadByTarget {
@@ -1718,6 +1724,8 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		return
 	}
 	activate()
+	tr.retainRunRendezvousUntil(remoteLifecycleCtx, test.ID, rendezvousTerm)
+	rendezvousTransferred = true
 	go b.observeGeneratorClocks(remoteLifecycleCtx, tr, test)
 	if len(podClaims) > 0 {
 		store := tr.testStore.(podCapacityStore)

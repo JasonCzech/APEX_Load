@@ -94,6 +94,32 @@ describe('DataRowGrid', () => {
     expect(add).toHaveBeenLastCalledWith([{ id: 'C-7', email: 'a@x' }, { id: 'C-8', email: 'b@y' }])
   })
 
+  it('preserves explicit empty values without filling untouched columns', async () => {
+    const commit = vi.fn().mockResolvedValue(true)
+    const add = vi.fn().mockResolvedValue(true)
+    await act(async () => root.render(<DataRowGrid label="Rows" columns={['id', 'email', 'region']} rows={rows} onCellCommit={commit} onAddRows={add} markEmpty />))
+    await type(cell('email, row 2'), 'temporary')
+    await type(cell('email, row 2'), '')
+    await key(cell('email, row 2'), 'Enter')
+    expect(commit).toHaveBeenLastCalledWith(rows[1], 'email', '')
+
+    await act(async () => { const empty = container.querySelector<HTMLButtonElement>('button[aria-label="Set region empty, row 1"]')!; empty.focus(); empty.click() })
+    expect(document.activeElement).toBe(cell('region, row 1'))
+    expect(commit).toHaveBeenLastCalledWith(rows[0], 'region', '')
+
+    await type(cell('id, new row'), 'C-3')
+    await type(cell('email, new row'), 'temporary')
+    await type(cell('email, new row'), '')
+    await key(cell('id, new row'), 'Enter')
+    expect(add).toHaveBeenLastCalledWith([{ id: 'C-3', email: '' }])
+
+    await act(async () => { const empty = container.querySelector<HTMLButtonElement>('button[aria-label="Set email empty, new row"]')!; empty.focus(); empty.click() })
+    expect(document.activeElement).toBe(cell('email, new row'))
+    await key(cell('email, new row'), 'Enter')
+    expect(add).toHaveBeenLastCalledWith([{ email: '' }])
+    expect(add).toHaveBeenCalledTimes(2)
+  })
+
   it('checks a new column name before adding it', async () => {
     const addColumn = vi.fn().mockResolvedValue(true)
     await act(async () => root.render(<DataRowGrid label="Rows" columns={['id']} rows={[]} onAddColumn={addColumn} maxColumns={2} />))

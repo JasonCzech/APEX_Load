@@ -49,6 +49,7 @@ function ScriptEditor(props: ComponentProps<typeof RealScriptEditor>) {
 }
 
 const apiMock = {
+  listScenarios: vi.fn(),
   getScript: vi.fn(),
   getScriptAuthoring: vi.fn(),
   getScriptSecretStatus: vi.fn(),
@@ -552,6 +553,7 @@ describe('ScriptEditor', () => {
     codeMirrorDispatchMock.mockReset()
     codeMirrorScrollDoms.length = 0
     apiMock.getScript.mockResolvedValue({ script: initialScript })
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [] })
     apiMock.getScriptAuthoring.mockImplementation(async (id: string, projectId?: string) => authoringFixture((await apiMock.getScript(id)).script, id, projectId))
     apiMock.getScriptSecretStatus.mockResolvedValue({
       script_id: 'script-1',
@@ -2108,6 +2110,133 @@ describe('ScriptEditor', () => {
     } finally {
       Object.defineProperty(HTMLElement.prototype, 'offsetHeight', height)
     }
+  })
+
+  it('blocks saving, validation and download for invalid catalog drafts and keeps them across action selection', async () => {
+    setCachedDslActionCatalog({ protocols: ['http'], common_fields: [], actions: [LIVE_TABLE_SPEC] })
+    try {
+      const tableScript = { ...initialScript, actions: [{ name: 'Increment count', type: 'live_table', target: '', params: { alias: 'work', operation: 'increment', position: 1, columns: ['count'], delta: '1' } }, { ...initialScript.actions[0], name: 'Other step' }] } as ScriptDefinition
+      await act(async () => root.render(<ScriptEditor initialScript={tableScript} projectId="project-1" />))
+      await flushReact()
+      const delta = () => Array.from(container.querySelectorAll('.catalog-action-form label')).find(label => label.querySelector('span')?.textContent?.startsWith('Add') && label.querySelector('input[type="text"]'))!.querySelector<HTMLInputElement>('input')!
+      await act(async () => changeInputValue(delta(), '1.5'))
+      const save = container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!
+      expect(save.disabled).toBe(true)
+      expect(save.getAttribute('data-tooltip')).toBe('Fix action fields before saving')
+      await act(async () => { save.click(); findButtonByTitle(container, 'Recheck script readiness')!.click(); findButtonByText(container, 'Download')!.click() })
+      expect(apiMock.createScript).not.toHaveBeenCalled()
+      expect(apiMock.validateDraftScript).not.toHaveBeenCalled()
+      expect(downloadTextFileMock).not.toHaveBeenCalled()
+      await act(async () => findCenterTab(container, 'DSL')!.click())
+      expect(container.querySelector('.script-json-scope-bar')?.textContent).toContain('Selected Action')
+      await act(async () => findButtonByText(container.querySelector('.script-code-pane')!, 'Download')!.click())
+      expect(downloadTextFileMock).not.toHaveBeenCalled()
+      await act(async () => findCenterTab(container, 'Action editor')!.click())
+      const select = (name: string) => container.querySelector<HTMLElement>(`[role="treeitem"][data-tooltip="${name}"]`)!.click()
+      await act(async () => select('Other step'))
+      expect(container.textContent).toContain('Fix action fields before saving')
+      expect(save.disabled).toBe(true)
+      await act(async () => select('Increment count'))
+      expect(delta().value).toBe('1.5')
+      await act(async () => changeInputValue(delta(), '9007199254740993'))
+      expect(save.disabled).toBe(false)
+      await act(async () => { save.click(); await Promise.resolve() })
+      expect(apiMock.createScript.mock.calls[0][0].actions[0].params.delta).toBe('9007199254740993')
+    } finally { setCachedDslActionCatalog(null) }
+  })
+
+  it('blocks malformed catalog JSON and saves corrected JSON even before blur', async () => {
+    setCachedDslActionCatalog({ protocols: ['http'], common_fields: [], actions: [{ type: 'catalog_test', protocols: ['http'], summary: 'An action with JSON options.', fields: [{ name: 'params.options', kind: 'object' }] }] })
+    try {
+      const draft = { ...initialScript, actions: [{ name: 'Options', type: 'catalog_test', target: '', params: { options: { old: 'value' } } }] }
+      await act(async () => root.render(<ScriptEditor initialScript={draft} projectId="project-1" />))
+      await flushReact()
+      const input = () => container.querySelector<HTMLTextAreaElement>('.catalog-action-form textarea')!
+      const save = container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!
+      await act(async () => changeTextareaValue(input(), '{"next":'))
+      expect(input().getAttribute('aria-invalid')).toBe('true')
+      expect(save.disabled).toBe(true)
+      await act(async () => changeTextareaValue(input(), '{"next":"saved"}'))
+      expect(save.disabled).toBe(false)
+      await act(async () => findButtonByText(container, 'Download')!.click())
+      expect(JSON.parse(downloadTextFileMock.mock.calls[0][0]).script.actions[0].params.options).toEqual({ next: 'saved' })
+      await act(async () => changeTextareaValue(input(), '{"next":"selected"}'))
+      await act(async () => container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Options"]')!.click())
+      await act(async () => findCenterTab(container, 'DSL')!.click())
+      expect(container.querySelector('.script-json-scope-bar')?.textContent).toContain('Selected Action')
+      await act(async () => findButtonByText(container.querySelector('.script-code-pane')!, 'Download')!.click())
+      expect(JSON.parse(downloadTextFileMock.mock.calls[1][0]).params.options).toEqual({ next: 'selected' })
+      await act(async () => findCenterTab(container, 'Action editor')!.click())
+      await act(async () => changeTextareaValue(input(), '{"next":"keyboard"}'))
+      // Programmatic Save has no blur, just like a keyboard shortcut.
+      await act(async () => { save.click(); await Promise.resolve() })
+      expect(apiMock.createScript.mock.calls[0][0].actions[0].params.options).toEqual({ next: 'keyboard' })
+    } finally { setCachedDslActionCatalog(null) }
+  })
+
+  it('preserves invalid catalog text when the parent echoes an equivalent baseline object', async () => {
+    setCachedDslActionCatalog({ protocols: ['http'], common_fields: [], actions: [LIVE_TABLE_SPEC] })
+    try {
+      const draft = { ...initialScript, actions: [{ name: 'Increment', type: 'live_table', target: '', params: { alias: 'work', operation: 'increment', position: 1, columns: ['count'], delta: '1' } }] }
+      const render = (initial: ScriptDefinition) => <ScriptEditor scriptId="saved" initialScript={initial} projectId="project-1" />
+      await act(async () => root.render(render(draft)))
+      await flushReact()
+      const delta = () => Array.from(container.querySelectorAll('.catalog-action-form label')).find(label => label.querySelector('span')?.textContent?.startsWith('Add') && label.querySelector('input[type="text"]'))!.querySelector<HTMLInputElement>('input')!
+      await act(async () => changeInputValue(delta(), '1.5'))
+      await act(async () => root.render(render(structuredClone(draft))))
+      expect(delta().value).toBe('1.5')
+      expect(container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.disabled).toBe(true)
+      expect(container.textContent).toContain('Fix action fields before saving')
+      expect(apiMock.updateScript).not.toHaveBeenCalled()
+    } finally { setCachedDslActionCatalog(null) }
+  })
+
+  it('gates catalog text while valid DSL changes are pending and allows editing after Apply', async () => {
+    setCachedDslActionCatalog({ protocols: ['http'], common_fields: [], actions: [LIVE_TABLE_SPEC] })
+    try {
+      const draft = { ...initialScript, actions: [{ name: 'Increment', type: 'live_table', target: '', params: { alias: 'work', operation: 'increment', position: 1, columns: ['count'], delta: '1' } }] }
+      await act(async () => root.render(<ScriptEditor initialScript={draft} projectId="project-1" />))
+      await flushReact()
+      await act(async () => findCenterTab(container, 'DSL')!.click())
+      await act(async () => findButtonByText(container, 'Edit JSON')!.click())
+      const source = container.querySelector<HTMLTextAreaElement>('.script-code-pane textarea')!
+      await act(async () => changeTextareaValue(source, JSON.stringify({ script: { ...draft, name: 'Edited in DSL' } })))
+      await act(async () => findCenterTab(container, 'Action editor')!.click())
+      const delta = () => Array.from(container.querySelectorAll('.catalog-action-form label')).find(label => label.querySelector('span')?.textContent?.startsWith('Add') && label.querySelector('input[type="text"]'))!.querySelector<HTMLInputElement>('input')!
+      expect(delta().disabled).toBe(true)
+      expect(container.textContent).toContain('Apply or reset the DSL changes before editing these fields.')
+      await act(async () => changeInputValue(delta(), '1.5'))
+      expect(delta().value).toBe('1')
+      await act(async () => findCenterTab(container, 'DSL')!.click())
+      await act(async () => findButtonByText(container, 'Apply changes')!.click())
+      await act(async () => findCenterTab(container, 'Action editor')!.click())
+      expect(delta().disabled).toBe(false)
+      await act(async () => changeInputValue(delta(), '2'))
+      await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click(); await Promise.resolve() })
+      expect(apiMock.createScript.mock.calls[0][0].name).toBe('Edited in DSL')
+      expect(apiMock.createScript.mock.calls[0][0].actions[0].params.delta).toBe('2')
+    } finally { setCachedDslActionCatalog(null) }
+  })
+
+  it('disables catalog text drafts while a create is in flight and the saved script opens', async () => {
+    setCachedDslActionCatalog({ protocols: ['http'], common_fields: [], actions: [LIVE_TABLE_SPEC] })
+    let finish!: (saved: StoredScript) => void
+    apiMock.createScript.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const onSave = vi.fn()
+    try {
+      const draft = { ...initialScript, actions: [{ name: 'Increment', type: 'live_table', target: '', params: { alias: 'work', operation: 'increment', position: 1, columns: ['count'], delta: '1' } }] }
+      await act(async () => root.render(<ScriptEditor initialScript={draft} projectId="project-1" onSave={onSave} />))
+      await flushReact()
+      await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click(); await Promise.resolve() })
+      const delta = Array.from(container.querySelectorAll('.catalog-action-form label')).find(label => label.querySelector('span')?.textContent?.startsWith('Add') && label.querySelector('input[type="text"]'))!.querySelector<HTMLInputElement>('input')!
+      expect(delta.disabled).toBe(true)
+      await act(async () => changeInputValue(delta, '1.5'))
+      expect(delta.value).toBe('1')
+      await act(async () => finish({ id: 'created', name: draft.name, version: draft.version, protocol: draft.protocol, created_at: '2026-10-17T00:00:00Z', script: draft }))
+      expect(onSave).toHaveBeenCalled()
+      expect(delta.disabled).toBe(true)
+      expect(container.textContent).not.toContain('Fix action fields before saving')
+    } finally { setCachedDslActionCatalog(null) }
   })
 
   it('edits a live-table action from the catalog, never with HTTP fields, and its JSON keeps the keys in order', async () => {

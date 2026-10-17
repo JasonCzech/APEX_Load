@@ -142,17 +142,9 @@ func (a *Appium) execute(ctx context.Context, action *protocol.Action, result *p
 			return a.driver.elementCommand(commandCtx, a.session, element, "value", map[string]any{"text": action.Value}, nil)
 		})
 	case "appium_wait":
-		var text string
-		if err := a.onElement(commandCtx, action, func(element string) error {
-			return a.driver.elementCommand(commandCtx, a.session, element, "text", nil, &text)
-		}); err != nil {
-			return err
-		}
+		text, err := a.waitForText(commandCtx, action)
 		result.ResponseBody = text
-		if want, _ := action.Params["text"].(string); want != "" && !strings.Contains(text, want) {
-			return fmt.Errorf("element %q shows %q, not %q", action.Target, firstLine(text), want)
-		}
-		return nil
+		return err
 	case "appium_activate_app", "appium_terminate_app":
 		bundle, _ := action.Params["bundle_id"].(string)
 		if strings.TrimSpace(bundle) == "" {
@@ -190,6 +182,42 @@ func (a *Appium) execute(ctx context.Context, action *protocol.Action, result *p
 		return nil
 	default:
 		return fmt.Errorf("unsupported appium action type %q", action.Type)
+	}
+}
+
+// waitForText uses one deadline for the element and its expected text. A
+// present loading label or a re-rendered element is still pending, not a
+// failed assertion, until the wait expires.
+func (a *Appium) waitForText(ctx context.Context, action *protocol.Action) (string, error) {
+	waitCtx, cancel := context.WithTimeout(ctx, a.waitTimeout(action))
+	defer cancel()
+	want, _ := action.Params["text"].(string)
+	var text string
+	var pending error
+	for {
+		err := a.onElement(waitCtx, action, func(element string) error {
+			return a.driver.elementCommand(waitCtx, a.session, element, "text", nil, &text)
+		})
+		if err == nil && (want == "" || strings.Contains(text, want)) {
+			return text, nil
+		}
+		if err != nil && !errors.Is(err, errStaleElement) {
+			return text, err
+		}
+		pending = err
+		if err == nil {
+			pending = fmt.Errorf("element %q shows %q, not %q within %s", action.Target, firstLine(text), want, a.waitTimeout(action))
+		}
+		timer := time.NewTimer(elementPollInterval)
+		select {
+		case <-waitCtx.Done():
+			timer.Stop()
+			if ctx.Err() != nil {
+				return text, ctx.Err()
+			}
+			return text, pending
+		case <-timer.C:
+		}
 	}
 }
 

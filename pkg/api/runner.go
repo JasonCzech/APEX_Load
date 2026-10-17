@@ -311,8 +311,8 @@ type TestRunner struct {
 	// policy's check and the new run's anchor cannot interleave with another
 	// start of the same plan.
 	executionPlanStarts sync.Map // plan ID -> *sync.Mutex
-	// pendingPlanStops holds Stop plan requests for sequential runs whose
-	// state recovery has not restored yet (guarded by seqMu).
+	// pendingPlanStops bridges durable Stop requests to recovery snapshots read
+	// before the stop was persisted and not yet installed (guarded by seqMu).
 	pendingPlanStops map[string]string
 	// Accepted CI retries share one term-bound coordinator. Per-row goroutines
 	// would create an unbounded timer/provider herd during a shared outage.

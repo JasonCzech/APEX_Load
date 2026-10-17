@@ -38,6 +38,10 @@ Registered remote clusters still require their own RBAC; see
 On an upgrade with `--reuse-values`, a legacy release whose stored values do
 not contain `restartControls` receives the chart's current default: restart
 controls become enabled and the controller receives the scoped RBAC and token.
+Missing HTTP/3, archive-staging, and egress-profile settings also receive their
+current defaults, with those optional features disabled. Partial settings
+inherit only missing keys; explicit `false` values and empty target lists are
+preserved. The chart tests upgrades using the September 15, 2026 values snapshot.
 Use this upgrade command to remain opted out:
 
 ```bash

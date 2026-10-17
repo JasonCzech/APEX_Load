@@ -21,12 +21,19 @@ type suggestionRegexBudget struct {
 	matches     int
 }
 
-func (b *suggestionRegexBudget) findAllSubmatches(pattern *regexp.Regexp, value string) ([][]string, error) {
-	valueBytes := int64(len(value))
+func (b *suggestionRegexBudget) chargeSearchBytes(size int) error {
+	valueBytes := int64(size)
 	if valueBytes > maxSuggestionRegexSearchBytes-b.searchBytes {
-		return nil, fmt.Errorf("%w: regex input exceeds %d bytes", ErrSuggestionWorkLimit, maxSuggestionRegexSearchBytes)
+		return fmt.Errorf("%w: input scans exceed %d bytes", ErrSuggestionWorkLimit, maxSuggestionRegexSearchBytes)
 	}
 	b.searchBytes += valueBytes
+	return nil
+}
+
+func (b *suggestionRegexBudget) findAllSubmatches(pattern *regexp.Regexp, value string) ([][]string, error) {
+	if err := b.chargeSearchBytes(len(value)); err != nil {
+		return nil, err
+	}
 
 	remaining := maxSuggestionRegexMatches - b.matches
 	if remaining < 0 {
@@ -41,11 +48,9 @@ func (b *suggestionRegexBudget) findAllSubmatches(pattern *regexp.Regexp, value 
 }
 
 func (b *suggestionRegexBudget) findAllSubmatchIndexes(pattern *regexp.Regexp, value string) ([][]int, error) {
-	valueBytes := int64(len(value))
-	if valueBytes > maxSuggestionRegexSearchBytes-b.searchBytes {
-		return nil, fmt.Errorf("%w: regex input exceeds %d bytes", ErrSuggestionWorkLimit, maxSuggestionRegexSearchBytes)
+	if err := b.chargeSearchBytes(len(value)); err != nil {
+		return nil, err
 	}
-	b.searchBytes += valueBytes
 
 	remaining := maxSuggestionRegexMatches - b.matches
 	if remaining < 0 {

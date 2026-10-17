@@ -30,10 +30,13 @@ type createImportTransaction struct {
 	// journaled for crash recovery: a restart leaves an applied update
 	// applied, which is the version the operator asked for. A failure later in
 	// the same request puts its prior content back as a further version.
-	updates         map[string]*StoredScript
-	appliedUpdates  map[string]bool
-	mutationStarted bool
-	closed          bool
+	updates map[string]*StoredScript
+	// reconciledUpdates were applied by an earlier attempt of this operation.
+	// Verify and return them without a new version or a compensation entry.
+	reconciledUpdates map[string]*StoredScript
+	appliedUpdates    map[string]bool
+	mutationStarted   bool
+	closed            bool
 }
 
 var errCreateImportAssetCompensation = errors.New("direct import asset compensation failed")

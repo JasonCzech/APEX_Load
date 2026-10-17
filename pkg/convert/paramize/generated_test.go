@@ -2,6 +2,7 @@ package paramize
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -390,5 +391,87 @@ func TestGeneratedValuesAvoidAVariableTheScriptReads(t *testing.T) {
 	}
 	if suggestions[0].VarName != "trace_id_2" {
 		t.Errorf("var name = %q, want trace_id_2", suggestions[0].VarName)
+	}
+}
+
+func TestGeneratedValuesCountReplacementsWithinOneField(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		set        func(*dsl.Action, string)
+		parameters int
+		update     string
+	}{
+		{name: "body", set: func(a *dsl.Action, id string) { a.Body = fmt.Sprintf(`{"requestId":%q,"parentRequestId":%q}`, id, id) }, parameters: 2, update: "each_iteration"},
+		{name: "header", set: func(a *dsl.Action, id string) {
+			a.HeaderList = dsl.HeaderList{{Name: "X-Request-Id", Value: id + ":" + id}}
+		}, parameters: 2, update: "each_iteration"},
+		{name: "duplicate ordered headers", set: func(a *dsl.Action, id string) {
+			a.HeaderList = dsl.HeaderList{{Name: "X-Request-Id", Value: id}, {Name: "X-Request-Id", Value: id}}
+			a.Headers = map[string]string{"X-Request-Id": id}
+		}, parameters: 2, update: "each_iteration"},
+		{name: "same header name different text and casing", set: func(a *dsl.Action, id string) {
+			a.HeaderList = dsl.HeaderList{{Name: "X-Request-Id", Value: id}, {Name: "x-request-id", Value: "prefix" + id}}
+		}, parameters: 2, update: "each_iteration"},
+		{name: "compatibility header map is not another occurrence", set: func(a *dsl.Action, id string) {
+			a.HeaderList = dsl.HeaderList{{Name: "X-Request-Id", Value: id}}
+			a.Headers = map[string]string{"x-request-id": id}
+		}, parameters: 1, update: "each_occurrence"},
+		{name: "query", set: func(a *dsl.Action, id string) { a.Target = "/requests?requestId=" + id + "&parentRequestId=" + id }, parameters: 2, update: "each_iteration"},
+		{name: "embedded second copy", set: func(a *dsl.Action, id string) {
+			a.Body = fmt.Sprintf(`{"requestId":%q,"messageId":"prefix%s"}`, id, id)
+		}, parameters: 2, update: "each_iteration"},
+		{name: "template is not replaced", set: func(a *dsl.Action, id string) {
+			a.Body = fmt.Sprintf(`{"requestId":%q,"template":"{{var.%s}}"}`, id, id)
+		}, parameters: 1, update: "each_occurrence"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var actions []dsl.Action
+			for i, id := range []string{testMessageID, testConversationID} {
+				action := dsl.Action{Name: fmt.Sprint(i), Type: "http_request", Method: "POST", Target: "/requests"}
+				tc.set(&action, id)
+				actions = append(actions, action)
+			}
+			suggestions := suggestGenerated(generatedScript(actions...))
+			if len(suggestions) != tc.parameters {
+				t.Fatalf("suggestions=%+v, want %d parameters", suggestions, tc.parameters)
+			}
+			for _, suggestion := range suggestions {
+				if suggestion.Parameter.Update != tc.update {
+					t.Fatalf("update=%s, want %s", suggestion.Parameter.Update, tc.update)
+				}
+			}
+		})
+	}
+}
+
+func TestGeneratedValueConfidenceIncludesEveryOccurrenceInAField(t *testing.T) {
+	script := generatedScript(dsl.Action{Name: "send", Type: "http_request", Method: "POST", Target: "/requests", Body: fmt.Sprintf(`{"requestId":%q,"accountRef":%q}`, testMessageID, testMessageID)})
+	suggestions := suggestGenerated(script)
+	if len(suggestions) != 1 || suggestions[0].AutoApply || suggestions[0].Parameter.Update != "each_iteration" {
+		t.Fatalf("the second occurrence's business role was ignored: %+v", suggestions)
+	}
+}
+
+func TestGeneratedHeaderReplacementTextsIndex(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		action dsl.Action
+		want   map[string][]string
+	}{
+		{name: "empty", want: map[string][]string{}},
+		{name: "ordered duplicates and compatibility mirror", action: dsl.Action{
+			HeaderList: dsl.HeaderList{{Name: "X-Request-Id", Value: "a"}, {Name: "x-request-id", Value: "a"}, {Name: "X-Request-Id", Value: "prefix-a"}},
+			Headers:    map[string]string{"X-Request-Id": "mirror", "X-Other": "fallback"},
+		}, want: map[string][]string{"x-request-id": {"a", "a", "prefix-a"}, "x-other": {"fallback"}}},
+		{name: "map casing variants", action: dsl.Action{Headers: map[string]string{"X-Request-Id": "a", "x-request-id": "b"}}, want: map[string][]string{"x-request-id": {"a", "b"}}},
+		{name: "empty ordered header still shadows map", action: dsl.Action{
+			HeaderList: dsl.HeaderList{{Name: "X-Request-Id", Value: ""}}, Headers: map[string]string{"x-request-id": "mirror"},
+		}, want: map[string][]string{"x-request-id": {""}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := generatedHeaderReplacementTexts(&tc.action); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("texts=%v, want %v", got, tc.want)
+			}
+		})
 	}
 }

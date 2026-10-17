@@ -1,0 +1,42 @@
+package appium
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
+)
+
+func TestMonthlyReviewWaitsForExpectedText(t *testing.T) {
+	var reads atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var value any
+		switch r.URL.Path {
+		case "/session/s1/element":
+			value = map[string]string{webdriverElementKey: "e1"}
+		case "/session/s1/element/e1/text":
+			value = "Loading"
+			if reads.Add(1) >= 2 { value = "Ready" }
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"value": value})
+	}))
+	defer server.Close()
+	driver, err := newWebDriver(server.URL)
+	if err != nil { t.Fatal(err) }
+	device := &Appium{driver: driver, session: "s1", elementTimeout: time.Second}
+	result, err := device.Execute(context.Background(), &protocol.Action{
+		Name: "Wait for ready", Type: "appium_wait", Target: "Status",
+		Params: map[string]any{"text": "Ready", "timeout_ms": 1000},
+	})
+	if err != nil { t.Fatal(err) }
+	if !result.Success || result.ResponseBody != "Ready" {
+		t.Fatalf("wait failed after %d text read(s), duration=%s: %s", reads.Load(), result.Duration, result.ErrorMessage)
+	}
+}

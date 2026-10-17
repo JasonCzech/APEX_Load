@@ -51,6 +51,15 @@ type directImportAttempt struct {
 	receipt    *storage.DirectImportReceipt
 	ownerToken string
 	created    bool
+	// Retried update batches can contain earlier atomic updates that survive
+	// compensation. Keep the operation identity until they are reconciled.
+	retainReceiptOnRollback bool
+}
+
+func (attempt *directImportAttempt) retainUpdateRecovery(targets []*importUpdateTarget) {
+	if attempt != nil && !attempt.created && hasImportUpdateTargets(targets) {
+		attempt.retainReceiptOnRollback = true
+	}
 }
 
 func directImportOperationHash(projectID, sourceProfile, operationID string) string {
@@ -444,7 +453,7 @@ func (attempt *directImportAttempt) rollback(transaction *createImportTransactio
 		// releases durable claims only after its journal has run.
 		rollbackErr = transaction.rollback()
 	}
-	if errors.Is(rollbackErr, errCreateImportAssetCompensation) {
+	if errors.Is(rollbackErr, errCreateImportAssetCompensation) || attempt.retainReceiptOnRollback {
 		// An unresolved deterministic asset must retain its receipt identity.
 		// Releasing (rather than deleting) the row lets a retry recover the
 		// claims and reuse the same IDs instead of orphaning the old asset.

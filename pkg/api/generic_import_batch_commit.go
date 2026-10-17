@@ -178,6 +178,7 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	attempt.retainUpdateRecovery(updateTargets)
 	finished := false
 	assetsCommitted := false
 	var transaction *createImportTransaction
@@ -488,9 +489,8 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	// Recovery above adopted an update an earlier attempt applied; anything
-	// else must still be the version the operator reviewed.
-	if !requireReviewedImportUpdates(w, updateTargets, updates) {
+	reconciledUpdates, validUpdates := s.reconcileImportUpdates(w, attempt, prepared, updateTargets, updates)
+	if !validUpdates {
 		return
 	}
 	transaction, err = newImportTransaction(s, genericImportBatchProfile, prepared, updates, "", nil)
@@ -498,6 +498,8 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, "failed to prepare import batch: "+err.Error())
 		return
 	}
+	transaction.reconciledUpdates = reconciledUpdates
+
 	stored := make([]*StoredScript, 0, len(prepared))
 	for index, script := range prepared {
 		if err := attempt.renew(); err != nil {
