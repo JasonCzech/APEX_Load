@@ -9,8 +9,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol/jsonextract/jsonextracttest"
 )
 
-// HTTP keeps its own JMESPath implementation until it delegates to jsonextract.
-// Until then the two must agree on every value, miss and failure.
+// HTTP decodes bodies with its own limits and wording, then evaluates through
+// jsonextract. Both paths must still agree on every value, miss and failure.
 func TestJMESPathMatchesSharedExtraction(t *testing.T) {
 	const items = `{"items":[{"id":1234567890123456789,"price":12,"tags":["a"]},{"id":2,"price":3,"tags":["b"]}]}`
 	corpus := []struct{ expr, body string }{

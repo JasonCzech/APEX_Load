@@ -87,13 +87,44 @@ func TestFormatValueNeverUsesExponentFormForComputedNumbers(t *testing.T) {
 	}
 }
 
+func TestJMESPathCompileCacheKeepsLongExpressions(t *testing.T) {
+	// HTTP admits expressions up to 64 KiB and compiles them here; one past the
+	// cache's default 4 KiB key limit must still be compiled only once.
+	expr := "items[?" + strings.Repeat("price > `1` && ", 400) + "price > `1`].price | [0]"
+	if len(expr) <= 4<<10 || len(expr) >= 64<<10 {
+		t.Fatalf("expression is %d bytes, want between 4 KiB and 64 KiB", len(expr))
+	}
+	if got, err := EvaluateJMESPath(expr, map[string]any{"items": []any{map[string]any{"price": 12.0}}}); err != nil || got != 12.0 {
+		t.Fatalf("EvaluateJMESPath = %v, %v", got, err)
+	}
+	if _, cached := jmesPathCompileCache.Load(expr); !cached {
+		t.Fatal("a long expression was compiled without being cached")
+	}
+}
+
+func TestJMESPathNumberRepresentationSensitiveClassification(t *testing.T) {
+	for expr, want := range map[string]bool{
+		"data.orderId":                          false,
+		"items[200].id":                         false,
+		"items[*].name | [0]":                   false,
+		"items[?enabled].name":                  false,
+		"items[?count > `1`].id | [0]":          true,
+		"items[?id == `9007199254740993`].name": true,
+		"length(items)":                         true,
+		"sum(items[*].count)":                   true,
+		"!items":                                true,
+	} {
+		if got := jmesPathNumberRepresentationSensitive(expr); got != want {
+			t.Fatalf("jmesPathNumberRepresentationSensitive(%q) = %t, want %t", expr, got, want)
+		}
+	}
+}
+
 // Every protocol must reach JMESPath through this package, so a private copy
-// cannot reintroduce float64 rounding or exponent output. HTTP keeps its own
-// implementation until its refactor lands; TestJMESPathMatchesSharedExtraction
-// in pkg/protocol/http holds it to identical results meanwhile.
+// cannot reintroduce float64 rounding or exponent output.
 func TestProtocolsDoNotImportJMESPathDirectly(t *testing.T) {
 	// Directories relative to pkg/protocol; packages nested below them are checked.
-	allowed := map[string]bool{"jsonextract": true, "http": true}
+	allowed := map[string]bool{"jsonextract": true}
 	err := filepath.WalkDir("..", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -120,7 +151,7 @@ func TestProtocolsDoNotImportJMESPathDirectly(t *testing.T) {
 		}
 		for _, spec := range parsed.Imports {
 			if strings.Trim(spec.Path.Value, `"`) == "github.com/jmespath/go-jmespath" {
-				t.Errorf("%s imports go-jmespath directly; use jsonextract.JMESPathValue", path)
+				t.Errorf("%s imports go-jmespath directly; use jsonextract.JMESPathValue or EvaluateJMESPath", path)
 			}
 		}
 		return nil

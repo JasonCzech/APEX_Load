@@ -1,12 +1,9 @@
 package jsonextract
 
-// Exact-number JMESPath shared by every protocol that extracts JSON values.
-//
-// The number-normalization and comparison-safety helpers below are ported
-// verbatim from pkg/protocol/http/extract.go, so database, network, WebSocket
-// and gRPC extraction behave exactly like HTTP's. HTTP keeps its own copy
-// until its in-flight refactor lands; TestJMESPathMatchesSharedExtraction in
-// pkg/protocol/http keeps the two identical until HTTP delegates here.
+// Exact-number JMESPath shared by every protocol that extracts JSON values:
+// HTTP, WebSocket, gRPC, database and network extraction all evaluate through
+// EvaluateJMESPath, so a selected number keeps its source token everywhere and
+// a comparison never silently rounds a large integer.
 
 import (
 	"encoding/json"
@@ -45,7 +42,9 @@ func (e *JMESPathError) Unwrap() error { return e.Err }
 
 var errUnsafeJMESPathComparison = errors.New("numeric comparison is unsafe for values outside the exact float64 integer range")
 
-var jmesPathCompileCache = boundedcache.NewStringCache[*jmespath.JMESPath](0, 0, 0)
+// Sized like HTTP's compiled-extractor caches, since HTTP extraction compiles
+// through this one: an expression up to HTTP's 64 KiB limit stays cached.
+var jmesPathCompileCache = boundedcache.NewStringCache[*jmespath.JMESPath](1024, 64<<10, 4<<20)
 
 func compileJMESPathCached(expr string) (*jmespath.JMESPath, error) {
 	if cached, ok := jmesPathCompileCache.Load(expr); ok {
@@ -59,17 +58,25 @@ func compileJMESPathCached(expr string) (*jmespath.JMESPath, error) {
 	return actual, nil
 }
 
-// JMESPathValue evaluates expr against one JSON document without rounding its
-// numbers. A selection keeps each number's source token (json.Number). Only an
-// expression that can observe number representation (a comparison, function
-// call or literal) is re-evaluated with float64 values inside the exact
-// integer range, and it is refused when a comparison would read a larger
-// integer. A nil value means the expression matched nothing.
+// JMESPathValue decodes one JSON document with DecodeExact and evaluates expr
+// against it (see EvaluateJMESPath). A nil value means the expression matched
+// nothing.
 func JMESPathValue(expr string, body []byte) (any, error) {
 	var current any
 	if err := DecodeExact(body, &current); err != nil {
 		return nil, &JMESPathError{Kind: JMESPathInvalidJSON, Err: err}
 	}
+	return EvaluateJMESPath(expr, current)
+}
+
+// EvaluateJMESPath evaluates expr against a document decoded with json.Number
+// values, for a protocol that applies its own decoding limits. A selection
+// keeps each number's source token (json.Number). Only an expression that can
+// observe number representation (a comparison, function call or literal) is
+// re-evaluated with float64 values inside the exact integer range, and it is
+// refused when a comparison would read a larger integer. A nil value means the
+// expression matched nothing.
+func EvaluateJMESPath(expr string, current any) (any, error) {
 	compiled, err := compileJMESPathCached(expr)
 	if err != nil {
 		return nil, &JMESPathError{Kind: JMESPathInvalidExpression, Err: err}

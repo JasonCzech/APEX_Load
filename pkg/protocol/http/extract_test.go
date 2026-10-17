@@ -348,24 +348,6 @@ func TestExtractJMESPathStructuralSelectionSkipsNormalizedReevaluation(t *testin
 	}
 }
 
-func TestJMESPathNumberRepresentationSensitiveClassification(t *testing.T) {
-	for expr, want := range map[string]bool{
-		"data.orderId":                          false,
-		"items[200].id":                         false,
-		"items[*].name | [0]":                   false,
-		"items[?enabled].name":                  false,
-		"items[?count > `1`].id | [0]":          true,
-		"items[?id == `9007199254740993`].name": true,
-		"length(items)":                         true,
-		"sum(items[*].count)":                   true,
-		"!items":                                true,
-	} {
-		if got := jmesPathNumberRepresentationSensitive(expr); got != want {
-			t.Fatalf("jmesPathNumberRepresentationSensitive(%q) = %t, want %t", expr, got, want)
-		}
-	}
-}
-
 func TestExtractJMESPath_PreservesUnrepresentableScalarNumber(t *testing.T) {
 	got, err := extractJMESPath("value", []byte(`{"value":1e400}`))
 	if err != nil {
@@ -1555,6 +1537,15 @@ func TestCompileRegexCachedRejectsOversizedExpression(t *testing.T) {
 	}
 }
 
+// JMESPath compiles through the shared jsonextract cache, so HTTP enforces its
+// expression limit before evaluation and the oversized key never reaches it.
+func TestExtractJMESPathRejectsOversizedExpression(t *testing.T) {
+	expr := strings.Repeat("x", MaxExtractorExpressionBytes+1)
+	if _, err := extractJMESPath(expr, []byte(`{"x":1}`)); !errors.Is(err, errExtractorResourceLimit) {
+		t.Fatalf("oversized JMESPath error = %v, want extractor resource limit", err)
+	}
+}
+
 func TestCompiledExpressionCachesRejectOversizedKeys(t *testing.T) {
 	expr := strings.Repeat("x", MaxExtractorExpressionBytes+1)
 	tests := []struct {
@@ -1562,17 +1553,6 @@ func TestCompiledExpressionCachesRejectOversizedKeys(t *testing.T) {
 		compile func() error
 		cached  func() bool
 	}{
-		{
-			name: "jmespath",
-			compile: func() error {
-				_, err := compileJMESPathCached(expr)
-				return err
-			},
-			cached: func() bool {
-				_, ok := compiledJMESPathCache.Load(expr)
-				return ok
-			},
-		},
 		{
 			name: "xpath",
 			compile: func() error {
