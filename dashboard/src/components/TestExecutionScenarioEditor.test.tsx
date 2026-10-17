@@ -128,7 +128,75 @@ describe('TestExecutionScenarioEditor', () => {
     await flushPromises()
     expect(container.textContent).toContain('profile:none')
   })
+
+  it('shows a failed script load with Retry instead of an editor without scripts', async () => {
+    const onClose = vi.fn()
+    apiMock.listScripts.mockRejectedValueOnce(new Error('controller unavailable'))
+    await act(async () => root.render(<TestExecutionScenarioEditor open test={queuedRun()} onClose={onClose} onSelectTest={vi.fn()} />))
+    await flushPromises()
+
+    expect(document.body.querySelector('[data-testid="create-test-modal"]')).toBeNull()
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain('Scripts could not be loaded')
+
+    await act(async () => buttonNamed('Retry').dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+
+    expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
+    expect(document.body.querySelector('[role="alert"]')).toBeNull()
+    expect(container.textContent).toContain('scripts:1')
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('keeps the failure on screen while a retry runs and closes from it', async () => {
+    const onClose = vi.fn()
+    let rejectRetry: (cause: Error) => void = () => undefined
+    apiMock.listScripts
+      .mockRejectedValueOnce(new Error('controller unavailable'))
+      .mockReturnValueOnce(new Promise((_, reject) => { rejectRetry = reject }))
+    await act(async () => root.render(<TestExecutionScenarioEditor open test={queuedRun()} onClose={onClose} onSelectTest={vi.fn()} />))
+    await flushPromises()
+
+    await act(async () => buttonNamed('Retry').dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(buttonNamed('Retrying…').disabled).toBe(true)
+    expect(document.body.querySelector('[data-testid="create-test-modal"]')).toBeNull()
+
+    await act(async () => rejectRetry(new Error('still unavailable')))
+    await flushPromises()
+    expect(buttonNamed('Retry').disabled).toBe(false)
+
+    await act(async () => buttonNamed('Close').dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not open the editor with an empty script list while scripts load', async () => {
+    let resolveScripts: (response: { scripts: Array<{ id: string }> }) => void = () => undefined
+    apiMock.listScripts.mockReturnValueOnce(new Promise(resolve => { resolveScripts = resolve }))
+    await act(async () => root.render(<TestExecutionScenarioEditor open test={queuedRun()} onClose={vi.fn()} onSelectTest={vi.fn()} />))
+    await flushPromises()
+
+    expect(container.querySelector('[data-testid="create-test-modal"]')).toBeNull()
+    expect(container.textContent).toContain('Loading scenario editor…')
+
+    await act(async () => resolveScripts({ scripts: [{ id: 'script-1' }, { id: 'script-2' }] }))
+    await flushPromises()
+    expect(container.textContent).toContain('scripts:2')
+  })
 })
+
+function queuedRun() {
+  return {
+    id: 'test-1', name: 'Queued Checkout Run', status: 'QUEUED', project_id: 'project-2', total_vusers: 10, duration: '5m', created_at: '2026-05-12T20:00:00Z',
+    groups: [{ name: 'Checkout', script_id: 'script-1', vusers: 10, initialization: 'at_runtime' }],
+  } as never
+}
+
+function buttonNamed(name: string): HTMLButtonElement {
+  const button = Array.from(document.body.querySelectorAll('button')).find(candidate => candidate.textContent === name)
+  if (!button) {
+    throw new Error(`no button named ${name}`)
+  }
+  return button
+}
 
 async function flushPromises() {
   await act(async () => {

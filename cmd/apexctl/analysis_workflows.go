@@ -598,16 +598,22 @@ type rcaWaitState struct {
 // with is queued or running (or, for show, while none has completed but the
 // project analyzes every run automatically), polls until it ends or wait
 // passes. It returns the last response; reaching the deadline is not an
-// error, so a caller still sees the state.
+// error, so a caller still sees the state. A poll that fails or answers with
+// something unreadable is a controller or transport failure, and cancellation
+// returns the context's error: the last response would otherwise read as the
+// analysis's final state.
 func (c *ApiClient) waitForRCAAnalysis(ctx context.Context, method, path string, body []byte, testID string, wait time.Duration) ([]byte, error) {
 	response, err := c.workflowRequest(ctx, method, path, bytes.NewReader(body), "application/json")
 	if err != nil {
 		return nil, err
 	}
 	deadline := time.Now().Add(wait)
-	for {
+	for polled := false; ; polled = true {
 		var state rcaWaitState
-		if json.Unmarshal(response, &state) != nil {
+		if err := json.Unmarshal(response, &state); err != nil {
+			if polled {
+				return nil, &verdictError{exitCodeControllerOrTransport, fmt.Sprintf("root-cause analysis poll returned an unreadable response: %v", err)}
+			}
 			return response, nil
 		}
 		pending := state.State == "queued" || state.State == "running"
@@ -617,7 +623,7 @@ func (c *ApiClient) waitForRCAAnalysis(ctx context.Context, method, path string,
 		}
 		select {
 		case <-ctx.Done():
-			return response, nil
+			return nil, ctx.Err()
 		case <-time.After(rcaWaitPoll):
 		}
 		next := "/api/v1/tests/" + url.PathEscape(testID) + "/archive/root-cause/v2"
@@ -625,8 +631,15 @@ func (c *ApiClient) waitForRCAAnalysis(ctx context.Context, method, path string,
 			next = "/api/v1/tests/" + url.PathEscape(testID) + "/archive/root-cause/analyses/" + url.PathEscape(state.AnalysisID)
 		}
 		latest, err := c.workflowRequest(ctx, http.MethodGet, next, nil, "")
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if err != nil {
-			return response, nil
+			last := fmt.Sprintf("last state %q", state.State)
+			if state.AnalysisID != "" {
+				last += ", analysis " + state.AnalysisID
+			}
+			return nil, &verdictError{exitCodeControllerOrTransport, fmt.Sprintf("root-cause analysis poll failed (%s): %v", last, err)}
 		}
 		response = latest
 	}
