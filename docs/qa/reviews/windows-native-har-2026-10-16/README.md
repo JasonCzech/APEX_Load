@@ -319,6 +319,12 @@ AWS SDK, `modernc.org/cc`; #237) and dashboard packages. `x/sys` and the
 pinned Playwright driver are unchanged, so they leave the code under test as
 qualified.
 
+The last `main` merge before landing brought in #230, #238, #239 and #240,
+none of which touches a HAR file. The repository's Actions budget was used up,
+so CI could not run on that merge. It was checked locally on macOS: vet and
+lint for Windows, Linux and macOS, and the browser package's HAR tests, the
+`pkg/api` HAR, replay and archive tests and `pkg/importartifact`, all passing.
+
 Each of these jobs then failed in its later native analytics step
 (`TestAnalysisCleanupRetriesMetadataReadFailure` and similar), which `main`
 fails too and PR #230 fixes. That PR's Windows job has since passed in full.
