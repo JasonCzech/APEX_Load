@@ -26,9 +26,14 @@ func workerExecutableSnapshotName() string {
 // Launch reopens only this private, permission-protected immutable copy, hashed
 // from an exact retained source descriptor and checked against startup approval.
 // Platform DLL/rpath/code-signing behavior still requires packaged acceptance.
+// On macOS the copy is a link to this process's verified template (see
+// worker_executable_template_darwin.go), re-hashed for each attempt.
 func workerSnapshotExecutable(a *workerAttempt, sourcePath, expected string) (string, error) {
 	if workerContextError(a.ctx) != nil {
 		return "", errWorkerOwnership
+	}
+	if path, handled, err := workerLinkedExecutableSnapshot(a, sourcePath, expected); handled {
+		return path, err
 	}
 	source, err := os.Open(sourcePath)
 	if err != nil {
