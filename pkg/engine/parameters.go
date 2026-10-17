@@ -587,7 +587,7 @@ func (pr *ParameterRuntime) valuesForParameter(param dsl.Parameter, state *param
 	if stride == 0 {
 		stride = 1
 	}
-	if pr.allocation != nil && param.Selection == "unique" && (param.AutoAllocate || param.BlockSize > 0) {
+	if pr.allocation != nil && dsl.AllocatesUniqueRows(param) {
 		values, ok = allocationValues(param, pr.provider)
 		baseOffset, stride = 0, 1
 	}
@@ -611,7 +611,9 @@ func (pr *ParameterRuntime) applyParameterRowAllocationWithOffset(values []strin
 	if len(values) == 0 {
 		return values, offset
 	}
-	if param.AutoAllocate && pr.allocation == nil {
+	// A unique block exists only once the run plans it: outside a planned
+	// allocation the parameter yields no rows, never every VUser's same rows.
+	if dsl.AutoAllocatesUniqueRows(param) && pr.allocation == nil {
 		return nil, offset
 	}
 	start := 0

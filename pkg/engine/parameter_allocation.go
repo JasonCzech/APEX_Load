@@ -34,7 +34,7 @@ func HasAllocatedParameters(s *dsl.Script) bool {
 		return true
 	}
 	for _, p := range s.Parameters {
-		if p.Selection == "unique" && (p.AutoAllocate || p.BlockSize > 0) {
+		if dsl.AllocatesUniqueRows(p) {
 			return true
 		}
 	}
@@ -71,7 +71,7 @@ func CompileParameterAllocation(params []dsl.Parameter, d *DataProvider, a Param
 			preview = append(preview, ParameterAllocationPreview{Name: p.Name, BlockSize: p.BlockSize, Population: a.Population})
 			continue
 		}
-		if p.Selection != "unique" || (!p.AutoAllocate && p.BlockSize == 0) {
+		if !dsl.AllocatesUniqueRows(p) {
 			continue
 		}
 		if a.Population <= 0 || a.Offset < 0 || a.Offset >= a.Population {
@@ -86,7 +86,7 @@ func CompileParameterAllocation(params []dsl.Parameter, d *DataProvider, a Param
 			rows = 0
 		}
 		size := p.BlockSize
-		if p.AutoAllocate && size == 0 {
+		if dsl.AutoAllocatesUniqueRows(p) && size == 0 {
 			switch {
 			case p.Update == "once":
 				size = 1
@@ -131,7 +131,7 @@ func (pr *ParameterRuntime) inheritAllocatedParameterState(parent *ParameterRunt
 	allocation := *parent.allocation
 	pr.allocation = &allocation
 	for name, param := range parent.params {
-		if param.Selection != "unique" || (param.BlockSize == 0 && !param.AutoAllocate) {
+		if !dsl.AllocatesUniqueRows(param) {
 			continue
 		}
 		pr.params[name] = param
@@ -151,7 +151,7 @@ func ValidateParameterAllocationTopology(s *dsl.Script) error {
 	}
 	var eachOccurrence bool
 	for _, p := range s.Parameters {
-		if p.Selection == "unique" && (p.AutoAllocate || p.BlockSize > 0) && effectiveParameterUpdate(p) == "each_occurrence" {
+		if dsl.AllocatesUniqueRows(p) && effectiveParameterUpdate(p) == "each_occurrence" {
 			eachOccurrence = true
 		}
 	}

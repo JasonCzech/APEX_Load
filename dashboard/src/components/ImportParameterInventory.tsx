@@ -5,6 +5,7 @@ import { isSensitiveCredentialPreviewName, isSensitiveCredentialPreviewKey } fro
 import type { ScriptDefinition, ScriptParameterDefinition } from '../types/scripts'
 import { getImportSummary, findImportedParameterMappingDataSourceIndex, type ImportParameterFileSection } from './scriptEditorImportModel'
 import { inferDelimiter } from './scriptEditorUtils'
+import { autoAllocatesUniqueRows } from './uniqueRowAllocation'
 import { CategoryActions, SettingValue, formatSettingValue, useImportSettings, type ImportDataView } from './ImportSettingsContext'
 
 const generatorFields: Record<string, string[]> = {
@@ -63,7 +64,7 @@ function ParameterInventoryWorkspace({ script }: { script: ScriptDefinition }) {
   if (p.type === 'list') return `${(p.values || []).slice(0, 2).join(', ') || '(empty list)'}${(p.values?.length || 0) > 2 ? ` · +${p.values!.length - 2} values` : ''}`
   return (generatorFields[p.type] || []).filter(key => p[key as keyof ScriptParameterDefinition] != null).map(key => `${key.replace(/_/g, ' ')}: ${formatSettingValue(p[key as keyof ScriptParameterDefinition])}`).join(' · ') || `Generated at replay (${p.type.replace(/_/g, ' ')})`
  }
- const allocation = (p: ScriptParameterDefinition) => `${['file', 'list'].includes(p.type) ? `Row ${p.start_row ?? 1}${p.selection === 'unique' ? p.auto_allocate ? ' · Auto allocation' : ` · Block ${p.block_size ?? 'default'}` : ''}${p.same_line_as ? ` · Same row as ${p.same_line_as}` : ''} · ` : ''}${p.on_exhaustion || 'wrap'} on exhaustion${p.on_exhaustion ? '' : ' (default)'}`
+ const allocation = (p: ScriptParameterDefinition) => `${['file', 'list'].includes(p.type) ? `Row ${p.start_row ?? 1}${p.selection === 'unique' ? autoAllocatesUniqueRows(p) ? ' · Auto allocation' : p.block_size ? ` · Block ${p.block_size}` : ' · One value per VUser' : ''}${p.same_line_as ? ` · Same row as ${p.same_line_as}` : ''} · ` : ''}${p.on_exhaustion || 'wrap'} on exhaustion${p.on_exhaustion ? '' : ' (default)'}`
  return <section className="import-settings-section lr-parameter-inventory" aria-label="Imported parameters and data">
   <ImportReviewSectionHeader title="Imported parameters & data" description="Edit imported definitions, inspect source files, or preview row allocation. Replay issues are tracked separately from definition checks." />
   <TabList className="import-data-nav" aria-label="Data views">{(['parameters', 'sources', 'allocation'] as const).map(name => <button type="button" key={name} id={`${viewId}-${name}`} role="tab" aria-selected={view === name} aria-controls={`${viewId}-panel`} tabIndex={view === name ? 0 : -1} onClick={() => setView(name)}>{name === 'parameters' ? `Parameters (${parameters.length})` : name === 'sources' ? `Data sources (${sources.length})` : 'Allocation preview'}</button>)}</TabList>

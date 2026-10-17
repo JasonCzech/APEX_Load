@@ -493,6 +493,12 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 			if param.OnExhaustion == "" {
 				param.OnExhaustion = "wrap"
 			}
+			// VuGen allocates Unique rows to each VUser automatically unless the
+			// source names a block size; record that rather than leave it implied.
+			if dsl.AutoAllocatesUniqueRows(param) && !param.AutoAllocate && (autoAllocateRaw == "" || validAuto) {
+				param.AutoAllocate = true
+				result.Warnings = append(result.Warnings, "parameter "+name+" uses Unique selection without a block size; rows are allocated automatically per VUser, as VuGen does by default, so runs need a closed workload and enough rows for every VUser")
+			}
 		}
 		if (param.Type == "counter" || param.Type == "current_iteration") && param.Step == 0 {
 			param.Step = 1

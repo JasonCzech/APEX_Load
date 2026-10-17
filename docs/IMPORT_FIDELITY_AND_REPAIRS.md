@@ -166,7 +166,7 @@ The active user-agent selection respects `UseCustomAgent`. Navigator language me
 
 ### Unique allocation
 
-`parameters[].auto_allocate` records LR automatic allocation. Allocation compiles before execution using the planned VUser population and usable rows after StartRow. Each VUser receives a contiguous block identified by a dense ordinal independently of distributed runtime IDs.
+`parameters[].auto_allocate` records LR automatic allocation. A unique file or list parameter without `block_size` (or `value_for_each_vuser`) is allocated automatically even when `auto_allocate` is absent, as VuGen's default "automatically allocate block size" is, so no two VUsers read the same rows; imports record `auto_allocate: true` with a note. Allocation compiles before execution using the planned VUser population and usable rows after StartRow. Each VUser receives a contiguous block identified by a dense ordinal independently of distributed runtime IDs.
 
 - A duration run divides usable rows by planned VUsers using integer division; remainder rows are unused.
 - An iteration run uses the effective iteration requirement per VUser.

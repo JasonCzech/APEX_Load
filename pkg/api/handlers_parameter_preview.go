@@ -63,6 +63,10 @@ func (s *Server) handlePreviewParameter(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, http.StatusOK, parameterPreviewResponse{Note: "Host values are supplied by the execution host and cannot be previewed here."})
 			return
 		}
+		if dsl.AutoAllocatesUniqueRows(parameter) {
+			writeJSON(w, http.StatusOK, parameterPreviewResponse{Note: "Unique rows are allocated to each virtual user when a run starts, from its virtual user count and iterations, so this preview cannot show which rows a virtual user receives. Set a block size to preview a fixed block."})
+			return
+		}
 		needed[name] = true
 		name = strings.ToLower(strings.TrimSpace(parameter.SameLineAs))
 	}

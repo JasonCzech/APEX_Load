@@ -1,0 +1,1 @@
+function e(e){return e.auto_allocate?!0:e.selection!==`unique`||(e.block_size??0)>0||e.value_for_each_vuser?!1:e.type===`file`||e.type===`list`}export{e as t};

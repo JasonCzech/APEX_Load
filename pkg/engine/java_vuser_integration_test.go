@@ -157,8 +157,9 @@ func TestJavaVuserEachOccurrenceParametersAdvanceOnlyForIterationMethods(t *test
 			RunLogic: dsl.RunLogicConfig{Iterations: 2},
 		},
 		Parameters: []dsl.Parameter{
-			{Name: "Ticket", Type: "list", Update: "each_occurrence", Selection: "unique", OnExhaustion: "empty", Values: []string{"t1", "t2", "t3", "t4"}},
-			{Name: "Fixed", Type: "list", Update: "each_occurrence", Selection: "unique", Values: []string{"f1", "f2"}},
+			// Unique each-occurrence rows need an explicit block per VUser.
+			{Name: "Ticket", Type: "list", Update: "each_occurrence", Selection: "unique", BlockSize: 4, OnExhaustion: "empty", Values: []string{"t1", "t2", "t3", "t4"}},
+			{Name: "Fixed", Type: "list", Update: "each_occurrence", Selection: "unique", BlockSize: 2, Values: []string{"f1", "f2"}},
 		},
 		Init: []dsl.Action{{
 			Name:   "Actions.init",

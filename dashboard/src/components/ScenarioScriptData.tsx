@@ -1,5 +1,6 @@
 import type { ScriptDataSource, ScriptParameterDefinition } from '../types/scripts'
 import type { StoredScript } from '../types'
+import { autoAllocatesUniqueRows } from './uniqueRowAllocation'
 import './ScenarioScriptData.css'
 
 function label(value: string) {
@@ -36,7 +37,7 @@ function ParameterSettings({ parameter }: { parameter: ScriptParameterDefinition
   else if (rowBased && (parameter.data_source || parameter.values?.length)) settings.push(`${label(parameter.selection || 'sequential')} selection`)
   if ((rowBased && (parameter.data_source || parameter.values?.length)) || parameter.type === 'counter') settings.push(`On exhaustion: ${label(parameter.on_exhaustion || 'wrap')}`)
   if (parameter.start_row !== undefined) settings.push(`Start row: ${parameter.start_row}`)
-  if (parameter.auto_allocate) settings.push('Auto-allocate rows')
+  if (autoAllocatesUniqueRows(parameter)) settings.push('Auto-allocate rows')
   if (parameter.block_size !== undefined) settings.push(`Block size: ${parameter.block_size}`)
   if (parameter.value_for_each_vuser) settings.push('Value per VUser')
   for (const field of ['min', 'max', 'start', 'end', 'step', 'length', 'format', 'timezone', 'offset_seconds', 'charset', 'pad_width', 'pad_char', 'seed'] as const) {

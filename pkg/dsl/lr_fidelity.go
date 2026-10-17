@@ -9,7 +9,7 @@ func RequiresLRFidelity(s *Script) bool {
 		return false
 	}
 	for _, p := range s.Parameters {
-		if p.AutoAllocate || (p.Selection == "unique" && p.BlockSize > 0) {
+		if p.AutoAllocate || AllocatesUniqueRows(p) {
 			return true
 		}
 	}
