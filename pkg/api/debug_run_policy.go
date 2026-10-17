@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/recordbridge"
 )
 
 var debugRunIdentityPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
@@ -14,10 +15,7 @@ var debugRunIdentityPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 // session: the caller's choice, else the session's own identity, so a script
 // that tags its requests with the run can be debugged as it runs in a test.
 func debugRunIdentity(requested, sessionID string) string {
-	if id := strings.TrimSpace(requested); id != "" {
-		return id
-	}
-	return "debug-" + sessionID
+	return recordbridge.DebugRunIdentity(requested, sessionID)
 }
 
 // validateDebugRunIdentity rejects a requested run identity a target could
@@ -34,18 +32,9 @@ func validateDebugRunIdentity(requested string) error {
 // own setting, or the scenario default of continuing — so a debug run fails
 // the way the load test would.
 func debugContinueOnError(requested *bool, script *dsl.Script) bool {
-	if requested != nil {
-		return *requested
-	}
-	if script != nil && script.Config.ErrorHandling.ContinueOnErrorSet() {
-		return script.Config.ErrorHandling.ContinueOnErrorEnabled()
-	}
-	return true
+	return recordbridge.DebugContinueOnError(requested, script)
 }
 
 func debugFailurePolicy(continueOnError bool) string {
-	if continueOnError {
-		return "continue_on_error"
-	}
-	return "stop_on_error"
+	return recordbridge.DebugFailurePolicy(continueOnError)
 }

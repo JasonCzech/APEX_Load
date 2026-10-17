@@ -50,6 +50,7 @@ CI_FULL_JOB_IDS = (
     "workflow-policy",
     "go-quality",
     "go-tests",
+    "content-concurrency",
     "build",
     "protocol-tags",
     "dashboard",

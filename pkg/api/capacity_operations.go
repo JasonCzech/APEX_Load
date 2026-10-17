@@ -80,14 +80,11 @@ func (s *Server) startAsyncCapacityProvisioning(w http.ResponseWriter, r *http.R
 		WarmFloor: warmFloor, Deadline: deadline, Admission: firstNonEmpty(pool.CapacityAdmission, storage.CapacityAdmissionStrict),
 	}
 	applyStandingRollback(&capacityRequest, pool, backend.Describe())
-	plan, err := backend.Plan(r.Context(), capacityRequest)
+	plan, err := planCapacityOperation(r.Context(), backend, capacityRequest, request)
 	if err != nil {
 		return true, fmt.Errorf("capacity preflight failed: %w", err)
 	}
 
-	if plan.Launch > 0 {
-		return true, fmt.Errorf("%w: this target only supports run-owned burst instances; operator provisioning requires durable warm capacity", compute.ErrUnsupportedOperation)
-	}
 	if !owner.current() {
 		return true, errNotExecutionLeader
 	}
@@ -350,6 +347,46 @@ func (s *Server) asyncCapacityRequest(pool *storage.FleetPool, request *storage.
 	}
 }
 
+// planCapacityOperation keeps the durable request's purpose authoritative at
+// admission, retry, and takeover. Provider adapters still decide standing/burst
+// mechanics and preserve their own operation identities.
+func planCapacityOperation(ctx context.Context, backend compute.Backend, base compute.CapacityRequest, request *storage.ProvisioningRequest) (compute.Plan, error) {
+	plan, err := backend.Plan(ctx, base)
+	if err != nil {
+		return plan, err
+	}
+	if !isAutomaticRunCapacityRequest(request) && plan.Launch > 0 {
+		return plan, fmt.Errorf("%w: operator provisioning requires durable warm capacity; use a run for burst instances", compute.ErrUnsupportedOperation)
+	}
+	return plan, nil
+}
+
+// recoverCapacityOperation validates the persisted purpose before a successor
+// can call Reconcile. Refusal retains uncertain provider IDs/intents and performs
+// no cleanup; cancellation and orphan reconciliation keep their existing owners.
+func (s *Server) recoverCapacityOperation(owner *capacityOperationOwner, pool *storage.FleetPool, backend compute.Backend, base compute.CapacityRequest, intents []*storage.CapacityInstanceIntent) {
+	request, err := owner.request()
+	if err != nil {
+		owner.finish()
+		return
+	}
+	if _, err := planCapacityOperation(owner.ctx, backend, base, request); err != nil {
+		defer owner.finish()
+		if errors.Is(err, compute.ErrUnsupportedOperation) {
+			if current, loadErr := owner.request(); loadErr == nil {
+				now := time.Now().UTC()
+				revision := current.Revision
+				current.Revision++
+				current.Status, current.LastError, current.CompletedAt = "failed", err.Error(), &now
+				_ = owner.transition(current, revision, owner.attemptToken)
+			}
+		}
+		slog.Warn("resume capacity plan", "request_id", owner.requestID, "error", err)
+		return
+	}
+	s.reconcileAsyncCapacityOperation(owner, pool, backend, base, intents)
+}
+
 func isAutomaticRunCapacityRequest(request *storage.ProvisioningRequest) bool {
 	return request != nil && strings.HasPrefix(strings.TrimSpace(request.Reason), automaticRunCapacityReasonPrefix)
 }
@@ -445,12 +482,9 @@ func (s *Server) restartAsyncCapacityProvisioning(request *storage.ProvisioningR
 		}
 	}
 	attachCapacityLaunchIntents(&base, intents)
-	plan, err := backend.Plan(context.Background(), base)
+	_, err = planCapacityOperation(owner.ctx, backend, base, request)
 	if err != nil {
 		return true, err
-	}
-	if plan.Launch > 0 {
-		return true, fmt.Errorf("%w: operator provisioning requires durable warm capacity; use a run for burst instances", compute.ErrUnsupportedOperation)
 	}
 	if !s.beginCapacityOperation(owner) {
 		owner.cancel()

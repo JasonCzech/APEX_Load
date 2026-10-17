@@ -3080,7 +3080,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 				}
 				if detached := cloneScriptForStoredGroup(&scriptCopy); detached != nil {
 					scriptCopy = *detached
-					stampJavaVuserAuthoringApproval(&scriptCopy, evidence.sessionID)
+					stampJavaVuserAuthoringApproval(&scriptCopy, evidence.SessionID)
 				}
 			}
 		}

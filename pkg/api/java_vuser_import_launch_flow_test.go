@@ -78,10 +78,10 @@ public class Actions {
 	}
 	if evidence, ok := readJavaVuserAuthoringApproval(approval.Script.Script); !ok {
 		t.Fatal("approved imported response omitted governance evidence")
-	} else if evidence.contentHash != hashLibraryScript(approval.Script.Script) {
+	} else if evidence.ContentHash != hashLibraryScript(approval.Script.Script) {
 		t.Fatalf(
 			"approved imported response hash = %q, canonical response hash = %q",
-			evidence.contentHash,
+			evidence.ContentHash,
 			hashLibraryScript(approval.Script.Script),
 		)
 	}

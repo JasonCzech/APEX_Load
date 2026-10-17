@@ -259,7 +259,7 @@ func (s *Server) handleImportGitHub(w http.ResponseWriter, r *http.Request) {
 			},
 		}},
 	}
-	augmented := draft.augment(r)
+	augmented := draft.Augment(r)
 	warnings := augmented.Warnings
 
 	s.recordAuditEvent(r, "github.script.import", "success", "script", script.Name, script.ProjectID, map[string]any{

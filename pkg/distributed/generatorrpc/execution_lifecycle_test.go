@@ -116,6 +116,46 @@ func TestAssignmentLifecycleCoordinatorNormalizesLegacyCommittedFixture(t *testi
 	}
 }
 
+func TestLifecycleOwnerControlsCapacityUntilExactStopCompletes(t *testing.T) {
+	service := newIsolatedService(t, 10)
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	owner := service.lifecycleCoordinator
+	_, completion := owner.beginStopping("draining", 7, assignedTest{committed: true})
+	if service.idleForStandbyCapacityLocked() || !owner.isStoppingLocked("draining") || owner.stoppingCountLocked() != 1 {
+		t.Fatal("capacity did not observe the owner's stopping barrier")
+	}
+	ids := owner.stoppingIDsLocked()
+	if len(ids) != 1 || ids[0] != "draining" {
+		t.Fatalf("stopping IDs = %v", ids)
+	}
+	ids[0] = "replacement"
+	if !owner.isStoppingLocked("draining") || owner.isStoppingLocked("replacement") {
+		t.Fatal("query exposed mutable owner state")
+	}
+	owner.completeStopping("draining", 6)
+	if generation, ok := owner.stoppingGenerationLocked("draining"); !ok || generation != 7 || service.idleForStandbyCapacityLocked() {
+		t.Fatal("stale completion released capacity")
+	}
+	select {
+	case <-completion.done:
+		t.Fatal("stale completion released waiters")
+	default:
+	}
+	owner.completeStopping("draining", 7)
+	if !service.idleForStandbyCapacityLocked() || owner.stoppingCountLocked() != 0 {
+		t.Fatal("exact completion retained capacity")
+	}
+	if _, ok := owner.stoppingGenerationLocked("draining"); ok {
+		t.Fatal("completed generation retained")
+	}
+	select {
+	case <-completion.done:
+	default:
+		t.Fatal("exact completion did not release waiters")
+	}
+}
+
 func TestServiceDelegatesAssignmentLifecycleWithoutChangingWireStates(t *testing.T) {
 	service := newIsolatedService(t, 10)
 	assignment := &pb.WorkAssignment{
@@ -155,7 +195,7 @@ func TestServiceDelegatesAssignmentLifecycleWithoutChangingWireStates(t *testing
 	}
 	service.mu.RLock()
 	_, assigned := service.assignments[assignment.GetTestId()]
-	_, stopping := service.stoppingTests[assignment.GetTestId()]
+	_, stopping := service.lifecycleCoordinator.stoppingTests[assignment.GetTestId()]
 	service.mu.RUnlock()
 	terminal := service.metricsBroker.terminalBatch(terminalBatchKey{testID: assignment.GetTestId()})
 	if assigned || stopping || terminal.GetLifecycleState() != "COMPLETE" {

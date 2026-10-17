@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 )
 
 // The status/wait help must publish the exit-code contract so CI can tell a
@@ -62,7 +62,7 @@ func TestIsTerminalStatus(t *testing.T) {
 
 func TestTerminalStatusVocabularyMatchesController(t *testing.T) {
 	for _, status := range []string{"CREATED", "PENDING", "QUEUED", "STARTING", "RUNNING", "PAUSED", "STOPPING", "FINALIZING", "COMPLETE", " complete ", "FAILED", "ABORTED", ""} {
-		if got, want := isTerminalStatus(status), api.IsTerminalTestStatus(status); got != want {
+		if got, want := isTerminalStatus(status), runcontract.IsTerminalTestStatus(status); got != want {
 			t.Fatalf("terminal classification for %q: apexctl=%t controller=%t", status, got, want)
 		}
 	}

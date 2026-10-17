@@ -191,7 +191,7 @@ func TestDuplicateForcedStopWaitsForQuiescenceAndRetainsFinalEvidence(t *testing
 	deadline := time.Now().Add(time.Second)
 	for {
 		service.mu.RLock()
-		_, stopping := service.stoppingTests["run"]
+		_, stopping := service.lifecycleCoordinator.stoppingTests["run"]
 		_, assigned := service.assignments["run"]
 		service.mu.RUnlock()
 		if stopping && !assigned {

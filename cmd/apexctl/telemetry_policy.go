@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/telemetrypolicy"
 )
 
 const telemetryPolicyCLIResponseLimit = 8 << 20
@@ -92,7 +92,7 @@ func (c *ApiClient) readTelemetryPolicy(ctx context.Context, flags *flag.FlagSet
 	if err != nil {
 		return errors.New("policy response test identity unavailable")
 	}
-	evidence := &api.TelemetryPolicyEvidence{Availability: "unavailable", Reason: "immutable-policy-not-retained"}
+	evidence := &telemetrypolicy.TelemetryPolicyEvidence{Availability: "unavailable", Reason: "immutable-policy-not-retained"}
 	if value, exists := object["telemetry_policy"]; exists {
 		evidence, err = decodeTelemetryPolicyCLI(value)
 		if err != nil {
@@ -103,10 +103,10 @@ func (c *ApiClient) readTelemetryPolicy(ctx context.Context, flags *flag.FlagSet
 		return err
 	}
 	return json.NewEncoder(out).Encode(struct {
-		SchemaVersion   string                       `json:"schema_version"`
-		Source          string                       `json:"source"`
-		TestID          string                       `json:"test_id"`
-		TelemetryPolicy *api.TelemetryPolicyEvidence `json:"telemetry_policy"`
+		SchemaVersion   string                                   `json:"schema_version"`
+		Source          string                                   `json:"source"`
+		TestID          string                                   `json:"test_id"`
+		TelemetryPolicy *telemetrypolicy.TelemetryPolicyEvidence `json:"telemetry_policy"`
 	}{"apexload.telemetry_policy_projection.v1", source, canonical, evidence})
 }
 
@@ -146,7 +146,7 @@ func telemetryPolicyCLINoAliases(object map[string]json.RawMessage, fields []str
 	return nil
 }
 
-func decodeTelemetryPolicyCLI(raw []byte) (*api.TelemetryPolicyEvidence, error) {
+func decodeTelemetryPolicyCLI(raw []byte) (*telemetrypolicy.TelemetryPolicyEvidence, error) {
 	invalid := errors.New("invalid telemetry policy receipt")
 	fields, err := analysisCLIObject(raw, 32<<10, []string{"availability", "reason", "policy"})
 	if err != nil {
@@ -156,7 +156,7 @@ func decodeTelemetryPolicyCLI(raw []byte) (*api.TelemetryPolicyEvidence, error) 
 	if err != nil {
 		return nil, invalid
 	}
-	evidence := &api.TelemetryPolicyEvidence{Availability: availability}
+	evidence := &telemetrypolicy.TelemetryPolicyEvidence{Availability: availability}
 	if reason, exists := fields["reason"]; exists {
 		evidence.Reason, err = analysisCLIText(reason, 64, false)
 		if err != nil {
@@ -225,8 +225,8 @@ func decodeTelemetryPolicyCLI(raw []byte) (*api.TelemetryPolicyEvidence, error) 
 	if _, err := d.Token(); err != io.EOF {
 		return nil, invalid
 	}
-	var policy api.TelemetryBudgetPolicy
-	if err := json.Unmarshal(fields["policy"], &policy); err != nil || !api.ValidateTelemetryBudgetPolicy(&policy) {
+	var policy telemetrypolicy.TelemetryBudgetPolicy
+	if err := json.Unmarshal(fields["policy"], &policy); err != nil || !telemetrypolicy.ValidateTelemetryBudgetPolicy(&policy) {
 		return nil, invalid
 	}
 	evidence.Policy = &policy

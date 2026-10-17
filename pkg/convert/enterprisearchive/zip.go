@@ -18,7 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 	"github.com/jasonczech/apexload/pkg/javarunner"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 

@@ -22,6 +22,7 @@ import {
   StoredScript,
   TestSummary,
 } from '../types'
+import { useApplicationApi } from '../hooks/api/useApplicationApi'
 import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
 import { useProjectApi, type DeleteEntityResponse } from '../hooks/api/useProjectApi'
 import { useScriptApi } from '../hooks/api/useScriptApi'
@@ -281,6 +282,7 @@ export default function ApplicationRepositoryPage({
   onCreateTestFromScenario,
 }: Props) {
   const repositoryApi = useRepositoryApi()
+  const applicationApi = useApplicationApi()
   const projectApi = useProjectApi()
   const scriptApi = useScriptApi()
   const testApi = useTestApi()
@@ -911,7 +913,7 @@ export default function ApplicationRepositoryPage({
       case 'project':
 				return onProjectDelete ? onProjectDelete(row.id) : projectApi.deleteProject(row.id)
       case 'release':
-        await repositoryApi.deleteRelease(row.id)
+        await applicationApi.deleteRelease(row.id)
         break
       case 'script':
         await scriptApi.deleteScript(row.id)
@@ -928,11 +930,11 @@ export default function ApplicationRepositoryPage({
       default:
         break
     }
-	}, [onProjectDelete, projectApi, repositoryApi, scriptApi, testApi])
+	}, [onProjectDelete, projectApi, applicationApi, scriptApi, testApi])
 
   const archiveRepositoryRow = useCallback(async (row: RepositoryAssetRow) => {
     if (row.kind === 'release') {
-      await repositoryApi.archiveRelease(row.id)
+      await applicationApi.archiveRelease(row.id)
       return
     }
     if (row.kind === 'data_pool') {
@@ -946,7 +948,7 @@ export default function ApplicationRepositoryPage({
         updated_at: pool.updated_at,
       })
     }
-  }, [repositoryApi, scriptApi])
+  }, [applicationApi, scriptApi])
 
   const refreshAfterBulkChange = useCallback(async (rows: RepositoryAssetRow[]) => {
     if (rows.some(row => row.kind === 'project')) {

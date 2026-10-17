@@ -167,15 +167,13 @@ func normalizedUnit(unit string) string {
 }
 func scaleValue(v float64, unit string) float64 {
 	switch unit {
-	case "ns":
-		return v / 1e6
-	case "us":
-		return v / 1e3
-	case "s":
-		return v * 1e3
+	case "ns", "us", "s":
+		converted, _ := analysis.ConvertDuration(v, unit, "ms")
+		return converted
 	}
 	return v
 }
+
 func safeReason(e error) string {
 	if e == nil {
 		return ""

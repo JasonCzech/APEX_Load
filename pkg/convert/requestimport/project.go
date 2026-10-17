@@ -18,7 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/protocol"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 	"golang.org/x/net/http/httpguts"
 )
 
@@ -800,15 +800,14 @@ func importURLCredentialSurfaces(ref dslwalk.SurfaceRef) []importURLCredentialSu
 	if ref.Request == nil || !ref.IsNestedRequest() {
 		return nil
 	}
-	raw, _ := ref.Request["target"].(string)
+	raw := ref.Target().Value
 	if strings.TrimSpace(raw) == "" {
 		return nil
 	}
-	request := ref.Request
 	return []importURLCredentialSurface{{
 		raw: raw,
 		set: func(projected string) {
-			request["target"] = projected
+			ref.SetTarget(projected)
 		},
 		pointerSuffix: "/target",
 		targetField:   "url",

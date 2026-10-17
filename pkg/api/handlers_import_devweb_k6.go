@@ -52,7 +52,7 @@ func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
 		Warnings:         result.Warnings,
 		Accounting:       result.Accounting(),
 	}
-	augmented := draft.augment(r)
+	augmented := draft.Augment(r)
 	result.Warnings = augmented.Warnings
 	protectedRequirements := result.ProtectedRequirements.Take()
 
@@ -98,7 +98,7 @@ func (s *Server) handleImportK6(w http.ResponseWriter, r *http.Request) {
 		Warnings:         result.Warnings,
 		Accounting:       result.Accounting(),
 	}
-	augmented := draft.augment(r)
+	augmented := draft.Augment(r)
 	result.Warnings = augmented.Warnings
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:                 result,

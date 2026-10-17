@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/contentmutation"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/refkey"
@@ -109,6 +110,7 @@ type leaseTermFencedScenarioScheduleOccurrenceClaimPersistence interface {
 func (tr *TestRunner) StoreScenario(req CreateScenarioRequest) (*StoredScenario, error) {
 	tr.scenarioMutationMu.Lock()
 	defer tr.scenarioMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	stored, err := tr.storeScenarioLocked(uuid.New().String(), req)
@@ -118,6 +120,7 @@ func (tr *TestRunner) StoreScenario(req CreateScenarioRequest) (*StoredScenario,
 func (tr *TestRunner) StoreScenarioWithID(id string, req CreateScenarioRequest) (*StoredScenario, error) {
 	tr.scenarioMutationMu.Lock()
 	defer tr.scenarioMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = strings.TrimSpace(id)
@@ -131,6 +134,7 @@ func (tr *TestRunner) StoreScenarioWithID(id string, req CreateScenarioRequest) 
 func (tr *TestRunner) UpdateScenario(id string, req CreateScenarioRequest) (*StoredScenario, bool, error) {
 	tr.scenarioMutationMu.Lock()
 	defer tr.scenarioMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
@@ -162,6 +166,7 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 func (tr *TestRunner) StoreScenarioWithIDCreateOnly(id string, req CreateScenarioRequest) (*StoredScenario, error) {
 	tr.scenarioMutationMu.Lock()
 	defer tr.scenarioMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = strings.TrimSpace(id)
@@ -193,6 +198,7 @@ func (tr *TestRunner) createOnlyScenarioWriterLocked(id string) func(*storage.Sc
 func (tr *TestRunner) UpdateScenarioIfUnchanged(id string, req CreateScenarioRequest, expectedUpdatedAt time.Time) (*StoredScenario, error) {
 	tr.scenarioMutationMu.Lock()
 	defer tr.scenarioMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = strings.TrimSpace(id)
@@ -215,10 +221,13 @@ func (tr *TestRunner) UpdateScenarioIfUnchanged(id string, req CreateScenarioReq
 }
 
 func (tr *TestRunner) DeleteScenarioIfUnchanged(id string, expectedUpdatedAt time.Time) (bool, error) {
+	tr.scenarioMutationMu.Lock()
+	defer tr.scenarioMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
+	releaseProjectMutation := tr.acquireProjectTestMutation(tr.scenarioProjectIDForContentMutation(id))
+	defer releaseProjectMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
 	id = strings.TrimSpace(id)
 	if id == "" || expectedUpdatedAt.IsZero() {
 		return false, fmt.Errorf("scenario id and expected updated_at are required")
@@ -226,7 +235,7 @@ func (tr *TestRunner) DeleteScenarioIfUnchanged(id string, expectedUpdatedAt tim
 	deleted := false
 	if store, ok := tr.scenarioStore.(conditionalScenarioDeletePersistence); ok {
 		var err error
-		deleted, err = store.DeleteScenarioIfUnchanged(id, expectedUpdatedAt)
+		deleted, err = contentmutation.OutsideLock(&tr.mu, func() (bool, error) { return store.DeleteScenarioIfUnchanged(id, expectedUpdatedAt) })
 		if err != nil || !deleted {
 			return deleted, err
 		}
@@ -877,10 +886,13 @@ func (tr *TestRunner) DeleteScenario(id string) bool {
 }
 
 func (tr *TestRunner) DeleteScenarioDurable(id string, guard ...*storage.ScenarioWriterGuard) (bool, error) {
+	tr.scenarioMutationMu.Lock()
+	defer tr.scenarioMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
+	releaseProjectMutation := tr.acquireProjectTestMutation(tr.scenarioProjectIDForContentMutation(id))
+	defer releaseProjectMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
 	id = tr.resolveRefKeyLocked(id)
 	scenario, ok := tr.scenarios[id]
 	if !ok {
@@ -893,10 +905,10 @@ func (tr *TestRunner) DeleteScenarioDurable(id string, guard ...*storage.Scenari
 	}
 	if tr.scenarioStore != nil {
 		if guardedStore, canGuard := tr.scenarioStore.(storage.ScenarioGuardedWriterStore); canGuard && len(guard) > 0 && guard[0] != nil {
-			if err := guardedStore.DeleteScenarioGuarded(id, *guard[0]); err != nil {
+			if err := contentmutation.WriteOutsideLock(&tr.mu, func() error { return guardedStore.DeleteScenarioGuarded(id, *guard[0]) }); err != nil {
 				return false, err
 			}
-		} else if err := tr.scenarioStore.DeleteScenario(id); err != nil {
+		} else if err := contentmutation.WriteOutsideLock(&tr.mu, func() error { return tr.scenarioStore.DeleteScenario(id) }); err != nil {
 			return false, err
 		}
 	}
@@ -1553,4 +1565,15 @@ func cloneStoredScenarioForReadLocked(scenario *StoredScenario) *StoredScenario 
 	cloned.LastRunAt = cloneTimePtr(scenario.LastRunAt)
 	cloned.LastRunEndedAt = cloneTimePtr(scenario.LastRunEndedAt)
 	return &cloned
+}
+
+// scenarioProjectIDForContentMutation resolves the project before acquiring its
+// deletion gate; the mutation owner prevents a local same-ID replacement.
+func (tr *TestRunner) scenarioProjectIDForContentMutation(id string) string {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	if scenario := tr.scenarios[tr.resolveRefKeyLocked(strings.TrimSpace(id))]; scenario != nil {
+		return scenario.ProjectID
+	}
+	return ""
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 	"golang.org/x/net/http/httpproxy"
 )
 
@@ -36,20 +37,20 @@ type transportConfig struct {
 }
 
 const (
-	defaultHTTPMaxConnsPerHost = 100
-	defaultHTTPMaxIdleConns    = 4
+	defaultHTTPMaxConnsPerHost = httpcontract.DefaultMaxConnsPerHost
+	defaultHTTPMaxIdleConns    = httpcontract.DefaultMaxIdleConns
 	// Match net/http.DefaultTransport so Expect: 100-continue requests remain
 	// bounded while still giving a cooperating HTTP/1.1 server time to reply.
-	defaultHTTPExpectContinueTimeout = time.Second
+	defaultHTTPExpectContinueTimeout = httpcontract.DefaultExpectContinueTimeout
 	// MaxConfigured* are shared with DSL validation so authored scripts fail
 	// explicitly instead of being silently clamped by the runtime.
-	MaxConfiguredConnsPerHost = 256
-	MaxConfiguredIdleConns    = 32
-	MaxConfiguredTimeout      = time.Hour
-	MaxConfiguredRedirects    = 50
-	MaxConfiguredNetworkKbps  = 100_000_000
-	MaxConfiguredStreamKbps   = 100_000_000
-	MaxConfiguredStreamBuffer = time.Hour
+	MaxConfiguredConnsPerHost = httpcontract.MaxConfiguredConnsPerHost
+	MaxConfiguredIdleConns    = httpcontract.MaxConfiguredIdleConns
+	MaxConfiguredTimeout      = httpcontract.MaxConfiguredTimeout
+	MaxConfiguredRedirects    = httpcontract.MaxConfiguredRedirects
+	MaxConfiguredNetworkKbps  = httpcontract.MaxConfiguredNetworkKbps
+	MaxConfiguredStreamKbps   = httpcontract.MaxConfiguredStreamKbps
+	MaxConfiguredStreamBuffer = httpcontract.MaxConfiguredStreamBuffer
 	// Protocol instances are per VUser. Keep this deliberately small so the
 	// TLS session cache cannot multiply into hundreds of thousands of retained
 	// sessions at generator scale while still covering ordinary multi-host flows.
@@ -101,31 +102,7 @@ func validateHTTPRuntimeConfigBounds(config map[string]any) error {
 }
 
 func exactHTTPConfigInteger(value any) (int64, error) {
-	switch typed := value.(type) {
-	case int:
-		return int64(typed), nil
-	case int64:
-		return typed, nil
-	case int32:
-		return int64(typed), nil
-	case float64:
-		if math.IsNaN(typed) || math.IsInf(typed, 0) || math.Trunc(typed) != typed || typed < math.MinInt64 || typed > math.MaxInt64 {
-			return 0, fmt.Errorf("not an integer")
-		}
-		return int64(typed), nil
-	case float32:
-		converted := float64(typed)
-		if math.IsNaN(converted) || math.IsInf(converted, 0) || math.Trunc(converted) != converted {
-			return 0, fmt.Errorf("not an integer")
-		}
-		return int64(typed), nil
-	case json.Number:
-		return typed.Int64()
-	case string:
-		return strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
-	default:
-		return 0, fmt.Errorf("not an integer")
-	}
+	return httpcontract.ExactConfigInteger(value)
 }
 
 func exactHTTPConfigFloat(value any) (float64, error) {
@@ -162,14 +139,15 @@ func exactHTTPConfigFloat(value any) (float64, error) {
 
 func parseTransportConfig(config map[string]any) transportConfig {
 	settings := transportConfig{
-		ipVersion:       strings.ToLower(strings.TrimSpace(protocol.ConfigString(config, "ip_version"))),
-		maxConnsPerHost: defaultHTTPMaxConnsPerHost,
-		maxIdleConns:    defaultHTTPMaxIdleConns,
-		connectTimeout:  30 * time.Second,
-		tlsTimeout:      10 * time.Second,
-		idleTimeout:     90 * time.Second,
-		requestTimeout:  60 * time.Second,
-		keepAlive:       30 * time.Second,
+		ipVersion:        strings.ToLower(strings.TrimSpace(protocol.ConfigString(config, "ip_version"))),
+		maxConnsPerHost:  defaultHTTPMaxConnsPerHost,
+		maxIdleConns:     defaultHTTPMaxIdleConns,
+		connectTimeout:   httpcontract.DefaultConnectTimeout,
+		tlsTimeout:       httpcontract.DefaultTLSTimeout,
+		idleTimeout:      httpcontract.DefaultIdleTimeout,
+		requestTimeout:   httpcontract.DefaultRequestTimeout,
+		keepAlive:        httpcontract.DefaultKeepAlive,
+		disableKeepAlive: !httpcontract.DefaultKeepAliveEnabled,
 	}
 	if value := protocol.ConfigInt(config, "max_conns_per_host"); value > 0 {
 		settings.maxConnsPerHost = min(value, MaxConfiguredConnsPerHost)
@@ -215,8 +193,9 @@ func boundedHTTPTimeout(config map[string]any, key string) time.Duration {
 }
 
 func buildTLSConfig(config map[string]any) (*tls.Config, error) {
+	minVersion, _ := parseTLSVersion(httpcontract.DefaultTLSMinVersion)
 	tlsCfg := &tls.Config{
-		MinVersion:         tls.VersionTLS12,
+		MinVersion:         minVersion,
 		ClientSessionCache: tls.NewLRUClientSessionCache(maxTLSClientSessionsPerVUser),
 	}
 
@@ -371,22 +350,7 @@ func parseNetworkSimulationProfile(config map[string]any) networkSimulationProfi
 }
 
 func resolveNetworkProfile(mode, preset string, latencyMS, bandwidthKbps int) (int, int) {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "preset":
-		switch strings.ToLower(strings.TrimSpace(preset)) {
-		case "56k":
-			return 120, 56
-		case "dsl":
-			return 50, 1536
-		case "t1":
-			return 20, 1544
-		case "10mbps":
-			return 5, 10240
-		}
-	case "custom":
-		return latencyMS, bandwidthKbps
-	}
-	return 0, 0
+	return httpcontract.ResolveNetworkProfile(mode, preset, latencyMS, bandwidthKbps)
 }
 
 func bandwidthBytesPerSecond(kbps int) int {
@@ -617,7 +581,7 @@ func splitNoProxyHostPort(value string) (string, string) {
 }
 
 func buildCookieJar(config map[string]any) http.CookieJar {
-	cookiesEnabled := true
+	cookiesEnabled := httpcontract.DefaultCookiesEnabled
 	if value, ok := config["cookies_enabled"].(bool); ok {
 		cookiesEnabled = value
 	}
@@ -740,7 +704,7 @@ func (h *HTTP) SetCookie(ctx context.Context, cookie protocol.ScriptCookie) erro
 }
 
 func parseMaxRedirects(config map[string]any) int {
-	maxRedirects := 10
+	maxRedirects := httpcontract.DefaultMaxRedirects
 	if _, configured := config["max_redirects"]; configured {
 		maxRedirects = protocol.ConfigInt(config, "max_redirects")
 		if maxRedirects > MaxConfiguredRedirects {
@@ -782,48 +746,15 @@ func applyRedirectPolicy(client *http.Client, maxRedirects int) {
 }
 
 func buildDefaultHeaders(config map[string]any) map[string]string {
-	headers := make(map[string]string)
-	if values, ok := config["default_headers"].(map[string]string); ok {
-		for key, value := range values {
-			headers[key] = value
-		}
-	}
-	addTypedHeaderUnlessOverridden(headers, "User-Agent", config["user_agent"])
-	addTypedHeaderUnlessOverridden(headers, "Accept-Encoding", config["accept_encoding"])
-	addTypedHeaderUnlessOverridden(headers, "Accept-Language", config["accept_language"])
-	return headers
+	return httpcontract.DefaultHeaders(config)
 }
 
 func buildTypedDefaultHeaders(config map[string]any) map[string]string {
-	headers := make(map[string]string)
-	addTypedHeaderUnlessOverridden(headers, "User-Agent", config["user_agent"])
-	addTypedHeaderUnlessOverridden(headers, "Accept-Encoding", config["accept_encoding"])
-	addTypedHeaderUnlessOverridden(headers, "Accept-Language", config["accept_language"])
-	return headers
+	return httpcontract.TypedDefaultHeaders(config)
 }
 
 func mergeDefaultHeaders(typed, authored map[string]string) map[string]string {
-	headers := make(map[string]string, len(typed)+len(authored))
-	for name, value := range authored {
-		headers[name] = value
-	}
-	for name, value := range typed {
-		addTypedHeaderUnlessOverridden(headers, name, value)
-	}
-	return headers
-}
-
-func addTypedHeaderUnlessOverridden(headers map[string]string, name string, raw any) {
-	value, ok := raw.(string)
-	if !ok || value == "" {
-		return
-	}
-	for existing := range headers {
-		if strings.EqualFold(strings.TrimSpace(existing), name) {
-			return
-		}
-	}
-	headers[name] = value
+	return httpcontract.MergeDefaultHeaders(typed, authored)
 }
 
 func buildDefaultHeaderList(config map[string]any) protocol.HeaderList {
@@ -864,16 +795,7 @@ func buildAuthConfig(config map[string]any) *protocol.AuthConfig {
 	}
 }
 
-func validateAuthType(authType string) error {
-	switch strings.ToLower(strings.TrimSpace(authType)) {
-	case "", "none", "noauth", "inherit", "basic", "bearer", "digest", "ntlm", "negotiate", "negotiate_any":
-		return nil
-	case "kerberos":
-		return fmt.Errorf("unsupported HTTP auth type %q: Kerberos tickets are not supported; use negotiate (Negotiate with NTLM) or an external auth flow", authType)
-	default:
-		return fmt.Errorf("unsupported HTTP auth type %q", authType)
-	}
-}
+func validateAuthType(authType string) error { return httpcontract.ValidateAuthType(authType) }
 
 func buildActionAuthHeader(auth *protocol.AuthConfig) (string, bool, error) {
 	if auth == nil {

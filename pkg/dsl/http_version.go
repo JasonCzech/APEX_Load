@@ -2,7 +2,7 @@ package dsl
 
 import (
 	"github.com/jasonczech/apexload/pkg/protocol"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 // OptionalHTTPVersion is the shared presence-aware leaf policy scalar.

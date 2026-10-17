@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/credential"
-	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 )
 
 var browserStorageStateSecretPattern = regexp.MustCompile(`^\{\{secret\.` + credential.LogicalNameInputPattern + `\}\}$`)

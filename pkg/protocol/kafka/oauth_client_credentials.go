@@ -5,12 +5,12 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	"github.com/jasonczech/apexload/pkg/protocol/kafkacontract"
 )
 
 func hasExplicitOAuth(c config) bool {
@@ -61,9 +61,5 @@ func explicitOAuthToken(ctx context.Context, c config) (string, error) {
 // ValidateOAuthTokenEndpoint checks the structural contract without resolving
 // credentials or performing network access.
 func ValidateOAuthTokenEndpoint(raw string) error {
-	parsed, err := url.Parse(raw)
-	if len(raw) > 8192 || err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" || parsed.User != nil || parsed.Fragment != "" {
-		return fmt.Errorf("Kafka OAuth token endpoint must be an HTTPS URL without user info or fragment")
-	}
-	return nil
+	return kafkacontract.ValidateOAuthTokenEndpoint(raw)
 }

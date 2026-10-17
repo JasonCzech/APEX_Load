@@ -2,14 +2,10 @@ package api
 
 import (
 	"context"
-	"errors"
-	"os"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/recordbridge"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -21,15 +17,14 @@ const (
 	defaultReplaySessionWorkerAbandonGrace = 2 * time.Minute
 )
 
-var errReplaySessionIDInvalid = errors.New("replay_session_id must be a canonical UUID v4")
+var errReplaySessionIDInvalid = recordbridge.ErrReplaySessionIDInvalid
 
 // replaySessionProjectMatches treats an empty expected project as an
 // unrestricted (global-admin/internal) lookup. Project-scoped HTTP handlers
 // pass the project bound by middleware so an ID retired and reused between
 // authorization and execution cannot substitute a different tenant's session.
 func replaySessionProjectMatches(actualProjectID, expectedProjectID string) bool {
-	expectedProjectID = strings.TrimSpace(expectedProjectID)
-	return expectedProjectID == "" || normalizeProjectID(actualProjectID) == normalizeProjectID(expectedProjectID)
+	return recordbridge.ReplaySessionProjectMatches(actualProjectID, expectedProjectID)
 }
 
 // replaySessionIDReserver owns the shared progress-event namespace. The
@@ -150,24 +145,7 @@ func releaseRetainedReplaySessionSignals(signals []*replaySessionLeaseSignal) {
 }
 
 func waitForReplaySessionWorkers(sessions []<-chan struct{}, timeout time.Duration) {
-	if len(sessions) == 0 {
-		return
-	}
-	if timeout <= 0 {
-		timeout = replaySessionCloseDrainTimeout
-	}
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	for _, done := range sessions {
-		if done == nil {
-			continue
-		}
-		select {
-		case <-done:
-		case <-timer.C:
-			return
-		}
-	}
+	recordbridge.WaitForReplaySessionWorkers(sessions, timeout)
 }
 
 // replaySessionLeaseStore is the narrow durable coordination boundary required
@@ -196,29 +174,14 @@ func watchReplaySessionLease(ctx context.Context, cancel context.CancelFunc, sig
 }
 
 func replaySessionTerminalTTL(ttl time.Duration) time.Duration {
-	if ttl > 0 {
-		return ttl
-	}
-	return defaultReplaySessionTerminalTTL
+	return recordbridge.ReplaySessionTerminalTTL(ttl)
 }
 
 // validateExternalReplaySessionID limits client-selected event-correlation IDs
 // to unpredictable 122-bit UUIDv4 capabilities. The dashboard selects the ID
 // before the HTTP response so it can subscribe to early WebSocket events; an
 // empty value remains valid for callers that do not need that synchronization.
-func validateExternalReplaySessionID(value string) error {
-	if value == "" {
-		return nil
-	}
-	if strings.TrimSpace(value) != value {
-		return errReplaySessionIDInvalid
-	}
-	parsed, err := uuid.Parse(value)
-	if err != nil || parsed.Version() != uuid.Version(4) || parsed.Variant() != uuid.RFC4122 || parsed.String() != value {
-		return errReplaySessionIDInvalid
-	}
-	return nil
-}
+var validateExternalReplaySessionID = recordbridge.ValidateExternalReplaySessionID
 
 type replaySessionRetentionConfig struct {
 	terminalTTL time.Duration
@@ -232,25 +195,8 @@ type replaySessionRetentionConfig struct {
 }
 
 func defaultReplaySessionRetentionConfig() replaySessionRetentionConfig {
-	return replaySessionRetentionConfig{
-		terminalTTL: firstConfiguredDuration(defaultReplaySessionTerminalTTL,
-			"APEXLOAD_REPLAY_SESSION_TERMINAL_TTL",
-			"APEXLOAD_REPLAY_SESSION_TERMINAL_TTL_SECONDS",
-		),
-		idleCancel: firstConfiguredDuration(defaultReplaySessionIdleCancel,
-			"APEXLOAD_REPLAY_SESSION_IDLE_CANCEL",
-			"APEXLOAD_REPLAY_SESSION_IDLE_CANCEL_SECONDS",
-		),
-		maxSessions: firstConfiguredPositiveInt(defaultReplaySessionMaxSessions,
-			"APEXLOAD_REPLAY_SESSION_MAX",
-			"APEXLOAD_REPLAY_SESSION_MAX_SESSIONS",
-		),
-		workerAbandonGrace: firstConfiguredDuration(defaultReplaySessionWorkerAbandonGrace,
-			"APEXLOAD_REPLAY_SESSION_WORKER_ABANDON_GRACE",
-			"APEXLOAD_REPLAY_SESSION_WORKER_ABANDON_GRACE_SECONDS",
-		),
-		now: time.Now,
-	}
+	config := recordbridge.DefaultReplayRetentionConfig()
+	return replaySessionRetentionConfig{terminalTTL: config.TerminalTTL, idleCancel: config.IdleCancel, maxSessions: config.MaxSessions, workerAbandonGrace: config.WorkerAbandonGrace, now: config.Now}
 }
 
 func (c replaySessionRetentionConfig) clock() time.Time {
@@ -261,37 +207,30 @@ func (c replaySessionRetentionConfig) clock() time.Time {
 }
 
 func firstConfiguredPositiveInt(fallback int, names ...string) int {
-	for _, name := range names {
-		raw := strings.TrimSpace(os.Getenv(name))
-		if raw == "" {
-			continue
-		}
-		value, err := strconv.Atoi(raw)
-		if err == nil && value > 0 {
-			return value
-		}
-	}
-	return fallback
+	return recordbridge.FirstConfiguredPositiveInt(fallback, names...)
 }
 
 func replaySessionJanitorInterval(config replaySessionRetentionConfig) time.Duration {
-	interval := time.Minute
-	for _, candidate := range []time.Duration{config.terminalTTL / 2, config.idleCancel / 2} {
-		if candidate > 0 && candidate < interval {
-			interval = candidate
-		}
-	}
-	if interval < time.Second {
-		return time.Second
-	}
-	return interval
+	return recordbridge.ReplaySessionJanitorInterval(recordbridge.ReplayRetentionConfig{TerminalTTL: config.terminalTTL, IdleCancel: config.idleCancel})
 }
 
 func replaySessionStatusTerminal(status string) bool {
-	switch status {
-	case "completed", "failed", "stopped":
-		return true
-	default:
-		return false
-	}
+	return recordbridge.ReplaySessionStatusTerminal(status)
 }
+
+// Exported lease methods adapt controller ownership to the shared replay manager.
+func (s *replaySessionLeaseSignal) Done() <-chan struct{} {
+	if s == nil {
+		return nil
+	}
+	return s.done
+}
+func (s *replaySessionLeaseSignal) Fail(err error) { s.fail(err) }
+func (s *replaySessionLeaseSignal) FailureOrExpired(now time.Time) error {
+	return s.failureOrExpired(now)
+}
+func (s *replaySessionLeaseSignal) RetainForTerminal(ttl time.Duration) error {
+	return s.retainForTerminal(ttl)
+}
+func (s *replaySessionLeaseSignal) ReleaseRetainedID() { s.releaseRetainedID() }
+func (s *replaySessionLeaseSignal) ReleaseAll()        { s.releaseAll() }

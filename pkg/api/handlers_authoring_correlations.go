@@ -1,7 +1,8 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -467,19 +468,4 @@ func shouldReplaceCorrelationSample(req authoringCorrelationPreviewRequest) bool
 	return *req.ReplaceSampleValue
 }
 
-func cloneScriptDefinition(in *dsl.Script) *dsl.Script {
-	if in == nil {
-		return nil
-	}
-	data, err := json.Marshal(in)
-	if err != nil {
-		out := *in
-		return &out
-	}
-	var out dsl.Script
-	if err := json.Unmarshal(data, &out); err != nil {
-		copied := *in
-		return &copied
-	}
-	return &out
-}
+var cloneScriptDefinition = importreview.CloneScriptDefinition

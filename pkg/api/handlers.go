@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"crypto/rand"
 	"database/sql"
@@ -18,10 +20,9 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/buildinfo"
-	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
-	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"github.com/jasonczech/apexload/pkg/telemetry"
@@ -1770,252 +1771,39 @@ func (s *Server) handleTestStream(w http.ResponseWriter, r *http.Request) {
 	s.hub.serveWS(w, r, id, "", s.websocketAuthorizer(r, projectID))
 }
 
-func validateScript(script *dsl.Script) []string {
-	return validateStoredExecutionScript(script)
-}
+var validateScript = importreview.ValidateScript
 
-type scriptValidationResponse struct {
-	ScriptID                    string                                              `json:"script_id"`
-	Valid                       bool                                                `json:"valid"`
-	Issues                      []string                                            `json:"issues"`
-	Warnings                    []string                                            `json:"warnings,omitempty"`
-	Preflight                   *ReplayPreflight                                    `json:"preflight,omitempty"`
-	RuntimeSettingsParity       []enterprisearchive.RuntimeSettingParityEntry       `json:"runtime_settings_parity,omitempty"`
-	RuntimeSettingsStatusCounts map[string]int                                      `json:"runtime_settings_status_counts,omitempty"`
-	MigrationReadiness          *enterprisearchive.RuntimeSettingMigrationReadiness `json:"migration_readiness,omitempty"`
-	DataSourceFit               *DataSourceFitReport                                `json:"data_source_fit,omitempty"`
-	AIGuardrails                *AIGuardrailReport                                  `json:"ai_guardrails,omitempty"`
-	AuthoringHealth             AuthoringHealth                                     `json:"authoring_health"`
-	// ValidatedFingerprint echoes the draft fingerprint the client sent, so a
-	// result binds to exactly the document it describes.
-	ValidatedFingerprint string `json:"validated_fingerprint,omitempty"`
-	// ValidatedContentRevision is the stored script revision a stored-script
-	// validation read, when the store keeps durable revisions.
-	ValidatedContentRevision string `json:"validated_content_revision,omitempty"`
-}
+type scriptValidationResponse = importreview.ScriptValidationResponse
 
 func buildScriptValidationResponse(scriptID string, script *dsl.Script, resolvers ...engine.SecretResolver) scriptValidationResponse {
-	return buildScriptValidationResponseWithVariables(scriptID, script, nil, resolvers...)
+	return importreview.BuildScriptValidationResponse(scriptID, script, resolvers...)
 }
 
-func buildScriptValidationResponseWithVariables(scriptID string, script *dsl.Script, variables map[string]string, resolvers ...engine.SecretResolver) scriptValidationResponse {
-	issues := validateScript(script)
-	return buildScriptValidationResponseFromIssues(
-		scriptID,
-		script,
-		variables,
-		issues,
-		resolvers...,
-	)
+var buildScriptValidationResponseWithVariables = importreview.BuildScriptValidationResponseWithVariables
+
+func buildDraftScriptValidationResponseWithVariables(scriptID string, script *dsl.Script, variables map[string]string, resolvers ...engine.SecretResolver) scriptValidationResponse {
+	return importreview.BuildDraftScriptValidationResponseWithVariables(scriptID, script, variables, resolvers...)
 }
 
-func buildDraftScriptValidationResponseWithVariables(
-	scriptID string,
-	script *dsl.Script,
-	variables map[string]string,
-	resolvers ...engine.SecretResolver,
-) scriptValidationResponse {
-	return buildScriptValidationResponseFromIssues(
-		scriptID,
-		script,
-		variables,
-		dsl.ValidateScriptIssues(script),
-		resolvers...,
-	)
-}
+var buildScriptValidationResponseFromIssues = importreview.BuildScriptValidationResponseFromIssues
 
-func buildScriptValidationResponseFromIssues(
-	scriptID string,
-	script *dsl.Script,
-	variables map[string]string,
-	issues []string,
-	resolvers ...engine.SecretResolver,
-) scriptValidationResponse {
-	for _, blocker := range scriptImportPromotionBlockers(script) {
-		issues = append(issues, "import fidelity blocker: "+blocker)
-	}
-	warnings := validationWarnings(script)
-	preflight := buildReplayPreflight(script, variables, issues, warnings, resolvers...)
-	parity := buildValidationRuntimeSettingsParity(script)
-	counts := enterprisearchive.RuntimeSettingStatusCounts(parity)
-	readiness := enterprisearchive.BuildRTSMigrationReadiness(parity, validationRuntimeSettingMigrationPolicy(script))
-	dataSourceFit := buildDataSourceFitReport(script)
-	aiGuardrails := buildAIGuardrailReport(script, len(issues) == 0)
+var scriptHasAuthoringProvenance = importreview.ScriptHasAuthoringProvenance
 
-	return scriptValidationResponse{
-		ScriptID:                    scriptID,
-		Valid:                       len(issues) == 0,
-		Issues:                      issues,
-		Warnings:                    warnings,
-		Preflight:                   preflight,
-		RuntimeSettingsParity:       parity,
-		RuntimeSettingsStatusCounts: counts,
-		MigrationReadiness:          readiness,
-		DataSourceFit:               dataSourceFit,
-		AIGuardrails:                aiGuardrails,
-		AuthoringHealth:             buildAuthoringHealth(issues, warnings, counts, dataSourceFit, aiGuardrails, scriptHasAuthoringProvenance(script), replayReviewGateIssues(script)...),
-	}
-}
+var validationWarnings = importreview.ValidationWarnings
 
-func scriptHasAuthoringProvenance(script *dsl.Script) bool {
-	if script == nil {
-		return false
-	}
-	if strings.TrimSpace(script.GeneratedBy) != "" || strings.TrimSpace(script.GeneratedFrom) != "" {
-		return true
-	}
-	return script.Metadata != nil && script.Metadata.Import != nil
-}
+var needsRecordedResourceMetadataWarning = importreview.NeedsRecordedResourceMetadataWarning
 
-func validationWarnings(script *dsl.Script) []string {
-	if script == nil {
-		return nil
-	}
+var hasRecordedResourceMetadata = importreview.HasRecordedResourceMetadata
 
-	warnings := make([]string, 0, 2)
-	if script.Protocol == "browser" {
-		engine := strings.TrimSpace(script.Config.Browser.Engine)
-		if deviceProfile := strings.TrimSpace(script.Config.Browser.DeviceProfile); deviceProfile != "" {
-			if profile, ok := browserprotocol.LookupDevice(deviceProfile); ok && profile.BrowserFamily != "" && engine == "" {
-				engine = profile.BrowserFamily
-			}
-		}
-		if warning := browserprotocol.RuntimeInstallWarning(engine); warning != "" {
-			warnings = append(warnings, warning)
-		}
-	}
+var recordedResourceMetadataWarning = importreview.RecordedResourceMetadataWarning
 
-	if needsRecordedResourceMetadataWarning(script) {
-		warnings = append(warnings, recordedResourceMetadataWarning())
-	}
-	if warning := lightningReloadWarning(script); warning != "" {
-		warnings = append(warnings, warning)
-	}
+var buildValidationRuntimeSettingsParity = importreview.BuildValidationRuntimeSettingsParity
 
-	return warnings
-}
+var validationMustPreserveImportedRuntimeFinding = importreview.ValidationMustPreserveImportedRuntimeFinding
 
-func needsRecordedResourceMetadataWarning(script *dsl.Script) bool {
-	if script == nil || script.Protocol != "browser" {
-		return false
-	}
-	if !strings.EqualFold(strings.TrimSpace(script.Config.Browser.DownloadResources), "recorded") {
-		return false
-	}
-	return !hasRecordedResourceMetadata(script)
-}
+var validationRuntimeSettingMigrationPolicy = importreview.ValidationRuntimeSettingMigrationPolicy
 
-func hasRecordedResourceMetadata(script *dsl.Script) bool {
-	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {
-		return false
-	}
-	rawAvailable, ok := script.Metadata.Import.Preserved["recorded_resource_urls_available"]
-	if !ok {
-		return false
-	}
-	available, ok := rawAvailable.(bool)
-	return ok && available
-}
-
-func recordedResourceMetadataWarning() string {
-	return "Browser replay with download_resources=recorded requires preserved recorded-resource metadata. Manually authored scripts or imports without captured resource URLs cannot enforce recorded-only asset loading yet."
-}
-
-func buildValidationRuntimeSettingsParity(script *dsl.Script) []enterprisearchive.RuntimeSettingParityEntry {
-	if script == nil {
-		return nil
-	}
-
-	preserved := runtimeSettingsParityValue(validationImportPreservedValue(script, "runtime_settings_parity"))
-	derived := enterprisearchive.BuildRTSParityReportFromScript(script)
-	if len(derived) == 0 {
-		return preserved
-	}
-	if len(preserved) == 0 {
-		return derived
-	}
-
-	preservedByID := make(map[string]enterprisearchive.RuntimeSettingParityEntry, len(preserved))
-	for _, entry := range preserved {
-		preservedByID[entry.ID] = entry
-	}
-
-	merged := make([]enterprisearchive.RuntimeSettingParityEntry, 0, len(derived)+len(preserved))
-	for _, entry := range derived {
-		if preservedEntry, ok := preservedByID[entry.ID]; ok {
-			entry.RuntimeFiles = appendUniqueStrings(
-				append([]string(nil), preservedEntry.RuntimeFiles...),
-				entry.RuntimeFiles...,
-			)
-			if len(entry.Fields) == 0 {
-				entry.Fields = append([]string(nil), preservedEntry.Fields...)
-			}
-			// A script-derived report can prove that the destination field is now
-			// configured, but it cannot disprove an import-time fidelity finding
-			// (for example RANDOM think time mapped to recorded defaults). Keep
-			// that source finding until review relaxes the migration policy.
-			if validationMustPreserveImportedRuntimeFinding(preservedEntry.Status) {
-				entry.Status = preservedEntry.Status
-				if preservedEntry.Area != "" {
-					entry.Area = preservedEntry.Area
-				}
-				if preservedEntry.Concept != "" {
-					entry.Concept = preservedEntry.Concept
-				}
-				if len(preservedEntry.Fields) > 0 {
-					entry.Fields = append([]string(nil), preservedEntry.Fields...)
-				}
-				if preservedEntry.Notes != "" {
-					entry.Notes = preservedEntry.Notes
-				}
-			}
-			delete(preservedByID, entry.ID)
-		}
-		merged = append(merged, entry)
-	}
-
-	// Some source-only controls deliberately have no destination field and
-	// therefore cannot appear in BuildRTSParityReportFromScript. Retain them as
-	// review evidence instead of silently dropping them during validation.
-	for _, entry := range preserved {
-		if _, ok := preservedByID[entry.ID]; !ok {
-			continue
-		}
-		entry.Fields = append([]string(nil), entry.Fields...)
-		entry.RuntimeFiles = append([]string(nil), entry.RuntimeFiles...)
-		merged = append(merged, entry)
-		delete(preservedByID, entry.ID)
-	}
-
-	return merged
-}
-
-func validationMustPreserveImportedRuntimeFinding(status enterprisearchive.RuntimeSettingStatus) bool {
-	switch status {
-	case enterprisearchive.RuntimeSettingStatusPartial,
-		enterprisearchive.RuntimeSettingStatusCompatibilityOnly,
-		enterprisearchive.RuntimeSettingStatusNonApplicable,
-		enterprisearchive.RuntimeSettingStatusBlocked:
-		return true
-	default:
-		return false
-	}
-}
-
-func validationRuntimeSettingMigrationPolicy(script *dsl.Script) enterprisearchive.RuntimeSettingMigrationPolicy {
-	readiness := enterpriseArchiveMigrationReadinessValue(validationImportPreservedValue(script, "runtime_settings_migration_readiness"))
-	if readiness != nil && len(readiness.Policy.BlockStatuses) > 0 {
-		return readiness.Policy
-	}
-	return enterprisearchive.DefaultRuntimeSettingMigrationPolicy()
-}
-
-func validationImportPreservedValue(script *dsl.Script, key string) any {
-	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {
-		return nil
-	}
-	return script.Metadata.Import.Preserved[key]
-}
+var validationImportPreservedValue = importreview.ValidationImportPreservedValue
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -2105,15 +1893,7 @@ func newErrorReference() string {
 	return hex.EncodeToString(buf[:])
 }
 
-type SLABreachReport struct {
-	TestID                            string                             `json:"test_id"`
-	Status                            string                             `json:"status"`
-	SLAEvaluated                      bool                               `json:"sla_evaluated"`
-	SLABreached                       bool                               `json:"sla_breached"`
-	Details                           []string                           `json:"details,omitempty"`
-	TransactionRuleResults            []TransactionSLARuleResult         `json:"transaction_rule_results,omitempty"`
-	TransactionResponseTimeSLAResults []TransactionResponseTimeSLAResult `json:"transaction_response_time_sla_results,omitempty"`
-}
+type SLABreachReport = runcontract.SLABreachReport
 
 func (s *Server) handleGetTestSLAStatus(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

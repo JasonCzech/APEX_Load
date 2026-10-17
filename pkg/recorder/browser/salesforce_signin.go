@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 )
 
 // A browser recording of a Salesforce journey usually starts by signing in:

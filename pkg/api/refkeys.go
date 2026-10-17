@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/buildinfo"
+	"github.com/jasonczech/apexload/pkg/contentmutation"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/refkey"
 )
@@ -78,8 +79,8 @@ func (tr *TestRunner) initRefKeys() {
 		tr.observeAndIndexRefKeyLocked(test.RefKey, test.ID)
 	}
 
-	tr.backfillScriptRefKeysLocked()
-	tr.backfillScenarioRefKeysLocked()
+	tr.backfillScriptRefKeys()
+	tr.backfillScenarioRefKeys()
 	tr.backfillTestRefKeysLocked()
 	tr.backfillArchiveRefKeysLocked()
 }
@@ -100,108 +101,12 @@ func (tr *TestRunner) loadRefSeqSettingLocked(key string) int {
 	return n
 }
 
-func (tr *TestRunner) saveRefSeqSettingLocked(key string, value int) error {
-	if tr.settingsStore == nil {
-		return nil
-	}
-	// Runs with tr.mu held, so the settings write is published to the panic
-	// backstop's in-flight gauge; see beginLockHeldDurableWrite.
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
-	if err := tr.settingsStore.SaveSetting(key, strconv.Itoa(value)); err != nil {
-		return err
-	}
-	return nil
-}
-
-type atomicReferenceSequenceStore interface {
-	NextSettingSequence(key string) (int, error)
-}
-
-type atomicReferenceSequenceFloorStore interface {
-	EnsureSettingSequenceAtLeast(key string, minimum int) (int, error)
-}
-
-// artifactReferenceSequenceAllocator keeps script/scenario sequence storage I/O
-// independent of TestRunner.mu. Its mutex preserves the old single-controller
-// serialization for compatibility stores that do not implement atomic sequence
-// allocation; production stores still provide cross-replica uniqueness.
-type artifactReferenceSequenceAllocator struct {
-	mu      sync.Mutex
-	key     string
-	store   settingsPersistence
-	current int
-}
+type atomicReferenceSequenceStore = contentmutation.AtomicSequenceStore
+type atomicReferenceSequenceFloorStore = contentmutation.AtomicSequenceFloorStore
+type artifactReferenceSequenceAllocator = contentmutation.SequenceAllocator
 
 func newArtifactReferenceSequenceAllocator(key string, current int, store settingsPersistence) *artifactReferenceSequenceAllocator {
-	return &artifactReferenceSequenceAllocator{key: key, current: current, store: store}
-}
-
-func (allocator *artifactReferenceSequenceAllocator) next() (int, error) {
-	if allocator == nil {
-		return 0, fmt.Errorf("artifact reference sequence allocator is not initialized")
-	}
-	allocator.mu.Lock()
-	defer allocator.mu.Unlock()
-	if store, ok := allocator.store.(atomicReferenceSequenceStore); ok {
-		if allocator.current > 0 {
-			if floorStore, floorOK := allocator.store.(atomicReferenceSequenceFloorStore); floorOK {
-				floor, err := floorStore.EnsureSettingSequenceAtLeast(allocator.key, allocator.current)
-				if err != nil {
-					return 0, err
-				}
-				if floor > allocator.current {
-					allocator.current = floor
-				}
-			}
-		}
-		next, err := store.NextSettingSequence(allocator.key)
-		for err == nil && next <= allocator.current {
-			next, err = store.NextSettingSequence(allocator.key)
-		}
-		if err == nil {
-			allocator.current = next
-		}
-		return next, err
-	}
-	current := allocator.current
-	if allocator.store != nil {
-		raw, err := allocator.store.GetSetting(allocator.key)
-		if err != nil {
-			return 0, err
-		}
-		if persisted, parseErr := strconv.Atoi(strings.TrimSpace(raw)); parseErr == nil && persisted > current {
-			current = persisted
-		}
-	}
-	next := current + 1
-	if allocator.store != nil {
-		if err := allocator.store.SaveSetting(allocator.key, strconv.Itoa(next)); err != nil {
-			return 0, err
-		}
-	}
-	allocator.current = next
-	return next, nil
-}
-
-func (allocator *artifactReferenceSequenceAllocator) observe(sequence int) {
-	if allocator == nil || sequence <= 0 {
-		return
-	}
-	allocator.mu.Lock()
-	if sequence > allocator.current {
-		allocator.current = sequence
-	}
-	allocator.mu.Unlock()
-}
-
-func (allocator *artifactReferenceSequenceAllocator) bindStore(store settingsPersistence) {
-	if allocator == nil {
-		return
-	}
-	allocator.mu.Lock()
-	allocator.store = store
-	allocator.mu.Unlock()
+	return contentmutation.NewSequenceAllocator(key, current, store)
 }
 
 // runReferenceSequenceAllocator is shared by the live runner and every
@@ -285,61 +190,26 @@ func (allocator *runReferenceSequenceAllocator) observe(day string, sequence int
 	allocator.byDay[day] = sequence
 }
 
-// allocateRefSequenceLocked is the compatibility/bootstrap fallback for callers
-// without a dedicated artifact allocator. New authoring paths use the allocator
-// directly outside tr.mu; this fallback remains counted because it runs locked.
-func (tr *TestRunner) allocateRefSequenceLocked(key string, current int) (int, error) {
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
-	if store, ok := tr.settingsStore.(atomicReferenceSequenceStore); ok {
-		return store.NextSettingSequence(key)
-	}
-	next := current + 1
-	if tr.settingsStore != nil {
-		persisted := tr.loadRefSeqSettingLocked(key)
-		if persisted >= next {
-			next = persisted + 1
-		}
-		if err := tr.saveRefSeqSettingLocked(key, next); err != nil {
-			return 0, err
-		}
-	}
-	return next, nil
-}
-
+// nextScriptSeqLocked temporarily releases the live-state mutex for allocation.
+// The content mutation owner remains held by its caller across this boundary.
 func (tr *TestRunner) nextScriptSeqLocked() (int, error) {
-	var next int
-	var err error
-	if tr.scriptRefSeqAllocator != nil {
-		tr.scriptRefSeqAllocator.bindStore(tr.settingsStore)
-		next, err = tr.scriptRefSeqAllocator.next()
-	} else {
-		next, err = tr.allocateRefSequenceLocked(refSeqSettingKey(tr.envCode, refkey.TypeScript), tr.refScriptSeq)
-	}
-	if err == nil {
-		tr.refScriptSeq = next
-	}
-	return next, err
+	return contentmutation.OutsideLock(&tr.mu, tr.nextScriptSeqOutsideRunnerLock)
 }
 
 func (tr *TestRunner) nextScenarioSeqLocked() (int, error) {
-	var next int
-	var err error
-	if tr.scenarioRefSeqAllocator != nil {
-		tr.scenarioRefSeqAllocator.bindStore(tr.settingsStore)
-		next, err = tr.scenarioRefSeqAllocator.next()
-	} else {
-		next, err = tr.allocateRefSequenceLocked(refSeqSettingKey(tr.envCode, refkey.TypeScenario), tr.refScenarioSeq)
-	}
-	if err == nil {
-		tr.refScenarioSeq = next
-	}
-	return next, err
+	return contentmutation.OutsideLock(&tr.mu, tr.nextScenarioSeqOutsideRunnerLock)
 }
 
 func (tr *TestRunner) nextScriptSeqOutsideRunnerLock() (int, error) {
-	tr.scriptRefSeqAllocator.bindStore(tr.settingsStore)
-	next, err := tr.scriptRefSeqAllocator.next()
+	tr.mu.Lock()
+	if tr.scriptRefSeqAllocator == nil {
+		tr.scriptRefSeqAllocator = newArtifactReferenceSequenceAllocator(refSeqSettingKey(tr.envCode, refkey.TypeScript), tr.refScriptSeq, tr.settingsStore)
+	}
+	allocator, floor, settings := tr.scriptRefSeqAllocator, tr.refScriptSeq, tr.settingsStore
+	tr.mu.Unlock()
+	allocator.BindStore(settings)
+	allocator.Observe(floor)
+	next, err := allocator.Next()
 	if err != nil {
 		return 0, err
 	}
@@ -352,8 +222,15 @@ func (tr *TestRunner) nextScriptSeqOutsideRunnerLock() (int, error) {
 }
 
 func (tr *TestRunner) nextScenarioSeqOutsideRunnerLock() (int, error) {
-	tr.scenarioRefSeqAllocator.bindStore(tr.settingsStore)
-	next, err := tr.scenarioRefSeqAllocator.next()
+	tr.mu.Lock()
+	if tr.scenarioRefSeqAllocator == nil {
+		tr.scenarioRefSeqAllocator = newArtifactReferenceSequenceAllocator(refSeqSettingKey(tr.envCode, refkey.TypeScenario), tr.refScenarioSeq, tr.settingsStore)
+	}
+	allocator, floor, settings := tr.scenarioRefSeqAllocator, tr.refScenarioSeq, tr.settingsStore
+	tr.mu.Unlock()
+	allocator.BindStore(settings)
+	allocator.Observe(floor)
+	next, err := allocator.Next()
 	if err != nil {
 		return 0, err
 	}
@@ -412,12 +289,10 @@ func (tr *TestRunner) observeAndIndexRefKeyLocked(key string, id string) {
 	case refkey.TypeScript:
 		if parts.Seq > tr.refScriptSeq {
 			tr.refScriptSeq = parts.Seq
-			tr.saveRefSeqSettingLocked(refSeqSettingKey(tr.envCode, refkey.TypeScript), tr.refScriptSeq)
 		}
 	case refkey.TypeScenario:
 		if parts.Seq > tr.refScenarioSeq {
 			tr.refScenarioSeq = parts.Seq
-			tr.saveRefSeqSettingLocked(refSeqSettingKey(tr.envCode, refkey.TypeScenario), tr.refScenarioSeq)
 		}
 	case refkey.TypeRun:
 		day := parts.Date.Format(refRunDateLayout)
@@ -507,9 +382,7 @@ func (tr *TestRunner) resolveRefKeyLocked(id string) string {
 	return id
 }
 
-func (tr *TestRunner) backfillScriptRefKeysLocked() {
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
+func (tr *TestRunner) backfillScriptRefKeys() {
 	scripts := make([]*StoredScript, 0, len(tr.scripts))
 	for _, script := range tr.scripts {
 		if script != nil && strings.TrimSpace(script.RefKey) == "" {
@@ -529,7 +402,7 @@ func (tr *TestRunner) backfillScriptRefKeysLocked() {
 		} else if strings.TrimSpace(stored.Version) != "" {
 			version = scriptRefVersion(stored.Version)
 		}
-		sequence, err := tr.nextScriptSeqLocked()
+		sequence, err := tr.nextScriptSeqOutsideRunnerLock()
 		if err != nil {
 			slog.Warn("failed to allocate script reference key", "script_id", stored.ID, "error", err)
 			continue
@@ -582,9 +455,7 @@ func storedScriptBackfillBefore(left *StoredScript, right *StoredScript) bool {
 	return left.ID < right.ID
 }
 
-func (tr *TestRunner) backfillScenarioRefKeysLocked() {
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
+func (tr *TestRunner) backfillScenarioRefKeys() {
 	scenarios := make([]*StoredScenario, 0, len(tr.scenarios))
 	for _, scenario := range tr.scenarios {
 		if scenario != nil && strings.TrimSpace(scenario.RefKey) == "" {
@@ -602,7 +473,7 @@ func (tr *TestRunner) backfillScenarioRefKeysLocked() {
 		return left.ID < right.ID
 	})
 	for _, stored := range scenarios {
-		sequence, err := tr.nextScenarioSeqLocked()
+		sequence, err := tr.nextScenarioSeqOutsideRunnerLock()
 		if err != nil {
 			slog.Warn("failed to allocate scenario reference key", "scenario_id", stored.ID, "error", err)
 			continue
@@ -739,4 +610,26 @@ func scriptRefVersion(version string) int {
 		return 1
 	}
 	return n
+}
+
+// flushContentReferenceFloors persists observed imported/reference keys after
+// releasing the live-state mutex. A failed floor update is retried by the next
+// allocation; allocation still checks the observed in-memory floor.
+func (tr *TestRunner) flushContentReferenceFloors() {
+	tr.mu.RLock()
+	script, scenario := tr.scriptRefSeqAllocator, tr.scenarioRefSeqAllocator
+	scriptFloor, scenarioFloor, settings := tr.refScriptSeq, tr.refScenarioSeq, tr.settingsStore
+	tr.mu.RUnlock()
+	for _, item := range []struct {
+		allocator *artifactReferenceSequenceAllocator
+		floor     int
+	}{{script, scriptFloor}, {scenario, scenarioFloor}} {
+		if item.allocator == nil {
+			continue
+		}
+		item.allocator.BindStore(settings)
+		if err := item.allocator.PersistFloor(item.floor); err != nil {
+			slog.Warn("failed to persist reference-key sequence floor", "key", item.allocator.Key(), "error", err)
+		}
+	}
 }

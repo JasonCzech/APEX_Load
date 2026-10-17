@@ -1192,15 +1192,9 @@ func expandReplayAction(
 			return replayNext, false
 		}
 		loop := action.Control
-		maxPasses := controlLoopMaxPasses(loop)
-		outerLoopIndex, hadOuterLoopIndex := vu.Variables["loop_index"]
-		restoreLoopIndex := func() {
-			if hadOuterLoopIndex {
-				vu.Variables["loop_index"] = outerLoopIndex
-			} else {
-				delete(vu.Variables, "loop_index")
-			}
-		}
+		cursor := newControlLoopCursor(vu, loop)
+		// Replay keeps bindings visible through container think time.
+		defer cursor.restoreBindings()
 
 		// runPass replays loop.Steps once for a given iteration path, returning the
 		// loop-level signal (next/break/continue) or replayStop when a child failed
@@ -1225,77 +1219,25 @@ func expandReplayAction(
 			return replayNext, false
 		}
 
-		// foreach mode (precedence: for_each > count > condition).
-		if loop.ForEach != nil {
-			rows := vu.foreachRows(loop.ForEach)
-			restoreRows := vu.captureForEachRestore(loop.ForEach.Var, rows)
-			defer restoreRows()
-			defer restoreLoopIndex()
-			for pass := 0; pass < rows.Len() && pass < maxPasses; pass++ {
-				row, receipt := rows.rowWithReceipt(pass)
-				if ctx.Err() != nil {
-					return replayStop, true
-				}
-				vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
-				vu.bindForEachRow(loop.ForEach.Var, row)
-				vu.recordReplayRuntimeRow("foreach", strings.TrimSpace(loop.ForEach.Source), strings.TrimSpace(loop.ForEach.Var), receipt)
-				childIterPath := append(append([]int(nil), iterationPath...), pass+1)
-				if loop.ForEach.Condition != nil {
-					condOK, evidence := vu.evalConditionEvidence(loop.ForEach.Condition)
-					publishConditionEvidence(vu, onProgress, report, action, phase, actionIndex, stepPath, childIterPath, evidence)
-					if !condOK {
-						break
-					}
-				}
-				flow, abort := runPass(childIterPath)
-				if abort {
-					return replayStop, true
-				}
-				if flow == replayStop {
-					return replayStop, false
-				}
-				if flow == replayBreak {
-					break
-				}
-				if flow == replayExitIteration {
-					return replayExitIteration, false
-				}
-				// replayContinue / replayNext: advance to the next row.
-			}
-			if !applyReplayContainerThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg, report) {
-				return replayStop, true
-			}
-			return replayNext, false
-		}
-
-		defer restoreLoopIndex()
-		fixed := loop.Count > 0
-		for pass := 0; ; pass++ {
+		for cursor.pending() {
 			if ctx.Err() != nil {
 				return replayStop, true
 			}
-			vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
-			if fixed {
-				if pass >= loop.Count || pass >= maxPasses {
+			pass, ok := cursor.next()
+			if !ok {
+				break
+			}
+			if loop.ForEach != nil {
+				vu.recordReplayRuntimeRow("foreach", strings.TrimSpace(loop.ForEach.Source), strings.TrimSpace(loop.ForEach.Var), pass.rowReceipt)
+			}
+			childIterPath := append(append([]int(nil), iterationPath...), pass.index)
+			if pass.checkCondition {
+				condOK, evidence := vu.evalConditionEvidence(pass.condition)
+				publishConditionEvidence(vu, onProgress, report, action, phase, actionIndex, stepPath, childIterPath, evidence)
+				if !condOK {
 					break
-				}
-			} else {
-				if pass >= maxPasses {
-					break
-				}
-				// do_while runs the body once before the predicate is first checked
-				// (post-test), mirroring the live engine, so a loop whose
-				// terminal-state var persists from a prior iteration re-primes it on
-				// pass 0 instead of being skipped.
-				if !(loop.DoWhile && pass == 0) {
-					condOK, evidence := vu.evalConditionEvidence(loop.Condition)
-					publishConditionEvidence(vu, onProgress, report, action, phase, actionIndex, stepPath, append(append([]int(nil), iterationPath...), pass+1), evidence)
-					if !condOK {
-						break
-					}
 				}
 			}
-			childIterPath := append(append([]int(nil), iterationPath...), pass+1)
 			flow, abort := runPass(childIterPath)
 			if abort {
 				return replayStop, true

@@ -3,7 +3,6 @@ package jmeter
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"regexp"
 	"slices"
 	"sort"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
@@ -20,7 +20,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 type ConvertOptions struct {

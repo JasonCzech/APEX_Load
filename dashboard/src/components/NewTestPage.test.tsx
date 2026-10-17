@@ -139,6 +139,9 @@ describe('NewTestPage', () => {
   })
 
   beforeEach(() => {
+    // Child monitoring controls use the shared transport directly. Keep their
+    // unavailable-capability state local instead of contacting jsdom's origin.
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Monitoring capabilities unavailable in this fixture')))
     window.localStorage.clear()
     window.sessionStorage.clear()
     projectMock.activeProject = { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
@@ -499,6 +502,7 @@ describe('NewTestPage', () => {
     window.sessionStorage.clear()
     vi.clearAllMocks()
     vi.useRealTimers()
+    vi.unstubAllGlobals()
   })
 
   it('edits and round-trips random delay bounds in the global run-default editor', async () => {

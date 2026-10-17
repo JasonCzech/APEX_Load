@@ -28,7 +28,7 @@ import { scenarioScriptReadiness } from './scenarioScriptReadiness'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import LoadPlanChart from './LoadPlanChart'
-import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveReport, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary, TrafficProfile, TrafficProfileDeriveResponse } from '../types'
+import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveReport, ScenarioDataPoolBinding, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary, TrafficProfileDeriveResponse } from '../types'
 import { type ScriptConfig } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
@@ -115,6 +115,8 @@ import type { RunLoadProfilePreview } from './newTestRunModel'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 import { retargetRecent } from '../desktop/desktopRecents'
 import { savedScenarioBuilderHash } from './importScenario'
+import { persistScenarioAuthoringDraft, persistScenarioProjectDraft, restoreScenarioDraftBaseline } from './scenarioAuthoringWorkflow'
+import type { ScenarioFormState, ScenarioFormGroup, ScenarioStartChoice } from '../types/scenarioAuthoring'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -134,50 +136,11 @@ interface Props {
   onScriptWorkflowChange?: (active: boolean) => void
 }
 
-export interface ScenarioFormState {
-  termination_mode?: 'duration' | 'iterations'
-  name: string
-  duration: string
-  /** Preserved even though start delay is not currently exposed by this editor. */
-  start_delay: string
-  groups: ScenarioFormGroup[]
-  scenario_mode: ScenarioMode
-  script_shakeout: boolean
-  resource_baseline: boolean
-  goal_config?: GoalConfig
-  traffic_profile?: TrafficProfile
-  /**
-   * The scenario-wide runtime defaults, as stored. Every editor writes this
-   * canonical override directly (AUTH-3): there are no flat display mirrors.
-   */
-  runtime_settings?: RuntimeSettingsOverride
-  assignment?: GeneratorAssignmentSettings
-  /** Canonical data-pool bindings shared by editing, validation and submission. */
-  data_pools?: ScenarioDataPoolBinding[]
-}
-
-export interface ScenarioFormGroup {
-  name: string
-  script_id: string
-  role?: 'load' | 'observer'
-  vusers: number
-  ramp_up: string
-	ramp_down: string
-	start_offset?: string
-  stages: LoadStageDraft[]
-  iterations?: number
-  initialization: 'at_runtime' | 'at_once'
-  /** Per-group runtime overrides layered over the scenario-wide defaults. */
-  runtimeSettings?: ScenarioRuntimeSettingsDraft
-  assignment?: GeneratorAssignmentSettings
-	transactionResponseTimeSlaMs?: number
-}
-
 const SCENARIO_SORT_FIELDS = ['updated_at', 'name', 'scripts', 'data_pools', 'created_at', 'associated_releases', 'last_run_test_id', 'last_run_at', 'last_run_ended_at', 'result_count'] as const
 type ScenarioSortField = (typeof SCENARIO_SORT_FIELDS)[number]
 const SORT_DIRECTIONS = ['asc', 'desc'] as const
 type ScriptLibrarySortField = 'name' | 'created_at' | 'last_run_at' | 'associated_scenarios' | 'associated_releases' | 'protocol'
-export type ScenarioStartChoice = ScenarioSourceMode | 'goal' | ''
+
 
 // Workload shape backing the production traffic-profile workflow. Its domain
 // feature gates the workflow's entry points and its analyze/derive endpoints.
@@ -2959,16 +2922,16 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     savingRef.current = true
     setSavePending(true)
     try {
-      // An edit never falls back to a create; updateScenario refuses a missing baseline.
-      const saved = editingId ? await api.updateScenario(editingId, payload, baseline as ScenarioAuthoringBaseline) : await api.createScenario(payload)
-      if (!stillCurrent()) return null
-      if (!saved?.id) {
+      const persisted = await persistScenarioAuthoringDraft({
+        editingId, payload, baseline, projectId: activeProjectId || undefined,
+      }, { api, isCurrent: stillCurrent })
+      if (persisted.kind === 'superseded') return null
+      if (persisted.kind === 'incomplete') {
         setError('The controller returned an incomplete save response. Check the scenario library before retrying.')
         return null
       }
-      let committed: ScenarioAuthoringBaseline | null = null
-      try { committed = scenarioBaselineFromRead(saved, activeProjectId || undefined) } catch { committed = null }
-      setScenarioBaseline(committed)
+      const saved = persisted.saved
+      setScenarioBaseline(persisted.baseline)
       originalShapeIdRef.current = selectedShapeId
       setSavedNotice(`Saved ${saved.name || form.name}${saved.ref_key ? ` (${saved.ref_key})` : ''}.`)
       return saved
@@ -3029,17 +2992,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     savingRef.current = true
     setSavePending(true)
     try {
-      const current = projectDraftRef.current
-      let saved
-      if (current) {
-        try {
-          saved = await api.updateScenarioDraft(projectId, current.id, { ...body, revision: current.revision })
-        } catch (cause) {
-          // Deleted elsewhere since: save it again as a new draft.
-          if (!(cause instanceof ApiError && cause.status === 404)) throw cause
-          saved = await api.createScenarioDraft(projectId, body)
-        }
-      } else saved = await api.createScenarioDraft(projectId, body)
+      const saved = await persistScenarioProjectDraft(projectId, projectDraftRef.current, body, api)
       if (currentProjectIdRef.current !== projectId) return false
       // Unless the builder has moved on to other work meanwhile, it now
       // continues this draft, and the project holds its work.
@@ -3118,13 +3071,13 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     const generation = scenarioDraftGenerationRef.current
     const scopeProjectId = activeProjectId
     try {
-      const fresh = await api.getScenario(id)
-      if (generation !== scenarioDraftGenerationRef.current || currentProjectIdRef.current !== scopeProjectId) return
-      const baseline = fresh?.id === id ? scenarioBaselineFromRead(fresh, scopeProjectId || undefined) : null
-      const unchanged = baseline && (draft.baselineTag ? baseline.etag === draft.baselineTag : fresh.updated_at === draft.editingUpdatedAt)
-      if (baseline && unchanged) {
+      const restored = await restoreScenarioDraftBaseline(id, scopeProjectId, draft, {
+        api, isCurrent: () => generation === scenarioDraftGenerationRef.current && currentProjectIdRef.current === scopeProjectId,
+      })
+      if (restored.kind === 'superseded') return
+      if (restored.kind === 'baseline') {
         resumedBaselineTagRef.current = ''
-        setScenarioBaseline(baseline)
+        setScenarioBaseline(restored.baseline)
       } else if (draft.baselineTag) setScenarioConflict(conflict => conflict || { reason: 'The scenario changed after this draft was saved. Load the current baseline, review the differences, then reapply your draft.', loading: false, current: null })
     } catch { /* The next save asks for a reviewed baseline. */ }
   }

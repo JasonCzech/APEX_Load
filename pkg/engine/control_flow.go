@@ -218,6 +218,104 @@ func controlLoopMaxPasses(control *dsl.ControlFlow) int {
 	return defaultControlLoopMaxIterations
 }
 
+// controlLoopCursor owns the loop language's pass order and temporary bindings.
+// Execution adapters retain their own cancellation, flow signals, observation,
+// and think-time ordering. In particular, replay observes predicates before it
+// dispatches a body, while live execution does not publish debugger evidence.
+type controlLoopCursor struct {
+	vu                  *VUser
+	control             *dsl.ControlFlow
+	rows                dataRowView
+	maxPasses           int
+	pass                int
+	restore             func()
+	conditionCapReached bool
+}
+
+type controlLoopPass struct {
+	index          int
+	condition      *dsl.Condition
+	checkCondition bool
+	rowReceipt     dataRowReceipt
+}
+
+func newControlLoopCursor(vu *VUser, control *dsl.ControlFlow) *controlLoopCursor {
+	outerIndex, hadIndex := vu.Variables["loop_index"]
+	restoreRows := func() {}
+	cursor := &controlLoopCursor{vu: vu, control: control, maxPasses: controlLoopMaxPasses(control)}
+	if control.ForEach != nil {
+		cursor.rows = vu.foreachRows(control.ForEach)
+		restoreRows = vu.captureForEachRestore(control.ForEach.Var, cursor.rows)
+	}
+	cursor.restore = func() {
+		restoreRows()
+		if hadIndex {
+			vu.Variables["loop_index"] = outerIndex
+		} else {
+			delete(vu.Variables, "loop_index")
+		}
+	}
+	return cursor
+}
+
+// pending preserves the foreach boundary: an empty/exhausted row view has no
+// next pass. Count/condition loops perform their final context/bounds probe in
+// the adapter, as they did before sharing this cursor.
+func (cursor *controlLoopCursor) pending() bool {
+	return cursor.control.ForEach == nil || cursor.pass < min(cursor.rows.Len(), cursor.maxPasses)
+}
+
+func (cursor *controlLoopCursor) next() (controlLoopPass, bool) {
+	pass := cursor.pass
+	cursor.pass++
+	current := controlLoopPass{index: pass + 1}
+	cursor.vu.Variables["loop_index"] = strconv.Itoa(current.index)
+	switch {
+	case cursor.control.ForEach != nil:
+		if pass >= min(cursor.rows.Len(), cursor.maxPasses) {
+			return current, false
+		}
+		row, receipt := cursor.rows.rowWithReceipt(pass)
+		cursor.vu.bindForEachRow(cursor.control.ForEach.Var, row)
+		current.rowReceipt = receipt
+		current.condition = cursor.control.ForEach.Condition
+		current.checkCondition = current.condition != nil
+	case cursor.control.Count > 0:
+		if pass >= min(cursor.control.Count, cursor.maxPasses) {
+			return current, false
+		}
+	default:
+		if pass >= cursor.maxPasses {
+			cursor.conditionCapReached = cursor.control.MaxIterations <= 0
+			return current, false
+		}
+		current.condition = cursor.control.Condition
+		current.checkCondition = !(cursor.control.DoWhile && pass == 0)
+	}
+	return current, true
+}
+
+func (cursor *controlLoopCursor) implicitTruncation() int {
+	if cursor.control.MaxIterations > 0 {
+		return 0
+	}
+	count := cursor.control.Count
+	if cursor.control.ForEach != nil {
+		count = cursor.rows.Len()
+	}
+	if count > cursor.maxPasses {
+		return count
+	}
+	return 0
+}
+
+func (cursor *controlLoopCursor) restoreBindings() {
+	if cursor.restore != nil {
+		cursor.restore()
+		cursor.restore = nil
+	}
+}
+
 // foreachRows resolves the rows a foreach control_loop iterates over. The rows
 // are read-only column→value maps (raw column names) that never advance the
 // per-VUser data cursor, so foreach is independent of the per-iteration

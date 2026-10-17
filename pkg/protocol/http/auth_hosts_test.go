@@ -16,7 +16,7 @@ func TestParseAuthHostScopes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("valid hosts rejected: %v", err)
 	}
-	if len(scopes) != 4 || scopes[0].host != "shop.test" || scopes[1].port != "8443" || scopes[2].host != "::1" {
+	if len(scopes) != 4 || scopes[0].Host != "shop.test" || scopes[1].Port != "8443" || scopes[2].Host != "::1" {
 		t.Fatalf("scopes = %+v", scopes)
 	}
 	for _, bad := range []string{"", "https://shop.test", "shop.test/path", "*.shop.test", "user@shop.test", "shop.test:"} {

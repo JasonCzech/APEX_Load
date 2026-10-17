@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/api"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 )
 
 func TestBuildJUnitReportNoSLA(t *testing.T) {
@@ -100,8 +100,8 @@ func TestBuildJUnitReportPreservesStructuredTransactionRuleEvidence(t *testing.T
 	observed := 912.0
 	report := buildJUnitReport(junitInput{sla: &SLASummary{
 		Evaluated: true,
-		TransactionRuleResults: []api.TransactionSLARuleResult{{
-			Rule:   api.TransactionSLARule{Transaction: "Checkout", Metric: "p95_duration_ms", Comparator: "lte", Threshold: 800, Severity: "warning"},
+		TransactionRuleResults: []runcontract.TransactionSLARuleResult{{
+			Rule:   runcontract.TransactionSLARule{Transaction: "Checkout", Metric: "p95_duration_ms", Comparator: "lte", Threshold: 800, Severity: "warning"},
 			Status: "warning", Observed: &observed, MatchedCount: 42, Message: "breached",
 		}},
 	}})

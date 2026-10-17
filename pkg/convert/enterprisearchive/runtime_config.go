@@ -16,8 +16,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/javarunner"
-	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browsercontract"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 

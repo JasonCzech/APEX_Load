@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"context"
 	"fmt"
@@ -18,7 +20,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-const javaVuserApprovalEvidenceKey = "java_vuser_authoring_approval"
+const javaVuserApprovalEvidenceKey = importreview.JavaVuserApprovalEvidenceKey
 
 const (
 	javaVuserRuntimeHealthyTTL   = 15 * time.Second
@@ -293,10 +295,7 @@ func stampJavaVuserAuthoringApproval(script *dsl.Script, sessionID string) {
 	}
 }
 
-type javaVuserApprovalEvidence struct {
-	sessionID   string
-	contentHash string
-}
+type javaVuserApprovalEvidence = importreview.JavaVuserApprovalEvidence
 
 func readJavaVuserAuthoringApproval(script *dsl.Script) (javaVuserApprovalEvidence, bool) {
 	if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
@@ -307,37 +306,18 @@ func readJavaVuserAuthoringApproval(script *dsl.Script) (javaVuserApprovalEviden
 		return javaVuserApprovalEvidence{}, false
 	}
 	result := javaVuserApprovalEvidence{
-		sessionID:   strings.TrimSpace(fmt.Sprint(evidence["session_id"])),
-		contentHash: strings.ToLower(strings.TrimSpace(fmt.Sprint(evidence["content_hash"]))),
+		SessionID:   strings.TrimSpace(fmt.Sprint(evidence["session_id"])),
+		ContentHash: strings.ToLower(strings.TrimSpace(fmt.Sprint(evidence["content_hash"]))),
 	}
-	if result.sessionID == "" || !isCanonicalSHA256(result.contentHash) {
+	if result.SessionID == "" || !isCanonicalSHA256(result.ContentHash) {
 		return javaVuserApprovalEvidence{}, false
 	}
 	return result, true
 }
 
-func clearJavaVuserAuthoringApproval(script *dsl.Script) {
-	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {
-		return
-	}
-	delete(script.Metadata.Import.Preserved, javaVuserApprovalEvidenceKey)
-}
+var clearJavaVuserAuthoringApproval = importreview.ClearJavaVuserAuthoringApproval
 
-func writeJavaVuserAuthoringApproval(script *dsl.Script, evidence javaVuserApprovalEvidence) {
-	if script.Metadata == nil {
-		script.Metadata = &dsl.ScriptMetadata{}
-	}
-	if script.Metadata.Import == nil {
-		script.Metadata.Import = &dsl.ImportMetadata{}
-	}
-	if script.Metadata.Import.Preserved == nil {
-		script.Metadata.Import.Preserved = map[string]any{}
-	}
-	script.Metadata.Import.Preserved[javaVuserApprovalEvidenceKey] = map[string]any{
-		"session_id":   evidence.sessionID,
-		"content_hash": evidence.contentHash,
-	}
-}
+var writeJavaVuserAuthoringApproval = importreview.WriteJavaVuserAuthoringApproval
 
 // javaVuserOverrideChangedExecutableSurface reports whether a scenario/runtime
 // override moved the candidate script away from the approved baseline in a way
@@ -389,13 +369,7 @@ func scriptHasJavaClasspathAssets(script *dsl.Script) bool {
 	return script != nil && len(script.Config.JavaVuser.ClasspathAssets) > 0
 }
 
-func scriptRequiresJavaVuserAuthoringApproval(script *dsl.Script) bool {
-	return script != nil &&
-		strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") &&
-		(javaVuserActionsRequireRunner(script.Init) ||
-			javaVuserActionsRequireRunner(script.Actions) ||
-			javaVuserActionsRequireRunner(script.Teardown))
-}
+var scriptRequiresJavaVuserAuthoringApproval = importreview.ScriptRequiresJavaVuserAuthoringApproval
 
 // restoreJavaVuserAuthoringApprovalForUpdate rejects caller-supplied
 // provenance and restores only an approval already verified against the
@@ -439,14 +413,14 @@ func (tr *TestRunner) javaVuserApprovalConflict(script *dsl.Script) string {
 	if !ok {
 		return "Java Vuser scripts must be approved through an authoring session before launch"
 	}
-	if evidence.contentHash != hashLibraryScript(script) {
+	if evidence.ContentHash != hashLibraryScript(script) {
 		return "Java Vuser authoring approval is missing or stale; review and approve the current script revision"
 	}
 	reader, ok := tr.scriptStore.(authoringSessionReader)
 	if !ok {
 		return "Java Vuser authoring approval cannot be verified by the configured store"
 	}
-	session, err := reader.GetAuthoringSession(evidence.sessionID)
+	session, err := reader.GetAuthoringSession(evidence.SessionID)
 	if err != nil || session == nil || session.Status != "approved" || normalizeProjectID(session.ProjectID) != normalizeProjectID(script.ProjectID) {
 		return "Java Vuser authoring approval is missing or stale; review and approve the current script revision"
 	}
@@ -727,43 +701,9 @@ func groupRequiresJavaVuserPhaseLifecycle(group TestGroup) bool {
 		javaVuserActionsRequirePhaseLifecycle(group.script.Teardown)
 }
 
-func javaVuserActionsRequirePhaseLifecycle(actions []dsl.Action) bool {
-	for _, action := range actions {
-		if strings.EqualFold(strings.TrimSpace(action.Type), "java_vuser_run") {
-			method := ""
-			if value, ok := action.Params["method"]; ok && value != nil {
-				method = strings.TrimSpace(fmt.Sprint(value))
-			}
-			if method != "" && !strings.EqualFold(method, "full_lifecycle") {
-				return true
-			}
-		}
-		if action.Control != nil {
-			for _, branch := range action.Control.ActionBranches() {
-				if javaVuserActionsRequirePhaseLifecycle(branch.Actions) {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
+var javaVuserActionsRequirePhaseLifecycle = importreview.JavaVuserActionsRequirePhaseLifecycle
 
-func javaVuserActionsRequireRunner(actions []dsl.Action) bool {
-	for _, action := range actions {
-		if strings.EqualFold(strings.TrimSpace(action.Type), "java_vuser_run") {
-			return true
-		}
-		if action.Control != nil {
-			for _, branch := range action.Control.ActionBranches() {
-				if javaVuserActionsRequireRunner(branch.Actions) {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
+var javaVuserActionsRequireRunner = importreview.JavaVuserActionsRequireRunner
 
 func javaVuserRunnerLaunchConflict(groups []TestGroup) *LaunchConflict {
 	conflicts := (&TestRunner{}).javaVuserRunnerLaunchConflictsLocked(groups)

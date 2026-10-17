@@ -29,7 +29,7 @@ func (s *Service) orphanLocked(testID string, assignment assignedTest, generatio
 		emptyRunSupervisionTokenHash(assignment.runSupervisionTokenHash) {
 		return false
 	}
-	if _, stopping := s.stoppingTests[testID]; stopping {
+	if s.lifecycleCoordinator.isStoppingLocked(testID) {
 		return false
 	}
 	lease := s.runSupervisions[testID]
@@ -147,7 +147,7 @@ func (s *Service) adoptRunLocked(generation uint64, adoption *pb.RunAdoption, re
 	if !sameRunSupervisionTokenHash(assignment.runSupervisionTokenHash, priorHash) {
 		return result(pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_REJECTED, "run supervision token does not match the assignment")
 	}
-	if _, stopping := s.stoppingTests[testID]; stopping {
+	if s.lifecycleCoordinator.isStoppingLocked(testID) {
 		return result(pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, "the run is already stopping")
 	}
 	switch {

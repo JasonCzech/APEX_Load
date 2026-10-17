@@ -547,7 +547,7 @@ func TestReconcileProvisioningRequestsResumesAsyncCapacity(t *testing.T) {
 		t.Fatalf("CreateCapacityInstanceIntent: %v", err)
 	}
 	backend := &fakeCapacityBackend{observation: compute.Observation{ProviderOperationID: "task-existing", Requested: 1, Observed: 1, Ready: 1, Terminal: true, Instances: []compute.Instance{{ProviderID: "task-existing", Healthy: true}}}}
-	server.capacityBackends = fakeCapacityResolver{backend: backend, target: &storage.ExecutionTarget{ID: pool.ExecutionTargetID, Kind: storage.ExecutionTargetAWSECSFargate}}
+	server.capacityBackends = fakeCapacityResolver{backend: &warmCapacityBackend{backend}, target: &storage.ExecutionTarget{ID: pool.ExecutionTargetID, Kind: storage.ExecutionTargetAWSECSFargate}}
 
 	if err := server.reconcileProvisioningRequests(context.Background()); err != nil {
 		t.Fatalf("reconcileProvisioningRequests: %v", err)

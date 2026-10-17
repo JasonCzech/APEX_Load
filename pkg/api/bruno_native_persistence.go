@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"encoding/xml"
 	"errors"
@@ -12,7 +14,7 @@ import (
 )
 
 const protectedBrunoNativeXMLBody = "<apexload-native-xml-body/>"
-const brunoNativeImporterIdentity = "apexload-bruno-native-importer"
+const brunoNativeImporterIdentity = importreview.BrunoNativeImporterIdentity
 
 // preparePersistentBrunoNativeScript applies the ordinary durable-script
 // persistence boundary without allowing any generic response projection to
@@ -65,100 +67,11 @@ func preparePersistentBrunoNativeScript(script *dsl.Script) (*dsl.Script, error)
 // native-import identifiers and auth-mode enums after the generic metadata
 // scrubber has run. The raw Bruno source remains exclusively in the encrypted
 // shared artifact; no authored values or JavaScript are copied back here.
-func restoreBrunoNativeCompactProvenance(projected, source *dsl.Script) {
-	if projected == nil || source == nil ||
-		projected.Metadata == nil || projected.Metadata.Import == nil ||
-		source.Metadata == nil || source.Metadata.Import == nil {
-		return
-	}
-	if source.GeneratedBy != brunoNativeImporterIdentity ||
-		!strings.EqualFold(strings.TrimSpace(source.Metadata.Import.Source), "bruno") {
-		return
-	}
-	nativeAction := false
-	for _, action := range source.Actions {
-		if strings.EqualFold(strings.TrimSpace(anyStringValue(action.Metadata["source_profile"])), "bruno_native") {
-			nativeAction = true
-			break
-		}
-	}
-	if !nativeAction {
-		return
-	}
-	projectedPreserved := projected.Metadata.Import.Preserved
-	sourcePreserved := source.Metadata.Import.Preserved
-	if projectedPreserved == nil || sourcePreserved == nil {
-		return
-	}
+var restoreBrunoNativeCompactProvenance = importreview.RestoreBrunoNativeCompactProvenance
 
-	if mode, ok := sourcePreserved["effective_auth"].(string); ok && isBrunoNativeAuthMode(mode) {
-		projectedPreserved["effective_auth"] = mode
-	}
-	for _, key := range []string{"diagnostic_ids", "finding_ids"} {
-		value, exists := sourcePreserved[key]
-		if !exists {
-			continue
-		}
-		if ids, ok := brunoNativeFindingIDs(value); ok {
-			projectedPreserved[key] = ids
-		} else {
-			delete(projectedPreserved, key)
-		}
-	}
+var isBrunoNativeAuthMode = importreview.IsBrunoNativeAuthMode
 
-	sourceFields, sourceOK := sourcePreserved["effective_fields"].(map[string]any)
-	projectedFields, projectedOK := projectedPreserved["effective_fields"].(map[string]any)
-	if !sourceOK || !projectedOK {
-		return
-	}
-	if mode, ok := sourceFields["auth_mode"].(string); ok && isBrunoNativeAuthMode(mode) {
-		projectedFields["auth_mode"] = mode
-	}
-}
-
-func isBrunoNativeAuthMode(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "inherit", "none", "noauth", "no_auth", "basic", "bearer",
-		"digest", "oauth2", "oauth_2", "apikey", "api_key", "awsv4", "ntlm",
-		"wsse", "unsupported":
-		return true
-	default:
-		return false
-	}
-}
-
-func brunoNativeFindingIDs(value any) ([]string, bool) {
-	var values []string
-	switch typed := value.(type) {
-	case []string:
-		values = typed
-	case []any:
-		values = make([]string, 0, len(typed))
-		for _, item := range typed {
-			text, ok := item.(string)
-			if !ok {
-				return nil, false
-			}
-			values = append(values, text)
-		}
-	default:
-		return nil, false
-	}
-	for _, value := range values {
-		const prefix = "bruno-native-"
-		if !strings.HasPrefix(value, prefix) || len(value) != len(prefix)+24 {
-			return nil, false
-		}
-		for _, char := range value[len(prefix):] {
-			if !strings.ContainsRune("0123456789abcdef", char) {
-				return nil, false
-			}
-		}
-	}
-	out := make([]string, len(values))
-	copy(out, values)
-	return out, true
-}
+var brunoNativeFindingIDs = importreview.BrunoNativeFindingIDs
 
 func isBrunoNativeXMLAction(action dsl.Action) bool {
 	if !strings.EqualFold(strings.TrimSpace(anyStringValue(action.Metadata["source_profile"])), "bruno_native") {
@@ -167,10 +80,7 @@ func isBrunoNativeXMLAction(action dsl.Action) bool {
 	return strings.HasPrefix(strings.TrimSpace(action.Body), "<")
 }
 
-func anyStringValue(value any) string {
-	text, _ := value.(string)
-	return text
-}
+var anyStringValue = importreview.AnyStringValue
 
 type brunoNativeXMLCredentialFrame struct {
 	name      string

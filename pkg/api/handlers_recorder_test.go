@@ -265,9 +265,7 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	if !strings.Contains(resp.Body.String(), "recorded-secret") || !strings.Contains(resp.Body.String(), "hunter2") {
 		t.Fatalf("stored conversion response did not preserve source credentials: %s", resp.Body.String())
 	}
-	server.importDraftAttestationMu.Lock()
-	attestationCount := len(server.importDraftAttestations)
-	server.importDraftAttestationMu.Unlock()
+	attestationCount := server.memoryImportDraftOwner().Len()
 	if attestationCount != 0 {
 		t.Fatalf("already-committed recording response retained %d unused draft attestation(s)", attestationCount)
 	}

@@ -1,13 +1,14 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"errors"
-	"fmt"
+
 	"net/http"
-	"sort"
+
 	"strings"
 
-	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 )
@@ -50,29 +51,17 @@ func (s *Server) transientStaticIssues(submitted, prepared *dsl.Script, trusted 
 	return validateScriptForReplayWithImportTrust(judged, false)
 }
 
-func replayReviewGateIssues(script *dsl.Script) []string {
-	return scriptReviewGateIssues(script, "replay")
-}
+var replayReviewGateIssues = importreview.ReplayReviewGateIssues
 
 // errScriptReplayBlocked marks a replay a script's own review gates refuse:
 // the caller must resolve them, so it is not a server failure.
-var errScriptReplayBlocked = errors.New("script replay is blocked")
+var errScriptReplayBlocked = importreview.ErrScriptReplayBlocked
 
 // scriptReplayBlockedError is errScriptReplayBlocked with the gates that
 // refused the replay, so a response can list them instead of one long sentence.
-type scriptReplayBlockedError struct {
-	issues []string
-}
+type scriptReplayBlockedError = importreview.ScriptReplayBlockedError
 
-func (e *scriptReplayBlockedError) Error() string {
-	return fmt.Sprintf("%s: %s", errScriptReplayBlocked, strings.Join(e.issues, "; "))
-}
-
-func (e *scriptReplayBlockedError) Unwrap() error { return errScriptReplayBlocked }
-
-func newScriptReplayBlockedError(issues []string) error {
-	return &scriptReplayBlockedError{issues: append([]string(nil), issues...)}
-}
+var newScriptReplayBlockedError = importreview.NewScriptReplayBlockedError
 
 // writeScriptReplayBlocked answers a replay its review gates refused: 409 with
 // the message older clients show plus each gate in issues. It reports whether
@@ -84,19 +73,13 @@ func writeScriptReplayBlocked(w http.ResponseWriter, err error) bool {
 	body := map[string]any{"error": err.Error(), "code": "script_replay_blocked"}
 	var blocked *scriptReplayBlockedError
 	if errors.As(err, &blocked) {
-		body["issues"] = blocked.issues
+		body["issues"] = blocked.Issues()
 	}
 	writeJSON(w, http.StatusConflict, body)
 	return true
 }
 
-func replayReviewGateError(script *dsl.Script) error {
-	issues := replayReviewGateIssues(script)
-	if len(issues) == 0 {
-		return nil
-	}
-	return newScriptReplayBlockedError(issues)
-}
+var replayReviewGateError = importreview.ReplayReviewGateError
 
 // storedScriptReplayGateError protects immutable import gates before a
 // stored-script endpoint applies a caller-supplied draft replacement. Historical
@@ -120,82 +103,13 @@ func launchReviewGateIssues(script *dsl.Script) []string {
 	return scriptReviewGateIssues(script, "launch")
 }
 
-func scriptReviewGateIssues(script *dsl.Script, operation string) []string {
-	return scriptReviewGateIssuesWithBrowserPolicy(script, operation, true)
-}
+var scriptReviewGateIssues = importreview.ScriptReviewGateIssues
 
-func scriptReviewGateIssuesWithBrowserPolicy(
-	script *dsl.Script,
-	operation string,
-	enforceBrowserPolicy bool,
-) []string {
-	if script == nil {
-		return nil
-	}
-	browserProtocol := strings.EqualFold(strings.TrimSpace(script.Protocol), "browser")
-	policy := script.Config.Browser.ReviewPolicy
-	var issues []string
-	err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
-		action := reviewGateSurfaceAction(ref)
-		label := fmt.Sprintf("%s %q", ref.Path, action.Name)
-		if blockers := executionReviewBlockerCodes(action.Metadata); len(blockers) > 0 {
-			details := make([]string, 0, len(blockers))
-			for _, blocker := range blockers {
-				details = append(details, executionBlockerDetail(blocker, action.Metadata))
-			}
-			detail := strings.Join(details, ", ")
-			// The script editor titles this message by its shape
-			// (dashboard/src/components/replayReadinessIssues.ts); a new
-			// wording still shows, just untitled.
-			issues = append(issues, fmt.Sprintf(
-				"%s: execution blocker %s blocks %s until the imported behavior is resolved",
-				label,
-				detail,
-				operation,
-			))
-		}
-		if durableImportReviewGateAction(action) {
-			issues = append(issues, fmt.Sprintf("%s: review-required action blocks %s until review metadata is removed", label, operation))
-		} else if browserProtocol && enforceBrowserPolicy && reviewGatedJavaScriptAction(action) {
-			if !policy.AllowReviewedJavaScript {
-				issues = append(issues, fmt.Sprintf("%s: review-gated JavaScript requires config.browser.review_policy.allow_reviewed_javascript=true before %s", label, operation))
-			}
-		} else if browserProtocol && enforceBrowserPolicy && reviewRequiredAction(action) {
-			if !policy.AllowReviewRequired {
-				issues = append(issues, fmt.Sprintf("%s: review-required action requires config.browser.review_policy.allow_review_required=true before %s", label, operation))
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		issues = append(issues, "script review-gate traversal failed: "+err.Error())
-	}
-	return issues
-}
+var scriptReviewGateIssuesWithBrowserPolicy = importreview.ScriptReviewGateIssuesWithBrowserPolicy
 
-func reviewGateSurfaceAction(ref dslwalk.SurfaceRef) dsl.Action {
-	if ref.Action != nil {
-		return *ref.Action
-	}
-	action := dsl.Action{
-		Name:     ref.Name(),
-		Metadata: ref.Metadata(),
-	}
-	if ref.Request != nil {
-		action.Type, _ = ref.Request["type"].(string)
-	}
-	return action
-}
+var reviewGateSurfaceAction = importreview.ReviewGateSurfaceAction
 
-func executionReviewBlockerCodes(metadata map[string]any) []string {
-	codes := metadataStringSlice(metadata, "execution_blockers")
-	if blocker := metadataString(metadata, "execution_blocker"); blocker != "" {
-		codes = append(codes, blocker)
-	}
-	codes = appendUniqueStrings(nil, codes...)
-	sort.Strings(codes)
-	return codes
-}
+var executionReviewBlockerCodes = importreview.ExecutionReviewBlockerCodes
 
 func scriptHasNativeBrunoReviewGate(script *dsl.Script) bool {
 	if script == nil {
@@ -211,21 +125,9 @@ func scriptHasNativeBrunoReviewGate(script *dsl.Script) bool {
 	return found || err != nil
 }
 
-func reviewGatedJavaScriptAction(action dsl.Action) bool {
-	if !strings.EqualFold(strings.TrimSpace(action.Type), "browser_evaluate_js") {
-		return false
-	}
-	if metadataString(action.Metadata, "review_gate") == "javascript" {
-		return true
-	}
-	return metadataBool(action.Metadata, "review_required") || metadataBool(action.Metadata, "promotion_blocker")
-}
+var reviewGatedJavaScriptAction = importreview.ReviewGatedJavaScriptAction
 
-func reviewRequiredAction(action dsl.Action) bool {
-	return metadataBool(action.Metadata, "review_required") ||
-		metadataBool(action.Metadata, "promotion_blocker") ||
-		metadataString(action.Metadata, "review_gate") == "bruno_javascript"
-}
+var reviewRequiredAction = importreview.ReviewRequiredAction
 
 // durableReviewGateSource declares an importer whose review gates are durable:
 // the block survives browser review policy and cannot be waived per replay.
@@ -238,17 +140,9 @@ func reviewRequiredAction(action dsl.Action) bool {
 // review markers under the browser policy, which an operator can knowingly
 // override. Promoting them to permanent blocks would retroactively make
 // existing TrueClient and enterprise-archive imports unrunnable.
-type durableReviewGateSource struct {
-	// gatePrefix matches review_gate values this importer owns.
-	gatePrefix string
-	// sourceProfile additionally hardens an action carrying the ordinary
-	// review_required/promotion_blocker flags when it came from this importer.
-	sourceProfile string
-}
+type durableReviewGateSource = importreview.DurableReviewGateSource
 
-var durableReviewGateSources = []durableReviewGateSource{
-	{gatePrefix: "bruno_", sourceProfile: "bruno_native"},
-}
+var durableReviewGateSources = importreview.DurableReviewGateSources
 
 // durableImportReviewGateAction reports whether an action carries a gate whose
 // block is durable.
@@ -256,33 +150,16 @@ var durableReviewGateSources = []durableReviewGateSource{
 // The gate itself is the enforcement marker. Requiring its companion flags
 // would let an author bypass the blocker by deleting only review_required or
 // promotion_blocker while leaving the untranslated source behavior in place.
-func durableImportReviewGateAction(action dsl.Action) bool {
-	gate := metadataString(action.Metadata, "review_gate")
-	profile := metadataString(action.Metadata, "source_profile")
-	for _, source := range durableReviewGateSources {
-		if source.gatePrefix != "" && strings.HasPrefix(gate, source.gatePrefix) {
-			return true
-		}
-		if source.sourceProfile != "" && profile == source.sourceProfile &&
-			reviewRequiredAction(action) {
-			return true
-		}
-	}
-	return false
-}
+var durableImportReviewGateAction = importreview.DurableImportReviewGateAction
 
 // metadataBool, metadataString and metadataStringSlice adapt the shared
 // dslwalk extractors to this package's comparison semantics: gate names are
 // lowercased because they are matched against fixed literals, and blocker lists
 // keep source order while dropping duplicates so a review message reads the way
 // the importer wrote it.
-func metadataBool(metadata map[string]any, key string) bool {
-	return dslwalk.MetadataBool(metadata, key)
-}
+var metadataBool = importreview.MetadataBool
 
-func metadataString(metadata map[string]any, key string) string {
-	return strings.ToLower(dslwalk.MetadataString(metadata, key))
-}
+var metadataString = importreview.MetadataString
 
 // executionBlockerDetail is a blocker code with what it is about, when the
 // action says: the variables a Bruno request leaves unset, or the headers an
@@ -290,109 +167,17 @@ func metadataString(metadata map[string]any, key string) string {
 // same hold also covers something else (an HTTP version, multipart fields),
 // so the editor does not present the headers as the only fix. The script
 // editor shows the names (dashboard/src/components/replayReadinessIssues.ts).
-func executionBlockerDetail(code string, metadata map[string]any) string {
-	switch code {
-	case "bruno_missing_variables":
-		if names := metadataStringSlice(metadata, "missing_variables"); len(names) > 0 {
-			return fmt.Sprintf("%s (%s)", code, strings.Join(names, ", "))
-		}
-	case "import_review_required":
-		if names := omittedImportHeaderNames(metadata); len(names) > 0 {
-			noun := "headers"
-			if len(names) == 1 {
-				noun = "header"
-			}
-			label := fmt.Sprintf("%d %s left out", len(names), noun)
-			if !importReviewOnlyForHeaders(metadata) {
-				label = "other review and " + label
-			}
-			return fmt.Sprintf("%s (%s: %s)", code, label, strings.Join(names, ", "))
-		}
-	}
-	return code
-}
+var executionBlockerDetail = importreview.ExecutionBlockerDetail
 
 // importReviewOnlyForHeaders reports whether an import holds the action only
 // for headers it left out.
-func importReviewOnlyForHeaders(metadata map[string]any) bool {
-	if metadata[dsl.ImportMultipartFidelityMetadataKey] != nil || metadata[requestimport.ImportHTTPVersionFidelityMetadataKey] != nil {
-		return false
-	}
-	review, _ := metadata["import_review"].(map[string]any)
-	for _, reason := range metadataStringSlice(review, "reason_codes") {
-		if !strings.HasPrefix(reason, "http_header_") {
-			return false
-		}
-	}
-	return true
-}
+var importReviewOnlyForHeaders = importreview.ImportReviewOnlyForHeaders
 
 // omittedImportHeaderNames lists the headers an import left out of the
 // request, from its header fidelity marker. Markers written before headers
 // were named hold a placeholder, which names nothing.
-func omittedImportHeaderNames(metadata map[string]any) []string {
-	marker, _ := metadata[dsl.ImportHeaderFidelityMetadataKey].(map[string]any)
-	if marker == nil {
-		return nil
-	}
-	var occurrences []map[string]any
-	switch typed := marker["omitted_occurrences"].(type) {
-	case []map[string]any:
-		occurrences = typed
-	case []any:
-		for _, entry := range typed {
-			if occurrence, ok := entry.(map[string]any); ok {
-				occurrences = append(occurrences, occurrence)
-			}
-		}
-	}
-	seen := map[string]bool{}
-	var names []string
-	for _, occurrence := range occurrences {
-		name, _ := occurrence["name"].(string)
-		name = strings.TrimSpace(name)
-		if name == "" || name == "<header>" || name == "<invalid-header>" || seen[name] {
-			continue
-		}
-		seen[name] = true
-		names = append(names, name)
-	}
-	return names
-}
+var omittedImportHeaderNames = importreview.OmittedImportHeaderNames
 
-func metadataStringSlice(metadata map[string]any, key string) []string {
-	values := dslwalk.MetadataStrings(metadata, key)
-	out := make([]string, 0, len(values))
-	seen := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		if _, exists := seen[value]; exists {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	return out
-}
+var metadataStringSlice = importreview.MetadataStringSlice
 
-func appendUniqueStrings(values []string, extra ...string) []string {
-	if len(extra) == 0 {
-		return values
-	}
-	seen := make(map[string]struct{}, len(values)+len(extra))
-	out := make([]string, 0, len(values)+len(extra))
-	for _, value := range values {
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	for _, value := range extra {
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	return out
-}
+var appendUniqueStrings = importreview.AppendUniqueStrings

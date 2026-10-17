@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 )
 
 // browserActionSpecs declares the browser protocol action types. The

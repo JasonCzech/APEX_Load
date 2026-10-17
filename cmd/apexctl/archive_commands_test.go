@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/archivecontract"
 )
 
 func TestVerifyArchiveReturnsReport(t *testing.T) {
@@ -15,7 +15,7 @@ func TestVerifyArchiveReturnsReport(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(api.RunArchiveIntegrityReport{
+		_ = json.NewEncoder(w).Encode(archivecontract.RunArchiveIntegrityReport{
 			TestID:   "test-7",
 			Status:   "verified",
 			Verified: true,
@@ -41,7 +41,7 @@ func TestVerifyArchiveReturnsReport(t *testing.T) {
 
 func TestVerifyArchiveTamperedReportNotAnError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(api.RunArchiveIntegrityReport{
+		_ = json.NewEncoder(w).Encode(archivecontract.RunArchiveIntegrityReport{
 			TestID:     "test-8",
 			Status:     "tampered",
 			Verified:   false,
@@ -72,7 +72,7 @@ func TestVerifyArchiveRetriesTransientReadFailure(t *testing.T) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(api.RunArchiveIntegrityReport{Verified: true})
+		_ = json.NewEncoder(w).Encode(archivecontract.RunArchiveIntegrityReport{Verified: true})
 	}))
 	defer server.Close()
 
@@ -190,7 +190,7 @@ func TestVerifyArchiveEscapesTestIDPathSegment(t *testing.T) {
 	var requestURI string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestURI = r.RequestURI
-		_ = json.NewEncoder(w).Encode(api.RunArchiveIntegrityReport{Verified: true})
+		_ = json.NewEncoder(w).Encode(archivecontract.RunArchiveIntegrityReport{Verified: true})
 	}))
 	defer server.Close()
 

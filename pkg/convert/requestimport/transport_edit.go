@@ -9,7 +9,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 // Transport edits are an author's explicit HTTP version choices for the
@@ -84,23 +84,14 @@ func RequestOrigin(baseURL, target string) string {
 // SurfaceHTTPVersionPolicy is a request surface's leaf policy, or "" when it
 // inherits.
 func SurfaceHTTPVersionPolicy(ref dslwalk.SurfaceRef) string {
+	field := ref.HTTPVersion()
 	if ref.Action != nil {
-		if ref.Action.HTTPVersion.IsPresent() {
-			return ref.Action.HTTPVersion.Value()
-		}
-		return ""
+		return field.Value
 	}
-	value, _ := ref.Request["http_version"].(string)
-	return strings.TrimSpace(value)
+	return strings.TrimSpace(field.Value)
 }
 
-func surfaceTarget(ref dslwalk.SurfaceRef) string {
-	if ref.Action != nil {
-		return ref.Action.Target
-	}
-	target, _ := ref.Request["target"].(string)
-	return target
-}
+func surfaceTarget(ref dslwalk.SurfaceRef) string { return ref.Target().Value }
 
 // ApplyTransportEdits applies reviewed edits to the script's HTTP request
 // surfaces in place. It refuses the whole batch if any edit no longer matches
@@ -157,16 +148,10 @@ func ApplyTransportEdits(script *dsl.Script, edits []TransportEdit) ([]Transport
 
 func applyTransportEdit(ref dslwalk.SurfaceRef, edit TransportEdit) TransportChange {
 	change := TransportChange{Path: edit.Path, Origin: edit.Origin, From: edit.From, To: edit.To}
-	if ref.Action != nil {
-		if edit.To == "" {
-			ref.Action.HTTPVersion = dsl.OptionalHTTPVersion{}
-		} else {
-			ref.Action.HTTPVersion, _ = dsl.NewHTTPVersionOverride(edit.To)
-		}
-	} else if edit.To == "" {
-		delete(ref.Request, "http_version")
+	if edit.To == "" {
+		ref.ClearHTTPVersion()
 	} else {
-		ref.Request["http_version"] = edit.To
+		_ = ref.SetHTTPVersion(edit.To)
 	}
 	metadata := ref.Metadata()
 	if metadata == nil {

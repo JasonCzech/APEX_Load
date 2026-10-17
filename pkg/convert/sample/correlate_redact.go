@@ -16,7 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )

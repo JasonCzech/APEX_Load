@@ -25,8 +25,10 @@ import (
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/importsession"
+	"github.com/jasonczech/apexload/pkg/internal/importreview"
 	"github.com/jasonczech/apexload/pkg/keywrap"
 	"github.com/jasonczech/apexload/pkg/prometheus"
+	"github.com/jasonczech/apexload/pkg/recordbridge"
 	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -132,11 +134,9 @@ type Server struct {
 	authoringMutationMu      sync.Mutex
 	authoring                map[string]*storage.AuthoringSession
 	importDraftAttestationMu sync.Mutex
-	// importDraftAttestations contains only credential digests and scope
-	// metadata. Raw imported values remain in the operator's editable response
-	// and never enter this compatibility handoff.
-	importDraftAttestations map[string]*importDraftAttestation
-	libraryMu               sync.Mutex
+	// importDraftOwner owns exact draft candidates for the process-local fallback.
+	importDraftOwner *importreview.MemoryDraftOwner
+	libraryMu        sync.Mutex
 	// libraryStateMutationMu serializes the load/mutate/CAS transition for
 	// remotes and synchronization links within one controller. Durable CAS still
 	// provides the cross-controller fence.
@@ -278,7 +278,7 @@ type Server struct {
 	desktopOIDCStates                 map[string]desktopOIDCStateGrant
 	desktopGitHubStates               map[string]desktopGitHubStateGrant
 	bridgeMode                        bool
-	recordingBridge                   *BrowserRecordingBridge
+	recordingRuntime                  *recordbridge.Bridge
 	desktopAppData                    string
 	desktopLogPath                    string
 	importAssetDir                    string
@@ -608,7 +608,7 @@ func NewServer(cfg ServerConfig) *Server {
 		controllerID:                controllerID,
 		haExecution:                 cfg.HAExecutionLeadership,
 		authoring:                   make(map[string]*storage.AuthoringSession),
-		importDraftAttestations:     make(map[string]*importDraftAttestation),
+		importDraftOwner:            importreview.NewMemoryDraftOwner(),
 		libraryRemotes:              make(map[string]*LibraryRemote),
 		libraryLinks:                make(map[string]*librarySyncLink),
 		libraryCreds:                cfg.LibraryCredentials,
@@ -1667,6 +1667,9 @@ func (s *Server) enforceAuthPosture() error {
 }
 
 func (s *Server) Start() (startErr error) {
+	if s != nil && s.recordingRuntime != nil {
+		return s.recordingRuntime.Start()
+	}
 	startupCtx, err := s.beginServerStartup()
 	if err != nil {
 		return err
@@ -1955,6 +1958,9 @@ func (s *Server) clearBoundAddrs() {
 }
 
 func (s *Server) BoundAddr() string {
+	if s != nil && s.recordingRuntime != nil {
+		return s.recordingRuntime.BoundAddr()
+	}
 	if s == nil {
 		return ""
 	}
@@ -1973,6 +1979,9 @@ func (s *Server) BoundAddr() string {
 // for this to become true before reading BrowserURL, otherwise they would
 // observe the unbound ":0" placeholder.
 func (s *Server) BoundAddrReady() bool {
+	if s != nil && s.recordingRuntime != nil {
+		return s.recordingRuntime.BoundAddrReady()
+	}
 	if s == nil {
 		return false
 	}
@@ -2106,6 +2115,9 @@ func (s *Server) validDesktopBrowserCapability(capability string) bool {
 }
 
 func (s *Server) BrowserURL() string {
+	if s != nil && s.recordingRuntime != nil {
+		return s.recordingRuntime.BrowserURL()
+	}
 	addr := s.BoundAddr()
 	if strings.HasPrefix(addr, ":") {
 		addr = "127.0.0.1" + addr
@@ -2120,6 +2132,9 @@ func (s *Server) BrowserURL() string {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s != nil && s.recordingRuntime != nil {
+		return s.recordingRuntime.Shutdown(ctx)
+	}
 	if s == nil {
 		return nil
 	}

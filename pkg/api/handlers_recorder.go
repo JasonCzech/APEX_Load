@@ -1,18 +1,16 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
-	"errors"
-	"fmt"
+	"github.com/jasonczech/apexload/pkg/recordbridge"
 	"log/slog"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/recorder"
-	"github.com/jasonczech/apexload/pkg/recorder/marker"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
@@ -149,41 +147,22 @@ func (s *Server) handleResumeRecording(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStartRecordingTransaction(w http.ResponseWriter, r *http.Request) {
-	s.handleRecordingMarker(w, r, marker.KindTransactionStart)
+	s.recordingHTTPService().HandleStartRecordingTransaction(w, r)
 }
 
 func (s *Server) handleEndRecordingTransaction(w http.ResponseWriter, r *http.Request) {
-	s.handleRecordingMarker(w, r, marker.KindTransactionEnd)
+	s.recordingHTTPService().HandleEndRecordingTransaction(w, r)
 }
 
 func (s *Server) handleAddRecordingNote(w http.ResponseWriter, r *http.Request) {
-	s.handleRecordingMarker(w, r, marker.KindNote)
+	s.recordingHTTPService().HandleAddRecordingNote(w, r)
 }
 
 // handleRecordingMarker marks a transaction boundary or a note on a proxy
 // recording, so an operator capturing a device can name each step as they
 // perform it: 404 unknown session, 409 not recording or paused, 400 invalid.
 func (s *Server) handleRecordingMarker(w http.ResponseWriter, r *http.Request, kind string) {
-	var req struct {
-		Name string `json:"name,omitempty"`
-		Text string `json:"text,omitempty"`
-	}
-	if !decodeOptionalJSONBody(w, r, &req) {
-		return
-	}
-	session, added, err := s.recorder.AddMarker(r.PathValue("id"), marker.Marker{Kind: kind, Name: req.Name, Text: req.Text})
-	switch {
-	case errors.Is(err, recorder.ErrSessionNotFound):
-		writeError(w, http.StatusNotFound, "recording session not found")
-		return
-	case errors.Is(err, recorder.ErrSessionNotLive):
-		writeError(w, http.StatusConflict, err.Error())
-		return
-	case err != nil:
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"session": sanitizeRecorderSessionForResponse(session), "marker": added})
+	s.recordingHTTPService().HandleRecordingMarker(w, r, kind)
 }
 
 func (s *Server) handleStopRecording(w http.ResponseWriter, r *http.Request) {
@@ -197,46 +176,7 @@ func (s *Server) handleStopRecording(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetRecording(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	includeRequests := queryIncludes(r.URL.Query(), "requests") || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_requests")), "true")
-	sinceSeq := 0
-	tail := 0
-	if rawSince := strings.TrimSpace(r.URL.Query().Get("since")); rawSince != "" {
-		parsed, err := strconv.Atoi(rawSince)
-		if err != nil || parsed < 0 {
-			writeError(w, http.StatusBadRequest, "since must be a non-negative request sequence")
-			return
-		}
-		sinceSeq = parsed
-		includeRequests = true
-	}
-	if rawTail := strings.TrimSpace(r.URL.Query().Get("tail")); rawTail != "" {
-		parsed, err := strconv.Atoi(rawTail)
-		if err != nil || parsed < 1 || parsed > 100 {
-			writeError(w, http.StatusBadRequest, "tail must be between 1 and 100")
-			return
-		}
-		tail = parsed
-		includeRequests = true
-	}
-	session, ok := s.recorder.GetSessionWindow(id, includeRequests, sinceSeq, tail)
-	if !ok {
-		writeError(w, http.StatusNotFound, "recording session not found")
-		return
-	}
-	raw := rawRecordingExportRequested(r)
-	if raw && !s.canExportRawRecording(r, session.ProjectID) {
-		s.recordAuditEvent(r, "recording.session_raw", "denied", "recording", id, session.ProjectID, map[string]any{"reason": "insufficient_role"})
-		writeError(w, http.StatusForbidden, "raw recording session access requires editor, project_admin, or system_admin access")
-		return
-	}
-	if raw {
-		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
-		writeJSON(w, http.StatusOK, session)
-		return
-	}
-	w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
-	writeJSON(w, http.StatusOK, sanitizeRecorderSessionForResponse(session))
+	s.recordingHTTPService().HandleGetRecording(w, r)
 }
 
 func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
@@ -298,128 +238,23 @@ func (s *Server) handleDeleteRecording(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateRecordedRequest(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	seq, err := strconv.Atoi(r.PathValue("seq"))
-	if err != nil || seq <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid request sequence")
-		return
-	}
-
-	var update recorder.RequestUpdate
-	if !decodeJSONBody(w, r, &update) {
-		return
-	}
-
-	req, err := s.recorder.UpdateRequest(id, seq, update)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, sanitizeRecordedRequestForResponse(*req))
+	s.recordingHTTPService().HandleUpdateRecordedRequest(w, r)
 }
 
 func sanitizeRecorderSessionForResponse(session *recorder.Session) *recorder.Session {
-	if session == nil {
-		return nil
-	}
-	clone := &recorder.Session{
-		ID:                       session.ID,
-		Name:                     session.Name,
-		ProjectID:                session.ProjectID,
-		Status:                   session.Status,
-		StartedAt:                session.StartedAt,
-		BaseURL:                  scrub.ValueURL(session.BaseURL, scrub.Policy{}),
-		RequestCount:             session.RequestCount,
-		LastSeq:                  session.LastSeq,
-		DroppedRequests:          session.DroppedRequests,
-		DroppedWebSocketMessages: session.DroppedWebSocketMessages,
-		RejectedRequests:         session.RejectedRequests,
-		LastRejectedHost:         session.LastRejectedHost,
-		FilteredRequests:         session.FilteredRequests,
-		LastFilteredHost:         session.LastFilteredHost,
-		Truncated:                session.Truncated,
-		Warnings:                 sanitizeRecorderWarningsForResponse(session.Warnings),
-		Filters: recorder.SessionFilters{
-			ExcludeStatic:         session.Filters.ExcludeStatic,
-			ExcludeStaticSet:      session.Filters.ExcludeStaticSet,
-			ExcludeHosts:          append([]string(nil), session.Filters.ExcludeHosts...),
-			IncludeHosts:          append([]string(nil), session.Filters.IncludeHosts...),
-			BodyCaptureLimitBytes: session.Filters.BodyCaptureLimitBytes,
-			RedactHeaders:         append([]string(nil), session.Filters.RedactHeaders...),
-			CaptureCookies:        session.Filters.CaptureCookies,
-			RecordingProfileID:    session.Filters.RecordingProfileID,
-		},
-		// Operator-authored transaction names and notes, not recorded traffic.
-		Markers:          append([]marker.Marker(nil), session.Markers...),
-		OpenTransactions: append([]string(nil), session.OpenTransactions...),
-	}
-	if session.StoppedAt != nil {
-		stoppedAt := *session.StoppedAt
-		clone.StoppedAt = &stoppedAt
-	}
-	if len(session.Requests) > 0 {
-		clone.Requests = make([]recorder.RecordedRequest, len(session.Requests))
-		for index, request := range session.Requests {
-			clone.Requests[index] = sanitizeRecordedRequestForResponse(request)
-		}
-	}
-	return clone
+	return recordbridge.SanitizeRecorderSessionForResponse(session)
 }
 
 func sanitizeRecorderWarningsForResponse(warnings []string) []string {
-	if warnings == nil {
-		return nil
-	}
-	safeWarnings := make([]string, len(warnings))
-	for index, warning := range warnings {
-		safeWarnings[index] = scrub.Value(warning, scrub.Policy{})
-	}
-	return safeWarnings
+	return recordbridge.SanitizeRecorderWarningsForResponse(warnings)
 }
 
 func sanitizeRecordedRequestForResponse(request recorder.RecordedRequest) recorder.RecordedRequest {
-	policy := scrub.Policy{}
-	request.URL = scrub.ValueURL(request.URL, policy)
-	request.QueryString = scrub.Value(request.QueryString, policy)
-	request.Headers = scrub.Headers(request.Headers, policy)
-	request.HeadersMulti = sanitizeRecordedHeaderValues(request.HeadersMulti, policy)
-	request.RawHeaders = nil
-	request.RawHeadersMulti = nil
-	request.Body = scrub.Value(request.Body, policy)
-	request.ResponseHeaders = scrub.Headers(request.ResponseHeaders, policy)
-	request.ResponseHeadersMulti = sanitizeRecordedHeaderValues(request.ResponseHeadersMulti, policy)
-	request.ResponseBody = scrub.Value(request.ResponseBody, policy)
-	request.StepName = scrub.Value(request.StepName, policy)
-	request.TransactionName = scrub.Value(request.TransactionName, policy)
-	request.Note = scrub.Value(request.Note, policy)
-	if len(request.WebSocketMessages) > 0 {
-		messages := make([]recorder.RecordedWebSocketMessage, len(request.WebSocketMessages))
-		copy(messages, request.WebSocketMessages)
-		for index := range messages {
-			messages[index].Payload = scrub.Value(messages[index].Payload, policy)
-		}
-		request.WebSocketMessages = messages
-	}
-	return request
+	return recordbridge.SanitizeRecordedRequestForResponse(request)
 }
 
 func sanitizeRecordedHeaderValues(headers map[string][]string, policy scrub.Policy) map[string][]string {
-	if len(headers) == 0 {
-		return headers
-	}
-	result := make(map[string][]string, len(headers))
-	for name, values := range headers {
-		redacted := make([]string, len(values))
-		for index, value := range values {
-			if policy.SensitiveHeader(name) {
-				redacted[index] = scrub.Redacted
-			} else {
-				redacted[index] = scrub.Value(value, policy)
-			}
-		}
-		result[name] = redacted
-	}
-	return result
+	return recordbridge.SanitizeRecordedHeaderValues(headers, policy)
 }
 
 func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) {
@@ -509,143 +344,22 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	writeScriptImportResponse(w, http.StatusCreated, response)
 }
 
-func validateConvertedScriptForCommit(script *dsl.Script) error {
-	if script == nil {
-		return fmt.Errorf("conversion produced no script")
-	}
-	if issues := validateScript(script); len(issues) > 0 {
-		return fmt.Errorf("%s", strings.Join(issues, "; "))
-	}
-	return nil
-}
+var validateConvertedScriptForCommit = importreview.ValidateConvertedScriptForCommit
 
 func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	session, ok := s.recorder.GetSession(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "recording session not found")
-		return
-	}
-
-	var req struct {
-		Name         string `json:"name"`
-		Parameterize bool   `json:"parameterize"`
-		// PageTitleChecks (default on) and ResourceMode (runtime | in_step)
-		// mirror VuGen's recording options.
-		PageTitleChecks *bool  `json:"page_title_checks,omitempty"`
-		ResourceMode    string `json:"resource_mode,omitempty"`
-		// AsyncScan (default on) turns requests a page repeated in the
-		// background into background conversations; false keeps them inline.
-		AsyncScan *bool `json:"async_scan,omitempty"`
-		// RecordingProfileID names a project recording profile; it defaults
-		// to the one the session was started with.
-		RecordingProfileID string `json:"recording_profile_id,omitempty"`
-		// HTTPVersionMode maps captured HTTP versions to leaf policies.
-		HTTPVersionMode string `json:"http_version_mode,omitempty" enums:"upgrade,exact,inherit"`
-	}
-	if !decodeOptionalJSONBody(w, r, &req) {
-		return
-	}
-	if !validHTTPVersionMode(w, req.HTTPVersionMode) {
-		return
-	}
-	profile, err := s.sessionRecordingProfile(session, req.RecordingProfileID)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode, AsyncScan: req.AsyncScan, Profile: profile, HTTPVersionMode: req.HTTPVersionMode})
-	if result.Script != nil {
-		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
-		ensureCredentialPreservingImportMetadata(result.Script, "recorder")
-	}
-	snapshotDigest, err := recordingBaselineSnapshotDigest(session)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to bind recording preview snapshot")
-		return
-	}
-	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
-		Script:                  result.Script,
-		Warnings:                result.Warnings,
-		Diagnostics:             result.Diagnostics,
-		Correlations:            result.Correlations,
-		Stats:                   recordingConversionStats(session),
-		RecordingSessionID:      id,
-		RecordingSnapshotDigest: snapshotDigest,
-	})
+	s.recordingHTTPService().HandlePreviewRecordingConversion(w, r)
 }
 
 // recordingConversionStats counts the session's recorded requests and the
 // ones marked excluded, which a conversion leaves out, for the review.
-func recordingConversionStats(session *recorder.Session) map[string]int {
-	excluded := 0
-	for _, req := range session.Requests {
-		if req.Excluded {
-			excluded++
-		}
-	}
-	return map[string]int{"requests_recorded": len(session.Requests), "requests_excluded": excluded}
-}
+var recordingConversionStats = recordbridge.RecordingConversionStats
 
 func (s *Server) handleExportRecording(w http.ResponseWriter, r *http.Request) {
-	extendArtifactWriteDeadline(w)
-	id := r.PathValue("id")
-	session, ok := s.recorder.GetSession(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "recording session not found")
-		return
-	}
-
-	format := strings.ToLower(r.URL.Query().Get("format"))
-	if format == "" {
-		format = "har"
-	}
-	if format != "har" {
-		writeError(w, http.StatusBadRequest, "unsupported recording export format: "+format)
-		return
-	}
-
-	includeExcluded := r.URL.Query().Get("include_excluded") == "true"
-	data, err := recorder.ExportHAR(session, includeExcluded)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to export HAR: "+err.Error())
-		return
-	}
-
-	raw := rawRecordingExportRequested(r)
-	if raw && !s.canExportRawRecording(r, session.ProjectID) {
-		s.recordAuditEvent(r, "recording.export_har_raw", "denied", "recording", id, session.ProjectID, map[string]any{"reason": "insufficient_role"})
-		writeError(w, http.StatusForbidden, "raw recording export requires editor, project_admin, or system_admin access")
-		return
-	}
-
-	sensitivity := scrub.SensitivityRaw
-	if !raw {
-		scrubbed, err := scrub.HAR(data, scrub.Policy{})
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to scrub HAR: "+err.Error())
-			return
-		}
-		data = scrubbed
-		sensitivity = scrub.SensitivityScrubbed
-	}
-	s.recordAuditEvent(r, "recording.export_har", "success", "recording", id, session.ProjectID, map[string]any{"sensitivity": sensitivity, "raw": raw})
-
-	filename := sanitizeDownloadName(session.Name)
-	if filename == "" {
-		filename = "recording"
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.har"`, filename))
-	w.Header().Set("X-APEXLoad-Sensitivity", sensitivity)
-	w.WriteHeader(http.StatusOK)
-	w.Write(data)
+	s.recordingHTTPService().HandleExportRecording(w, r)
 }
 
 func rawRecordingExportRequested(r *http.Request) bool {
-	query := r.URL.Query()
-	return query.Get("raw") == "true" || query.Get("scrub") == "false"
+	return recordbridge.RawRecordingExportRequested(r)
 }
 
 func (s *Server) canExportRawRecording(r *http.Request, projectID string) bool {
@@ -661,26 +375,7 @@ func (s *Server) handleRecorderCACert(w http.ResponseWriter, r *http.Request) {
 	s.recorder.HandleCACert(w, r)
 }
 
-func sanitizeDownloadName(name string) string {
-	name = strings.ToLower(strings.TrimSpace(name))
-	if name == "" {
-		return ""
-	}
-	var b strings.Builder
-	lastDash := false
-	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-			lastDash = false
-			continue
-		}
-		if !lastDash {
-			b.WriteByte('-')
-			lastDash = true
-		}
-	}
-	return strings.Trim(b.String(), "-")
-}
+func sanitizeDownloadName(name string) string { return recordbridge.SanitizeDownloadName(name) }
 
 func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
 	projectID := authorizedProjectOr(r, strings.TrimSpace(r.URL.Query().Get("project_id")))
@@ -726,23 +421,7 @@ func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
 // mergeRecorderHostFilters is the profile's hosts followed by the request's,
 // trimmed, once each (hosts compare case-insensitively).
 func mergeRecorderHostFilters(profileHosts, requestHosts []string) []string {
-	merged := make([]string, 0, len(profileHosts)+len(requestHosts))
-	seen := make(map[string]bool, len(profileHosts)+len(requestHosts))
-	for _, hosts := range [][]string{profileHosts, requestHosts} {
-		for _, host := range hosts {
-			host = strings.TrimSpace(host)
-			key := strings.ToLower(host)
-			if host == "" || seen[key] {
-				continue
-			}
-			seen[key] = true
-			merged = append(merged, host)
-		}
-	}
-	if len(merged) == 0 {
-		return nil
-	}
-	return merged
+	return recordbridge.MergeRecorderHostFilters(profileHosts, requestHosts)
 }
 
 // recorderProxyLoopbackOnly is the reason code for a proxy listening only on
@@ -833,14 +512,7 @@ func (s *Server) sessionRecordingProfile(session *recorder.Session, profileID st
 	}
 	var profile *recordingprofile.Profile
 	var err error
-	if s.recordingBridge != nil && profileID != "" && strings.EqualFold(profileID, session.Filters.RecordingProfileID) {
-		// The Recording Agent has no project store: a device capture
-		// converts with the profile it was started with.
-		profile = s.recordingBridge.device.recordingProfile(session.ID)
-	}
-	if profile == nil {
-		profile, err = s.projectRecordingProfile(normalizeProjectID(session.ProjectID), profileID)
-	}
+	profile, err = s.projectRecordingProfile(normalizeProjectID(session.ProjectID), profileID)
 	if err != nil || profile == nil || !strings.EqualFold(profile.ID, session.Filters.RecordingProfileID) {
 		return profile, err
 	}
@@ -857,8 +529,5 @@ func (s *Server) sessionRecordingProfile(session *recorder.Session, profileID st
 // recorderCaptureCookies is a proxy session's cookie capture: the request's
 // explicit choice, else the recording profile's, else off.
 func recorderCaptureCookies(requested *bool, profile *recordingprofile.Profile) bool {
-	if requested != nil {
-		return *requested
-	}
-	return profile != nil && profile.CaptureCookies != nil && *profile.CaptureCookies
+	return recordbridge.RecorderCaptureCookies(requested, profile)
 }

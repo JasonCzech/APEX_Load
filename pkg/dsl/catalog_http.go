@@ -1,6 +1,6 @@
 package dsl
 
-import httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+import httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 
 // httpActionSpecs declares the request-shaped action types used by the http,
 // soap, and java_http protocols. The action type itself is the HTTP method;

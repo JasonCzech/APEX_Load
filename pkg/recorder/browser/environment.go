@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"math"
 
-	"github.com/jasonczech/apexload/pkg/dsl"
-	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	"github.com/mxschmitt/playwright-go"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 )
 
 const (

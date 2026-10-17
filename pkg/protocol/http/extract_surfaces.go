@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 // responseSurfaces is everything an extractor can search in one response.
@@ -70,13 +71,10 @@ func extractFromSurface(ext protocol.Extractor, content []byte) (string, error) 
 
 // ExtractorDFETypes are the data-format transforms an extractor can apply to
 // a response body before searching.
-var ExtractorDFETypes = map[string]bool{
-	"base64": true, "gzip": true, "json_to_xml": true, "xml_to_json": true,
-	"url_decode": true, "url_encode": true, "html_unescape": true, "html_escape": true,
-}
+var ExtractorDFETypes = httpcontract.ExtractorDFETypes
 
 // MaxExtractorDFEs bounds an extractor's transform chain.
-const MaxExtractorDFEs = 8
+const MaxExtractorDFEs = httpcontract.MaxExtractorDFEs
 
 // withExtractorDFEs returns the response with its body transformed by the
 // extractor's DFE chain. A body the chain cannot transform (for example one

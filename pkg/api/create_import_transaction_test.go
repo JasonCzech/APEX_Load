@@ -233,7 +233,7 @@ func TestHandleConvertBrowserRecordingRollbackPreservesConcurrentMutation(t *tes
 	}
 	fake := newFakeBrowserRecorder(artifact)
 	server := NewServer(ServerConfig{Store: store})
-	fake.install(server.browserRecording)
+	installBrowserRecorderBackend(t, server, fake)
 	id := startBrowserRecordingViaAPI(t, server)
 	stopBrowserRecordingViaAPI(t, server, id)
 

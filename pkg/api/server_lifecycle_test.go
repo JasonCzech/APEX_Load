@@ -283,9 +283,7 @@ func TestShutdownDeadlineCancelsBlockedLocalAuthGenerationActivation(t *testing.
 func retentionJanitorsRunning(server *Server) (bool, bool, bool) {
 	browserRunning := false
 	if server != nil && server.browserReplay != nil {
-		server.browserReplay.mu.RLock()
-		browserRunning = server.browserReplay.janitorCancel != nil
-		server.browserReplay.mu.RUnlock()
+		browserRunning = server.browserReplay.BackgroundRunning()
 	}
 	scriptRunning := false
 	if server != nil && server.scriptDebug != nil {
@@ -295,9 +293,7 @@ func retentionJanitorsRunning(server *Server) (bool, bool, bool) {
 	}
 	recordingRunning := false
 	if server != nil && server.browserRecording != nil {
-		server.browserRecording.mu.RLock()
-		recordingRunning = server.browserRecording.janitorCancel != nil
-		server.browserRecording.mu.RUnlock()
+		recordingRunning = server.browserRecording.BackgroundRunning()
 	}
 	return browserRunning, scriptRunning, recordingRunning
 }

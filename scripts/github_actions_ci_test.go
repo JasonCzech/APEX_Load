@@ -522,7 +522,7 @@ func TestRequiredAggregationEnforcesEventSpecificResults(t *testing.T) {
 	script := strings.Join(scriptLines, "\n")
 
 	fullJobs := []string{
-		"workflow-policy", "go-quality", "go-tests", "build", "protocol-tags",
+		"workflow-policy", "go-quality", "go-tests", "content-concurrency", "build", "protocol-tags",
 		"dashboard", "deployment-artifacts", "containers", "govulncheck", "codeql",
 	}
 	results := func(defaultResult string) map[string]map[string]string {
@@ -1023,5 +1023,37 @@ assert "_retired" in Path("pytest.ini").read_text()
 	cmd.Dir = ".."
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("documentation/archive discovery: %v\n%s", err, output)
+	}
+}
+
+// The cheap ownership gate must remain required and independent of the large
+// API/storage suites; filtering API tests alone still compiles that package.
+func TestContentConcurrencyGateIsRequiredAndIndependent(t *testing.T) {
+	data, err := os.ReadFile("../.github/workflows/ci.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := string(data)
+	start := strings.Index(workflow, "  content-concurrency:\n")
+	if start < 0 {
+		t.Fatal("content concurrency job missing")
+	}
+	end := strings.Index(workflow[start:], "  go-tests:\n")
+	if end < 0 {
+		t.Fatal("following Go job missing")
+	}
+	job := workflow[start : start+end]
+	for _, fragment := range []string{"timeout-minutes: 10", "-race -shuffle=on -count=20 -timeout=2m -json", "./pkg/contentmutation ./cmd/apexctl/internal/ciclient", "content-concurrency.json"} {
+		if !strings.Contains(job, fragment) {
+			t.Errorf("ownership gate missing %q", fragment)
+		}
+	}
+	for _, forbidden := range []string{"npm ", "playwright", "./pkg/api", "./pkg/storage", "go test ./..."} {
+		if strings.Contains(job, forbidden) {
+			t.Errorf("ownership gate depends on %q", forbidden)
+		}
+	}
+	if !strings.Contains(workflow, "      - content-concurrency\n") || !strings.Contains(workflow, "go-tests content-concurrency build") {
+		t.Fatal("ownership gate is absent from required aggregation")
 	}
 }

@@ -106,8 +106,8 @@ func TestUnalignedRebindRefusalNamesTheActionAndField(t *testing.T) {
 	if !errors.As(err, &refusal) {
 		t.Fatalf("err = %v, want a rebind refusal", err)
 	}
-	if refusal.requirement.ID != requirement.ID {
-		t.Fatalf("refusal names %q, want %q", refusal.requirement.ID, requirement.ID)
+	if refusal.Requirement().ID != requirement.ID {
+		t.Fatalf("refusal names %q, want %q", refusal.Requirement().ID, requirement.ID)
 	}
 	want := `Request body in action 2 ("Submit login") can't use a project secret`
 	if !strings.HasPrefix(err.Error(), want) {

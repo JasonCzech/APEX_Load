@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,12 @@ func TestBrowserReplayRecordHARRefusedWithoutNativeHAR(t *testing.T) {
 		t.Cleanup(func() { browserNativeHARSupported = previous })
 	}
 	server := NewServer(ServerConfig{})
+	t.Cleanup(server.browserReplay.Close)
+	reservations := 0
+	server.browserReplay.setSessionIDReserver(func(ctx context.Context, id, project string) (string, func(), *replaySessionLeaseSignal, error) {
+		reservations++
+		return server.reserveReplaySessionIDContext(ctx, id, project)
+	})
 	script := map[string]any{
 		"name": "Replay HAR platform", "version": "1.0.0", "protocol": "browser",
 		"config":  map[string]any{"browser": map[string]any{"engine": "chromium"}},
@@ -62,12 +69,7 @@ func TestBrowserReplayRecordHARRefusedWithoutNativeHAR(t *testing.T) {
 				return resp
 			}
 
-			sessionCount := func() int {
-				server.browserReplay.mu.RLock()
-				defer server.browserReplay.mu.RUnlock()
-				return len(server.browserReplay.sessions)
-			}
-			before := sessionCount()
+			before := reservations
 			refused := start(ptr(true))
 			if refused.Code != http.StatusUnprocessableEntity {
 				t.Fatalf("record_har: status %d body=%s, want 422", refused.Code, refused.Body.String())
@@ -81,8 +83,8 @@ func TestBrowserReplayRecordHARRefusedWithoutNativeHAR(t *testing.T) {
 			if !strings.Contains(payload.Error, "record_har is not available") || !strings.Contains(payload.Error, runtime.GOOS) || !strings.Contains(payload.Error, "without record_har") {
 				t.Fatalf("refusal message %q", payload.Error)
 			}
-			if after := sessionCount(); after != before {
-				t.Fatalf("a refused replay changed the session count from %d to %d", before, after)
+			if after := reservations; after != before {
+				t.Fatalf("a refused replay attempted a reservation; count changed from %d to %d", before, after)
 			}
 
 			for _, record := range []*bool{nil, ptr(false)} {

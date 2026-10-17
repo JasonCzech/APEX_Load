@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ScenarioFormState } from './TestHub'
+import type { ScenarioFormState } from '../types/scenarioAuthoring'
 import { assertDraftHasNoInlineCredentials, clearScenarioAuthoringDraft, migrateScenarioAuthoringDraft, parseScenarioAuthoringDraft, readScenarioAuthoringDraft, saveScenarioAuthoringDraft, scenarioAuthoringDraftFromScripts, type ScenarioAuthoringDraft } from './scenarioAuthoringDraft'
 const draft = (): ScenarioAuthoringDraft => ({ version: 3, projectId: 'project-a', savedAt: '2026-09-12T12:00:00Z', editingId: null, editingUpdatedAt: '', form: { name: '', duration: '', start_delay: '', scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false, groups: [{ name: '', script_id: '', stages: [], vusers: 0, ramp_up: '', ramp_down: '', initialization: 'at_runtime' }] } as ScenarioFormState, source: 'existing', startChoice: 'existing', shapeId: '', templateId: '', cloneId: '', step: 'source', visited: 1 })
 afterEach(() => { localStorage.clear(); vi.restoreAllMocks() })

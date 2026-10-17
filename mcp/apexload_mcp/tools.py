@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .client import JsonMap, APEXLoadClient, apply_path_params, guarded_response, json_text
+from .schemas import describe_endpoint_inputs
 
 
 @dataclass(frozen=True)
@@ -450,6 +451,7 @@ def register_endpoint_tools(mcp: Any) -> None:
         endpoint_handler = make_endpoint_handler(spec)
         endpoint_handler.__name__ = spec.name
         endpoint_handler.__doc__ = spec.description
+        describe_endpoint_inputs(spec.name, endpoint_handler)
         mcp.tool(name=spec.name, description=spec.description)(endpoint_handler)
 
     async def script_import_file(

@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"encoding/json"
 	"errors"
@@ -307,7 +309,14 @@ func (s *Server) browserToHTTPNetworkEntries(req BrowserToHTTPPreviewRequest, se
 			replayEvidence.SessionResolved = true
 			replayEvidence.SessionStatus = strings.TrimSpace(session.Status)
 			replayEvidence.SessionSuccessful = session.Status == BrowserReplayCompleted && session.FinalReport != nil && session.FinalReport.Success
-			for _, event := range session.Events {
+			// Completed workers move retained events into the final report and
+			// clear the live list. Prefer that canonical report without merging
+			// stale progress; keep the live list for running and legacy snapshots.
+			events := session.Events
+			if session.FinalReport != nil && len(session.FinalReport.Events) > 0 {
+				events = session.FinalReport.Events
+			}
+			for _, event := range events {
 				sessionEntries = append(sessionEntries, event.Network...)
 				if event.Snapshot != nil {
 					sessionEntries = append(sessionEntries, event.Snapshot.NetworkEntries...)
@@ -1008,12 +1017,7 @@ func sourceScriptID(source *dsl.Script) string {
 	return strings.TrimSpace(source.ID)
 }
 
-func sourceScriptName(source *dsl.Script) string {
-	if source == nil {
-		return ""
-	}
-	return strings.TrimSpace(source.Name)
-}
+var sourceScriptName = importreview.SourceScriptName
 
 func sourceScriptProjectID(source *dsl.Script) string {
 	if source == nil {

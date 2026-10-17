@@ -20,25 +20,12 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/internal/subprocessguard"
 	"github.com/jasonczech/apexload/pkg/javarunner"
+	"github.com/jasonczech/apexload/pkg/javarunner/ipc"
 )
 
 const maxPersistentFrameBytes = 2 << 20
 
-type persistentEnvelope struct {
-	Contract          string `json:"contract"`
-	Kind              string `json:"kind"`
-	RequestID         string `json:"request_id"`
-	FrameToken        string `json:"frame_token,omitempty"`
-	Success           bool   `json:"success"`
-	Error             string `json:"error,omitempty"`
-	Stdout            string `json:"stdout,omitempty"`
-	Stderr            string `json:"stderr,omitempty"`
-	StdoutTruncated   bool   `json:"stdout_truncated,omitempty"`
-	StderrTruncated   bool   `json:"stderr_truncated,omitempty"`
-	EventFallbackUsed bool   `json:"event_fallback_used,omitempty"`
-	EventsTruncated   bool   `json:"events_truncated,omitempty"`
-	Fatal             bool   `json:"fatal,omitempty"`
-}
+type persistentEnvelope = ipc.SidecarPersistentEnvelope
 
 type persistentSession struct {
 	nativeCapable bool
@@ -435,8 +422,7 @@ func (s *persistentSession) invoke(ctx context.Context, request ExecutionRequest
 				success: envelope.Success, errorMessage: boundedHarnessError(envelope.Error),
 				stdout: envelope.Stdout, stderr: envelope.Stderr, events: events,
 				stdoutTruncated: envelope.StdoutTruncated, stderrTruncated: envelope.StderrTruncated,
-				eventsTruncated: eventsTruncated || envelope.EventsTruncated ||
-					(envelope.EventFallbackUsed && envelope.StderrTruncated),
+				eventsTruncated: envelope.EventCaptureTruncated(eventsTruncated),
 			}
 			if !envelope.Success {
 				outcome.errorCode = "harness_reported_failure"

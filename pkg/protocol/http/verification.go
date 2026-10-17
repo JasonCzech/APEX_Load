@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/jasonczech/apexload/pkg/protocol"
 	"io"
 	"net/http"
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 type registeredVerification struct {
@@ -26,25 +28,7 @@ type verificationObservation struct {
 type verificationContextKey struct{}
 
 func ValidateVerification(v protocol.Verification) error {
-	if v.ID == "" || len(v.ID) > 256 {
-		return fmt.Errorf("verification ID must contain 1..256 bytes")
-	}
-	switch v.Operation {
-	case "pause", "resume":
-		return nil
-	case "register":
-	default:
-		return fmt.Errorf("invalid verification operation")
-	}
-	if v.Text == "" || len(v.Text) > 65536 {
-		return fmt.Errorf("verification text must contain 1..65536 bytes")
-	}
-	switch strings.ToLower(v.Scope) {
-	case "all", "body", "headers", "noresource", "resource":
-	default:
-		return fmt.Errorf("invalid verification scope")
-	}
-	return nil
+	return httpcontract.ValidateVerification(v)
 }
 func (h *HTTP) ConfigureVerification(v protocol.Verification) error {
 	if err := ValidateVerification(v); err != nil {

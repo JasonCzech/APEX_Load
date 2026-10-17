@@ -1,0 +1,438 @@
+[
+  {
+    "name": "numeric token 1234567",
+    "body": "{\"id\":1234567}",
+    "path": "$.id",
+    "expect": {
+      "lite": {
+        "values": [
+          "1234567"
+        ]
+      },
+      "messaging": {
+        "values": [
+          "1234567"
+        ]
+      },
+      "http": {
+        "values": [
+          "1234567"
+        ]
+      },
+      "loadrunner": {
+        "values": [
+          "1234567"
+        ]
+      }
+    }
+  },
+  {
+    "name": "numeric token 9007199254740993",
+    "body": "{\"id\":9007199254740993}",
+    "path": "$.id",
+    "expect": {
+      "lite": {
+        "values": [
+          "9007199254740993"
+        ]
+      },
+      "messaging": {
+        "values": [
+          "9007199254740993"
+        ]
+      },
+      "http": {
+        "values": [
+          "9007199254740993"
+        ]
+      },
+      "loadrunner": {
+        "values": [
+          "9007199254740993"
+        ]
+      }
+    }
+  },
+  {
+    "name": "numeric token 1.2300",
+    "body": "{\"id\":1.2300}",
+    "path": "$.id",
+    "expect": {
+      "lite": {
+        "values": [
+          "1.2300"
+        ]
+      },
+      "messaging": {
+        "values": [
+          "1.2300"
+        ]
+      },
+      "http": {
+        "values": [
+          "1.2300"
+        ]
+      },
+      "loadrunner": {
+        "values": [
+          "1.2300"
+        ]
+      }
+    }
+  },
+  {
+    "name": "numeric token 1e400",
+    "body": "{\"id\":1e400}",
+    "path": "$.id",
+    "expect": {
+      "lite": {
+        "values": [
+          "1e400"
+        ]
+      },
+      "messaging": {
+        "values": [
+          "1e400"
+        ]
+      },
+      "http": {
+        "values": [
+          "1e400"
+        ]
+      },
+      "loadrunner": {
+        "values": [
+          "1e400"
+        ]
+      }
+    }
+  },
+  {
+    "name": "numeric token -0",
+    "body": "{\"id\":-0}",
+    "path": "$.id",
+    "expect": {
+      "lite": {
+        "values": [
+          "-0"
+        ]
+      },
+      "messaging": {
+        "values": [
+          "-0"
+        ]
+      },
+      "http": {
+        "values": [
+          "-0"
+        ]
+      },
+      "loadrunner": {
+        "values": [
+          "-0"
+        ]
+      }
+    }
+  },
+  {
+    "name": "numeric object dotted",
+    "body": "{\"123\":\"key\"}",
+    "path": "$.123",
+    "expect": {
+      "lite": {
+        "values": [
+          "key"
+        ]
+      },
+      "messaging": {
+        "values": [
+          "key"
+        ]
+      },
+      "http": {
+        "values": [
+          "key"
+        ]
+      },
+      "loadrunner": {
+        "values": [
+          "key"
+        ]
+      }
+    }
+  },
+  {
+    "name": "numeric object quoted",
+    "body": "{\"123\":\"key\"}",
+    "path": "$[\"123\"]",
+    "expect": {
+      "lite": {
+        "error": true
+      },
+      "http": {
+        "error": true
+      },
+      "messaging": {
+        "values": [
+          "key"
+        ]
+      },
+      "loadrunner": {
+        "values": [
+          "key"
+        ]
+      }
+    }
+  },
+  {
+    "name": "quoted punctuation",
+    "body": "{\"a.b]\":\"key\"}",
+    "path": "$[\"a.b]\"]",
+    "expect": {
+      "lite": {
+        "error": true
+      },
+      "http": {
+        "error": true
+      },
+      "messaging": {
+        "values": [
+          "key"
+        ]
+      },
+      "loadrunner": {
+        "values": [
+          "key"
+        ]
+      }
+    }
+  },
+  {
+    "name": "array bracket",
+    "body": "{\"items\":[\"a\",\"b\"]}",
+    "path": "$.items[1]",
+    "expect": {
+      "lite": {
+        "values": [
+          "b"
+        ]
+      },
+      "messaging": {
+        "values": [
+          "b"
+        ]
+      },
+      "http": {
+        "values": [
+          "b"
+        ]
+      },
+      "loadrunner": {
+        "values": [
+          "b"
+        ]
+      }
+    }
+  },
+  {
+    "name": "array dotted",
+    "body": "{\"items\":[\"a\",\"b\"]}",
+    "path": "$.items.1",
+    "expect": {
+      "lite": {
+        "error": true
+      },
+      "http": {
+        "error": true
+      },
+      "messaging": {
+        "values": [
+          "b"
+        ]
+      },
+      "loadrunner": {
+        "values": []
+      }
+    }
+  },
+  {
+    "name": "negative array",
+    "body": "{\"items\":[\"a\",\"b\"]}",
+    "path": "$.items[-1]",
+    "expect": {
+      "lite": {
+        "error": true
+      },
+      "http": {
+        "error": true
+      },
+      "messaging": {
+        "error": true
+      },
+      "loadrunner": {
+        "values": [
+          "b"
+        ]
+      }
+    }
+  },
+  {
+    "name": "composite member order",
+    "body": "{\"obj\":{\"z\":2,\"a\":1}}",
+    "path": "$.obj",
+    "expect": {
+      "lite": {
+        "values": [
+          "{\"a\":1,\"z\":2}"
+        ]
+      },
+      "http": {
+        "values": [
+          "{\"a\":1,\"z\":2}"
+        ]
+      },
+      "messaging": {
+        "values": [
+          "map[a:1 z:2]"
+        ]
+      },
+      "loadrunner": {
+        "values": [
+          "{\"z\":2,\"a\":1}"
+        ]
+      }
+    }
+  },
+  {
+    "name": "null rendering",
+    "body": "{\"value\":null}",
+    "path": "$.value",
+    "expect": {
+      "lite": {
+        "values": [
+          ""
+        ]
+      },
+      "http": {
+        "values": [
+          "<nil>"
+        ]
+      },
+      "messaging": {
+        "values": [
+          "<nil>"
+        ]
+      },
+      "loadrunner": {
+        "values": [
+          "null"
+        ]
+      }
+    }
+  },
+  {
+    "name": "missing field",
+    "body": "{\"value\":1}",
+    "path": "$.missing",
+    "expect": {
+      "lite": {
+        "error": true
+      },
+      "http": {
+        "error": true
+      },
+      "messaging": {
+        "error": true
+      },
+      "loadrunner": {
+        "values": []
+      }
+    }
+  },
+  {
+    "name": "root whitespace",
+    "body": " {\"z\":2, \"a\":1} ",
+    "path": "$",
+    "expect": {
+      "lite": {
+        "values": [
+          "{\"a\":1,\"z\":2}"
+        ]
+      },
+      "http": {
+        "values": [
+          "{\"a\":1,\"z\":2}"
+        ]
+      },
+      "messaging": {
+        "values": [
+          " {\"z\":2, \"a\":1} "
+        ]
+      },
+      "loadrunner": {
+        "values": [
+          "{\"z\":2,\"a\":1}"
+        ]
+      }
+    }
+  },
+  {
+    "name": "trailing document root",
+    "body": "{\"id\":1} null",
+    "path": "$",
+    "expect": {
+      "lite": {
+        "error": true
+      },
+      "http": {
+        "error": true
+      },
+      "messaging": {
+        "values": [
+          "{\"id\":1} null"
+        ]
+      },
+      "loadrunner": {
+        "error": true
+      }
+    }
+  },
+  {
+    "name": "trailing document field",
+    "body": "{\"id\":1} null",
+    "path": "$.id",
+    "expect": {
+      "lite": {
+        "error": true
+      },
+      "messaging": {
+        "error": true
+      },
+      "http": {
+        "error": true
+      },
+      "loadrunner": {
+        "error": true
+      }
+    }
+  },
+  {
+    "name": "unterminated bracket",
+    "body": "{\"items\":[1]}",
+    "path": "$.items[0",
+    "expect": {
+      "lite": {
+        "error": true
+      },
+      "messaging": {
+        "error": true
+      },
+      "http": {
+        "error": true
+      },
+      "loadrunner": {
+        "error": true
+      }
+    }
+  }
+]

@@ -19,6 +19,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
+	"github.com/jasonczech/apexload/pkg/recordbridge"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -1071,21 +1072,18 @@ func TestReplaySessionIDReservationIsSharedAcrossReplayModes(t *testing.T) {
 		return &protocol.Result{Success: true, StatusCode: 200}, nil
 	})
 	server := NewServer(ServerConfig{})
-	now := time.Now()
-	server.browserReplay.retention.terminalTTL = time.Second
-	server.browserReplay.retention.now = func() time.Time { return now }
+	var clockNanos atomic.Int64
+	clockNanos.Store(time.Now().UnixNano())
+	retention := recordbridge.DefaultReplayRetentionConfig()
+	retention.TerminalTTL = time.Second
+	retention.Now = func() time.Time { return time.Unix(0, clockNanos.Load()) }
+	replaceReplayFixtureManager(t, server, recordbridge.ReplayManagerOptions{Retention: &retention})
 
 	browserSession, err := server.browserReplay.Start("browser-script", &dsl.Script{
 		Name: "Browser", Protocol: "browser", ProjectID: "project-a",
 	}, BrowserReplayStartRequest{ReplaySessionID: replayHandlerTestSessionID, StartPaused: true})
 	if err != nil {
 		t.Fatalf("start browser replay: %v", err)
-	}
-	server.browserReplay.mu.RLock()
-	browserRuntime := server.browserReplay.sessions[browserSession.ID]
-	server.browserReplay.mu.RUnlock()
-	if browserRuntime == nil {
-		t.Fatal("browser replay runtime was not registered")
 	}
 
 	debugReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/debug/sessions", nil)
@@ -1135,12 +1133,8 @@ func TestReplaySessionIDReservationIsSharedAcrossReplayModes(t *testing.T) {
 	// Stop only requests cancellation; terminal retention begins after the
 	// worker has drained and finalized its observable artifacts. Waiting here
 	// also orders the fake-clock advance after the worker's final clock read.
-	select {
-	case <-browserRuntime.workerDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("browser replay worker did not drain after stop")
-	}
-	now = now.Add(2 * time.Second)
+	waitForBrowserReplayFixture(t, server.browserReplay, browserSession.ID)
+	clockNanos.Add(int64(2 * time.Second))
 	if removed := server.browserReplay.PruneExpired(); removed != 1 {
 		t.Fatalf("pruned browser sessions = %d, want 1", removed)
 	}

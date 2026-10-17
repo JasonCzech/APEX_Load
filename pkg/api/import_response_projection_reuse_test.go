@@ -57,11 +57,11 @@ func TestImportResponseReusesAttestationProjection(t *testing.T) {
 			t.Fatalf("masking a converter draft differs from masking its JSON copy: %v", err)
 		}
 		_, projection, err := fingerprintImportDraftCredentialsWithProjection(script, nil)
-		if err != nil || projection.script == nil {
+		if err != nil || projection.Script() == nil {
 			t.Fatalf("fingerprint projection: %v", err)
 		}
 		ensureScriptImportPreserved(script, script.Metadata.Import.Source)[importDraftAttestationMetadataKey] = "reuse-attestation-token"
-		attested[script] = projection.script
+		attested[script] = projection.Script()
 	}
 	for name, value := range map[string]any{"scripts": scripts, "script": scripts[0]} {
 		got := credentialPreservingImportResponseValueFromExact(value, importResponseRawScriptValue(value), attested)
@@ -91,17 +91,17 @@ func TestImportResponseWiresAttestationProjection(t *testing.T) {
 	defer store.Close()
 	server := NewServer(ServerConfig{Store: store, ImportAssetDir: t.TempDir()})
 	scripts := projectionReuseTestScripts(t)
-	opts := scriptImportResponseOptions{Script: scripts[0], Scripts: scripts, textMemo: &importProjectionTextMemo{}}
+	opts := scriptImportResponseOptions{Script: scripts[0], Scripts: scripts, TextMemo: &importProjectionTextMemo{}}
 	if err := server.attachImportDraftAttestations(httptest.NewRequest(http.MethodPost, "/", nil), &opts); err != nil {
 		t.Fatal(err)
 	}
-	projection := opts.attestedProjections[scripts[0]]
+	projection := opts.AttestedProjections[scripts[0]]
 	if projection == nil {
 		t.Fatal("attestation did not record the draft's projection")
 	}
 	marked := cloneScriptDefinition(projection)
 	marked.Name = "attested-projection-marker"
-	opts.attestedProjections[scripts[0]] = marked
+	opts.AttestedProjections[scripts[0]] = marked
 	_, private := newScriptImportResponseWithProjection(opts)
 	payload, err := json.Marshal(private)
 	if err != nil {

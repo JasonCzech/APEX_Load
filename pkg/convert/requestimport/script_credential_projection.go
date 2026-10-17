@@ -15,7 +15,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/protocol"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 // ScriptCredentialURL is one importer-owned URL surface outside the canonical
@@ -1157,32 +1157,13 @@ func appendBaseURLProjectionFindings(
 	})
 }
 
-func enterpriseSurfaceTarget(ref dslwalk.SurfaceRef) string {
-	if ref.Action != nil {
-		return ref.Action.Target
-	}
-	value, _ := ref.Request["target"].(string)
-	return value
-}
-
-func enterpriseSetSurfaceTarget(ref dslwalk.SurfaceRef, target string) {
-	if ref.Action != nil {
-		ref.Action.Target = target
-		return
-	}
-	ref.Request["target"] = target
-}
+func enterpriseSurfaceTarget(ref dslwalk.SurfaceRef) string            { return ref.Target().Value }
+func enterpriseSetSurfaceTarget(ref dslwalk.SurfaceRef, target string) { ref.SetTarget(target) }
 
 func enterpriseSurfaceHeaders(ref dslwalk.SurfaceRef, source credentialpolicy.SourceRef) HeaderList {
-	var list dsl.HeaderList
-	var legacy map[string]string
-	if ref.Action != nil {
-		list = append(dsl.HeaderList(nil), ref.Action.HeaderList...)
-		legacy = ref.Action.Headers
-	} else {
-		list = enterpriseMapHeaderList(ref.Request["header_list"])
-		legacy = enterpriseStringMap(ref.Request["headers"])
-	}
+	fields := ref.Headers()
+	list := enterpriseMapHeaderList(fields.List)
+	legacy := enterpriseStringMap(fields.Map)
 	out := make(HeaderList, 0, len(list)+len(legacy))
 	seen := make(map[string]struct{}, len(list))
 	for _, header := range list {
@@ -1222,18 +1203,11 @@ func enterpriseSetSurfaceHeaders(ref dslwalk.SurfaceRef, headers HeaderList) {
 		list = append(list, dsl.HeaderEntry{Name: header.Name, Value: header.Value, Enabled: header.Enabled})
 	}
 	compatibility := list.ToMap()
-	if ref.Action != nil {
-		ref.Action.HeaderList = list
-		ref.Action.Headers = compatibility
+	if ref.Action == nil && len(list) == 0 {
+		ref.ClearHeaders()
 		return
 	}
-	if len(list) == 0 {
-		delete(ref.Request, "header_list")
-		delete(ref.Request, "headers")
-		return
-	}
-	ref.Request["header_list"] = list
-	ref.Request["headers"] = compatibility
+	ref.SetHeaders(list, compatibility)
 }
 
 func enterpriseMapHeaderList(value any) dsl.HeaderList {
@@ -1296,31 +1270,11 @@ func enterpriseHeaderValue(headers HeaderList, name string) string {
 }
 
 func enterpriseSurfaceBody(ref dslwalk.SurfaceRef) (body, encoding string, present, valid bool) {
-	if ref.Action != nil {
-		return ref.Action.Body, ref.Action.BodyEncoding,
-			ref.Action.Body != "" || ref.Action.BodyEncoding != "",
-			true
+	b, e := ref.Body(), ref.BodyEncoding()
+	if !b.Valid || !e.Valid {
+		return "", "", b.Present || e.Present, false
 	}
-	rawBody, bodyPresent := ref.Request["body"]
-	rawEncoding, encodingPresent := ref.Request["body_encoding"]
-	if !bodyPresent && !encodingPresent {
-		return "", "", false, true
-	}
-	if bodyPresent {
-		var ok bool
-		body, ok = rawBody.(string)
-		if !ok {
-			return "", "", true, false
-		}
-	}
-	if encodingPresent {
-		var ok bool
-		encoding, ok = rawEncoding.(string)
-		if !ok {
-			return "", "", true, false
-		}
-	}
-	return body, encoding, true, true
+	return b.Value, e.Value, b.Present || e.Present, true
 }
 
 // representableEnterpriseSurfaceBody renders a non-string imported body into
@@ -1341,24 +1295,14 @@ func representableEnterpriseSurfaceBody(body any) string {
 	return fmt.Sprint(body)
 }
 
-func enterpriseSetSurfaceBody(ref dslwalk.SurfaceRef, body string) {
-	if ref.Action != nil {
-		ref.Action.Body = body
-		return
-	}
-	ref.Request["body"] = body
-}
+func enterpriseSetSurfaceBody(ref dslwalk.SurfaceRef, body string) { ref.SetBody(body) }
 
 func enterpriseSetSurfaceBodyEncoding(ref dslwalk.SurfaceRef, encoding string) {
-	if ref.Action != nil {
-		ref.Action.BodyEncoding = encoding
+	if ref.Action == nil && strings.TrimSpace(encoding) == "" {
+		ref.ClearBodyEncoding()
 		return
 	}
-	if strings.TrimSpace(encoding) == "" {
-		delete(ref.Request, "body_encoding")
-		return
-	}
-	ref.Request["body_encoding"] = encoding
+	ref.SetBodyEncoding(encoding)
 }
 
 func provenVariableReferencesForSurface(

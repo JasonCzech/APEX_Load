@@ -13,7 +13,43 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/cmd/apexctl/internal/ciclient"
 )
+
+func TestControllerCIResultKeepsCommandPolicyOutsideCoordinator(t *testing.T) {
+	for _, tc := range []struct {
+		name                    string
+		observed                bool
+		cancellation            error
+		err                     error
+		wantOutcome, wantStatus string
+	}{
+		{name: "create authentication", err: &ciControllerAuthFailure{Err: ciConfigurationErrorf("missing authentication")}, wantOutcome: ciOutcomeConfigurationError, wantStatus: "AUTH_FAILED"},
+		{name: "create transport", err: errors.New("network"), wantOutcome: ciOutcomeExecutionError, wantStatus: "CREATE_FAILED"},
+		{name: "observation transport", observed: true, err: errors.New("network"), wantOutcome: ciOutcomeExecutionError, wantStatus: "STATUS_FAILED"},
+		{name: "cancelled with abort deadline", observed: true, cancellation: context.Canceled, err: errors.Join(context.Canceled, context.DeadlineExceeded), wantOutcome: ciOutcomeCancelled, wantStatus: "CANCELLED"},
+		{name: "workflow deadline", observed: true, cancellation: context.DeadlineExceeded, err: context.DeadlineExceeded, wantOutcome: ciOutcomeTimedOut, wantStatus: "TIMED_OUT"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := ciclient.State[*CIRunResponse]{TestID: "deterministic", Observed: tc.observed, Cancellation: tc.cancellation}
+			if tc.observed {
+				state.Response = &CIRunResponse{TestID: "accepted", Status: "RUNNING", Transactions: 7}
+			}
+			result := controllerCIResult(state, tc.err)
+			if result.Outcome != tc.wantOutcome || result.Status != tc.wantStatus {
+				t.Fatalf("result=%+v", result)
+			}
+			if tc.observed {
+				if result.TestID != "accepted" || result.Transactions != 7 {
+					t.Fatalf("last complete observation lost: %+v", result)
+				}
+			} else if result.TestID != "deterministic" {
+				t.Fatalf("deterministic identity lost: %+v", result)
+			}
+		})
+	}
+}
 
 func controllerCancellationArgs(t *testing.T, controllerURL string) ciArgs {
 	t.Helper()

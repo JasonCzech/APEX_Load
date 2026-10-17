@@ -118,8 +118,8 @@ func transitionAssignmentLifecycle(current assignmentLifecycleState, event assig
 // one atomic lock boundary for capacity and fencing decisions while engine,
 // filesystem, and network work occurs only after that lock is released.
 //
-// The Service map fields alias these maps during the incremental migration so
-// existing internal callers and characterization tests keep their current seam.
+// Service readers use narrow queries under that same lock. Only this owner
+// mutates the stopping barriers and staging timers; Service holds no map aliases.
 type assignmentLifecycleCoordinator struct {
 	stoppingTests       map[string]struct{}
 	stoppingGenerations map[string]uint64
@@ -146,6 +146,31 @@ func newAssignmentLifecycleCoordinator() *assignmentLifecycleCoordinator {
 		stageTokens:         make(map[string]uint64),
 		stageTTL:            defaultAssignmentStageTTL,
 	}
+}
+
+// These queries require Service.mu, like the owner's transition methods. They
+// expose facts rather than mutable maps, keeping capacity/fencing decisions in
+// their existing atomic critical section.
+func (coordinator *assignmentLifecycleCoordinator) isStoppingLocked(testID string) bool {
+	_, stopping := coordinator.stoppingTests[testID]
+	return stopping
+}
+
+func (coordinator *assignmentLifecycleCoordinator) stoppingCountLocked() int {
+	return len(coordinator.stoppingTests)
+}
+
+func (coordinator *assignmentLifecycleCoordinator) stoppingGenerationLocked(testID string) (uint64, bool) {
+	generation, tracked := coordinator.stoppingGenerations[testID]
+	return generation, tracked
+}
+
+func (coordinator *assignmentLifecycleCoordinator) stoppingIDsLocked() []string {
+	ids := make([]string, 0, len(coordinator.stoppingTests))
+	for id := range coordinator.stoppingTests {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // stateOf accepts legacy test fixtures that only initialize committed. New

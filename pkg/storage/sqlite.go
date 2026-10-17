@@ -16,11 +16,16 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-type SQLiteStore struct {
+// sqlStore owns the shared relational persistence implementation. Exported
+// SQLiteStore remains a compatibility alias; backend construction selects a
+// dialect explicitly rather than implying SQLite semantics for PostgreSQL.
+type sqlStore struct {
 	db          *storeDB
 	backend     StoreBackendInfo
 	timescaleDB bool
 }
+
+type SQLiteStore = sqlStore
 
 type PostgresStore struct {
 	*SQLiteStore
@@ -56,8 +61,9 @@ type storeTx struct {
 }
 
 type optionalSchemaMigration struct {
-	name  string
-	query string
+	name          string
+	query         string
+	postgresQuery string
 }
 
 const (
@@ -422,7 +428,8 @@ var (
 	trailingCreateComma  = regexp.MustCompile(`,\s*\)`)
 	// postgresSQLRewrites translates SQLite SQL into Postgres SQL by SUBSTRING
 	// match: every entry is pinned to one column name written one exact way.
-	// There is no Postgres schema file to fall back on, so a boolean column that
+	// New boolean DDL uses explicit dialect constructors. This compatibility
+	// path still supports older callers and queries: a boolean column that
 	// deviates from a pattern here (extra NOT NULL, a different default, a new
 	// name) silently stays INTEGER on Postgres while Go binds a real bool — a
 	// runtime-only break no SQLite test can see. Three guards keep the list

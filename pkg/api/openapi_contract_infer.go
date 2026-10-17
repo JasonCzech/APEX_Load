@@ -97,6 +97,9 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 			}
 		}
 	}
+	if err := addSharedRecordingHandlerDefinitions(dir, functionCandidates, typeDefinitions, explicitResponseStatuses); err != nil {
+		return nil, err
+	}
 	if err := addOpenAPICrossPackageTypeDefinitions(dir, typeDefinitions); err != nil {
 		return nil, err
 	}
@@ -183,6 +186,15 @@ func applyGenericImportBatchContract(route discoveredRoute, contract *inferredRo
 // protocol, and converter models that handlers decode or return directly.
 var openAPICrossPackageDirectories = map[string]string{
 	"analysis":        "analysis",
+	"archivecontract": "archivecontract",
+	"browserresource": "browserresource",
+	"librarycontract": "librarycontract",
+	"runcontract":     "runcontract",
+	"telemetrypolicy": "telemetrypolicy",
+	"browsercontract": "protocol/browsercontract",
+	"httpcontract":    "protocol/httpcontract",
+	"recordbridge":    "recordbridge",
+	"importreview":    "internal/importreview",
 	"analytics":       "analysis/duckdb",
 	"monitorcontract": "monitorcontract",
 	"dynatrace":       "dynatrace",
@@ -242,6 +254,28 @@ func addOpenAPICrossPackageTypeDefinitions(apiDir string, typeDefinitions map[st
 					}
 					typeDefinitions[packageName+"."+typeSpec.Name.Name] = typeSpec.Type
 				}
+			}
+		}
+	}
+	// API forwarding aliases preserve the old model identity and depth budget.
+	// Resolving a selector as another nesting level would silently truncate deep
+	// request fields even though moving a Go declaration does not change JSON.
+	for name, definition := range typeDefinitions {
+		if strings.Contains(name, ".") {
+			continue
+		}
+		selector, ok := definition.(*ast.SelectorExpr)
+		if !ok {
+			continue
+		}
+		pkg, ok := selector.X.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		switch pkg.Name {
+		case "archivecontract", "browserresource", "librarycontract", "runcontract", "telemetrypolicy", "recordbridge", "importreview":
+			if underlying := typeDefinitions[pkg.Name+"."+selector.Sel.Name]; underlying != nil {
+				typeDefinitions[name] = underlying
 			}
 		}
 	}
@@ -961,7 +995,7 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 			if len(call.Args) == 3 && expressionContainsRequestBody(call.Args[2]) {
 				analysis.rawRequest = true
 			}
-		case "writeJSON":
+		case "writeJSON", "WriteJSON":
 			analysis.jsonResponse = true
 			if len(call.Args) > 1 {
 				if status, ok := openAPIHTTPStatus(call.Args[1]); ok {
@@ -969,7 +1003,7 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 					setInferredResponseSchema(call, status, variableTypes, functionResults, typeDefinitions, analysis)
 				}
 			}
-		case "writeError":
+		case "writeError", "WriteError":
 			analysis.jsonResponse = true
 			if len(call.Args) > 1 {
 				if status, ok := openAPIHTTPStatus(call.Args[1]); ok {
@@ -1038,7 +1072,7 @@ func shouldInspectCalledContract(name string) bool {
 	// Follow handler delegation and focused query parsers. Broad request/auth
 	// resolution helpers deliberately dispatch across many unrelated route
 	// lookups and would contaminate one operation with another operation's body.
-	return strings.HasPrefix(name, "handle") ||
+	return strings.HasPrefix(name, "handle") || strings.HasPrefix(name, "Handle") ||
 		strings.Contains(strings.ToLower(name), "query") ||
 		strings.HasPrefix(name, "parse") ||
 		strings.HasPrefix(name, "decode") ||

@@ -9,17 +9,17 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 )
 
 const maxTransactionSLARuleFileBytes = 1 << 20
 
-func parseTransactionSLARule(raw string) (api.TransactionSLARule, error) {
+func parseTransactionSLARule(raw string) (runcontract.TransactionSLARule, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return api.TransactionSLARule{}, fmt.Errorf("transaction rule cannot be empty")
+		return runcontract.TransactionSLARule{}, fmt.Errorf("transaction rule cannot be empty")
 	}
-	var rule api.TransactionSLARule
+	var rule runcontract.TransactionSLARule
 	if strings.HasPrefix(raw, "{") {
 		decoder := json.NewDecoder(strings.NewReader(raw))
 		decoder.DisallowUnknownFields()
@@ -38,7 +38,7 @@ func parseTransactionSLARule(raw string) (api.TransactionSLARule, error) {
 		if err != nil {
 			return rule, fmt.Errorf("parse transaction rule threshold: %w", err)
 		}
-		rule = api.TransactionSLARule{Transaction: parts[0], Metric: parts[1], Comparator: parts[2], Threshold: threshold}
+		rule = runcontract.TransactionSLARule{Transaction: parts[0], Metric: parts[1], Comparator: parts[2], Threshold: threshold}
 		if len(parts) == 5 {
 			rule.Severity = parts[4]
 		}
@@ -46,7 +46,7 @@ func parseTransactionSLARule(raw string) (api.TransactionSLARule, error) {
 	if rule.Severity == "" {
 		rule.Severity = "fail"
 	}
-	if err := api.ValidateTransactionSLARules([]api.TransactionSLARule{rule}); err != nil {
+	if err := runcontract.ValidateTransactionSLARules([]runcontract.TransactionSLARule{rule}); err != nil {
 		return rule, err
 	}
 	return rule, nil
@@ -69,7 +69,7 @@ func mergeTransactionSLARuleFile(args *runArgs) error {
 		return fmt.Errorf("transaction rules file exceeds %d bytes", maxTransactionSLARuleFileBytes)
 	}
 
-	var rules []api.TransactionSLARule
+	var rules []runcontract.TransactionSLARule
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if trimmed := bytes.TrimSpace(data); len(trimmed) > 0 && trimmed[0] == '[' {
@@ -78,7 +78,7 @@ func mergeTransactionSLARuleFile(args *runArgs) error {
 		}
 	} else {
 		var envelope struct {
-			TransactionRules []api.TransactionSLARule `json:"transaction_rules"`
+			TransactionRules []runcontract.TransactionSLARule `json:"transaction_rules"`
 		}
 		if err := decoder.Decode(&envelope); err != nil {
 			return fmt.Errorf("decode transaction rules file: %w", err)
