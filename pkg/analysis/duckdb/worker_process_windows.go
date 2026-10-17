@@ -119,7 +119,12 @@ func workerStartOwned(a *workerAttempt, cmd *exec.Cmd, bootstrap, root, commands
 	}
 	info := windows.StartupInfoEx{StartupInfo: windows.StartupInfo{Cb: uint32(unsafe.Sizeof(windows.StartupInfoEx{})), Flags: windows.STARTF_USESTDHANDLES | windows.STARTF_USESHOWWINDOW, ShowWindow: windows.SW_HIDE, StdInput: handles[2], StdOutput: handles[3], StdErr: handles[4]}, ProcThreadAttributeList: attrs.List()}
 	var created windows.ProcessInformation
-	flags := uint32(windows.CREATE_SUSPENDED | windows.CREATE_UNICODE_ENVIRONMENT | windows.EXTENDED_STARTUPINFO_PRESENT | windows.CREATE_NO_WINDOW)
+	// DETACHED_PROCESS, not CREATE_NO_WINDOW: a hidden console still gets a
+	// console host (conhost.exe), which joins the worker's job and can
+	// outlive a worker that exits at once, so the job would still count an
+	// active process after the worker is reaped. Detached, the job holds only
+	// the worker; its standard handles are the explicit pipes above.
+	flags := uint32(windows.CREATE_SUSPENDED | windows.CREATE_UNICODE_ENVIRONMENT | windows.EXTENDED_STARTUPINFO_PRESENT | windows.DETACHED_PROCESS)
 	if windows.CreateProcess(executable, arguments, nil, nil, true, flags, &environment[0], directory, &info.StartupInfo, &created) != nil {
 		return nil, errWorkerProtocol
 	}

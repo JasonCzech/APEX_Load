@@ -93,17 +93,6 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      # TEMPORARY diagnostic (PR #230): times a Windows worker child's reap
-      # and every descriptor close when the child exits mid-request, as DIAG
-      # lines. It runs first so later analytics failures cannot hide it.
-      - name: Windows worker exit diagnostic
-        if: runner.os == 'Windows'
-        shell: bash
-        env:
-          CGO_ENABLED: '0'
-        run: |
-          go test -count=1 -v -timeout 10m ./pkg/analysis/duckdb -run '^TestWindowsWorkerExitDiagnostic$' 2>&1 | grep -E 'DIAG|^(---|ok|FAIL|PASS)' || true
-
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
