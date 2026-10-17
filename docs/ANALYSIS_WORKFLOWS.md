@@ -1057,7 +1057,9 @@ returning v1.
   and `apexctl rca bundle --id RUN --analysis-id ID`, and `apexctl rca eval`
   for the evaluation corpus; `--wait DURATION` (at most 10m) on `analyze`,
   `status` and `show` polls until the analysis ends (`show`: until an
-  automatic analysis completes); MCP tools
+  automatic analysis completes), and exits 3 (controller or transport
+  failure) when a poll fails or answers with something unreadable, rather
+  than printing the last state as if it were final; MCP tools
   `run_rca_analyze`, `run_rca_status`, `run_rca_assessment`,
   `run_rca_bundle`, `run_rca_check_narration`, `run_rca_critiques` and
   `run_rca_critique_add`.

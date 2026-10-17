@@ -307,6 +307,11 @@ later actions can use it as `{{var.name}}`.
 | `header` | headers | A header name |
 | `sse_concat`, `sse_event` | body | Server-sent-event streams |
 
+In every protocol, `jsonpath` and `jmespath` return a selected number exactly as the
+response wrote it: an identifier such as `1234567890123456789` is not rounded, and
+`1.2300` stays `1.2300`. A JMESPath comparison that would read an integer beyond
+9,007,199,254,740,991 fails instead of comparing a rounded value.
+
 Useful extractor options: `on_miss` (`fail` to fail the request when nothing matches,
 `empty` to assign an empty string), `mode: "all"` to save every match as
 `name_1`…`name_N` plus `name_count`, `save_offset`/`save_length` to trim the value, and
