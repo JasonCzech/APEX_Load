@@ -311,4 +311,5 @@ On the merged code (01a0b60ed and later):
 | # | Run, job | Commit | HAR step |
 | --- | --- | --- | --- |
 | 1 | 39001525209, 117305285602 | e9d6b3ddc (#235's merge; no Go changes since 01a0b60ed) | passed: `winfs`, the browser package (45.7 s), `pkg/api` (43.9 s), and the memory step's browser tests; 349 tests; one skip, WebKit's waterfall comparison |
+| 2 | 39005524599, 117317092061 | c6397573b (the record and #236's merge; no Go changes) | passed: `winfs`, the browser package (35.2 s), `pkg/api` (37.9 s), and the memory step's browser tests; 349 tests; one skip, WebKit's waterfall comparison |
 
