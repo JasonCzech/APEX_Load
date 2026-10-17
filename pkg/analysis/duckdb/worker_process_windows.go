@@ -202,7 +202,8 @@ func (p *workerOwnedProcess) closeAfterWait() error {
 	}
 	if p.assigned {
 		var accounting workerWindowsJobAccounting
-		if windows.QueryInformationJobObject(p.job, windows.JobObjectBasicAccountingInformation, uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil) != nil || accounting.ActiveProcesses != 0 {
+		if err := windows.QueryInformationJobObject(p.job, windows.JobObjectBasicAccountingInformation, uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil); err != nil || accounting.ActiveProcesses != 0 {
+			workerLogUnresolved(p.owner, "job_still_active", "active_processes", accounting.ActiveProcesses, "total_processes", accounting.TotalProcesses, "query_error", err)
 			return errWorkerOwnership
 		}
 	}
