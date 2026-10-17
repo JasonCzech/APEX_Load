@@ -1,9 +1,9 @@
 # Native HAR capture on Windows
 
-Status: Wave 1 (platform gate, PR #228) delivered. Waves 2–4 (spike and
-`pkg/internal/winfs`, Windows ownership, portable tests, CI job, guide) in PR
-#229. The full HAR step has passed on Windows once; qualification needs three
-green runs in a row on the final code (see [Repeat runs](#repeat-runs)).
+Status: Wave 1 (platform gate, PR #228) is on main. Waves 2–4 (spike and
+`pkg/internal/winfs`, Windows ownership, portable tests, CI job, guide) are PR
+#229. **Qualified on Windows:** the full HAR step passed three runs in a row on
+the final code (see [Repeat runs](#repeat-runs)).
 
 The project has no Windows machine. Every Windows statement below comes from
 the Windows leg of `.github/workflows/desktop.yml` on GitHub-hosted runners.
@@ -298,8 +298,8 @@ Each run is recorded here as it completes. Runs 1 and 2 passed on the HAR
 code as of b10a9e6a4. `main` then changed one HAR test,
 `TestHAROwnershipCrossProcessCleaner` (#234: it now publishes its ready
 marker by rename and allows a slow child 8 s). It also added the Windows
-browser memory sampler to the browser package (#233). So three more runs on
-the merged code (01a0b60ed and later) follow.
+browser memory sampler to the browser package (#233). So three runs on the
+merged code (01a0b60ed and later) were needed; they are below.
 
 | # | Run, job | Commit | HAR step |
 | --- | --- | --- | --- |
@@ -312,4 +312,9 @@ On the merged code (01a0b60ed and later):
 | --- | --- | --- | --- |
 | 1 | 39001525209, 117305285602 | e9d6b3ddc (#235's merge; no Go changes since 01a0b60ed) | passed: `winfs`, the browser package (45.7 s), `pkg/api` (43.9 s), and the memory step's browser tests; 349 tests; one skip, WebKit's waterfall comparison |
 | 2 | 39005524599, 117317092061 | c6397573b (the record and #236's merge; no Go changes) | passed: `winfs`, the browser package (35.2 s), `pkg/api` (37.9 s), and the memory step's browser tests; 349 tests; one skip, WebKit's waterfall comparison |
+| 3 | 39005524599 attempt 2, 117330597493 | c6397573b (a re-run of run 2's job) | passed: `winfs`, the browser package (46.5 s), `pkg/api` (39.3 s), and the memory step's browser tests; 349 tests; one skip, WebKit's waterfall comparison |
+
+Each of these jobs then failed in its later native analytics step
+(`TestAnalysisCleanupRetriesMetadataReadFailure` and similar), which `main`
+fails too and PR #230 fixes. That PR's Windows job has since passed in full.
 
