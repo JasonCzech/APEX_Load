@@ -17,6 +17,8 @@ export interface ReportKpi {
   delta?: string
   deltaTone?: 'good' | 'warn' | 'danger' | 'neutral'
   sparkline: number[]
+  /** A percentile's percentile_quality, marked when it is not exact. */
+  percentileQuality?: string
 }
 
 export interface TimelineBreachWindow {
@@ -125,6 +127,7 @@ export function buildReportKpis(report: RunArchiveReport | null, history: Metric
       delta: baselineDiff.p95?.label,
       deltaTone: baselineDiff.p95?.tone,
       sparkline: sparkline(history, 'p95'),
+      percentileQuality: overview?.percentile_quality,
     },
     {
       id: 'errorRate',

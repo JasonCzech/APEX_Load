@@ -1,3 +1,4 @@
+import PercentileQualityMark from '../PercentileQualityMark'
 import type { ReportKpi } from './runReportModel'
 
 interface Props {
@@ -33,7 +34,7 @@ export default function RunReportKpiScorecard({ kpis }: Props) {
         <article key={kpi.id} className={`run-report-kpi run-report-tone-${kpi.tone}`}>
           <div>
             <p>{kpi.label}</p>
-            <strong>{kpi.value}</strong>
+            <strong><PercentileQualityMark quality={kpi.percentileQuality} />{kpi.value}</strong>
             {kpi.delta && <span className={`run-report-delta run-report-delta-${kpi.deltaTone || 'neutral'}`}>{kpi.delta}</span>}
           </div>
           <Sparkline values={kpi.sparkline} />

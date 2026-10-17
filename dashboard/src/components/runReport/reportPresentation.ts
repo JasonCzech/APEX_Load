@@ -21,7 +21,8 @@ export function reportPopulationOverview(report: RunArchiveReport | null, popula
   if (!report) return undefined
   const metrics = report.metric_populations?.[population]
   if (!metrics || metrics.transactions === 0) return undefined
-  return { ...report.overview, ...metrics, p95_ms: metrics.p95_ms, peak_tps: metrics.peak_tps ?? Number.NaN }
+  // The population's own percentiles and their quality, never the mixed overview's.
+  return { ...report.overview, ...metrics, p95_ms: metrics.p95_ms, percentile_quality: metrics.percentile_quality, peak_tps: metrics.peak_tps ?? Number.NaN }
 }
 export function reportAcceptance(report: RunArchiveReport | null) {
   return report?.verdict || { status: 'Not available', failed: false, conditional: true, explanation: 'No acceptance assessment is available.' }

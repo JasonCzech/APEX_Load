@@ -29,6 +29,12 @@ describe('report presentation', () => {
   expect(reportPopulationOverview(report, 'transaction')).toBeUndefined()
   expect(buildBaselineOverviewDiff(reportPopulationOverview(report, 'transaction'), report.overview)).toEqual({})
  })
+ it('takes percentile quality from the population, not the mixed overview', () => {
+  const sketchedOverview = { ...report, overview: { ...report.overview, percentile_quality: 'approximate' } } as unknown as RunArchiveReport
+  expect(reportPopulationOverview(sketchedOverview, 'action')?.percentile_quality).toBeUndefined()
+  const sketchedActions = { ...report, metric_populations: { ...report.metric_populations, action: { ...report.metric_populations!.action, p95_ms: 120, percentile_quality: 'approximate' } } } as unknown as RunArchiveReport
+  expect(reportPopulationOverview(sketchedActions, 'action')?.percentile_quality).toBe('approximate')
+ })
  it('does not substitute analyst signoff or an absent SLA breach for acceptance', () => {
   expect(reportAcceptance(null).status).toBe('Not available')
   expect(effectiveReportVerdict(report, { verdict_override: 'Pass' } as never).status).toBe('Not assessed')
