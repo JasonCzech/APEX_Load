@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"sync"
@@ -69,6 +70,13 @@ type workerPipeEvent struct {
 }
 type workerWriteEvent struct{ err error }
 
+// workerLogUnresolved records why an attempt's physical ownership stayed
+// unproven. Such an attempt stays charged, so its fixed public error alone
+// cannot tell an operator what is still held.
+func workerLogUnresolved(a *workerAttempt, cause string, attrs ...any) {
+	slog.Warn("native worker ownership unresolved", append([]any{"cause", cause, "attempt", a.bootstrap.Identity.AttemptID}, attrs...)...)
+}
+
 // The caller retains the returned attempt through durable copy and publication
 // reconciliation, then closes output readers and releases it. Error callers
 // may release only if physical ownership was proven; unresolved attempts stay
@@ -123,6 +131,7 @@ func runWorkerParent(a *workerAttempt, request workerRequest, options workerRunO
 			}
 			callerTimer.Reset(proofWindow)
 		case <-callerTimer.C:
+			workerLogUnresolved(a, "caller_deadline", "runtime_ms", a.bootstrap.Limits.RuntimeMS, "proof_window", proofWindow)
 			a.cancel()
 			abandon()
 			return nil, errWorkerOwnership
@@ -535,6 +544,13 @@ func runWorkerParentOwned(a *workerAttempt, request workerRequest, options worke
 		case <-proofC:
 			proofC = nil
 			if !waited || !writerJoined || !stderrJoined || !readerJoined || !pipesClosed() || !processJoined || probeDone != nil {
+				var processCloseErr error
+				if processOwner != nil {
+					a.mu.Lock()
+					processCloseErr = processOwner.err
+					a.mu.Unlock()
+				}
+				workerLogUnresolved(a, "join_timeout", "waited", waited, "stdout_eof", stdoutEOF, "writer_joined", writerJoined, "stderr_joined", stderrJoined, "reader_joined", readerJoined, "pipes_closed", pipesClosed(), "process_joined", processJoined, "process_close_error", processCloseErr, "probe_pending", probeDone != nil, "stage", state.stage)
 				select {
 				case unresolved <- struct{}{}:
 				default:
@@ -551,10 +567,14 @@ func runWorkerParentOwned(a *workerAttempt, request workerRequest, options worke
 	physicalClosed := a.descriptorsJoinedLocked(true)
 	a.mu.Unlock()
 	if !physicalClosed {
+		workerLogUnresolved(a, "descriptors_unjoined")
 		return nil, errWorkerOwnership
 	}
 	_ = cancelStarted // retained for later resource evidence receipt
 	if cause != nil {
+		if errors.Is(cause, errWorkerOwnership) {
+			workerLogUnresolved(a, "supervisor", "process_joined", processJoined, "stage", state.stage)
+		}
 		return nil, cause
 	}
 	if waitErr != nil || state.stage != "terminal" || result == nil || workerContextError(a.ctx) != nil {
@@ -578,6 +598,7 @@ func runWorkerParentOwned(a *workerAttempt, request workerRequest, options worke
 	// Only this complete successful receipt discharges a missing-child sample.
 	// No missing PID reaches reaped/pipesJoined/cleanup or signaling authority.
 	if childAbsenceObserved && !(waited && waitErr == nil && processJoined && physicalClosed && state.stage == "terminal" && result.Status == "ok") {
+		workerLogUnresolved(a, "child_absence_unproven")
 		return nil, errWorkerOwnership
 	}
 	return &workerRunResult{result: *result, attempt: a}, nil

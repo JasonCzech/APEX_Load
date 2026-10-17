@@ -2,8 +2,10 @@ package api
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -41,8 +43,21 @@ type analysisCleanupReadFailureStore struct {
 	completed   int
 }
 
+// ListAnalysisCleanupJobs lists the dataset job first, as a wall clock too
+// coarse to tell its not_before from its attempts' (Windows) orders it.
 func (s *analysisCleanupReadFailureStore) ListAnalysisCleanupJobs(now time.Time, limit int) ([]storage.AnalysisCleanupJob, error) {
-	return s.SQLiteStore.ListAnalysisCleanupJobs(now.Add(time.Hour), limit)
+	jobs, err := s.SQLiteStore.ListAnalysisCleanupJobs(now.Add(time.Hour), limit)
+	slices.SortStableFunc(jobs, func(a, b storage.AnalysisCleanupJob) int {
+		return cmp.Compare(boolRank(a.Kind != "dataset"), boolRank(b.Kind != "dataset"))
+	})
+	return jobs, err
+}
+
+func boolRank(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }
 func (s *analysisCleanupReadFailureStore) GetAnalysisImport(id string) (*storage.AnalysisImport, error) {
 	if s.failRead {
