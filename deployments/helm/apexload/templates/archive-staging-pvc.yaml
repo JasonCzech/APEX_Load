@@ -1,4 +1,5 @@
-{{- if .Values.archiveStaging.persistence.enabled }}
+{{- $upgradeValues := include "apexload.upgradeValues" . | fromJson -}}
+{{- if $upgradeValues.archiveStaging.persistence.enabled }}
 {{- $archiveRoot := "/var/lib/apexload/archives" }}
 {{- $archiveClaim := include "apexload.archiveStagingClaimName" . }}
 {{- $importRoot := clean .Values.importAssets.root }}
@@ -19,10 +20,10 @@
 {{- end }}
 {{- end }}
 {{- end }}
-{{- if and .Values.controller.ha.enabled (not (has "ReadWriteMany" .Values.archiveStaging.persistence.accessModes)) }}
+{{- if and .Values.controller.ha.enabled (not (has "ReadWriteMany" $upgradeValues.archiveStaging.persistence.accessModes)) }}
 {{- fail "archiveStaging.persistence.accessModes must declare ReadWriteMany when controller HA is enabled, including existingClaim" }}
 {{- end }}
-{{- if not .Values.archiveStaging.persistence.existingClaim }}
+{{- if not $upgradeValues.archiveStaging.persistence.existingClaim }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -34,12 +35,12 @@ metadata:
 {{ include "apexload.labels" . | indent 4 }}
 spec:
   accessModes:
-{{ toYaml .Values.archiveStaging.persistence.accessModes | indent 4 }}
-{{- if .Values.archiveStaging.persistence.storageClassName }}
-  storageClassName: {{ .Values.archiveStaging.persistence.storageClassName | quote }}
+{{ toYaml $upgradeValues.archiveStaging.persistence.accessModes | indent 4 }}
+{{- if $upgradeValues.archiveStaging.persistence.storageClassName }}
+  storageClassName: {{ $upgradeValues.archiveStaging.persistence.storageClassName | quote }}
 {{- end }}
   resources:
     requests:
-      storage: {{ .Values.archiveStaging.persistence.size | quote }}
+      storage: {{ $upgradeValues.archiveStaging.persistence.size | quote }}
 {{- end }}
 {{- end }}

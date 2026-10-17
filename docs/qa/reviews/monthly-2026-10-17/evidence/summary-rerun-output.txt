@@ -1,0 +1,11 @@
+# github.com/shoenig/go-m1cpu
+../../../../go/pkg/mod/github.com/shoenig/go-m1cpu@v0.1.6/cpu.go:75:17: warning: variable length array folded to constant array as an extension [-Wgnu-folding-constant]
+../../../../go/pkg/mod/github.com/shoenig/go-m1cpu@v0.1.6/cpu.go:77:16: warning: variable length array folded to constant array as an extension [-Wgnu-folding-constant]
+--- FAIL: TestMonthlyReviewSummaryWindowBoundaries (3.20s)
+    --- FAIL: TestMonthlyReviewSummaryWindowBoundaries/overlapping_count_windows (1.59s)
+        monthly_review_summary_test.go:24: inexact summary reported as valid: value=120 timestamp=2023-11-14 22:14:00 +0000 UTC derivation=[{Operation:count Algorithm:source_summary.v1 BucketSeconds:60} {Operation:count Algorithm:summary_window_sum.v1 BucketSeconds:120}]
+    --- FAIL: TestMonthlyReviewSummaryWindowBoundaries/summary_extends_past_query_end (1.61s)
+        monthly_review_summary_test.go:24: inexact summary reported as valid: value=60 timestamp=2023-11-14 22:14:00 +0000 UTC derivation=[{Operation:count Algorithm:source_summary.v1 BucketSeconds:60} {Operation:count Algorithm:summary_window_sum.v1 BucketSeconds:60}]
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/analysis/duckdb	3.679s
+FAIL

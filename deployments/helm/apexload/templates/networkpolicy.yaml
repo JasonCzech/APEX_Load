@@ -1,7 +1,8 @@
-{{- if and .Values.networkPolicy.egress.enabled (not .Values.networkPolicy.enabled) }}
+{{- $upgradeValues := include "apexload.upgradeValues" . | fromJson -}}
+{{- if and $upgradeValues.networkPolicy.egress.enabled (not $upgradeValues.networkPolicy.enabled) }}
 {{- fail "networkPolicy.egress.enabled requires networkPolicy.enabled" }}
 {{- end }}
-{{- if .Values.networkPolicy.enabled }}
+{{- if $upgradeValues.networkPolicy.enabled }}
 {{- $controllerAddr := trim (default ":8080" .Values.controller.addr) }}
 {{- $controllerHTTPPort := regexFind "[0-9]+$" $controllerAddr }}
 {{- if not $controllerHTTPPort }}
@@ -45,7 +46,7 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace }}
+              kubernetes.io/metadata.name: {{ $upgradeValues.networkPolicy.ingressNamespace }}
       ports:
         - protocol: TCP
           port: {{ $controllerHTTPPortInt }}
@@ -69,7 +70,7 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.networkPolicy.monitoringNamespace }}
+              kubernetes.io/metadata.name: {{ $upgradeValues.networkPolicy.monitoringNamespace }}
       ports:
         - protocol: TCP
           port: 9091
@@ -97,7 +98,7 @@ spec:
       ports:
         - protocol: TCP
           port: 9090
-{{- if .Values.networkPolicy.egress.enabled }}
+{{- if $upgradeValues.networkPolicy.egress.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -130,7 +131,7 @@ spec:
       ports:
         - protocol: TCP
           port: {{ $controllerHTTPPortInt }}
-{{- with .Values.networkPolicy.egress.controllerExtraRules }}
+{{- with $upgradeValues.networkPolicy.egress.controllerExtraRules }}
 {{ toYaml . | indent 4 }}
 {{- end }}
 ---
@@ -151,7 +152,7 @@ spec:
     - Egress
   egress:
 {{ include "apexload.egressTargetRules" . | indent 4 }}
-{{- with .Values.networkPolicy.egress.generatorExtraRules }}
+{{- with $upgradeValues.networkPolicy.egress.generatorExtraRules }}
 {{ toYaml . | indent 4 }}
 {{- end }}
 {{- end }}

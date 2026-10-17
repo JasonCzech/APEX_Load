@@ -202,12 +202,28 @@ func newCachedDNSDialer(base func(context.Context, string, string) (net.Conn, er
 			cache[host] = hit
 			mu.Unlock()
 		}
-		var last error
+		eligible := make([]net.IPAddr, 0, len(hit.addresses))
 		for _, address := range hit.addresses {
 			if network == "tcp4" && address.IP.To4() == nil || network == "tcp6" && address.IP.To4() != nil {
 				continue
 			}
-			conn, err := base(ctx, network, net.JoinHostPort(address.String(), port))
+			eligible = append(eligible, address)
+		}
+		var last error
+		for index, address := range eligible {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			// Numeric-address dials cannot use net.Dialer's hostname fallback.
+			// Reserve a share of the remaining deadline for every eligible
+			// address so one unreachable address cannot consume the whole dial.
+			attemptCtx := ctx
+			cancel := func() {}
+			if deadline, ok := ctx.Deadline(); ok && index+1 < len(eligible) {
+				attemptCtx, cancel = context.WithTimeout(ctx, time.Until(deadline)/time.Duration(len(eligible)-index))
+			}
+			conn, err := base(attemptCtx, network, net.JoinHostPort(address.String(), port))
+			cancel()
 			if err == nil {
 				return conn, nil
 			}

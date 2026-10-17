@@ -707,9 +707,8 @@ func (tr *TestRunner) StopExecutionPlanRun(planID, runID string, actor testCreat
 		return nil, errExecutionPlanRunNotFound
 	}
 	if st == nil && strings.EqualFold(run.RunMode, "sequential") && strings.EqualFold(run.Status, "running") {
-		// Recovery has not restored this run's state yet (just after a
-		// takeover): it applies the stop when it does, so no further entry
-		// starts. Its running entry's run is stopped below.
+		// Recovery may be retrying after admission reopened. Record the stop
+		// durably before acknowledging it, even without an in-memory state.
 		tr.seqMu.Lock()
 		if restored := tr.seqPlanRuns[runID]; restored != nil {
 			marked, err := tr.stopSequentialPlanRunLocked(restored, detail)
@@ -719,11 +718,21 @@ func (tr *TestRunner) StopExecutionPlanRun(planID, runID string, actor testCreat
 			}
 			pendingSkipped = marked
 		} else {
-			if tr.pendingPlanStops == nil {
-				tr.pendingPlanStops = make(map[string]string)
+			var marked bool
+			run, marked, err = tr.stopUnrestoredSequentialPlanRunLocked(run, detail)
+			if err != nil {
+				tr.seqMu.Unlock()
+				return nil, err
 			}
-			tr.pendingPlanStops[runID] = detail
-			pendingSkipped = true
+			if marked {
+				// A recovery read can predate the durable stop and still be
+				// waiting for seqMu. This hint also stops that stale snapshot.
+				if tr.pendingPlanStops == nil {
+					tr.pendingPlanStops = make(map[string]string)
+				}
+				tr.pendingPlanStops[runID] = detail
+			}
+			pendingSkipped = marked
 		}
 		tr.seqMu.Unlock()
 	}
@@ -828,25 +837,7 @@ func (tr *TestRunner) stopSequentialPlanRunLocked(st *seqPlanRunState, detail st
 	previousEntries := append([]storage.ExecutionPlanRunEntry(nil), st.statuses...)
 	previousStop := st.stopDetail
 	st.stopDetail = detail
-	marked := false
-	for i := range st.statuses {
-		switch st.statuses[i].Status {
-		case "pending":
-			st.statuses[i].Status = "skipped"
-			st.statuses[i].Detail = detail
-			st.statuses[i].Stopped = true
-			marked = true
-		case "running":
-			// The running entry records the stop too, so a run whose last entry
-			// is being stopped still ends as stopped, after a restart as well.
-			// Its run is stopped by the caller once it exists; one still being
-			// created is cancelled by the launcher.
-			st.statuses[i].Detail = detail
-			st.statuses[i].Stopped = true
-			marked = true
-		}
-	}
-	if !marked {
+	if !markSequentialPlanEntriesStopped(st.statuses, detail) {
 		return false, nil
 	}
 	run := st.toStorageRun()
@@ -866,4 +857,68 @@ func (tr *TestRunner) stopSequentialPlanRunLocked(st *seqPlanRunState, detail st
 	}
 	st.revision = run.Revision
 	return true, nil
+}
+
+// stopUnrestoredSequentialPlanRunLocked persists the same stop transition while
+// recovery has no state to mutate. Holding seqMu prevents recovery from installing
+// its snapshot until the caller has also published the pending-stop hint.
+func (tr *TestRunner) stopUnrestoredSequentialPlanRunLocked(run *storage.ExecutionPlanRun, detail string) (*storage.ExecutionPlanRun, bool, error) {
+	term, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return nil, false, err
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		if run == nil {
+			return nil, false, errExecutionPlanRunNotFound
+		}
+		if !strings.EqualFold(run.RunMode, "sequential") || !strings.EqualFold(run.Status, "running") {
+			return run, false, nil
+		}
+		updated := cloneExecutionPlanRunRecord(run)
+		if !markSequentialPlanEntriesStopped(updated.Entries, detail) {
+			return run, false, nil
+		}
+		updated.UpdatedAt = time.Now().UTC()
+		updated.TransitionToken = ""
+		expectedRevision := updated.Revision
+		err = tr.persistExecutionPlanRunDurableWithTerm(updated, term)
+		if err == nil {
+			return updated, true, nil
+		}
+		if errors.Is(err, errExecutionPlanRunCommitUnknown) {
+			if current, loadErr := tr.execPlanRunStore.GetExecutionPlanRun(run.ID); loadErr == nil && executionPlanRunTransitionMatches(current, updated, expectedRevision) {
+				return current, true, nil
+			}
+		}
+		if !errors.Is(err, errExecutionPlanRunConflict) {
+			break
+		}
+		// A definite conflict means another transition won; apply the stop to
+		// its current entries rather than overwriting that newer state.
+		run, err = tr.execPlanRunStore.GetExecutionPlanRun(run.ID)
+		if err != nil {
+			break
+		}
+		err = errExecutionPlanRunConflict
+	}
+	return nil, false, executionPlanPersistenceError("persist stopped execution-plan run", err)
+}
+
+func markSequentialPlanEntriesStopped(entries []storage.ExecutionPlanRunEntry, detail string) bool {
+	marked := false
+	for i := range entries {
+		switch entries[i].Status {
+		case "pending":
+			entries[i].Status = "skipped"
+		case "running":
+			// The running entry records the stop too, including when it is
+			// the last entry. The caller stops its run once that run exists.
+		default:
+			continue
+		}
+		entries[i].Detail = detail
+		entries[i].Stopped = true
+		marked = true
+	}
+	return marked
 }
