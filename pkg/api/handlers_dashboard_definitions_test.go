@@ -70,8 +70,8 @@ func TestDashboardDefinitionRejectsArbitraryPanelKind(t *testing.T) {
 
 // dashboardSaveFailingStore is a store whose definition saves fail with err.
 type dashboardSaveFailingStore struct {
-	*storage.SQLiteStore
-	err error
+	SQLiteStore *storage.SQLiteStore
+	err         error
 }
 
 func (s dashboardSaveFailingStore) UpdateDashboardDefinitionIfRevision(*storage.DashboardDefinition, int64) (bool, error) {
@@ -85,7 +85,7 @@ func (s dashboardSaveFailingStore) SaveDashboardDefinition(*storage.DashboardDef
 // dashboardRevisionRaceStore answers the revision list as if an edit
 // committed after the definition was read: one revision newer than it.
 type dashboardRevisionRaceStore struct {
-	*storage.SQLiteStore
+	SQLiteStore *storage.SQLiteStore
 }
 
 func (s dashboardRevisionRaceStore) ListDashboardDefinitionRevisions(id string) ([]storage.DashboardDefinitionRevision, error) {
@@ -110,7 +110,7 @@ func TestDashboardDefinitionReadsStayConsistentAcrossAConcurrentEdit(t *testing.
 	if created.Code != http.StatusCreated || json.Unmarshal(created.Body.Bytes(), &definition) != nil {
 		t.Fatalf("create = %d %s", created.Code, created.Body.String())
 	}
-	server.store = dashboardRevisionRaceStore{SQLiteStore: server.store.(*storage.SQLiteStore)}
+	server.store = sqliteOverlay(dashboardRevisionRaceStore{SQLiteStore: server.store.(*storage.SQLiteStore)})
 	item := "/api/v1/monitoring/dashboard-definitions/" + definition.ID
 	read := func(path string) storage.DashboardDefinition {
 		t.Helper()
@@ -153,7 +153,7 @@ func TestDashboardDefinitionSaveFailureIsTheServers(t *testing.T) {
 	if limited := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboard-definitions", map[string]any{"project_id": projectID, "name": "One too many", "visibility": "project", "tabs": []map[string]any{{"id": "overview", "title": "Overview", "panels": []map[string]any{}}}}); limited.Code != http.StatusBadRequest || !strings.Contains(limited.Body.String(), "maximum") {
 		t.Fatalf("over the limit = %d %s", limited.Code, limited.Body.String())
 	}
-	server.store = dashboardSaveFailingStore{SQLiteStore: server.store.(*storage.SQLiteStore), err: errors.New("database is locked")}
+	server.store = sqliteOverlay(dashboardSaveFailingStore{SQLiteStore: server.store.(*storage.SQLiteStore), err: errors.New("database is locked")})
 	failed := dashboardAPIRequest(t, server, http.MethodPatch, item, map[string]any{"revision": 1, "name": "Operations v2"})
 	if failed.Code != http.StatusInternalServerError || strings.Contains(failed.Body.String(), "locked") {
 		t.Fatalf("store failure = %d %s", failed.Code, failed.Body.String())

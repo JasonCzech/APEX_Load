@@ -153,15 +153,15 @@ func TestEvaluationWorkerShutdownLeavesTheLeaseToExpire(t *testing.T) {
 // evaluationFinishesBeforeCancelStore finishes the job just before the cancel
 // lands, as a runner on another controller would.
 type evaluationFinishesBeforeCancelStore struct {
-	*storage.SQLiteStore
-	t *testing.T
+	SQLiteStore *storage.SQLiteStore
+	t           *testing.T
 }
 
 func (s *evaluationFinishesBeforeCancelStore) CancelEvaluationJob(projectID, id string, now time.Time) (bool, error) {
-	claimed, err := s.ClaimEvaluationJob("other-controller", time.Now(), time.Minute, []string{"test_echo"}, evaluationJobMaxAttempts)
+	claimed, err := s.SQLiteStore.ClaimEvaluationJob("other-controller", time.Now(), time.Minute, []string{"test_echo"}, evaluationJobMaxAttempts)
 	if err != nil || claimed == nil || claimed.ID != id {
 		s.t.Errorf("claim before cancel: %#v %v", claimed, err)
-	} else if done, err := s.CompleteEvaluationJobFenced(id, "other-controller", storage.EvaluationJobReady, `{"doubled":2}`, "sha", "", "", time.Now(), "", "", 0); err != nil || !done {
+	} else if done, err := s.SQLiteStore.CompleteEvaluationJobFenced(id, "other-controller", storage.EvaluationJobReady, `{"doubled":2}`, "sha", "", "", time.Now(), "", "", 0); err != nil || !done {
 		s.t.Errorf("finish before cancel: %v %v", done, err)
 	}
 	return s.SQLiteStore.CancelEvaluationJob(projectID, id, now)
@@ -173,7 +173,7 @@ func TestEvaluationCancelAfterTheJobFinishedAnswersTheFinishedJob(t *testing.T) 
 	server, store := newAuditTestServer(t)
 	t.Cleanup(func() { store.Close() })
 	job := queueEvaluation(t, server, testEvaluationInput{Value: 1}, "")
-	server.store = &evaluationFinishesBeforeCancelStore{SQLiteStore: store, t: t}
+	server.store = sqliteOverlay(&evaluationFinishesBeforeCancelStore{SQLiteStore: store, t: t})
 	t.Cleanup(func() { server.store = store })
 	response := evaluationRequest(t, server, http.MethodDelete, "/api/v1/analysis/evaluations/"+job.ID+"?project_id="+storage.DefaultProjectID, nil, "")
 	var answered EvaluationJobResponse

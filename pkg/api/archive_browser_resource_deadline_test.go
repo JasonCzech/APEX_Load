@@ -12,10 +12,10 @@ import (
 )
 
 type resourceDeadlineSQLIdentityStore struct {
-	*storage.SQLiteStore
-	pool     *sql.DB
-	calls    int
-	deadline time.Time
+	SQLiteStore *storage.SQLiteStore
+	pool        *sql.DB
+	calls       int
+	deadline    time.Time
 }
 
 func (store *resourceDeadlineSQLIdentityStore) ReadBrowserResourceArchiveIdentityContext(ctx context.Context, id string) (*storage.BrowserResourceArchiveIdentity, error) {
@@ -51,14 +51,14 @@ func TestBrowserResourceRouteDeadlineCoversPreHandlerOccupiedProjectSQL(t *testi
 			}
 			defer transaction.Rollback()
 			store := &resourceDeadlineSQLIdentityStore{SQLiteStore: actual, pool: pool}
-			server := &Server{store: store, mux: http.NewServeMux()}
+			server := &Server{store: sqliteOverlay(store), mux: http.NewServeMux()}
 			route := newBrowserResourceReadAPIRoute()
 			entered := false
 			route.Handler = func(*Server) http.Handler {
 				return http.HandlerFunc(func(http.ResponseWriter, *http.Request) { entered = true })
 			}
 			passthrough := func(next http.Handler) http.Handler { return next }
-			server.registerAPIRouteCatalog(apiRouteCatalog{Routes: []apiRouteSpec{route}}, apiRouteMiddlewareStack{cors: passthrough, log: passthrough, auth: authMiddleware(func() AuthSettings { return AuthSettings{Mode: authModeTrustedHeaders} }, store, nil)})
+			server.registerAPIRouteCatalog(apiRouteCatalog{Routes: []apiRouteSpec{route}}, apiRouteMiddlewareStack{cors: passthrough, log: passthrough, auth: authMiddleware(func() AuthSettings { return AuthSettings{Mode: authModeTrustedHeaders} }, sqliteOverlay(store), nil)})
 			ctx, cancel := context.WithTimeout(context.Background(), 35*time.Millisecond)
 			defer cancel()
 			if alreadyCanceled {

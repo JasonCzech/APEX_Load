@@ -17,7 +17,7 @@ import (
 )
 
 type nativeReconciliationFaultStore struct {
-	*storage.SQLiteStore
+	SQLiteStore                                    *storage.SQLiteStore
 	confirmOutage, confirmLostReply, resolveOutage atomic.Bool
 	confirms, resolutions                          atomic.Int64
 }
@@ -75,7 +75,7 @@ func nativeReconciliationFixture(t *testing.T) (*Server, *nativeReconciliationFa
 	fault := &nativeReconciliationFaultStore{SQLiteStore: store}
 	// Core retention tests need no scheduler/recovery fixture. Startup integration
 	// below separately constructs and joins a real Server.
-	return &Server{store: fault, nativeReconciliationStore: fault}, fault, in
+	return &Server{store: sqliteOverlay(fault), nativeReconciliationStore: sqliteOverlay(fault)}, fault, in
 }
 func nativeReconciliationPipeline(t *testing.T) (context.Context, *analytics.NativePipeline, string) {
 	t.Helper()
@@ -108,7 +108,7 @@ func nativeReconciliationPipeline(t *testing.T) (context.Context, *analytics.Nat
 			}
 			attempts := record.scope.origin.(storage.AnalysisAttemptStore)
 			// Clear only known fixture fault injection, never an actual close failure.
-			if owner, ok := attempts.(*nativeReconciliationFaultStore); ok {
+			if owner, ok := overlaidFake(attempts).(*nativeReconciliationFaultStore); ok {
 				owner.confirmOutage.Store(false)
 				owner.confirmLostReply.Store(false)
 			}
@@ -124,7 +124,7 @@ func nativeReconciliationPipeline(t *testing.T) (context.Context, *analytics.Nat
 		}
 		if value, ok := nativePendingPublicationPipelines.Load(pipeline); ok {
 			record := value.(*nativePublicationRecord)
-			if owner, ok := record.scope.origin.(*nativeReconciliationFaultStore); ok {
+			if owner, ok := overlaidFake(record.scope.origin).(*nativeReconciliationFaultStore); ok {
 				owner.resolveOutage.Store(false)
 			}
 			s := &Server{store: record.scope.origin, nativeReconciliationStore: record.scope.origin}
@@ -170,7 +170,7 @@ func TestNativeQuiescenceDatabaseOutageRetainsExactProofAndRetries(t *testing.T)
 				t.Fatal(err)
 			}
 			call, stop := context.WithTimeout(context.Background(), 5*time.Second)
-			err = s.confirmNativeWriterQuiescence(call, store, record)
+			err = s.confirmNativeWriterQuiescence(call, sqliteOverlay(store), record)
 			stop()
 			if err == nil {
 				t.Fatal("outage accepted")
@@ -187,7 +187,7 @@ func TestNativeQuiescenceDatabaseOutageRetainsExactProofAndRetries(t *testing.T)
 			// physical lease. It does not reacquire or infer proof from gate completion.
 			store.confirmOutage.Store(false)
 			store.confirmLostReply.Store(false)
-			second, err := storage.NewSQLiteStore(store.BackendInfo().DSN)
+			second, err := storage.NewSQLiteStore(store.SQLiteStore.BackendInfo().DSN)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -257,7 +257,7 @@ func TestNativeQuiescenceCannotConfirmUntilActualArtifactCloseJoins(t *testing.T
 		t.Fatal(err)
 	}
 	call := nativeQueryDetachedDeadline{Context: context.Background(), deadline: time.Now().Add(20 * time.Millisecond)}
-	if err = s.confirmNativeWriterQuiescence(call, store, record); err == nil {
+	if err = s.confirmNativeWriterQuiescence(call, sqliteOverlay(store), record); err == nil {
 		t.Fatal("blocked file supplied proof")
 	}
 	if store.confirms.Load() != 0 {
@@ -272,7 +272,7 @@ func TestNativeQuiescenceCannotConfirmUntilActualArtifactCloseJoins(t *testing.T
 	}
 	callCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stop()
-	if err = s.confirmNativeWriterQuiescence(callCtx, store, record); err != nil {
+	if err = s.confirmNativeWriterQuiescence(callCtx, sqliteOverlay(store), record); err != nil {
 		t.Fatal(err)
 	}
 	if store.confirms.Load() != 1 {
@@ -288,7 +288,7 @@ func TestNativePendingReceiptRefusesDifferentDatabaseAndArtifactNamespace(t *tes
 		t.Fatal(err)
 	}
 	call, stop := context.WithTimeout(context.Background(), 5*time.Second)
-	_ = s.confirmNativeWriterQuiescence(call, store, record)
+	_ = s.confirmNativeWriterQuiescence(call, sqliteOverlay(store), record)
 	stop()
 	foreign, err := storage.NewSQLiteStore(t.TempDir() + "/foreign.db")
 	if err != nil {
@@ -327,7 +327,7 @@ func TestNativeUnknownPublicationRetainsCompleteReceiptAcrossRealServerReplaceme
 		t.Fatal(err)
 	}
 	call, stop := context.WithTimeout(context.Background(), 5*time.Second)
-	if err = s.confirmNativeWriterQuiescence(call, store, proof); err != nil {
+	if err = s.confirmNativeWriterQuiescence(call, sqliteOverlay(store), proof); err != nil {
 		stop()
 		t.Fatal(err)
 	}
@@ -351,7 +351,7 @@ func TestNativeUnknownPublicationRetainsCompleteReceiptAcrossRealServerReplaceme
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = store.PublishAnalysisImportAttempt(ctx, storage.AnalysisAttemptPublication{Import: candidate, AttemptID: in.Owner, Digest: digest}); err != nil {
+	if _, err = store.SQLiteStore.PublishAnalysisImportAttempt(ctx, storage.AnalysisAttemptPublication{Import: candidate, AttemptID: in.Owner, Digest: digest}); err != nil {
 		t.Fatal(err)
 	}
 	store.resolveOutage.Store(true)
@@ -371,7 +371,7 @@ func TestNativeUnknownPublicationRetainsCompleteReceiptAcrossRealServerReplaceme
 	// Configuration may be temporarily different during shutdown. The exact
 	// record remains reachable and is resumed only by the original namespace.
 	store.resolveOutage.Store(false)
-	second, err := storage.NewSQLiteStore(store.BackendInfo().DSN)
+	second, err := storage.NewSQLiteStore(store.SQLiteStore.BackendInfo().DSN)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +421,7 @@ func TestNativeUnlaunchedJobFencesBeforeStopAndRetainsFailedConfirmation(t *test
 			t.Error("no-launch stop admitted a replacement writer")
 		}
 	}
-	s.failUnlaunchedAnalysisImport(ctx, t.Context(), store, *in, pipeline, dir, stop)
+	s.failUnlaunchedAnalysisImport(ctx, t.Context(), sqliteOverlay(store), *in, pipeline, dir, stop)
 	if !stopped.Load() {
 		t.Fatal("unlaunched lifetime not stopped")
 	}
@@ -434,7 +434,7 @@ func TestNativeUnlaunchedJobFencesBeforeStopAndRetainsFailedConfirmation(t *test
 	if record.claim != nativeClaim(*in) || record.dir != dir {
 		t.Fatal("no-launch retained a different claim")
 	}
-	current, err := store.GetAnalysisImport(in.ID)
+	current, err := store.SQLiteStore.GetAnalysisImport(in.ID)
 	if err != nil || current.State != "failed" {
 		t.Fatal("unlaunched attempt did not enter exact failed state", err)
 	}
@@ -530,13 +530,13 @@ func TestNativeQuiescenceRefusesForeignPassedAttemptAdapter(t *testing.T) {
 		t.Fatal(err)
 	}
 	foreign := &nativeReconciliationFaultStore{SQLiteStore: configured.SQLiteStore}
-	if err = s.confirmNativeWriterQuiescence(ctx, foreign, record); !errors.Is(err, errNativeReconciliationRetained) || foreign.confirms.Load() != 0 {
+	if err = s.confirmNativeWriterQuiescence(ctx, sqliteOverlay(foreign), record); !errors.Is(err, errNativeReconciliationRetained) || foreign.confirms.Load() != 0 {
 		t.Fatal("foreign request adapter touched durable quiescence", err)
 	}
 	if value, ok := nativePendingWriterPipelines.Load(pipeline); !ok || value != record {
 		t.Fatal("foreign attempt adapter released exact physical hold")
 	}
-	if err = s.confirmNativeWriterQuiescence(ctx, configured, record); err != nil {
+	if err = s.confirmNativeWriterQuiescence(ctx, sqliteOverlay(configured), record); err != nil {
 		t.Fatal("configured startup adapter failed actual confirmation", err)
 	}
 }

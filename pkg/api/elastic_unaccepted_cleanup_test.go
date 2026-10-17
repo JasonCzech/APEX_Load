@@ -121,10 +121,10 @@ func TestUnacceptedDirectElasticCleanupAcknowledgementClearsOwnership(t *testing
 }
 
 type failingElasticCleanupStore struct {
-	*storage.SQLiteStore
-	stage   string
-	fail    atomic.Bool
-	creates atomic.Int32
+	SQLiteStore *storage.SQLiteStore
+	stage       string
+	fail        atomic.Bool
+	creates     atomic.Int32
 }
 
 func (s *failingElasticCleanupStore) CreateElasticInspection(op *storage.ElasticInspection) error {
@@ -168,7 +168,7 @@ func TestUnacceptedElasticCleanupSurvivesStorageAndDeleteOutage(t *testing.T) {
 		t.Run(tc.path+"_"+tc.stage, func(t *testing.T) {
 			server, provider, job, point, _ := apiElasticMonitorFixture(t)
 			store := &failingElasticCleanupStore{SQLiteStore: server.store.(*storage.SQLiteStore), stage: tc.stage}
-			server.store = store
+			server.store = sqliteOverlay(store)
 			client := unacceptedElasticOutageClient(t, job)
 			owned := &analysis.ProviderContinuation{QueryID: point.Provider.QueryID, PITID: "outage-owned-private-pit", WindowFrom: job.StartedAt, WindowUntil: job.StartedAt.Add(time.Minute), KeepAliveUntil: time.Now().UTC().Add(time.Minute)}
 			key, scope := job.ID, elasticCleanupRun
@@ -176,7 +176,7 @@ func TestUnacceptedElasticCleanupSurvivesStorageAndDeleteOutage(t *testing.T) {
 			var owner string
 			if tc.path != "run" {
 				var err error
-				op, owner, err = beginPreparedElasticInspection(context.Background(), store, job.Source, job.ElasticConnectionSnapshot)
+				op, owner, err = beginPreparedElasticInspection(context.Background(), sqliteOverlay(store), job.Source, job.ElasticConnectionSnapshot)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -187,11 +187,11 @@ func TestUnacceptedElasticCleanupSurvivesStorageAndDeleteOutage(t *testing.T) {
 				server.finishUnacceptedDirectElasticResult(client, job, elastic.Result{Continuation: owned})
 			} else {
 				if tc.path == "preparation" {
-					if err := completePreparedElasticInspection(store, op, owner, collectoragent.ElasticInspectionData{CleanupContinuations: []*analysis.ProviderContinuation{owned}}, nil, time.Now().UTC()); err == nil {
+					if err := completePreparedElasticInspection(sqliteOverlay(store), op, owner, collectoragent.ElasticInspectionData{CleanupContinuations: []*analysis.ProviderContinuation{owned}}, nil, time.Now().UTC()); err == nil {
 						t.Fatal("failed private receipt published verification")
 					}
 				}
-				server.finishUnacceptedElasticInspectionCleanup(client, store, op, owner, []*analysis.ProviderContinuation{owned})
+				server.finishUnacceptedElasticInspectionCleanup(client, sqliteOverlay(store), op, owner, []*analysis.ProviderContinuation{owned})
 			}
 			if !server.hasUnacceptedElasticCleanup(scope, key) {
 				t.Fatal("simultaneous outage dropped private ownership")
@@ -208,7 +208,7 @@ func TestUnacceptedElasticCleanupSurvivesStorageAndDeleteOutage(t *testing.T) {
 			deadline := time.Now().Add(3 * time.Second)
 			var pending []*storage.ElasticInspection
 			for time.Now().Before(deadline) {
-				pending, _ = store.ListElasticInspectionCleanup(job.ProjectID, "", 2)
+				pending, _ = store.SQLiteStore.ListElasticInspectionCleanup(job.ProjectID, "", 2)
 				if len(pending) == 1 && !server.hasUnacceptedElasticCleanup(scope, key) {
 					break
 				}
@@ -241,7 +241,7 @@ func TestUnacceptedElasticCleanupHonorsKnownExpiryAndShutdown(t *testing.T) {
 			server, _, job, point, _ := apiElasticMonitorFixture(t)
 			store := &failingElasticCleanupStore{SQLiteStore: server.store.(*storage.SQLiteStore), stage: "retain"}
 			store.fail.Store(true)
-			server.store = store
+			server.store = sqliteOverlay(store)
 			client := unacceptedElasticOutageClient(t, job)
 			expiry := time.Now().UTC().Add(time.Second)
 			if mode == "expiry" {
@@ -279,14 +279,14 @@ func TestUnacceptedElasticCleanupKeepsOverlappingInspectionOwners(t *testing.T) 
 	server, _, job, _, _ := apiElasticMonitorFixture(t)
 	store := &failingElasticCleanupStore{SQLiteStore: server.store.(*storage.SQLiteStore), stage: "create"}
 	store.fail.Store(true)
-	server.store = store
+	server.store = sqliteOverlay(store)
 	privateJob := storage.RunMonitorJob{ID: "overlapping-inspection", ProjectID: job.ProjectID, Source: storage.MonitorSource{ConnectionID: job.Source.ConnectionID}, ElasticConnectionSnapshot: job.ElasticConnectionSnapshot}
 	key := elasticUnacceptedCleanupKey{server: server, scope: elasticCleanupInspection, jobID: privateJob.ID}
 	now := time.Now().UTC()
 	for _, handle := range []string{"first-owned-pit", "second-owned-pit"} {
 		cursor := &analysis.ProviderContinuation{QueryID: "inspection-pit", PITID: handle, WindowFrom: now, WindowUntil: now.Add(time.Nanosecond), KeepAliveUntil: now.Add(time.Minute)}
 		client := unacceptedElasticOutageClient(t, job)
-		server.finishOwnedElasticCleanup(key, &elasticUnacceptedCleanupTask{store: store, job: privateJob, client: client, owned: []*analysis.ProviderContinuation{cursor}})
+		server.finishOwnedElasticCleanup(key, &elasticUnacceptedCleanupTask{store: sqliteOverlay(store), job: privateJob, client: client, owned: []*analysis.ProviderContinuation{cursor}})
 	}
 	if !server.hasUnacceptedElasticCleanup(elasticCleanupInspection, privateJob.ID) {
 		t.Fatal("overlapping private owners did not block reassignment")
@@ -306,7 +306,7 @@ func TestUnacceptedElasticCleanupKeepsOverlappingInspectionOwners(t *testing.T) 
 	store.fail.Store(false)
 	deadline := time.Now().Add(4 * time.Second)
 	for time.Now().Before(deadline) {
-		pending, err := store.ListElasticInspectionCleanup(job.ProjectID, "", 10)
+		pending, err := store.SQLiteStore.ListElasticInspectionCleanup(job.ProjectID, "", 10)
 		if err == nil && len(pending) == 2 && !server.hasUnacceptedElasticCleanup(elasticCleanupInspection, privateJob.ID) {
 			for _, op := range pending {
 				for _, cursor := range op.CleanupContinuations {

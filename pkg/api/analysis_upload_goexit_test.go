@@ -60,10 +60,10 @@ func TestAnalysisUploadBodyGoexitRetainsUnknownPhysicalOwnership(t *testing.T) {
 // Begin commits. Its exact record exists; the caller must not invent proof of
 // the interrupted operation's physical allocations from a nil recover value.
 type uploadGoexitBeginStore struct {
-	*storage.SQLiteStore
-	mu        sync.Mutex
-	intent    *storage.AnalysisUploadWriter
-	completes atomic.Int32
+	SQLiteStore *storage.SQLiteStore
+	mu          sync.Mutex
+	intent      *storage.AnalysisUploadWriter
+	completes   atomic.Int32
 }
 
 func (s *uploadGoexitBeginStore) BeginAnalysisUploadWriter(ctx context.Context, request storage.AnalysisUploadRequest) (*storage.AnalysisUploadWriter, error) {
@@ -87,9 +87,9 @@ func TestAnalysisUploadBackgroundGoexitRetainsSlotAndNeverPublishesCursor(t *tes
 	initial, base := newTimeslotServer(t)
 	shutdownUploadFixtureServer(t, initial)
 	fault := &uploadGoexitBeginStore{SQLiteStore: base.(*storage.SQLiteStore)}
-	server := NewServer(ServerConfig{Store: fault, MaxConcurrent: 2})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(fault), MaxConcurrent: 2})
 	t.Cleanup(func() { shutdownUploadFixtureServer(t, server) })
-	in, err := fault.SaveAnalysisImport(storage.AnalysisImport{ID: uuid.NewString(), ProjectID: "proj-a", Name: "Goexit writer", State: "uploading", UploadWriterVersion: storage.AnalysisUploadWriterVersion, Files: []storage.AnalysisImportFile{{ID: uuid.NewString(), RelativePath: "data.parquet", Size: 12}}}, 0)
+	in, err := fault.SQLiteStore.SaveAnalysisImport(storage.AnalysisImport{ID: uuid.NewString(), ProjectID: "proj-a", Name: "Goexit writer", State: "uploading", UploadWriterVersion: storage.AnalysisUploadWriterVersion, Files: []storage.AnalysisImportFile{{ID: uuid.NewString(), RelativePath: "data.parquet", Size: 12}}}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestAnalysisUploadBackgroundGoexitRetainsSlotAndNeverPublishesCursor(t *tes
 	data := []byte("PAR1dataPAR1")
 	sum := sha256.Sum256(data)
 	response := httptest.NewRecorder()
-	server.writeAnalysisUploadChunk(response, httptest.NewRequest("PUT", "/", nil).WithContext(ctx), fault, *in, in.Files[0], 0, data, hex.EncodeToString(sum[:]))
+	server.writeAnalysisUploadChunk(response, httptest.NewRequest("PUT", "/", nil).WithContext(ctx), sqliteOverlay(fault), *in, in.Files[0], 0, data, hex.EncodeToString(sum[:]))
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatal("abnormally returned writer published a cursor", response.Code, response.Body.String())
 	}
@@ -118,7 +118,7 @@ func TestAnalysisUploadBackgroundGoexitRetainsSlotAndNeverPublishesCursor(t *tes
 	if got, ok := analysisUploadOwners.Load(owner.id); !ok || got != owner || len(analysisUploadWriterSlots) != before+1 {
 		t.Fatal("interrupted writer lost its exact charged parent")
 	}
-	current, err := fault.GetAnalysisImport(in.ID)
+	current, err := fault.SQLiteStore.GetAnalysisImport(in.ID)
 	if err != nil || current == nil || current.Revision != in.Revision || len(current.Files) != 1 || current.Files[0].Uploaded != 0 || len(current.Files[0].Chunks) != 0 {
 		t.Fatal("Goexit changed durable cursor", current, err)
 	}
@@ -128,7 +128,7 @@ func TestAnalysisUploadBackgroundGoexitRetainsSlotAndNeverPublishesCursor(t *tes
 	if intent == nil {
 		t.Fatal("controlled Begin did not commit its actual intent")
 	}
-	retained, err := fault.ResolveAnalysisUploadWriter(t.Context(), in.ProjectID, in.ID, intent.ID)
+	retained, err := fault.SQLiteStore.ResolveAnalysisUploadWriter(t.Context(), in.ProjectID, in.ID, intent.ID)
 	if err != nil || !analysisSameUploadIntent(intent, retained) || retained.State != "pending" || retained.PhysicallyClosed {
 		t.Fatal("Goexit manufactured a completed/abandoned writer receipt", retained, err)
 	}

@@ -151,7 +151,7 @@ func TestStandbyEpochBatchPreservesOtherRunAdoptions(t *testing.T) {
 	}
 }
 
-type unavailableAdoptionCapacityStore struct{ *storage.SQLiteStore }
+type unavailableAdoptionCapacityStore struct{ SQLiteStore *storage.SQLiteStore }
 
 func (s *unavailableAdoptionCapacityStore) ListPodCapacityReservations() ([]storage.PodCapacityReservation, error) {
 	return nil, errors.New("capacity snapshot unavailable")
@@ -168,7 +168,7 @@ func TestAdoptionDoesNotClaimEpochWithoutStandbySnapshot(t *testing.T) {
 	runner.leadership = leader
 	test := storedContinueRun(t, runner, store, "snapshot-run", "continue")
 	runner.tests[test.ID] = test
-	runner.testStore = &unavailableAdoptionCapacityStore{store}
+	runner.testStore = sqliteOverlay(&unavailableAdoptionCapacityStore{store})
 	runner.execution = newDistributedExecutionBackend([]string{"gen-a:9091"}, time.Second, func(context.Context, string) (generatorClient, error) {
 		t.Error("claimed a generator before the complete standby snapshot")
 		return nil, errors.New("unexpected dial")

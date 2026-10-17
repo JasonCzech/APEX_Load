@@ -1521,7 +1521,7 @@ func TestGroupSettingsEndpointsOverHTTP(t *testing.T) {
 }
 
 type groupSettingsAuditFailureStore struct {
-	storage.Store
+	Store  storage.Store
 	action string
 	status string
 }
@@ -1541,9 +1541,9 @@ func TestGroupSettingsHandlersRequireDurableAudit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		server.store = &groupSettingsAuditFailureStore{
+		server.store = storeOverlay(&groupSettingsAuditFailureStore{
 			Store: store, action: "test.runtime_settings.update", status: "pending",
-		}
+		})
 		body, _ := json.Marshal(map[string]any{
 			"expected_revision": view.Revision,
 			"fields":            []string{"pacing"},
@@ -1571,9 +1571,9 @@ func TestGroupSettingsHandlersRequireDurableAudit(t *testing.T) {
 		}
 		parameters := cloneScriptParameters(view.Parameters)
 		parameters[1].Selection = "sequential"
-		server.store = &groupSettingsAuditFailureStore{
+		server.store = storeOverlay(&groupSettingsAuditFailureStore{
 			Store: store, action: "test.parameters.update", status: "success",
-		}
+		})
 		body, _ := json.Marshal(map[string]any{
 			"expected_revision": view.Revision,
 			"parameters":        parameters,

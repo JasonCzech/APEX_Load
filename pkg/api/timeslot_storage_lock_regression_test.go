@@ -13,7 +13,7 @@ import (
 // production atomic binding paths remain enabled, while observing every
 // storage boundary used by create-time and standalone timeslot binding.
 type timeslotLockObservingStore struct {
-	*storage.SQLiteStore
+	SQLiteStore         *storage.SQLiteStore
 	runner              *TestRunner
 	timeslotIOCalls     atomic.Int32
 	timeslotIOUnderLock atomic.Bool
@@ -73,7 +73,7 @@ func newTimeslotLockObservingRunner(t *testing.T) (*TestRunner, *timeslotLockObs
 	}
 	t.Cleanup(func() { _ = base.Close() })
 	store := &timeslotLockObservingStore{SQLiteStore: base}
-	runner := NewTestRunner(10, NewHub(), store)
+	runner := NewTestRunner(10, NewHub(), sqliteOverlay(store))
 	store.runner = runner
 	store.timeslotIOCalls.Store(0)
 	store.timeslotIOUnderLock.Store(false)
@@ -83,13 +83,13 @@ func newTimeslotLockObservingRunner(t *testing.T) (*TestRunner, *timeslotLockObs
 func TestCreateTimeTimeslotStorageRunsOutsideRunnerLock(t *testing.T) {
 	runner, store := newTimeslotLockObservingRunner(t)
 	now := time.Now().UTC()
-	if err := store.SaveProject(&storage.Project{
+	if err := store.SQLiteStore.SaveProject(&storage.Project{
 		ID: "timeslot-lock-project", Name: "Timeslot lock project", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatalf("SaveProject: %v", err)
 	}
 	storePreflightScript(runner, "timeslot-lock-script", "timeslot-lock-project")
-	if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+	if err := store.SQLiteStore.SaveCapacityReservation(&storage.CapacityReservation{
 		ID: "timeslot-create-lock", ProjectID: "timeslot-lock-project",
 		StartAt: now.Add(-time.Hour), EndAt: now.Add(time.Hour), ApprovalState: "approved",
 	}); err != nil {
@@ -120,18 +120,18 @@ func TestCreateTimeTimeslotStorageRunsOutsideRunnerLock(t *testing.T) {
 func TestStandaloneTimeslotStorageRunsOutsideRunnerLock(t *testing.T) {
 	runner, store := newTimeslotLockObservingRunner(t)
 	now := time.Now().UTC()
-	if err := store.SaveProject(&storage.Project{
+	if err := store.SQLiteStore.SaveProject(&storage.Project{
 		ID: "timeslot-lock-project", Name: "Timeslot lock project", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatalf("SaveProject: %v", err)
 	}
-	if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+	if err := store.SQLiteStore.SaveCapacityReservation(&storage.CapacityReservation{
 		ID: "timeslot-standalone-lock", ProjectID: "timeslot-lock-project",
 		StartAt: now.Add(-time.Hour), EndAt: now.Add(time.Hour), ApprovalState: "approved",
 	}); err != nil {
 		t.Fatalf("SaveCapacityReservation: %v", err)
 	}
-	if err := store.SaveTest(&storage.TestRecord{
+	if err := store.SQLiteStore.SaveTest(&storage.TestRecord{
 		ID: "timeslot-standalone-test", Name: "standalone timeslot lock", Status: "QUEUED",
 		RefKey: "RUN-TIMESLOT-REF", ProjectID: "timeslot-lock-project", StartTime: now,
 		Duration: int64(10 * time.Minute), Groups: []any{},
@@ -168,7 +168,7 @@ func TestStandaloneTimeslotStorageRunsOutsideRunnerLock(t *testing.T) {
 
 func TestStandaloneTimeslotCacheMissRestoresRunnableRuntime(t *testing.T) {
 	runner, store := newTimeslotLockObservingRunner(t)
-	creator := NewTestRunner(10, NewHub(), store)
+	creator := NewTestRunner(10, NewHub(), sqliteOverlay(store))
 	storedScript, err := creator.StoreScriptDurable(httpScript("timeslot-hydration-script", "Timeslot hydration script"))
 	if err != nil {
 		t.Fatalf("StoreScriptDurable: %v", err)
@@ -192,7 +192,7 @@ func TestStandaloneTimeslotCacheMissRestoresRunnableRuntime(t *testing.T) {
 		t.Fatal("test unexpectedly existed in binding runner before cache-miss bind")
 	}
 	now := time.Now().UTC()
-	if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+	if err := store.SQLiteStore.SaveCapacityReservation(&storage.CapacityReservation{
 		ID:            "timeslot-hydration-slot",
 		ProjectID:     storage.DefaultProjectID,
 		StartAt:       now.Add(-time.Hour),
@@ -222,12 +222,12 @@ func TestStandaloneTimeslotCacheMissRestoresRunnableRuntime(t *testing.T) {
 func TestStandaloneTimeslotBindDoesNotMutateStaleSameIDRuntime(t *testing.T) {
 	runner, store := newTimeslotLockObservingRunner(t)
 	now := time.Now().UTC()
-	if err := store.SaveProject(&storage.Project{
+	if err := store.SQLiteStore.SaveProject(&storage.Project{
 		ID: "timeslot-identity-project", Name: "Timeslot identity project", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatalf("SaveProject: %v", err)
 	}
-	if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+	if err := store.SQLiteStore.SaveCapacityReservation(&storage.CapacityReservation{
 		ID: "timeslot-identity-slot", ProjectID: "timeslot-identity-project",
 		StartAt: now.Add(-time.Hour), EndAt: now.Add(time.Hour), ApprovalState: "approved",
 	}); err != nil {
@@ -237,7 +237,7 @@ func TestStandaloneTimeslotBindDoesNotMutateStaleSameIDRuntime(t *testing.T) {
 		ID: "timeslot-reused-test-id", Name: "durable replacement", Status: "QUEUED",
 		ProjectID: "timeslot-identity-project", StartTime: now, Duration: int64(10 * time.Minute), Groups: []any{},
 	}
-	if err := store.SaveTest(record); err != nil {
+	if err := store.SQLiteStore.SaveTest(record); err != nil {
 		t.Fatalf("SaveTest: %v", err)
 	}
 	stale := managedTestFromRecord(record)

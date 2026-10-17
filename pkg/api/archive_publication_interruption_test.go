@@ -9,7 +9,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-type interruptedArchiveRecordUpdateStore struct{ *storage.SQLiteStore }
+type interruptedArchiveRecordUpdateStore struct{ SQLiteStore *storage.SQLiteStore }
 
 func (s *interruptedArchiveRecordUpdateStore) UpdateArchiveFinalizationRecordIfToken(string, string, *storage.RunArchiveRecord) (bool, error) {
 	return false, errors.New("publication interrupted after adjunct write")
@@ -24,8 +24,8 @@ func TestArchivePublicationRecoversInterruptedAdjunctWrite(t *testing.T) {
 	}
 	defer sqlite.Close()
 	store := &interruptedArchiveRecordUpdateStore{sqlite}
-	test, record := createArchiveFinalizationTest(t, store, "interrupted-adjunct", root)
-	if err := NewTestRunner(1, NewHub(), store).finalizeRunArchiveDurably(context.Background(), test, record, true); err == nil {
+	test, record := createArchiveFinalizationTest(t, sqliteOverlay(store), "interrupted-adjunct", root)
+	if err := NewTestRunner(1, NewHub(), sqliteOverlay(store)).finalizeRunArchiveDurably(context.Background(), test, record, true); err == nil {
 		t.Fatal("interruption ignored")
 	}
 	job, err := sqlite.GetArchiveFinalizationJob(test.ID)

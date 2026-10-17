@@ -289,10 +289,10 @@ func TestOriginalLiveSeedDoesNotWaitForAnotherRunLock(t *testing.T) {
 }
 
 type blockingLiveFinalizationStore struct {
-	*storage.SQLiteStore
-	entered chan struct{}
-	proceed chan struct{}
-	once    sync.Once
+	SQLiteStore *storage.SQLiteStore
+	entered     chan struct{}
+	proceed     chan struct{}
+	once        sync.Once
 }
 
 func (s *blockingLiveFinalizationStore) GetLiveTableFinalization(ctx context.Context, id, projectID string) (*storage.LiveTableFinalizationResult, error) {
@@ -318,7 +318,7 @@ func TestLiveTableSlowFinalizationBoundsConcurrentRawCopies(t *testing.T) {
 	test.Status = "FAILED"
 	runner.mu.Unlock()
 	blocked := &blockingLiveFinalizationStore{SQLiteStore: store, entered: make(chan struct{}), proceed: make(chan struct{})}
-	runner.dataPoolStore = blocked
+	runner.dataPoolStore = sqliteOverlay(blocked)
 	server := &Server{runner: runner, store: store}
 	request := func() *http.Request {
 		r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"output_pool_name":"Recovered output"}`))

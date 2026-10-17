@@ -11,7 +11,7 @@ import (
 )
 
 type capacityBindLostResponseStore struct {
-	*storage.SQLiteStore
+	SQLiteStore            *storage.SQLiteStore
 	armVerificationFailure atomic.Bool
 	failNextVerification   atomic.Bool
 }
@@ -41,24 +41,24 @@ func TestStandaloneTimeslotBindRetryAdoptsExactCommittedPair(t *testing.T) {
 	t.Cleanup(func() { _ = base.Close() })
 	store := &capacityBindLostResponseStore{SQLiteStore: base}
 	now := time.Now().UTC()
-	if err := store.SaveProject(&storage.Project{
+	if err := store.SQLiteStore.SaveProject(&storage.Project{
 		ID: "lost-bind-project", Name: "Lost bind project", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatalf("SaveProject: %v", err)
 	}
-	if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+	if err := store.SQLiteStore.SaveCapacityReservation(&storage.CapacityReservation{
 		ID: "lost-bind-slot", ProjectID: "lost-bind-project", ApprovalState: "approved",
 		StartAt: now.Add(-time.Hour), EndAt: now.Add(time.Hour),
 	}); err != nil {
 		t.Fatalf("SaveCapacityReservation: %v", err)
 	}
-	if err := store.SaveTest(&storage.TestRecord{
+	if err := store.SQLiteStore.SaveTest(&storage.TestRecord{
 		ID: "lost-bind-test", RefKey: "RUN-LOST-BIND", Name: "Lost bind test", Status: "QUEUED",
 		ProjectID: "lost-bind-project", StartTime: now, Duration: int64(10 * time.Minute), Groups: []any{},
 	}); err != nil {
 		t.Fatalf("SaveTest: %v", err)
 	}
-	runner := NewTestRunner(10, NewHub(), store)
+	runner := NewTestRunner(10, NewHub(), sqliteOverlay(store))
 	store.armVerificationFailure.Store(true)
 
 	reservation, result, err := runner.BindCapacityTimeslot("lost-bind-slot", "lost-bind-test")
@@ -74,7 +74,7 @@ func TestStandaloneTimeslotBindRetryAdoptsExactCommittedPair(t *testing.T) {
 		reservation.BoundTestID == nil || *reservation.BoundTestID != "lost-bind-test" {
 		t.Fatalf("retry BindCapacityTimeslot = (%#v, %q, %v), want exact committed pair", reservation, result, err)
 	}
-	durable, err := store.GetTest("lost-bind-test")
+	durable, err := store.SQLiteStore.GetTest("lost-bind-test")
 	if err != nil || durable == nil || durable.TimeslotID == nil || *durable.TimeslotID != "lost-bind-slot" {
 		t.Fatalf("durable test after retry = (%#v, %v), want reciprocal timeslot", durable, err)
 	}
@@ -96,13 +96,13 @@ func TestStandaloneTimeslotBindRetryAdoptsExactCommittedPair(t *testing.T) {
 
 	// Idempotency is pair-specific. Reusing either bound row with a different
 	// peer must retain the ordinary conflict result.
-	if err := store.SaveTest(&storage.TestRecord{
+	if err := store.SQLiteStore.SaveTest(&storage.TestRecord{
 		ID: "lost-bind-other-test", Name: "Other test", Status: "QUEUED", ProjectID: "lost-bind-project",
 		StartTime: now, Duration: int64(10 * time.Minute), Groups: []any{},
 	}); err != nil {
 		t.Fatalf("SaveTest(other): %v", err)
 	}
-	if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+	if err := store.SQLiteStore.SaveCapacityReservation(&storage.CapacityReservation{
 		ID: "lost-bind-other-slot", ProjectID: "lost-bind-project", ApprovalState: "approved",
 		StartAt: now.Add(-time.Hour), EndAt: now.Add(time.Hour),
 	}); err != nil {

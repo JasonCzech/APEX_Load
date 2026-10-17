@@ -186,7 +186,7 @@ func TestHandleSaveEnterpriseArchiveImportRestartRecoversCommittedCredentialedBa
 	}
 	defer base.Close()
 	store := &failOnceDirectImportReceiptStore{SQLiteStore: base, failComplete: true}
-	firstServer := NewServer(ServerConfig{Store: store})
+	firstServer := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	script := &dsl.Script{
 		Name: "Enterprise restart recovery", Version: "1.0.0", Protocol: "http", ProjectID: storage.DefaultProjectID,
 		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "loadrunner", Preserved: map[string]any{}}},
@@ -220,7 +220,7 @@ func TestHandleSaveEnterpriseArchiveImportRestartRecoversCommittedCredentialedBa
 		t.Fatalf("post-commit capability reuse status = %d body=%s", reuse.Code, reuse.Body.String())
 	}
 
-	restarted := NewServer(ServerConfig{Store: store})
+	restarted := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	recovered := postEnterpriseArchiveBatch(t, restarted, payload)
 	if recovered.Code != http.StatusCreated {
 		t.Fatalf("restart recovery status = %d body=%s", recovered.Code, recovered.Body.String())

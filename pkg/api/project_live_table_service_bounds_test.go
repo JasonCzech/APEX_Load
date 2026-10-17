@@ -13,9 +13,9 @@ import (
 )
 
 type projectDeadlineStore struct {
-	*storage.SQLiteStore
-	deadline chan time.Time
-	failFast bool
+	SQLiteStore *storage.SQLiteStore
+	deadline    chan time.Time
+	failFast    bool
 }
 
 func (s *projectDeadlineStore) block(ctx context.Context) error {
@@ -43,7 +43,7 @@ func TestProjectLiveTableServiceBoundsStorageCalls(t *testing.T) {
 	for _, name := range []string{"list", "get", "create", "inspect", "lifecycle", "reset", "stats", "export", "operator", "shorter caller"} {
 		t.Run(name, func(t *testing.T) {
 			wrapper := &projectDeadlineStore{SQLiteStore: store, deadline: make(chan time.Time, 1)}
-			runner.dataPoolStore = wrapper
+			runner.dataPoolStore = sqliteOverlay(wrapper)
 			defer func() { runner.dataPoolStore = store }()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -145,7 +145,7 @@ func TestProjectLiveTableServiceCancelsWhileMetadataBusy(t *testing.T) {
 func TestProjectLiveTableAuthoringBoundsReferenceRead(t *testing.T) {
 	_, store, d := newProjectTableFixture(t)
 	wrapper := &projectDeadlineStore{SQLiteStore: store, deadline: make(chan time.Time, 1), failFast: true}
-	err := validateProjectLiveTableReference(wrapper, d.ProjectID, storage.ScenarioDataPoolBinding{Scope: "project", ProjectTableID: d.ID, AccessMode: "live"})
+	err := validateProjectLiveTableReference(sqliteOverlay(wrapper), d.ProjectID, storage.ScenarioDataPoolBinding{Scope: "project", ProjectTableID: d.ID, AccessMode: "live"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("reference error not preserved: %v", err)
 	}
@@ -156,8 +156,8 @@ func TestProjectLiveTableAuthoringBoundsReferenceRead(t *testing.T) {
 }
 
 type projectDetailDeadlineStore struct {
-	*storage.SQLiteStore
-	deadline chan time.Time
+	SQLiteStore *storage.SQLiteStore
+	deadline    chan time.Time
 }
 
 func (s *projectDetailDeadlineStore) ListProjectLiveTableAttachments(ctx context.Context, _, _ string) ([]storage.ProjectLiveTableAttachment, error) {
@@ -176,7 +176,7 @@ func TestProjectLiveTableDetailBoundsDirectAttachmentRead(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			wrapper := &projectDetailDeadlineStore{SQLiteStore: store, deadline: make(chan time.Time, 1)}
-			server.store = wrapper
+			server.store = sqliteOverlay(wrapper)
 			defer func() { server.store = store }()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()

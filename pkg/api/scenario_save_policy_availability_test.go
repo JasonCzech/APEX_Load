@@ -225,7 +225,7 @@ func TestScenarioStrictPolicyRequiresIfMatchWithoutSideEffects(t *testing.T) {
 // handler's early check while the durable row is already strict, standing in
 // for a policy enabled between admission and the save transaction.
 type strictPolicyAfterAdmissionStore struct {
-	*storage.SQLiteStore
+	SQLiteStore *storage.SQLiteStore
 }
 
 func (s *strictPolicyAfterAdmissionStore) GetProject(id string) (*storage.Project, error) {
@@ -239,7 +239,7 @@ func (s *strictPolicyAfterAdmissionStore) GetProject(id string) (*storage.Projec
 func TestScenarioStrictPolicyEnabledDuringSaveIsFencedInTransaction(t *testing.T) {
 	server, store, _, scenario := newScenarioPolicyAvailabilityFixture(t)
 	setScenarioStrictPolicy(t, store, true)
-	server.store = &strictPolicyAfterAdmissionStore{SQLiteStore: store}
+	server.store = sqliteOverlay(&strictPolicyAfterAdmissionStore{SQLiteStore: store})
 	before, err := store.GetScenarioAuthoringSnapshot(scenario.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -302,7 +302,7 @@ func TestScenarioLegacySaveIsAuditedAndReturnsBaseline(t *testing.T) {
 }
 
 type scenarioPolicyAvailabilityFaultStore struct {
-	storage.Store
+	Store           storage.Store
 	failProject     bool
 	failScenario    bool
 	wrongScenarioID bool
@@ -341,7 +341,7 @@ func TestScenarioSaveWithoutDurableRevisionsRefusesConditionsExplicitly(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			server.store = &scenarioPolicyAvailabilityFaultStore{Store: store}
+			server.store = storeOverlay(&scenarioPolicyAvailabilityFaultStore{Store: store})
 			request := scenarioSaveRequest("Must not save", 1)
 			request.RuntimeSettings = &RuntimeSettingsOverride{Env: map[string]string{"API_TOKEN": "must-not-provision"}}
 			response := authoringAPIRequest(t, server, http.MethodPut, "/api/v1/scenarios/"+scenario.ID, request, tc.tag)
@@ -376,7 +376,7 @@ func TestScenarioSaveOwnershipAndReadFailuresRefuse(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			server.store = &scenarioPolicyAvailabilityFaultStore{Store: store, failProject: tc.failProject, failScenario: tc.failScenario, wrongScenarioID: tc.wrongScenarioID}
+			server.store = storeOverlay(&scenarioPolicyAvailabilityFaultStore{Store: store, failProject: tc.failProject, failScenario: tc.failScenario, wrongScenarioID: tc.wrongScenarioID})
 			body, err := json.Marshal(scenarioSaveRequest("Must not save", 1))
 			if err != nil {
 				t.Fatal(err)

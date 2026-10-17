@@ -21,8 +21,8 @@ func TestArchiveRefreshRetryUsesCopiedCatalogTrustAnchor(t *testing.T) {
 	}
 	defer sqlite.Close()
 	store := &failingArchiveCatalogStore{SQLiteStore: sqlite}
-	test, record := createArchiveFinalizationTest(t, store, "refresh-retry", root)
-	runner := NewTestRunner(1, NewHub(), store)
+	test, record := createArchiveFinalizationTest(t, sqliteOverlay(store), "refresh-retry", root)
+	runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 	if err := runner.finalizeRunArchiveDurably(context.Background(), test, record, true); err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestArchiveRefreshRetryUsesCopiedCatalogTrustAnchor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	refresh, err := store.BumpArchiveRefreshJob(test.ID)
+	refresh, err := store.SQLiteStore.BumpArchiveRefreshJob(test.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestArchiveRefreshRetryUsesCopiedCatalogTrustAnchor(t *testing.T) {
 	if err := runner.processArchiveRefreshJob(context.Background(), refresh); err == nil {
 		t.Fatal("catalog failure ignored")
 	}
-	job, err := store.GetArchiveFinalizationJob(test.ID)
+	job, err := store.SQLiteStore.GetArchiveFinalizationJob(test.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestArchiveRefreshRetryUsesCopiedCatalogTrustAnchor(t *testing.T) {
 	if err := runner.processArchiveFinalizationJob(context.Background(), job); err != nil {
 		t.Fatalf("refresh retry failed: %v", err)
 	}
-	catalog, err := store.GetRunArchive(test.ID)
+	catalog, err := store.SQLiteStore.GetRunArchive(test.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,10 +65,10 @@ func TestArchiveRefreshRetryUsesCopiedCatalogTrustAnchor(t *testing.T) {
 	if err != nil || string(unchanged) != string(original) {
 		t.Fatalf("catalog source was modified: %v", err)
 	}
-	if _, err := store.GetArchiveFinalizationJob(test.ID); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.SQLiteStore.GetArchiveFinalizationJob(test.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("pending finalization: %v", err)
 	}
-	if _, err := store.GetArchiveRefreshJob(test.ID); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.SQLiteStore.GetArchiveRefreshJob(test.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("pending refresh: %v", err)
 	}
 }

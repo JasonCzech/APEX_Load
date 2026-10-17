@@ -77,7 +77,7 @@ Every lane runs, in order:
 - Generator and collector exclude DuckDB: `go list -tags analytics_duckdb -deps ./cmd/generator ./cmd/apexload-collector-agent`
 - Packaged desktop native startup: `python3 scripts/test_native_worker_startup.py --desktop-build-dir desktop/build/bin`
 
-The API check runs only where `scripts/ci/pkg-api-test-build-fits.sh` succeeds. Compiling pkg/api's test binary takes about 10 GB of memory and the macOS Apple Silicon lane's hosted runner has 7 GB, so that lane leaves the API check to the others; its native checks above still run.
+The API check runs only where `scripts/ci/pkg-api-test-build-fits.sh` succeeds. Compiling pkg/api's test binary peaks near 6 GB of memory, too much for the macOS Apple Silicon lane's 7 GB hosted runner, so that lane leaves the API check to the others; its native checks above still run.
 
 ## Reference workload
 

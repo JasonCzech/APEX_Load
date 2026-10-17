@@ -455,7 +455,7 @@ func TestManagementPartialObjectWriteNeverPublishesAndCleanupReclaimsOrphans(t *
 		t.Fatal(err)
 	}
 	cleanupStore := &analysisCleanupReadFailureStore{SQLiteStore: store.(*storage.SQLiteStore)}
-	server.store = cleanupStore
+	server.store = sqliteOverlay(cleanupStore)
 	if err = server.retryAnalysisCleanup(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -483,8 +483,8 @@ func TestManagementPartialObjectWriteNeverPublishesAndCleanupReclaimsOrphans(t *
 // A real cleanup transaction may finish after the request has expired. The
 // artifact writer must recheck cancellation after that transaction returns.
 type managementCleanupHookStore struct {
-	*storage.SQLiteStore
-	afterQueue func()
+	SQLiteStore *storage.SQLiteStore
+	afterQueue  func()
 }
 
 func (s *managementCleanupHookStore) QueueMonitorObjectCleanup(project, run, key string) error {
@@ -502,12 +502,12 @@ func TestManagementCancelledAfterCleanupCannotRecreateDeletedProjectArtifacts(t 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	hookCalls := 0
-	server.store = &managementCleanupHookStore{SQLiteStore: sqlite, afterQueue: func() {
+	server.store = sqliteOverlay(&managementCleanupHookStore{SQLiteStore: sqlite, afterQueue: func() {
 		hookCalls++
 		if err := sqlite.DeleteProject("proj-a"); err != nil {
 			t.Fatal(err)
 		}
-		cleanupServer := &Server{store: &analysisCleanupReadFailureStore{SQLiteStore: sqlite}}
+		cleanupServer := &Server{store: sqliteOverlay(&analysisCleanupReadFailureStore{SQLiteStore: sqlite})}
 		if err := cleanupServer.retryAnalysisCleanup(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -516,7 +516,7 @@ func TestManagementCancelledAfterCleanupCannotRecreateDeletedProjectArtifacts(t 
 			t.Fatalf("deleted project cleanup not drained: %+v %v", pending, err)
 		}
 		cancel()
-	}}
+	}})
 	body, err := json.Marshal(batch)
 	if err != nil {
 		t.Fatal(err)

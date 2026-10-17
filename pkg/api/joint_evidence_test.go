@@ -922,7 +922,7 @@ func TestJointEvidenceArchiveTruncatedAtTheHistoryCap(t *testing.T) {
 	if manifest := persist(&ManagedTest{ID: "joint-capped"}); manifest.JointIntervalsTruncated {
 		t.Fatal("a run below the cap was marked truncated")
 	}
-	server.runner.testStore = cappedHistoryStore{store}
+	server.runner.testStore = sqliteOverlay(cappedHistoryStore{store})
 	manifest := persist(&ManagedTest{ID: "joint-capped"})
 	if !manifest.JointIntervalsTruncated {
 		t.Fatal("a run at the history cap was not marked truncated")
@@ -936,7 +936,7 @@ func TestJointEvidenceArchiveTruncatedAtTheHistoryCap(t *testing.T) {
 }
 
 // cappedHistoryStore reports every run's history as having reached the cap.
-type cappedHistoryStore struct{ *storage.SQLiteStore }
+type cappedHistoryStore struct{ SQLiteStore *storage.SQLiteStore }
 
 func (cappedHistoryStore) NativeIntervalEvidenceTrimmed(context.Context, string) (bool, error) {
 	return true, nil

@@ -16,7 +16,7 @@ import (
 )
 
 type observedDataPoolCursorStore struct {
-	*storage.SQLiteStore
+	SQLiteStore       *storage.SQLiteStore
 	pageStateReads    int
 	fullRevisionReads int
 }
@@ -92,7 +92,7 @@ func TestDataPoolRowCursorPaginationUsesStableKeysetAndRejectsDrift(t *testing.T
 		}
 	}
 	observedStore := &observedDataPoolCursorStore{SQLiteStore: store}
-	server := NewServer(ServerConfig{Store: observedStore})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(observedStore)})
 	type cursorPayload struct {
 		Rows       []*storage.SharedDataPoolRow `json:"rows"`
 		Total      int                          `json:"total"`

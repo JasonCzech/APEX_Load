@@ -238,8 +238,8 @@ func TestGuardedScenarioWriterRereadsStrictPolicyInTransaction(t *testing.T) {
 // have passed admission, so the race is decided by the storage CAS rather than
 // by request ordering.
 type scenarioRaceBarrierStore struct {
-	*storage.SQLiteStore
-	arrive func()
+	SQLiteStore *storage.SQLiteStore
+	arrive      func()
 }
 
 func (s *scenarioRaceBarrierStore) UpdateScenarioAuthoringWithSourcesIfCurrent(scenario *storage.Scenario, groups []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding, expected storage.ScenarioAuthoringPrecondition, admission storage.ScenarioSourceAdmission) (*storage.ScenarioAuthoringMutationResult, error) {
@@ -276,8 +276,8 @@ func exerciseScenarioReplicaRace(t *testing.T, owner, peer *Server, ownerStore, 
 		t.Fatal("replicas disagree on the baseline")
 	}
 	arrive := newScenarioRaceBarrier(t, 2)
-	owner.runner.scenarioStore = &scenarioRaceBarrierStore{SQLiteStore: ownerStore, arrive: arrive}
-	peer.runner.scenarioStore = &scenarioRaceBarrierStore{SQLiteStore: peerStore, arrive: arrive}
+	owner.runner.scenarioStore = sqliteOverlay(&scenarioRaceBarrierStore{SQLiteStore: ownerStore, arrive: arrive})
+	peer.runner.scenarioStore = sqliteOverlay(&scenarioRaceBarrierStore{SQLiteStore: peerStore, arrive: arrive})
 	defer func() { owner.runner.scenarioStore, peer.runner.scenarioStore = ownerStore, peerStore }()
 	codes := make(chan int, 2)
 	var wg sync.WaitGroup
@@ -323,17 +323,17 @@ func TestScenarioConditionedSaveRaceAcrossSQLiteReplicas(t *testing.T) {
 // sourceEditedDuringSaveStore stands in for another replica that edits a group
 // source after this save compiled it but before the write commits.
 type sourceEditedDuringSaveStore struct {
-	*storage.SQLiteStore
-	t *testing.T
+	SQLiteStore *storage.SQLiteStore
+	t           *testing.T
 }
 
 func (s *sourceEditedDuringSaveStore) UpdateScenarioAuthoringWithSourcesIfCurrent(scenario *storage.Scenario, groups []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding, expected storage.ScenarioAuthoringPrecondition, admission storage.ScenarioSourceAdmission) (*storage.ScenarioAuthoringMutationResult, error) {
-	script, err := s.GetScript(groups[0].ScriptID)
+	script, err := s.SQLiteStore.GetScript(groups[0].ScriptID)
 	if err != nil {
 		s.t.Fatal(err)
 	}
 	script.Name = "Edited on another replica"
-	if err := s.SaveScript(script); err != nil {
+	if err := s.SQLiteStore.SaveScript(script); err != nil {
 		s.t.Fatal(err)
 	}
 	return s.SQLiteStore.UpdateScenarioAuthoringWithSourcesIfCurrent(scenario, groups, pools, expected, admission)
@@ -349,7 +349,7 @@ func TestScenarioSaveClaimsCompiledSourceRevisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.runner.scenarioStore = &sourceEditedDuringSaveStore{SQLiteStore: store, t: t}
+	server.runner.scenarioStore = sqliteOverlay(&sourceEditedDuringSaveStore{SQLiteStore: store, t: t})
 	response := authoringAPIRequest(t, server, http.MethodPut, "/api/v1/scenarios/"+scenario.ID, scenarioSaveRequest("Compiled against old source", 2), tag)
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "script changed") {
 		t.Fatalf("source edited during save: %d %s", response.Code, response.Body.String())

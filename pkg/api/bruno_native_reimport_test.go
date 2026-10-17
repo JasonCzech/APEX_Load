@@ -715,7 +715,7 @@ func TestBrunoNativeReimportIgnoresUndeclaredNameOfExistingScript(t *testing.T) 
 // scriptReadFailureStore fails script reads while every other storage
 // capability, including the native batch store, still works.
 type scriptReadFailureStore struct {
-	*storage.SQLiteStore
+	SQLiteStore *storage.SQLiteStore
 }
 
 func (scriptReadFailureStore) GetScript(string) (*dsl.Script, error) {
@@ -733,7 +733,7 @@ func TestBrunoNativeUpdateTargetReadFailureIsNotReportedAsStale(t *testing.T) {
 		t.Fatalf("first commit status = %d body=%s", response.Code, response.Body.String())
 	}
 	second := inspectBrunoNativeFiles(t, server, brunoImportTestProject, orderedBrunoNativeFiles())
-	server.store = scriptReadFailureStore{SQLiteStore: store}
+	server.store = sqliteOverlay(scriptReadFailureStore{SQLiteStore: store})
 	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
 		ProjectID: brunoImportTestProject, ImportSessionID: second.ImportSessionID,
 		Mode: "create_native_batch", UpdateTargets: brunoNativeUpdateTargets(t, second),

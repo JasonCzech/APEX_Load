@@ -101,10 +101,10 @@ func TestArchiveFinalizationRejectsChangedIdentityBeforeMutation(t *testing.T) {
 	}
 }
 
-type revokeCompletionLeaseStore struct{ *storage.SQLiteStore }
+type revokeCompletionLeaseStore struct{ SQLiteStore *storage.SQLiteStore }
 
 func (s *revokeCompletionLeaseStore) CompleteArchiveFinalizationForRun(id, token, refresh string, record *storage.RunArchiveRecord, identity storage.ArchiveFinalizationRunIdentity) (bool, error) {
-	if err := s.ReleaseSchedulerLease(identity.LeaseName, identity.LeaseOwner); err != nil {
+	if err := s.SQLiteStore.ReleaseSchedulerLease(identity.LeaseName, identity.LeaseOwner); err != nil {
 		return false, err
 	}
 	return s.SQLiteStore.CompleteArchiveFinalizationForRun(id, token, refresh, record, identity)
@@ -120,9 +120,9 @@ func TestArchiveFinalizationLostLeasePreservesCurrentSource(t *testing.T) {
 	}
 	defer sqlite.Close()
 	store := &revokeCompletionLeaseStore{sqlite}
-	test, record := createArchiveFinalizationTest(t, store, "lease-expired-publication", root)
-	runner := NewTestRunner(1, NewHub(), store)
-	leader := newExecutionLeadership(store, "publication-fence")
+	test, record := createArchiveFinalizationTest(t, sqliteOverlay(store), "lease-expired-publication", root)
+	runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
+	leader := newExecutionLeadership(sqliteOverlay(store), "publication-fence")
 	leader.tick()
 	defer leader.relinquish()
 	runner.leadership = leader
@@ -131,13 +131,13 @@ func TestArchiveFinalizationLostLeasePreservesCurrentSource(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "current publication preserved") {
 		t.Fatalf("completion error=%v", err)
 	}
-	if _, err := store.GetArchiveFinalizationJob(test.ID); err != nil {
+	if _, err := store.SQLiteStore.GetArchiveFinalizationJob(test.ID); err != nil {
 		t.Fatal("pending intent lost", err)
 	}
-	if _, err := store.GetRunArchive(test.ID); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.SQLiteStore.GetRunArchive(test.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal("lost lease published", err)
 	}
-	jobs, err := store.ListArchiveVersionCleanupJobs(10)
+	jobs, err := store.SQLiteStore.ListArchiveVersionCleanupJobs(10)
 	if err != nil || len(jobs) != 0 {
 		t.Fatal("current source queued for deletion", err)
 	}

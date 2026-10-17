@@ -32,7 +32,7 @@ import (
 )
 
 type authoringSessionFailureStore struct {
-	*storage.SQLiteStore
+	SQLiteStore        *storage.SQLiteStore
 	authoringSaveCalls int
 	failOnCall         int
 	failScriptSave     bool
@@ -4912,7 +4912,7 @@ func TestApproveAuthoringSessionFailsClosedWhenSessionPersistenceFails(t *testin
 	seedAuthoringScriptProjects(t, baseStore, "project-authoring")
 	wantErr := errors.New("authoring database unavailable")
 	store := &authoringSessionFailureStore{SQLiteStore: baseStore, err: wantErr}
-	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(store), MaxConcurrent: 2, Addr: ":8080"})
 
 	t.Run("blocked review state", func(t *testing.T) {
 		session := &storage.AuthoringSession{

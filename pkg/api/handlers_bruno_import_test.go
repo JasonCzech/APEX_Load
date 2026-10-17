@@ -523,7 +523,7 @@ http: {method: GET, url: https://example.test/unknown}
 
 	expiredAt := time.Now().UTC().Add(-brunoArtifactCollectionGrace - time.Minute)
 	expireBrunoSessionDescriptor(t, artifactDir, inspected.ImportSessionID, expiredAt)
-	server.store = &brunoStoreWithoutArtifactReferenceChecker{Store: store}
+	server.store = storeOverlay(&brunoStoreWithoutArtifactReferenceChecker{Store: store})
 	if err := server.pruneExpiredBrunoImportSessions(time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
@@ -908,7 +908,7 @@ func TestExpiredBrunoPublicationJournalFailsClosedWithoutReferenceChecker(t *tes
 	); err != nil {
 		t.Fatal(err)
 	}
-	server.store = &brunoStoreWithoutArtifactReferenceChecker{Store: store}
+	server.store = storeOverlay(&brunoStoreWithoutArtifactReferenceChecker{Store: store})
 	if err := server.pruneExpiredBrunoImportSessions(time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
@@ -1046,7 +1046,7 @@ type flakyBrunoArtifactReferenceStore struct {
 }
 
 type brunoStoreWithoutArtifactReferenceChecker struct {
-	storage.Store
+	Store storage.Store
 }
 
 func (s *flakyBrunoArtifactReferenceStore) IsBrunoArtifactBackendKeyReferenced(backendKey string) (bool, error) {

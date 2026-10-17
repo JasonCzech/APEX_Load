@@ -284,7 +284,7 @@ func TestPublishedArchiveSourceReceiptRequiresUploadAndCatalogCommit(t *testing.
 			record.ArchiveURI = backend.runURI(test.ID)
 			record.ManifestURI = backend.manifestURI(test.ID)
 			store := &failingArchiveCatalogStore{SQLiteStore: sqlite, failCatalog: mode == "catalog failure"}
-			runner := NewTestRunner(1, NewHub(), store)
+			runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			err := runner.finalizeRunArchiveDurably(ctx, test, record, false)

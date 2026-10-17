@@ -69,8 +69,8 @@ func TestConnectionLinkSettingsRejectUnsafeTemplates(t *testing.T) {
 
 // failingJobsStore fails run monitor job listing on demand.
 type failingJobsStore struct {
-	*storage.SQLiteStore
-	fail atomic.Bool
+	SQLiteStore *storage.SQLiteStore
+	fail        atomic.Bool
 }
 
 func (s *failingJobsStore) ListRunMonitorJobs(project, run string) ([]storage.RunMonitorJob, error) {
@@ -87,7 +87,7 @@ func TestExemplarAPIReturnsWorkingDeepLinks(t *testing.T) {
 	}
 	t.Cleanup(func() { store.Close() })
 	wrapped := &failingJobsStore{SQLiteStore: store}
-	server := NewServer(ServerConfig{Store: wrapped})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(wrapped)})
 	// The run gets a live direct-mode monitor job; keep the poller off it.
 	if server.providerMonitoringCancel != nil {
 		server.providerMonitoringCancel()

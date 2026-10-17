@@ -9,16 +9,16 @@
 #     exit 1
 #   fi
 #
-# That single compile holds 6-9.5 GB (measured with go1.26.9 on darwin/arm64,
-# with and without -tags analytics_duckdb). About a hundred test stores promote
-# storage.Store's ~900 methods, so the compiler builds over 200,000 wrapper
-# functions and keeps their code until it writes the object file. Hosted arm64
-# macOS runners have 7 GB: there the compile swaps for hours and the job hits
-# its timeout. Those legs leave pkg/api to the macOS Intel (14 GB), Linux and
-# Windows (16 GB) legs.
+# That single compile peaks near 6 GB (measured with go1.26.9 on darwin/arm64,
+# with and without -tags analytics_duckdb, at three CPUs). It peaked at 8-9.5 GB
+# while the package's test stores embedded the store they wrapped: see
+# pkg/api/store_overlay_doc_test.go. Hosted arm64 macOS runners have 7 GB in
+# all, shared with the system and the runner; there the old compile swapped for
+# hours until the job's timeout, and the new one is unproven. Those legs leave
+# pkg/api to the macOS Intel (14 GB), Linux and Windows (16 GB) legs.
 set -euo pipefail
 
-required=$((12 << 30))
+required=$((10 << 30))
 case "$(uname -s)" in
   Darwin) total=$(sysctl -n hw.memsize) ;;
   # Hosted Linux and Windows runners have 16 GB for public repositories (8 GB
@@ -26,6 +26,6 @@ case "$(uname -s)" in
   *) exit 0 ;;
 esac
 if ((total < required)); then
-  echo "::notice::Skipping pkg/api tests: its test binary needs about 10 GB of memory to compile and this runner has $((total >> 30)) GB. The desktop workflow's macOS Intel, Linux and Windows legs run them."
+  echo "::notice::Skipping pkg/api tests: compiling its test binary peaks near 6 GB, too much for this runner's $((total >> 30)) GB. The desktop workflow's macOS Intel, Linux and Windows legs run them."
   exit 3
 fi
