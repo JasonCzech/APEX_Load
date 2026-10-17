@@ -251,8 +251,8 @@ func TestArchiveCollectionKeepsDurableMissingSources(t *testing.T) {
 }
 
 type rejectedCollectionIntentStore struct {
-	*storage.SQLiteStore
-	called atomic.Bool
+	SQLiteStore *storage.SQLiteStore
+	called      atomic.Bool
 }
 
 func (s *rejectedCollectionIntentStore) PrepareRunArchiveCollection(string, string, time.Time, map[string]string, string, string) (*storage.RunArchiveCollectionIntent, bool, error) {
@@ -272,7 +272,7 @@ func (c *collectionAssignmentClient) AssignWork(ctx context.Context, a generator
 func TestArchiveCollectionPersistenceFailurePreventsAssignment(t *testing.T) {
 	tr, store, run := collectionIntentFixture(t)
 	rejected := &rejectedCollectionIntentStore{SQLiteStore: store}
-	tr.testStore = rejected
+	tr.testStore = sqliteOverlay(rejected)
 	rpc, _ := newTestGeneratorRPCClient(t, "collection-generator", 10)
 	client := &collectionAssignmentClient{Client: rpc}
 	backend := newDistributedExecutionBackend([]string{"collection-generator"}, time.Second, func(context.Context, string) (generatorClient, error) { return client, nil })
@@ -298,7 +298,7 @@ func TestArchiveCollectionPersistenceFailureLeavesUnassignedEvacuationCandidateU
 	}
 
 	rejected := &rejectedCollectionIntentStore{SQLiteStore: store}
-	tr.testStore = rejected
+	tr.testStore = sqliteOverlay(rejected)
 	rpc, _ := newTestGeneratorRPCClient(t, "collection-evacuation", 10)
 	client := &collectionEvacuationClient{collectionAssignmentClient: &collectionAssignmentClient{Client: rpc}}
 	b := newDistributedExecutionBackend([]string{"new"}, time.Second, nil)

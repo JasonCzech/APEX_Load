@@ -13,7 +13,7 @@ import (
 )
 
 type drainRecoveryStore struct {
-	*storage.SQLiteStore
+	SQLiteStore  *storage.SQLiteStore
 	failRead     atomic.Bool
 	failMetadata atomic.Bool
 	reads        atomic.Int64
@@ -47,7 +47,7 @@ func newDrainRecoveryServer(t *testing.T) (*Server, *drainRecoveryStore, *distri
 		t.Fatal(err)
 	}
 	store := &drainRecoveryStore{SQLiteStore: db}
-	s := NewServer(ServerConfig{Store: store, HAExecutionLeadership: true, GeneratorTargets: []string{"gen:9090"}})
+	s := NewServer(ServerConfig{Store: sqliteOverlay(store), HAExecutionLeadership: true, GeneratorTargets: []string{"gen:9090"}})
 	t.Cleanup(func() { s.leadership.relinquish(); db.Close() })
 	b := s.runner.getExecutionBackend().(*distributedExecutionBackend)
 	b.recordGeneratorIdentity("gen:9090", "gen-0")
@@ -67,13 +67,13 @@ func TestGeneratorDrainRecoveryReloadsBeforeAdmission(t *testing.T) {
 	s, store, b := newDrainRecoveryServer(t)
 	b.ApplyGeneratorDrainStates(map[string]string{"gen-0": "draining", "removed": "cordoned"})
 	b.SetTerminatingGeneratorPods([]KubePodRef{{Name: "gen-0", Terminating: true}})
-	if err := store.SaveSetting(generatorDrainStatesStoreKey, `{"gen-0":"active","operator":"draining","old-cordon":"cordoned"}`); err != nil {
+	if err := store.SQLiteStore.SaveSetting(generatorDrainStatesStoreKey, `{"gen-0":"active","operator":"draining","old-cordon":"cordoned"}`); err != nil {
 		t.Fatal(err)
 	}
 	for _, m := range []*storage.GeneratorMetadata{
 		{GeneratorID: "offline", Cordoned: true}, {GeneratorID: "old-cordon", Cordoned: false}, {GeneratorID: "operator", Cordoned: false},
 	} {
-		if err := store.SaveGeneratorMetadata(m); err != nil {
+		if err := store.SQLiteStore.SaveGeneratorMetadata(m); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -92,7 +92,7 @@ func TestGeneratorDrainRecoveryReloadsBeforeAdmission(t *testing.T) {
 	}
 	// Reacquisition of the same process must also refresh.
 	s.leadership.relinquish()
-	if err := store.SaveSetting(generatorDrainStatesStoreKey, `{"gen-0":"cordoned"}`); err != nil {
+	if err := store.SQLiteStore.SaveSetting(generatorDrainStatesStoreKey, `{"gen-0":"cordoned"}`); err != nil {
 		t.Fatal(err)
 	}
 	s.leadership.tick()
@@ -121,7 +121,7 @@ func TestGeneratorDrainRecoveryFailureKeepsAdmissionClosed(t *testing.T) {
 			case "invalid-key":
 				raw = `{" gen-0":"draining"}`
 			}
-			if err := store.SaveSetting(generatorDrainStatesStoreKey, raw); err != nil {
+			if err := store.SQLiteStore.SaveSetting(generatorDrainStatesStoreKey, raw); err != nil {
 				t.Fatal(err)
 			}
 			s.leadership.tick()
@@ -140,7 +140,7 @@ func TestGeneratorDrainRecoveryFailureKeepsAdmissionClosed(t *testing.T) {
 			}
 			store.failRead.Store(false)
 			store.failMetadata.Store(false)
-			if err := store.SaveSetting(generatorDrainStatesStoreKey, `{}`); err != nil {
+			if err := store.SQLiteStore.SaveSetting(generatorDrainStatesStoreKey, `{}`); err != nil {
 				t.Fatal(err)
 			}
 			waitDrainRecoveryAdmission(t, s)
@@ -156,7 +156,7 @@ func TestGeneratorDrainRecoveryRejectsCanceledRead(t *testing.T) {
 	// returns successful data after cancellation cannot clear existing intent.
 	ctx, cancel := context.WithCancel(context.Background())
 	store.afterRead = cancel
-	if _, err := readGeneratorDrainStates(ctx, store); !errors.Is(err, context.Canceled) {
+	if _, err := readGeneratorDrainStates(ctx, sqliteOverlay(store)); !errors.Is(err, context.Canceled) {
 		t.Fatalf("error=%v", err)
 	}
 	store.afterRead = nil
@@ -172,17 +172,17 @@ func TestGeneratorReconnectDoesNotPersistStandbySnapshot(t *testing.T) {
 	s, store, b := newDrainRecoveryServer(t)
 	b.ApplyGeneratorDrainStates(map[string]string{"stale": "draining"})
 	latest := `{"newer":"draining"}`
-	if err := store.SaveSetting(generatorDrainStatesStoreKey, latest); err != nil {
+	if err := store.SQLiteStore.SaveSetting(generatorDrainStatesStoreKey, latest); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveGeneratorMetadata(&storage.GeneratorMetadata{GeneratorID: "gen-0", Cordoned: true}); err != nil {
+	if err := store.SQLiteStore.SaveGeneratorMetadata(&storage.GeneratorMetadata{GeneratorID: "gen-0", Cordoned: true}); err != nil {
 		t.Fatal(err)
 	}
 	s.applyMetadataCordonOnReconnect(b, "gen-0")
 	if b.GeneratorDrainStateByID("gen-0") != "cordoned" {
 		t.Fatal("local metadata projection not updated")
 	}
-	raw, err := store.GetSetting(generatorDrainStatesStoreKey)
+	raw, err := store.SQLiteStore.GetSetting(generatorDrainStatesStoreKey)
 	if err != nil || raw != latest {
 		t.Fatalf("reconnect overwrote newer durable state: %s err=%v", raw, err)
 	}

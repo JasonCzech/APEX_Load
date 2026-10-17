@@ -191,7 +191,7 @@ func TestCommitAsyncAPIImportBatchRestartRecoversCommittedCredentialedBatch(t *t
 	}
 	defer base.Close()
 	store := &failOnceDirectImportReceiptStore{SQLiteStore: base, failComplete: true}
-	firstServer := NewServer(ServerConfig{Store: store})
+	firstServer := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	script := asyncAPIBatchScriptWithCredential("Restart recovery", "asyncapi-restart-secret")
 	preview := firstServer.newScriptImportResponseWithSourceSecrets(
 		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/asyncapi", nil),
@@ -219,7 +219,7 @@ func TestCommitAsyncAPIImportBatchRestartRecoversCommittedCredentialedBatch(t *t
 
 	// The second process shares only durable storage; the masked token's local
 	// credential candidate is deliberately gone.
-	restarted := NewServer(ServerConfig{Store: store})
+	restarted := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	recovered := postAsyncAPIBatch(t, restarted, payload)
 	if recovered.Code != http.StatusCreated {
 		t.Fatalf("restart recovery status = %d body=%s", recovered.Code, recovered.Body.String())

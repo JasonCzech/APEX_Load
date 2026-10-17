@@ -13,7 +13,7 @@ import (
 )
 
 type commitBetweenPublishedScriptScansStore struct {
-	storage.Store
+	Store   storage.Store
 	once    sync.Once
 	between func()
 }
@@ -56,7 +56,7 @@ func TestListPublishedImportScriptsRejectsCommitBetweenScans(t *testing.T) {
 			commitErr = transaction.commit()
 		},
 	}
-	listed, err := listPublishedImportScripts(raceStore, storage.DefaultProjectID, nil)
+	listed, err := listPublishedImportScripts(storeOverlay(raceStore), storage.DefaultProjectID, nil)
 	if commitErr != nil {
 		t.Fatalf("commit between publication scans: %v", commitErr)
 	}
@@ -79,7 +79,7 @@ func TestListPublishedImportScriptsRejectsCommitBetweenScans(t *testing.T) {
 }
 
 type publicationDispatchStore struct {
-	*storage.SQLiteStore
+	SQLiteStore   *storage.SQLiteStore
 	claimCAS      atomic.Int64
 	legacyCAS     atomic.Int64
 	snapshotReads atomic.Int64
@@ -115,7 +115,7 @@ func TestLibraryImportClaimsUseQualifiedPublicationAndRereadConflict(t *testing.
 	}
 	defer base.Close()
 	store := &publicationDispatchStore{SQLiteStore: base}
-	server := NewServer(ServerConfig{Store: store})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	script := libraryTestScript("qualified-existing", "Published source", storage.DefaultProjectID, "/published")
 	if _, err := server.runner.CreateScriptDurable(script); err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestLibraryImportClaimsUseQualifiedPublicationAndRereadConflict(t *testing.
 	if err != nil || after.ContentRevision != before.ContentRevision {
 		t.Fatalf("claim preparation mutated source content: %v", err)
 	}
-	if _, err := getPublishedImportScript(store, script.ID); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := getPublishedImportScript(sqliteOverlay(store), script.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("prepared source remained published: %v", err)
 	}
 	if transaction.mutationStarted {
@@ -163,7 +163,7 @@ func TestLibraryImportClaimsUseQualifiedPublicationAndRereadConflict(t *testing.
 		t.Fatal(err)
 	}
 	transaction.closeWithoutAssetCompensation()
-	if _, err := getPublishedImportScript(store, script.ID); err != nil {
+	if _, err := getPublishedImportScript(sqliteOverlay(store), script.ID); err != nil {
 		t.Fatalf("terminal no-op lost source: %v", err)
 	}
 }

@@ -106,10 +106,10 @@ func TestProjectLiveTableDefaultLeaseOwnerMatchesClient(t *testing.T) {
 }
 
 type projectDelayedDefinitionStore struct {
-	*storage.SQLiteStore
-	pause   atomic.Bool
-	read    chan struct{}
-	release chan struct{}
+	SQLiteStore *storage.SQLiteStore
+	pause       atomic.Bool
+	read        chan struct{}
+	release     chan struct{}
 }
 
 func (s *projectDelayedDefinitionStore) GetProjectLiveTable(ctx context.Context, project, id string) (*storage.ProjectLiveTableDefinition, error) {
@@ -136,7 +136,7 @@ func TestProjectLiveTableDelayedReadCannotDowngradeLifecycle(t *testing.T) {
 	svc.release(rt)
 	wrapper := &projectDelayedDefinitionStore{SQLiteStore: store, read: make(chan struct{}), release: make(chan struct{})}
 	wrapper.pause.Store(true)
-	runner.dataPoolStore = wrapper
+	runner.dataPoolStore = sqliteOverlay(wrapper)
 	var release sync.Once
 	done := make(chan struct{})
 	defer func() {

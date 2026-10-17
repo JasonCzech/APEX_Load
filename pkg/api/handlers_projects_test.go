@@ -936,7 +936,7 @@ func TestProjectApplicationCleanupRetainsUnindexedCloudScope(t *testing.T) {
 	}
 }
 
-type failingApplicationCleanupStore struct{ *storage.SQLiteStore }
+type failingApplicationCleanupStore struct{ SQLiteStore *storage.SQLiteStore }
 
 func (s *failingApplicationCleanupStore) ListExternalApplicationSecretMetadata(string) ([]storage.ProjectSecretMetadata, error) {
 	return nil, errors.New("metadata unavailable")
@@ -955,7 +955,7 @@ func TestDeleteProjectBlocksWhenApplicationCleanupMetadataUnavailable(t *testing
 	if err := store.SaveApplication(&storage.Application{ID: "unavailable-app", ProjectID: projectID, Name: "Unavailable"}); err != nil {
 		t.Fatal(err)
 	}
-	server := NewServer(ServerConfig{Store: &failingApplicationCleanupStore{SQLiteStore: store}})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(&failingApplicationCleanupStore{SQLiteStore: store})})
 	response := httptest.NewRecorder()
 	server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+projectID, nil))
 	if response.Code != http.StatusServiceUnavailable {

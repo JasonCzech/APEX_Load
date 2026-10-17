@@ -19,7 +19,7 @@ import (
 )
 
 type failingArchiveCatalogStore struct {
-	*storage.SQLiteStore
+	SQLiteStore *storage.SQLiteStore
 	failCatalog bool
 }
 
@@ -45,7 +45,7 @@ func (s *failingArchiveCatalogStore) CompleteArchiveFinalizationForRun(id, token
 }
 
 type archiveIntentOrderStore struct {
-	*storage.SQLiteStore
+	SQLiteStore *storage.SQLiteStore
 	adjunctPath string
 	mu          sync.Mutex
 	orderErr    error
@@ -140,8 +140,8 @@ func TestArchiveFinalizationPersistsIntentBeforeAdjuncts(t *testing.T) {
 		SQLiteStore: sqliteStore,
 		adjunctPath: filepath.Join(archiveRoot, testID, testRunManifestFileName),
 	}
-	test, record := createArchiveFinalizationTest(t, store, testID, archiveRoot)
-	runner := NewTestRunner(1, NewHub(), store)
+	test, record := createArchiveFinalizationTest(t, sqliteOverlay(store), testID, archiveRoot)
+	runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 
 	if err := runner.finalizeRunArchiveDurably(context.Background(), test, record, true); err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func TestArchiveFinalizationPersistsIntentBeforeAdjuncts(t *testing.T) {
 	if _, err := os.Stat(store.adjunctPath); err != nil {
 		t.Fatalf("adjunct was not generated after intent commit: %v", err)
 	}
-	if _, err := store.GetArchiveFinalizationJob(testID); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.SQLiteStore.GetArchiveFinalizationJob(testID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("successful finalization left outbox job: %v", err)
 	}
 }
@@ -216,14 +216,14 @@ func TestArchiveFinalizationRecoversCatalogFailureAfterRestart(t *testing.T) {
 	}
 	store := &failingArchiveCatalogStore{SQLiteStore: sqliteStore, failCatalog: true}
 	testID := "archive-finalization-restart"
-	test, record := createArchiveFinalizationTest(t, store, testID, archiveRoot)
-	runner := NewTestRunner(1, NewHub(), store)
+	test, record := createArchiveFinalizationTest(t, sqliteOverlay(store), testID, archiveRoot)
+	runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 
 	err = runner.finalizeRunArchiveDurably(context.Background(), test, record, true)
 	if err == nil || !strings.Contains(err.Error(), "catalog") {
 		t.Fatalf("finalize error = %v, want catalog failure", err)
 	}
-	job, err := store.GetArchiveFinalizationJob(testID)
+	job, err := store.SQLiteStore.GetArchiveFinalizationJob(testID)
 	if err != nil {
 		t.Fatalf("durable finalization job missing after catalog failure: %v", err)
 	}

@@ -935,7 +935,7 @@ type startFenceOnlyTestDecorator struct {
 	startStore deploymentLeaseTestStartPersistence
 }
 
-type revisionBlindStorageDecorator struct{ storage.Store }
+type revisionBlindStorageDecorator struct{ Store storage.Store }
 
 func TestDurableStartAdmissionFailsClosedWithoutRevisionReader(t *testing.T) {
 	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "revision-blind-admission.db"))
@@ -944,7 +944,7 @@ func TestDurableStartAdmissionFailsClosedWithoutRevisionReader(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = base.Close() })
 	blind := &revisionBlindStorageDecorator{Store: base}
-	runner := NewTestRunner(2, NewHub(), blind)
+	runner := NewTestRunner(2, NewHub(), storeOverlay(blind))
 	storePreflightScript(runner, "revision-blind-script", storage.DefaultProjectID)
 	// This test targets launch-evidence capability detection. Use the concrete
 	// store only for setup because the intentionally blind decorator also omits
@@ -956,7 +956,7 @@ func TestDurableStartAdmissionFailsClosedWithoutRevisionReader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTest: %v", err)
 	}
-	runner.testStore = blind
+	runner.testStore = storeOverlay(blind)
 	if _, err := runner.loadStartLaunchEvidence(test.ID, time.Now().UTC()); err == nil || !strings.Contains(err.Error(), "admission revision fence is unavailable") {
 		t.Fatalf("revision-blind evidence error = %v, want fail-closed capability error", err)
 	}

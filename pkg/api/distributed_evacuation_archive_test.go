@@ -173,8 +173,8 @@ func TestFailClosedEvacuationRejectsSupersededRun(t *testing.T) {
 }
 
 type evacuationTerminalGateStore struct {
-	*storage.SQLiteStore
-	blocked atomic.Bool
+	SQLiteStore *storage.SQLiteStore
+	blocked     atomic.Bool
 }
 
 func (s *evacuationTerminalGateStore) UpdateTestStatusIfActive(id, status string, end *time.Time, reason string) (storage.TestStatusTransitionResult, error) {
@@ -206,7 +206,7 @@ func TestFailClosedEvacuationRetainsSourcesUntilTerminalCommit(t *testing.T) {
 	}
 	run.History = []*LiveMetrics{{Timestamp: interval.Timestamp, TargetTPS: 17}, {Timestamp: interval.Timestamp.Add(time.Second), TargetTPS: 29}}
 	run.remoteClientsByTarget = map[string]generatorClient{"generator-a": client}
-	runner := NewTestRunner(1, nil, gate)
+	runner := NewTestRunner(1, nil, sqliteOverlay(gate))
 	runner.tests[run.ID] = run
 	t.Cleanup(func() {
 		gate.blocked.Store(false)

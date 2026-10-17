@@ -39,7 +39,7 @@ func recordingTestServer(t *testing.T) *Server {
 }
 
 type recordingStatusReadSpy struct {
-	storage.Store
+	Store                storage.Store
 	fullReads            int
 	statusReads          int
 	fullRecordOverride   *storage.ScriptRecordingRecord
@@ -305,7 +305,7 @@ func TestScriptRecordingStatusEndpointUsesMetadataOnlyStorageRead(t *testing.T) 
 		[]storage.ScriptRecordingObservation{{ID: 0}, {ID: 1}},
 	)
 	spy := &recordingStatusReadSpy{Store: server.store}
-	server.store = spy
+	server.store = storeOverlay(spy)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/metadata-only-status/recording/status", nil)
 	req.SetPathValue("id", script.ID)
@@ -326,7 +326,7 @@ func TestScriptRecordingStatusRejectsCrossProjectReplacementSnapshot(t *testing.
 	server := recordingTestServer(t)
 	storeRecordingDigestTestScript(t, server, "status-replacement-race")
 	originalStore := server.store
-	server.store = &recordingStatusReadSpy{
+	server.store = storeOverlay(&recordingStatusReadSpy{
 		Store: originalStore,
 		statusRecordOverride: &storage.ScriptRecordingStatusRecord{
 			ScriptID:                    "status-replacement-race",
@@ -341,7 +341,7 @@ func TestScriptRecordingStatusRejectsCrossProjectReplacementSnapshot(t *testing.
 			CorrelationMetadataCurrent:  true,
 			UpdatedAt:                   time.Now().UTC(),
 		},
-	}
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/status-replacement-race/recording/status", nil)
 	req.SetPathValue("id", "status-replacement-race")
@@ -362,7 +362,7 @@ func TestScriptRecordingDiagnosisRejectsCrossProjectReplacementSnapshot(t *testi
 	server := recordingTestServer(t)
 	storeRecordingDigestTestScript(t, server, "diagnosis-replacement-race")
 	originalStore := server.store
-	server.store = &recordingStatusReadSpy{
+	server.store = storeOverlay(&recordingStatusReadSpy{
 		Store: originalStore,
 		fullRecordOverride: &storage.ScriptRecordingRecord{
 			ScriptID:                         "diagnosis-replacement-race",
@@ -374,7 +374,7 @@ func TestScriptRecordingDiagnosisRejectsCrossProjectReplacementSnapshot(t *testi
 			RequestCount:                     99,
 			EncryptedCorrelationObservations: recordingBaselineCipherPrefixV3 + base64.RawStdEncoding.EncodeToString(make([]byte, 12+16)),
 		},
-	}
+	})
 
 	req := httptest.NewRequest(
 		http.MethodPost,

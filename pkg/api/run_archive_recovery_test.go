@@ -161,10 +161,10 @@ func TestRunArchiveRecoveryProjectsDurableStateWithoutReadingSources(t *testing.
 }
 
 type recoveryReadStore struct {
-	*storage.SQLiteStore
-	reads     int
-	failure   bool
-	afterRead func()
+	SQLiteStore *storage.SQLiteStore
+	reads       int
+	failure     bool
+	afterRead   func()
 }
 
 func (s *recoveryReadStore) GetRunArchiveCollection(id string) (*storage.RunArchiveCollectionIntent, error) {
@@ -192,7 +192,7 @@ func TestRunArchiveRecoverySingleRunReadsAndIncarnationRecheck(t *testing.T) {
 			run.Status = "FAILED"
 			run.EndedAt = &end
 			store := &recoveryReadStore{SQLiteStore: sqlite, failure: mode == "store failure"}
-			tr := NewTestRunner(1, NewHub(), store)
+			tr := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 			if mode == "replaced during read" {
 				store.afterRead = func() {
 					row, err := sqlite.GetTest(run.ID)

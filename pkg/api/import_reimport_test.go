@@ -748,7 +748,7 @@ func TestReimportRetryAdoptsAnUpdateItsEarlierAttemptApplied(t *testing.T) {
 	}
 	t.Cleanup(func() { base.Close() })
 	store := &failOnceDirectImportReceiptStore{SQLiteStore: base}
-	server := NewServer(ServerConfig{Store: store})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(store)})
 	original := savedReimportScript(t, saveReimport(t, server, "lost-first", reimportHAR(t, server, "checkout.har", "/orders").Script, nil))
 	again := reimportHAR(t, server, "checkout.har", "/orders/v2")
 	match := again.ExistingScripts[0]

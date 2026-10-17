@@ -207,8 +207,8 @@ func TestArchiveAdjunctPreparedRecoveryUsesAdmission(t *testing.T) {
 	}
 	defer sqlite.Close()
 	store := &interruptedArchiveManifestStore{SQLiteStore: sqlite, failPreparation: "after"}
-	run, record := createArchiveFinalizationTest(t, store, "adjunct-recovery", root)
-	runner := NewTestRunner(1, nil, store)
+	run, record := createArchiveFinalizationTest(t, sqliteOverlay(store), "adjunct-recovery", root)
+	runner := NewTestRunner(1, nil, sqliteOverlay(store))
 	if err := runner.finalizeRunArchiveDurably(context.Background(), run, record, true); err == nil {
 		t.Fatal("interruption ignored")
 	}
@@ -216,7 +216,7 @@ func TestArchiveAdjunctPreparedRecoveryUsesAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	job, err := store.GetArchiveFinalizationJob(run.ID)
+	job, err := store.SQLiteStore.GetArchiveFinalizationJob(run.ID)
 	if err != nil || job.PreparedManifestJSON == "" {
 		t.Fatal("no durable preparation", err)
 	}

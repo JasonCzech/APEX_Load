@@ -122,7 +122,7 @@ func TestPostgresScenarioStrictPolicyFlipIsFencedInTransaction(t *testing.T) {
 	if err := ownerStore.SaveProject(project); err != nil {
 		t.Fatal(err)
 	}
-	owner.store = &strictPolicyAfterAdmissionStore{SQLiteStore: ownerStore.SQLiteStore}
+	owner.store = sqliteOverlay(&strictPolicyAfterAdmissionStore{SQLiteStore: ownerStore.SQLiteStore})
 	before, err := ownerStore.GetScenarioAuthoringSnapshot(scenarioID)
 	if err != nil {
 		t.Fatal(err)

@@ -263,7 +263,7 @@ type createUnsupportedSecretStore struct{ secretstore.Store }
 func (*createUnsupportedSecretStore) CreateSupported() bool { return false }
 
 type selectiveAuditFailureStore struct {
-	storage.Store
+	Store  storage.Store
 	action string
 	status string
 }
@@ -502,7 +502,7 @@ func TestProjectSecretListSuppressesInternalRuntimeRollbackOwner(t *testing.T) {
 
 func TestProjectSecretCreateFailsClosedWhenIntentAuditIsUnavailable(t *testing.T) {
 	server, records, managed, projectID := newProjectSecretAPIServer(t)
-	server.store = &selectiveAuditFailureStore{Store: records, action: "project_secret.create", status: "pending"}
+	server.store = storeOverlay(&selectiveAuditFailureStore{Store: records, action: "project_secret.create", status: "pending"})
 	const value = "intent-audit-value-must-not-be-written"
 	response := secretAPIRequest(t, server, http.MethodPost, "/api/v1/projects/"+projectID+"/secrets", map[string]any{
 		"secrets": []map[string]string{{"name": "AUDIT_INTENT", "value": value}},
@@ -518,7 +518,7 @@ func TestProjectSecretCreateFailsClosedWhenIntentAuditIsUnavailable(t *testing.T
 func TestProjectSecretMutationsDoNotAcknowledgeSuccessWhenOutcomeAuditFails(t *testing.T) {
 	t.Run("create", func(t *testing.T) {
 		server, records, managed, projectID := newProjectSecretAPIServer(t)
-		server.store = &selectiveAuditFailureStore{Store: records, action: "project_secret.create", status: "success"}
+		server.store = storeOverlay(&selectiveAuditFailureStore{Store: records, action: "project_secret.create", status: "success"})
 		const value = "create-outcome-audit-value"
 		response := secretAPIRequest(t, server, http.MethodPost, "/api/v1/projects/"+projectID+"/secrets", map[string]any{
 			"secrets": []map[string]string{{"name": "AUDIT_CREATE", "value": value}},
@@ -540,7 +540,7 @@ func TestProjectSecretMutationsDoNotAcknowledgeSuccessWhenOutcomeAuditFails(t *t
 		if _, err := managed.Create(context.Background(), projectID, "AUDIT_ROTATE", "before", "setup"); err != nil {
 			t.Fatal(err)
 		}
-		server.store = &selectiveAuditFailureStore{Store: records, action: "project_secret.rotate", status: "success"}
+		server.store = storeOverlay(&selectiveAuditFailureStore{Store: records, action: "project_secret.rotate", status: "success"})
 		const value = "rotate-outcome-audit-value"
 		response := secretAPIRequest(t, server, http.MethodPut, "/api/v1/projects/"+projectID+"/secrets/AUDIT_ROTATE", map[string]any{"value": value})
 		if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), value) {
@@ -564,7 +564,7 @@ func TestProjectSecretMutationsDoNotAcknowledgeSuccessWhenOutcomeAuditFails(t *t
 		if err != nil {
 			t.Fatal(err)
 		}
-		server.store = &selectiveAuditFailureStore{Store: records, action: "script_import.secret.migrate", status: "success"}
+		server.store = storeOverlay(&selectiveAuditFailureStore{Store: records, action: "script_import.secret.migrate", status: "success"})
 		response := secretAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/import/secrets/migrate", map[string]any{
 			"project_id":               projectID,
 			"source_secret_session_id": sessionID,

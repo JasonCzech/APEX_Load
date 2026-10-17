@@ -14,9 +14,9 @@ import (
 )
 
 type gatedPublicationStore struct {
-	*storage.SQLiteStore
-	entered chan struct{}
-	release chan struct{}
+	SQLiteStore *storage.SQLiteStore
+	entered     chan struct{}
+	release     chan struct{}
 }
 
 func (s *gatedPublicationStore) CompleteArchiveFinalization(id, token, refresh string, record *storage.RunArchiveRecord) (bool, error) {
@@ -40,10 +40,10 @@ func TestDistributedCompletionVisibleWhilePublicationPending(t *testing.T) {
 	}
 	defer sqlite.Close()
 	store := &gatedPublicationStore{SQLiteStore: sqlite, entered: make(chan struct{}), release: make(chan struct{})}
-	runner := NewTestRunner(1, NewHub(), store)
+	runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 	now := time.Now().UTC()
 	test := &ManagedTest{ID: "publication-visibility", Name: "publication visibility", ProjectID: storage.DefaultProjectID, Status: "RUNNING", CreatedAt: now, remoteFinalizing: true, LiveMetrics: &LiveMetrics{Timestamp: now, ActiveVUsers: 0}}
-	if err := store.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, ProjectID: test.ProjectID, Status: test.Status, StartTime: now}); err != nil {
+	if err := store.SQLiteStore.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, ProjectID: test.ProjectID, Status: test.Status, StartTime: now}); err != nil {
 		t.Fatal(err)
 	}
 	source := t.TempDir()
@@ -70,10 +70,10 @@ func TestDistributedCompletionVisibleWhilePublicationPending(t *testing.T) {
 		close(store.release)
 		select {
 		case <-done:
-			if _, err := store.GetRunArchive(test.ID); err != nil {
+			if _, err := store.SQLiteStore.GetRunArchive(test.ID); err != nil {
 				t.Errorf("publication did not commit catalog: %v", err)
 			}
-			if _, err := store.GetArchiveFinalizationJob(test.ID); !errors.Is(err, sql.ErrNoRows) {
+			if _, err := store.SQLiteStore.GetArchiveFinalizationJob(test.ID); !errors.Is(err, sql.ErrNoRows) {
 				t.Errorf("publication intent did not retire: %v", err)
 			}
 			if snapshot, ok := runner.GetTestSummary(test.ID); !ok || snapshot.Archive == nil || snapshot.Status != "COMPLETE" {
@@ -90,11 +90,11 @@ func TestDistributedCompletionVisibleWhilePublicationPending(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("publication did not start")
 	}
-	durable, err := store.GetTest(test.ID)
+	durable, err := store.SQLiteStore.GetTest(test.ID)
 	if err != nil || durable.Status != "COMPLETE" {
 		t.Fatalf("terminal outcome not durable: %+v %v", durable, err)
 	}
-	if _, err := store.GetArchiveFinalizationJob(test.ID); err != nil {
+	if _, err := store.SQLiteStore.GetArchiveFinalizationJob(test.ID); err != nil {
 		t.Fatal(err)
 	}
 	snapshot, ok := runner.GetTestSummary(test.ID)
@@ -125,15 +125,15 @@ readEvents:
 	if snapshot.Archive != nil {
 		t.Fatal("uncommitted archive exposed")
 	}
-	if _, err := store.GetRunArchive(test.ID); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.SQLiteStore.GetRunArchive(test.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("catalog became visible before publication: %v", err)
 	}
 }
 
 // failFirstPublicationStore refuses the first archive publication commit.
 type failFirstPublicationStore struct {
-	*storage.SQLiteStore
-	failed bool
+	SQLiteStore *storage.SQLiteStore
+	failed      bool
 }
 
 func (s *failFirstPublicationStore) CompleteArchiveFinalizationForRun(id, token, refresh string, record *storage.RunArchiveRecord, identity storage.ArchiveFinalizationRunIdentity) (bool, error) {
@@ -164,7 +164,7 @@ func TestDistributedPublicationRetryKeepsHeldJointBatches(t *testing.T) {
 	}
 	defer sqlite.Close()
 	store := &failFirstPublicationStore{SQLiteStore: sqlite}
-	runner := NewTestRunner(1, NewHub(), store)
+	runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 	// The refused commit queues a background publication retry; stop it and
 	// wait for it before the store closes and the archive root is restored.
 	defer func() {
@@ -186,7 +186,7 @@ func TestDistributedPublicationRetryKeepsHeldJointBatches(t *testing.T) {
 	now := time.Now().UTC()
 	test := &ManagedTest{ID: "publication-retry-joint", Name: "publication retry", ProjectID: storage.DefaultProjectID, Status: "RUNNING", CreatedAt: now, remoteFinalizing: true, LiveMetrics: &LiveMetrics{Timestamp: now, ActiveVUsers: 0},
 		pendingJointPublications: []*storage.NativePublicationEvidence{{SourceID: "generator", Sequence: 5}}, pendingJointBytes: 256}
-	if err := store.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, ProjectID: test.ProjectID, Status: test.Status, StartTime: now}); err != nil {
+	if err := store.SQLiteStore.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, ProjectID: test.ProjectID, Status: test.Status, StartTime: now}); err != nil {
 		t.Fatal(err)
 	}
 	source := t.TempDir()
@@ -215,7 +215,7 @@ func TestDistributedPublicationRetryKeepsHeldJointBatches(t *testing.T) {
 	if attached || held != 1 || dropped != 0 {
 		t.Fatalf("after a failed publication: attached %v, %d held, %d dropped", attached, held, dropped)
 	}
-	job, err := store.GetArchiveFinalizationJob(test.ID)
+	job, err := store.SQLiteStore.GetArchiveFinalizationJob(test.ID)
 	if err != nil {
 		t.Fatalf("no publication retry was queued: %v", err)
 	}

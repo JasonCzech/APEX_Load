@@ -14,7 +14,7 @@ import (
 )
 
 type nativeQueryMetadataBarrier struct {
-	*storage.SQLiteStore
+	SQLiteStore  *storage.SQLiteStore
 	entered      chan struct{}
 	release      chan struct{}
 	blockProject bool
@@ -131,7 +131,7 @@ func TestNativeDatasetFinalMetadataReadBarrierObservesCurrentRevision(t *testing
 	var owner *nativeQueryMetadataBarrier
 	s, store, in := nativeQueryAuthorityFixture(t, func(store *storage.SQLiteStore) storage.Store {
 		owner = &nativeQueryMetadataBarrier{SQLiteStore: store, entered: make(chan struct{}), release: make(chan struct{}), blockDataset: true}
-		return owner
+		return sqliteOverlay(owner)
 	})
 	owner.armed.Store(true)
 	var released sync.Once
@@ -177,7 +177,7 @@ func TestNativeComparisonAndSeriesRefuseLateContextFreeMetadataReplies(t *testin
 			var owner *nativeQueryMetadataBarrier
 			s, _, in := nativeQueryAuthorityFixture(t, func(store *storage.SQLiteStore) storage.Store {
 				owner = &nativeQueryMetadataBarrier{SQLiteStore: store, entered: make(chan struct{}), release: make(chan struct{}), blockProject: stage == "project", blockDataset: stage == "dataset"}
-				return owner
+				return sqliteOverlay(owner)
 			})
 			owner.armed.Store(true)
 			deadline := time.Now().Add(30 * time.Millisecond)

@@ -21,16 +21,16 @@ import (
 )
 
 type rejectedImportSourceRetentionStore struct {
-	*storage.SQLiteStore
-	mu       sync.Mutex
-	failures int
-	err      error
+	SQLiteStore *storage.SQLiteStore
+	mu          sync.Mutex
+	failures    int
+	err         error
 }
 
 type rejectedImportRevisionListStore struct {
-	*storage.SQLiteStore
-	mu     sync.Mutex
-	reject bool
+	SQLiteStore *storage.SQLiteStore
+	mu          sync.Mutex
+	reject      bool
 }
 
 func (s *rejectedImportRevisionListStore) ListImportSourceRevisions(
@@ -390,7 +390,7 @@ func TestDeleteImportedScriptRetainsRowWhenSourceCleanupCannotBePrepared(t *test
 	}
 	artifactDir := t.TempDir()
 	server := NewServer(ServerConfig{
-		Store:                store,
+		Store:                sqliteOverlay(store),
 		BrunoArtifactDir:     artifactDir,
 		BrunoArtifactWrapper: wrapper,
 	})
@@ -480,7 +480,7 @@ func TestRetainedImportSourceFailureCleansOrJournalsUntrackedObject(t *testing.T
 		t.Fatal(err)
 	}
 	server := NewServer(ServerConfig{
-		Store:                store,
+		Store:                sqliteOverlay(store),
 		BrunoArtifactDir:     t.TempDir(),
 		BrunoArtifactWrapper: wrapper,
 	})
@@ -562,7 +562,7 @@ func TestProtectedImportRetentionFailureLeavesSessionRetryable(t *testing.T) {
 	}
 	artifactDir := t.TempDir()
 	server := NewServer(ServerConfig{
-		Store:                store,
+		Store:                sqliteOverlay(store),
 		BrunoArtifactDir:     artifactDir,
 		BrunoArtifactWrapper: wrapper,
 	})
@@ -730,7 +730,7 @@ func TestProtectedImportRetentionRetryDoesNotOverwriteInterveningEdit(t *testing
 		t.Fatal(err)
 	}
 	server := NewServer(ServerConfig{
-		Store:                store,
+		Store:                sqliteOverlay(store),
 		BrunoArtifactDir:     t.TempDir(),
 		BrunoArtifactWrapper: wrapper,
 	})
@@ -919,7 +919,7 @@ func TestProtectedImportCreateRetentionRetryDoesNotAttachSourceAfterEdit(t *test
 		t.Fatal(err)
 	}
 	server := NewServer(ServerConfig{
-		Store:                store,
+		Store:                sqliteOverlay(store),
 		BrunoArtifactDir:     t.TempDir(),
 		BrunoArtifactWrapper: wrapper,
 	})

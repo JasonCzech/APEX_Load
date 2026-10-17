@@ -262,7 +262,7 @@ func TestGatewayRejectsCrossTargetGeneratorIdentity(t *testing.T) {
 	t.Cleanup(func() { _ = reconnected.Close() })
 }
 
-type unavailableEnrollmentIntentStore struct{ *storage.SQLiteStore }
+type unavailableEnrollmentIntentStore struct{ SQLiteStore *storage.SQLiteStore }
 
 func (*unavailableEnrollmentIntentStore) ListCapacityInstanceIntents(string, string) ([]*storage.CapacityInstanceIntent, error) {
 	return nil, errors.New("intent store unavailable")
@@ -274,7 +274,7 @@ func TestGatewayFailsClosedWhenCapacityIntentAuthorityIsUnavailable(t *testing.T
 	store := genericStore.(*storage.SQLiteStore)
 	token := strings.Repeat("s", 32)
 	target := seedReverseExecutionTarget(t, store, token)
-	server.store = &unavailableEnrollmentIntentStore{store}
+	server.store = sqliteOverlay(&unavailableEnrollmentIntentStore{store})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/generator-gateway/connect", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set(generatorGatewayIDHeader, "generator")

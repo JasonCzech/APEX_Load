@@ -14,7 +14,7 @@ import (
 )
 
 type projectDelayedAttachmentStore struct {
-	*storage.SQLiteStore
+	SQLiteStore   *storage.SQLiteStore
 	pause         atomic.Bool
 	read, release chan struct{}
 }
@@ -51,7 +51,7 @@ func TestProjectLiveTableReconciliationCannotUndoAttachmentPublication(t *testin
 			a := attachments[0]
 			wrapper := &projectDelayedAttachmentStore{SQLiteStore: store, read: make(chan struct{}), release: make(chan struct{})}
 			wrapper.pause.Store(true)
-			runner.dataPoolStore = wrapper
+			runner.dataPoolStore = sqliteOverlay(wrapper)
 			defer func() { runner.dataPoolStore = store }()
 			var once sync.Once
 			done := make(chan error, 1)

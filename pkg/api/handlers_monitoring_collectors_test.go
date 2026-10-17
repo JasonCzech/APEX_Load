@@ -15,7 +15,7 @@ import (
 )
 
 type losingCollectorRotationStore struct {
-	*storage.SQLiteStore
+	SQLiteStore *storage.SQLiteStore
 }
 
 func (s *losingCollectorRotationStore) UpdateMonitoringCollectorTokenHashIfUnchanged(_, _, _, _ string) (bool, error) {
@@ -173,7 +173,7 @@ func TestMonitoringCollectorRotationConflictDoesNotReturnPlaintextToken(t *testi
 	if err := store.SaveMonitoringCollector(collector); err != nil {
 		t.Fatal(err)
 	}
-	server := NewServer(ServerConfig{Store: &losingCollectorRotationStore{SQLiteStore: store}})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(&losingCollectorRotationStore{SQLiteStore: store})})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitoring/collectors/"+collector.ID+"/rotate-token", nil)
 	req.SetPathValue("id", collector.ID)
 	resp := httptest.NewRecorder()

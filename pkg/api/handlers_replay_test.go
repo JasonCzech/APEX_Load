@@ -341,7 +341,7 @@ func TestHandleClassicReplayFencesSelfHealWhenExecutionEpochEndsDuringPersistenc
 	}
 	startedCAS := make(chan struct{})
 	blockingStore := &blockingObjectRepositoryContextCASStore{SQLiteStore: baseStore, started: startedCAS}
-	server := newAdmittedHAReplayServerWithStore(t, blockingStore)
+	server := newAdmittedHAReplayServerWithStore(t, sqliteOverlay(blockingStore))
 	now := time.Now().UTC()
 	if err := server.store.SaveProject(&storage.Project{ID: "p1", Name: "p1", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)

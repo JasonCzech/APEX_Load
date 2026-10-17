@@ -13,7 +13,7 @@ import (
 )
 
 type blockedDynatraceTraceStore struct {
-	*storage.SQLiteStore
+	SQLiteStore  *storage.SQLiteStore
 	writeStarted chan bool
 	runner       *TestRunner
 }
@@ -31,7 +31,7 @@ func TestDynatraceTraceWorkerShutdownBoundsFinalStorageFlush(t *testing.T) {
 	store := monitors.(*storage.SQLiteStore)
 	writeStarted := make(chan bool, 1)
 	blockedStore := &blockedDynatraceTraceStore{SQLiteStore: store, writeStarted: writeStarted}
-	runner := NewTestRunner(1, NewHub(), blockedStore)
+	runner := NewTestRunner(1, NewHub(), sqliteOverlay(blockedStore))
 	blockedStore.runner = runner
 	artifacts := &runArtifacts{runner: runner, nativeTraceLookups: lookupSetOf(fmt.Sprintf("%032x", 1))}
 	artifacts.nativeDynatrace.Store(true)

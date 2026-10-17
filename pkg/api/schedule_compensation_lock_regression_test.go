@@ -23,7 +23,7 @@ type failingScheduleApprovalStore struct {
 	releaseApproval chan struct{}
 }
 
-type nonAtomicScheduleApprovalStore struct{ storage.Store }
+type nonAtomicScheduleApprovalStore struct{ Store storage.Store }
 
 func (s *failingScheduleApprovalStore) observeScheduleIO() {
 	s.ioCalls.Add(1)
@@ -249,7 +249,7 @@ func TestScenarioScheduleApprovalResolutionFailsBeforeSplitWrite(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	t.Cleanup(func() { _ = base.Close() })
-	runner := NewTestRunner(10, NewHub(), &nonAtomicScheduleApprovalStore{Store: base})
+	runner := NewTestRunner(10, NewHub(), storeOverlay(&nonAtomicScheduleApprovalStore{Store: base}))
 	storePreflightScript(runner, "schedule-resolution-script", storage.DefaultProjectID)
 	scenario, err := runner.StoreScenario(CreateScenarioRequest{
 		Name: "schedule resolution", Duration: "1m",

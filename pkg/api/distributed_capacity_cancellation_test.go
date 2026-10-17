@@ -117,7 +117,7 @@ func TestEnsureRunCapacityRejectsSuccessAfterContextCancellation(t *testing.T) {
 }
 
 type capacityReadinessCommitStore struct {
-	*storage.SQLiteStore
+	SQLiteStore  *storage.SQLiteStore
 	afterSuccess func(*storage.ProvisioningRequest)
 }
 
@@ -156,7 +156,7 @@ func TestEnsureRunCapacityRollsBackUnpublishedReadiness(t *testing.T) {
 				server.runner.mu.Unlock()
 			})
 			committed := false
-			server.store = &capacityReadinessCommitStore{SQLiteStore: store, afterSuccess: func(request *storage.ProvisioningRequest) {
+			server.store = sqliteOverlay(&capacityReadinessCommitStore{SQLiteStore: store, afterSuccess: func(request *storage.ProvisioningRequest) {
 				committed = true
 				switch interruption {
 				case "cancel context":
@@ -179,7 +179,7 @@ func TestEnsureRunCapacityRollsBackUnpublishedReadiness(t *testing.T) {
 					}
 					cancel()
 				}
-			}}
+			}})
 			if err := server.ensureRunCapacity(ctx, test); !errors.Is(err, context.Canceled) {
 				t.Fatalf("ensureRunCapacity = %v, want cancellation", err)
 			}

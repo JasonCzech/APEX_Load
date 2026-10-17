@@ -15,9 +15,9 @@ import (
 // scenarioCreateThenEditStore commits another writer's change right after the
 // create commits, before the create handler answers.
 type scenarioCreateThenEditStore struct {
-	*storage.SQLiteStore
-	t       *testing.T
-	created *storage.ScenarioAuthoringSnapshot
+	SQLiteStore *storage.SQLiteStore
+	t           *testing.T
+	created     *storage.ScenarioAuthoringSnapshot
 }
 
 func (s *scenarioCreateThenEditStore) CreateScenarioAuthoringIfAbsent(scenario *storage.Scenario, groups []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding) (*storage.ScenarioAuthoringMutationResult, error) {
@@ -54,7 +54,7 @@ func decodeStoredScenario(t *testing.T, body []byte) StoredScenario {
 func TestScenarioCreateTagIsTheCommittedRevisionWhenAnotherWriterFollows(t *testing.T) {
 	server, store, _, _ := newScenarioPolicyAvailabilityFixture(t)
 	wrapper := &scenarioCreateThenEditStore{SQLiteStore: store, t: t}
-	server.runner.scenarioStore = wrapper
+	server.runner.scenarioStore = sqliteOverlay(wrapper)
 	created := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scenarios", scenarioSaveRequest("Created", 1), "")
 	server.runner.scenarioStore = store
 	if created.Code != http.StatusCreated || wrapper.created == nil {
@@ -160,7 +160,7 @@ func TestScenarioValidatorIsOmittedForAStaleCopy(t *testing.T) {
 // scenarioCreateLostAckStore commits the create and then reports its outcome
 // as unknown, as a connection reset during COMMIT does.
 type scenarioCreateLostAckStore struct {
-	*storage.SQLiteStore
+	SQLiteStore *storage.SQLiteStore
 }
 
 func (s *scenarioCreateLostAckStore) CreateScenarioAuthoringIfAbsent(scenario *storage.Scenario, groups []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding) (*storage.ScenarioAuthoringMutationResult, error) {
@@ -176,7 +176,7 @@ func (s *scenarioCreateLostAckStore) CreateScenarioAuthoringIfAbsent(scenario *s
 func TestScenarioCreateWithALostCommitAckIsAdoptedOnRetry(t *testing.T) {
 	server, store, _, _ := newScenarioPolicyAvailabilityFixture(t)
 	body := scenarioSaveRequest("Lost ack create", 1)
-	server.runner.scenarioStore = &scenarioCreateLostAckStore{SQLiteStore: store}
+	server.runner.scenarioStore = sqliteOverlay(&scenarioCreateLostAckStore{SQLiteStore: store})
 	first := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
 	server.runner.scenarioStore = store
 	if first.Code != http.StatusServiceUnavailable || !strings.Contains(first.Body.String(), "scenario_save_outcome_unknown") {
@@ -226,7 +226,7 @@ func TestScenarioCreateWithCredentialsAndALostCommitAckIsAdoptedOnRetry(t *testi
 	server, store, _, _ := newScenarioPolicyAvailabilityFixture(t)
 	body := scenarioSaveRequest("Lost ack credentials", 1)
 	body.RuntimeSettings = &RuntimeSettingsOverride{Env: map[string]string{"API_TOKEN": "lost-ack-runtime-value"}}
-	server.runner.scenarioStore = &scenarioCreateLostAckStore{SQLiteStore: store}
+	server.runner.scenarioStore = sqliteOverlay(&scenarioCreateLostAckStore{SQLiteStore: store})
 	first := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
 	server.runner.scenarioStore = store
 	if first.Code != http.StatusServiceUnavailable {

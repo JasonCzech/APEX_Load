@@ -118,8 +118,8 @@ func TestHandleDeleteTestWaitsForArchiveFinalizationFence(t *testing.T) {
 	defer sqliteStore.Close()
 	store := &failingArchiveCatalogStore{SQLiteStore: sqliteStore, failCatalog: true}
 	testID := "delete-races-finalization"
-	test, record := createArchiveFinalizationTest(t, store, testID, archiveRoot)
-	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 1})
+	test, record := createArchiveFinalizationTest(t, sqliteOverlay(store), testID, archiveRoot)
+	server := NewServer(ServerConfig{Store: sqliteOverlay(store), MaxConcurrent: 1})
 
 	// Simulate the producer's existing fence spanning local finalization and the
 	// terminal transition. The HTTP handler must wait rather than deleting the
@@ -156,13 +156,13 @@ func TestHandleDeleteTestWaitsForArchiveFinalizationFence(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("delete status = %d, want 200 body=%s", resp.Code, resp.Body.String())
 	}
-	if _, err := store.GetTest(testID); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.SQLiteStore.GetTest(testID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("test row remains after fenced delete: %v", err)
 	}
-	if _, err := store.GetArchiveFinalizationJob(testID); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.SQLiteStore.GetArchiveFinalizationJob(testID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("finalization job remains after fenced delete: %v", err)
 	}
-	if _, err := store.GetArchiveCleanupJob(testID); err != nil {
+	if _, err := store.SQLiteStore.GetArchiveCleanupJob(testID); err != nil {
 		t.Fatalf("finalization job was not converted to durable cleanup: %v", err)
 	}
 	if err := server.retryArchiveCleanupJobs(context.Background()); err != nil {
