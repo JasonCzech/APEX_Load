@@ -314,6 +314,11 @@ On the merged code (01a0b60ed and later):
 | 2 | 39005524599, 117317092061 | c6397573b (the record and #236's merge; no Go changes) | passed: `winfs`, the browser package (35.2 s), `pkg/api` (37.9 s), and the memory step's browser tests; 349 tests; one skip, WebKit's waterfall comparison |
 | 3 | 39005524599 attempt 2, 117330597493 | c6397573b (a re-run of run 2's job) | passed: `winfs`, the browser package (46.5 s), `pkg/api` (39.3 s), and the memory step's browser tests; 349 tests; one skip, WebKit's waterfall comparison |
 
+Later `main` merges bumped Go modules the HAR code does not use (`x/mod`, the
+AWS SDK, `modernc.org/cc`; #237) and dashboard packages. `x/sys` and the
+pinned Playwright driver are unchanged, so they leave the code under test as
+qualified.
+
 Each of these jobs then failed in its later native analytics step
 (`TestAnalysisCleanupRetriesMetadataReadFailure` and similar), which `main`
 fails too and PR #230 fixes. That PR's Windows job has since passed in full.
