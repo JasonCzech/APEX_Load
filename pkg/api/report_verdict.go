@@ -69,14 +69,7 @@ func deriveReportVerdict(report *RunArchiveReport) ReportVerdict {
 					continue
 				}
 				slaBreached = true
-				prefix := strings.Trim(strings.TrimSpace(dashboard.Title)+" / "+strings.TrimSpace(panel.Title), " / ")
-				detail := strings.TrimSpace(panel.ThresholdDetail)
-				if detail == "" {
-					detail = prefix + " breached its imported threshold"
-				} else if prefix != "" {
-					detail = prefix + ": " + detail
-				}
-				slaDetails = compactNonEmptyStrings(append(slaDetails, detail)...)
+				slaDetails = compactNonEmptyStrings(append(slaDetails, importedPanelBreachDetail(dashboard.Title, panel.Title, panel.ThresholdDetail))...)
 			}
 		}
 	}

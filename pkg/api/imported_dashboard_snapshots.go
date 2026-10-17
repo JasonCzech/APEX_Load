@@ -186,14 +186,7 @@ func (tr *TestRunner) applyImportedDashboardThresholdVerdict(test *ManagedTest) 
 				continue
 			}
 			breached = true
-			prefix := strings.Trim(strings.TrimSpace(dashboard.DashboardTitle)+" / "+strings.TrimSpace(panel.Title), " / ")
-			detail := strings.TrimSpace(panel.ThresholdDetail)
-			if detail == "" {
-				detail = prefix + " breached its imported threshold"
-			} else if prefix != "" {
-				detail = prefix + ": " + detail
-			}
-			details = compactNonEmptyStrings(append(details, detail)...)
+			details = compactNonEmptyStrings(append(details, importedPanelBreachDetail(dashboard.DashboardTitle, panel.Title, panel.ThresholdDetail))...)
 		}
 	}
 	tr.mu.Lock()
@@ -207,6 +200,27 @@ func (tr *TestRunner) applyImportedDashboardThresholdVerdict(test *ManagedTest) 
 	}
 	tr.mu.Unlock()
 	return nil
+}
+
+// importedPanelBreachDetail describes an imported panel's threshold breach,
+// prefixed by whichever of the dashboard and panel titles are set. Titles are
+// kept as written, including any slashes they contain.
+func importedPanelBreachDetail(dashboardTitle, panelTitle, thresholdDetail string) string {
+	titles := make([]string, 0, 2)
+	for _, title := range []string{dashboardTitle, panelTitle} {
+		if title = strings.TrimSpace(title); title != "" {
+			titles = append(titles, title)
+		}
+	}
+	prefix := strings.Join(titles, " / ")
+	detail := strings.TrimSpace(thresholdDetail)
+	if detail == "" {
+		return prefix + " breached its imported threshold"
+	}
+	if prefix != "" {
+		return prefix + ": " + detail
+	}
+	return detail
 }
 
 func graphDataSourceTimeoutSeconds(settings SystemSettings) int {

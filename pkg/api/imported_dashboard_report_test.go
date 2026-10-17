@@ -55,6 +55,19 @@ func TestImportedDashboardThresholdProducesFailedReportVerdict(t *testing.T) {
 	}
 }
 
+func TestImportedDashboardBreachKeepsTitlesAsWritten(t *testing.T) {
+	report := &RunArchiveReport{DashboardPanels: &RunArchiveDashboardPanels{Dashboards: []RunArchiveDashboard{
+		{Panels: []RunArchiveDashboardPanel{{Title: "/orders", ThresholdBreached: true}}},
+		{Title: "API", Panels: []RunArchiveDashboardPanel{{Title: "Latency /", ThresholdBreached: true, ThresholdDetail: "p95 above 800"}}},
+	}}}
+	verdict := deriveReportVerdict(report)
+	for _, want := range []string{"/orders breached its imported threshold", "API / Latency /: p95 above 800"} {
+		if !strings.Contains(verdict.Explanation, want) {
+			t.Fatalf("verdict explanation = %q, want %q", verdict.Explanation, want)
+		}
+	}
+}
+
 func TestBuildRunArchiveDashboardPanelsEmpty(t *testing.T) {
 	if got := buildRunArchiveDashboardPanels(&ImportedDashboardGraphsResponse{}, time.Now()); got != nil {
 		t.Fatalf("empty response should produce nil digest, got %#v", got)
