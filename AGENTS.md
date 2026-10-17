@@ -36,6 +36,7 @@ cmd/
   swaggergen/    — Code generator for docs/swagger.yaml + docs/api-endpoint-catalog.json
   openapits/     — Code generator for the dashboard's TypeScript API contract from the OpenAPI document
   webcoverage/   — Generator for the LoadRunner import coverage docs (`docs/LOADRUNNER_COVERAGE.md`)
+  storeoverlay/  — Generator for pkg/api's test store overlays (`pkg/api/store_overlay_test.go`)
 pkg/
   protocol/      — Protocol plugin interface + registry
   protocol/http/ — HTTP/1.1 + HTTP/2 protocol implementation

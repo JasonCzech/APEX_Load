@@ -145,7 +145,7 @@ func TestNativePreviewFinalMetadataBarrierRefusesConcurrentRevisionAndLateReply(
 			var owner *nativeQueryMetadataBarrier
 			s, store, in := nativePreviewAuthorityFixture(t, "uploading", func(store *storage.SQLiteStore) storage.Store {
 				owner = &nativeQueryMetadataBarrier{SQLiteStore: store, entered: make(chan struct{}), release: make(chan struct{}), blockProject: stage == "project-deadline", blockDataset: stage != "project-deadline"}
-				return owner
+				return sqliteOverlay(owner)
 			})
 			owner.armed.Store(true)
 			ctx := t.Context()

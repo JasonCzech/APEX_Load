@@ -52,28 +52,28 @@ func newHABrowserRecorderTestServerWithStore(t *testing.T, fake *fakeBrowserReco
 }
 
 type failOnceBrowserRecordingBaselineStore struct {
-	*storage.SQLiteStore
-	fail bool
+	SQLiteStore *storage.SQLiteStore
+	fail        bool
 }
 
 type failOnceBrowserRecordingBaselineReadStore struct {
-	*storage.SQLiteStore
-	fail bool
+	SQLiteStore *storage.SQLiteStore
+	fail        bool
 }
 
 type browserRecordingLocatorCountingStore struct {
-	*storage.SQLiteStore
+	SQLiteStore *storage.SQLiteStore
 	listScripts int
 	getScripts  int
 }
 
 type failOnceBrowserRecordingLocatorStore struct {
-	*storage.SQLiteStore
-	fail bool
+	SQLiteStore *storage.SQLiteStore
+	fail        bool
 }
 
 type failOnceBrowserRecordingPublicationStore struct {
-	*storage.SQLiteStore
+	SQLiteStore      *storage.SQLiteStore
 	mu               sync.Mutex
 	failComplete     bool
 	failPublish      bool
@@ -81,7 +81,7 @@ type failOnceBrowserRecordingPublicationStore struct {
 }
 
 type browserRecordingRollbackTakeoverStore struct {
-	*storage.SQLiteStore
+	SQLiteStore   *storage.SQLiteStore
 	renewStarted  chan struct{}
 	renewContinue chan struct{}
 	renewOnce     sync.Once
@@ -1330,13 +1330,13 @@ func TestHandleConvertBrowserRecordingRetriesAfterBaselinePersistenceFailure(t *
 	t.Cleanup(func() { _ = base.Close() })
 	store := &failOnceBrowserRecordingBaselineStore{SQLiteStore: base, fail: true}
 	now := time.Now().UTC()
-	if err := store.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := store.SQLiteStore.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveFolder(&storage.Folder{ID: "browser-baseline-folder", ProjectID: "proj-1", Name: "Baseline imports", Category: "scripts", CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := store.SQLiteStore.SaveFolder(&storage.Folder{ID: "browser-baseline-folder", ProjectID: "proj-1", Name: "Baseline imports", Category: "scripts", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	server := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(artifact), store)
+	server := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(artifact), sqliteOverlay(store))
 	id := startBrowserRecordingViaAPI(t, server)
 	stopBrowserRecordingViaAPI(t, server, id)
 	body := `{"name":"Baseline retry","also_create_http_script":true,"folder_id":"browser-baseline-folder","expected_script_count":2}`
@@ -1415,7 +1415,7 @@ func TestHandleConvertBrowserRecordingRejectsUnknownLostCapabilityWithoutWrites(
 		t.Fatal(err)
 	}
 	store := &browserRecordingLocatorCountingStore{SQLiteStore: base}
-	server := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(nil), store)
+	server := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(nil), sqliteOverlay(store))
 	// Ignore startup hydration. The assertion below covers only the bogus-id
 	// resolver/handler path and proves it does not scan the script catalog.
 	store.listScripts = 0
@@ -1455,10 +1455,10 @@ func TestHandleConvertBrowserRecordingRetriesAfterLocatorPersistenceFailure(t *t
 	t.Cleanup(func() { _ = base.Close() })
 	store := &failOnceBrowserRecordingLocatorStore{SQLiteStore: base, fail: true}
 	now := time.Now().UTC()
-	if err := store.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := store.SQLiteStore.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	server := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(recordedBrowserArtifact()), store)
+	server := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(recordedBrowserArtifact()), sqliteOverlay(store))
 	id := startBrowserRecordingViaAPI(t, server)
 	stopBrowserRecordingViaAPI(t, server, id)
 	body := `{"name":"Locator retry","expected_script_count":1}`
@@ -1542,10 +1542,10 @@ func TestRollbackBrowserRecordingSavePreservesLocatorWhenReceiptTakeoverWins(t *
 		renewContinue: make(chan struct{}),
 	}
 	now := time.Now().UTC()
-	if err := store.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := store.SQLiteStore.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	server := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(nil), store)
+	server := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(nil), sqliteOverlay(store))
 	const recordingID = "rollback-takeover-recording"
 	req := browserRecordingConvertRequest{Name: "Rollback takeover", ExpectedScriptCount: 1}
 	script, err := preparePersistentImportedLibraryScript(&dsl.Script{
@@ -1667,7 +1667,7 @@ func TestValidatePersistedBrowserRecordingHARBaselineForAdoptionPreservesReadErr
 	}
 	t.Cleanup(func() { _ = base.Close() })
 	store := &failOnceBrowserRecordingBaselineReadStore{SQLiteStore: base, fail: true}
-	server := &Server{store: store}
+	server := &Server{store: sqliteOverlay(store)}
 	script := &dsl.Script{
 		ID: "http-script",
 		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Preserved: map[string]any{
@@ -1710,10 +1710,10 @@ func TestHandleConvertBrowserRecordingHARetryFinishesEveryPublicationFailure(t *
 				failClaimCleanup: test.failClaimCleanup,
 			}
 			now := time.Now().UTC()
-			if err := store.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+			if err := store.SQLiteStore.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
 				t.Fatal(err)
 			}
-			server := newHABrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(recordedBrowserArtifact()), store)
+			server := newHABrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(recordedBrowserArtifact()), sqliteOverlay(store))
 			id := startBrowserRecordingViaAPI(t, server)
 			stopBrowserRecordingViaAPI(t, server, id)
 			body := `{"name":"HA publication retry","expected_script_count":1}`
@@ -1950,11 +1950,11 @@ func TestHandleConvertBrowserRecordingHAAdoptsExpiredPreCommitStageAndRetriesExa
 	t.Cleanup(func() { _ = base.Close() })
 	store := &failOnceDirectImportReceiptStore{SQLiteStore: base}
 	now := time.Now().UTC()
-	if err := store.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := store.SQLiteStore.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	artifact := recordedBrowserArtifact()
-	first := newHABrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(artifact), store)
+	first := newHABrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(artifact), sqliteOverlay(store))
 	id := startBrowserRecordingViaAPI(t, first)
 	stopBrowserRecordingViaAPI(t, first, id)
 	req := browserRecordingConvertRequest{Name: "HA crash-window retry", ExpectedScriptCount: 1}
@@ -2018,7 +2018,7 @@ func TestHandleConvertBrowserRecordingHAAdoptsExpiredPreCommitStageAndRetriesExa
 	transaction.stopClaimHeartbeat()
 	owner := transaction.claims.owner
 	activeLibraryImportOwners.Delete(owner)
-	restarted := newHABrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(nil), store)
+	restarted := newHABrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(nil), sqliteOverlay(store))
 	if _, err := restarted.loadDurableBrowserRecordingConversion(id); !errors.Is(err, errBrowserRecordingSaveFinalizing) {
 		t.Fatalf("unexpired HA staged lookup error=%v, want finalizing conflict", err)
 	}
@@ -2066,10 +2066,10 @@ func TestHandleConvertBrowserRecordingRestartAdoptsAfterReceiptCompletionFailure
 	t.Cleanup(func() { _ = base.Close() })
 	store := &failOnceDirectImportReceiptStore{SQLiteStore: base, failComplete: true}
 	now := time.Now().UTC()
-	if err := store.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := store.SQLiteStore.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	first := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(recordedBrowserArtifact()), store)
+	first := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(recordedBrowserArtifact()), sqliteOverlay(store))
 	id := startBrowserRecordingViaAPI(t, first)
 	stopBrowserRecordingViaAPI(t, first, id)
 	body := `{"name":"Receipt completion restart","expected_script_count":1}`

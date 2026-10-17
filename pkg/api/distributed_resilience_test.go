@@ -1517,7 +1517,7 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 	}
 
 	if checkpointFailure != "" && checkpointFailure != "live-channel" {
-		runner.testStore = &evacuationCheckpointFaultStore{SQLiteStore: store, rejectWrite: func(next string) bool {
+		runner.testStore = sqliteOverlay(&evacuationCheckpointFaultStore{SQLiteStore: store, rejectWrite: func(next string) bool {
 			var guard runEvacuationCheckpoint
 			if json.Unmarshal([]byte(next), &guard) != nil || guard.Version != runEvacuationCheckpointVersion {
 				return checkpointFailure == "complete"
@@ -1526,7 +1526,7 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 				(checkpointFailure == "staged" && guard.Phase == runEvacuationPhaseStaged) ||
 				(checkpointFailure == "source-fenced" && guard.Phase == runEvacuationPhaseSourceFenced) ||
 				(checkpointFailure == "replacement-committed" && guard.Phase == runEvacuationPhaseReplacementCommitted)
-		}}
+		}})
 	}
 	if checkpointFailure == "live-channel" {
 		// Inject only after replacement staging, at the positive source fence,

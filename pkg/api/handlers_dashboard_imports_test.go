@@ -364,11 +364,11 @@ func TestGrafanaImportRejectsOversizedCommitName(t *testing.T) {
 }
 
 type failOnceGrafanaDashboardStore struct {
-	*storage.SQLiteStore
-	fail bool
+	SQLiteStore *storage.SQLiteStore
+	fail        bool
 }
 
-type grafanaSnapshotReadErrorStore struct{ *storage.SQLiteStore }
+type grafanaSnapshotReadErrorStore struct{ SQLiteStore *storage.SQLiteStore }
 
 func (s *grafanaSnapshotReadErrorStore) GetGrafanaDashboardSnapshot(string, string) (*storage.GrafanaDashboardSnapshot, error) {
 	return nil, errors.New("injected snapshot read failure")
@@ -393,7 +393,7 @@ func TestGrafanaImportSaveFailureReleasesSessionForRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	wrapped := &failOnceGrafanaDashboardStore{SQLiteStore: base, fail: true}
-	server := NewServer(ServerConfig{Store: wrapped})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(wrapped)})
 	resp := importGrafanaDashboard(t, server, "proj-a", importFixtureDashboard)
 	body := map[string]any{"project_id": "proj-a", "import_session_id": resp.ImportSessionID}
 	first := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboards/import/grafana/commit", body)
@@ -419,7 +419,7 @@ func TestTerminalGrafanaGraphsDoNotFallBackLiveOnSnapshotReadFailure(t *testing.
 	if err := base.SaveProject(&storage.Project{ID: "proj-a", Name: "A", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	server := NewServer(ServerConfig{Store: &grafanaSnapshotReadErrorStore{SQLiteStore: base}})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(&grafanaSnapshotReadErrorStore{SQLiteStore: base})})
 	server.runner.mu.Lock()
 	server.runner.tests["run-a"] = &ManagedTest{ID: "run-a", Name: "Run", Status: "COMPLETE", ProjectID: "proj-a", CreatedAt: now}
 	server.runner.mu.Unlock()

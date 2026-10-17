@@ -17,7 +17,7 @@ import (
 // real QUEUED -> PENDING path while retaining production SQLite lifecycle
 // transactions for the later promotion/failure.
 type sqliteScenarioQuotaRaceStore struct {
-	*storage.SQLiteStore
+	SQLiteStore             *storage.SQLiteStore
 	runner                  *TestRunner
 	once                    sync.Once
 	forcedOccurrenceReadErr error
@@ -61,7 +61,7 @@ func newRecurringQuotaPendingFixture(t *testing.T) recurringQuotaPendingFixture 
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	raceStore := &sqliteScenarioQuotaRaceStore{SQLiteStore: store}
-	runner := NewTestRunner(1, NewHub(), raceStore)
+	runner := NewTestRunner(1, NewHub(), sqliteOverlay(raceStore))
 	raceStore.runner = runner
 	runner.StoreScript(&dsl.Script{
 		ID: "scenario-pending-lifecycle-script", Name: "Scenario pending lifecycle", Protocol: "http", Version: "1",

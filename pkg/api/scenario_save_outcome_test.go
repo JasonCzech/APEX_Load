@@ -16,7 +16,7 @@ import (
 // scenarioLostCommitAckStore commits the conditioned write and then reports
 // the commit outcome as unknown, as a connection reset during COMMIT does.
 type scenarioLostCommitAckStore struct {
-	*storage.SQLiteStore
+	SQLiteStore *storage.SQLiteStore
 }
 
 func (s *scenarioLostCommitAckStore) UpdateScenarioAuthoringWithSourcesIfCurrent(scenario *storage.Scenario, groups []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding, expected storage.ScenarioAuthoringPrecondition, admission storage.ScenarioSourceAdmission) (*storage.ScenarioAuthoringMutationResult, error) {
@@ -53,7 +53,7 @@ func TestScenarioSaveWithALostCommitAckKeepsItsCredentialsForRecovery(t *testing
 		t.Fatal(err)
 	}
 	cached, _ := server.runner.GetScenario(created.ID)
-	server.runner.scenarioStore = &scenarioLostCommitAckStore{SQLiteStore: records}
+	server.runner.scenarioStore = sqliteOverlay(&scenarioLostCommitAckStore{SQLiteStore: records})
 	_, _, _, err = server.runner.UpdateScenarioAuthoringDurable(created.ID, CreateScenarioRequest{
 		Name: "After", Duration: "1m", Groups: []CreateGroupEntry{{ScriptID: script.ID, VUsers: 1}},
 		RuntimeSettings: &RuntimeSettingsOverride{Env: map[string]string{"API_TOKEN": secret}}, creationActor: actor,
@@ -101,8 +101,8 @@ func TestScenarioConditionedSaveRefreshesAStaleCacheWithoutHA(t *testing.T) {
 // fingerprintAtCommitStore records the commit fingerprint of the typed
 // scenario the create writes, as the credential attempt journals it.
 type fingerprintAtCommitStore struct {
-	*storage.SQLiteStore
-	committed string
+	SQLiteStore *storage.SQLiteStore
+	committed   string
 }
 
 func (s *fingerprintAtCommitStore) CreateScenarioAuthoringIfAbsent(scenario *storage.Scenario, groups []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding) (*storage.ScenarioAuthoringMutationResult, error) {
@@ -133,7 +133,7 @@ func TestScenarioRuntimeCommitFingerprintSurvivesStorage(t *testing.T) {
 func exerciseScenarioRuntimeCommitFingerprint(t *testing.T, server *Server, store *storage.SQLiteStore, scriptID string) {
 	t.Helper()
 	recorder := &fingerprintAtCommitStore{SQLiteStore: store}
-	server.runner.scenarioStore = recorder
+	server.runner.scenarioStore = sqliteOverlay(recorder)
 	thinkTime := &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 250, MinPercent: 50, MaxPercent: 150}
 	sla := 250.1
 	created, _, err := server.runner.CreateScenarioAuthoringDurable("", CreateScenarioRequest{

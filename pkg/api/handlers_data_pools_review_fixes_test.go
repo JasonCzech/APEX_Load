@@ -459,7 +459,7 @@ func TestParseDataPoolCSVPreservesLeadingValueWhitespace(t *testing.T) {
 }
 
 type replaceRaceDataPoolStore struct {
-	*storage.SQLiteStore
+	SQLiteStore   *storage.SQLiteStore
 	beforeReplace func() error
 }
 
@@ -498,7 +498,7 @@ func TestReplaceDataPoolImportRejectsConcurrentSameCountEdit(t *testing.T) {
 		}
 		return nil
 	}
-	server.store = raceStore
+	server.store = sqliteOverlay(raceStore)
 
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, newDataPoolImportRequest(
@@ -601,9 +601,9 @@ func TestExportDataPoolRowsRecordsCanceledOutcome(t *testing.T) {
 }
 
 type mutatingDataPoolExportStore struct {
-	*storage.SQLiteStore
-	poolID    string
-	pageCalls int
+	SQLiteStore *storage.SQLiteStore
+	poolID      string
+	pageCalls   int
 }
 
 func (s *mutatingDataPoolExportStore) ListDataPoolRowsPageAfter(poolID, afterKey, afterID string, limit int) ([]*storage.SharedDataPoolRow, string, error) {
@@ -627,7 +627,7 @@ func TestExportDataPoolRowsAbortsWhenRowsChangeBetweenHeaderAndBodyPasses(t *tes
 	}); err != nil {
 		t.Fatalf("SaveDataPoolRow: %v", err)
 	}
-	server.store = &mutatingDataPoolExportStore{SQLiteStore: store, poolID: pool.ID}
+	server.store = sqliteOverlay(&mutatingDataPoolExportStore{SQLiteStore: store, poolID: pool.ID})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/data-pools/"+pool.ID+"/rows/export", nil)
 	req.SetPathValue("id", pool.ID)

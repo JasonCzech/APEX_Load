@@ -14,21 +14,21 @@ import (
 )
 
 type blockingFinalizationListingStore struct {
-	*storage.SQLiteStore
-	entered chan struct{}
-	release chan struct{}
-	once    sync.Once
+	SQLiteStore *storage.SQLiteStore
+	entered     chan struct{}
+	release     chan struct{}
+	once        sync.Once
 }
 
 type cancelFirstOrphanReadStore struct {
-	*storage.SQLiteStore
-	cancel context.CancelFunc
-	once   sync.Once
+	SQLiteStore *storage.SQLiteStore
+	cancel      context.CancelFunc
+	once        sync.Once
 }
 
 type cancelRepeatedSlowOrphanStore struct {
-	*storage.SQLiteStore
-	cancel context.CancelFunc
+	SQLiteStore *storage.SQLiteStore
+	cancel      context.CancelFunc
 }
 
 func TestDiscoverOrphanArchiveDirectoriesExactEntryLimit(t *testing.T) {
@@ -71,7 +71,7 @@ func TestOrphanRecoveryRotatesRepeatedlySlowCandidate(t *testing.T) {
 		writeOrphanArchiveFixture(t, root, id, id, storage.DefaultProjectID)
 	}
 	store := &cancelRepeatedSlowOrphanStore{SQLiteStore: base}
-	runner := NewTestRunner(1, nil, store)
+	runner := NewTestRunner(1, nil, sqliteOverlay(store))
 	for sweep := 0; sweep < 2; sweep++ {
 		ctx, cancel := context.WithCancel(context.Background())
 		store.cancel = cancel
@@ -108,7 +108,7 @@ func TestOrphanRecoveryRetainsUnprocessedCandidatesAfterDeadline(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	store := &cancelFirstOrphanReadStore{SQLiteStore: base, cancel: cancel}
-	runner := NewTestRunner(1, nil, store)
+	runner := NewTestRunner(1, nil, sqliteOverlay(store))
 	if err := runner.recoverOrphanedLocalRunArchives(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("first sweep error = %v, want canceled", err)
 	}
@@ -141,9 +141,9 @@ func TestOrphanRecoveryRunsWhileKnownFinalizationListingIsBlocked(t *testing.T) 
 	}
 	defer base.Close()
 	store := &blockingFinalizationListingStore{SQLiteStore: base, entered: make(chan struct{}), release: make(chan struct{})}
-	saveTerminalOrphanTest(t, store, "independent-orphan", storage.DefaultProjectID)
+	saveTerminalOrphanTest(t, sqliteOverlay(store), "independent-orphan", storage.DefaultProjectID)
 	writeOrphanArchiveFixture(t, root, "independent-orphan", "independent-orphan", storage.DefaultProjectID)
-	runner := NewTestRunner(1, nil, store)
+	runner := NewTestRunner(1, nil, sqliteOverlay(store))
 	server := &Server{runner: runner, archiveFinalizationWake: make(chan struct{}, 1), archiveOrphanWake: make(chan struct{}, 1)}
 	server.startArchiveFinalizationRetry()
 	defer func() {
@@ -162,7 +162,7 @@ func TestOrphanRecoveryRunsWhileKnownFinalizationListingIsBlocked(t *testing.T) 
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		if _, err := store.GetArchiveFinalizationJob("independent-orphan"); err == nil {
+		if _, err := store.SQLiteStore.GetArchiveFinalizationJob("independent-orphan"); err == nil {
 			return
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			t.Fatal(err)

@@ -10,10 +10,10 @@ import (
 )
 
 type blockingScenarioOccurrenceClaimStore struct {
-	*storage.SQLiteStore
-	entered chan struct{}
-	release chan struct{}
-	once    sync.Once
+	SQLiteStore *storage.SQLiteStore
+	entered     chan struct{}
+	release     chan struct{}
+	once        sync.Once
 }
 
 func (s *blockingScenarioOccurrenceClaimStore) ClaimScenarioScheduleOccurrenceIfCurrent(occurrence *storage.ScenarioScheduleOccurrence) (bool, error) {
@@ -23,10 +23,10 @@ func (s *blockingScenarioOccurrenceClaimStore) ClaimScenarioScheduleOccurrenceIf
 }
 
 type blockingExecutionPlanOccurrenceClaimStore struct {
-	*storage.SQLiteStore
-	entered chan struct{}
-	release chan struct{}
-	once    sync.Once
+	SQLiteStore *storage.SQLiteStore
+	entered     chan struct{}
+	release     chan struct{}
+	once        sync.Once
 }
 
 func (s *blockingExecutionPlanOccurrenceClaimStore) ClaimExecutionPlanScheduleOccurrenceIfCurrent(occurrence *storage.ExecutionPlanScheduleOccurrence) (bool, error) {
@@ -69,7 +69,7 @@ func TestScenarioScheduleClaimLosesRaceToConcurrentDisable(t *testing.T) {
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	scenario := &storage.Scenario{ID: "scenario-claim-race", Name: "Claim Race", Duration: "1m", CreatedAt: now, UpdatedAt: now}
-	if err := store.SaveScenario(scenario, nil); err != nil {
+	if err := store.SQLiteStore.SaveScenario(scenario, nil); err != nil {
 		t.Fatal(err)
 	}
 	schedule := &storage.ScenarioSchedule{
@@ -77,11 +77,11 @@ func TestScenarioScheduleClaimLosesRaceToConcurrentDisable(t *testing.T) {
 		Name: "Claim Race", CronExpr: "* * * * *", Timezone: "UTC", Enabled: true, NextRunAt: &now,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if err := store.SaveScenarioSchedule(schedule); err != nil {
+	if err := store.SQLiteStore.SaveScenarioSchedule(schedule); err != nil {
 		t.Fatal(err)
 	}
 
-	runner := NewTestRunner(1, NewHub(), store)
+	runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 	scheduler := newScenarioScheduler(runner)
 	scheduler.now = func() time.Time { return now }
 	done := make(chan error, 1)
@@ -103,7 +103,7 @@ func TestScenarioScheduleClaimLosesRaceToConcurrentDisable(t *testing.T) {
 	close(store.release)
 	waitForScheduleSweep(t, done)
 
-	occurrence, err := store.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, now)
+	occurrence, err := store.SQLiteStore.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestExecutionPlanScheduleClaimLosesRaceToConcurrentDisable(t *testing.T) {
 		ID: "execution-plan-claim-race", ProjectID: "default", Name: "Claim Race", RunMode: "parallel",
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if err := store.SaveExecutionPlan(plan); err != nil {
+	if err := store.SQLiteStore.SaveExecutionPlan(plan); err != nil {
 		t.Fatal(err)
 	}
 	schedule := &storage.ExecutionPlanSchedule{
@@ -139,11 +139,11 @@ func TestExecutionPlanScheduleClaimLosesRaceToConcurrentDisable(t *testing.T) {
 		Name: "Claim Race", CronExpr: "* * * * *", Timezone: "UTC", Enabled: true, NextRunAt: &now,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if err := store.SaveExecutionPlanSchedule(schedule); err != nil {
+	if err := store.SQLiteStore.SaveExecutionPlanSchedule(schedule); err != nil {
 		t.Fatal(err)
 	}
 
-	runner := NewTestRunner(1, NewHub(), store)
+	runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 	done := make(chan error, 1)
 	go func() {
 		runner.sweepDueExecutionPlanSchedules(now)
@@ -166,14 +166,14 @@ func TestExecutionPlanScheduleClaimLosesRaceToConcurrentDisable(t *testing.T) {
 	close(store.release)
 	waitForScheduleSweep(t, done)
 
-	occurrence, err := store.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, now)
+	occurrence, err := store.SQLiteStore.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if occurrence != nil {
 		t.Fatalf("stale execution-plan occurrence was claimed after disable: %+v", occurrence)
 	}
-	runs, err := store.ListExecutionPlanRuns(plan.ID, 10, 0)
+	runs, err := store.SQLiteStore.ListExecutionPlanRuns(plan.ID, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

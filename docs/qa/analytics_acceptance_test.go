@@ -79,10 +79,17 @@ var analyticsAcceptancePlatforms = []struct{ Platform, Lane string }{
 	{"windows/amd64", "Windows (windows-latest)"},
 }
 
+// analyticsAcceptanceAPIGate decides which lanes can compile pkg/api's test
+// binary for the API check.
+const (
+	analyticsAcceptanceAPIGate  = "scripts/ci/pkg-api-test-build-fits.sh"
+	analyticsAcceptanceAPICheck = "API native analytics contracts"
+)
+
 // analyticsAcceptanceLaneChecks are the native steps every desktop lane runs.
 var analyticsAcceptanceLaneChecks = []struct{ Check, Command string }{
 	{"Native analytics contracts", "go test -timeout 30m -tags analytics_duckdb ./pkg/analysis/... -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'"},
-	{"API native analytics contracts", "go test -timeout 30m -tags analytics_duckdb ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'"},
+	{analyticsAcceptanceAPICheck, "go test -timeout 30m -tags analytics_duckdb ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'"},
 	{"Worker race checks", "go test -timeout 45m -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'"},
 	{"Controller build with DuckDB", "go build -tags analytics_duckdb -o \"${controller}\" ./cmd/controller"},
 	{"Controller native worker startup", "python3 scripts/test_native_worker_startup.py --binary \"${controller}\""},
@@ -141,6 +148,13 @@ func renderAnalyticsAcceptance(t *testing.T) string {
 		}
 		out.WriteString(fmt.Sprintf("- %s: `%s`\n", check.Check, check.Command))
 	}
+	for _, check := range analyticsAcceptanceLaneChecks {
+		gated := regexp.MustCompile(`if ` + regexp.QuoteMeta(analyticsAcceptanceAPIGate) + `; then\n\s+` + regexp.QuoteMeta(check.Command) + `\n`)
+		if check.Check == analyticsAcceptanceAPICheck && !gated.MatchString(workflow) {
+			t.Errorf("desktop.yml no longer runs %q behind %s, as the note below says", check.Command, analyticsAcceptanceAPIGate)
+		}
+	}
+	out.WriteString("\nThe API check runs only where `" + analyticsAcceptanceAPIGate + "` succeeds. Compiling pkg/api's test binary peaks near 6 GB of memory, too much for the macOS Apple Silicon lane's 7 GB hosted runner, so that lane leaves the API check to the others; its native checks above still run.\n")
 	out.WriteString("\n## Reference workload\n\n`APEXLOAD_ANALYTICS_BENCHMARK=1 go test -tags analytics_duckdb ./pkg/api -run '^TestNativeAnalyticsReferenceBenchmark$' -v` generates a reproducible fixture: one ZSTD-compressed Parquet file per day, 3,456,000 rows each (25 ms apart, values derived from a hash of the row), until the files reach `APEXLOAD_ANALYTICS_BENCHMARK_BYTES` (default 1 GiB, at most 6 GiB; at most 366 files, the span one series query may cover). It imports the fixture through the API, then times a selected-window query (one hour of the last day at 60-second buckets, cold and 20 times repeated), a full-range query and the cancellation of a heavy query. It records the fixture's hashes and rows, upload and normalization time, pruned objects and avoided bytes, peak RSS sampled for the controller, its workers and both together, and every failure; a fixture short of its target fails. The interactive target is a selected-window P95 of at most five seconds on the 4 vCPU / 16 GiB reference host; the results say whether the host had that shape.\n\n")
 	out.WriteString("With `APEXLOAD_ANALYTICS_BENCHMARK_OUT` it writes `analytics-reference.json` there, and, when `APEXLOAD_COMMIT_SHA` names the measured commit, `analytics-reference-acceptance-requests.json`: one F4 request (`NA-6`, `analytics-reference`), `pending` when the run had no failure and met the target, `failed` otherwise, never `passed` by itself. `scripts/run-optin-suites.sh --all` runs it as the \"native analytics reference workload\" suite. It does not measure spill bytes, live telemetry lag under a concurrent run, a cold replica, a worker crash, disk exhaustion or contention, and no result closes the waived 10 GB benchmark.\n")
 	return out.String()

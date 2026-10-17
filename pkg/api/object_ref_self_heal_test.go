@@ -12,9 +12,9 @@ import (
 )
 
 type blockingObjectRepositoryContextCASStore struct {
-	*storage.SQLiteStore
-	started chan struct{}
-	once    sync.Once
+	SQLiteStore *storage.SQLiteStore
+	started     chan struct{}
+	once        sync.Once
 }
 
 type objectRepositoryContextCASOnlyStore struct {
@@ -717,7 +717,7 @@ func TestPersistSelfHealToRepositoryCancelsInFlightCASWhenExecutionEpochEnds(t *
 		SQLiteStore: server.store.(*storage.SQLiteStore),
 		started:     make(chan struct{}),
 	}
-	server.store = blockingStore
+	server.store = sqliteOverlay(blockingStore)
 	script := &dsl.Script{ProjectID: "unassigned", Protocol: "browser", Actions: []dsl.Action{{
 		Name: "Login", Type: "browser_click", ObjectRef: "object-repo-context-cas:Login",
 		Metadata: resolvedObjectRefMetadata("object-repo-context-cas", "Login"),

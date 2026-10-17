@@ -319,8 +319,8 @@ func TestDeleteRefusedForResultsKeepsTheCreateKeyReplaying(t *testing.T) {
 // concurrentDeleteAfterTombstoneStore lets a second delete of the same
 // scenario win right after the first delete wrote its tombstone.
 type concurrentDeleteAfterTombstoneStore struct {
-	*storage.SQLiteStore
-	winner func()
+	SQLiteStore *storage.SQLiteStore
+	winner      func()
 }
 
 func (s *concurrentDeleteAfterTombstoneStore) TombstoneAuthoringMutationReceipts(resourceType, resourceID, reason string, now time.Time) error {
@@ -341,12 +341,12 @@ func TestDeleteThatLostToAConcurrentDeleteKeepsItsTombstone(t *testing.T) {
 	server, store, _, _ := newScenarioPolicyAvailabilityFixture(t)
 	body := scenarioSaveRequest("Deleted concurrently", 1)
 	id := claimCrashedScenarioCreate(t, server, store, body, true)
-	server.store = &concurrentDeleteAfterTombstoneStore{SQLiteStore: store, winner: func() {
+	server.store = sqliteOverlay(&concurrentDeleteAfterTombstoneStore{SQLiteStore: store, winner: func() {
 		// The winner's own tombstone is a no-op; only its delete matters.
 		if deleted, err := server.runner.DeleteScenarioDurable(id); err != nil || !deleted {
 			t.Errorf("concurrent delete: %v %v", deleted, err)
 		}
-	}}
+	}})
 	response := authoringAPIRequest(t, server, http.MethodDelete, "/api/v1/scenarios/"+id, nil, "")
 	server.store = store
 	if response.Code == http.StatusOK {
@@ -414,8 +414,8 @@ func TestRefusedDeleteOfAScriptInUseKeepsTheCreateKeyReplaying(t *testing.T) {
 // unknown, as a connection reset during COMMIT does, after the delete
 // committed or (committed false) without it.
 type scenarioDeleteUnknownOutcomeStore struct {
-	*storage.SQLiteStore
-	committed bool
+	SQLiteStore *storage.SQLiteStore
+	committed   bool
 }
 
 func (s *scenarioDeleteUnknownOutcomeStore) DeleteScenario(id string) error {
@@ -448,7 +448,7 @@ func TestDeleteWithAnUnknownOutcomeKeepsItsTombstone(t *testing.T) {
 			t.Fatalf("create: %d %s", first.Code, first.Body.String())
 		}
 		id := decodeScenarioID(t, first)
-		server.runner.scenarioStore = &scenarioDeleteUnknownOutcomeStore{SQLiteStore: store, committed: committed}
+		server.runner.scenarioStore = sqliteOverlay(&scenarioDeleteUnknownOutcomeStore{SQLiteStore: store, committed: committed})
 		response := authoringAPIRequest(t, server, http.MethodDelete, "/api/v1/scenarios/"+id, nil, "")
 		server.runner.scenarioStore = store
 		if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "scenario_save_outcome_unknown") {

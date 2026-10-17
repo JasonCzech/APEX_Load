@@ -120,15 +120,15 @@ func TestOrphanRecoveryVerifiesExistingPayloads(t *testing.T) {
 	}
 }
 
-type changedOrphanRunStore struct{ *storage.SQLiteStore }
+type changedOrphanRunStore struct{ SQLiteStore *storage.SQLiteStore }
 
 func (s *changedOrphanRunStore) SaveArchiveFinalizationJobIfOrphanForRun(job *storage.ArchiveFinalizationJob, requestedAt time.Time, status, lease, owner string) (bool, error) {
-	row, err := s.GetTest(job.TestID)
+	row, err := s.SQLiteStore.GetTest(job.TestID)
 	if err != nil {
 		return false, err
 	}
 	row.StartTime = row.StartTime.Add(time.Second)
-	if err := s.SaveTest(row); err != nil {
+	if err := s.SQLiteStore.SaveTest(row); err != nil {
 		return false, err
 	}
 	return s.SQLiteStore.SaveArchiveFinalizationJobIfOrphanForRun(job, requestedAt, status, lease, owner)
@@ -145,7 +145,7 @@ func TestOrphanRecoveryFencesRunChangedAfterInspection(t *testing.T) {
 	saveTerminalOrphanTest(t, store, "orphan", storage.DefaultProjectID)
 	writeOrphanArchiveFixture(t, root, "orphan", "orphan", storage.DefaultProjectID)
 	tr := NewTestRunner(1, nil, nil)
-	tr.testStore, tr.archiveStore = store, &changedOrphanRunStore{store}
+	tr.testStore, tr.archiveStore = store, sqliteOverlay(&changedOrphanRunStore{store})
 	if err := tr.recoverOrphanedLocalRunArchives(context.Background()); err != nil {
 		t.Fatal(err)
 	}

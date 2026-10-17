@@ -63,7 +63,7 @@ type scriptReloadRaceStore struct {
 }
 
 type scenarioReloadRaceStore struct {
-	storage.Store
+	Store  storage.Store
 	inject func()
 }
 
@@ -486,7 +486,7 @@ func TestReloadStoredScenariosDoesNotOverwriteConcurrentMutation(t *testing.T) {
 		tr.contentRevision++
 		tr.mu.Unlock()
 	}}
-	tr.scenarioStore = store
+	tr.scenarioStore = storeOverlay(store)
 
 	if err := tr.reloadStoredScenarios(); err != nil {
 		t.Fatal(err)

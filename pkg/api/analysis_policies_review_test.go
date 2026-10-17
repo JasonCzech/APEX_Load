@@ -148,7 +148,7 @@ func TestStartIgnoresInvalidNonDefaultPoliciesButRefusesAnInvalidDefault(t *test
 }
 
 type failingPolicyListStore struct {
-	*storage.SQLiteStore
+	SQLiteStore *storage.SQLiteStore
 }
 
 func (s *failingPolicyListStore) ListLatestAnalysisDefinitions(string, string) ([]storage.AnalysisDefinition, error) {
@@ -160,7 +160,7 @@ func TestPolicyStoreFailureAtStartIsRetryable(t *testing.T) {
 	t.Setenv(config.EnvArchiveDir, t.TempDir())
 	runner, store, test := newPassiveTransitionTestRunner(t, "policy-store-failure")
 	runner.setExecutionBackend(newTelemetryPolicyBarrierBackend(t))
-	runner.testStore = &failingPolicyListStore{SQLiteStore: store}
+	runner.testStore = sqliteOverlay(&failingPolicyListStore{SQLiteStore: store})
 	err := runner.StartTest(test.ID)
 	if !errors.Is(err, errStartAdmissionEvidenceStale) || errors.Is(err, errRunPolicyConfiguration) {
 		t.Fatalf("store failure at Start: %v", err)
@@ -367,7 +367,7 @@ func TestPolicyStoreFailureAtStartIsAServiceUnavailableResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	server := NewServer(ServerConfig{Store: &failingPolicyListStore{SQLiteStore: db}, MaxConcurrent: 10, Addr: ":8080"})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(&failingPolicyListStore{SQLiteStore: db}), MaxConcurrent: 10, Addr: ":8080"})
 	storePreflightScript(server.runner, "policy-store-http", "")
 	run, err := server.runner.CreateTest(CreateTestRequest{Name: "Policy outage", ScriptID: "policy-store-http", VUsers: 1, Duration: "1m"})
 	if err != nil {
@@ -424,9 +424,9 @@ func TestPagedPolicyReadDeduplicatesAPolicyShiftedAcrossPages(t *testing.T) {
 
 // flakyPolicyListStore fails the first policy reads, then recovers.
 type flakyPolicyListStore struct {
-	*storage.SQLiteStore
-	mu        sync.Mutex
-	remaining int
+	SQLiteStore *storage.SQLiteStore
+	mu          sync.Mutex
+	remaining   int
 }
 
 func (s *flakyPolicyListStore) ListLatestAnalysisDefinitions(project, kind string) ([]storage.AnalysisDefinition, error) {
@@ -447,7 +447,7 @@ func (s *flakyPolicyListStore) ListLatestAnalysisDefinitions(project, kind strin
 func TestPendingPromotionRetriesAPolicyStoreFailure(t *testing.T) {
 	t.Setenv(config.EnvArchiveDir, t.TempDir())
 	runner, store, test := newPassiveTransitionTestRunner(t, "policy-retry")
-	runner.testStore = &flakyPolicyListStore{SQLiteStore: store, remaining: 1}
+	runner.testStore = sqliteOverlay(&flakyPolicyListStore{SQLiteStore: store, remaining: 1})
 	pendingSince := time.Now().UTC().Add(-time.Minute)
 	runner.mu.Lock()
 	test.Status = "PENDING"

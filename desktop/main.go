@@ -95,6 +95,7 @@ func main() {
 			Messages: apexloadWindowsMessages(),
 		},
 	})
+	duckdb.ReleaseNativeWorkerTemplate()
 
 	if err != nil {
 		log.Fatal(err)

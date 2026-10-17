@@ -54,10 +54,10 @@ type missingTargetStopBackend struct {
 }
 
 type blockingExternalFenceStore struct {
-	*storage.SQLiteStore
-	entered chan struct{}
-	release chan struct{}
-	once    sync.Once
+	SQLiteStore *storage.SQLiteStore
+	entered     chan struct{}
+	release     chan struct{}
+	once        sync.Once
 }
 
 func (s *blockingExternalFenceStore) SaveTest(record *storage.TestRecord) error {
@@ -249,7 +249,7 @@ func TestStopTeardownRetryHonorsForceUpgradeDuringFenceNotePersistence(t *testin
 		}
 	})
 	backend := &expiredGenerationStopBackend{abortCalled: make(chan struct{})}
-	runner := NewTestRunner(1, NewHub(), store)
+	runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 	test := &ManagedTest{ID: "late-force-upgrade", Name: "late force upgrade", Status: "STOPPING", executionBackend: backend}
 	if err := sqlite.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, Status: test.Status, StartTime: time.Now().UTC()}); err != nil {
 		t.Fatal(err)

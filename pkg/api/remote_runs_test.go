@@ -578,7 +578,7 @@ func TestUpsertRemoteRunLinkRetriesCASWithoutLosingOtherReplica(t *testing.T) {
 	}
 }
 
-type noCASSettingsStore struct{ storage.Store }
+type noCASSettingsStore struct{ Store storage.Store }
 
 func TestRemoteRunLinkMutationFailsClosedWithoutCASInHA(t *testing.T) {
 	baseStore, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "remote-ha-cas.db"))
@@ -586,7 +586,7 @@ func TestRemoteRunLinkMutationFailsClosedWithoutCASInHA(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer baseStore.Close()
-	server := NewServer(ServerConfig{Store: &noCASSettingsStore{Store: baseStore}, HAExecutionLeadership: true})
+	server := NewServer(ServerConfig{Store: storeOverlay(&noCASSettingsStore{Store: baseStore}), HAExecutionLeadership: true})
 	if _, err := server.upsertRemoteRunLink(RemoteRunLink{LocalRunID: "run", RemoteID: "workspace", RemoteTestID: "test", LocalProjectID: storage.DefaultProjectID}); err == nil || !strings.Contains(err.Error(), "HA storage must support compare-and-swap") {
 		t.Fatalf("HA non-CAS mutation error = %v", err)
 	}

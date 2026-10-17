@@ -307,7 +307,7 @@ func TestNoSessionImportCommitLegacyAttestationRetentionRetryIsIdempotent(t *tes
 		failures:    1,
 		err:         errors.New("injected legacy-attestation retention failure"),
 	}
-	server.store = retentionStore
+	server.store = sqliteOverlay(retentionStore)
 
 	const firstCredential = "legacy-attested-retry-password-81aa"
 	inspection := inspectProtectedPostmanSource(

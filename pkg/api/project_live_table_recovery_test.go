@@ -18,8 +18,8 @@ import (
 )
 
 type projectLostReplyStore struct {
-	*storage.SQLiteStore
-	lose atomic.Bool
+	SQLiteStore *storage.SQLiteStore
+	lose        atomic.Bool
 }
 
 func (s *projectLostReplyStore) AppendProjectLiveTableEntry(ctx context.Context, e storage.ProjectLiveTableEntry, term storage.LiveTableExecutionTerm) error {
@@ -38,7 +38,7 @@ func TestProjectLiveTableRecoversCommittedUnknownInSameOwner(t *testing.T) {
 	consumer := projectTableRun(t, runner, store, "still-attached-consumer", d, "pop")
 	wrapper := &projectLostReplyStore{SQLiteStore: store}
 	wrapper.lose.Store(true)
-	runner.dataPoolStore = wrapper
+	runner.dataPoolStore = sqliteOverlay(wrapper)
 	binding := runner.liveBindingsForGroup(producer.ID, "workers")[0]
 	request := livetable.Request{ClientID: "worker", Sequence: 1, Operation: livetable.OpPush, Values: map[string]string{"value": "committed-once"}}
 	client := runner.liveClient(producer.ID, "local/workers")

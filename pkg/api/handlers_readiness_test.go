@@ -1117,7 +1117,7 @@ func TestMetadataStoreReadinessSanitizesInjectedBackendInfo(t *testing.T) {
 }
 
 type blockingLegacyMetadataReadinessStore struct {
-	storage.Store
+	Store       storage.Store
 	mu          sync.Mutex
 	calls       int
 	startedOnce sync.Once
@@ -1155,7 +1155,7 @@ func TestMetadataStoreReadinessDoesNotMultiplyBlockedLegacyProbes(t *testing.T) 
 		started: make(chan struct{}),
 		release: release,
 	}
-	server := &Server{store: store}
+	server := &Server{store: storeOverlay(store)}
 
 	for attempt := 0; attempt < 2; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
@@ -1178,7 +1178,7 @@ func TestMetadataStoreReadinessDoesNotMultiplyBlockedLegacyProbes(t *testing.T) 
 }
 
 type blockingSystemReadinessSettingsStore struct {
-	storage.Store
+	Store        storage.Store
 	mu           sync.Mutex
 	blocking     bool
 	blockedCalls int
@@ -1234,7 +1234,7 @@ func TestSystemReadinessDoesNotMultiplyBlockedSettingsReads(t *testing.T) {
 		release:  release,
 		finished: make(chan struct{}, 4),
 	}
-	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080", Store: store})
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080", Store: storeOverlay(store)})
 	server.staticFS = readinessTestStaticFS()
 	store.beginBlocking()
 

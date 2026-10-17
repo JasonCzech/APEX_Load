@@ -72,15 +72,15 @@ func TestRecoverUploadedArchiveAfterSourceLoss(t *testing.T) {
 			}
 			defer sqlite.Close()
 			store := &failingArchiveCatalogStore{SQLiteStore: sqlite, failCatalog: true}
-			run, record := createArchiveFinalizationTest(t, store, "uploaded-source-loss", filepath.Join(resolveArchiveRoot(), "remote"))
+			run, record := createArchiveFinalizationTest(t, sqliteOverlay(store), "uploaded-source-loss", filepath.Join(resolveArchiveRoot(), "remote"))
 			record.ArchiveBackend = archiveBackendS3
 			record.ArchiveURI = currentArchiveBackend().runURI(run.ID)
 			record.ManifestURI = currentArchiveBackend().manifestURI(run.ID)
-			producer := NewTestRunner(1, NewHub(), store)
+			producer := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 			if err := producer.finalizeRunArchiveDurably(context.Background(), run, record, true); err == nil || !strings.Contains(err.Error(), "injected archive catalog failure") {
 				t.Fatalf("upload/catalog crash=%v", err)
 			}
-			pending, err := store.GetArchiveFinalizationJob(run.ID)
+			pending, err := store.SQLiteStore.GetArchiveFinalizationJob(run.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -115,7 +115,7 @@ func TestRecoverUploadedArchiveAfterSourceLoss(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			row, err := store.GetTest(run.ID)
+			row, err := store.SQLiteStore.GetTest(run.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -132,18 +132,18 @@ func TestRecoverUploadedArchiveAfterSourceLoss(t *testing.T) {
 				mu.Unlock()
 			case "changed start":
 				row.StartTime = row.StartTime.Add(time.Second)
-				if err := store.SaveTest(row); err != nil {
+				if err := store.SQLiteStore.SaveTest(row); err != nil {
 					t.Fatal(err)
 				}
 			case "changed end":
 				end := row.EndTime.Add(time.Second)
 				row.EndTime = &end
-				if err := store.SaveTest(row); err != nil {
+				if err := store.SQLiteStore.SaveTest(row); err != nil {
 					t.Fatal(err)
 				}
 			case "changed status":
 				row.Status = "FAILED"
-				if err := store.SaveTest(row); err != nil {
+				if err := store.SQLiteStore.SaveTest(row); err != nil {
 					t.Fatal(err)
 				}
 			case "canceled":
@@ -154,7 +154,7 @@ func TestRecoverUploadedArchiveAfterSourceLoss(t *testing.T) {
 				mu.Lock()
 				intercept = func() {
 					copy := *pending
-					if err := store.SaveArchiveFinalizationJob(&copy); err != nil {
+					if err := store.SQLiteStore.SaveArchiveFinalizationJob(&copy); err != nil {
 						t.Error(err)
 					}
 				}
@@ -167,7 +167,7 @@ func TestRecoverUploadedArchiveAfterSourceLoss(t *testing.T) {
 					// token's checksum and bytes. Use a changed but valid manifest.
 					changed := strings.Replace(pending.PreparedManifestJSON, `"COMPLETE"`, `"FAILED"`, 1)
 					copy.ManifestSHA256 = sha256BytesHex([]byte(changed))
-					if ok, err := store.PrepareArchiveFinalizationManifestIfToken(pending.TestID, pending.IntentToken, &copy, changed); err != nil || !ok {
+					if ok, err := store.SQLiteStore.PrepareArchiveFinalizationManifestIfToken(pending.TestID, pending.IntentToken, &copy, changed); err != nil || !ok {
 						t.Error("replace pending checksum", ok, err)
 					}
 				}
@@ -178,15 +178,15 @@ func TestRecoverUploadedArchiveAfterSourceLoss(t *testing.T) {
 				t.Setenv("APEXLOAD_ARCHIVE_BUCKET", "Different-Test")
 			case "wrong token":
 				copy := *pending
-				if err := store.SaveArchiveFinalizationJob(&copy); err != nil {
+				if err := store.SQLiteStore.SaveArchiveFinalizationJob(&copy); err != nil {
 					t.Fatal(err)
 				}
 				pending = &copy
 			}
 			store.failCatalog = false
-			restarted := NewTestRunner(1, NewHub(), store)
+			restarted := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 			if mode == "stale lease" {
-				leader := newExecutionLeadership(store, "uploaded-recovery")
+				leader := newExecutionLeadership(sqliteOverlay(store), "uploaded-recovery")
 				leader.tick()
 				defer leader.relinquish()
 				restarted.leadership, restarted.durableExecutionFence = leader, true
@@ -196,7 +196,7 @@ func TestRecoverUploadedArchiveAfterSourceLoss(t *testing.T) {
 				}
 				mu.Lock()
 				intercept = func() {
-					if err := store.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {
+					if err := store.SQLiteStore.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {
 						t.Error(err)
 					}
 				}
@@ -210,15 +210,15 @@ func TestRecoverUploadedArchiveAfterSourceLoss(t *testing.T) {
 			if !want && mode != "new intent" && err == nil {
 				t.Fatal("unproven upload accepted")
 			}
-			catalog, catalogErr := store.GetRunArchive(run.ID)
+			catalog, catalogErr := store.SQLiteStore.GetRunArchive(run.ID)
 			if want {
 				if catalogErr != nil || catalog.ManifestSHA256 != pending.ArchiveRecord.ManifestSHA256 || catalog.TrendPointJSON != pending.ArchiveRecord.TrendPointJSON {
 					t.Fatal("catalog recovery differs", catalogErr)
 				}
-				if _, err := store.GetArchiveFinalizationJob(run.ID); !errors.Is(err, sql.ErrNoRows) {
+				if _, err := store.SQLiteStore.GetArchiveFinalizationJob(run.ID); !errors.Is(err, sql.ErrNoRows) {
 					t.Fatal("completed intent retained", err)
 				}
-				if _, err := store.GetArchiveRefreshJob(run.ID); err != nil {
+				if _, err := store.SQLiteStore.GetArchiveRefreshJob(run.ID); err != nil {
 					t.Fatal("adjunct reconciliation lost", err)
 				}
 			} else {
@@ -228,10 +228,10 @@ func TestRecoverUploadedArchiveAfterSourceLoss(t *testing.T) {
 				if !errors.Is(catalogErr, sql.ErrNoRows) {
 					t.Fatal("unproven catalog published", catalogErr)
 				}
-				if _, err := store.GetArchiveFinalizationJob(run.ID); err != nil {
+				if _, err := store.SQLiteStore.GetArchiveFinalizationJob(run.ID); err != nil {
 					t.Fatal("unconfirmed pending work lost", err)
 				}
-				if _, err := store.GetArchiveRefreshJob(run.ID); !errors.Is(err, sql.ErrNoRows) {
+				if _, err := store.SQLiteStore.GetArchiveRefreshJob(run.ID); !errors.Is(err, sql.ErrNoRows) {
 					t.Fatal("rejected recovery dirtied refresh", err)
 				}
 			}

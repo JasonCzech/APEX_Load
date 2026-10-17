@@ -26,15 +26,20 @@ func workerExecutableSnapshotName() string {
 // Launch reopens only this private, permission-protected immutable copy, hashed
 // from an exact retained source descriptor and checked against startup approval.
 // Platform DLL/rpath/code-signing behavior still requires packaged acceptance.
+// On macOS the copy is a link to this process's verified template (see
+// worker_executable_template_darwin.go), re-hashed for each attempt.
 //
-// The copy is not fsynced. It is hashed while it is written, closed before
-// launch and removed with the attempt's scratch, so no later run reads it back
-// after a crash; the loader reads the same pages the copy wrote. Copying and
-// flushing a 56 MiB worker took about half a second per attempt on Windows
-// runners.
+// The per-attempt copy (every platform but macOS, and macOS's fallback) is not
+// fsynced. It is hashed while it is written, closed before launch and removed
+// with the attempt's scratch, so no later run reads it back after a crash; the
+// loader reads the same pages the copy wrote. Copying and flushing a 56 MiB
+// worker took about half a second per attempt on Windows runners.
 func workerSnapshotExecutable(a *workerAttempt, sourcePath, expected string) (string, error) {
 	if workerContextError(a.ctx) != nil {
 		return "", errWorkerOwnership
+	}
+	if path, handled, err := workerLinkedExecutableSnapshot(a, sourcePath, expected); handled {
+		return path, err
 	}
 	source, err := os.Open(sourcePath)
 	if err != nil {

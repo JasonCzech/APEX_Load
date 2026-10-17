@@ -392,7 +392,7 @@ func TestRCABrowserBaselinePolicyFromThePin(t *testing.T) {
 	if policy, err := server.rcaBrowserBaselinePolicy(storage.DefaultProjectID, manifest); err != nil || policy == nil || policy.Unavailable != "its revision is invalid" {
 		t.Fatalf("invalid revision = %+v %v", policy, err)
 	}
-	server.store = journeyPolicyLookupStore{SQLiteStore: store, err: errors.New("database is locked")}
+	server.store = sqliteOverlay(journeyPolicyLookupStore{SQLiteStore: store, err: errors.New("database is locked")})
 	if _, err := server.rcaBrowserBaselinePolicy(storage.DefaultProjectID, manifest); err == nil {
 		t.Fatal("a store failure was read as a missing policy")
 	}
@@ -481,7 +481,7 @@ func TestRCAAssessmentWithoutDocumentsSkipsTheBrowserPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.store = journeyPolicyLookupStore{SQLiteStore: store, err: errors.New("database is locked")}
+	server.store = sqliteOverlay(journeyPolicyLookupStore{SQLiteStore: store, err: errors.New("database is locked")})
 	assessment, err := server.assessRCAAnalysis(context.Background(), &storage.RCAAnalysis{ID: "a", ProjectID: storage.DefaultProjectID, TestID: run.ID},
 		rcaAnalysisPayload{Inputs: rca.InputDigests{Archive: digest, Engine: rcaEngineVersion}})
 	if err != nil || assessment == nil || assessment.BrowserBaseline != nil {

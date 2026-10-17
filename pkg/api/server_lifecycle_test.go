@@ -16,9 +16,9 @@ import (
 )
 
 type blockedLocalAuthActivationStore struct {
-	*storage.SQLiteStore
-	entered chan struct{}
-	once    sync.Once
+	SQLiteStore *storage.SQLiteStore
+	entered     chan struct{}
+	once        sync.Once
 }
 
 func (s *blockedLocalAuthActivationStore) ActivateLocalAuthGenerationContext(ctx context.Context, _ string, _ time.Time) (int64, error) {
@@ -247,7 +247,7 @@ func TestShutdownDeadlineCancelsBlockedLocalAuthGenerationActivation(t *testing.
 		t.Fatalf("activate initial generation: %v", err)
 	}
 	blocked := &blockedLocalAuthActivationStore{SQLiteStore: base, entered: make(chan struct{})}
-	server := NewServer(ServerConfig{Store: blocked, Addr: "127.0.0.1:0", ProxyAddr: "127.0.0.1:0"})
+	server := NewServer(ServerConfig{Store: sqliteOverlay(blocked), Addr: "127.0.0.1:0", ProxyAddr: "127.0.0.1:0"})
 	startResult := make(chan error, 1)
 	go func() { startResult <- server.Start() }()
 

@@ -77,6 +77,8 @@ Every lane runs, in order:
 - Generator and collector exclude DuckDB: `go list -tags analytics_duckdb -deps ./cmd/generator ./cmd/apexload-collector-agent`
 - Packaged desktop native startup: `python3 scripts/test_native_worker_startup.py --desktop-build-dir desktop/build/bin`
 
+The API check runs only where `scripts/ci/pkg-api-test-build-fits.sh` succeeds. Compiling pkg/api's test binary peaks near 6 GB of memory, too much for the macOS Apple Silicon lane's 7 GB hosted runner, so that lane leaves the API check to the others; its native checks above still run.
+
 ## Reference workload
 
 `APEXLOAD_ANALYTICS_BENCHMARK=1 go test -tags analytics_duckdb ./pkg/api -run '^TestNativeAnalyticsReferenceBenchmark$' -v` generates a reproducible fixture: one ZSTD-compressed Parquet file per day, 3,456,000 rows each (25 ms apart, values derived from a hash of the row), until the files reach `APEXLOAD_ANALYTICS_BENCHMARK_BYTES` (default 1 GiB, at most 6 GiB; at most 366 files, the span one series query may cover). It imports the fixture through the API, then times a selected-window query (one hour of the last day at 60-second buckets, cold and 20 times repeated), a full-range query and the cancellation of a heavy query. It records the fixture's hashes and rows, upload and normalization time, pruned objects and avoided bytes, peak RSS sampled for the controller, its workers and both together, and every failure; a fixture short of its target fails. The interactive target is a selected-window P95 of at most five seconds on the 4 vCPU / 16 GiB reference host; the results say whether the host had that shape.

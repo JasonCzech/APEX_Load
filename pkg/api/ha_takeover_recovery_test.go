@@ -401,7 +401,7 @@ func TestReloadActiveStoredTestsLoadsOnlyInFlightRuns(t *testing.T) {
 // adoptionOrderStore records how far acquisition had progressed when the full
 // test reload began.
 type adoptionOrderStore struct {
-	*storage.SQLiteStore
+	SQLiteStore      *storage.SQLiteStore
 	runner           atomic.Pointer[TestRunner]
 	fullReloadMarker atomic.Int64
 }
@@ -423,7 +423,7 @@ func TestReloadAndReconcileAdoptsBeforeFullReload(t *testing.T) {
 	t.Cleanup(func() { _ = raw.Close() })
 	store := &adoptionOrderStore{SQLiteStore: raw}
 	store.fullReloadMarker.Store(-1)
-	runner := NewTestRunner(10, NewHub(), store, WithRunContinuityKeyWrapper(testContinuityWrapper(t)))
+	runner := NewTestRunner(10, NewHub(), sqliteOverlay(store), WithRunContinuityKeyWrapper(testContinuityWrapper(t)))
 	t.Cleanup(runner.beginShutdown)
 	leadership := newExecutionLeadership(raw, "ordering-controller")
 	leadership.tick()

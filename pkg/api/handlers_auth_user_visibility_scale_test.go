@@ -35,7 +35,7 @@ var errScopeCategoryUnresolvable = errors.New("repository category not found")
 // GetRepositoryCategory error as "no category placement", so a row that went
 // missing out of band or a transient read error both land on it.
 type scopeReadCountingStore struct {
-	storage.Store
+	Store                  storage.Store
 	unresolvableCategoryID string
 	mu                     sync.Mutex
 	getProject             int
@@ -155,7 +155,7 @@ func TestListVisibleUsersResolvesEachBindingScopeOnce(t *testing.T) {
 	}
 
 	counting := &scopeReadCountingStore{Store: sqlite, unresolvableCategoryID: legacyCategory.ID}
-	server := NewServer(ServerConfig{Store: counting})
+	server := NewServer(ServerConfig{Store: storeOverlay(counting)})
 	settings := server.runner.GetSystemSettings()
 	settings.Auth.Mode = authModeTrustedHeaders
 	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
