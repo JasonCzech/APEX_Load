@@ -21,7 +21,7 @@ type baselineTransactionAccumulator struct {
 	websocket       *protocolmetrics.WebSocketSummary
 	count, errors   int64
 	total, min, max float64
-	digest          *engine.TDigest
+	digest          *engine.DurationSketch
 	points          []BaselineMetricPoint
 }
 type baselineComparisonRun struct {
@@ -202,7 +202,7 @@ func (s *Server) readBaselineComparisonRun(ctx context.Context, t *ManagedTest, 
 				if cells > maxLoadComparisonDistributionCells {
 					return fmt.Errorf("transaction distribution budget exceeded; narrow the comparison")
 				}
-				a = &baselineTransactionAccumulator{digest: engine.NewTDigest(100), min: math.Inf(1)}
+				a = &baselineTransactionAccumulator{digest: engine.NewDurationSketch(), min: math.Inf(1)}
 				r.transactions[key][i] = a
 			}
 			a.count++

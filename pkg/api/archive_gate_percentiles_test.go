@@ -9,6 +9,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -34,12 +35,19 @@ func sortedGateSamples(samples []float64) []float64 {
 	return sorted
 }
 
-func gateDigestCompression(t *testing.T, acc *archiveQuantileAccumulator) float64 {
-	t.Helper()
-	if acc.digest == nil {
-		t.Fatalf("accumulator holds %d exact samples, want a digest", len(acc.exact))
+// archiveBracketError reports how far a percentile lies outside the sketch's
+// accuracy band around the two samples that bracket rank q*(n-1).
+func archiveBracketError(sorted []float64, q, got float64) float64 {
+	rank := q * float64(len(sorted)-1)
+	lo, hi := sorted[int(math.Floor(rank))], sorted[int(math.Ceil(rank))]
+	low, high := lo*(1-engine.DurationSketchRelativeAccuracy-1e-9), hi*(1+engine.DurationSketchRelativeAccuracy+1e-9)
+	switch {
+	case got < low:
+		return (low - got) / lo
+	case got > high:
+		return (got - high) / hi
 	}
-	return acc.digest.Snapshot().Compression
+	return 0
 }
 
 func TestArchiveGateQuantilesStayExactThroughTheExactLimit(t *testing.T) {
@@ -48,7 +56,7 @@ func TestArchiveGateQuantilesStayExactThroughTheExactLimit(t *testing.T) {
 	for _, sample := range samples {
 		acc.Add(sample)
 	}
-	if acc.digest != nil {
+	if acc.sketch != nil {
 		t.Fatalf("gate accumulator sketched %d samples, want exact through %d", len(samples), archiveGateExactQuantileLimit)
 	}
 	sorted := sortedGateSamples(samples)
@@ -59,9 +67,11 @@ func TestArchiveGateQuantilesStayExactThroughTheExactLimit(t *testing.T) {
 	}
 }
 
-func TestArchiveGateQuantilesNarrowTheModeBoundaryError(t *testing.T) {
+func TestArchiveQuantilesHaveNoModeBoundaryErrorBeyondTheExactLimit(t *testing.T) {
+	// Timeouts near 1% put p99 on the boundary between modes, where the old
+	// t-digest reported values from the empty gap. Beyond the exact limits the
+	// sketch stays within its accuracy band in every run.
 	const runs, samplesPerRun = 60, 60_000
-	ordinaryMisses, gateMisses := 0, 0
 	for trial := 0; trial < runs; trial++ {
 		samples := gateSweepSamples(int64(1000+trial), samplesPerRun, 0.0095+float64(trial%20)*0.00005)
 		ordinary := &archiveQuantileAccumulator{}
@@ -70,16 +80,17 @@ func TestArchiveGateQuantilesNarrowTheModeBoundaryError(t *testing.T) {
 			ordinary.Add(sample)
 			gate.Add(sample)
 		}
-		exact := percentileFromSortedSamples(sortedGateSamples(samples), 0.99)
-		if math.Abs(ordinary.Quantile(0.99)-exact)/exact > 0.10 {
-			ordinaryMisses++
+		sorted := sortedGateSamples(samples)
+		for name, acc := range map[string]*archiveQuantileAccumulator{"ordinary": ordinary, "gate": gate} {
+			if acc.sketch == nil {
+				t.Fatalf("%s accumulator kept %d samples exact", name, len(acc.exact))
+			}
+			for _, q := range []float64{0.95, 0.99} {
+				if err := archiveBracketError(sorted, q, acc.Quantile(q)); err > 0 {
+					t.Fatalf("run %d %s p%v = %v, outside the sketch's band by %.3g", trial, name, q*100, acc.Quantile(q), err)
+				}
+			}
 		}
-		if math.Abs(gate.Quantile(0.99)-exact)/exact > 0.10 {
-			gateMisses++
-		}
-	}
-	if gateMisses > 3 || gateMisses >= ordinaryMisses {
-		t.Fatalf("p99 off by more than 10%% in %d of %d near-boundary runs (ordinary report accumulator: %d); want at most 3 and fewer than ordinary", gateMisses, runs, ordinaryMisses)
 	}
 }
 
@@ -91,54 +102,43 @@ func TestArchiveGateQuantileBudget(t *testing.T) {
 	}
 	extraExactBytes := int64(archiveGateExactQuantileLimit-archiveExactQuantileLimit) * archiveGateExactSampleBytes
 
-	t.Run("promotion trades extra exact samples for the finer digest", func(t *testing.T) {
+	t.Run("promotion returns extra exact samples to the budget", func(t *testing.T) {
 		budget := newArchiveQuantileBudget()
 		acc := newArchiveGateQuantileAccumulator(budget)
 		addSamples(acc, archiveGateExactQuantileLimit)
-		if acc.digest != nil || budget.remainingBytes != archiveGateQuantileBudgetBytes-extraExactBytes {
-			t.Fatalf("after %d samples: digest %v, budget %d; want exact samples charged beyond the ordinary limit", archiveGateExactQuantileLimit, acc.digest != nil, budget.remainingBytes)
+		if acc.sketch != nil || budget.remainingBytes != archiveGateQuantileBudgetBytes-extraExactBytes {
+			t.Fatalf("after %d samples: sketch %v, budget %d; want exact samples charged beyond the ordinary limit", archiveGateExactQuantileLimit, acc.sketch != nil, budget.remainingBytes)
 		}
 		acc.Add(1)
-		if got := gateDigestCompression(t, acc); got != archiveGateTDigestCompression {
-			t.Fatalf("compression = %v, want %d", got, archiveGateTDigestCompression)
-		}
-		if budget.remainingBytes != archiveGateQuantileBudgetBytes-archiveGateDigestReservationBytes {
-			t.Fatalf("budget = %d, want only the digest reservation held", budget.remainingBytes)
+		if acc.sketch == nil || acc.Count() != archiveGateExactQuantileLimit+1 || budget.remainingBytes != archiveGateQuantileBudgetBytes {
+			t.Fatalf("after promotion: sketch %v, count %d, budget %d", acc.sketch != nil, acc.Count(), budget.remainingBytes)
 		}
 	})
 
-	t.Run("a spent budget keeps the ordinary limits", func(t *testing.T) {
+	t.Run("a spent budget keeps the ordinary limit", func(t *testing.T) {
 		acc := newArchiveGateQuantileAccumulator(&archiveQuantileBudget{})
 		addSamples(acc, archiveExactQuantileLimit)
-		if acc.digest != nil {
+		if acc.sketch != nil {
 			t.Fatalf("sketched within the ordinary exact limit")
 		}
 		acc.Add(1)
-		if got := gateDigestCompression(t, acc); got != archiveTDigestCompression {
-			t.Fatalf("compression = %v, want the ordinary %d", got, archiveTDigestCompression)
+		if acc.sketch == nil {
+			t.Fatalf("still exact past the ordinary limit with no budget")
 		}
 	})
 
 	t.Run("accumulators share one bound", func(t *testing.T) {
-		const leftover = 44 << 10
-		budget := &archiveQuantileBudget{remainingBytes: archiveGateDigestReservationBytes + leftover}
-		first := newArchiveGateQuantileAccumulator(budget)
-		addSamples(first, archiveGateExactQuantileLimit+1)
-		if got := gateDigestCompression(t, first); got != archiveGateTDigestCompression {
-			t.Fatalf("first compression = %v, want %d", got, archiveGateTDigestCompression)
+		const extraSamples = 5_000
+		budget := &archiveQuantileBudget{remainingBytes: extraSamples * archiveGateExactSampleBytes}
+		first, second := newArchiveGateQuantileAccumulator(budget), newArchiveGateQuantileAccumulator(budget)
+		addSamples(first, archiveExactQuantileLimit+extraSamples)
+		addSamples(second, archiveExactQuantileLimit+1)
+		if first.sketch != nil || second.sketch == nil || budget.remainingBytes != 0 {
+			t.Fatalf("first sketch %v, second sketch %v, budget %d; want the first holding the whole budget", first.sketch != nil, second.sketch != nil, budget.remainingBytes)
 		}
-		second := newArchiveGateQuantileAccumulator(budget)
-		extraSamples := leftover / archiveGateExactSampleBytes
-		addSamples(second, archiveExactQuantileLimit+extraSamples)
-		if second.digest != nil || budget.remainingBytes != 0 {
-			t.Fatalf("second: digest %v, budget %d; want exact until the budget is spent", second.digest != nil, budget.remainingBytes)
-		}
-		second.Add(1)
-		if got := gateDigestCompression(t, second); got != archiveTDigestCompression {
-			t.Fatalf("second compression = %v, want the ordinary %d once the budget cannot hold a digest", got, archiveTDigestCompression)
-		}
-		if budget.remainingBytes != leftover || second.Count() != int64(archiveExactQuantileLimit+extraSamples+1) {
-			t.Fatalf("budget = %d count = %d; want the extra exact samples released", budget.remainingBytes, second.Count())
+		first.Add(1)
+		if first.sketch == nil || budget.remainingBytes != extraSamples*archiveGateExactSampleBytes {
+			t.Fatalf("first sketch %v, budget %d; want the budget returned", first.sketch != nil, budget.remainingBytes)
 		}
 	})
 }

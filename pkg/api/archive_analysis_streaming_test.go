@@ -76,7 +76,7 @@ func TestArchiveAnalysisStreamsGraphAndRetainsOnlyRequestedPage(t *testing.T) {
 	if acc == nil || acc.Transactions != transactionCount {
 		t.Fatalf("action accumulator = %#v, want %d transactions", acc, transactionCount)
 	}
-	if acc.Quantiles == nil || acc.Quantiles.digest == nil || len(acc.Quantiles.exact) != 0 {
+	if acc.Quantiles == nil || acc.Quantiles.sketch == nil || len(acc.Quantiles.exact) != 0 {
 		t.Fatalf("large percentile state was not promoted to a bounded digest: %#v", acc.Quantiles)
 	}
 

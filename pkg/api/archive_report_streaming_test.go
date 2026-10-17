@@ -71,7 +71,7 @@ func TestArchiveQuantileAccumulatorPromotesToBoundedDigest(t *testing.T) {
 	for index := 0; index < archiveExactQuantileLimit+100; index++ {
 		accumulator.Add(float64(index))
 	}
-	if accumulator.digest == nil || len(accumulator.exact) != 0 {
+	if accumulator.sketch == nil || len(accumulator.exact) != 0 {
 		t.Fatalf("quantile accumulator did not promote to digest: %#v", accumulator)
 	}
 	if accumulator.Count() != archiveExactQuantileLimit+100 {

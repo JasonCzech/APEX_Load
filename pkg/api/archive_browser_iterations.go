@@ -38,7 +38,7 @@ type browserIterationTimesAccumulator struct {
 	passed int64
 	errors int64
 	sumMs  float64
-	digest *engine.TDigest
+	digest *engine.DurationSketch
 }
 
 func (a *browserIterationTimesAccumulator) result() *BrowserIterationTimes {
@@ -83,7 +83,7 @@ func (a *archiveBrowserIterationAccumulator) merge(tx TransactionEvent) {
 	}
 	times := pair[slot]
 	if times == nil {
-		times = &browserIterationTimesAccumulator{digest: engine.NewTDigest(100)}
+		times = &browserIterationTimesAccumulator{digest: engine.NewDurationSketch()}
 		pair[slot] = times
 	}
 	if !tx.Success {
