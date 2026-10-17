@@ -7,7 +7,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus v1.11.0
 	github.com/Azure/go-amqp v1.7.0
 	github.com/PuerkitoBio/goquery v1.13.0
-	github.com/alicebob/miniredis/v2 v2.39.0
+	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/andybalholm/brotli v1.2.6
 	github.com/antchfx/htmlquery v1.3.7
 	github.com/antchfx/xmlquery v1.5.2
