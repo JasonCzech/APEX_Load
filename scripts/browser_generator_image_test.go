@@ -50,7 +50,7 @@ func TestBrowserImagesRunPlaywrightChromium(t *testing.T) {
 		}
 	}
 	generator := read("Dockerfile.browser-generator")
-	for _, required := range []string{"node:22.22.0-bookworm-slim@sha256:", "golang:1.26.9-bookworm@sha256:", "CGO_ENABLED=0", "./cmd/generator", `test "${GO_BUILD_TAGS}" = standard`} {
+	for _, required := range []string{"node:22.23.3-bookworm-slim@sha256:", "golang:1.26.9-bookworm@sha256:", "CGO_ENABLED=0", "./cmd/generator", `test "${GO_BUILD_TAGS}" = standard`} {
 		if !strings.Contains(generator, required) {
 			t.Errorf("Dockerfile.browser-generator missing %q", required)
 		}
