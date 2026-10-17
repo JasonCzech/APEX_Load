@@ -14,5 +14,7 @@ func TestMain(m *testing.M) {
 	if handled, code := DispatchNativeWorker(); handled {
 		os.Exit(code)
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	ReleaseNativeWorkerTemplate()
+	os.Exit(code)
 }

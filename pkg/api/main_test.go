@@ -31,6 +31,7 @@ func TestMain(m *testing.M) {
 	}
 	code := runArchiveSandboxedTests(m)
 	browserprotocol.ShutdownPool(10 * time.Second)
+	duckdb.ReleaseNativeWorkerTemplate()
 	os.Exit(code)
 }
 
