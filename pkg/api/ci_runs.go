@@ -1952,9 +1952,13 @@ func encodeCIRunMetadata(metadata ciRunMetadata) (string, error) {
 	return ciRunMetadataPrefix + base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
+// errNotCIRun reports a materialization key that does not belong to a CI run.
+// Every other decode error is a CI run whose metadata cannot be read.
+var errNotCIRun = errors.New("not a CI run")
+
 func decodeCIRunMetadata(value string) (ciRunMetadata, error) {
 	if !strings.HasPrefix(value, ciRunMetadataPrefix) {
-		return ciRunMetadata{}, fmt.Errorf("not a CI run")
+		return ciRunMetadata{}, errNotCIRun
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(value, ciRunMetadataPrefix))
 	if err != nil {

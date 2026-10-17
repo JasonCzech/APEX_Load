@@ -586,8 +586,13 @@ func (tr *TestRunner) validateCIRunPolicyForStartAtProjectRevision(id string, ex
 	candidate := test
 	metadata, metadataErr := decodeCIRunMetadata(test.MaterializationKey)
 	tr.mu.RUnlock()
-	if metadataErr != nil {
+	if errors.Is(metadataErr, errNotCIRun) {
 		return nil
+	}
+	if metadataErr != nil {
+		// The metadata names the policy revision that accepted the run. A run
+		// whose revision cannot be read cannot be checked, so it must not start.
+		return fmt.Errorf("CI run metadata is unreadable: %w", metadataErr)
 	}
 	if tr.projectStore == nil {
 		return fmt.Errorf("CI run trust policy is unavailable")
