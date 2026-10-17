@@ -1151,10 +1151,7 @@ type runArchiveWriter struct {
 	flushStop               chan struct{}
 	flushStopped            chan struct{}
 	flushErr                error
-	detailItems             int64
-	detailBytes             int64
-	detailPriorityItems     [4]int64
-	detailPriorityBytes     [4]int64
+	detailUsage             engine.MessageDetailUsage
 	// Provider lookup outcomes stream here when a capture can look up traces.
 	lookupFile    *os.File
 	lookupBuf     *bufio.Writer

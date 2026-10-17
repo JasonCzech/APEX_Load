@@ -1352,10 +1352,7 @@ type controllerMessageDetailBudget struct {
 	maxItemBytes  int64
 	maxTotalBytes int64
 	adaptive      bool
-	retainedItems int64
-	retainedBytes int64
-	priorityItems map[int]int64
-	priorityBytes map[int]int64
+	usage         engine.MessageDetailUsage
 }
 
 func messageDetailBudgetsForTest(test *ManagedTest) map[string]*controllerMessageDetailBudget {
@@ -1377,8 +1374,6 @@ func messageDetailBudgetsForTest(test *ManagedTest) map[string]*controllerMessag
 			maxItemBytes:  policy.MaxItemBytes,
 			maxTotalBytes: policy.MaxTotalBytes,
 			adaptive:      mode == "adaptive",
-			priorityItems: make(map[int]int64),
-			priorityBytes: make(map[int]int64),
 		}
 		if budget.maxItems <= 0 {
 			budget.maxItems = controllerMessageDetailDefaultMaxItems
@@ -1501,56 +1496,26 @@ func enforceControllerMessageDetailBudget(event *TransactionEvent, budget *contr
 	if event == nil || budget == nil || stats == nil || event.Snapshot == nil {
 		return
 	}
-	drop := func(reason string) {
-		stats.Dropped[reason]++
-		event.Snapshot = nil
-	}
-	priority := 0
-	priorityItemLimit, priorityByteLimit := budget.maxItems, budget.maxTotalBytes
-	if budget.adaptive {
-		priority = min(max(event.MessageDetailPriority, 1), 3)
-		priorityItemLimit = adaptiveMessageDetailPriorityLimit(budget.maxItems, priority)
-		priorityByteLimit = adaptiveMessageDetailPriorityLimit(budget.maxTotalBytes, priority)
-		if priorityItemLimit == 0 || budget.priorityItems[priority] >= priorityItemLimit {
-			drop(fmt.Sprintf("controller_priority_%d_item_limit", priority))
-			return
-		}
-		if priorityByteLimit == 0 || budget.priorityBytes[priority] >= priorityByteLimit {
-			drop(fmt.Sprintf("controller_priority_%d_byte_limit", priority))
-			return
-		}
-	}
-	if budget.retainedItems >= budget.maxItems {
-		drop("controller_item_limit")
-		return
-	}
-	remaining := budget.maxTotalBytes - budget.retainedBytes
-	if priority > 0 {
-		remaining = min(remaining, priorityByteLimit-budget.priorityBytes[priority])
-	}
-	if remaining <= 0 {
-		drop("controller_total_byte_limit")
-		return
-	}
-	limit := min(budget.maxItemBytes, remaining)
-	before := archiveMessageDetailSnapshotBytes(event.Snapshot)
-	if before > limit {
-		event.Snapshot = engine.BoundErrorSnapshot(event.Snapshot, int(limit))
+	admission := budget.usage.Admit(engine.MessageDetailLimits{
+		MaxItems: budget.maxItems, MaxItemBytes: budget.maxItemBytes, MaxTotalBytes: budget.maxTotalBytes, Adaptive: budget.adaptive,
+	}, event.MessageDetailPriority, event.Snapshot)
+	if admission.Truncated {
 		stats.TruncatedItems++
 	}
-	retained := archiveMessageDetailSnapshotBytes(event.Snapshot)
-	if event.Snapshot == nil || retained <= 0 || retained > limit {
-		drop("controller_item_byte_limit")
+	if admission.Drop != engine.MessageDetailKept {
+		// The fleet budget names its drops apart from each generator's, and
+		// calls a detail that does not fit, even truncated, an item byte limit.
+		reason := "controller_" + admission.Drop.Reason(admission.Priority)
+		if admission.Drop == engine.MessageDetailItemByteLimit {
+			reason = "controller_item_byte_limit"
+		}
+		stats.Dropped[reason]++
+		event.Snapshot = nil
 		return
 	}
-	budget.retainedItems++
-	budget.retainedBytes += retained
-	if priority > 0 {
-		budget.priorityItems[priority]++
-		budget.priorityBytes[priority] += retained
-	}
+	event.Snapshot = admission.Snapshot
 	stats.RetainedItems++
-	stats.RetainedBytes += retained
+	stats.RetainedBytes += admission.Bytes
 }
 
 type remoteArchiveSummaryCursor struct {

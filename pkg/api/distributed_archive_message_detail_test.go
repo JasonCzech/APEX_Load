@@ -28,7 +28,6 @@ func TestMessageDetailBudgetsForTestIncludesAdaptiveMode(t *testing.T) {
 func TestControllerAdaptiveBudgetPreservesPriorityShares(t *testing.T) {
 	budget := &controllerMessageDetailBudget{
 		maxItems: 4, maxItemBytes: 1024, maxTotalBytes: 4096, adaptive: true,
-		priorityItems: make(map[int]int64), priorityBytes: make(map[int]int64),
 	}
 	stats := &RunArchiveMessageDetailCapture{Dropped: make(map[string]int64)}
 	newEvent := func(priority int) *TransactionEvent {
@@ -51,7 +50,6 @@ func TestControllerAdaptiveBudgetPreservesPriorityShares(t *testing.T) {
 func TestControllerAdaptiveBudgetWithOneItemRetainsHighPriority(t *testing.T) {
 	budget := &controllerMessageDetailBudget{
 		maxItems: 1, maxItemBytes: 1024, maxTotalBytes: 1024, adaptive: true,
-		priorityItems: make(map[int]int64), priorityBytes: make(map[int]int64),
 	}
 	stats := &RunArchiveMessageDetailCapture{Dropped: make(map[string]int64)}
 	event := &TransactionEvent{Success: true, MessageDetailPriority: 3, Snapshot: &protocol.ErrorSnapshot{ResponseBody: "outlier"}}

@@ -431,10 +431,7 @@ type archiveRecorder struct {
 	recordErr               error
 	failureSignaled         bool
 	closed                  bool
-	detailItems             int64
-	detailBytes             int64
-	detailPriorityItems     [4]int64
-	detailPriorityBytes     [4]int64
+	detailUsage             engine.MessageDetailUsage
 }
 
 func (w *archiveRecorder) bindExecution(generation uint64, group, sourceIdentity string) {
@@ -1200,84 +1197,23 @@ func (w *archiveRecorder) applyMessageDetailBudget(event *archiveTransactionEven
 		drop("invalid_budget")
 		return
 	}
-	priority := 0
-	priorityItemLimit, priorityByteLimit := maxItems, maxTotalBytes
-	if strings.EqualFold(result.MessageDetailMode, "adaptive") {
-		priority = min(max(result.MessageDetailPriority, 1), 3)
-		priorityItemLimit = adaptiveMessageDetailPriorityLimit(maxItems, priority)
-		priorityByteLimit = adaptiveMessageDetailPriorityLimit(maxTotalBytes, priority)
-		if w.detailPriorityItems[priority] >= priorityItemLimit || priorityItemLimit == 0 {
-			drop(fmt.Sprintf("priority_%d_item_limit", priority))
-			return
-		}
-		if w.detailPriorityBytes[priority] >= priorityByteLimit || priorityByteLimit == 0 {
-			drop(fmt.Sprintf("priority_%d_byte_limit", priority))
-			return
-		}
-	}
-	if w.detailItems >= maxItems {
-		drop("item_limit")
-		return
-	}
-	remaining := maxTotalBytes - w.detailBytes
-	if priority > 0 {
-		remaining = min(remaining, priorityByteLimit-w.detailPriorityBytes[priority])
-	}
-	if remaining <= 0 {
-		drop("total_byte_limit")
-		return
-	}
-	limit := min(maxItemBytes, remaining)
-	before := generatorMessageDetailSnapshotBytes(event.Snapshot)
-	if before > limit {
-		event.Snapshot = engine.BoundErrorSnapshot(event.Snapshot, int(limit))
+	admission := w.detailUsage.Admit(engine.MessageDetailLimits{
+		MaxItems: maxItems, MaxItemBytes: maxItemBytes, MaxTotalBytes: maxTotalBytes,
+		Adaptive: strings.EqualFold(result.MessageDetailMode, "adaptive"),
+	}, result.MessageDetailPriority, event.Snapshot)
+	if admission.Truncated {
 		stats.TruncatedItems++
 	}
-	retained := generatorMessageDetailSnapshotBytes(event.Snapshot)
-	if event.Snapshot == nil || retained <= 0 || retained > limit {
-		drop("total_byte_limit")
+	if admission.Drop != engine.MessageDetailKept {
+		drop(admission.Drop.Reason(admission.Priority))
 		return
 	}
-	w.detailItems++
-	w.detailBytes += retained
-	if priority > 0 {
-		w.detailPriorityItems[priority]++
-		w.detailPriorityBytes[priority] += retained
-	}
+	event.Snapshot = admission.Snapshot
 	stats.RetainedItems++
-	stats.RetainedBytes += retained
+	stats.RetainedBytes += admission.Bytes
 	result.Snapshot = event.Snapshot
 	result.MessageDetailRetained = true
 	event.HasDetail = true
-}
-
-func adaptiveMessageDetailPriorityLimit(total int64, priority int) int64 {
-	if total <= 0 || priority < 1 || priority > 3 {
-		return 0
-	}
-	high := (total + 1) / 2
-	remaining := total - high
-	low := remaining / 2
-	middle := remaining - low
-	switch priority {
-	case 1:
-		return low
-	case 2:
-		return middle
-	default:
-		return high
-	}
-}
-
-func generatorMessageDetailSnapshotBytes(snapshot *protocol.ErrorSnapshot) int64 {
-	if snapshot == nil {
-		return 0
-	}
-	encoded, err := json.Marshal(snapshot)
-	if err != nil {
-		return 0
-	}
-	return int64(len(encoded))
 }
 
 // RecordTransaction persists engine-synthesized business transactions. The

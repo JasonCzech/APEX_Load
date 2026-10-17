@@ -434,88 +434,22 @@ func (w *runArchiveWriter) applyMessageDetailBudget(event *TransactionEvent, res
 		drop("invalid_budget")
 		return
 	}
-	priority := 0
-	priorityItemLimit, priorityByteLimit := maxItems, maxTotalBytes
-	if strings.EqualFold(result.MessageDetailMode, "adaptive") {
-		priority = min(max(result.MessageDetailPriority, 1), 3)
-		priorityItemLimit = adaptiveMessageDetailPriorityLimit(maxItems, priority)
-		priorityByteLimit = adaptiveMessageDetailPriorityLimit(maxTotalBytes, priority)
-		if w.detailPriorityItems[priority] >= priorityItemLimit || priorityItemLimit == 0 {
-			drop(fmt.Sprintf("priority_%d_item_limit", priority))
-			return
-		}
-		if w.detailPriorityBytes[priority] >= priorityByteLimit || priorityByteLimit == 0 {
-			drop(fmt.Sprintf("priority_%d_byte_limit", priority))
-			return
-		}
-	}
-	if w.detailItems >= maxItems {
-		drop("item_limit")
-		return
-	}
-	remaining := maxTotalBytes - w.detailBytes
-	if priority > 0 {
-		remaining = min(remaining, priorityByteLimit-w.detailPriorityBytes[priority])
-	}
-	if remaining <= 0 {
-		drop("total_byte_limit")
-		return
-	}
-	limit := min(maxItemBytes, remaining)
-	before := archiveMessageDetailSnapshotBytes(event.Snapshot)
-	if before > limit {
-		event.Snapshot = engine.BoundErrorSnapshot(event.Snapshot, int(limit))
+	admission := w.detailUsage.Admit(engine.MessageDetailLimits{
+		MaxItems: maxItems, MaxItemBytes: maxItemBytes, MaxTotalBytes: maxTotalBytes,
+		Adaptive: strings.EqualFold(result.MessageDetailMode, "adaptive"),
+	}, result.MessageDetailPriority, event.Snapshot)
+	if admission.Truncated {
 		stats.TruncatedItems++
 	}
-	retained := archiveMessageDetailSnapshotBytes(event.Snapshot)
-	if event.Snapshot == nil || retained <= 0 || retained > limit {
-		drop("total_byte_limit")
+	if admission.Drop != engine.MessageDetailKept {
+		drop(admission.Drop.Reason(admission.Priority))
 		return
 	}
-	w.detailItems++
-	w.detailBytes += retained
-	if priority > 0 {
-		w.detailPriorityItems[priority]++
-		w.detailPriorityBytes[priority] += retained
-	}
+	event.Snapshot = admission.Snapshot
 	stats.RetainedItems++
-	stats.RetainedBytes += retained
+	stats.RetainedBytes += admission.Bytes
 	result.Snapshot = event.Snapshot
 	result.MessageDetailRetained = true
-}
-
-// adaptiveMessageDetailPriorityLimit divides a finite budget into the authored
-// 25/25/50 low/mid/high shares without losing units to integer rounding. The
-// highest priority receives the odd unit first, followed by the middle class;
-// this keeps a one-item adaptive budget useful while the three limits always
-// sum to the original total.
-func adaptiveMessageDetailPriorityLimit(total int64, priority int) int64 {
-	if total <= 0 || priority < 1 || priority > 3 {
-		return 0
-	}
-	high := (total + 1) / 2
-	remaining := total - high
-	low := remaining / 2
-	middle := remaining - low
-	switch priority {
-	case 1:
-		return low
-	case 2:
-		return middle
-	default:
-		return high
-	}
-}
-
-func archiveMessageDetailSnapshotBytes(snapshot *protocol.ErrorSnapshot) int64 {
-	if snapshot == nil {
-		return 0
-	}
-	encoded, err := json.Marshal(snapshot)
-	if err != nil {
-		return 0
-	}
-	return int64(len(encoded))
 }
 
 // RecordTransaction persists synthetic business transactions emitted by the
