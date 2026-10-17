@@ -10,7 +10,7 @@ export default function ManagementCollectionState({ projectId, sourceId, canMana
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [refresh, setRefresh] = useState(0)
-  const operation = useRef<AbortController>()
+  const operation = useRef<AbortController | undefined>(undefined)
   const path = `/projects/${encodeURIComponent(projectId)}/monitor-sources/${encodeURIComponent(sourceId)}/management-state`
   useEffect(() => {
     const abort = new AbortController()

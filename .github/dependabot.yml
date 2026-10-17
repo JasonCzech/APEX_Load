@@ -69,6 +69,24 @@ updates:
       - dependency-name: "@eslint/js"
         update-types:
           - version-update:semver-major
+      # React 19 is on hold. Measured on 2026-10-17, it added about 22 KiB
+      # gzip to every route, past all three bundle budgets, and its dev-build
+      # owner stacks made the large page suites (SettingsPage, NewTestPage,
+      # ScriptEditor, TestHub) several times slower, so SettingsPage tests hit
+      # the 5 s limit. Remove these four entries to take the react-major
+      # group again.
+      - dependency-name: react
+        update-types:
+          - version-update:semver-major
+      - dependency-name: react-dom
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@types/react"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@types/react-dom"
+        update-types:
+          - version-update:semver-major
     labels:
       - dependencies
       - dashboard

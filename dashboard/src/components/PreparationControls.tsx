@@ -10,7 +10,7 @@ export default function PreparationControls({ testId, projectId, status, canEdit
   const [preparation, setPreparation] = useState<Preparation>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const controller = useRef<AbortController>()
+  const controller = useRef<AbortController | undefined>(undefined)
   const path = `/tests/${encodeURIComponent(testId)}/preparation`
   const preparationState = preparation?.state
   useEffect(() => {

@@ -11,7 +11,7 @@ export default function AnalysisSavedMappings({ projectId, mapping, canEdit, onL
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [revision, setRevision] = useState(0)
-  const saving = useRef<AbortController>()
+  const saving = useRef<AbortController | undefined>(undefined)
   useEffect(() => () => saving.current?.abort(), [projectId])
   const path = `/analysis/mappings?project_id=${encodeURIComponent(projectId)}`
   useEffect(() => {

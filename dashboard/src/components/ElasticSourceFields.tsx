@@ -64,7 +64,7 @@ export default function ElasticSourceFields({ projectId, source, onChange, onVal
   queryRowIds.current.length = Math.min(queryRowIds.current.length, selection.queries?.length || 0)
   while (queryRowIds.current.length < (selection.queries?.length || 0)) queryRowIds.current.push(nextQueryRowId.current++)
   const connection = connections.find(item => item.id === source.connection_id)
-  const inspectionScope = useRef<{ kind: 'discover_indices' | 'discover_fields' | 'preview'; key: string }>()
+  const inspectionScope = useRef<{ kind: 'discover_indices' | 'discover_fields' | 'preview'; key: string } | undefined>(undefined)
   const connectionScope = JSON.stringify([projectId, source.connection_id, connection?.revision])
   const fieldScope = JSON.stringify([connectionScope, selection.indices])
   const previewScope = JSON.stringify([connectionScope, selection, queryErrors, from, to])
