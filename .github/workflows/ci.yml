@@ -174,7 +174,7 @@ jobs:
       - name: Setup the canonical action's manifest-validation runtime
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22.22.0
+          node-version: 22.23.3
 
       - name: Test canonical composite action helpers
         run: .github/actions/apexload-run/tests/run.sh
@@ -331,7 +331,7 @@ jobs:
       - name: Setup Node for React recording regression
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '22.22.0'
+          node-version: '22.23.3'
 
       - name: Install React recording fixture dependencies
         working-directory: dashboard
@@ -560,7 +560,7 @@ jobs:
       - name: Setup Node 22
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22.22.0
+          node-version: 22.23.3
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
 
@@ -662,7 +662,7 @@ jobs:
       - name: Setup Node 22
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22.22.0
+          node-version: 22.23.3
 
       - name: Setup Go from go.mod
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
