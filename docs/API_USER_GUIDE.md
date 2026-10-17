@@ -512,6 +512,17 @@ match what the target received, read `metric_populations` (`action` for requests
 neither) or the `by_request` and `by_transaction` maps; the dashboard's report pages
 read these.
 
+Percentiles say how they were computed in `percentile_quality`. The archive report's
+`overview`, `metric_populations` and `by_*` rows, its SLA compliance rows and the
+manifest's `transaction_rule_results` carry `approximate` once their percentiles
+come from the duration sketch: past 20,000 observations for SLA rules and for the
+overview and the request and transaction populations and tables (while a report's
+40 MiB budget lasts), and past 1,024 for the other tables. Each is then within 0.5%
+of the value at its rank. A value without the field used every observation, and the
+report CSV writes `exact`. Load levels from archives older than the sketch say
+`approximate_tdigest`. Live metrics carry `approximate_tdigest` or `averaged` when a
+distributed window could not merge sketches because a generator predates them.
+
 Some reporting endpoints accept `format` or `profile` query parameters where implemented, for example `format=html|json|csv|analysis_zip|pdf|docx|jsonl|parquet` and `profile=executive|engineer|audit`. `analysis_zip` on the archive report endpoint downloads row-based CSV tables plus a data guide while the original four-column report CSV remains available.
 
 Usage accounting from `GET /api/v1/system/usage` may include a `by_user` array when run attribution exists. Each bucket follows the same usage bucket shape used by project and protocol summaries; historical runs without attribution are grouped as `unattributed`.

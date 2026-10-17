@@ -888,20 +888,6 @@ func ownerScaleContext(parent context.Context, owner *capacityOperationOwner) (c
 	}
 }
 
-func (s *Server) transitionProvisioningRequest(req *storage.ProvisioningRequest, expectedRevision int, expectedAttemptToken string) error {
-	if cas, ok := s.store.(provisioningRequestCASStore); ok {
-		changed, err := cas.TransitionProvisioningRequest(req, expectedRevision, expectedAttemptToken)
-		if err != nil {
-			return err
-		}
-		if !changed {
-			return fmt.Errorf("provisioning request changed concurrently")
-		}
-		return nil
-	}
-	return s.store.SaveProvisioningRequest(req)
-}
-
 func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.Request) {
 	if !s.requireExecutionLeader(w) {
 		return
