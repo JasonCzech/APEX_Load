@@ -99,6 +99,7 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
+	attempt.retainUpdateRecovery(updateTargets)
 	finished := false
 	assetsCommitted := false
 	var transaction *createImportTransaction
@@ -286,9 +287,8 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 		}
 	}
 
-	// Recovery above adopted an update an earlier attempt applied; anything
-	// else must still be the version the operator reviewed.
-	if !requireReviewedImportUpdates(w, updateTargets, updates) {
+	reconciledUpdates, validUpdates := s.reconcileImportUpdates(w, attempt, prepared, updateTargets, updates)
+	if !validUpdates {
 		return
 	}
 	transaction, err = newImportTransaction(s, enterpriseArchiveSaveProfile, prepared, updates, "", nil)
@@ -296,6 +296,8 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusInternalServerError, "failed to prepare enterprise archive batch: "+err.Error())
 		return
 	}
+	transaction.reconciledUpdates = reconciledUpdates
+
 	stored := make([]*StoredScript, 0, len(prepared))
 	for index, script := range prepared {
 		if err := attempt.renew(); err != nil {

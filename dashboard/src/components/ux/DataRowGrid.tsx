@@ -99,6 +99,11 @@ export default function DataRowGrid({
   // only the buttons wait for the request.
   const locked = disabled || busy
   const failureId = `${tableId}-cell-failure`
+  const stageCell = (key: string, value: string) => {
+    const next = { ...draftsRef.current, [key]: value }
+    draftsRef.current = next
+    setDrafts(current => ({ ...current, [key]: value }))
+  }
 
   // A live region only speaks when its text changes, so a repeat of the same
   // message alternates a trailing no-break space.
@@ -119,7 +124,7 @@ export default function DataRowGrid({
     const row = rowsRef.current.find(candidate => candidate.id === rowId)
     if (!row || !(key in draftsRef.current)) return
     const value = draftsRef.current[key]
-    const unchanged = Object.prototype.hasOwnProperty.call(row.values, column) ? row.values[column] === value : value === ''
+    const unchanged = Object.prototype.hasOwnProperty.call(row.values, column) && row.values[column] === value
     if (unchanged && !force) {
       setDrafts(current => without(current, key))
       setFailed(current => without(current, key))
@@ -164,7 +169,9 @@ export default function DataRowGrid({
   }
 
   const submitNewRow = async (refocus: boolean) => {
-    const values = Object.fromEntries(Object.entries(newRow).filter(([, value]) => value !== ''))
+    // The draft contains only touched columns. An explicitly cleared cell is
+    // present with an empty string; untouched columns remain absent.
+    const values = { ...newRow }
     if (Object.keys(values).length === 0) {
       setNotice('Type at least one value before adding the row.')
       return
@@ -343,12 +350,13 @@ export default function DataRowGrid({
                     disabled={disabled}
                     onChange={event => {
                       const next = event.target.value
-                      setDrafts(current => ({ ...current, [key]: next }))
+                      stageCell(key, next)
                     }}
                     onPaste={onCellPaste}
                     onBlur={() => void commitCell(row.id, column)}
                     onKeyDown={event => onCellKeyDown(event, rowIndex, columnIndex, row)}
                   />
+                  {markEmpty && !present && !(key in drafts) && <button type="button" className="data-grid-set-empty" disabled={disabled} aria-label={`Set ${column} empty, row ${number}`} onClick={() => { stageCell(key, ''); focusCell(rowIndex, columnIndex); void commitCell(row.id, column) }}>Set empty</button>}
                 </td>
               })}
               {visibleDetails && <td className="data-grid-details">{row.details}</td>}
@@ -371,6 +379,7 @@ export default function DataRowGrid({
                 onPaste={event => onNewRowPaste(event, columnIndex)}
                 onKeyDown={event => onCellKeyDown(event, rows.length, columnIndex)}
               />
+              {markEmpty && !(column in newRow) && <button type="button" className="data-grid-set-empty" disabled={disabled} aria-label={`Set ${column} empty, new row`} onClick={() => { setNewRow(current => ({ ...current, [column]: '' })); focusCell(rows.length, columnIndex) }}>Set empty</button>}
             </td>)}
             {visibleDetails && <td><span className="sr-only">No details until the row is added</span></td>}
             <td className="data-grid-actions">

@@ -1,0 +1,26 @@
+//go:build analytics_duckdb && cgo
+
+package duckdb
+
+import (
+    "context"
+    "testing"
+    "time"
+    "github.com/jasonczech/apexload/pkg/analysis"
+)
+
+func TestMonthlyReviewSummaryWindowBoundaries(t *testing.T) {
+    cases := []struct{name, fixture string; duration time.Duration; bucket int}{
+        {"overlapping count windows", "SELECT * FROM (VALUES (1700000040, 60.0), (1700000070, 60.0)) t(ts, n)", 120*time.Second, 120},
+        {"summary extends past query end", "SELECT 1700000040 AS ts, 60.0 AS n", 30*time.Second, 60},
+    }
+    for _, tc := range cases { t.Run(tc.name, func(t *testing.T) {
+        e, path := nativeFixture(t, tc.fixture)
+        mapping := Mapping{Version:1, Timestamp:Column{"ts"}, TimestampEncoding:"unix_s", Timezone:"UTC", Measures:[]Measure{summaryFixtureMeasure("n", "requests", "count", "count")}}
+        result := normalizeSummaryFixture(t, e, path, mapping, false)
+        start := summaryStart()
+        points, err := e.Series(context.Background(), result.Files, SeriesQuery{ProjectID:"p", DatasetID:"d", Metric:"requests", From:start, To:start.Add(tc.duration), BucketSeconds:tc.bucket, Aggregation:"count"})
+        if err != nil { t.Fatal(err) }
+        for _, p := range points { if p.Quality == analysis.QualityValid { t.Errorf("inexact summary reported as valid: value=%v timestamp=%s derivation=%+v", *p.Value, p.TimestampUTC, p.Derivation) } }
+    }) }
+}

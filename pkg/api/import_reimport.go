@@ -345,11 +345,15 @@ func importUpdateTargetsDigestValue(targets []*importUpdateTarget) []any {
 // projectID. A failed check wraps errImportUpdateTargetStale and says why.
 // Whether it is still the version reviewed is checked once a retry has had
 // the chance to adopt what an earlier attempt saved
-// (requireReviewedImportUpdates).
+// (reconcileImportUpdates).
 func (s *Server) importUpdateTargetScript(projectID string, draft *dsl.Script, target importUpdateTarget) (*StoredScript, error) {
+	existing, _ := s.runner.GetScript(target.ScriptID)
+	return validateImportUpdateTargetScript(projectID, draft, target, existing)
+}
+
+func validateImportUpdateTargetScript(projectID string, draft *dsl.Script, target importUpdateTarget, existing *StoredScript) (*StoredScript, error) {
 	stale := func(reason string) error { return staleImportUpdate(reason) }
-	existing, ok := s.runner.GetScript(target.ScriptID)
-	if !ok || existing == nil || existing.Script == nil || existing.ID != target.ScriptID ||
+	if existing == nil || existing.Script == nil || existing.ID != target.ScriptID ||
 		normalizeProjectID(existing.ProjectID) != normalizeProjectID(projectID) {
 		return nil, stale("the script to update no longer exists")
 	}
@@ -363,6 +367,47 @@ func (s *Server) importUpdateTargetScript(projectID string, draft *dsl.Script, t
 		return nil, stale("the script to update was not imported from this source")
 	}
 	return existing, nil
+}
+
+// reconcileImportUpdates classifies each update separately after the receipt
+// and old transaction claims have been fenced. Exact prior mutations are
+// adopted only on a retry of that same request; pending items still require
+// their reviewed baseline. A single unfinished item must not invalidate the
+// already-applied items, nor authorize overwriting a different intervening edit.
+func (s *Server) reconcileImportUpdates(w http.ResponseWriter, attempt *directImportAttempt, prepared []*dsl.Script, targets []*importUpdateTarget, updates map[string]*StoredScript) (map[string]*StoredScript, bool) {
+	reconciled := make(map[string]*StoredScript)
+	for index, target := range targets {
+		if target == nil {
+			continue
+		}
+		existing := updates[target.ScriptID]
+		if attempt != nil && !attempt.created {
+			stored, _, err := s.runner.GetScriptDurable(target.ScriptID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to read re-import update target: "+err.Error())
+				return nil, false
+			}
+			if index >= len(prepared) || prepared[index] == nil {
+				writeImportUpdateTargetStale(w, index, staleImportUpdate("the prepared update is missing"))
+				return nil, false
+			}
+			existing, err = validateImportUpdateTargetScript(prepared[index].ProjectID, prepared[index], *target, stored)
+			if err != nil {
+				writeImportUpdateTargetStale(w, index, err)
+				return nil, false
+			}
+			updates[target.ScriptID] = existing
+			if equivalentCreateOnlyScript(existing.Script, prepared[index]) {
+				reconciled[target.ScriptID] = existing
+				continue
+			}
+		}
+		if existing == nil || !importUpdateTargetReviewed(existing.Script, *target) {
+			writeImportUpdateTargetStale(w, index, staleImportUpdate("the script to update changed after review"))
+			return nil, false
+		}
+	}
+	return reconciled, true
 }
 
 // importUpdateTargetReviewed reports whether script is still the version the
@@ -379,24 +424,6 @@ func importUpdateTargetReviewed(script *dsl.Script, target importUpdateTarget) b
 	}
 	current, err := importedScriptContentDigest(script)
 	return err == nil && current == target.ExpectedContentDigest
-}
-
-// requireReviewedImportUpdates writes a 409 and returns false when a script a
-// save updates is no longer the version the operator reviewed. A save calls
-// it after recovery, so a retry first adopts an update its earlier attempt
-// applied.
-func requireReviewedImportUpdates(w http.ResponseWriter, targets []*importUpdateTarget, updates map[string]*StoredScript) bool {
-	for index, target := range targets {
-		if target == nil {
-			continue
-		}
-		existing := updates[target.ScriptID]
-		if existing == nil || !importUpdateTargetReviewed(existing.Script, *target) {
-			writeImportUpdateTargetStale(w, index, staleImportUpdate("the script to update changed after review"))
-			return false
-		}
-	}
-	return true
 }
 
 // sameImportUpdateTime compares a stored script's update time with the one a
@@ -510,6 +537,17 @@ func writeImportUpdateTargetStale(w http.ResponseWriter, index int, err error) {
 // saveImportedScript updates the earlier script the transaction reserved for
 // script.ID as a new version, or creates script.
 func (tx *createImportTransaction) saveImportedScript(script *dsl.Script, sourceProfile string) (*StoredScript, error) {
+	if tx != nil && !tx.closed && script != nil && tx.reconciledUpdates[strings.TrimSpace(script.ID)] != nil {
+		current, found, err := tx.server.runner.GetScriptDurable(script.ID)
+		if err != nil {
+			return nil, err
+		}
+		if !found || current == nil || !equivalentCreateOnlyScript(current.Script, script) {
+			return nil, staleImportUpdate("a reconciled script changed before the batch resumed")
+		}
+		tx.appliedUpdates[script.ID] = true
+		return current, nil
+	}
 	if tx != nil && script != nil && tx.updates[strings.TrimSpace(script.ID)] != nil {
 		return tx.updateImportedScript(script, sourceProfile)
 	}

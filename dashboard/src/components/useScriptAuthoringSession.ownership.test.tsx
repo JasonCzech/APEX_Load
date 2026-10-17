@@ -184,6 +184,7 @@ describe('scriptSaveAvailability', () => {
       [{ saving: true }, 'Saving script'],
       [{ validating: true }, 'Wait for validation to finish before saving'],
       [{ jsonParseMessage: 'bad' }, 'Fix invalid Script JSON before saving'],
+      [{ fieldDraftProblem: 'Enter valid JSON.' }, 'Fix action fields before saving'],
       [{ dirty: false }, 'No unsaved changes to save'],
       [{ hasName: false }, 'Enter a script name before saving'],
       [{ baseURLError: 'Base URL is invalid' }, 'Base URL is invalid'],

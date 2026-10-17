@@ -1,3 +1,4 @@
+{{- $upgradeValues := include "apexload.upgradeValues" . | fromJson -}}
 apiVersion: v1
 kind: Service
 {{- $controllerAddr := trim (default ":8080" .Values.controller.addr) }}
@@ -183,7 +184,7 @@ spec:
           env:
 {{ include "apexload.http3Env" . | indent 12 }}
             - name: APEXLOAD_HTTP3_PREFLIGHT
-              value: {{ .Values.http3.preflight | quote }}
+              value: {{ $upgradeValues.http3.preflight | quote }}
             - name: APEXLOAD_K8S_RESTART_ENABLED
               value: {{ $restartControls.enabled | quote }}
 {{- if $restartControls.enabled }}
@@ -219,7 +220,7 @@ spec:
 {{ end }}
             - name: APEXLOAD_ARCHIVE_DIR
               value: /var/lib/apexload/archives
-{{- if .Values.archiveStaging.persistence.enabled }}
+{{- if $upgradeValues.archiveStaging.persistence.enabled }}
             - name: APEXLOAD_ARCHIVE_STAGING_DIR
               value: /var/lib/apexload/archives/_object_staging
             - name: APEXLOAD_ARCHIVE_READER_CACHE_DIR
@@ -275,7 +276,7 @@ spec:
               mountPath: /tmp
             - name: data
               mountPath: /var/lib/apexload
-{{- if .Values.archiveStaging.persistence.enabled }}
+{{- if $upgradeValues.archiveStaging.persistence.enabled }}
             - name: archive-staging
               mountPath: /var/lib/apexload/archives
 {{- end }}
@@ -315,7 +316,7 @@ spec:
         - name: data
           emptyDir:
             sizeLimit: {{ .Values.controller.scratch.dataSizeLimit }}
-{{- if .Values.archiveStaging.persistence.enabled }}
+{{- if $upgradeValues.archiveStaging.persistence.enabled }}
         - name: archive-staging
           persistentVolumeClaim:
             claimName: {{ include "apexload.archiveStagingClaimName" . | quote }}

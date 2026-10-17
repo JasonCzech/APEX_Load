@@ -96,8 +96,8 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
     EndpointTool("script_create", "POST", "/scripts", f"{WRITE} Create a script.", True, False, True),
     EndpointTool("script_archive", "POST", "/scripts/{id}/archive", f"{WRITE} Archive a script; provide its current updated_at in body.", True),
     EndpointTool("script_restore", "POST", "/scripts/{id}/restore", f"{WRITE} Restore a script; provide its current updated_at in body.", True),
-    EndpointTool("script_get", "GET", "/scripts/{id}", f"{READ} Get a script."),
-    EndpointTool("script_update", "PUT", "/scripts/{id}", f"{WRITE} Update a script.", True),
+    EndpointTool("script_get", "GET", "/scripts/{id}", f"{READ} Get a script. Use query.view=authoring to read its editable projection and response etag for a conditional save."),
+    EndpointTool("script_update", "PUT", "/scripts/{id}", f"{WRITE} Update a script. Pass if_match with the etag from script_get(query.view=authoring); required when the project requires conditional saves. A 412 requires reading and reconciling the current document, not retrying automatically.", True),
     EndpointTool("script_delete", "DELETE", "/scripts/{id}", f"{DESTRUCTIVE} Delete a script.", True, True),
     EndpointTool("script_move", "PATCH", "/scripts/{id}/move", f"{WRITE} Move a script.", True),
     EndpointTool("script_recording_status", "GET", "/scripts/{id}/recording/status", f"{READ} Check whether a recorded baseline exists for a script."),
@@ -146,8 +146,8 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
     EndpointTool("scenario_validate_load_model", "POST", "/scenarios/validate-load-model", "Validate a scenario load model without saving."),
     EndpointTool("scenario_archive", "POST", "/scenarios/{id}/archive", f"{WRITE} Archive a scenario; provide its current updated_at in body.", True),
     EndpointTool("scenario_restore", "POST", "/scenarios/{id}/restore", f"{WRITE} Restore a scenario; provide its current updated_at in body.", True),
-    EndpointTool("scenario_get", "GET", "/scenarios/{id}", f"{READ} Get a scenario."),
-    EndpointTool("scenario_update", "PUT", "/scenarios/{id}", f"{WRITE} Update a scenario.", True),
+    EndpointTool("scenario_get", "GET", "/scenarios/{id}", f"{READ} Get a scenario. Use query.view=authoring to read its editable projection and response etag for a conditional save."),
+    EndpointTool("scenario_update", "PUT", "/scenarios/{id}", f"{WRITE} Update a scenario. Pass if_match with the etag from scenario_get(query.view=authoring); required when the project requires conditional saves. A 412 requires reading and reconciling the current document, not retrying automatically.", True),
     EndpointTool("scenario_delete", "DELETE", "/scenarios/{id}", f"{DESTRUCTIVE} Delete a scenario.", True, True),
     EndpointTool("scenario_load_model_support_matrix", "GET", "/scenarios/load-models/support-matrix", f"{READ} Get load model support."),
     EndpointTool("scenario_load_model_templates", "GET", "/scenarios/load-models/templates", f"{READ} Get load model templates."),
@@ -376,6 +376,7 @@ async def run_endpoint_tool(
     path_params: JsonMap | None = None,
     query: JsonMap | None = None,
     payload: Any | None = None,
+    if_match: str | None = None,
     confirm: bool = False,
     reason: str = "",
     client: APEXLoadClient | None = None,
@@ -395,6 +396,7 @@ async def run_endpoint_tool(
         resolved_path,
         query=with_default_project(active_client, query, spec.default_project),
         payload=payload,
+        headers={"If-Match": if_match} if if_match is not None else None,
     )
     return json_text(response)
 
@@ -429,6 +431,7 @@ def register_endpoint_tools(mcp: Any) -> None:
                 path_params: dict[str, Any] | None = None,
                 query: dict[str, Any] | None = None,
                 payload: dict[str, Any] | list[Any] | None = None,
+                if_match: str | None = None,
                 confirm: bool = False,
                 reason: str = "",
             ) -> str:
@@ -437,6 +440,7 @@ def register_endpoint_tools(mcp: Any) -> None:
                     path_params=path_params,
                     query=query,
                     payload=payload,
+                    if_match=if_match,
                     confirm=confirm,
                     reason=reason,
                 )

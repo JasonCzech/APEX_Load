@@ -70,23 +70,20 @@ func (s *SQLiteStore) CreateScenarioDraft(draft *ScenarioDraft) error {
 // UpdateScenarioDraftIfRevision replaces a draft's name, scenario and
 // document when it is still at expectedRevision, and advances the revision.
 // It reports false when the draft is missing or another save came first.
+// On success draft contains this mutation's snapshot, even if a subsequent
+// writer has already advanced the persisted revision.
 func (s *SQLiteStore) UpdateScenarioDraftIfRevision(draft *ScenarioDraft, expectedRevision int64) (bool, error) {
 	if draft == nil || strings.TrimSpace(draft.ID) == "" || strings.TrimSpace(draft.Name) == "" || draft.Document == "" {
 		return false, errors.New("scenario draft id, name and document are required")
 	}
 	draft.ProjectID = normalizeProjectID(draft.ProjectID)
 	now := time.Now().UTC()
-	result, err := s.db.Exec(`UPDATE scenario_drafts SET scenario_id = ?, name = ?, document_json = ?, revision = revision + 1, updated_by = ?, updated_at = ?
-		WHERE id = ? AND project_id = ? AND revision = ?`,
-		nullableString(draft.ScenarioID), draft.Name, draft.Document, draft.UpdatedBy, now, draft.ID, draft.ProjectID, expectedRevision)
-	if err != nil {
-		return false, err
+	stored, err := scanScenarioDraft(s.db.QueryRow(`UPDATE scenario_drafts SET scenario_id = ?, name = ?, document_json = ?, revision = revision + 1, updated_by = ?, updated_at = ?
+		WHERE id = ? AND project_id = ? AND revision = ? RETURNING `+fmt.Sprintf(scenarioDraftColumns, `document_json`),
+		nullableString(draft.ScenarioID), draft.Name, draft.Document, draft.UpdatedBy, now, draft.ID, draft.ProjectID, expectedRevision))
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
 	}
-	affected, err := result.RowsAffected()
-	if err != nil || affected != 1 {
-		return false, err
-	}
-	stored, err := s.GetScenarioDraft(draft.ProjectID, draft.ID)
 	if err != nil {
 		return false, err
 	}

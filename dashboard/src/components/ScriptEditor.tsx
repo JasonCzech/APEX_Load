@@ -233,6 +233,7 @@ import {
 } from './useScriptJsonAuthoringController'
 import { useScriptAuthoringSession, type ResolvedScriptDraft } from './useScriptAuthoringSession'
 import { draftFingerprint, scriptSaveAvailability, validationContextKey } from './scriptAuthoringSession'
+import { CatalogFieldDraftContext, useCatalogFieldDrafts } from './catalogFieldDrafts'
 import {
   buildBrowserHTTPConversionReview,
   replayEvidenceIndex,
@@ -1509,6 +1510,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const runningSaveRef = useRef<{ scope: object; outcome: Promise<boolean>; result: { laterEdits: boolean } } | null>(null)
   const pendingParameterDataCellEditsRef = useRef(new Map<string, PendingParameterDataCellEdit>())
   const parameterDataEditGenerationRef = useRef(0)
+  const catalogFieldDrafts = useCatalogFieldDrafts(currentDraftScript, () => { parameterDataEditGenerationRef.current += 1 })
+  const clearCatalogFieldDrafts = catalogFieldDrafts.clear
+  const catalogResourceRef = useRef({ scriptId, projectId, folderId })
   const [pendingParameterDataCellEditCount, setPendingParameterDataCellEditCount] = useState(0)
   const stageParameterDataCellEdit = useCallback((change: ParameterDataCellDraftChange) => {
     const key = parameterDataCellEditKey(change)
@@ -1554,8 +1558,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     debugMutationSequenceRef.current += 1
   }
   const validationDocumentKey = useMemo(
-    () => jsonParseMessage ? null : jsonDirty ? formatScriptJson(currentDraftScript) : formattedScriptJson,
-    [currentDraftScript, formattedScriptJson, jsonDirty, jsonParseMessage],
+    () => jsonParseMessage || catalogFieldDrafts.count ? null : jsonDirty ? formatScriptJson(currentDraftScript) : formattedScriptJson,
+    [currentDraftScript, formattedScriptJson, jsonDirty, jsonParseMessage, catalogFieldDrafts.count],
   )
   // A validation result depends on the project, folder and replay variables
   // it was issued with as well as the document and its baseline revision.
@@ -1610,7 +1614,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       resourceScopeRef: editorResourceScopeRef,
       mountedRef: editorMountedRef,
       documentKeyRef: validationDocumentKeyRef,
-      hasPendingEdits: () => pendingParameterDataCellEditsRef.current.size > 0,
+      hasPendingEdits: () => pendingParameterDataCellEditsRef.current.size > 0 || catalogFieldDrafts.hasPending(),
       onHydrate: baselineScript => {
         setAuthorCodeFocus(null)
         setShowFullScriptJson(false)
@@ -1621,6 +1625,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         setJsonText(formatScriptJson(adopted))
         setJsonDirty(false)
         clearPendingParameterDataCellEdits()
+        clearCatalogFieldDrafts()
         markBaseline(baselineScript)
         setError('')
         setSuccess(reapplied ? 'Draft reapplied to the reviewed baseline. Review its fields, then save explicitly.' : 'Loaded the current script; the previous draft was discarded.')
@@ -1629,7 +1634,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     document: {
       initialRetainedDraft,
       jsonDirty,
-      pendingEditCount: pendingParameterDataCellEditCount,
+      pendingEditCount: pendingParameterDataCellEditCount + catalogFieldDrafts.count,
       formattedDocument: formattedScriptJson,
       savedDocumentKey: baselineJsonRef.current,
     },
@@ -1653,6 +1658,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     const ownEcho = ownSavedEditorEchoRef.current
     const canonicalEcho = ownEcho && scriptId === ownEcho.id && (projectId === undefined || projectId === ownEcho.projectId)
       && initialScriptDocumentKey === ownEcho.documentKey
+    const previousCatalogResource = catalogResourceRef.current
+    catalogResourceRef.current = { scriptId, projectId, folderId }
+    const sameCatalogResource = previousCatalogResource.scriptId === scriptId && previousCatalogResource.projectId === projectId && previousCatalogResource.folderId === folderId
+    const equivalentBaselineEcho = hydratedInitialScriptRef.current?.scriptId === scriptId && initialScriptDocumentKey === baselineJsonRef.current
+    // Match hydration's equivalent-baseline rule: fresh props for the same
+    // baseline must not silently discard unresolved catalog text.
+    if (!canonicalEcho && !(sameCatalogResource && equivalentBaselineEcho)) clearCatalogFieldDrafts()
     if (!canonicalEcho) {
       clearPendingParameterDataCellEdits()
       pendingCreatedSecretNamesRef.current = [...(initialRetainedCreatedSecretNames || [])]
@@ -1694,6 +1706,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     projectId,
     scriptId,
     clearPendingParameterDataCellEdits,
+    clearCatalogFieldDrafts,
+    baselineJsonRef,
     invalidateValidation,
     publishRuntimeAdmission,
     setActiveReplaySessionId,
@@ -2932,11 +2946,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     script: ScriptData
     editGeneration: number
   } => {
+    const resolvedCatalogScript = catalogFieldDrafts.resolve(baseScript)
     const edits = Array.from(pendingParameterDataCellEditsRef.current.values())
     const editGeneration = parameterDataEditGenerationRef.current
-    if (edits.length === 0) return { script: baseScript, editGeneration }
+    if (edits.length === 0 && resolvedCatalogScript === baseScript) return { script: baseScript, editGeneration }
 
-    const nextScript = applyPendingParameterDataCellEdits(baseScript, edits)
+    const nextScript = applyPendingParameterDataCellEdits(resolvedCatalogScript, edits)
     const affectedSourceIndexes = Array.from(new Set(edits.map(edit => edit.sourceIndex)))
     setDataSourceHistory(history => {
       const nextHistory = { ...history }
@@ -2952,6 +2967,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       return nextHistory
     })
     clearPendingParameterDataCellEdits()
+    clearCatalogFieldDrafts()
     commitJsonDraft(nextScript)
     return { script: nextScript, editGeneration }
   }
@@ -2959,25 +2975,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   flushPendingEditsRef.current = flushPendingParameterDataCellEdits
 
   const handleDownloadScript = useCallback(async () => {
-    const filename = `${sanitizeDownloadName(currentDraftScript.name, 'script')}.json`
-    if (!scriptId || scriptEditorDirty) {
-      await exportGeneratedTextFile(jsonText || formatScriptJson(script), filename)
-      return
-    }
     setError('')
     try {
+      const draft = resolveDraft().script
+      const filename = `${sanitizeDownloadName(draft.name, 'script')}.json`
+      if (!scriptId || scriptEditorDirty) {
+        await exportGeneratedTextFile(formatScriptJson(draft), filename)
+        return
+      }
       const content = await api.downloadScript(scriptId)
       await exportGeneratedTextFile(content, filename)
     } catch (cause: unknown) {
       setError(getErrorMessage(cause, 'Failed to download script'))
     }
-  }, [api, currentDraftScript.name, exportGeneratedTextFile, jsonText, script, scriptEditorDirty, scriptId, setError])
+  }, [api, exportGeneratedTextFile, resolveDraft, scriptEditorDirty, scriptId, setError])
 
   const draftBaseURLError = scriptBaseURLError(currentDraftScript)
   const { disabled: saveScriptDisabled, title: saveScriptTitle } = scriptSaveAvailability({
     opening: savedScriptOpening && !scriptId,
     stored: Boolean(scriptId), revisionState: authoringRevisionState, hasBaseline: Boolean(authoringBaseline), saving, secretBindingsOpen, validating,
-    dirty: scriptEditorDirty, hasName: Boolean(currentDraftScript.name), jsonParseMessage: jsonParseMessage || '', baseURLError: draftBaseURLError || '',
+    dirty: scriptEditorDirty, hasName: Boolean(currentDraftScript.name), jsonParseMessage, fieldDraftProblem: catalogFieldDrafts.problem, baseURLError: draftBaseURLError || '',
   })
   const validateScriptDisabled = saving || replaying || validating || !currentDraftScript.name
   const validateScriptTitle = validating
@@ -5918,6 +5935,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const renderActionInspectorContent = (): ReactNode => (
     activeInspectorScope ? (
       <ReferenceFieldContext.Provider value={referenceFieldContext}>
+        <CatalogFieldDraftContext.Provider value={catalogFieldDrafts.forAction(activeInspectorScope.key, activeInspectorScope.action, { disabled: saving || savedScriptOpening || jsonDirty, sourcePending: jsonDirty })}>
         <p className="inspector-selection-path" title={`${actionBreadcrumb(script, authorCodeFocus || activeInspectorScope)} (${activeInspectorScope.path})`}>{actionBreadcrumb(script, authorCodeFocus || activeInspectorScope)}<small>{activeInspectorScope.path}</small></p>
         <ActionEditor inspector initialSection={inspectorFocusSection} key={`${activeInspectorScope.path}:${inspectorFocusSection}`}
           onOpenBody={() => { openCenterTab('request-body'); setNarrowAuthorPane('editor') }}
@@ -5951,6 +5969,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           checksReplay={checksReplay.replay}
           checksUnavailable={checksReplay.unavailable}
         />
+        </CatalogFieldDraftContext.Provider>
       </ReferenceFieldContext.Provider>
     ) : null
   )
@@ -6507,11 +6526,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         selectedJsonUnavailable={selectedJsonUnavailable}
         onShowFullScriptJson={setShowFullScriptJson}
         onCopySelected={() => void navigator.clipboard?.writeText(selectedAuthorJsonText)}
-        onDownloadSelected={() => {
-          if (selectedAuthorJsonScope) {
-            void exportGeneratedTextFile(selectedAuthorJsonText, `${sanitizeDownloadName(selectedAuthorJsonScope.label, 'selected-action')}.json`)
+        onDownloadSelected={() => { void (async () => {
+          if (!selectedAuthorJsonScope) return
+          setError('')
+          try {
+            const draft = resolveDraft().script
+            const scope = resolveAuthorJsonScopeByKey(draft, selectedAuthorJsonScope.key)
+            if (!scope) throw new Error('Select an action before downloading it.')
+            await exportGeneratedTextFile(JSON.stringify(scope.action, null, 2), `${sanitizeDownloadName(scope.label, 'selected-action')}.json`)
+          } catch (cause: unknown) {
+            setError(getErrorMessage(cause, 'Failed to download the selected action'))
           }
-        }}
+        })() }}
         sourcePane={{
           value: jsonText,
           status: jsonStatus,
@@ -6906,6 +6932,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }
 
   return (<>
+    {catalogFieldDrafts.problem && <div className="form-error" role="alert">
+      Fix action fields before saving: {catalogFieldDrafts.problem}{' '}
+      <button type="button" className="btn btn-ghost btn-sm" onClick={clearCatalogFieldDrafts}>Discard field edits</button>
+    </div>}
     {/* The return target (an import review this draft came from) leaves the
         editor through the session's guard, as Close does. */}
     {returnTarget && <div className="authoring-return-bar">

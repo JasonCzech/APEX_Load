@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useContext, useId, useState, type ReactNode } from 'react'
 
 import type { ScriptActionDefinition } from '../types/scripts'
 import { dslSpecForActionType, useDslActionCatalog, type DslCatalogAction, type DslCatalogField, type DslCatalogVariant } from './dslActionCatalog'
@@ -20,6 +20,7 @@ import {
 import ColumnChips from './ux/ColumnChips'
 import DataRowGrid from './ux/DataRowGrid'
 import ReferenceField from './ReferenceField'
+import { CatalogFieldDraftContext, useCatalogFieldDraft } from './catalogFieldDrafts'
 import './CatalogActionForm.css'
 
 type Action = ScriptActionDefinition
@@ -47,6 +48,7 @@ function SourceLink({ onOpenSource }: { onOpenSource?: () => void }) {
  */
 export default function CatalogActionForm({ action, index, onUpdate, context, onOpenSource }: Props) {
   const { catalog, status, retry } = useDslActionCatalog()
+  const sourcePending = useContext(CatalogFieldDraftContext)?.sourcePending ?? false
   if (status === 'loading') return <p className="form-hint full-width catalog-form-state" role="status">Loading this action’s fields…</p>
   if (status === 'failed' || !catalog) {
     return <div className="form-hint full-width catalog-form-state" role="alert">
@@ -66,7 +68,12 @@ export default function CatalogActionForm({ action, index, onUpdate, context, on
       This editor needs a newer controller to edit this action’s operations; edit it in DSL meanwhile. <SourceLink onOpenSource={onOpenSource} />
     </div>
   }
-  return <CatalogFields spec={spec} action={action} index={index} onUpdate={onUpdate} context={context} onOpenSource={onOpenSource} />
+  return <>
+    {sourcePending && <p className="form-hint" role="status">Apply or reset the DSL changes before editing these fields.</p>}
+    <fieldset className="catalog-form-fields" aria-label="Action fields" disabled={sourcePending}>
+      <CatalogFields spec={spec} action={action} index={index} onUpdate={onUpdate} context={context} onOpenSource={onOpenSource} />
+    </fieldset>
+  </>
 }
 
 function CatalogFields({ spec, action, index, onUpdate, context, onOpenSource }: Props & { spec: DslCatalogAction }) {
@@ -202,7 +209,7 @@ function CatalogField({ field, action, required, count, context, onChange }: Fie
   if (field.kind === 'bool') {
     return <label className="checkbox-label full-width"><input type="checkbox" checked={value === true} aria-describedby={describedBy} onChange={event => onChange(event.target.checked ? true : undefined)} /><span>{label}</span>{hint}</label>
   }
-  if (widget === 'int64' || field.kind === 'int64') return <Int64Field caption={caption} hint={hint} describedBy={describedBy} value={value} onChange={onChange} />
+  if (widget === 'int64' || field.kind === 'int64') return <Int64Field field={field.name} caption={caption} hint={hint} describedBy={describedBy} value={value} onChange={onChange} />
   if (field.kind === 'int' || field.kind === 'float') {
     const unit = widget === 'duration-ms' ? 'ms' : ''
     return <label><span>{caption}</span>
@@ -213,7 +220,7 @@ function CatalogField({ field, action, required, count, context, onChange }: Fie
       </span>
       {field.maximum ? <small>At most {field.maximum.toLocaleString()}{unit ? ` ${unit}` : ''}.</small> : null}{hint}</label>
   }
-  if (field.kind === 'object' || field.kind === 'array' || field.kind === 'any') return <JsonField caption={caption} hint={hint} describedBy={describedBy} value={value} kind={field.kind} onChange={onChange} />
+  if (field.kind === 'object' || field.kind === 'array' || field.kind === 'any') return <JsonField field={field.name} caption={caption} hint={hint} describedBy={describedBy} value={value} kind={field.kind} onChange={onChange} />
   const suggestions = widget === 'alias' ? context?.aliases || [] : widget === 'output-ref' ? context?.outputs[(field.output_kind || '') as keyof LiveTableFormContext['outputs']] || [] : []
   const text = typeof value === 'string' ? value : value === undefined ? '' : String(value)
   // A top-level field (target, value) stays a string when cleared; a nested one goes.
@@ -236,38 +243,43 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.values(value).every(item => typeof item === 'string')
 }
 
-function Int64Field({ caption, hint, describedBy, value, onChange }: { caption: ReactNode; hint: ReactNode; describedBy?: string; value: unknown; onChange: (value: unknown) => void }) {
+function Int64Field({ field, caption, hint, describedBy, value, onChange }: { field: string; caption: ReactNode; hint: ReactNode; describedBy?: string; value: unknown; onChange: (value: unknown) => void }) {
   const id = useId()
   const stored = typeof value === 'string' ? value : typeof value === 'number' ? String(value) : ''
-  const [text, setText] = useState(stored)
-  useEffect(() => { setText(current => current === stored || (current !== '' && int64Problem(current)) ? current : stored) }, [stored])
+  const { draft, change, disabled } = useCatalogFieldDraft(field, value)
+  const text = draft?.text ?? stored
   const problem = text === '' ? '' : int64Problem(text)
   return <label><span>{caption}</span>
-    <input type="text" inputMode="numeric" value={text} aria-invalid={Boolean(problem)} aria-describedby={[problem ? `${id}-problem` : '', describedBy || ''].filter(Boolean).join(' ') || undefined}
-      onChange={event => { const next = event.target.value.trim(); setText(next); if (next === '') onChange(undefined); else if (!int64Problem(next)) onChange(next) }} />
+    <input type="text" inputMode="numeric" disabled={disabled} value={text} aria-invalid={Boolean(problem)} aria-describedby={[problem ? `${id}-problem` : '', describedBy || ''].filter(Boolean).join(' ') || undefined}
+      onChange={event => { if (disabled) return; const next = event.target.value.trim(); const error = next === '' ? '' : int64Problem(next); change(error ? { text: next, error } : null); if (!error) onChange(next === '' ? undefined : next) }} />
     {problem && <small id={`${id}-problem`} role="alert">{problem}</small>}{hint}</label>
 }
 
-function JsonField({ caption, hint, describedBy, value, kind, onChange }: { caption: ReactNode; hint: ReactNode; describedBy?: string; value: unknown; kind: string; onChange: (value: unknown) => void }) {
+function JsonField({ field, caption, hint, describedBy, value, kind, onChange }: { field: string; caption: ReactNode; hint: ReactNode; describedBy?: string; value: unknown; kind: string; onChange: (value: unknown) => void }) {
   const id = useId()
   const stored = value === undefined ? '' : JSON.stringify(value, null, 2)
-  const [text, setText] = useState(stored)
-  const [problem, setProblem] = useState('')
-  useEffect(() => { setText(stored); setProblem('') }, [stored])
-  const commit = () => {
-    if (text.trim() === '') { setProblem(''); if (value !== undefined) onChange(undefined); return }
+  const { draft, change, disabled } = useCatalogFieldDraft(field, value)
+  const text = draft?.text ?? stored
+  const problem = draft?.error || ''
+  const edit = (text: string) => {
+    if (disabled) return
+    if (text.trim() === '') { change({ text, error: '', value: undefined }); return }
     try {
       const parsed: unknown = JSON.parse(text)
       if (kind === 'object' && (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))) throw new Error('Enter a JSON object, such as {"key": "value"}.')
       if (kind === 'array' && !Array.isArray(parsed)) throw new Error('Enter a JSON list, such as ["a", "b"].')
-      setProblem('')
-      if (JSON.stringify(parsed) !== JSON.stringify(value)) onChange(parsed)
+      change({ text, error: '', value: parsed })
     } catch (error) {
-      setProblem(error instanceof SyntaxError ? 'Enter valid JSON.' : error instanceof Error ? error.message : 'Enter valid JSON.')
+      change({ text, error: error instanceof SyntaxError ? 'Enter valid JSON.' : error instanceof Error ? error.message : 'Enter valid JSON.' })
     }
   }
+  const commit = () => {
+    if (disabled || !draft || draft.error) return
+    if (JSON.stringify(draft.value) !== JSON.stringify(value)) onChange(draft.value)
+    change(null)
+  }
   return <label className="full-width"><span>{caption}</span>
-    <textarea rows={3} spellCheck={false} value={text} aria-invalid={Boolean(problem)} aria-describedby={[problem ? `${id}-problem` : '', describedBy || ''].filter(Boolean).join(' ') || undefined} onChange={event => setText(event.target.value)} onBlur={commit} />
+    <textarea rows={3} spellCheck={false} disabled={disabled} value={text} aria-invalid={Boolean(problem)} aria-describedby={[problem ? `${id}-problem` : '', describedBy || ''].filter(Boolean).join(' ') || undefined} onChange={event => edit(event.target.value)} onBlur={commit} />
     {problem && <small id={`${id}-problem`} role="alert">{problem}</small>}{hint}</label>
 }
 
