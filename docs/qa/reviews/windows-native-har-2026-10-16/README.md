@@ -297,8 +297,9 @@ The Windows HAR step must pass three runs in a row on the final code.
 Each run is recorded here as it completes. Runs 1 and 2 passed on the HAR
 code as of b10a9e6a4. `main` then changed one HAR test,
 `TestHAROwnershipCrossProcessCleaner` (#234: it now publishes its ready
-marker by rename and allows a slow child 8 s). So three more runs on the
-merged code follow.
+marker by rename and allows a slow child 8 s). It also added the Windows
+browser memory sampler to the browser package (#233). So three more runs on
+the merged code (01a0b60ed and later) follow.
 
 | # | Run, job | Commit | HAR step |
 | --- | --- | --- | --- |
