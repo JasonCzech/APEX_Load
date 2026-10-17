@@ -833,9 +833,9 @@ func TestManagementTerminalCohortCompactsWithoutChangingReplay(t *testing.T) {
 			if err := s.AbandonManagementPoll(m.ProjectID, m.CollectorID, "instance-1", poll.ID, poll.Generation, ManagementDrainProof{}, now); err != nil {
 				t.Fatal(err)
 			}
-			draining, err := s.GetManagementPoll(m.ProjectID, poll.ID)
-			if err != nil || draining.Cohort[0].Job.Source.ManagementScope == nil {
-				t.Fatalf("unresolved drain lost full cohort: %#v %v", draining, err)
+			draining, getErr := s.GetManagementPoll(m.ProjectID, poll.ID)
+			if getErr != nil || draining.Cohort[0].Job.Source.ManagementScope == nil {
+				t.Fatalf("unresolved drain lost full cohort: %#v %v", draining, getErr)
 			}
 			err = s.AbandonManagementPoll(m.ProjectID, m.CollectorID, "instance-1", poll.ID, poll.Generation, ManagementDrainProof{Kind: "completed"}, now)
 		case "unissued":
