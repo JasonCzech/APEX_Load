@@ -30,11 +30,13 @@ func TestBrowserImagesRunPlaywrightChromium(t *testing.T) {
 			}
 		}
 		for _, required := range []string{
-			"FROM debian:bookworm-slim@sha256:",
+			"FROM debian:trixie-slim@sha256:",
 			"/src/dashboard/node_modules/playwright-core-go/ /opt/playwright-driver/package/",
 			"ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright",
 			"node /opt/playwright-driver/package/cli.js install --with-deps chromium",
 			"chmod -R a+rX /ms-playwright",
+			"apt-get purge -y --auto-remove xvfb xserver-common",
+			"apt-get upgrade -y --no-install-recommends",
 			"ARG PLAYWRIGHT_DOWNLOAD_HOST",
 			"USER 65532:65532",
 		} {
@@ -48,7 +50,7 @@ func TestBrowserImagesRunPlaywrightChromium(t *testing.T) {
 		}
 	}
 	generator := read("Dockerfile.browser-generator")
-	for _, required := range []string{"node:22.22.0-bookworm-slim@sha256:", "golang:1.26.9-bookworm@sha256:", "CGO_ENABLED=0", "./cmd/generator", `test "${GO_BUILD_TAGS}" = standard`} {
+	for _, required := range []string{"node:22.23.3-bookworm-slim@sha256:", "golang:1.26.9-bookworm@sha256:", "CGO_ENABLED=0", "./cmd/generator", `test "${GO_BUILD_TAGS}" = standard`} {
 		if !strings.Contains(generator, required) {
 			t.Errorf("Dockerfile.browser-generator missing %q", required)
 		}

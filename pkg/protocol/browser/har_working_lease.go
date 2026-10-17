@@ -876,6 +876,11 @@ func PlanRuntimeHARWorkingCleanupContext(ctx context.Context, dir string, limit 
 	if limit > maxRuntimeHARWorkingGenerations {
 		limit = maxRuntimeHARWorkingGenerations
 	}
+	if !NativeHARSupported() {
+		// This platform never creates a working generation, so it has none
+		// to prove and retire.
+		return nil, nil
+	}
 	path, parent, err := openHARPublishedRoot(dir)
 	if err != nil {
 		return nil, err

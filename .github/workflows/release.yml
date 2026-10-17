@@ -389,7 +389,7 @@ jobs:
       - name: Setup Node 22
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22.22.0
+          node-version: 22.23.3
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
 
@@ -485,7 +485,7 @@ jobs:
       - name: Setup Node 22
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22.22.0
+          node-version: 22.23.3
 
       - name: Install Wails
         shell: bash
@@ -1036,7 +1036,33 @@ jobs:
           output-file: release/assets/sbom-apexload-${{ matrix.component }}-${{ matrix.profile }}-linux-arm64.spdx.json
           upload-artifact: false
 
-      - name: Block linux-amd64 high and critical findings
+      # Image vulnerability gate, the same at every scan site
+      # (scripts/image_scan_policy_test.go): every HIGH/CRITICAL OS finding is
+      # listed; OS findings block once the distribution has shipped a fix (the
+      # images apply every released fix at build time, so one means a stale
+      # base or package); application libraries are ours to update, so their
+      # findings block whether or not upstream has fixed them.
+      - name: List linux-amd64 high and critical OS findings
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.repository }}@${{ steps.platforms.outputs.amd64-digest }}
+          format: table
+          exit-code: "0"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          vuln-type: os
+
+      - name: Block fixable linux-amd64 high and critical OS findings
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.repository }}@${{ steps.platforms.outputs.amd64-digest }}
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os
+
+      - name: Block linux-amd64 high and critical library findings
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ steps.image.outputs.repository }}@${{ steps.platforms.outputs.amd64-digest }}
@@ -1044,9 +1070,29 @@ jobs:
           exit-code: "1"
           severity: HIGH,CRITICAL
           ignore-unfixed: false
-          vuln-type: os,library
+          vuln-type: library
 
-      - name: Block linux-arm64 high and critical findings
+      - name: List linux-arm64 high and critical OS findings
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.repository }}@${{ steps.platforms.outputs.arm64-digest }}
+          format: table
+          exit-code: "0"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          vuln-type: os
+
+      - name: Block fixable linux-arm64 high and critical OS findings
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.repository }}@${{ steps.platforms.outputs.arm64-digest }}
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os
+
+      - name: Block linux-arm64 high and critical library findings
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ steps.image.outputs.repository }}@${{ steps.platforms.outputs.arm64-digest }}
@@ -1054,7 +1100,7 @@ jobs:
           exit-code: "1"
           severity: HIGH,CRITICAL
           ignore-unfixed: false
-          vuln-type: os,library
+          vuln-type: library
 
       - name: Sign exact image digest with KMS or HSM key
         if: vars.COSIGN_KEY_REF != ''
