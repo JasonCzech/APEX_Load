@@ -1607,7 +1607,7 @@ func validateCorrelationJSONShape(body string) (valid bool, err error) {
 			return depth == 0 && roots == 1, nil
 		}
 		if tokenErr != nil {
-			return false, nil
+			return false, nil //nolint:nilerr // malformed JSON returns valid=false so the bounded regex fallback runs
 		}
 		tokens++
 		if tokens > maxCorrelationJSONTokens {
@@ -1671,7 +1671,7 @@ func jsonCandidatesFromParsedBodyAnalysis(body string, budget *correlationJSONWa
 	decoder := json.NewDecoder(strings.NewReader(body))
 	decoder.UseNumber()
 	if err := decoder.Decode(&value); err != nil {
-		return nil, false, false, nil
+		return nil, false, false, nil //nolint:nilerr // a body that is not one JSON document uses the regex fallbacks
 	}
 	// Decode must consume exactly one JSON document. If an XSSI prefix, JSONP
 	// wrapper, or trailing payload makes the body non-JSON, use replayable regex

@@ -712,31 +712,28 @@ func peekConnectTunnelByte(conn net.Conn, reader *bufio.Reader) (byte, error) {
 }
 
 func (r *Recorder) forwardPlainConnect(clientConn net.Conn, clientReader *bufio.Reader, hostname, host string) {
-	for {
-		_ = clientConn.SetReadDeadline(time.Now().Add(connectTunnelIdleTimeout))
-		clientReq, nextReader, err := readRecorderHTTPRequest(clientReader)
-		if err != nil {
-			if err != io.EOF {
-				slog.Debug("error reading plaintext CONNECT request", "hostname", hostname, "err", err)
-			}
-			return
+	_ = clientConn.SetReadDeadline(time.Now().Add(connectTunnelIdleTimeout))
+	clientReq, nextReader, err := readRecorderHTTPRequest(clientReader)
+	if err != nil {
+		if err != io.EOF {
+			slog.Debug("error reading plaintext CONNECT request", "hostname", hostname, "err", err)
 		}
-		clientReader = nextReader
-		_ = clientConn.SetReadDeadline(time.Time{})
-
-		r.mu.RLock()
-		session := r.active
-		r.mu.RUnlock()
-		start := time.Now()
-
-		if isWebSocketUpgrade(clientReq) {
-			r.forwardWebSocketPlainConnect(clientConn, clientReader, clientReq, hostname, host, session, start)
-			return
-		}
-
-		writeHTTPError(clientConn, http.StatusBadGateway, "unsupported plaintext CONNECT request")
 		return
 	}
+	clientReader = nextReader
+	_ = clientConn.SetReadDeadline(time.Time{})
+
+	r.mu.RLock()
+	session := r.active
+	r.mu.RUnlock()
+	start := time.Now()
+
+	if isWebSocketUpgrade(clientReq) {
+		r.forwardWebSocketPlainConnect(clientConn, clientReader, clientReq, hostname, host, session, start)
+		return
+	}
+
+	writeHTTPError(clientConn, http.StatusBadGateway, "unsupported plaintext CONNECT request")
 }
 
 type readBufferedConn struct {

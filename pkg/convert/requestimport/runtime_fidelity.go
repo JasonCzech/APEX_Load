@@ -626,7 +626,6 @@ func ApplyRuntimeFidelityReview(
 			}
 		}
 		if canPromote && common != "" {
-			configuredVersion = common
 			script.Config.HTTP.Version = common
 		}
 	}

@@ -112,7 +112,7 @@ func buildRuntimeSecretRedaction(
 	}
 	extended, err := WithScriptSourcedSecretValueRedaction(config, scriptSourced)
 	if err != nil {
-		return config, true, nil
+		return config, true, nil //nolint:nilerr // script-sourced values that do not fit are dropped and reported by the bool
 	}
 	return extended, false, nil
 }
@@ -138,7 +138,7 @@ func buildBoundedRuntimeSecretRedaction(
 	}
 	extended, err := WithScriptSourcedSecretValueRedaction(config, scriptSourced)
 	if err != nil || (extended != nil && extended.runtimePatternBytes > remainingBytes) {
-		return config, true, nil
+		return config, true, nil //nolint:nilerr // script-sourced values that do not fit are dropped and reported by the bool
 	}
 	return extended, false, nil
 }

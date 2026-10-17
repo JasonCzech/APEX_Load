@@ -168,11 +168,11 @@ func pruneBrowserStorageStateExports(now time.Time, retention time.Duration) {
 	cutoff := now.Add(-retention)
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(d.Name()) != ".json" {
-			return nil
+			return nil //nolint:nilerr // a best-effort prune skips entries it cannot read
 		}
 		info, statErr := d.Info()
 		if statErr != nil {
-			return nil
+			return nil //nolint:nilerr // a best-effort prune skips entries it cannot read
 		}
 		if info.ModTime().Before(cutoff) {
 			_ = os.Remove(path)

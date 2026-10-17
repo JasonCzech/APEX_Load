@@ -146,7 +146,7 @@ func (w *WebSocket) Execute(ctx context.Context, action *protocol.Action) (*prot
 		result.ErrorMessage = err.Error()
 		result.Snapshot = w.buildSnapshot(action, result)
 		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
-		return result, nil
+		return result, nil //nolint:nilerr // a step error is reported in the result, the protocol Execute contract
 	}
 	result.Success = true
 	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)

@@ -271,7 +271,7 @@ func InspectQueryValueStructure(value string, maxWorkBytes int) (jsonLike bool, 
 			if grammarContext && !queryValueNameByte(previous) && graphQLNumberStart(trimmed, index) {
 				end, numberErr := graphQLNumberEnd(trimmed, index)
 				if numberErr != nil {
-					return true, workBytes, nil
+					return true, workBytes, nil //nolint:nilerr // malformed number punctuation is classified JSON-like, the conservative choice
 				}
 				previous = trimmed[end-1]
 				index = end

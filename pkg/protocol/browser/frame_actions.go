@@ -679,19 +679,14 @@ func (b *Browser) dispatchSwitchWindow(ctx context.Context, action *protocol.Act
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 
-	var lastErr error
 	for {
-		if err := b.trySwitchWindow(action); err != nil {
-			lastErr = err
-		} else {
+		err := b.trySwitchWindow(action)
+		if err == nil {
 			return nil
 		}
 		select {
 		case <-switchCtx.Done():
-			if lastErr != nil {
-				return lastErr
-			}
-			return switchCtx.Err()
+			return err
 		case <-ticker.C:
 		}
 	}

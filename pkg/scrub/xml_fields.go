@@ -61,7 +61,6 @@ func redactXMLFields(value string, sensitiveName func(string) bool) string {
 		// past that malformed opening: a sensitive attribute in the skipped gap
 		// is still untrusted and must fail closed.
 		if gapSpans, found := malformedXMLOpeningTagSpans(value, searchAt, start, sensitiveName); found {
-			foundMarkup = true
 			spans = append(spans, gapSpans...)
 		}
 		foundMarkup = true
@@ -278,7 +277,7 @@ func classifiedXMLAttributeSpans(tag string, offset int, sensitiveName func(stri
 		}
 
 		valueStart := cursor
-		valueEnd := cursor
+		var valueEnd int
 		malformedSuffixStart := -1
 		malformedSuffixEnd := -1
 		switch tag[cursor] {
@@ -377,7 +376,7 @@ func xmlTagHasNamedCredential(tag string, cursor int, sensitiveName func(string)
 			continue
 		}
 		valueStart := cursor
-		valueEnd := cursor
+		var valueEnd int
 		switch tag[cursor] {
 		case '"', '\'':
 			quote := tag[cursor]

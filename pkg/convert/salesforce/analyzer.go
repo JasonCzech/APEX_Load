@@ -2288,7 +2288,7 @@ func validateSalesforceJSONShape(body string) (bool, error) {
 			return depth == 0, nil
 		}
 		if err != nil {
-			return false, nil
+			return false, nil //nolint:nilerr // malformed JSON returns valid=false and this response's shape pass is skipped
 		}
 		tokens++
 		if tokens > maxSalesforceJSONTokens {
@@ -2460,7 +2460,7 @@ func cometdCandidatesChecked(body string, budget *salesforceCorrelationBudget) (
 	}
 	var messages []map[string]any
 	if err := json.Unmarshal([]byte(trimmed), &messages); err != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr // a body that is not CometD JSON yields no candidates
 	}
 	for _, msg := range messages {
 		if channel, _ := msg["channel"].(string); channel != "/meta/handshake" {
@@ -2545,7 +2545,7 @@ func compositeCandidatesChecked(body string, budget *salesforceCorrelationBudget
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr // a body that is not composite JSON yields no candidates
 	}
 	usedNames := map[string]int{}
 	if entries, ok := decoded["compositeResponse"].([]any); ok {
@@ -3024,7 +3024,7 @@ func nestedJSONCandidatesChecked(body string, budget *salesforceCorrelationBudge
 	decoder := json.NewDecoder(strings.NewReader(body))
 	decoder.UseNumber()
 	if err := decoder.Decode(&decoded); err != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr // a body that is not one JSON document yields no candidates
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {

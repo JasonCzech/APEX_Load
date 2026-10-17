@@ -61,7 +61,7 @@ func validateHTTPSequenceActionIssues(index int, action Action) []string {
 	default:
 		issues = append(issues, fmt.Sprintf("%s: http_sequence params.requests must be an array", label))
 	}
-	if mode == HTTPSequenceConcurrent && settingsErr == nil {
+	if mode == HTTPSequenceConcurrent {
 		seen := make(map[string]bool)
 		for requestIndex, value := range httpSequenceRawRequests(requests) {
 			request, ok := httpSequenceRequestMap(value)

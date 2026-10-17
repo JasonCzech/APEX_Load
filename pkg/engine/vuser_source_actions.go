@@ -842,11 +842,6 @@ func (vu *VUser) handleSourceTransactionAction(action dsl.Action) error {
 func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, action dsl.Action) error {
 	function := normalizeSourceTransactionFunction(action)
 	args := sourceActionArgs(action)
-	// Marker names are display labels ("Start … transaction"/"End …
-	// transaction"). LoadRunner's first call argument is the authoritative
-	// business-transaction identity; fall back to Name for legacy scripts.
-	name := firstEngineValue(action.Name, args...)
-	key := strings.ToLower(strings.TrimSpace(name))
 	vu.ensureVariables()
 	switch function {
 	case "lr_start_transaction", "lr_start_sub_transaction":
@@ -857,8 +852,10 @@ func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, actio
 			}
 			return fmt.Errorf("lr_start_transaction requires a transaction name")
 		}
-		name = startName
-		key = strings.ToLower(name)
+		// The identity is LoadRunner's first call argument; Name, a display
+		// label, is only the fallback for a marker without arguments.
+		name := startName
+		key := strings.ToLower(name)
 		if key == "" {
 			return fmt.Errorf("%s requires a transaction name", function)
 		}
@@ -892,7 +889,7 @@ func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, actio
 		if !ok {
 			return fmt.Errorf("%s requires a transaction name and PASS, FAIL, STOP, or AUTO status", function)
 		}
-		key = strings.ToLower(strings.TrimSpace(endName))
+		key := strings.ToLower(strings.TrimSpace(endName))
 		state := vu.sourceTransactions[key]
 		if state == nil {
 			return fmt.Errorf("%s references transaction %q with no matching open transaction%s", function, endName, vu.renamedTransactionEndHint(action, endName))

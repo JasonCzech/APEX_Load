@@ -367,7 +367,7 @@ func validateCapacityBinding(reservation *CapacityReservation, test *TestRecord,
 		return CapacityBindingTestNotBindable
 	}
 	start := boundAt.UTC()
-	end := time.Time{}
+	var end time.Time
 	windowStartSet := test.CapacityWindowStartAt != nil && !test.CapacityWindowStartAt.IsZero()
 	windowEndSet := test.CapacityWindowEndAt != nil && !test.CapacityWindowEndAt.IsZero()
 	if windowStartSet != windowEndSet {

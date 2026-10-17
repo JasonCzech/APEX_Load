@@ -176,7 +176,7 @@ func QualifySharedAutomatically(ctx context.Context, request PooledQualification
 		return s, "", ctx.Err()
 	}
 	if err != nil {
-		return s, SharedJVMReasonInputs, nil
+		return s, SharedJVMReasonInputs, nil //nolint:nilerr // inputs that do not inspect keep the workload on dedicated JVMs with a stable reason
 	}
 	total, ok := request.Resources.memoryBytes()
 	if !ok {

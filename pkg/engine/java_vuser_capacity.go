@@ -354,7 +354,7 @@ func validatedJavaVuserRuntimeCapacityForPlan(ctx context.Context, instance prot
 func availableJavaVuserPersistentCapacity() (int64, bool, error) {
 	instance, err := protocol.Get("java_vuser")
 	if err != nil {
-		return 0, false, nil
+		return 0, false, nil //nolint:nilerr // an unregistered java_vuser protocol is left to preflight, which reports it
 	}
 	capabilities, supported, err := protocol.ReadRuntimeCapabilities(instance)
 	if err != nil {

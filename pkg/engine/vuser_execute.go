@@ -981,7 +981,7 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 			}
 			return nil, fmt.Errorf("protocol returned no result for action %q", actionName)
 		}
-		if streaming && result != nil {
+		if streaming {
 			if result.SampleKind == "" {
 				result.SampleKind = "aggregate"
 			}

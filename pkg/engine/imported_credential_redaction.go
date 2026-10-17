@@ -2793,8 +2793,7 @@ func parseImportedMultipartPart(
 	partBytes := payload[start:end]
 	crlf := bytes.Index(partBytes, []byte("\r\n\r\n"))
 	lf := bytes.Index(partBytes, []byte("\n\n"))
-	headerEnd := -1
-	bodyStart := -1
+	var headerEnd, bodyStart int
 	switch {
 	case crlf >= 0 && (lf < 0 || crlf <= lf):
 		headerEnd = start + crlf

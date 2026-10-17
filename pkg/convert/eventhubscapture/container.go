@@ -85,7 +85,7 @@ func scanContainer(data []byte, maxEvents int) (containerScan, error) {
 		switch {
 		case countErr != nil || sizeErr != nil:
 			scan.problem = fmt.Sprintf("Avro file is truncated inside the block header at byte %d; read the complete blocks before it", start)
-			return scan, nil
+			return scan, nil //nolint:nilerr // a truncated block is reported in scan.problem and the blocks before it import
 		case count < 0 || size < 0:
 			scan.problem = fmt.Sprintf("Avro block at byte %d declares a negative record count or size; read the blocks before it", start)
 			return scan, nil

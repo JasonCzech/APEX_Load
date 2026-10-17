@@ -1404,7 +1404,7 @@ func projectFormURLEncoded(raw string, options Options, targetField string) (str
 			if queryField {
 				queryJSON, work, classifyErr := InspectQueryValueStructure(field.Value, options.structuredRedactionBudget.remainingBytes)
 				if !reserveStructuredRedactionBytes(options, work) || classifyErr != nil {
-					return "", nil, rejected(options.Source, "credential_structured_work_limit_exceeded"), nil
+					return "", nil, rejected(options.Source, "credential_structured_work_limit_exceeded"), nil //nolint:nilerr // the only inspect error is the work limit, recorded as a rejection that fails closed
 				}
 				if queryJSON {
 					projected, item, nestedErr = projectRequestBody([]byte(field.Value), "application/json", nestedOptions, &spans)
@@ -1859,7 +1859,7 @@ func ProjectGraphQL(input GraphQL, options Options) (GraphQL, Result, error) {
 	if options.Mode == Redact && !wholeStructuredRuntimeTemplate(string(input.Query)) {
 		jsonLike, work, inspectErr := InspectQueryValueStructure(string(input.Query), options.structuredRedactionBudget.remainingBytes)
 		if !reserveStructuredRedactionBytes(options, work) || inspectErr != nil {
-			return GraphQL{}, rejected(options.Source, "credential_structured_work_limit_exceeded"), nil
+			return GraphQL{}, rejected(options.Source, "credential_structured_work_limit_exceeded"), nil //nolint:nilerr // the only inspect error is the work limit, recorded as a rejection that fails closed
 		}
 		if jsonLike {
 			return GraphQL{}, rejected(options.Source, "credential_graphql_malformed_sensitive"), nil
@@ -2153,21 +2153,16 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 	for cursor := 0; cursor < len(payload); {
 		openRelative := bytes.IndexByte(payload[cursor:], '<')
 		if openRelative < 0 {
+			// Only text after the last tag remains. The caller admits a
+			// well-formed document whose root has closed, so no open element
+			// reads the known-value text buffer again.
 			logicalText := html.UnescapeString(string(payload[cursor:]))
-			projectedLogicalText := logicalText
 			logicalTextMatched := false
 			if cursor < len(payload) &&
 				!xmlProjectionStackSuppressed(stack) {
 				logicalTextMatched = knownCredentialScalarMatch(
 					options,
 					logicalText,
-				)
-				if logicalTextMatched {
-					projectedLogicalText = credential.Redacted
-				}
-				knownLogicalText = append(
-					knownLogicalText,
-					projectedLogicalText...,
 				)
 			}
 			if len(stack) > 0 && cursor < len(payload) {

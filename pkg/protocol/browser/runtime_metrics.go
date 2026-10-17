@@ -51,20 +51,14 @@ func (b *Browser) captureClientMetrics(ctx context.Context, duration time.Durati
 		ActionDurationMs:    float64(duration) / float64(time.Millisecond),
 	}
 
-	if err := b.capturePageMetrics(ctx, metrics); err != nil {
-		// Keep metrics collection non-fatal for the browser action.
-	}
-	if err := b.captureRuntimeMetrics(ctx, metrics); err != nil {
-		// Keep metrics collection non-fatal for the browser action.
-	}
+	// Metrics collection never fails the browser action, and browser-process
+	// attribution depends on CDP support that varies by runtime.
+	_ = b.capturePageMetrics(ctx, metrics)
+	_ = b.captureRuntimeMetrics(ctx, metrics)
 	// WebKit exposes no browser process CPU or RSS; the driver's process tree
 	// never stands in for it.
 	if b.processMetricsAttributionEnabled() && b.engine != "webkit" {
-		if err := b.captureBrowserProcessMetrics(ctx, metrics, processBefore); err != nil {
-			// Keep browser-process attribution non-fatal because CDP support varies by runtime.
-		}
-	} else {
-		// Keep browser-process attribution non-fatal because CDP support varies by runtime.
+		_ = b.captureBrowserProcessMetrics(ctx, metrics, processBefore)
 	}
 
 	if *metrics == (protocol.ClientMetrics{ActionDurationMs: metrics.ActionDurationMs}) {

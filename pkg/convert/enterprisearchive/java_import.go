@@ -5160,7 +5160,6 @@ func javaVuserClassForProject(
 		if phase != "action" {
 			continue
 		}
-		declared = true
 		class, candidates, ok := javaVuserClassForSourceFile(program, sourceFile.Name)
 		if ok {
 			return class, true, ""

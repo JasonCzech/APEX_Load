@@ -89,14 +89,11 @@ func ResolverAvailable() bool {
 }
 
 func Resolve(ctx context.Context, request Request) ([]byte, error) {
-	reader, size, err := Open(ctx, request)
+	reader, _, err := Open(ctx, request)
 	if err != nil {
 		return nil, err
 	}
 	defer reader.Close()
-	if size < 0 {
-		size = 0
-	}
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, err

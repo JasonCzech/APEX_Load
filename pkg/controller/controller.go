@@ -197,7 +197,7 @@ func (c *Controller) SetCancel(id string, cancel context.CancelFunc) error {
 	// safely adopt. Cancel it outside the mutex so abort-before-install and
 	// duplicate-start races cannot leave untracked load running or deadlock via a
 	// reentrant callback.
-	if installErr != nil && cancel != nil {
+	if installErr != nil {
 		cancel()
 	}
 	return installErr

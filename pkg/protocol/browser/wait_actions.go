@@ -192,19 +192,17 @@ func (b *Browser) waitElementCountForAction(ctx context.Context, action *protoco
 	}
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
-	lastCount := -1
 	for {
 		count, err := locator.Count()
 		if err != nil {
 			return fmt.Errorf("browser_wait count predicate could not count selector %q: %w", selector, err)
 		}
-		lastCount = count
 		if predicate.matches(count) {
 			return nil
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("browser_wait timed out waiting for selector %q count %s %d (last count %d): %w", selector, predicate.Operator, predicate.Count, lastCount, ctx.Err())
+			return fmt.Errorf("browser_wait timed out waiting for selector %q count %s %d (last count %d): %w", selector, predicate.Operator, predicate.Count, count, ctx.Err())
 		case <-ticker.C:
 		}
 	}

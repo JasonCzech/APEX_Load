@@ -262,38 +262,41 @@ func ramlResolvedMethodBody(method, doc map[string]any, action *dsl.Action, resu
 		}
 		bodies = map[string]any{media: bodies}
 	}
-	for _, contentType := range sortedMapKeys(bodies) {
-		media := mapValue(bodies[contentType])
-		if media == nil {
-			if text, ok := bodies[contentType].(string); ok {
-				media = map[string]any{"type": text}
-			} else {
-				media = map[string]any{}
-			}
-		}
-		if value, ok := ramlExample(media); ok {
-			text, _ := bodyExampleValue(value)
-			return text, contentType, true
-		}
-		value, complete := sampleRAMLType(media, mapValue(doc["types"]), &ramlSample{active: map[string]bool{}, remaining: 2000}, 0)
-		if !complete {
-			if action.Metadata == nil {
-				action.Metadata = map[string]any{}
-			}
-			if declared := stringValue(media["type"]); declared != "" {
-				action.Metadata["raml_request_body_type"] = declared
-			}
-			ramlReview(action, result, "RAML request body", "No complete request example is available; review the generated body and supply missing required fields or select a union variant")
-		}
-		if strings.Contains(contentType, "json") {
-			return jsonBody(value), contentType, true
-		}
-		if value != nil {
-			return stringValue(value), contentType, true
-		}
-		return "", contentType, true
+	// The first declared media type, in sorted order, shapes the body.
+	contentTypes := sortedMapKeys(bodies)
+	if len(contentTypes) == 0 {
+		return "", "", false
 	}
-	return "", "", false
+	contentType := contentTypes[0]
+	media := mapValue(bodies[contentType])
+	if media == nil {
+		if text, ok := bodies[contentType].(string); ok {
+			media = map[string]any{"type": text}
+		} else {
+			media = map[string]any{}
+		}
+	}
+	if value, ok := ramlExample(media); ok {
+		text, _ := bodyExampleValue(value)
+		return text, contentType, true
+	}
+	value, complete := sampleRAMLType(media, mapValue(doc["types"]), &ramlSample{active: map[string]bool{}, remaining: 2000}, 0)
+	if !complete {
+		if action.Metadata == nil {
+			action.Metadata = map[string]any{}
+		}
+		if declared := stringValue(media["type"]); declared != "" {
+			action.Metadata["raml_request_body_type"] = declared
+		}
+		ramlReview(action, result, "RAML request body", "No complete request example is available; review the generated body and supply missing required fields or select a union variant")
+	}
+	if strings.Contains(contentType, "json") {
+		return jsonBody(value), contentType, true
+	}
+	if value != nil {
+		return stringValue(value), contentType, true
+	}
+	return "", contentType, true
 }
 
 func ramlExample(declaration map[string]any) (any, bool) {

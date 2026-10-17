@@ -1638,96 +1638,94 @@ func (s *Server) createPersistentSession(
 		runtimeLease = leases[0]
 	}
 	configKey := persistentSessionConfigKey(request.Runtime, request.Command)
-	for {
-		s.ownerMu.Lock()
-		if s.draining.Load() || s.owner != generation || !generation.ready {
+	s.ownerMu.Lock()
+	if s.draining.Load() || s.owner != generation || !generation.ready {
+		s.ownerMu.Unlock()
+		return nil, &safeFailure{code: "owner_fenced"}
+	}
+	s.sessionsMu.Lock()
+	if unusable, exists := s.unusableSessions[id]; exists && unusable.generation == generation &&
+		(runtimeLease == nil || unusable.runtimeLease == runtimeLease) {
+		s.sessionsMu.Unlock()
+		s.ownerMu.Unlock()
+		return nil, &safeFailure{code: "session_unusable"}
+	}
+	if existing, ok := s.sessions[id]; ok {
+		s.sessionsMu.Unlock()
+		s.ownerMu.Unlock()
+		if existing.generation != generation {
+			return nil, &safeFailure{code: "owner_fenced"}
+		}
+		if runtimeLease != nil && existing.runtimeLease != runtimeLease {
+			return nil, &safeFailure{code: "runtime_lease_fenced"}
+		}
+		if existing.configKey != configKey {
+			return nil, &safeFailure{code: "session_configuration_mismatch"}
+		}
+		return existing, nil
+	}
+	if pending, ok := s.pendingSessions[id]; ok {
+		if pending.generation != generation {
+			s.sessionsMu.Unlock()
 			s.ownerMu.Unlock()
 			return nil, &safeFailure{code: "owner_fenced"}
 		}
-		s.sessionsMu.Lock()
-		if unusable, exists := s.unusableSessions[id]; exists && unusable.generation == generation &&
-			(runtimeLease == nil || unusable.runtimeLease == runtimeLease) {
+		if runtimeLease != nil && pending.runtimeLease != runtimeLease {
 			s.sessionsMu.Unlock()
 			s.ownerMu.Unlock()
+			return nil, &safeFailure{code: "runtime_lease_fenced"}
+		}
+		if pending.configKey != configKey {
+			s.sessionsMu.Unlock()
+			s.ownerMu.Unlock()
+			return nil, &safeFailure{code: "session_configuration_mismatch"}
+		}
+		ready := pending.ready
+		s.sessionsMu.Unlock()
+		s.ownerMu.Unlock()
+		select {
+		case <-ready:
+			if pending.failure != nil {
+				return nil, pending.failure
+			}
+			if pending.session != nil {
+				return pending.session, nil
+			}
 			return nil, &safeFailure{code: "session_unusable"}
+		case <-ctx.Done():
+			return nil, &safeFailure{code: contextErrorCode(ctx)}
 		}
-		if existing, ok := s.sessions[id]; ok {
-			s.sessionsMu.Unlock()
-			s.ownerMu.Unlock()
-			if existing.generation != generation {
-				return nil, &safeFailure{code: "owner_fenced"}
-			}
-			if runtimeLease != nil && existing.runtimeLease != runtimeLease {
-				return nil, &safeFailure{code: "runtime_lease_fenced"}
-			}
-			if existing.configKey != configKey {
-				return nil, &safeFailure{code: "session_configuration_mismatch"}
-			}
-			return existing, nil
-		}
-		if pending, ok := s.pendingSessions[id]; ok {
-			if pending.generation != generation {
-				s.sessionsMu.Unlock()
-				s.ownerMu.Unlock()
-				return nil, &safeFailure{code: "owner_fenced"}
-			}
-			if runtimeLease != nil && pending.runtimeLease != runtimeLease {
-				s.sessionsMu.Unlock()
-				s.ownerMu.Unlock()
-				return nil, &safeFailure{code: "runtime_lease_fenced"}
-			}
-			if pending.configKey != configKey {
-				s.sessionsMu.Unlock()
-				s.ownerMu.Unlock()
-				return nil, &safeFailure{code: "session_configuration_mismatch"}
-			}
-			ready := pending.ready
-			s.sessionsMu.Unlock()
-			s.ownerMu.Unlock()
-			select {
-			case <-ready:
-				if pending.failure != nil {
-					return nil, pending.failure
-				}
-				if pending.session != nil {
-					return pending.session, nil
-				}
-				return nil, &safeFailure{code: "session_unusable"}
-			case <-ctx.Done():
-				return nil, &safeFailure{code: contextErrorCode(ctx)}
-			}
-		}
-		pending := &pendingPersistentSession{
-			configKey: configKey, generation: generation, runtimeLease: runtimeLease, ready: make(chan struct{}),
-		}
-		s.pendingSessions[id] = pending
-		s.sessionsMu.Unlock()
-		s.ownerMu.Unlock()
-
-		session, failure := s.startPersistentSession(ctx, prepared, request, generation, runtimeLease)
-		s.ownerMu.Lock()
-		stillCurrent := !s.draining.Load() && s.owner == generation && generation.ready
-		if failure == nil && session != nil && !stillCurrent {
-			// Do not publish a JVM created by a fenced owner. A background claim
-			// is waiting on this operation, so reap synchronously before return.
-			_ = session.close(context.Background())
-			session = nil
-			failure = &safeFailure{code: "owner_fenced"}
-		}
-		s.sessionsMu.Lock()
-		if current := s.pendingSessions[id]; current == pending {
-			delete(s.pendingSessions, id)
-		}
-		pending.session = session
-		pending.failure = failure
-		if stillCurrent && failure == nil && session != nil {
-			s.sessions[id] = session
-		}
-		close(pending.ready)
-		s.sessionsMu.Unlock()
-		s.ownerMu.Unlock()
-		return session, failure
 	}
+	pending := &pendingPersistentSession{
+		configKey: configKey, generation: generation, runtimeLease: runtimeLease, ready: make(chan struct{}),
+	}
+	s.pendingSessions[id] = pending
+	s.sessionsMu.Unlock()
+	s.ownerMu.Unlock()
+
+	session, failure := s.startPersistentSession(ctx, prepared, request, generation, runtimeLease)
+	s.ownerMu.Lock()
+	stillCurrent := !s.draining.Load() && s.owner == generation && generation.ready
+	if failure == nil && session != nil && !stillCurrent {
+		// Do not publish a JVM created by a fenced owner. A background claim
+		// is waiting on this operation, so reap synchronously before return.
+		_ = session.close(context.Background())
+		session = nil
+		failure = &safeFailure{code: "owner_fenced"}
+	}
+	s.sessionsMu.Lock()
+	if current := s.pendingSessions[id]; current == pending {
+		delete(s.pendingSessions, id)
+	}
+	pending.session = session
+	pending.failure = failure
+	if stillCurrent && failure == nil && session != nil {
+		s.sessions[id] = session
+	}
+	close(pending.ready)
+	s.sessionsMu.Unlock()
+	s.ownerMu.Unlock()
+	return session, failure
 }
 
 func (s *Server) handleCloseSession(w http.ResponseWriter, r *http.Request) {

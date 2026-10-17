@@ -112,7 +112,7 @@ func storageValueLeaves(raw string) ([]string, error) {
 	decoder := json.NewDecoder(strings.NewReader(raw))
 	decoder.UseNumber()
 	if err := decoder.Decode(&value); err != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr // the whole value is already protected; a value that does not decode has no nested leaves
 	}
 	var values []string
 	var walk func(any, int) error

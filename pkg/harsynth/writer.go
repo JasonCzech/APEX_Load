@@ -212,7 +212,7 @@ func (w *Writer) Add(e Entry) error {
 	raw, err := scrubEntry(entry, w.meta.Policy)
 	if err != nil {
 		w.omitted[OmittedUnscrubbable]++
-		return nil
+		return nil //nolint:nilerr // an entry that cannot be scrubbed is counted omitted and never written
 	}
 	if w.written()+int64(len(raw))+1+trailerReserve > w.maxBytes {
 		w.omitted[OmittedByteLimit]++

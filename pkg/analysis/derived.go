@@ -163,7 +163,7 @@ func EvaluateCounter(operation string, before, after CounterSample) (DerivedValu
 	}
 	semantics := semanticsOf(before.Point)
 	if err := semantics.Validate(); err != nil {
-		return unscored(unit, "unknown_measurement_semantics"), nil
+		return unscored(unit, "unknown_measurement_semantics"), nil //nolint:nilerr // unknown semantics leave the value unscored with a reason, not failed
 	}
 	if !before.Complete || !after.Complete || before.Point.Quality != QualityValid || after.Point.Quality != QualityValid {
 		return unscored(unit, "incomplete_evidence"), nil
@@ -212,7 +212,7 @@ func EvaluateBaselineDelta(current, baseline MetricPoint, percentage bool) (Deri
 	}
 	semantics := semanticsOf(current)
 	if err := semantics.Validate(); err != nil {
-		return unscored(unit, "unknown_measurement_semantics"), nil
+		return unscored(unit, "unknown_measurement_semantics"), nil //nolint:nilerr // unknown semantics leave the value unscored with a reason, not failed
 	}
 	if current.Quality != QualityValid || baseline.Quality != QualityValid {
 		return unscored(unit, "incomplete_evidence"), nil

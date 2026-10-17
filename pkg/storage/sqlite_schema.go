@@ -3079,13 +3079,12 @@ func (s *SQLiteStore) ensureLegacyScenariosTx(tx *storeTx) error {
 		if candidate.existingScenarioID == "" {
 			continue
 		}
+		// Keep the old row as the stable ref-key owner when the scoped target
+		// already has a different key; deleting it would make the public key
+		// unreachable.
 		keepLegacyRefOwner := legacyRefKeys[candidate.existingScenarioID] != "" && !legacyRefKeysTransferred[candidate.existingScenarioID]
 		if !keepLegacyRefOwner {
 			oldScenarioIDs[candidate.existingScenarioID] = struct{}{}
-		} else {
-			// Keep the old row as the stable ref-key owner when the scoped target
-			// already has a different key; deleting it would make the public key
-			// unreachable.
 		}
 		referenceKey := candidate.existingScenarioID + "\x00" + scenarioID + "\x00" + candidate.projectID
 		if _, migrated := migratedReferences[referenceKey]; migrated {
@@ -3330,7 +3329,7 @@ func deleteLegacyScenarioIfUnreferencedTx(tx *storeTx, scenarioID string) error 
 			_, changed, err := rewriteLegacyScenarioEntries(payload, scenarioID, "")
 			if err != nil || changed {
 				rows.Close()
-				return nil
+				return nil //nolint:nilerr // a payload that cannot be parsed may still reference the scenario, so it is kept
 			}
 		}
 		if err := rows.Err(); err != nil {

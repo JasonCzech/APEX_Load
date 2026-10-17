@@ -595,9 +595,11 @@ func runWorkerParentOwned(a *workerAttempt, request workerRequest, options worke
 	if inputErr != nil {
 		return nil, errWorkerProtocol
 	}
-	// Only this complete successful receipt discharges a missing-child sample.
-	// No missing PID reaches reaped/pipesJoined/cleanup or signaling authority.
-	if childAbsenceObserved && !(waited && waitErr == nil && processJoined && physicalClosed && state.stage == "terminal" && result.Status == "ok") {
+	// Only this complete successful receipt discharges a missing-child sample;
+	// the returns above already require a clean wait, the terminal stage and an
+	// ok result. No missing PID reaches reaped/pipesJoined/cleanup or signaling
+	// authority.
+	if childAbsenceObserved && !(waited && processJoined && physicalClosed) {
 		workerLogUnresolved(a, "child_absence_unproven")
 		return nil, errWorkerOwnership
 	}

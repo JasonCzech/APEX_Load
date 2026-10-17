@@ -36,7 +36,7 @@ func IsWebSocketStep(actionType string) bool {
 func (h *HTTP) executeWebSocketStep(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	client, err := h.webSocketClient(ctx, true)
 	if err != nil {
-		return &protocol.Result{ActionName: protocol.ActionName(action), StartTime: time.Now(), DependencyType: "websocket", ErrorMessage: err.Error()}, nil
+		return &protocol.Result{ActionName: protocol.ActionName(action), StartTime: time.Now(), DependencyType: "websocket", ErrorMessage: err.Error()}, nil //nolint:nilerr // a client that cannot open fails the step in its result, as Execute reports step errors
 	}
 	return client.Execute(ctx, action)
 }

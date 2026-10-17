@@ -283,7 +283,7 @@ func (parser *jsonProjectionParser) parseValue(
 			queryJSON, work, classifyErr := InspectQueryValueStructure(decoded, parser.options.structuredRedactionBudget.remainingBytes)
 			if !reserveStructuredRedactionBytes(parser.options, work) || classifyErr != nil {
 				parser.result.Merge(rejected(parser.options.Source, "credential_structured_work_limit_exceeded"))
-				return nil
+				return nil //nolint:nilerr // the only inspect error is the work limit, recorded as a rejection that fails closed
 			}
 			jsonLayer = queryJSON
 		}

@@ -2167,7 +2167,7 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 	if !reserved && mge.launchCtx != nil && mge.launchCtx.Err() != nil {
 		mge.mu.Unlock()
 		mge.abortPreparedVUser(prepared)
-		return nil, nil
+		return nil, nil //nolint:nilerr // a cancelled VUser or launch prepares nothing; only an initialization failure is an error
 	}
 	mge.vuserCancels[identity.handle] = cancelVUser
 	if mge.vuserRetires == nil {
@@ -2180,7 +2180,7 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 
 	if vuCtx.Err() != nil {
 		mge.abortPreparedVUser(prepared)
-		return nil, nil
+		return nil, nil //nolint:nilerr // a cancelled VUser or launch prepares nothing; only an initialization failure is an error
 	}
 	var vuProto protocol.Protocol
 	var err error
@@ -2241,7 +2241,7 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 	}
 	if vuCtx.Err() != nil || (mge.launchCtx != nil && mge.launchCtx.Err() != nil) {
 		mge.abortPreparedVUser(prepared)
-		return nil, nil
+		return nil, nil //nolint:nilerr // a cancelled VUser or launch prepares nothing; only an initialization failure is an error
 	}
 	return prepared, nil
 }
@@ -2748,7 +2748,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
 		mge.mu.Unlock()
 		release()
-		return false, nil
+		return false, nil //nolint:nilerr // a cancelled VUser or launch spawns nothing; only a failed start is an error
 	}
 
 	runtimeVUserID := group.VUserIDOffset + identity.local
@@ -2807,7 +2807,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
 		mge.mu.Unlock()
 		release()
-		return false, nil
+		return false, nil //nolint:nilerr // a cancelled VUser or launch spawns nothing; only a failed start is an error
 	}
 	launchCtx := mge.launchCtx
 	if launchCtx != nil && launchCtx.Err() != nil {
@@ -2818,7 +2818,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
 		mge.mu.Unlock()
 		release()
-		return false, nil
+		return false, nil //nolint:nilerr // a cancelled VUser or launch spawns nothing; only a failed start is an error
 	}
 
 	mge.mu.Lock()
@@ -2831,7 +2831,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
 		mge.mu.Unlock()
 		release()
-		return false, nil
+		return false, nil //nolint:nilerr // a cancelled VUser or launch spawns nothing; only a failed start is an error
 	}
 	mge.markVUserRunningLocked(identity.handle)
 	mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))

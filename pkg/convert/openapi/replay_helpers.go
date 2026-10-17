@@ -145,7 +145,7 @@ func extractorCandidatesForSchema(s schema, resource string) []producedValue {
 			return
 		}
 		out = append(out, producedValue{
-			VarName:    varNameForProduced(resource, field, role),
+			VarName:    varNameForProduced(resource, field),
 			Resource:   resource,
 			FieldName:  field,
 			Role:       role,
@@ -546,19 +546,19 @@ func uniqueExtractorName(base string, used map[string]bool) string {
 	}
 }
 
-func varNameForProduced(resource string, field string, role string) string {
+func varNameForProduced(resource string, field string) string {
 	resource = sanitizeColumnName(singularize(resource))
-	role = sanitizeColumnName(normalizedIdentityToken(field, resource))
-	if role == "" || role == "id" || role == "uuid" || role == "guid" {
-		role = "id"
+	token := sanitizeColumnName(normalizedIdentityToken(field, resource))
+	if token == "" || token == "id" || token == "uuid" || token == "guid" {
+		token = "id"
 	}
 	if resource == "" {
-		return role
+		return token
 	}
-	if strings.HasPrefix(role, resource+"_") {
-		return role
+	if strings.HasPrefix(token, resource+"_") {
+		return token
 	}
-	return sanitizeColumnName(resource + "_" + role)
+	return sanitizeColumnName(resource + "_" + token)
 }
 
 func resourceOfPath(path string) string {

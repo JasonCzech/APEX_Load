@@ -2735,7 +2735,7 @@ func multipartFormExample(s schema, res resolver, location string, columns colum
 		sensitive := schemaCredentialField(name, prop)
 		column := sanitizeColumnName(name)
 		binary := strings.EqualFold(prop.Format, "binary")
-		wireName := name
+		var wireName string
 		if validMultipartExampleFieldName(name) {
 			wireName = escapeMultipartExampleFieldName(name)
 		} else {

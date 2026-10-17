@@ -547,7 +547,7 @@ func (service *Service) finishExecutionEpochClaim(ctx context.Context, generatio
 		return nil, status.FromContextError(committedContextError).Err()
 	}
 	if cleanupErr != nil {
-		return &pb.ExecutionEpochAck{
+		return &pb.ExecutionEpochAck{ //nolint:nilerr // a fencing cleanup failure refuses the claim in the ack (Accepted false, with the reason)
 			Accepted:          false,
 			CurrentGeneration: generation,
 			ExpiresAtUnixMs:   decision.expiresAt.UnixMilli(),
