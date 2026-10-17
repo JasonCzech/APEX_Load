@@ -1,0 +1,29 @@
+package http
+
+import (
+	"context"
+	"net"
+	"testing"
+	"time"
+)
+
+func TestMonthlyReviewDNSCacheFallback(t *testing.T) {
+	secondAttempted := false
+	dial := newCachedDNSDialer(func(ctx context.Context, network, address string) (net.Conn, error) {
+		if address == "192.0.2.1:443" {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		secondAttempted = true
+		a, b := net.Pipe()
+		_ = b.Close()
+		return a, nil
+	}, func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("192.0.2.1")}, {IP: net.ParseIP("192.0.2.2")}}, nil
+	}, time.Now)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	conn, err := dial(ctx, "tcp", "example.invalid:443")
+	if conn != nil { _ = conn.Close() }
+	if err != nil || !secondAttempted { t.Fatalf("reachable fallback attempted=%v, err=%v", secondAttempted, err) }
+}

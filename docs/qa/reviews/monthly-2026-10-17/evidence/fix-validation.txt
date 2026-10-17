@@ -1,0 +1,55 @@
+Monthly review fixes — backend validation
+
+All 150 Go test packages passed across the broad run and full API retry.
+The broad run passed 149 packages; API was interrupted after SQLite disk-full fixture failures.
+Retry: GOCACHE=/tmp/apexload-monthly-fixes-gocache TMPDIR=/tmp/apexload-monthly-api-tmp go test -p 1 -parallel 2 -timeout=20m -json ./pkg/api
+API result: PASS; test runtime 802.186s.
+API terminal checks: {'pass': 11947, 'skip': 16}
+API top-level outcomes: {'pass': 6321, 'skip': 14}
+
+New API regressions confirmed PASS:
+TestDistributedStartupRendezvousLifetime
+TestAdoptedRendezvousLifetime
+TestRendezvousLifetimeLossAndReplacement
+TestStopUnrestoredSequentialPlanSurvivesRestart
+TestStopUnrestoredSequentialPlanRequiresDurableAcceptance
+TestStopUnrestoredSequentialPlanPreservesConcurrentTransition
+TestPartialReimportRecoveryAcrossBatchHandlers
+
+Previously disk-failed fixtures confirmed PASS:
+TestScenarioScheduleOverridesScriptIterationCap
+TestExplicitIterationIntentSurvivesScheduleAuthority
+TestSharedRunGoalsSurviveScheduleAuthority
+
+Other completed validation:
+Full tagged DuckDB package: PASS, 222.898s
+Storage draft race regressions: PASS, 11.998s
+Full dashboard units: 7830 passed across 706 files
+MCP: 37 passed, 2 skipped
+Final-assets affected browser reruns: dev-admin 4 passed/1 skipped; local-auth 5 passed
+Formatting: 32 changed/new Go files clean; source diff whitespace clean.
+
+Full session logs:
+/tmp/apexload-go-full.log
+/tmp/apexload-api-full-final.jsonl
+/tmp/apexload-api-critical-final.log
+/tmp/apexload-analytics-full.log
+/tmp/apexload-storage-race.log
+/tmp/apexload-dashboard-cycle.log
+/tmp/apexload-dashboard-final-build.log
+/tmp/apexload-dashboard-final-dev-admin.log
+/tmp/apexload-dashboard-final-local-auth.log
+
+Completed broad browser campaign:
+Dev-admin: 298 passed, 6 skipped, 3 initial failures.
+Local-auth: 239 passed, 1 skipped, 1 known failure against older embedded CSS.
+All initially failing cases passed on corrective reruns.
+Raw test:cycle exit: 1; final-assets affected reruns exit: 0.
+
+Cleanup:
+Dedicated Go build/test cache: 5.53 GiB reclaimed, 8 KiB remaining.
+Unused session test archives previously reclaimed: 5.63 GiB.
+Frontend/Python caches removed: 303104 allocated bytes.
+Session API temp removed: 3936 KiB.
+Owned browsers/controllers closed; ports 18081–18084 free.
+Docker builder prune timed out after 20 seconds; cleanup unconfirmed.

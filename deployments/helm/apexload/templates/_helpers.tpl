@@ -84,7 +84,17 @@ chart default while explicit false values remain false.
 {{- end -}}
 
 {{- define "apexload.archiveStagingClaimName" -}}
-{{- default "apexload-controller-archive-staging" .Values.archiveStaging.persistence.existingClaim -}}
+{{- $values := include "apexload.upgradeValues" . | fromJson -}}
+{{- default "apexload-controller-archive-staging" $values.archiveStaging.persistence.existingClaim -}}
+{{- end -}}
+
+{{/* Defaults for sections introduced after the first enterprise chart. Reused
+release values bypass values.yaml; deep overwrite preserves explicit false,
+empty lists and operator overrides while filling missing nested keys. */}}
+{{- define "apexload.upgradeValues" -}}
+{{- $defaults := .Files.Get "defaults/upgrade.yaml" | fromYaml -}}
+{{- $configured := pick .Values "http3" "archiveStaging" "networkPolicy" -}}
+{{- mustMergeOverwrite $defaults $configured | toJson -}}
 {{- end -}}
 
 {{/*
@@ -94,18 +104,19 @@ not use hostNetwork, so each has its own network namespace and its UDP
 drop counters are attributable to it.
 */}}
 {{- define "apexload.http3Env" -}}
+{{- $values := include "apexload.upgradeValues" . | fromJson -}}
 - name: APEXLOAD_HTTP3
-  value: {{ .Values.http3.enabled | quote }}
+  value: {{ $values.http3.enabled | quote }}
 - name: APEXLOAD_UDP_COUNTER_SCOPE
   value: pod
 {{- range $key, $env := dict "initialStreamReceiveWindow" "APEXLOAD_QUIC_INITIAL_STREAM_RECEIVE_WINDOW" "maxStreamReceiveWindow" "APEXLOAD_QUIC_MAX_STREAM_RECEIVE_WINDOW" "initialConnectionReceiveWindow" "APEXLOAD_QUIC_INITIAL_CONNECTION_RECEIVE_WINDOW" "maxConnectionReceiveWindow" "APEXLOAD_QUIC_MAX_CONNECTION_RECEIVE_WINDOW" "maxResponseHeaderBytes" "APEXLOAD_QUIC_MAX_RESPONSE_HEADER_BYTES" "initialPacketSize" "APEXLOAD_QUIC_INITIAL_PACKET_SIZE" }}
-{{- $value := int64 (index $.Values.http3.quic $key) }}
+{{- $value := int64 (index $values.http3.quic $key) }}
 {{- if gt $value 0 }}
 - name: {{ $env }}
   value: {{ $value | toString | quote }}
 {{- end }}
 {{- end }}
-{{- if .Values.http3.quic.disablePathMTUDiscovery }}
+{{- if $values.http3.quic.disablePathMTUDiscovery }}
 - name: APEXLOAD_QUIC_DISABLE_PATH_MTU_DISCOVERY
   value: "true"
 {{- end }}
@@ -113,7 +124,8 @@ drop counters are attributable to it.
 
 {{/* Egress rules every profile shares: DNS, then the load-test targets. */}}
 {{- define "apexload.egressTargetRules" -}}
-{{- $egress := .Values.networkPolicy.egress -}}
+{{- $values := include "apexload.upgradeValues" . | fromJson -}}
+{{- $egress := $values.networkPolicy.egress -}}
 - to:
     - namespaceSelector:
         matchLabels:

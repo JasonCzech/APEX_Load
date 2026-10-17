@@ -19,7 +19,7 @@ func nativeSeriesFilter(q SeriesQuery) string {
 }
 
 // nativeSeriesLeadInFilter selects the series' rows that start before the
-// query; a histogram window among them can still end inside the first bucket.
+// query; a source window among them can still end inside the first bucket.
 func nativeSeriesLeadInFilter(q SeriesQuery) string {
 	return "project_id=" + literal(q.ProjectID) + " AND dataset_id=" + literal(q.DatasetID) + " AND metric_name=" + literal(q.Metric) + " AND timestamp_utc < TIMESTAMPTZ " + literal(q.From.UTC().Format(time.RFC3339Nano)) + nativeIdentityFilter(q)
 }
@@ -75,21 +75,19 @@ func nativeSeriesAggregationSQL(table string, q SeriesQuery, kind string) (strin
 // only when the bucket is one source window. Whether a coarser bucket merges
 // depends on how many windows it spans, never on how many rows happen to be
 // present: a sparse bucket holding one p95 row of several windows is still
-// not a p95 of the bucket. Any missing sample, duplicated window or window
-// crossing the bucket end makes the bucket missing, and the third column
-// names the reason when the input existed.
-func nativeSummaryAggregationSQL(table string, q SeriesQuery, statistic string, windowSeconds int) (string, error) {
+// not a p95 of the bucket. Missing samples, duplicated/overlapping windows,
+// and windows crossing a query or bucket edge make the bucket missing. The
+// third column names the reason when the input existed.
+func nativeSummaryAggregationSQL(table string, q SeriesQuery, statistic string, windowSeconds int, identity string) (string, error) {
 	if err := q.Validate(); err != nil {
 		return "", err
 	}
 	if err := analysis.ValidateSummaryAggregation(statistic, windowSeconds, q.BucketSeconds, q.Aggregation); err != nil {
 		return "", err
 	}
-	origin := "TIMESTAMPTZ " + literal(q.From.UTC().Format(time.RFC3339Nano))
-	bucketSeconds := strconv.Itoa(q.BucketSeconds)
-	bucket := "(" + origin + " + floor(epoch(timestamp_utc-" + origin + ")/" + bucketSeconds + ")*" + bucketSeconds + "*INTERVAL '1 second')"
-	rows := "SELECT " + bucket + " AS bucket, timestamp_utc, value, summary_sample_count, summary_sample_sum FROM " + table + " WHERE " + nativeSeriesSelectionFilter(q)
-	grouped := "SELECT bucket, count(*) AS n, count(value) AS nv, count(DISTINCT timestamp_utc) AS nt, bool_or(timestamp_utc+" + strconv.Itoa(windowSeconds) + "*INTERVAL '1 second' > bucket+" + bucketSeconds + "*INTERVAL '1 second') AS partial, sum(value) AS vsum, min(value) AS vmin, max(value) AS vmax, count(summary_sample_count) AS nc, sum(summary_sample_count) AS csum, count(summary_sample_sum) AS ns, sum(summary_sample_sum) AS ssum, sum(value*summary_sample_count) AS wsum FROM (" + rows + ") GROUP BY bucket"
+	leadIn := nativeSeriesLeadInFilter(q) + " AND summary_statistic=" + literal(statistic) + " AND " + identity
+	rows := nativeWindowAdmissionSQL(table, q, nativeSeriesSelectionFilter(q), leadIn, "timestamp_utc+summary_window_seconds*INTERVAL '1 second'", "value, summary_sample_count, summary_sample_sum")
+	grouped := "SELECT bucket, count(*) AS n, count(value) AS nv, count(DISTINCT timestamp_utc) AS nt, bool_or(partial_window) AS partial, sum(value) AS vsum, min(value) AS vmin, max(value) AS vmax, count(summary_sample_count) AS nc, sum(summary_sample_count) AS csum, count(summary_sample_sum) AS ns, sum(summary_sample_sum) AS ssum, sum(value*summary_sample_count) AS wsum FROM (" + rows + ") GROUP BY bucket"
 	spansWindows := q.BucketSeconds > windowSeconds
 	value, reason := "", "''"
 	switch {

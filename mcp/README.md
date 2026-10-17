@@ -27,6 +27,14 @@ Stable resources are also available:
 - `apexload://runtime-settings/support-matrix`
 - `apexload://protocol-bundles/support-matrix`
 
+For script and scenario edits, call `script_get` or `scenario_get` with
+`query: {"view": "authoring"}`. Keep the returned editable projection together
+with the top-level `etag`, including its quotes. Supply that tag as `if_match`
+to `script_update` or `scenario_update` when saving the edited projection.
+Projects requiring conditional saves reject missing tags with HTTP 428; a stale
+tag returns HTTP 412. Read and reconcile the current document before explicitly
+trying again. The bridge does not replace the tag or retry automatically.
+
 ## Installation
 
 Use Python 3.10 or newer.

@@ -68,6 +68,64 @@ async def test_endpoint_tool_reports_missing_path_params():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["script", "scenario"])
+async def test_authoring_read_and_conditional_save_preserve_the_observed_revision(kind):
+    tag = f'"{kind}-authoring-v1:revision-1"'
+    calls = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.method == "GET":
+            assert request.url.params["view"] == "authoring"
+            return httpx.Response(200, json={"id": "one"}, headers={"ETag": tag})
+        if "If-Match" not in request.headers:
+            return httpx.Response(428, json={"error": "conditional save required"})
+        if request.headers.get("If-Match") != tag:
+            return httpx.Response(412, json={"error": "changed"})
+        assert request.headers["X-APEXLoad-API-Key"] == "key"
+        return httpx.Response(200, json={"id": "one"}, headers={"ETag": '"revision-2"'})
+
+    client = APEXLoadClient(APEXLoadClientConfig(base_url="http://storm.test/api/v1", api_key="key"), transport=httpx.MockTransport(handler))
+    read = json.loads(await run_endpoint_tool(tool(f"{kind}_get"), path_params={"id": "one"}, query={"view": "authoring"}, client=client))
+    assert read["etag"] == tag
+    saved = json.loads(await run_endpoint_tool(tool(f"{kind}_update"), path_params={"id": "one"}, payload={"name": "edited"}, if_match=read["etag"], confirm=True, client=client))
+    assert saved["ok"] and saved["etag"] == '"revision-2"'
+    missing = json.loads(await run_endpoint_tool(tool(f"{kind}_update"), path_params={"id": "one"}, payload={"name": "edited"}, confirm=True, client=client))
+    assert missing["status_code"] == 428
+    failed = json.loads(await run_endpoint_tool(tool(f"{kind}_update"), path_params={"id": "one"}, payload={"name": "edited"}, if_match='"stale"', confirm=True, client=client))
+    assert failed["status_code"] == 412
+    assert len(calls) == 4  # Never reload or retry a stale save automatically.
+
+
+@pytest.mark.asyncio
+async def test_registered_tool_exposes_if_match(monkeypatch):
+    from apexload_mcp import tools
+    seen = []
+
+    async def handler(request):
+        seen.append(request.headers.get("If-Match"))
+        return httpx.Response(200, json={"id": "one"})
+
+    client = APEXLoadClient(APEXLoadClientConfig(base_url="http://storm.test/api/v1"), transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(tools, "APEXLoadClient", lambda: client)
+
+    class Registry:
+        def __init__(self):
+            self.handlers = {}
+
+        def tool(self, *, name, description):
+            def register(handler):
+                self.handlers[name] = handler
+                return handler
+            return register
+
+    registry = Registry()
+    tools.register_endpoint_tools(registry)
+    await registry.handlers["script_update"](path_params={"id": "one"}, payload={}, if_match='"observed"', confirm=True)
+    assert seen == ['"observed"']
+
+
+@pytest.mark.asyncio
 async def test_representative_domain_tools_call_expected_routes():
     seen: list[tuple[str, str]] = []
 

@@ -93,6 +93,7 @@ export interface ScriptSaveInputs {
   dirty: boolean
   hasName: boolean
   jsonParseMessage: string
+  fieldDraftProblem?: string
   baseURLError: string
 }
 
@@ -103,7 +104,7 @@ export function scriptSaveAvailability(input: ScriptSaveInputs): { disabled: boo
   // a recording); a stored one has nothing to save until it changes.
   const nothingToSave = input.stored && !input.dirty
   const disabled = Boolean(input.opening) || (input.stored && (input.revisionState !== 'ready' || !input.hasBaseline)) || input.saving || input.secretBindingsOpen || input.validating
-    || nothingToSave || !input.hasName || Boolean(input.jsonParseMessage) || Boolean(input.baseURLError)
+    || nothingToSave || !input.hasName || Boolean(input.jsonParseMessage) || Boolean(input.fieldDraftProblem) || Boolean(input.baseURLError)
   const title = input.opening
     ? 'The saved script is opening'
     : input.stored && input.revisionState !== 'ready'
@@ -114,10 +115,12 @@ export function scriptSaveAvailability(input: ScriptSaveInputs): { disabled: boo
         ? 'Wait for validation to finish before saving'
         : input.jsonParseMessage
           ? 'Fix invalid Script JSON before saving'
-          : nothingToSave
-            ? 'No unsaved changes to save'
-            : !input.hasName
-              ? 'Enter a script name before saving'
-              : input.baseURLError || 'Save script'
+          : input.fieldDraftProblem
+            ? 'Fix action fields before saving'
+            : nothingToSave
+              ? 'No unsaved changes to save'
+              : !input.hasName
+                ? 'Enter a script name before saving'
+                : input.baseURLError || 'Save script'
   return { disabled, title }
 }

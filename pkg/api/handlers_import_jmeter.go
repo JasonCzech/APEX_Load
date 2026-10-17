@@ -821,6 +821,7 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusCreated, savedJMeterImportResponse(storedScripts, storedScenario))
 		return
 	}
+	attempt.retainUpdateRecovery(updateTargets)
 	finished := false
 	assetsCommitted := false
 	var transaction *createImportTransaction
@@ -1120,9 +1121,8 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Recovery above adopted an update an earlier attempt applied; anything
-	// else must still be the version the operator reviewed.
-	if !requireReviewedImportUpdates(w, updateTargets, updates) {
+	reconciledUpdates, validUpdates := s.reconcileImportUpdates(w, attempt, preparedScripts, updateTargets, updates)
+	if !validUpdates {
 		return
 	}
 	transaction, err = newImportTransaction(s, "jmeter", preparedScripts, updates, scenarioID, scenarioRequest)
@@ -1130,6 +1130,8 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "failed to prepare imported assets: "+err.Error())
 		return
 	}
+
+	transaction.reconciledUpdates = reconciledUpdates
 
 	storedScripts := make([]*StoredScript, 0, len(preparedScripts))
 	for index, safeScript := range preparedScripts {

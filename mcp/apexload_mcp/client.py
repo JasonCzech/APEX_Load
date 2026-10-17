@@ -165,6 +165,11 @@ class APEXLoadClient:
             "error": None if ok else self._api_error(response, parsed, path),
         }
 
+        # Preserve the server's validator verbatim. Callers pair it with the
+        # document they read and send it as If-Match; never fetch/retry for them.
+        if "ETag" in response.headers:
+            result["etag"] = response.headers["ETag"]
+
         if ok and response.headers.get("X-APEXLOAD-Audit-Status") == "unavailable":
             result["warnings"] = [{"code": "activity_unavailable", "message": "Change saved; activity history could not be recorded."}]
         return result

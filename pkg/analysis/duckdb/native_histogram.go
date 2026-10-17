@@ -398,7 +398,7 @@ func nativeHistogramSeries(ctx context.Context, db *sql.DB, paths []string, q Se
 		unit = "count"
 	}
 	template = analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: source, Host: host, Service: service, Dimensions: dimensions, MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: analysis.KindHistogram, Derivation: lineage, Unit: unit, Quality: analysis.QualityMissing}
-	identity := "source=" + literal(source) + " AND host=" + literal(host) + " AND service=" + literal(service) + " AND dimensions_json=" + literal(dimensionsJSON)
+	identity := nativeWindowIdentityFilter(source, host, service, dimensionsJSON)
 	rows, err := db.QueryContext(ctx, nativeHistogramMergeSQL(table, q, len(bounds), identity))
 	if err != nil {
 		return nil, template, true, err
@@ -448,24 +448,18 @@ func nativeHistogramSeries(ctx context.Context, db *sql.DB, paths []string, q Se
 }
 
 // nativeHistogramMergeSQL sums per-bin counts of every window starting in a
-// bucket, with the counts needed to refuse duplicated or crossing windows and
-// the reason of any missing window. A bucket is crossed when one of its
-// windows ends past the bucket's end, or when a window from an earlier bucket
-// (or from before the query start) ends inside it: either way part of the
-// bucket's observations sit in a window it cannot split.
+// bucket, with the counts needed to refuse duplicated, overlapping or crossing
+// windows and the reason of any missing window. Shared interval admission
+// checks both bucket edges and the requested query end before merging bins.
 //
 // identity restricts the lead-in to the one series the query validated: a
 // different series ending just after From says nothing about this one.
 func nativeHistogramMergeSQL(table string, q SeriesQuery, bins int, identity string) string {
-	origin := "TIMESTAMPTZ " + literal(q.From.UTC().Format(time.RFC3339Nano))
-	seconds := strconv.Itoa(q.BucketSeconds)
 	end := "timestamp_utc+window_us*INTERVAL '1 microsecond'"
-	rows := "SELECT (" + origin + " + floor(epoch(timestamp_utc-" + origin + ")/" + seconds + ")*" + seconds + "*INTERVAL '1 second') AS bucket, timestamp_utc, window_us, quality, missing_reason, counts FROM " + table + " WHERE " + nativeSeriesFilter(q)
-	leadIn := "(SELECT max(" + end + ") FROM " + table + " WHERE " + nativeSeriesLeadInFilter(q) + " AND " + identity + ")"
-	stats := "SELECT bucket, count(*) AS n, count(*) FILTER(WHERE quality='valid') AS nv, count(DISTINCT timestamp_utc) AS nt, bool_or(" + end + " > bucket+" + seconds + "*INTERVAL '1 second') AS crossing, max(" + end + ") AS max_end, coalesce(min(missing_reason) FILTER(WHERE quality='missing'),'') AS reason FROM histogram_rows GROUP BY bucket"
-	earlier := "SELECT *, coalesce(max(max_end) OVER (ORDER BY bucket ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), " + leadIn + ") AS earlier_end FROM (" + stats + ")"
+	rows := nativeWindowAdmissionSQL(table, q, nativeSeriesFilter(q), nativeSeriesLeadInFilter(q)+" AND "+identity, end, "quality, missing_reason, counts")
+	stats := "SELECT bucket, count(*) AS n, count(*) FILTER(WHERE quality='valid') AS nv, count(DISTINCT timestamp_utc) AS nt, bool_or(partial_window) AS crossing, coalesce(min(missing_reason) FILTER(WHERE quality='missing'),'') AS reason FROM histogram_rows GROUP BY bucket"
 	sums := "SELECT bucket, list(total ORDER BY i) AS merged FROM (SELECT bucket, i, sum(counts[i]) AS total FROM histogram_rows, range(1," + strconv.Itoa(bins) + "+1) t(i) WHERE quality='valid' GROUP BY bucket, i) GROUP BY bucket"
-	return "WITH histogram_rows AS (" + rows + ") SELECT s.bucket, s.n, s.nv, s.nt, s.crossing OR coalesce(s.earlier_end > s.bucket, false), s.reason, coalesce(m.merged, []::DOUBLE[]) FROM (" + earlier + ") s LEFT JOIN (" + sums + ") m USING (bucket) ORDER BY s.bucket LIMIT 10001"
+	return "WITH histogram_rows AS (" + rows + ") SELECT s.bucket, s.n, s.nv, s.nt, s.crossing, s.reason, coalesce(m.merged, []::DOUBLE[]) FROM (" + stats + ") s LEFT JOIN (" + sums + ") m USING (bucket) ORDER BY s.bucket LIMIT 10001"
 }
 
 func nativeFloatList(values []any) ([]float64, error) {
