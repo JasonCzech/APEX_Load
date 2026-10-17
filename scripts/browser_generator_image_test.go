@@ -30,11 +30,13 @@ func TestBrowserImagesRunPlaywrightChromium(t *testing.T) {
 			}
 		}
 		for _, required := range []string{
-			"FROM debian:bookworm-slim@sha256:",
+			"FROM debian:trixie-slim@sha256:",
 			"/src/dashboard/node_modules/playwright-core-go/ /opt/playwright-driver/package/",
 			"ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright",
 			"node /opt/playwright-driver/package/cli.js install --with-deps chromium",
 			"chmod -R a+rX /ms-playwright",
+			"apt-get purge -y --auto-remove xvfb xserver-common",
+			"apt-get upgrade -y --no-install-recommends",
 			"ARG PLAYWRIGHT_DOWNLOAD_HOST",
 			"USER 65532:65532",
 		} {
