@@ -308,7 +308,9 @@ administrator) access to the project.
   recording runs under the same limits as a load run's: past 100 MiB or
   100,000 entries, or when the memory watchdog picks it, the browser context
   is closed and the replay fails, and an owner that cannot be created fails
-  the replay's start. Without it a replay records only when the script's own
+  the replay's start. Where native HAR capture is not supported (see the
+  platform paragraph below), `record_har: true` is refused with 422 and the
+  replay does not start. Without it a replay records only when the script's own
   capture policy does (and serves that HAR as its native one); otherwise it
   serves the synthetic HAR built from its network entries. The Script
   Editor's debugger runs replays as script debug sessions, which offer no
@@ -386,9 +388,15 @@ limiter still cannot observe all native in-memory buffering.
 This implementation uses Linux/macOS owner identity checks and Go's secure
 os.Root operations. Other platforms reject native HAR ownership until their
 private ACL, lock and durable publication behavior is qualified; Windows stays
-rejected. The coordinated local runtime acceptance host is macOS, where the
-ownership, crash-reclamation and real-driver tests run; results are recorded
-separately in the QA bundle. The same ownership and crash-reclamation tests
+rejected. `browser.NativeHARSupported()` gives each platform's answer. Where
+it is false, a HAR-recording browser session runs without a native HAR and
+reports `browser_har_unavailable_har_platform_unsupported` once per context,
+as an exhausted HAR budget does; nothing creates, cleans or reads a HAR
+directory's staging (published-artifact reads fail with "native HAR capture
+is not supported"); and a browser replay asked for `record_har: true` is
+refused with 422 before it starts. The coordinated local runtime acceptance
+host is macOS, where the ownership, crash-reclamation and real-driver tests
+run; results are recorded separately in the QA bundle. The same ownership and crash-reclamation tests
 also pass as a static Linux binary in a container without browsers, so the
 real-driver crash test has not run on Linux. Windows acceptance must not be
 inferred from either. The filesystems and peer processes must honor the

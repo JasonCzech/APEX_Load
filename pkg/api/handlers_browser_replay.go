@@ -27,7 +27,8 @@ type BrowserReplayStartRequest struct {
 	// the browser context, so an unrequested one could fail a replay that
 	// would otherwise pass. Without it the replay serves the native HAR its
 	// script's own capture policy recorded, if any, or else the synthetic HAR
-	// built from the report's network entries.
+	// built from the report's network entries. Where native HAR capture is
+	// not supported (browser.NativeHARSupported) it is refused with 422.
 	RecordHAR      *bool                 `json:"record_har,omitempty"`
 	Script         *dsl.Script           `json:"script,omitempty"`
 	Preflight      *ReplayPreflight      `json:"-"`
@@ -127,7 +128,7 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 	s.handleStartBrowserReplayRequest(w, r, id, script, req)
 }
 
-// OpenAPI-Responses: 409, 500, 503
+// OpenAPI-Responses: 409, 422, 500, 503
 func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.Request, id string, script *dsl.Script, req BrowserReplayStartRequest) {
 	if !s.requireExecutionLeader(w) {
 		return
@@ -138,6 +139,10 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 	}
 	if err := validateDebugRunIdentity(req.RunID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.RecordHAR != nil && *req.RecordHAR && !browserNativeHARSupported() {
+		writeError(w, http.StatusUnprocessableEntity, errReplayHARPlatformUnsupported.Error())
 		return
 	}
 	script = applyBrowserReplayOverrides(script, req)
