@@ -306,3 +306,9 @@ the merged code (01a0b60ed and later) follow.
 | 1 | 38986149129, 117257968307 | b10a9e6a4 | passed: `winfs`, the browser package (40.1 s), `pkg/api` (39.0 s); 345 tests; the completed-batch subtests ran and passed; one skip, WebKit's waterfall comparison |
 | 2 | 38994746174, 117284707561 | 8e6dbdea1 (the record and a main merge; no Go changes) | passed: `winfs`, the browser package (39.7 s), `pkg/api` (35.3 s); 345 tests; one skip, WebKit's waterfall comparison |
 
+On the merged code (01a0b60ed and later):
+
+| # | Run, job | Commit | HAR step |
+| --- | --- | --- | --- |
+| 1 | 39001525209, 117305285602 | e9d6b3ddc (#235's merge; no Go changes since 01a0b60ed) | passed: `winfs`, the browser package (45.7 s), `pkg/api` (43.9 s), and the memory step's browser tests; 349 tests; one skip, WebKit's waterfall comparison |
+
