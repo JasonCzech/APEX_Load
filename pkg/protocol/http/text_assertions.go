@@ -1,13 +1,13 @@
 package http
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"sort"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 // Text assertions check a response surface for literal text or an RE2
@@ -17,24 +17,16 @@ import (
 
 // IsTextAssertion reports whether an assertion type is a text check.
 func IsTextAssertion(assertionType string) bool {
-	switch assertionType {
-	case "text_contains", "text_not_contains", "text_matches", "text_not_matches":
-		return true
-	}
-	return false
+	return httpcontract.IsTextAssertion(assertionType)
 }
 
 // IsRegexTextAssertion reports whether a text check's value is a pattern.
 func IsRegexTextAssertion(assertionType string) bool {
-	return assertionType == "text_matches" || assertionType == "text_not_matches"
+	return httpcontract.IsRegexTextAssertion(assertionType)
 }
 
 func textAssertionSource(assertion protocol.Assertion) string {
-	source := strings.ToLower(strings.TrimSpace(assertion.Source))
-	if source == "" {
-		return "body"
-	}
-	return source
+	return httpcontract.TextAssertionSource(assertion)
 }
 
 func textAssertionNeedsBody(assertion protocol.Assertion) bool {
@@ -73,10 +65,7 @@ func textAssertionSurface(assertion protocol.Assertion, headers http.Header, bod
 }
 
 func textAssertionPattern(assertion protocol.Assertion) string {
-	if assertion.CaseInsensitive {
-		return "(?i)" + assertion.Value
-	}
-	return assertion.Value
+	return httpcontract.TextAssertionPattern(assertion)
 }
 
 func evaluateTextAssertion(assertion protocol.Assertion, headers http.Header, bodyText string) error {
@@ -105,26 +94,6 @@ func evaluateTextAssertion(assertion protocol.Assertion, headers http.Header, bo
 	return nil
 }
 
-func validateTextAssertion(assertion protocol.Assertion) error {
-	if assertion.Value == "" {
-		return fmt.Errorf("%s assertion: value is required", assertion.Type)
-	}
-	switch textAssertionSource(assertion) {
-	case "body", "headers", "all":
-	default:
-		return fmt.Errorf("%s assertion: source must be body, headers or all (got %q)", assertion.Type, assertion.Source)
-	}
-	if IsRegexTextAssertion(assertion.Type) {
-		if len(assertion.Value) > maxHTTPAssertionRegexBytes {
-			return fmt.Errorf("%s assertion: pattern exceeds %d bytes", assertion.Type, maxHTTPAssertionRegexBytes)
-		}
-		if _, err := compileRegexCached(textAssertionPattern(assertion)); err != nil {
-			return fmt.Errorf("%s assertion: invalid pattern: %w", assertion.Type, err)
-		}
-	}
-	return nil
-}
-
 func textAssertionCost(assertion protocol.Assertion, budget *assertionInputWorkBudget) int64 {
 	switch textAssertionSource(assertion) {
 	case "headers":
@@ -135,5 +104,3 @@ func textAssertionCost(assertion protocol.Assertion, budget *assertionInputWorkB
 		return budget.bodyBytes
 	}
 }
-
-var errAssertionSourceUnsupported = errors.New("source applies only to text assertions")

@@ -111,6 +111,19 @@ APEXLOAD_URL=http://localhost:8080/api/v1 .venv/bin/python server.py
 
 The following commands are for contributors, from the repository root with the MCP virtual environment installed. Clients normally launch and supervise the stdio process themselves.
 
+The suite checks every curated tool's method, path, and required placeholders
+against `docs/api-endpoint-catalog.json`. Input schemas for `run_list`,
+`run_start`, `script_get`, `scenario_get`, and their compatibility aliases come
+from the generated OpenAPI document. After regenerating the API contract, run:
+
+```bash
+mcp/.venv/bin/python mcp/generate_schemas.py
+```
+
+Names, descriptions, confirmation handling, and conditional-save arguments remain
+curated. Schema metadata describes the selected API inputs; the controller still
+owns semantic validation. CI checks schema freshness and the actual MCP registry.
+
 Run the mocked unit suite:
 
 ```bash

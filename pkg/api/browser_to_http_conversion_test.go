@@ -13,6 +13,59 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+func TestBrowserToHTTPNetworkEntriesUsesRetainedReplayEvidence(t *testing.T) {
+	entry := func(path string) protocol.NetworkEntry {
+		return protocol.NetworkEntry{URL: "https://shop.example.test/" + path, Method: http.MethodGet, ResourceType: "fetch"}
+	}
+	for _, test := range []struct {
+		name    string
+		session BrowserReplaySession
+		paths   []string
+	}{
+		{
+			name: "final report replaces stale progress and includes snapshots",
+			session: BrowserReplaySession{
+				Status: BrowserReplayCompleted,
+				Events: []engine.ReplayActionEvent{{Network: []protocol.NetworkEntry{entry("stale")}}},
+				FinalReport: &engine.ReplayReport{Success: true, Events: []engine.ReplayActionEvent{
+					{Network: []protocol.NetworkEntry{entry("report")}},
+					{Snapshot: &protocol.ErrorSnapshot{NetworkEntries: []protocol.NetworkEntry{entry("snapshot")}}},
+				}},
+			},
+			paths: []string{"report", "snapshot"},
+		},
+		{
+			name: "live progress remains usable",
+			session: BrowserReplaySession{
+				Status: BrowserReplayRunning,
+				Events: []engine.ReplayActionEvent{{Network: []protocol.NetworkEntry{entry("live")}}},
+			},
+			paths: []string{"live"},
+		},
+		{
+			name: "legacy terminal snapshot retains its event list",
+			session: BrowserReplaySession{
+				Status:      BrowserReplayCompleted,
+				Events:      []engine.ReplayActionEvent{{Network: []protocol.NetworkEntry{entry("legacy")}}},
+				FinalReport: &engine.ReplayReport{Success: true},
+			},
+			paths: []string{"legacy"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			entries, skipped, evidence, err := (&Server{}).browserToHTTPNetworkEntries(BrowserToHTTPPreviewRequest{ReplaySessionID: "retained"}, &test.session)
+			if err != nil || skipped != 0 || len(entries) != len(test.paths) || evidence.NetworkEntries != len(test.paths) || !evidence.AllEntriesBound {
+				t.Fatalf("entries=%#v skipped=%d evidence=%#v err=%v", entries, skipped, evidence, err)
+			}
+			for index, path := range test.paths {
+				if entries[index].URL != entry(path).URL {
+					t.Fatalf("entry %d=%s, want %s", index, entries[index].URL, entry(path).URL)
+				}
+			}
+		})
+	}
+}
+
 func TestHandlePreviewBrowserToHTTPGeneratesReviewDraftAndScenarioTemplate(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	body, _ := json.Marshal(BrowserToHTTPPreviewRequest{
@@ -216,23 +269,10 @@ func TestHandlePreviewBrowserToHTTPUsesPostedNetworkEvidenceWhenSessionIDIsStale
 
 func TestHandlePreviewBrowserToHTTPRejectsCallerApprovalWithoutDurableCorrelationEvidence(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
-	const sessionID = "durable-browser-replay"
-	server.browserReplay.mu.Lock()
-	server.browserReplay.sessions[sessionID] = &BrowserReplaySession{
-		ID:          sessionID,
-		Status:      BrowserReplayCompleted,
-		Protocol:    "browser",
-		FinalReport: &engine.ReplayReport{Success: true},
-		Events: []engine.ReplayActionEvent{{
-			Network: []protocol.NetworkEntry{{
-				URL:          "https://shop.example.test/api/cart",
-				Method:       http.MethodGet,
-				StatusCode:   http.StatusOK,
-				ResourceType: "fetch",
-			}},
-		}},
-	}
-	server.browserReplay.mu.Unlock()
+	const sessionID = "11111111-1111-4111-8111-111111111111"
+	completeBrowserReplayFixture(t, server, sessionID, true, []protocol.NetworkEntry{{
+		URL: "https://shop.example.test/api/cart", Method: http.MethodGet, StatusCode: http.StatusOK, ResourceType: "fetch",
+	}})
 
 	body, err := json.Marshal(BrowserToHTTPPreviewRequest{
 		ReplaySessionID: sessionID,
@@ -265,18 +305,10 @@ func TestHandlePreviewBrowserToHTTPRejectsCallerApprovalWithoutDurableCorrelatio
 
 func TestHandlePreviewBrowserToHTTPFailedReplayIsNotDurable(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
-	const sessionID = "failed-browser-replay"
-	server.browserReplay.mu.Lock()
-	server.browserReplay.sessions[sessionID] = &BrowserReplaySession{
-		ID:          sessionID,
-		Status:      BrowserReplayCompleted,
-		Protocol:    "browser",
-		FinalReport: &engine.ReplayReport{Success: false, Error: "assertion failed"},
-		Events: []engine.ReplayActionEvent{{Network: []protocol.NetworkEntry{{
-			URL: "https://shop.example.test/api/cart", Method: http.MethodGet, StatusCode: http.StatusInternalServerError, ResourceType: "fetch",
-		}}}},
-	}
-	server.browserReplay.mu.Unlock()
+	const sessionID = "22222222-2222-4222-8222-222222222222"
+	completeBrowserReplayFixture(t, server, sessionID, false, []protocol.NetworkEntry{{
+		URL: "https://shop.example.test/api/cart", Method: http.MethodGet, StatusCode: http.StatusInternalServerError, ResourceType: "fetch",
+	}})
 
 	body, err := json.Marshal(BrowserToHTTPPreviewRequest{ReplaySessionID: sessionID})
 	if err != nil {
@@ -303,7 +335,7 @@ func TestHandlePreviewBrowserToHTTPFailedReplayIsNotDurable(t *testing.T) {
 
 func TestHandlePreviewBrowserToHTTPPostedEntryCannotShadowReplayResponse(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
-	const sessionID = "canonical-browser-replay"
+	const sessionID = "33333333-3333-4333-8333-333333333333"
 	canonical := protocol.NetworkEntry{
 		URL:             "https://shop.example.test/api/orders",
 		Method:          http.MethodPost,
@@ -313,15 +345,7 @@ func TestHandlePreviewBrowserToHTTPPostedEntryCannotShadowReplayResponse(t *test
 		RequestBody:     `{"sku":"one"}`,
 		ResponseHeaders: map[string]string{"X-Attested": "true"},
 	}
-	server.browserReplay.mu.Lock()
-	server.browserReplay.sessions[sessionID] = &BrowserReplaySession{
-		ID:          sessionID,
-		Status:      BrowserReplayCompleted,
-		Protocol:    "browser",
-		FinalReport: &engine.ReplayReport{Success: true},
-		Events:      []engine.ReplayActionEvent{{Network: []protocol.NetworkEntry{canonical}}},
-	}
-	server.browserReplay.mu.Unlock()
+	completeBrowserReplayFixture(t, server, sessionID, true, []protocol.NetworkEntry{canonical})
 	forged := canonical
 	forged.StatusCode = http.StatusInternalServerError
 	forged.ResponseHeaders = map[string]string{"X-Attested": "false", "X-Forged": "true"}

@@ -7,7 +7,7 @@ import {
   clearScenarioBuilderDraft,
   hasScenarioBuilderProgress,
 } from './scenarioBuilderDraft'
-import type { ScenarioFormState, ScenarioStartChoice } from './TestHub'
+import type { ScenarioFormState, ScenarioStartChoice } from '../types/scenarioAuthoring'
 
 interface ProgressDraft {
   form: ScenarioFormState

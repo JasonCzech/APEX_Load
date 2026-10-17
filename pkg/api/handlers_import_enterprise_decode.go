@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 // handlers_import_enterprise_decode — split from handlers_scripts.go (same package, behavior-preserving).
 
 import (
@@ -16,23 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 )
 
-func fidelityReportValue(value any) *enterprisearchive.ImportFidelityReport {
-	if value == nil {
-		return nil
-	}
-	if report, ok := value.(*enterprisearchive.ImportFidelityReport); ok {
-		return report
-	}
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return nil
-	}
-	var report enterprisearchive.ImportFidelityReport
-	if err := json.Unmarshal(payload, &report); err != nil {
-		return nil
-	}
-	return &report
-}
+var fidelityReportValue = importreview.FidelityReportValue
 
 func salesforceReviewValue(value any) *salesforce.Review {
 	if value == nil {
@@ -88,63 +74,9 @@ func mulesoftReviewValue(value any) *mulesoft.Review {
 	return &review
 }
 
-func runtimeSettingsParityValue(value any) []enterprisearchive.RuntimeSettingParityEntry {
-	switch typed := value.(type) {
-	case []enterprisearchive.RuntimeSettingParityEntry:
-		return append([]enterprisearchive.RuntimeSettingParityEntry(nil), typed...)
-	case []any:
-		entries := make([]enterprisearchive.RuntimeSettingParityEntry, 0, len(typed))
-		for _, item := range typed {
-			mapping, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			entry := enterprisearchive.RuntimeSettingParityEntry{
-				ID:           stringValue(mapping["id"]),
-				Area:         stringValue(mapping["area"]),
-				Concept:      stringValue(mapping["concept"]),
-				Fields:       stringSliceValue(mapping["fields"]),
-				Status:       enterprisearchive.RuntimeSettingStatus(stringValue(mapping["status"])),
-				Notes:        stringValue(mapping["notes"]),
-				RuntimeFiles: stringSliceValue(mapping["runtime_files"]),
-			}
-			if entry.ID == "" {
-				continue
-			}
-			entries = append(entries, entry)
-		}
-		return entries
-	default:
-		return nil
-	}
-}
+var runtimeSettingsParityValue = importreview.RuntimeSettingsParityValue
 
-func enterpriseArchiveMigrationReadinessValue(value any) *enterprisearchive.RuntimeSettingMigrationReadiness {
-	switch typed := value.(type) {
-	case *enterprisearchive.RuntimeSettingMigrationReadiness:
-		return typed
-	case enterprisearchive.RuntimeSettingMigrationReadiness:
-		clone := typed
-		return &clone
-	case map[string]any:
-		readiness := &enterprisearchive.RuntimeSettingMigrationReadiness{
-			ScorePct:         intValue(typed["score_pct"]),
-			Blocked:          boolValue(typed["blocked"]),
-			Summary:          stringValue(typed["summary"]),
-			BlockingStatuses: runtimeSettingStatusSliceValue(typed["blocking_statuses"]),
-			BlockingSettings: runtimeSettingsParityValue(typed["blocking_settings"]),
-			Policy: enterprisearchive.RuntimeSettingMigrationPolicy{
-				BlockStatuses: runtimeSettingPolicyStatuses(typed["policy"]),
-			},
-		}
-		if readiness.ScorePct == 0 && !readiness.Blocked && readiness.Summary == "" && len(readiness.BlockingStatuses) == 0 && len(readiness.BlockingSettings) == 0 && len(readiness.Policy.BlockStatuses) == 0 {
-			return nil
-		}
-		return readiness
-	default:
-		return nil
-	}
-}
+var enterpriseArchiveMigrationReadinessValue = importreview.EnterpriseArchiveMigrationReadinessValue
 
 func trueClientArchiveInspectionValue(value any) *trueclient.ArchiveInspection {
 	switch typed := value.(type) {
@@ -157,97 +89,11 @@ func trueClientArchiveInspectionValue(value any) *trueclient.ArchiveInspection {
 	}
 }
 
-func sourceReviewValue(value any) *enterprisearchive.SourceReview {
-	switch typed := value.(type) {
-	case *enterprisearchive.SourceReview:
-		return typed
-	case enterprisearchive.SourceReview:
-		clone := typed
-		return &clone
-	case map[string]any:
-		review := &enterprisearchive.SourceReview{
-			TargetDomain:       stringValue(typed["target_domain"]),
-			SourceFiles:        sourceReviewFilesValue(typed["source_files"]),
-			Mappings:           sourceReviewMappingsValue(typed["mappings"]),
-			TotalSourceFiles:   intValue(typed["total_source_files"]),
-			OmittedSourceFiles: stringSliceValue(typed["omitted_source_files"]),
-		}
-		if len(review.SourceFiles) == 0 && len(review.Mappings) == 0 && review.TotalSourceFiles == 0 && len(review.OmittedSourceFiles) == 0 {
-			return nil
-		}
-		return review
-	default:
-		return nil
-	}
-}
+var sourceReviewValue = importreview.SourceReviewValue
 
-func sourceReviewFilesValue(value any) []enterprisearchive.SourceReviewFile {
-	switch typed := value.(type) {
-	case []enterprisearchive.SourceReviewFile:
-		return append([]enterprisearchive.SourceReviewFile(nil), typed...)
-	case []any:
-		files := make([]enterprisearchive.SourceReviewFile, 0, len(typed))
-		for _, item := range typed {
-			mapping, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			file := enterprisearchive.SourceReviewFile{
-				Path:          stringValue(mapping["path"]),
-				Language:      stringValue(mapping["language"]),
-				Content:       stringValue(mapping["content"]),
-				OriginalBytes: intValue(mapping["original_bytes"]),
-				Truncated:     boolValue(mapping["truncated"]),
-				Redacted:      boolValue(mapping["redacted"]),
-				FullSHA256:    stringValue(mapping["full_sha256"]),
-				FullBytes:     intValue(mapping["full_bytes"]),
-				FullLines:     intValue(mapping["full_lines"]),
-			}
-			if file.Path == "" {
-				continue
-			}
-			files = append(files, file)
-		}
-		return files
-	default:
-		return nil
-	}
-}
+var sourceReviewFilesValue = importreview.SourceReviewFilesValue
 
-func sourceReviewMappingsValue(value any) []enterprisearchive.SourceReviewMapping {
-	switch typed := value.(type) {
-	case []enterprisearchive.SourceReviewMapping:
-		return append([]enterprisearchive.SourceReviewMapping(nil), typed...)
-	case []any:
-		mappings := make([]enterprisearchive.SourceReviewMapping, 0, len(typed))
-		for _, item := range typed {
-			raw, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			mapping := enterprisearchive.SourceReviewMapping{
-				ID:          stringValue(raw["id"]),
-				SourceFile:  stringValue(raw["source_file"]),
-				StartLine:   intValue(raw["start_line"]),
-				EndLine:     intValue(raw["end_line"]),
-				Function:    stringValue(raw["function"]),
-				TargetPath:  stringValue(raw["target_path"]),
-				TargetName:  stringValue(raw["target_name"]),
-				TargetKind:  stringValue(raw["target_kind"]),
-				Status:      stringValue(raw["status"]),
-				SupportMode: stringValue(raw["support_mode"]),
-				Notes:       stringValue(raw["notes"]),
-			}
-			if mapping.ID == "" && mapping.SourceFile == "" && mapping.TargetPath == "" {
-				continue
-			}
-			mappings = append(mappings, mapping)
-		}
-		return mappings
-	default:
-		return nil
-	}
-}
+var sourceReviewMappingsValue = importreview.SourceReviewMappingsValue
 
 func intMapValue(value any) map[string]int {
 	switch typed := value.(type) {
@@ -282,54 +128,13 @@ func intMapValue(value any) map[string]int {
 	}
 }
 
-func intValue(value any) int {
-	switch typed := value.(type) {
-	case int:
-		return typed
-	case float64:
-		return int(typed)
-	default:
-		return 0
-	}
-}
+var intValue = importreview.IntValue
 
-func boolValue(value any) bool {
-	switch typed := value.(type) {
-	case bool:
-		return typed
-	case string:
-		return parseBoolDefault(typed, false)
-	default:
-		return false
-	}
-}
+var boolValue = importreview.BoolValue
 
-func runtimeSettingStatusSliceValue(value any) []enterprisearchive.RuntimeSettingStatus {
-	switch typed := value.(type) {
-	case []enterprisearchive.RuntimeSettingStatus:
-		return append([]enterprisearchive.RuntimeSettingStatus(nil), typed...)
-	case []any:
-		statuses := make([]enterprisearchive.RuntimeSettingStatus, 0, len(typed))
-		for _, item := range typed {
-			status := enterprisearchive.RuntimeSettingStatus(stringValue(item))
-			if status == "" {
-				continue
-			}
-			statuses = append(statuses, status)
-		}
-		return statuses
-	default:
-		return nil
-	}
-}
+var runtimeSettingStatusSliceValue = importreview.RuntimeSettingStatusSliceValue
 
-func runtimeSettingPolicyStatuses(value any) []enterprisearchive.RuntimeSettingStatus {
-	mapping, ok := value.(map[string]any)
-	if !ok {
-		return nil
-	}
-	return runtimeSettingStatusSliceValue(mapping["block_statuses"])
-}
+var runtimeSettingPolicyStatuses = importreview.RuntimeSettingPolicyStatuses
 
 func runtimeSettingsParitySeverity(entries []enterprisearchive.RuntimeSettingParityEntry) string {
 	severity := "info"

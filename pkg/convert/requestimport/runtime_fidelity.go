@@ -14,7 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/protocol"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 	"golang.org/x/net/http/httpguts"
 )
 
@@ -1478,9 +1478,9 @@ func runtimeSurfaceEffectiveHTTPVersion(ref dslwalk.SurfaceRef, inherited string
 		return dsl.EffectiveHTTPVersion(*ref.Action, inherited)
 	}
 	action := dsl.Action{}
-	if raw, present := ref.Request["http_version"]; present {
-		value, ok := raw.(string)
-		if !ok {
+	if field := ref.HTTPVersion(); field.Present {
+		value := field.Value
+		if !field.Valid {
 			return "auto", fmt.Errorf("invalid HTTP version scalar")
 		}
 		var err error

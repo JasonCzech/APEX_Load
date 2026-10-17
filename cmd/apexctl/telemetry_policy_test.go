@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/telemetrypolicy"
 )
 
-func telemetryPolicyCLIFixture(t *testing.T) *api.TelemetryPolicyEvidence {
+func telemetryPolicyCLIFixture(t *testing.T) *telemetrypolicy.TelemetryPolicyEvidence {
 	t.Helper()
-	policy := api.TelemetryBudgetPolicy{SchemaVersion: "apexload.telemetry_policy.v1", PolicyID: "system-telemetry-budgets", Revision: 1, CapturedAt: time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC), CaptureBoundary: "execution-admission-before-staging", ClassificationAlgorithm: "legacy-mixed-diagnostic.v1", ExpectedControllerPublicationIntervalMs: 3000, CadenceScope: "local-controller-ticker", SustainedBreachWindowMs: 15000, CoverageRule: "retained-classifications-only;gaps-unknown", Budgets: []api.TelemetryStageBudget{{Stage: "sample_age", Enabled: true, LimitMs: 11}, {Stage: "generator_processing", Enabled: false, LimitMs: 0}, {Stage: "transport", Enabled: true, LimitMs: 750}, {Stage: "controller_fanout", Enabled: true, LimitMs: 250}, {Stage: "browser_render", Enabled: true, LimitMs: 1e-12}}}
+	policy := telemetrypolicy.TelemetryBudgetPolicy{SchemaVersion: "apexload.telemetry_policy.v1", PolicyID: "system-telemetry-budgets", Revision: 1, CapturedAt: time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC), CaptureBoundary: "execution-admission-before-staging", ClassificationAlgorithm: "legacy-mixed-diagnostic.v1", ExpectedControllerPublicationIntervalMs: 3000, CadenceScope: "local-controller-ticker", SustainedBreachWindowMs: 15000, CoverageRule: "retained-classifications-only;gaps-unknown", Budgets: []telemetrypolicy.TelemetryStageBudget{{Stage: "sample_age", Enabled: true, LimitMs: 11}, {Stage: "generator_processing", Enabled: false, LimitMs: 0}, {Stage: "transport", Enabled: true, LimitMs: 750}, {Stage: "controller_fanout", Enabled: true, LimitMs: 250}, {Stage: "browser_render", Enabled: true, LimitMs: 1e-12}}}
 	identity := policy
 	identity.CapturedAt = time.Time{}
 	raw, err := json.Marshal(identity)
@@ -27,10 +27,10 @@ func telemetryPolicyCLIFixture(t *testing.T) *api.TelemetryPolicyEvidence {
 	}
 	digest := sha256.Sum256(raw)
 	policy.Hash = hex.EncodeToString(digest[:])
-	if !api.ValidateTelemetryBudgetPolicy(&policy) {
+	if !telemetrypolicy.ValidateTelemetryBudgetPolicy(&policy) {
 		t.Fatal("fixture must satisfy the actual shared server validator")
 	}
-	return &api.TelemetryPolicyEvidence{Availability: "available", Policy: &policy}
+	return &telemetrypolicy.TelemetryPolicyEvidence{Availability: "available", Policy: &policy}
 }
 
 func TestTelemetryPolicyCLIReadOnlyProjection(t *testing.T) {
@@ -63,8 +63,8 @@ func TestTelemetryPolicyCLIReadOnlyProjection(t *testing.T) {
 				t.Fatal("must project one read response without protected surrounding fields")
 			}
 			var projection struct {
-				TestID          string                      `json:"test_id"`
-				TelemetryPolicy api.TelemetryPolicyEvidence `json:"telemetry_policy"`
+				TestID          string                                  `json:"test_id"`
+				TelemetryPolicy telemetrypolicy.TelemetryPolicyEvidence `json:"telemetry_policy"`
 			}
 			if json.Unmarshal(output.Bytes(), &projection) != nil || projection.TestID != "canonical-run" || projection.TelemetryPolicy.Policy.Budgets[1].Enabled || projection.TelemetryPolicy.Policy.Budgets[4].LimitMs != 1e-12 {
 				t.Fatalf("policy or canonical identity changed: %s", output.Bytes())

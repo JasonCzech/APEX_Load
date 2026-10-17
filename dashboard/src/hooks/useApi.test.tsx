@@ -16,7 +16,7 @@ vi.mock('./apiClient', async (importOriginal) => {
 })
 
 import { ApiProvider } from './ApiProvider'
-import { ApiError, useApi, useOptionalApi } from './useApi'
+import { ApiError, useApi, useOptionalApi, useRecordingApi } from './useApi'
 import { ApiError as ClientApiError } from './apiClient'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -65,7 +65,7 @@ describe('ApiProvider', () => {
   it('exposes every domain hook on one flat context value', async () => {
     let services: Record<string, unknown> | undefined
     function Consumer() {
-      services = useApi() as unknown as Record<string, unknown>
+      services = useRecordingApi() as unknown as Record<string, unknown>
       return null
     }
     await act(async () => {

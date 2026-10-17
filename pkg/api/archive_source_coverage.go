@@ -119,29 +119,3 @@ func liveTableLossNote(aliases []string) string {
 	}
 	return " Live tables " + strings.Join(aliases, ", ") + effect
 }
-
-// Label names a source the way an operator knows it, as the run's error names
-// a generator: "gen-b (10.0.0.7:9090; us-west; group Store_Cart)", or its
-// address alone when nothing else was recorded.
-func (source RunArchiveSource) Label() string {
-	target := strings.TrimSpace(source.Target)
-	name := firstNonEmpty(strings.TrimSpace(source.GeneratorID), target)
-	var details []string
-	if name != target && target != "" {
-		details = append(details, target)
-	}
-	if region := strings.TrimSpace(source.Region); region != "" {
-		details = append(details, region)
-	}
-	switch len(source.Groups) {
-	case 0:
-	case 1:
-		details = append(details, "group "+source.Groups[0])
-	default:
-		details = append(details, "groups "+strings.Join(source.Groups, ", "))
-	}
-	if len(details) > 0 {
-		name += " (" + strings.Join(details, "; ") + ")"
-	}
-	return name
-}

@@ -13,6 +13,8 @@ import (
 // the canonical script. It is intended for generator pods mounting the same
 // immutable object namespace as the controller; artifact IDs are never treated
 // as filesystem paths.
+// Deprecated: the bundled Bruno runtime is retired; native source workflows
+// use EncryptedStore directly.
 type ContentAddressedResolver struct {
 	Objects *EncryptedStore
 	Kind    string

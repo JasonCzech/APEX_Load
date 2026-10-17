@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"crypto/sha256"
 	"encoding/hex"
@@ -85,13 +87,7 @@ func attachProtectedImportSourceCommitFence(
 	ensureScriptImportPreserved(script, fence.SourceProfile)[storage.ImportSourceCommitFenceMetadataKey] = fence
 }
 
-func stripProtectedImportSourceCommitFence(script *dsl.Script) {
-	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
-		script.Metadata.Import.Preserved == nil {
-		return
-	}
-	delete(script.Metadata.Import.Preserved, storage.ImportSourceCommitFenceMetadataKey)
-}
+var stripProtectedImportSourceCommitFence = importreview.StripProtectedImportSourceCommitFence
 
 func readProtectedImportSourceCommitFence(
 	script *dsl.Script,

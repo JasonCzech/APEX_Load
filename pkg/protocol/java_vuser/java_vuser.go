@@ -28,6 +28,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/internal/subprocessguard"
 	"github.com/jasonczech/apexload/pkg/javarunner"
+	"github.com/jasonczech/apexload/pkg/javarunner/ipc"
 	"github.com/jasonczech/apexload/pkg/javasidecar"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -42,8 +43,8 @@ const (
 	defaultHealthTimeout   = 5 * time.Second
 	defaultHarnessMain     = "Harness"
 	javaVuserProtocolName  = "java_vuser"
-	javaVuserIPCContract   = "apexload.java_vuser.ipc.v2"
-	javaVuserEventV2       = "apexload.java_vuser.lrapi_events.v2"
+	javaVuserIPCContract   = ipc.ContractV2
+	javaVuserEventV2       = ipc.EventContractV2
 	javaVuserValidationV1  = "java_vuser_validation_only_v1"
 	javaVuserClassloaderV1 = "java_vuser_dedicated_classloader_v1"
 	// FeatureLocalProcessContainmentV1 distinguishes an in-generator runtime
@@ -343,18 +344,7 @@ type runCommand struct {
 	Params           map[string]any `json:"params,omitempty"`
 }
 
-type runnerSummary struct {
-	Contract          string `json:"contract,omitempty"`
-	Kind              string `json:"kind,omitempty"`
-	RequestID         string `json:"request_id,omitempty"`
-	Success           *bool  `json:"success,omitempty"`
-	Error             string `json:"error,omitempty"`
-	ClassName         string `json:"class_name,omitempty"`
-	Method            string `json:"method,omitempty"`
-	DurationMS        int64  `json:"duration_ms,omitempty"`
-	EventFallbackUsed bool   `json:"event_fallback_used,omitempty"`
-	EventsTruncated   bool   `json:"events_truncated,omitempty"`
-}
+type runnerSummary = ipc.Summary
 
 type runnerEvent struct {
 	Contract            string `json:"contract,omitempty"`
@@ -1070,8 +1060,7 @@ func (j *JavaVuser) executeOneShot(ctx context.Context, action *protocol.Action,
 	if j.cfg.RequireBoundSummary {
 		boundSummary, hasBoundSummary = parseBoundRunnerSummary(stdoutText, cmdPayload.RequestID)
 		if hasBoundSummary {
-			eventStreamTruncated = eventStreamTruncated || boundSummary.EventsTruncated ||
-				(boundSummary.EventFallbackUsed && stderrTruncated)
+			eventStreamTruncated = boundSummary.EventCaptureTruncated(eventStreamTruncated, stderrTruncated)
 		}
 		if err == nil && !hasBoundSummary {
 			err = fmt.Errorf("java_vuser runner produced no matching result summary")
@@ -2291,12 +2280,7 @@ func resolveRunnerPath(workDir, path string) string {
 	return filepath.Join(workDir, path)
 }
 
-type runnerHealthEnvelope struct {
-	Contract      string   `json:"contract"`
-	Kind          string   `json:"kind"`
-	EventContract string   `json:"event_contract"`
-	Features      []string `json:"features"`
-}
+type runnerHealthEnvelope = ipc.HealthEnvelope
 
 func checkHarnessFeature(ctx context.Context, cfg configuration, requiredFeature string) error {
 	capabilities, err := cachedLocalHarnessCapabilities(ctx, cfg)
@@ -2826,17 +2810,7 @@ func parseRunnerSummary(stdout string) (runnerSummary, bool) {
 }
 
 func parseBoundRunnerSummary(stdout, requestID string) (runnerSummary, bool) {
-	for _, line := range reverseNonEmptyLines(stdout) {
-		var summary runnerSummary
-		if err := json.Unmarshal([]byte(line), &summary); err != nil {
-			continue
-		}
-		if summary.Contract == javaVuserIPCContract && summary.Kind == "result" &&
-			summary.RequestID == requestID && summary.Success != nil {
-			return summary, true
-		}
-	}
-	return runnerSummary{}, false
+	return ipc.ParseBoundSummary(stdout, requestID)
 }
 
 func parseRunnerEvents(stderr string) []runnerEvent {

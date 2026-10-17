@@ -42,7 +42,7 @@ func TestImportDraftAugmentAttachesTheSharedSetForABareDraft(t *testing.T) {
 		},
 	}
 
-	augmented := draft.augment(augmentTestRequest())
+	augmented := draft.Augment(augmentTestRequest())
 
 	if script.ProjectID != "proj-augment" {
 		t.Fatalf("script.ProjectID = %q, want proj-augment", script.ProjectID)
@@ -74,7 +74,7 @@ func TestImportDraftAugmentRecordsProvenanceWithoutASourceReview(t *testing.T) {
 	script := augmentTestScript("No Review")
 	draft := importDraft{Source: "broker_config", ProjectID: "proj-x", Script: script}
 
-	draft.augment(augmentTestRequest())
+	draft.Augment(augmentTestRequest())
 
 	if script.Metadata == nil || script.Metadata.Import == nil ||
 		script.Metadata.Import.Source != "broker_config" {
@@ -96,7 +96,7 @@ func TestImportDraftAugmentValidatesEachBatchScriptIndependently(t *testing.T) {
 		Script:    clean,
 		Scripts:   []*dsl.Script{clean, broken},
 	}
-	augmented := draft.augment(augmentTestRequest())
+	augmented := draft.Augment(augmentTestRequest())
 
 	if augmented.Preflight == nil || !augmented.Preflight.Valid {
 		t.Fatalf("primary preflight = %#v, want valid", augmented.Preflight)
@@ -121,7 +121,7 @@ func TestImportDraftAugmentKeepsValidationIssuesOutOfPreflightWarnings(t *testin
 	script.Protocol = ""
 
 	draft := importDraft{Source: "example_format", ProjectID: "proj-y", Script: script}
-	augmented := draft.augment(augmentTestRequest())
+	augmented := draft.Augment(augmentTestRequest())
 
 	if augmented.Preflight == nil {
 		t.Fatal("augmentation produced no preflight")
@@ -146,7 +146,7 @@ func TestImportDraftAugmentRunsProtocolDetectorsForEveryFormat(t *testing.T) {
 	script.Actions[0].Target = "https://orders.us-e2.cloudhub.io/api/orders"
 
 	draft := importDraft{Source: "k6", ProjectID: "proj-mule", Script: script}
-	augmented := draft.augment(augmentTestRequest())
+	augmented := draft.Augment(augmentTestRequest())
 
 	var found bool
 	for _, section := range augmented.Sections {

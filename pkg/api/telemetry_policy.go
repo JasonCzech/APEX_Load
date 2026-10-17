@@ -1,47 +1,25 @@
 package api
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/telemetrypolicy"
 )
 
-const telemetryPolicyVersion = "apexload.telemetry_policy.v1"
+const telemetryPolicyVersion = telemetrypolicy.Version
 
 // TelemetryBudgetPolicy is an immutable receipt of the resolved settings used
 // by the existing diagnostic algorithm. This receipt does not certify source
 // clocks, complete time coverage, exact loss totals, or a telemetry CI verdict.
-type TelemetryBudgetPolicy struct {
-	SchemaVersion                           string                 `json:"schema_version"`
-	PolicyID                                string                 `json:"policy_id"`
-	Revision                                int                    `json:"revision"`
-	Hash                                    string                 `json:"hash"`
-	CapturedAt                              time.Time              `json:"captured_at"`
-	CaptureBoundary                         string                 `json:"capture_boundary"`
-	ClassificationAlgorithm                 string                 `json:"classification_algorithm"`
-	ExpectedControllerPublicationIntervalMs int64                  `json:"expected_controller_publication_interval_ms"`
-	CadenceScope                            string                 `json:"cadence_scope"`
-	SustainedBreachWindowMs                 int64                  `json:"sustained_breach_window_ms"`
-	CoverageRule                            string                 `json:"coverage_rule"`
-	Budgets                                 []TelemetryStageBudget `json:"budgets"`
-}
+type TelemetryBudgetPolicy = telemetrypolicy.TelemetryBudgetPolicy
 
-type TelemetryStageBudget struct {
-	Stage   string  `json:"stage"`
-	Enabled bool    `json:"enabled"`
-	LimitMs float64 `json:"limit_ms"`
-}
+type TelemetryStageBudget = telemetrypolicy.TelemetryStageBudget
 
 // Availability belongs to the policy receipt, not to the collected metrics.
 // Legacy evidence remains readable without acquiring invented policy identity.
-type TelemetryPolicyEvidence struct {
-	Availability string                 `json:"availability"`
-	Reason       string                 `json:"reason,omitempty"`
-	Policy       *TelemetryBudgetPolicy `json:"policy,omitempty"`
-}
+type TelemetryPolicyEvidence = telemetrypolicy.TelemetryPolicyEvidence
 
 func captureTelemetryBudgetPolicy(settings RunArchiveExecutionSettingsSnapshot, distributed bool, now time.Time) *TelemetryBudgetPolicy {
 	interval, ok := checkedDuration(settings.General.MetricsIntervalSeconds, time.Second)
@@ -79,48 +57,15 @@ func captureTelemetryBudgetPolicy(settings RunArchiveExecutionSettingsSnapshot, 
 // policies must compare equal across runs. No process credential/fence is hashed
 // or disclosed here, and no source-generation identity is synthesized.
 func telemetryBudgetPolicyHash(policy *TelemetryBudgetPolicy) string {
-	if policy == nil {
-		return ""
-	}
-	value := *policy
-	value.Hash = ""
-	value.CapturedAt = time.Time{}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return ""
-	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:])
+	return telemetrypolicy.Hash(policy)
 }
 
 func cloneTelemetryBudgetPolicy(policy *TelemetryBudgetPolicy) *TelemetryBudgetPolicy {
-	if policy == nil {
-		return nil
-	}
-	owned := *policy
-	owned.Budgets = append([]TelemetryStageBudget(nil), policy.Budgets...)
-	return &owned
+	return telemetrypolicy.Clone(policy)
 }
 
 func validTelemetryBudgetPolicy(policy *TelemetryBudgetPolicy) bool {
-	if policy == nil || policy.SchemaVersion != telemetryPolicyVersion || policy.PolicyID != "system-telemetry-budgets" || policy.Revision != 1 ||
-		policy.CapturedAt.IsZero() || policy.CapturedAt.Location() != time.UTC ||
-		policy.CaptureBoundary != "execution-admission-before-staging" || policy.ClassificationAlgorithm != "legacy-mixed-diagnostic.v1" ||
-		policy.SustainedBreachWindowMs != telemetrySustainedBreachWindow.Milliseconds() ||
-		policy.CoverageRule != "retained-classifications-only;gaps-unknown" ||
-		policy.ExpectedControllerPublicationIntervalMs <= 0 || policy.ExpectedControllerPublicationIntervalMs > int64((time.Duration(1<<63-1))/time.Millisecond) ||
-		(policy.CadenceScope != "local-controller-ticker" && policy.CadenceScope != "distributed-controller-coalescing-gate") || len(policy.Budgets) != 5 ||
-		(policy.CadenceScope == "distributed-controller-coalescing-gate" && policy.ExpectedControllerPublicationIntervalMs != 1000) ||
-		(policy.CadenceScope == "local-controller-ticker" && (policy.ExpectedControllerPublicationIntervalMs < 1000 || policy.ExpectedControllerPublicationIntervalMs%1000 != 0)) {
-		return false
-	}
-	stages := []string{"sample_age", "generator_processing", "transport", "controller_fanout", "browser_render"}
-	for i, budget := range policy.Budgets {
-		if budget.Stage != stages[i] || math.IsNaN(budget.LimitMs) || math.IsInf(budget.LimitMs, 0) || budget.LimitMs < 0 || budget.Enabled != (budget.LimitMs > 0) {
-			return false
-		}
-	}
-	return len(policy.Hash) == 64 && policy.Hash == telemetryBudgetPolicyHash(policy)
+	return telemetrypolicy.Validate(policy)
 }
 
 func telemetryPolicyEvidenceFromProvenance(initial *RunArchiveProvenance) *TelemetryPolicyEvidence {

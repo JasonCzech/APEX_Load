@@ -11,7 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/librarycontract"
 )
 
 const maxCLILibraryBundleBytes = 64 << 20
@@ -51,7 +51,7 @@ func libraryCmd() {
 	client := NewApiClientWithAuth(args.api, args.apiKey, args.bearerToken)
 	switch subcommand {
 	case "export":
-		bundle, err := client.ExportLibraryBundle(context.Background(), api.LibraryTransferRequest{
+		bundle, err := client.ExportLibraryBundle(context.Background(), librarycontract.LibraryTransferRequest{
 			Kind: args.kind, ID: args.id, ProjectID: args.projectID, IncludeDependencies: args.includeDependencies,
 		})
 		if err != nil {
@@ -83,7 +83,7 @@ func libraryCmd() {
 			fmt.Fprintf(os.Stderr, "error reading library bundle: %v\n", err)
 			os.Exit(exitCodeUsageOrConfiguration)
 		}
-		result, conflicted, err := client.ImportLibraryBundle(context.Background(), api.LibraryImportRequest{
+		result, conflicted, err := client.ImportLibraryBundle(context.Background(), librarycontract.LibraryImportRequest{
 			Bundle: bundle, ProjectID: args.projectID, ApplicationID: args.applicationID, ReleaseID: args.releaseID,
 		})
 		if err != nil {
@@ -172,8 +172,8 @@ func validCLILibraryKind(kind string) bool {
 	}
 }
 
-func readCLILibraryBundle(path string) (api.LibraryBundle, error) {
-	var bundle api.LibraryBundle
+func readCLILibraryBundle(path string) (librarycontract.LibraryBundle, error) {
+	var bundle librarycontract.LibraryBundle
 	file, err := os.Open(path)
 	if err != nil {
 		return bundle, err
@@ -229,16 +229,16 @@ func writeCLILibraryBundle(path string, data []byte) (err error) {
 	return file.Sync()
 }
 
-func (c *ApiClient) ExportLibraryBundle(ctx context.Context, request api.LibraryTransferRequest) (*api.LibraryBundle, error) {
-	var bundle api.LibraryBundle
+func (c *ApiClient) ExportLibraryBundle(ctx context.Context, request librarycontract.LibraryTransferRequest) (*librarycontract.LibraryBundle, error) {
+	var bundle librarycontract.LibraryBundle
 	if err := c.libraryJSONRequest(ctx, "/api/v1/library/export", request, http.StatusOK, &bundle); err != nil {
 		return nil, err
 	}
 	return &bundle, nil
 }
 
-func (c *ApiClient) ImportLibraryBundle(ctx context.Context, request api.LibraryImportRequest) (*api.LibraryImportResponse, bool, error) {
-	var result api.LibraryImportResponse
+func (c *ApiClient) ImportLibraryBundle(ctx context.Context, request librarycontract.LibraryImportRequest) (*librarycontract.LibraryImportResponse, bool, error) {
+	var result librarycontract.LibraryImportResponse
 	status, err := c.libraryJSONRequestStatuses(ctx, "/api/v1/library/import", request, map[int]bool{http.StatusCreated: true, http.StatusConflict: true}, &result)
 	if err != nil {
 		return nil, false, err

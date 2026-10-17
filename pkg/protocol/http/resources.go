@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/html"
-
 	"github.com/jasonczech/apexload/pkg/internal/contentdecode"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/httpcontract"
+	"golang.org/x/net/html"
 )
 
 // Browser-emulation resource download ("Download non-HTML resources") and
@@ -29,7 +29,7 @@ import (
 // pages and iterations. Resource failures follow the configured replay outcome policy.
 // MaxPageResources is the most resources one page fetches, explicit
 // (params.resources) and discovered together. Importers apply the same bound.
-const MaxPageResources = 256
+const MaxPageResources = httpcontract.MaxPageResources
 
 const (
 	// maxPageResources bounds the resources fetched per page, including URLs

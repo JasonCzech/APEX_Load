@@ -114,7 +114,7 @@ func TestImportParameterizationScriptsReusesPreProjectedTree(t *testing.T) {
 	projection := credentialPreservingImportResponseValue(scripts)
 
 	fromRaw := importParameterizationScripts(raw)
-	fromProjection := importParameterizationScripts(projectedImportScripts{value: projection})
+	fromProjection := importParameterizationScripts(projectedImportScripts{Value: projection})
 
 	assertImportProjectionFixtureScripts(t, "raw path", fromRaw)
 	assertImportProjectionFixtureScripts(t, "pre-projected path", fromProjection)
@@ -144,7 +144,7 @@ func TestImportParameterizationScriptsReusesPreProjectedTree(t *testing.T) {
 	// optimization. Feeding it an unprojected tree must therefore come back with
 	// the raw credential intact; if it comes back redacted, the reuse branch is
 	// silently re-projecting and the projection cost was never removed.
-	fromWrappedRaw := importParameterizationScripts(projectedImportScripts{value: raw})
+	fromWrappedRaw := importParameterizationScripts(projectedImportScripts{Value: raw})
 	if len(fromWrappedRaw) != 2 {
 		t.Fatalf("wrapped raw tree recovered %d scripts, want 2", len(fromWrappedRaw))
 	}
@@ -186,7 +186,7 @@ func TestSanitizeImportParameterizationPreProjectedMatchesRaw(t *testing.T) {
 	fromRaw := sanitizeImportParameterization(input(), raw)
 	fromProjection := sanitizeImportParameterization(
 		input(),
-		projectedImportScripts{value: projection},
+		projectedImportScripts{Value: projection},
 	)
 
 	for label, sanitized := range map[string]*paramize.Result{
@@ -229,7 +229,7 @@ func TestNewScriptImportResponseDoesNotMutateSharedProjection(t *testing.T) {
 
 	requirements := secretBindingRequirementsForImportScripts(projection)
 	_ = annotateSecretBindingDestinationValues(requirements, raw, projection)
-	_ = importParameterizationScripts(projectedImportScripts{value: projection})
+	_ = importParameterizationScripts(projectedImportScripts{Value: projection})
 
 	after, err := json.Marshal(projection)
 	if err != nil {

@@ -2,7 +2,7 @@ import { parseLiveTableSandboxSeeds } from './liveTableSandboxModel'
 import { nativeJavaScriptTemplate } from './nativeServicesModel'
 import { scriptSecretReferenceSummaries } from './scriptSecretReferenceModel'
 import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
-import { baselineFromSavedScript, reapplyScriptDraft, scriptSaveFailedOnServer, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
+import { reapplyScriptDraft, scriptSaveFailedOnServer, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
 import ScriptRevisionConflict from './ScriptRevisionConflict'
 import TooltipButton from './ux/TooltipButton'
 import { isSavedBlock } from './savedBlocks'
@@ -28,7 +28,8 @@ import { useDeferredScriptInspectorFocus } from './useDeferredScriptInspectorFoc
 import { startPointerDrag } from './pointerDrag'
 import { actionBreadcrumb, dedupeAuthorIssues, insertAuthorAction, remapInsertedBreakpoints, changedDocumentLines, type InsertPosition } from './authorExperience'
 import { captureScript, type DebugRunRecord } from './debuggerExperience'
-import { preserveMappingBindings, withMappingReviewState } from './sourceMappingReviewState'
+import { withMappingReviewState } from './sourceMappingReviewState'
+import { persistScriptAuthoringDraft } from './scriptAuthoringWorkflow'
 import { ActionBodyWorkspace } from './ActionBodyWorkspace'
 import { debugContinuesAfterFailure, debugRunIdError, parameterUsageLabel } from './scriptSidebarModel'
 import { DatasetChangeReview, type DatasetChange } from './DatasetChangeReview'
@@ -185,7 +186,6 @@ import {
   type ScriptPhaseActionRow,
 } from './scriptEditorWorkbench'
 import { actionRequestCount, actionExtractorCount, isControlAction, isSourceFunctionAction, isReviewGatedJavaScriptAction, actionExecutionBlockers, actionRequiresReview, actionSelectorFallbackCount, actionTypeSummary, actionRowLabel, headerListToCompatibilityMap } from './scriptActionHelpers'
-import { authoringSessionIdempotencyKey, scriptRequiresJavaVuserAuthoringApproval } from './javaVuserApprovalGate'
 import { ActionEditor, ValidationEvidencePanel } from './ScriptEditorActionEditor'
 import { setHTTPActionVersion } from './httpActionVersionModel'
 import type { HTTP3UpgradeScope } from './HTTPVersionReplayEvidence'
@@ -3033,46 +3033,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       const ownNormalization = ownSavedEditorEchoRef.current
       const normalizedDraft = ownNormalization?.baseline && authoringBaseline?.projection.content_revision === ownNormalization.baseline.projection.content_revision
         ? reapplyScriptDraft(flushedScript, authoringBaseline, ownNormalization.submitted) : flushedScript
-      const currentScript = await preserveMappingBindings(normalizedDraft, importBaselineScript || initialScript || null)
-      if (!requestIsCurrent()) return false
-      // A new Java Vuser script with executable runner actions cannot be created
-      // through POST /scripts — the backend answers 409 and requires governed
-      // review. Save it as an authoring session and stop there; approval is a
-      // separate, explicit act, the same way the archive importer treats Java
-      // drafts.
-      if (!scriptId && scriptRequiresJavaVuserAuthoringApproval(currentScript)) {
-        const session = await api.createAuthoringSession({
-          project_id: projectId,
-          folder_id: folderId,
-          source: 'manual',
-          name: currentScript.name || 'Java Vuser Draft',
-          status: 'reviewing',
-          draft: currentScript,
-          idempotency_key: authoringSessionIdempotencyKey('script-editor-java-vuser', currentScript),
-        })
-        if (!requestIsCurrent()) return true
+      const persisted = await persistScriptAuthoringDraft({
+        scriptId, projectId, folderId, baseline: authoringBaseline,
+        draft: normalizedDraft, importBaseline: importBaselineScript || initialScript || null,
+      }, { api, isCurrent: requestIsCurrent })
+      if (persisted.kind === 'superseded') return persisted.saved
+      if (persisted.kind === 'invalid') { setShowAuthorProblems(true); return false }
+      const currentScript = persisted.script
+      if (persisted.kind === 'approval') {
         const unchangedSinceQueued = validationDocumentKeyRef.current === documentKeyAtSave && parameterDataEditGenerationRef.current === parameterDataEditGenerationAtSave
         result.laterEdits = !unchangedSinceQueued
-        if (unchangedSinceQueued) {
-          commitJsonDraft(currentScript)
-        }
-        // Deliberately not markBaseline/markSaved: no library
-        // script exists yet, so the editor must keep treating this as unsaved
-        // work and keep guarding navigation until an approval creates one.
-        setSuccess(`Java Vuser draft "${session.name}" queued for approval. Approve it from Scripts to add it to the library.`)
+        if (unchangedSinceQueued) commitJsonDraft(currentScript)
+        // Approval is still pending: no library baseline or saved marker exists.
+        setSuccess(`Java Vuser draft "${persisted.name}" queued for approval. Approve it from Scripts to add it to the library.`)
         return true
       }
-      if (collectAuthoringIssues(currentScript).some(issue => issue.severity === 'error')) { setShowAuthorProblems(true); return false }
-      let savedScript: StoredScript
-      if (scriptId) {
-        savedScript = await api.updateScript(scriptId, currentScript, authoringBaseline!)
-      } else {
-        savedScript = await api.createScript(currentScript, projectId, folderId)
-      }
-      if (!requestIsCurrent()) return true
-      const savedBaseline = scriptId || savedScript.authoring_projection ? baselineFromSavedScript(savedScript, projectId) : null
+      const { stored: savedScript, baseline: savedBaseline, definition: savedDefinition } = persisted
       if (savedBaseline) acceptSavedBaseline(savedBaseline)
-      const savedDefinition = savedBaseline?.projection.script || savedScript.script || currentScript
       const adoptedSavedDocument = validationDocumentKeyRef.current === documentKeyAtSave && parameterDataEditGenerationRef.current === parameterDataEditGenerationAtSave
       if (adoptedSavedDocument) {
         // Adopt the server's canonical document without treating normalization as

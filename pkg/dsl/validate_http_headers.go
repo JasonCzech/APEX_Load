@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 const (
@@ -90,18 +90,17 @@ func validateHTTPHeaderContractIssues(script *Script) []string {
 	return issues
 }
 
-// effectiveHTTPConfigHeaderMap mirrors protocol/http.buildDefaultHeaders.
+// effectiveHTTPConfigHeaderMap uses the runtime's shared default-header contract.
 // Authored DefaultHeaders win over typed convenience fields using HTTP's
 // case-insensitive name matching. Case-variant collisions authored within
 // DefaultHeaders itself remain visible so validation can reject them.
 func effectiveHTTPConfigHeaderMap(config HTTPConfig, shadowed map[string]struct{}) map[string]string {
-	headers := make(map[string]string, len(config.DefaultHeaders)+3)
-	for name, value := range config.DefaultHeaders {
-		headers[name] = value
-	}
-	addTypedHTTPConfigHeader(headers, "User-Agent", config.UserAgent)
-	addTypedHTTPConfigHeader(headers, "Accept-Encoding", config.AcceptEncoding)
-	addTypedHTTPConfigHeader(headers, "Accept-Language", config.AcceptLanguage)
+	headers := httpprotocol.DefaultHeaders(map[string]any{
+		"default_headers": config.DefaultHeaders,
+		"user_agent":      config.UserAgent,
+		"accept_encoding": config.AcceptEncoding,
+		"accept_language": config.AcceptLanguage,
+	})
 	for name := range headers {
 		if _, exists := shadowed[strings.ToLower(strings.TrimSpace(name))]; exists {
 			delete(headers, name)
@@ -111,18 +110,6 @@ func effectiveHTTPConfigHeaderMap(config HTTPConfig, shadowed map[string]struct{
 		return nil
 	}
 	return headers
-}
-
-func addTypedHTTPConfigHeader(headers map[string]string, name, value string) {
-	if value == "" {
-		return
-	}
-	for existing := range headers {
-		if strings.EqualFold(strings.TrimSpace(existing), name) {
-			return
-		}
-	}
-	headers[name] = value
 }
 
 func protocolHTTPHeaderList(headers HeaderList) protocol.HeaderList {

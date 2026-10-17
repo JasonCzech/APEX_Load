@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"math/rand"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -864,100 +863,36 @@ func (vu *VUser) Run(ctx context.Context) {
 					return flowNext
 				}
 				loop := action.Control
-				maxPasses := controlLoopMaxPasses(loop)
-				// Expose a 1-based {{var.loop_index}} to the loop body and the
-				// condition (set before evaluation so per-pass bounds like
-				// "int(var.loop_index) <= int(var.total)" work). The outer
-				// value is restored afterwards so nested loops compose.
-				outerLoopIndex, hadOuterLoopIndex := vu.Variables["loop_index"]
-				restoreLoopIndex := func() {
-					if hadOuterLoopIndex {
-						vu.Variables["loop_index"] = outerLoopIndex
-					} else {
-						delete(vu.Variables, "loop_index")
-					}
+				cursor := newControlLoopCursor(vu, loop)
+				if count := cursor.implicitTruncation(); count > 0 {
+					warnLoopTruncation(logger, action.Name, count, cursor.maxPasses)
 				}
-
-				// foreach mode (precedence: for_each > count > condition). Each row
-				// of the source binds under {{var.<Var>.<col>}} for the body.
-				if loop.ForEach != nil {
-					rows := vu.foreachRows(loop.ForEach)
-					if loop.MaxIterations <= 0 && rows.Len() > maxPasses {
-						warnLoopTruncation(logger, action.Name, rows.Len(), maxPasses)
-					}
-					restoreRows := vu.captureForEachRestore(loop.ForEach.Var, rows)
-					restore := func() { restoreRows(); restoreLoopIndex() }
-					for pass := 0; pass < rows.Len() && pass < maxPasses; pass++ {
-						row := rows.Row(pass)
-						if iterationBoundaryCtx.Err() != nil || iterCtx.Err() != nil {
-							restore()
-							return flowTeardown
-						}
-						vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
-						vu.bindForEachRow(loop.ForEach.Var, row)
-						if loop.ForEach.Condition != nil && !vu.evalCondition(loop.ForEach.Condition) {
-							break
-						}
-						switch runActions(loop.Steps, depth+1) {
-						case flowTeardown:
-							restore()
-							return flowTeardown
-						case flowBreak:
-							restore()
-							if !applyActionThinkTime(action) {
-								return flowTeardown
-							}
-							return flowNext
-						}
-						// flowContinue / flowNext: proceed to the next row.
-					}
-					restore()
-					if !applyActionThinkTime(action) {
-						return flowTeardown
-					}
-					return flowNext
-				}
-
-				fixed := loop.Count > 0
-				if loop.MaxIterations <= 0 && loop.Count > maxPasses {
-					warnLoopTruncation(logger, action.Name, loop.Count, maxPasses)
-				}
-				for pass := 0; ; pass++ {
+			passes:
+				for cursor.pending() {
 					if iterationBoundaryCtx.Err() != nil || iterCtx.Err() != nil {
-						restoreLoopIndex()
+						cursor.restoreBindings()
 						return flowTeardown
 					}
-					vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
-					if fixed {
-						if pass >= loop.Count || pass >= maxPasses {
-							break
-						}
-					} else if pass >= maxPasses {
-						if loop.MaxIterations <= 0 {
-							warnConditionLoopSafetyCap(logger, action.Name, maxPasses)
+					pass, ok := cursor.next()
+					if !ok {
+						if cursor.conditionCapReached {
+							warnConditionLoopSafetyCap(logger, action.Name, cursor.maxPasses)
 						}
 						break
-					} else if !(loop.DoWhile && pass == 0) && !vu.evalCondition(loop.Condition) {
-						// do_while runs the body once before the predicate is first
-						// checked, so a loop whose terminal-state var persists from a
-						// prior VUser iteration re-primes it on pass 0 instead of being
-						// skipped.
+					}
+					if pass.checkCondition && !vu.evalCondition(pass.condition) {
 						break
 					}
 					switch runActions(loop.Steps, depth+1) {
 					case flowTeardown:
-						restoreLoopIndex()
+						cursor.restoreBindings()
 						return flowTeardown
 					case flowBreak:
-						restoreLoopIndex()
-						if !applyActionThinkTime(action) {
-							return flowTeardown
-						}
-						return flowNext
+						break passes
 					}
-					// flowContinue / flowNext: proceed to the next pass.
+					// flowContinue / flowNext: advance to the next pass.
 				}
-				restoreLoopIndex()
+				cursor.restoreBindings()
 				if !applyActionThinkTime(action) {
 					return flowTeardown
 				}
@@ -1537,94 +1472,36 @@ func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.
 				return flowNext
 			}
 			loop := action.Control
-			maxPasses := controlLoopMaxPasses(loop)
-			// Mirror the main iteration loop: expose a 1-based
-			// {{var.loop_index}} to the body and the per-pass condition,
-			// restoring any outer value afterwards.
-			outerLoopIndex, hadOuterLoopIndex := vu.Variables["loop_index"]
-			restoreLoopIndex := func() {
-				if hadOuterLoopIndex {
-					vu.Variables["loop_index"] = outerLoopIndex
-				} else {
-					delete(vu.Variables, "loop_index")
-				}
+			cursor := newControlLoopCursor(vu, loop)
+			if count := cursor.implicitTruncation(); count > 0 {
+				warnLoopTruncation(logger, action.Name, count, cursor.maxPasses)
 			}
-
-			// foreach mode (precedence: for_each > count > condition).
-			if loop.ForEach != nil {
-				rows := vu.foreachRows(loop.ForEach)
-				if loop.MaxIterations <= 0 && rows.Len() > maxPasses {
-					warnLoopTruncation(logger, action.Name, rows.Len(), maxPasses)
-				}
-				restoreRows := vu.captureForEachRestore(loop.ForEach.Var, rows)
-				restore := func() { restoreRows(); restoreLoopIndex() }
-				for pass := 0; pass < rows.Len() && pass < maxPasses; pass++ {
-					row := rows.Row(pass)
-					if boundaryCtx.Err() != nil || actionCtx.Err() != nil {
-						restore()
-						return flowTeardown
-					}
-					vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
-					vu.bindForEachRow(loop.ForEach.Var, row)
-					if loop.ForEach.Condition != nil && !vu.evalCondition(loop.ForEach.Condition) {
-						break
-					}
-					switch runActions(loop.Steps, depth+1) {
-					case flowTeardown:
-						restore()
-						return flowTeardown
-					case flowBreak:
-						restore()
-						if !vu.applyActionThinkTime(boundaryCtx, action) {
-							return flowTeardown
-						}
-						return flowNext
-					}
-					// flowContinue / flowNext: proceed to the next row.
-				}
-				restore()
-				if !vu.applyActionThinkTime(boundaryCtx, action) {
-					return flowTeardown
-				}
-				return flowNext
-			}
-
-			fixed := loop.Count > 0
-			if loop.MaxIterations <= 0 && loop.Count > maxPasses {
-				warnLoopTruncation(logger, action.Name, loop.Count, maxPasses)
-			}
-			for pass := 0; ; pass++ {
+		passes:
+			for cursor.pending() {
 				if boundaryCtx.Err() != nil || actionCtx.Err() != nil {
-					restoreLoopIndex()
+					cursor.restoreBindings()
 					return flowTeardown
 				}
-				vu.Variables["loop_index"] = strconv.Itoa(pass + 1)
-				if fixed {
-					if pass >= loop.Count || pass >= maxPasses {
-						break
-					}
-				} else if pass >= maxPasses {
-					if loop.MaxIterations <= 0 {
-						warnConditionLoopSafetyCap(logger, action.Name, maxPasses)
+				pass, ok := cursor.next()
+				if !ok {
+					if cursor.conditionCapReached {
+						warnConditionLoopSafetyCap(logger, action.Name, cursor.maxPasses)
 					}
 					break
-				} else if !(loop.DoWhile && pass == 0) && !vu.evalCondition(loop.Condition) {
+				}
+				if pass.checkCondition && !vu.evalCondition(pass.condition) {
 					break
 				}
 				switch runActions(loop.Steps, depth+1) {
 				case flowTeardown:
-					restoreLoopIndex()
+					cursor.restoreBindings()
 					return flowTeardown
 				case flowBreak:
-					restoreLoopIndex()
-					if !vu.applyActionThinkTime(boundaryCtx, action) {
-						return flowTeardown
-					}
-					return flowNext
+					break passes
 				}
-				// flowContinue / flowNext: proceed to the next pass.
+				// flowContinue / flowNext: advance to the next pass.
 			}
-			restoreLoopIndex()
+			cursor.restoreBindings()
 			if !vu.applyActionThinkTime(boundaryCtx, action) {
 				return flowTeardown
 			}

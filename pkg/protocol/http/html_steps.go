@@ -13,6 +13,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/http/pagecontext"
+	"github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 // HTML-mode steps (LoadRunner web_link, web_image, web_submit_form and
@@ -28,7 +29,7 @@ import (
 //	 "submit": [{"name": "go", "value": "Go"}]}
 
 // HTMLStepParam is the action params key of an HTML-mode step.
-const HTMLStepParam = "html_step"
+const HTMLStepParam = httpcontract.HTMLStepParam
 
 // HTMLPageContextConfig is the protocol config key that turns page indexing
 // on. The engine sets it when a script has HTML-mode steps, so other scripts

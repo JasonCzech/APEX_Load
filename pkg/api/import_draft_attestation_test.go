@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/importartifact"
+	"github.com/jasonczech/apexload/pkg/internal/importreview"
 )
 
 func TestLegacyImportSaveAttestationPreservesCredentialWithoutReentry(t *testing.T) {
@@ -94,6 +94,8 @@ func TestLegacyImportSaveAttestationPreservesCredentialWithoutReentry(t *testing
 
 func TestImportDraftExpirationCanBeDisabledWithoutWeakeningOneShotClaim(t *testing.T) {
 	server := NewServer(ServerConfig{})
+	now := time.Now().UTC()
+	server.importDraftOwner = importreview.NewMemoryDraftOwner(importreview.MemoryDraftOptions{Now: func() time.Time { return now }})
 	script := attestedImportTestScript("non-expiring-import", "non-expiring-password-31af")
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", nil)
 	response := server.newScriptImportResponseWithSourceSecrets(request, scriptImportResponseOptions{
@@ -103,14 +105,10 @@ func TestImportDraftExpirationCanBeDisabledWithoutWeakeningOneShotClaim(t *testi
 	if _, present := response["import_draft_expires_at"]; present {
 		t.Fatalf("non-expiring response published an expiry: %#v", response["import_draft_expires_at"])
 	}
-	token := importDraftAttestationToken(script)
-	server.importDraftAttestationMu.Lock()
-	record := server.importDraftAttestations[token]
-	server.sweepImportDraftAttestationsLocked(time.Now().UTC().Add(100 * 365 * 24 * time.Hour))
-	retained := server.importDraftAttestations[token]
-	server.importDraftAttestationMu.Unlock()
-	if record == nil || !record.ExpirationDisabled || !record.ExpiresAt.IsZero() || retained == nil {
-		t.Fatalf("non-expiring attestation = %#v, retained=%v", record, retained != nil)
+	now = now.Add(100 * 365 * 24 * time.Hour)
+	server.memoryImportDraftOwner().PruneExpired()
+	if server.memoryImportDraftOwner().Len() != 1 {
+		t.Fatal("non-expiring attestation was pruned")
 	}
 
 	claim, err := server.claimImportDraftAttestation(request, script)
@@ -123,9 +121,12 @@ func TestImportDraftExpirationCanBeDisabledWithoutWeakeningOneShotClaim(t *testi
 	if err != nil || !rotatedExpiry.IsZero() {
 		t.Fatalf("rotate non-expiring attestation expiry = %v, err=%v", rotatedExpiry, err)
 	}
-	if rotated := server.importDraftAttestations[importDraftAttestationToken(mutated)]; rotated == nil || !rotated.ExpirationDisabled {
-		t.Fatalf("rotated attestation did not retain expiration policy: %#v", rotated)
+	rotated, err := server.claimImportDraftAttestation(request, mutated)
+	if err != nil || rotated == nil || !rotated.ExpirationDisabled {
+		t.Fatalf("rotated expiration policy: %#v %v", rotated, err)
 	}
+	server.releaseImportDraftAttestation(rotated)
+
 	script = mutated
 
 	created := createAttestedImportScript(t, server, script)
@@ -259,19 +260,11 @@ func TestImportSaveAttestationIncludesProtectedRequirementDescriptors(t *testing
 func TestImportResponseFailsClosedWhenDraftAttestationCapacityIsUnavailable(t *testing.T) {
 	const canary = "capacity-failure-import-credential-6d3e"
 	server := NewServer(ServerConfig{})
-	now := time.Now().UTC()
-	server.importDraftAttestationMu.Lock()
-	server.importDraftAttestations = make(
-		map[string]*importDraftAttestation,
-		importDraftAttestationCapacity,
-	)
-	for index := 0; index < importDraftAttestationCapacity; index++ {
-		token := fmt.Sprintf("occupied-%d", index)
-		server.importDraftAttestations[token] = &importDraftAttestation{
-			Token: token, ExpiresAt: now.Add(time.Hour),
-		}
+	server.importDraftOwner = importreview.NewMemoryDraftOwner(importreview.MemoryDraftOptions{Capacity: 1})
+	occupied := attestedImportTestScript("occupied", "existing-capability")
+	if err := server.attachImportDraftAttestation(httptest.NewRequest(http.MethodPost, "/", nil), occupied); err != nil {
+		t.Fatal(err)
 	}
-	server.importDraftAttestationMu.Unlock()
 
 	script := attestedImportTestScript("capacity-failure", canary)
 	response := server.newScriptImportResponseWithSourceSecrets(

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ScenarioFormState } from './TestHub'
+import type { ScenarioFormState } from '../types/scenarioAuthoring'
 import { scenarioFormStateFromStoredScenario, runtimeSettingsFromForm, replaceScenarioRuntimeDefaults, reseedScenarioGroups, seededScenarioRuntime } from './scenarioFormModel'
 
 describe('reseedScenarioGroups', () => {

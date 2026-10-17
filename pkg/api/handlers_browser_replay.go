@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/recordbridge"
+
 import (
 	"context"
 	"errors"
@@ -236,50 +238,7 @@ func writeBrowserReplayStartError(w http.ResponseWriter, err error) {
 }
 
 func applyBrowserReplayOverrides(script *dsl.Script, req BrowserReplayStartRequest) *dsl.Script {
-	if script == nil || req.Browser == nil {
-		return script
-	}
-	clone := *script
-	clone.Config = script.Config
-	browserCfg := clone.Config.Browser
-	if req.Browser.Engine != "" {
-		browserCfg.Engine = req.Browser.Engine
-	}
-	if req.Browser.Headless != nil {
-		browserCfg.Headless = req.Browser.Headless
-	}
-	if req.Browser.SlowMoMs > 0 {
-		browserCfg.SlowMoMs = req.Browser.SlowMoMs
-	}
-	if req.Browser.UserAgent != "" {
-		browserCfg.UserAgent = req.Browser.UserAgent
-	}
-	if req.Browser.DeviceProfile != "" {
-		browserCfg.DeviceProfile = req.Browser.DeviceProfile
-	}
-	if req.Browser.TouchMode != nil {
-		browserCfg.TouchMode = req.Browser.TouchMode
-	}
-	if req.Browser.Orientation != "" {
-		browserCfg.Orientation = req.Browser.Orientation
-	}
-	if req.Browser.ClientMetrics != nil {
-		browserCfg.ClientMetrics = req.Browser.ClientMetrics
-	}
-	if req.Browser.CaptureScreenshots != "" {
-		browserCfg.CaptureScreenshots = req.Browser.CaptureScreenshots
-	}
-	if req.Browser.Viewport.Width > 0 {
-		browserCfg.Viewport.Width = req.Browser.Viewport.Width
-	}
-	if req.Browser.Viewport.Height > 0 {
-		browserCfg.Viewport.Height = req.Browser.Viewport.Height
-	}
-	if req.Browser.ReviewPolicy.AllowReviewedJavaScript || req.Browser.ReviewPolicy.AllowReviewRequired {
-		browserCfg.ReviewPolicy = req.Browser.ReviewPolicy
-	}
-	clone.Config.Browser = browserCfg
-	return &clone
+	return recordbridge.ApplyBrowserReplayOverrides(script, recordbridge.BrowserReplayStartRequest{Browser: req.Browser})
 }
 
 func (s *Server) handleGetBrowserReplaySession(w http.ResponseWriter, r *http.Request) {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/librarycontract"
 )
 
 func TestParseLibraryArgsRequiresScopedContracts(t *testing.T) {
@@ -91,17 +91,17 @@ func TestLibraryClientExportAndConflictImport(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/api/v1/library/export":
-			var request api.LibraryTransferRequest
+			var request librarycontract.LibraryTransferRequest
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Error(err)
 			}
 			if request.Kind != "script" || request.ID != "script-1" || !request.IncludeDependencies {
 				t.Errorf("export request = %#v", request)
 			}
-			_ = json.NewEncoder(w).Encode(api.LibraryBundle{SchemaVersion: "apexload.library.v1", BundleID: "bundle-1"})
+			_ = json.NewEncoder(w).Encode(librarycontract.LibraryBundle{SchemaVersion: "apexload.library.v1", BundleID: "bundle-1"})
 		case "/api/v1/library/import":
 			w.WriteHeader(http.StatusConflict)
-			_ = json.NewEncoder(w).Encode(api.LibraryImportResponse{SchemaVersion: "apexload.library.v1", Conflicts: []api.LibraryConflict{{Kind: "script", Reason: "already exists"}}})
+			_ = json.NewEncoder(w).Encode(librarycontract.LibraryImportResponse{SchemaVersion: "apexload.library.v1", Conflicts: []librarycontract.LibraryConflict{{Kind: "script", Reason: "already exists"}}})
 		default:
 			http.NotFound(w, r)
 		}
@@ -109,11 +109,11 @@ func TestLibraryClientExportAndConflictImport(t *testing.T) {
 	defer server.Close()
 
 	client := NewApiClientWithAuth(server.URL, "", "token")
-	bundle, err := client.ExportLibraryBundle(context.Background(), api.LibraryTransferRequest{Kind: "script", ID: "script-1", IncludeDependencies: true})
+	bundle, err := client.ExportLibraryBundle(context.Background(), librarycontract.LibraryTransferRequest{Kind: "script", ID: "script-1", IncludeDependencies: true})
 	if err != nil || bundle.BundleID != "bundle-1" {
 		t.Fatalf("export = %#v, %v", bundle, err)
 	}
-	result, conflicted, err := client.ImportLibraryBundle(context.Background(), api.LibraryImportRequest{Bundle: *bundle, ProjectID: "project-1"})
+	result, conflicted, err := client.ImportLibraryBundle(context.Background(), librarycontract.LibraryImportRequest{Bundle: *bundle, ProjectID: "project-1"})
 	if err != nil || !conflicted || len(result.Conflicts) != 1 {
 		t.Fatalf("import = %#v, conflicted=%v, err=%v", result, conflicted, err)
 	}

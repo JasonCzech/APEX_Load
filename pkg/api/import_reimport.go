@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"crypto/sha256"
 	"encoding/hex"
@@ -58,29 +60,7 @@ type importedScriptIdentityLister interface {
 // script whose importer recorded no identity of its own. A file name is not a
 // declared identity. Scripts converted from one file together are told apart
 // by name.
-func stampFileImportSourceIdentity(fileName string, scripts []*dsl.Script) {
-	fileName = strings.TrimSpace(fileName)
-	if fileName == "" {
-		return
-	}
-	for _, script := range scripts {
-		if script == nil {
-			continue
-		}
-		var metadata *dsl.ImportMetadata
-		if script.Metadata != nil {
-			metadata = script.Metadata.Import
-		}
-		if _, _, _, ok := dsl.ImportSourceIdentityOf(metadata); ok {
-			continue
-		}
-		item := ""
-		if len(scripts) > 1 {
-			item = script.Name
-		}
-		dsl.SetImportSourceIdentity(script, fileName, false, item)
-	}
-}
+var stampFileImportSourceIdentity = importreview.StampFileImportSourceIdentity
 
 // importExistingScripts returns, for each script, the earlier imported script
 // in projectID from the same source document and item, or nil. Matching is a
@@ -374,7 +354,7 @@ func validateImportUpdateTargetScript(projectID string, draft *dsl.Script, targe
 // adopted only on a retry of that same request; pending items still require
 // their reviewed baseline. A single unfinished item must not invalidate the
 // already-applied items, nor authorize overwriting a different intervening edit.
-func (s *Server) reconcileImportUpdates(w http.ResponseWriter, attempt *directImportAttempt, prepared []*dsl.Script, targets []*importUpdateTarget, updates map[string]*StoredScript) (map[string]*StoredScript, bool) {
+func (s *Server) reconcileImportUpdates(attempt *directImportAttempt, prepared []*dsl.Script, targets []*importUpdateTarget, updates map[string]*StoredScript) (map[string]*StoredScript, *importBatchFailure) {
 	reconciled := make(map[string]*StoredScript)
 	for index, target := range targets {
 		if target == nil {
@@ -384,17 +364,14 @@ func (s *Server) reconcileImportUpdates(w http.ResponseWriter, attempt *directIm
 		if attempt != nil && !attempt.created {
 			stored, _, err := s.runner.GetScriptDurable(target.ScriptID)
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to read re-import update target: "+err.Error())
-				return nil, false
+				return nil, batchFailure(importBatchReadUpdate, index, err)
 			}
 			if index >= len(prepared) || prepared[index] == nil {
-				writeImportUpdateTargetStale(w, index, staleImportUpdate("the prepared update is missing"))
-				return nil, false
+				return nil, batchFailure(importBatchStaleUpdate, index, staleImportUpdate("the prepared update is missing"))
 			}
 			existing, err = validateImportUpdateTargetScript(prepared[index].ProjectID, prepared[index], *target, stored)
 			if err != nil {
-				writeImportUpdateTargetStale(w, index, err)
-				return nil, false
+				return nil, batchFailure(importBatchStaleUpdate, index, err)
 			}
 			updates[target.ScriptID] = existing
 			if equivalentCreateOnlyScript(existing.Script, prepared[index]) {
@@ -403,11 +380,10 @@ func (s *Server) reconcileImportUpdates(w http.ResponseWriter, attempt *directIm
 			}
 		}
 		if existing == nil || !importUpdateTargetReviewed(existing.Script, *target) {
-			writeImportUpdateTargetStale(w, index, staleImportUpdate("the script to update changed after review"))
-			return nil, false
+			return nil, batchFailure(importBatchStaleUpdate, index, staleImportUpdate("the script to update changed after review"))
 		}
 	}
-	return reconciled, true
+	return reconciled, nil
 }
 
 // importUpdateTargetReviewed reports whether script is still the version the
@@ -556,24 +532,7 @@ func (tx *createImportTransaction) saveImportedScript(script *dsl.Script, source
 
 // withoutImportedContentDigest returns metadata without the content digest an
 // import save stamps, copying only what it changes.
-func withoutImportedContentDigest(metadata *dsl.ScriptMetadata) *dsl.ScriptMetadata {
-	if metadata == nil || metadata.Import == nil || metadata.Import.Preserved == nil {
-		return metadata
-	}
-	if _, stamped := metadata.Import.Preserved[dsl.ImportedActionDigestKey]; !stamped {
-		return metadata
-	}
-	copied := *metadata
-	importCopy := *metadata.Import
-	importCopy.Preserved = make(map[string]any, len(metadata.Import.Preserved))
-	for key, value := range metadata.Import.Preserved {
-		if key != dsl.ImportedActionDigestKey {
-			importCopy.Preserved[key] = value
-		}
-	}
-	copied.Import = &importCopy
-	return &copied
-}
+var withoutImportedContentDigest = importreview.WithoutImportedContentDigest
 
 // keepUpdatedScriptNames gives each script that updates an earlier one that
 // script's current name, which an operator may have changed since the import:

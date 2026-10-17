@@ -14,12 +14,12 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/browserresource"
 )
 
-func resourceCLITestPage() api.BrowserResourcePage {
+func resourceCLITestPage() browserresource.BrowserResourcePage {
 	zero := int64(0)
-	return api.BrowserResourcePage{Version: 1, TestID: "run-1", ProjectID: "project-1", SourceFormat: "jsonl", SourceRevision: strings.Repeat("a", 64), SourceIntegrity: "legacy_scan_fingerprint", SourceTimestampPrecision: "unavailable", Population: api.BrowserResourcePagePopulation{Availability: "retained_observations", TransactionRecords: 1, RetainedEntryObservations: &zero, MatchedRetainedObservations: &zero}, CaptureCoverage: api.BrowserResourcePageCoverage{Availability: "unavailable", Reason: "retained_observations_are_not_capture_coverage"}, Items: []api.BrowserResourcePageItem{}}
+	return browserresource.BrowserResourcePage{Version: 1, TestID: "run-1", ProjectID: "project-1", SourceFormat: "jsonl", SourceRevision: strings.Repeat("a", 64), SourceIntegrity: "legacy_scan_fingerprint", SourceTimestampPrecision: "unavailable", Population: browserresource.BrowserResourcePagePopulation{Availability: "retained_observations", TransactionRecords: 1, RetainedEntryObservations: &zero, MatchedRetainedObservations: &zero}, CaptureCoverage: browserresource.BrowserResourcePageCoverage{Availability: "unavailable", Reason: "retained_observations_are_not_capture_coverage"}, Items: []browserresource.BrowserResourcePageItem{}}
 }
 func TestBrowserResourceCLIClosedProjectionAndScope(t *testing.T) {
 	page := resourceCLITestPage()
@@ -36,7 +36,7 @@ func TestBrowserResourceCLIClosedProjectionAndScope(t *testing.T) {
 	if err := runBrowserResourcesCommand(context.Background(), []string{"--api", server.URL, "--id", "run-1", "--project", "project-1"}, &out); err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := api.DecodeBrowserResourcePage(out.Bytes())
+	decoded, err := browserresource.DecodeBrowserResourcePage(out.Bytes())
 	if err != nil || decoded.Population.RetainedEntryObservations == nil || *decoded.Population.RetainedEntryObservations != 0 {
 		t.Fatalf("observed empty retained scan lost: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestBrowserResourceCLIRefusesRawErrorsRedirectsOversizeAndMissingFields(t *
 		status   int
 		body     []byte
 		location string
-	}{"secret_error": {http.StatusForbidden, []byte("password=private-secret"), ""}, "redirect": {http.StatusFound, valid, "http://127.0.0.1:1/credentials"}, "oversize": {http.StatusOK, bytes.Repeat([]byte(" "), api.MaxBrowserResourcePageBytes+1), ""}, "missing_required": {http.StatusOK, missing, ""}, "unknown": {http.StatusOK, bytes.Replace(valid, []byte(`"version":1`), []byte(`"version":1,"raw_headers":"secret"`), 1), ""}} {
+	}{"secret_error": {http.StatusForbidden, []byte("password=private-secret"), ""}, "redirect": {http.StatusFound, valid, "http://127.0.0.1:1/credentials"}, "oversize": {http.StatusOK, bytes.Repeat([]byte(" "), browserresource.MaxBrowserResourcePageBytes+1), ""}, "missing_required": {http.StatusOK, missing, ""}, "unknown": {http.StatusOK, bytes.Replace(valid, []byte(`"version":1`), []byte(`"version":1,"raw_headers":"secret"`), 1), ""}} {
 		t.Run(name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if response.location != "" {
@@ -230,13 +230,13 @@ func TestBrowserResourceCLIRefusesValidShapeBeyondImmutableRequestedLimit(t *tes
 			page.Population.RetainedEntryObservations = &count
 			page.Population.MatchedRetainedObservations = &count
 			for index := 0; index < tc.count; index++ {
-				page.Items = append(page.Items, api.BrowserResourcePageItem{Locator: api.BrowserResourcePageLocator{TransactionOrdinal: 1, ResourceOrdinal: int64(index + 1), Branch: "network_entries"}, TimestampPrecision: "unavailable", EvidenceState: "not_captured"})
+				page.Items = append(page.Items, browserresource.BrowserResourcePageItem{Locator: browserresource.BrowserResourcePageLocator{TransactionOrdinal: 1, ResourceOrdinal: int64(index + 1), Branch: "network_entries"}, TimestampPrecision: "unavailable", EvidenceState: "not_captured"})
 			}
 			raw, err := json.Marshal(page)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := api.DecodeBrowserResourcePage(raw); err != nil {
+			if _, err := browserresource.DecodeBrowserResourcePage(raw); err != nil {
 				t.Fatal("fixture did not retain otherwise valid closed page shape")
 			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(raw) }))
@@ -252,7 +252,7 @@ func TestBrowserResourceCLIRefusesValidShapeBeyondImmutableRequestedLimit(t *tes
 			if err != nil {
 				t.Fatal(err)
 			}
-			admitted, err := api.DecodeBrowserResourcePage(output.Bytes())
+			admitted, err := browserresource.DecodeBrowserResourcePage(output.Bytes())
 			if err != nil || len(admitted.Items) != tc.count {
 				t.Fatal("exact requested limit was not preserved")
 			}

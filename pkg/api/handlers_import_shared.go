@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 // handlers_import_shared — split from handlers_scripts.go (same package, behavior-preserving).
 
 import (
@@ -7,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sort"
+
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
@@ -61,26 +63,9 @@ func (s *Server) bindImportDrafts(w http.ResponseWriter, scripts []dsl.Script, p
 	return drafts, true
 }
 
-func ensureScriptImportPreserved(script *dsl.Script, source string) map[string]any {
-	if script.Metadata == nil {
-		script.Metadata = &dsl.ScriptMetadata{}
-	}
-	if script.Metadata.Import == nil {
-		script.Metadata.Import = &dsl.ImportMetadata{Source: source}
-	}
-	if script.Metadata.Import.Preserved == nil {
-		script.Metadata.Import.Preserved = map[string]any{}
-	}
-	return script.Metadata.Import.Preserved
-}
+var ensureScriptImportPreserved = importreview.EnsureScriptImportPreserved
 
-func attachImportReplayPreflight(script *dsl.Script, source string, preflight *ReplayPreflight) {
-	if script == nil || preflight == nil {
-		return
-	}
-	preserved := ensureScriptImportPreserved(script, source)
-	preserved["replay_preflight"] = cloneReplayPreflight(preflight)
-}
+var attachImportReplayPreflight = importreview.AttachImportReplayPreflight
 
 func (s *Server) handleAuthoringCapabilities(w http.ResponseWriter, r *http.Request) {
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
@@ -121,20 +106,7 @@ func (s *Server) handleAuthoringCapabilities(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, response)
 }
 
-func parseBoolDefault(value string, defaultValue bool) bool {
-	if value == "" {
-		return defaultValue
-	}
-
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "1", "true", "yes", "on":
-		return true
-	case "0", "false", "no", "off":
-		return false
-	default:
-		return defaultValue
-	}
-}
+var parseBoolDefault = importreview.ParseBoolDefault
 
 func stringMapAnyValue(values map[string]any, key string) string {
 	if values == nil {
@@ -184,75 +156,15 @@ func stableReviewKey(value string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-func stringSliceValue(value any) []string {
-	switch typed := value.(type) {
-	case []string:
-		return uniqueSortedStrings(typed)
-	case []any:
-		result := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if s, ok := item.(string); ok {
-				result = append(result, s)
-			}
-		}
-		return uniqueSortedStrings(result)
-	default:
-		return nil
-	}
-}
+var stringSliceValue = importreview.StringSliceValue
 
-func uniqueSortedStrings(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	sort.Strings(result)
-	return result
-}
+var uniqueSortedStrings = importreview.UniqueSortedStrings
 
-func stringValue(value any) string {
-	text, _ := value.(string)
-	return text
-}
+var stringValue = importreview.StringValue
 
-func attachSourceReviewToScripts(scripts []*dsl.Script, source string, sourceScriptName string, review any) {
-	if isNilImportValue(review) {
-		return
-	}
-	for _, script := range scripts {
-		attachSourceReviewToScript(script, source, sourceScriptName, review)
-	}
-}
+var attachSourceReviewToScripts = importreview.AttachSourceReviewToScripts
 
-func attachSourceReviewToScript(script *dsl.Script, source string, sourceScriptName string, review any) {
-	if script == nil || isNilImportValue(review) {
-		return
-	}
-	if script.Metadata == nil {
-		script.Metadata = &dsl.ScriptMetadata{}
-	}
-	if script.Metadata.Import == nil {
-		script.Metadata.Import = &dsl.ImportMetadata{}
-	}
-	if script.Metadata.Import.Source == "" {
-		script.Metadata.Import.Source = source
-	}
-	if script.Metadata.Import.SourceScriptName == "" {
-		script.Metadata.Import.SourceScriptName = sourceScriptName
-	}
-	if script.Metadata.Import.Preserved == nil {
-		script.Metadata.Import.Preserved = map[string]any{}
-	}
-	script.Metadata.Import.Preserved["source_review"] = review
-}
+var attachSourceReviewToScript = importreview.AttachSourceReviewToScript
 
 func persistProtocolCompatReport(script *dsl.Script, source string, report *protocolCompatReport) {
 	if script == nil || report == nil {

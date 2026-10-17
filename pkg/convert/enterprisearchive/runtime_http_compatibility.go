@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 func parseRuntimeHTTPCompatibility(rc *RuntimeConfig, sections map[string]map[string]string) {

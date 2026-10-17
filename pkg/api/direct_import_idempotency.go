@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/importreview"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -62,29 +63,11 @@ func (attempt *directImportAttempt) retainUpdateRecovery(targets []*importUpdate
 	}
 }
 
-func directImportOperationHash(projectID, sourceProfile, operationID string) string {
-	return directImportSHA256(
-		normalizeProjectID(projectID),
-		strings.TrimSpace(sourceProfile),
-		strings.TrimSpace(operationID),
-	)
-}
+var directImportOperationHash = importreview.DirectImportOperationHash
 
-func directImportSHA256(parts ...string) string {
-	digest := sha256.New()
-	for _, part := range parts {
-		_, _ = digest.Write([]byte{0})
-		_, _ = digest.Write([]byte(part))
-	}
-	return hex.EncodeToString(digest.Sum(nil))
-}
+var directImportSHA256 = importreview.DirectImportSHA256
 
-func deterministicDirectImportAssetID(operationHash, kind string, ordinal int) string {
-	return uuid.NewSHA1(
-		uuid.NameSpaceURL,
-		[]byte(fmt.Sprintf("apexload:direct-import:%s:%s:%d", operationHash, kind, ordinal)),
-	).String()
-}
+var deterministicDirectImportAssetID = importreview.DeterministicDirectImportAssetID
 
 func (s *Server) claimDirectImportAttempt(
 	projectID, sourceProfile, operationID, requestSHA256 string,

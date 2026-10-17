@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 func validateHTTPSequenceActionIssues(index int, action Action) []string {

@@ -1,5 +1,5 @@
 import { removeStoredItem } from '../utils/browserStorage'
-import type { ScenarioFormState, ScenarioStartChoice } from './TestHub'
+import type { ScenarioFormState, ScenarioStartChoice } from '../types/scenarioAuthoring'
 
 // Scenario-builder progress is never autosaved under this legacy key. Explicit, project-scoped
 // browser checkpoints (Save draft on an incomplete scenario, then Resume) live in

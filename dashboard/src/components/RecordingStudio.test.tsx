@@ -89,6 +89,7 @@ const clipboardWriteMock = vi.fn();
 
 vi.mock("../hooks/useApi", () => ({
   useApi: () => apiMock,
+  useRecordingApi: () => apiMock,
 }));
 
 vi.mock("../hooks/apiClient", () => ({

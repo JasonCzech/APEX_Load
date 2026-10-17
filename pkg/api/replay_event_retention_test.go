@@ -49,20 +49,6 @@ func TestReplayTerminalBroadcastCarriesOneAuthoritativeReport(t *testing.T) {
 		}},
 	}
 
-	t.Run("browser", func(t *testing.T) {
-		hub := NewHub()
-		manager := NewBrowserReplayManager(hub)
-		session := &BrowserReplaySession{
-			ID:           "terminal",
-			Status:       BrowserReplayCompleted,
-			Events:       append([]engine.ReplayActionEvent(nil), report.Events...),
-			CurrentEvent: &report.Events[0],
-			FinalReport:  report,
-		}
-		manager.broadcast("browser_replay_completed", session, 0, nil, report)
-		assertSingleTerminalReport(t, <-hub.broadcast)
-	})
-
 	t.Run("script debug", func(t *testing.T) {
 		hub := NewHub()
 		manager := NewScriptDebugManager(hub)

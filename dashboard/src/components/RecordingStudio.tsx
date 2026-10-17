@@ -17,7 +17,7 @@ import {
   downloadFilenameFromDisposition,
 } from "../utils/fileUtils";
 import { useAsyncTask } from "../hooks/useAsyncTask";
-import { useApi } from "../hooks/useApi";
+import { useRecordingApi } from "../hooks/useApi";
 import {
   API_ORIGIN,
   apiFetch,
@@ -632,7 +632,7 @@ export default function RecordingStudio({
   }, [onMethodChange]);
   const [browserURLError, setBrowserURLError] = useState('');
   const browserURLRef = useRef<HTMLInputElement>(null);
-  const api = useApi();
+  const api = useRecordingApi();
   const studioActiveRef = useRef(true);
   useEffect(() => {
     studioActiveRef.current = true;

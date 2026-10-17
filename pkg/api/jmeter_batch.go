@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"context"
 	"crypto/sha256"
@@ -21,13 +23,10 @@ import (
 
 const jmeterBatchProfile = "jmeter_batch_v1"
 const jmeterBatchReceiptProfile = "jmeter_batch_receipt_v1"
-const jmeterBatchMetadata = "jmeter_batch_v1"
+const jmeterBatchMetadata = importreview.JmeterBatchMetadata
 const jmeterBatchOriginMetadata = "jmeter_batch_origin_v1"
 
-type jmeterBatchIdentity struct {
-	ID       string `json:"id"`
-	Revision string `json:"revision"`
-}
+type jmeterBatchIdentity = importreview.JmeterBatchIdentity
 type jmeterBatchCandidate struct {
 	Identity     jmeterBatchIdentity    `json:"identity"`
 	ProjectID    string                 `json:"project_id"`
@@ -61,19 +60,9 @@ func stampBatch(b *jmeterBatchCandidate) {
 		ensureScriptImportPreserved(s, "jmeter")[jmeterBatchMetadata] = b.Identity
 	}
 }
-func scriptBatch(s *dsl.Script) (jmeterBatchIdentity, bool) {
-	var id jmeterBatchIdentity
-	if s == nil || s.Metadata == nil || s.Metadata.Import == nil {
-		return id, false
-	}
-	v, ok := s.Metadata.Import.Preserved[jmeterBatchMetadata]
-	if !ok {
-		return id, false
-	}
-	data, _ := json.Marshal(v)
-	_ = json.Unmarshal(data, &id)
-	return id, true
-}
+
+var scriptBatch = importreview.ScriptBatch
+
 func (s *Server) newJMeterBatch(r *http.Request, result *jmeter.ConvertResult, requests []*jmeterImportRequest) (*jmeterBatchCandidate, error) {
 	if len(requests) == 0 || requests[0] == nil || len(result.Scripts) == 0 {
 		return nil, nil

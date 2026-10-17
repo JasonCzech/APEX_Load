@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/archivecontract"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -38,31 +39,11 @@ const (
 
 // RunArchiveIntegrityArtifact is the verification outcome for a single archived
 // artifact: the hash the manifest recorded versus the hash recomputed now.
-type RunArchiveIntegrityArtifact struct {
-	Name           string `json:"name"`
-	Status         string `json:"status"`
-	ExpectedSHA256 string `json:"expected_sha256,omitempty"`
-	ActualSHA256   string `json:"actual_sha256,omitempty"`
-	SizeBytes      int64  `json:"size_bytes,omitempty"`
-	Detail         string `json:"detail,omitempty"`
-}
+type RunArchiveIntegrityArtifact = archivecontract.RunArchiveIntegrityArtifact
 
 // RunArchiveIntegrityReport is the rolled-up result of re-verifying every artifact
 // recorded in an archive manifest against its on-disk content.
-type RunArchiveIntegrityReport struct {
-	SchemaVersion string                        `json:"schema_version"`
-	TestID        string                        `json:"test_id"`
-	Status        string                        `json:"status"`
-	Verified      bool                          `json:"verified"`
-	VerifiedAt    time.Time                     `json:"verified_at"`
-	Summary       string                        `json:"summary"`
-	Total         int                           `json:"total"`
-	Matched       int                           `json:"matched"`
-	Mismatched    int                           `json:"mismatched"`
-	Missing       int                           `json:"missing"`
-	Unverifiable  int                           `json:"unverifiable"`
-	Artifacts     []RunArchiveIntegrityArtifact `json:"artifacts,omitempty"`
-}
+type RunArchiveIntegrityReport = archivecontract.RunArchiveIntegrityReport
 
 // verifyRunArchiveIntegrity recomputes the SHA-256 of every artifact the manifest
 // recorded and compares it to the stored hash. It never returns an error for a

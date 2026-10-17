@@ -684,7 +684,7 @@ func TestTerminalPathsReserveTestIDUntilArchiveFinalized(t *testing.T) {
 			}
 			service.archiveManager.setWriterForTest(testID, writer)
 			if tt.preReserved {
-				service.stoppingTests[testID] = struct{}{}
+				service.lifecycleCoordinator.stoppingTests[testID] = struct{}{}
 			}
 			service.mu.Unlock()
 
@@ -720,7 +720,7 @@ func TestTerminalPathsReserveTestIDUntilArchiveFinalized(t *testing.T) {
 				t.Fatal("terminal finalization did not complete")
 			}
 			service.mu.Lock()
-			_, stopping := service.stoppingTests[testID]
+			_, stopping := service.lifecycleCoordinator.stoppingTests[testID]
 			service.mu.Unlock()
 			if stopping {
 				t.Fatal("test-ID reservation survived completed finalization")
@@ -767,7 +767,7 @@ func TestDuplicateStopDoesNotClearFinalizerReservation(t *testing.T) {
 		t.Fatalf("duplicate StopTest before finalization = (%#v, %v), want DeadlineExceeded", second, err)
 	}
 	service.mu.Lock()
-	_, stillStopping := service.stoppingTests[testID]
+	_, stillStopping := service.lifecycleCoordinator.stoppingTests[testID]
 	service.mu.Unlock()
 	if !stillStopping {
 		t.Fatal("duplicate StopTest cleared the first stop's finalizer reservation")
@@ -795,7 +795,7 @@ func waitForGeneratorTestReservation(t *testing.T, service *Service, testID stri
 	for time.Now().Before(deadline) {
 		service.mu.Lock()
 		_, assigned := service.assignments[testID]
-		_, stopping := service.stoppingTests[testID]
+		_, stopping := service.lifecycleCoordinator.stoppingTests[testID]
 		service.mu.Unlock()
 		if !assigned && stopping {
 			return

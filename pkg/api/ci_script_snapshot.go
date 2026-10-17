@@ -45,16 +45,19 @@ func (tr *TestRunner) acquirePrivateCIScriptSnapshot(script *dsl.Script) (*Store
 	script.FolderID = nil
 
 	for {
+		tr.scriptMutationMu.Lock()
 		tr.mu.Lock()
 		existing := tr.scripts[script.ID]
 		if references := tr.privateCISnapshots[script.ID]; references > 0 {
 			if !isStoredCIScriptSnapshot(existing) || !equivalentCreateOnlyScript(existing.Script, script) {
 				tr.mu.Unlock()
+				tr.scriptMutationMu.Unlock()
 				return nil, fmt.Errorf("private CI script snapshot %q is already bound to different content", script.ID)
 			}
 			tr.privateCISnapshots[script.ID] = references + 1
 			stored := cloneStoredScriptForReadLocked(existing)
 			tr.mu.Unlock()
+			tr.scriptMutationMu.Unlock()
 			return stored, nil
 		}
 		if existing == nil {
@@ -69,16 +72,19 @@ func (tr *TestRunner) acquirePrivateCIScriptSnapshot(script *dsl.Script) (*Store
 			tr.contentRevision++
 			result := cloneStoredScriptForReadLocked(stored)
 			tr.mu.Unlock()
+			tr.scriptMutationMu.Unlock()
 			return result, nil
 		}
 		if !isStoredCIScriptSnapshot(existing) {
 			tr.mu.Unlock()
+			tr.scriptMutationMu.Unlock()
 			return nil, fmt.Errorf("private CI script snapshot id %q collides with a persistent library script", script.ID)
 		}
 		// Older controller versions persisted these temporary snapshots. Remove
 		// the exact durable version before installing the private replacement.
 		projectID := existing.ProjectID
 		tr.mu.Unlock()
+		tr.scriptMutationMu.Unlock()
 		deleted, err := tr.DeleteScriptDurableInProject(script.ID, projectID)
 		if err != nil {
 			return nil, fmt.Errorf("remove leaked CI script snapshot %q: %w", script.ID, err)
@@ -94,6 +100,8 @@ func (tr *TestRunner) releasePrivateCIScriptSnapshot(id string) {
 		return
 	}
 	id = strings.TrimSpace(id)
+	tr.scriptMutationMu.Lock()
+	defer tr.scriptMutationMu.Unlock()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	references := tr.privateCISnapshots[id]

@@ -1,6 +1,6 @@
 import { createElement, type PropsWithChildren, useMemo } from 'react'
 
-import { ApiContext } from './apiContext'
+import { ApiContext, RecorderConnectionContext } from './apiContext'
 import { mergeApiServiceGroups } from './apiServiceRegistry'
 import { useApplicationApi } from './api/useApplicationApi'
 import { useBrowserRecorderApi } from './api/useBrowserRecorderApi'
@@ -32,7 +32,6 @@ function useApiServices() {
   const projectLiveTables = useProjectLiveTablesApi()
   const system = useSystemApi()
   const recorder = useRecorderApi()
-  const browserRecorder = useBrowserRecorderApi()
   const library = useLibraryApi()
   const capacity = useCapacityApi()
   const fleet = useFleetApi()
@@ -58,7 +57,6 @@ function useApiServices() {
         projectLiveTables,
         system,
         recorder,
-        browserRecorder,
         library,
         capacity,
         fleet,
@@ -71,7 +69,7 @@ function useApiServices() {
 		elkConnections,
 		dynatraceConnections,
       }),
-    [tests, applications, projects, repository, scripts, projectLiveTables, system, recorder, browserRecorder, library, capacity, fleet, executionPlans, monitoringCollectors, objectRepositories, correlationRulesets, entitlements, dashboardDefinitions, elkConnections, dynatraceConnections],
+    [tests, applications, projects, repository, scripts, projectLiveTables, system, recorder, library, capacity, fleet, executionPlans, monitoringCollectors, objectRepositories, correlationRulesets, entitlements, dashboardDefinitions, elkConnections, dynatraceConnections],
   )
 }
 
@@ -79,5 +77,13 @@ export type ApiServices = ReturnType<typeof useApiServices>
 
 export function ApiProvider({ children }: PropsWithChildren) {
   const services = useApiServices()
-  return createElement(ApiContext.Provider, { value: services }, children)
+  return createElement(ApiContext.Provider, { value: services },
+    createElement(RecorderConnectionProvider, null, children))
+}
+
+// Recorder connection changes only publish to recorder consumers. Keeping this
+// provider below ApiContext also leaves unrelated consumers' render trees alone.
+function RecorderConnectionProvider({ children }: PropsWithChildren) {
+  const recorder = useBrowserRecorderApi()
+  return createElement(RecorderConnectionContext.Provider, { value: recorder }, children)
 }

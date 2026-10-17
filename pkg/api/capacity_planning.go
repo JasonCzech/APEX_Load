@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"fmt"
 	"math"
@@ -508,12 +510,7 @@ func poolCapacityReservationTotalsAt(settings SystemSettings, projectID, poolID 
 	return totalReserved, projectReserved
 }
 
-func minInt(a int, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
+var minInt = importreview.MinInt
 
 func calculateScenarioComplexity(groups []TestGroup, runtimeSettings *RuntimeSettingsOverride) (float64, []string) {
 	score := 1.0

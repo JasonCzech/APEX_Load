@@ -46,9 +46,10 @@ func runtimeSurfaceHeaderSnapshot(ref dslwalk.SurfaceRef) (dsl.HeaderList, map[s
 	if ref.Request == nil {
 		return nil, nil
 	}
-	rawList, hasList := ref.Request["header_list"]
+	fields := ref.Headers()
+	rawList, hasList := fields.List, fields.ListPresent
 	parsedList := parseMapRequestHeaderList(rawList, hasList, SourceRef{}, 0)
-	rawHeaders, hasHeaders := ref.Request["headers"]
+	rawHeaders, hasHeaders := fields.Map, fields.MapPresent
 	parsedMap := parseMapRequestHeaderMap(
 		rawHeaders,
 		hasHeaders,

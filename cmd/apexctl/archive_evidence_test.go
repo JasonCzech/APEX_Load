@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/archivecontract"
 )
 
 func archiveEvidenceFixture() (archiveEvidenceExpectation, map[string]any) {
@@ -24,9 +24,9 @@ func archiveEvidenceFixture() (archiveEvidenceExpectation, map[string]any) {
 		"manifest": map[string]any{"schema_version": "apexload.archive.v4", "test_id": expected.TestID, "status": "COMPLETE", "completed_at": end,
 			"provenance":      map[string]any{"project_id": expected.ProjectID, "requested_at": start, "controller_env": map[string]string{"secret": "SECRET"}},
 			"source_coverage": map[string]any{"mode": "required", "sources": []any{map[string]any{"target": "SECRET-target", "collected": true}}}},
-		"integrity": &api.RunArchiveIntegrityReport{SchemaVersion: "apexload.archive_integrity.v1", TestID: expected.TestID,
+		"integrity": &archivecontract.RunArchiveIntegrityReport{SchemaVersion: "apexload.archive_integrity.v1", TestID: expected.TestID,
 			Status: "verified", Verified: true, VerifiedAt: time.Now().UTC(), Total: 2, Matched: 2, Summary: "SECRET",
-			Artifacts: []api.RunArchiveIntegrityArtifact{{Name: "manifest.json", Status: "match", ExpectedSHA256: hash, ActualSHA256: hash},
+			Artifacts: []archivecontract.RunArchiveIntegrityArtifact{{Name: "manifest.json", Status: "match", ExpectedSHA256: hash, ActualSHA256: hash},
 				{Name: "SECRET.jsonl", Status: "match", ExpectedSHA256: hash, ActualSHA256: hash, SizeBytes: 12, Detail: "SECRET"}}},
 	}
 }
@@ -109,7 +109,7 @@ func TestArchiveEvidencePassDoesNotImplyRunSucceeded(t *testing.T) {
 func TestArchiveEvidenceRejectsStaleOrFutureVerification(t *testing.T) {
 	for _, offset := range []time.Duration{-time.Minute, time.Minute} {
 		expected, data := archiveEvidenceFixture()
-		data["integrity"].(*api.RunArchiveIntegrityReport).VerifiedAt = time.Now().Add(offset)
+		data["integrity"].(*archivecontract.RunArchiveIntegrityReport).VerifiedAt = time.Now().Add(offset)
 		client, _ := evidenceServer(t, data, nil)
 		report := collectArchiveEvidence(context.Background(), client, expected)
 		if report.Passed || report.Reason != "stale_integrity_response" {
@@ -159,25 +159,25 @@ func TestArchiveEvidenceFailClosedCases(t *testing.T) {
 			c["sources"] = append(s, s[0])
 		}},
 		{"tampered", "integrity_not_verified", func(d map[string]any) {
-			r := d["integrity"].(*api.RunArchiveIntegrityReport)
+			r := d["integrity"].(*archivecontract.RunArchiveIntegrityReport)
 			r.Status = "tampered"
 			r.Verified = false
 		}},
 		{"lying verified", "integrity_not_verified", func(d map[string]any) {
-			d["integrity"].(*api.RunArchiveIntegrityReport).Artifacts[1].ActualSHA256 = strings.Repeat("b", 64)
+			d["integrity"].(*archivecontract.RunArchiveIntegrityReport).Artifacts[1].ActualSHA256 = strings.Repeat("b", 64)
 		}},
-		{"wrong verifier run", "integrity_not_verified", func(d map[string]any) { d["integrity"].(*api.RunArchiveIntegrityReport).TestID = "other" }},
+		{"wrong verifier run", "integrity_not_verified", func(d map[string]any) { d["integrity"].(*archivecontract.RunArchiveIntegrityReport).TestID = "other" }},
 		{"wrong root anchor", "integrity_not_verified", func(d map[string]any) {
-			r := d["integrity"].(*api.RunArchiveIntegrityReport)
+			r := d["integrity"].(*archivecontract.RunArchiveIntegrityReport)
 			r.Artifacts[0].ExpectedSHA256 = strings.Repeat("b", 64)
 			r.Artifacts[0].ActualSHA256 = strings.Repeat("b", 64)
 		}},
-		{"missing entries", "integrity_not_verified", func(d map[string]any) { d["integrity"].(*api.RunArchiveIntegrityReport).Artifacts = nil }},
+		{"missing entries", "integrity_not_verified", func(d map[string]any) { d["integrity"].(*archivecontract.RunArchiveIntegrityReport).Artifacts = nil }},
 		{"duplicate entries", "integrity_not_verified", func(d map[string]any) {
-			r := d["integrity"].(*api.RunArchiveIntegrityReport)
+			r := d["integrity"].(*archivecontract.RunArchiveIntegrityReport)
 			r.Artifacts[1] = r.Artifacts[0]
 		}},
-		{"bad counts", "integrity_not_verified", func(d map[string]any) { d["integrity"].(*api.RunArchiveIntegrityReport).Matched = 3 }},
+		{"bad counts", "integrity_not_verified", func(d map[string]any) { d["integrity"].(*archivecontract.RunArchiveIntegrityReport).Matched = 3 }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

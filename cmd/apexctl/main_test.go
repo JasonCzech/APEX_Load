@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/api"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 )
 
 func TestApexctlBundlesExecutableProtocols(t *testing.T) {
@@ -442,7 +442,7 @@ func TestEvaluateLocalSLAReportsBreaches(t *testing.T) {
 				},
 			},
 		},
-	}, &api.GoalConfig{
+	}, &runcontract.GoalConfig{
 		P95LatencyMs:             &p95LatencyMs,
 		MaxErrorPct:              &maxErrorPct,
 		MaxAvgServerProcessingMs: &maxServerProcessingMs,
@@ -469,7 +469,7 @@ func TestEvaluateLocalSLARequiresEvidenceForEveryConfiguredThreshold(t *testing.
 	partial := evaluateLocalSLA(&engine.RunResult{
 		TotalTransactions: 10,
 		FinalSnapshot:     engine.MetricsSnapshot{P95: 100 * time.Millisecond},
-	}, &api.GoalConfig{
+	}, &runcontract.GoalConfig{
 		P95LatencyMs:             &p95LatencyMs,
 		MaxAvgServerProcessingMs: &maxServerProcessingMs,
 	})
@@ -477,7 +477,7 @@ func TestEvaluateLocalSLARequiresEvidenceForEveryConfiguredThreshold(t *testing.
 		t.Fatalf("partial SLA evidence = %#v, want not evaluated", partial)
 	}
 
-	allFailed := evaluateLocalSLA(&engine.RunResult{TotalErrors: 5}, &api.GoalConfig{MaxErrorPct: &maxErrorPct})
+	allFailed := evaluateLocalSLA(&engine.RunResult{TotalErrors: 5}, &runcontract.GoalConfig{MaxErrorPct: &maxErrorPct})
 	if allFailed == nil || !allFailed.Evaluated || !allFailed.Breached {
 		t.Fatalf("all-failed SLA evidence = %#v, want evaluated 100%% error-rate breach", allFailed)
 	}

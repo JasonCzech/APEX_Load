@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"github.com/jasonczech/apexload/pkg/convert/sharedvalue"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -15,10 +17,7 @@ import (
 // candidate IDs the browser receives identical to the ones the apply endpoint
 // re-derives, and guarantees no masked credential can be echoed back as a
 // pre-filled value.
-func buildImportSharedValues(scripts []*dsl.Script) *sharedvalue.Result {
-	result := sharedvalue.Detect(scripts)
-	return &result
-}
+var buildImportSharedValues = importreview.BuildImportSharedValues
 
 // trustedSharedValueCandidates re-derives the candidates a caller is allowed to
 // act on. Only IDs and operator-entered values cross the trust boundary; the

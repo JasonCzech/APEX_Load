@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/recordbridge"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -248,6 +249,13 @@ func TestHAReplaySessionRenewalLossTerminatesActiveBrowserReplay(t *testing.T) {
 	store := &loseReplayLeaseOnRenewStore{Store: base, delegate: base}
 	server := NewServer(ServerConfig{Store: store, HAExecutionLeadership: true})
 	server.replaySessionLeaseTTL = 150 * time.Millisecond
+	var leaseSignal *replaySessionLeaseSignal
+	server.browserReplay.setSessionIDReserver(func(ctx context.Context, requested, project string) (string, func(), *replaySessionLeaseSignal, error) {
+		id, release, signal, err := server.reserveReplaySessionIDContext(ctx, requested, project)
+		leaseSignal = signal
+		return id, release, signal, err
+	})
+	t.Cleanup(server.browserReplay.Close)
 
 	session, err := server.browserReplay.Start("browser-script", &dsl.Script{
 		Name: "Paused HA replay", Protocol: "browser", ProjectID: "project-a",
@@ -255,22 +263,9 @@ func TestHAReplaySessionRenewalLossTerminatesActiveBrowserReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start browser replay: %v", err)
 	}
-	server.browserReplay.mu.RLock()
-	runtime := server.browserReplay.sessions[session.ID]
-	server.browserReplay.mu.RUnlock()
-	if runtime == nil {
-		t.Fatal("browser replay runtime was not retained")
-	}
-	select {
-	case <-runtime.workerDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("browser replay worker did not terminate after renewal loss")
-	}
-	runtime.mu.RLock()
-	status, errMsg := runtime.Status, runtime.Error
-	runtime.mu.RUnlock()
-	if status != BrowserReplayFailed || !strings.Contains(errMsg, errReplaySessionLeaseLost.Error()) {
-		t.Fatalf("browser replay after renewal loss = status %q error %q", status, errMsg)
+	waitForBrowserReplayFixture(t, server.browserReplay, session.ID)
+	if leaseSignal == nil || !errors.Is(leaseSignal.failureOrExpired(time.Now()), errReplaySessionLeaseLost) {
+		t.Fatal("browser replay did not terminate because its durable lease was lost")
 	}
 	if _, ok := server.browserReplay.Get(session.ID); ok {
 		t.Fatal("lease-lost browser capability remained addressable after its global release")
@@ -285,7 +280,9 @@ func TestHAStoppedBrowserReplayRemainsTrackedAndActiveUntilWorkerFinishes(t *tes
 	trackedStore := &trackReplayLeaseRetentionStore{Store: firstStore, delegate: firstStore}
 	first := NewServer(ServerConfig{Store: trackedStore, HAExecutionLeadership: true})
 	second := NewServer(ServerConfig{Store: secondStore, HAExecutionLeadership: true})
-	first.browserReplay.retention.maxSessions = 1
+	retention := recordbridge.DefaultReplayRetentionConfig()
+	retention.MaxSessions = 1
+	replaceReplayFixtureManager(t, first, recordbridge.ReplayManagerOptions{Retention: &retention})
 	t.Cleanup(first.browserReplay.Close)
 
 	started := make(chan struct{})
@@ -307,10 +304,7 @@ func TestHAStoppedBrowserReplayRemainsTrackedAndActiveUntilWorkerFinishes(t *tes
 		t.Fatalf("start old replay: %v", err)
 	}
 	<-started
-	first.browserReplay.mu.RLock()
-	oldRuntime := first.browserReplay.sessions[oldSnapshot.ID]
-	first.browserReplay.mu.RUnlock()
-	if oldRuntime == nil {
+	if _, ok := first.browserReplay.Get(oldSnapshot.ID); !ok {
 		t.Fatal("old runtime session was not retained by manager")
 	}
 	if _, ok := first.browserReplay.Stop(oldID); !ok {
@@ -326,9 +320,7 @@ func TestHAStoppedBrowserReplayRemainsTrackedAndActiveUntilWorkerFinishes(t *tes
 	}, BrowserReplayStartRequest{ReplaySessionID: newID, StartPaused: true}); !errors.Is(err, errBrowserReplaySessionCapacity) {
 		t.Fatalf("replacement while stopped worker is blocked = %v, want %v", err, errBrowserReplaySessionCapacity)
 	}
-	first.browserReplay.mu.RLock()
-	_, oldStillMapped := first.browserReplay.sessions[oldID]
-	first.browserReplay.mu.RUnlock()
+	_, oldStillMapped := first.browserReplay.Get(oldID)
 	if !oldStillMapped {
 		t.Fatal("stopped unfinished worker was evicted from the manager")
 	}
@@ -337,11 +329,7 @@ func TestHAStoppedBrowserReplayRemainsTrackedAndActiveUntilWorkerFinishes(t *tes
 	}
 
 	releaseWorker()
-	select {
-	case <-oldRuntime.workerDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("blocked old worker did not finish after release")
-	}
+	waitForBrowserReplayFixture(t, first.browserReplay, oldID)
 	if got := trackedStore.retainCalls.Load(); got != 1 {
 		t.Fatalf("retention transitions after worker exit = %d, want 1", got)
 	}
@@ -351,9 +339,7 @@ func TestHAStoppedBrowserReplayRemainsTrackedAndActiveUntilWorkerFinishes(t *tes
 	}, BrowserReplayStartRequest{ReplaySessionID: newID, StartPaused: true}); err != nil {
 		t.Fatalf("start replacement after worker exit: %v", err)
 	}
-	first.browserReplay.mu.RLock()
-	_, oldStillMapped = first.browserReplay.sessions[oldID]
-	first.browserReplay.mu.RUnlock()
+	_, oldStillMapped = first.browserReplay.Get(oldID)
 	if oldStillMapped {
 		t.Fatal("finished terminal worker was not evicted at the configured manager cap")
 	}

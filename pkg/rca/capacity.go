@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/rca/signatures"
 )
 
@@ -306,13 +307,13 @@ func trendSlope(points []SeriesPoint) float64 {
 func secondsPer(unit string) (float64, bool) {
 	switch strings.ToLower(strings.TrimSpace(unit)) {
 	case "s", "second", "seconds":
-		return 1, true
+		return analysis.DurationSeconds("s")
 	case "ms", "millisecond", "milliseconds":
-		return 1e-3, true
+		return analysis.DurationSeconds("ms")
 	case "us", "µs", "microsecond", "microseconds":
-		return 1e-6, true
+		return analysis.DurationSeconds("us")
 	case "min", "minute", "minutes":
-		return 60, true
+		return analysis.DurationSeconds("min")
 	}
 	return 0, false
 }

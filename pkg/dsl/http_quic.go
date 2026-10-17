@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 // HTTPQUICConfig tunes the QUIC connections the HTTP/3 policies open

@@ -3,3 +3,5 @@ mcp>=1.0,<2.0
 httpx
 pytest
 pytest-asyncio
+# Used only by contributor schema generation and freshness tests.
+PyYAML>=6.0

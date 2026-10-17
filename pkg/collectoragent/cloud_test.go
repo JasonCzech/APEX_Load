@@ -204,3 +204,24 @@ func TestAzureMonitorRejectsEquivalentTimestamps(t *testing.T) {
 		t.Fatal("duplicate instant with different offset accepted")
 	}
 }
+
+func TestCloudDurationSpellingsDoNotExpandWithCanonicalFacts(t *testing.T) {
+	for _, tc := range []struct {
+		unit   string
+		factor float64
+		valid  bool
+	}{
+		{"Seconds", 1000, true}, {"Milliseconds", 1, true},
+		{"seconds", 0, false}, {"s", 0, false}, {"Microseconds", 0, false},
+	} {
+		t.Run(tc.unit, func(t *testing.T) {
+			unit, factor, err := cloudUnit(tc.unit)
+			if (err == nil) != tc.valid {
+				t.Fatalf("error=%v", err)
+			}
+			if tc.valid && (unit != "ms" || factor != tc.factor) {
+				t.Fatalf("unit=%s factor=%g", unit, factor)
+			}
+		})
+	}
+}

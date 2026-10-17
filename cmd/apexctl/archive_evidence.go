@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/archivecontract"
 )
 
 const archiveEvidenceMaxResponse = 4 << 20
@@ -48,7 +48,7 @@ type archiveEvidenceManifest struct {
 		ProjectID   string    `json:"project_id"`
 		RequestedAt time.Time `json:"requested_at"`
 	} `json:"provenance"`
-	SourceCoverage *api.RunArchiveSourceCoverage `json:"source_coverage"`
+	SourceCoverage *archivecontract.RunArchiveSourceCoverage `json:"source_coverage"`
 }
 
 // This projection intentionally excludes raw errors, script/settings data,
@@ -129,7 +129,7 @@ func archiveEvidenceRunMatches(run *archiveEvidenceRun, expected archiveEvidence
 		archiveEvidenceTimestamp(run.CreatedAt, expected.MetadataBackend).Equal(archiveEvidenceTimestamp(expected.CreatedAt, expected.MetadataBackend))
 }
 
-func archiveEvidenceIntegrity(report *api.RunArchiveIntegrityReport, testID, manifestHash string) bool {
+func archiveEvidenceIntegrity(report *archivecontract.RunArchiveIntegrityReport, testID, manifestHash string) bool {
 	if report.SchemaVersion != "apexload.archive_integrity.v1" || report.TestID != testID ||
 		!report.Verified || report.Status != "verified" || report.Total < 2 || report.Total > 4097 ||
 		report.Matched != report.Total || report.Mismatched != 0 || report.Missing != 0 || report.Unverifiable != 0 ||
@@ -240,7 +240,7 @@ func collectArchiveEvidence(ctx context.Context, client *ApiClient, expected arc
 			result.SourceCoverage = "partial"
 		}
 	}
-	var integrity api.RunArchiveIntegrityReport
+	var integrity archivecontract.RunArchiveIntegrityReport
 	verificationStarted := time.Now()
 	if !read("integrity", "/archive/verify", &integrity) {
 		return result

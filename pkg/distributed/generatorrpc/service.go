@@ -799,9 +799,6 @@ type Service struct {
 	executions                           map[string]map[string]*groupExecution
 	persistentJavaDrains                 map[uint64]javaVuserCapacityDrain
 	nextPersistentJavaDrain              uint64
-	stoppingTests                        map[string]struct{}
-	stoppingGenerations                  map[string]uint64
-	stopCompletions                      map[string]*stopCompletion
 	resCollector                         *engine.ResourceCollector
 	resCollectorMu                       sync.Mutex // serializes resCollector.Collect (mutates delta state)
 	metricsSnapshotMu                    sync.Mutex // serializes per-test multi-group evidence drains
@@ -811,8 +808,6 @@ type Service struct {
 	completionTimers                     map[string]*time.Timer
 	completionTokens                     map[string]uint64
 	nextCompletionToken                  uint64
-	stageTimers                          map[string]*time.Timer
-	stageTokens                          map[string]uint64
 	testExecutionLeases                  map[string]testExecutionLease
 	testExecutionLeaseFences             map[string]uint64
 	testExecutionLeaseFenceAllGeneration uint64
@@ -1024,15 +1019,10 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 		executions:               make(map[string]map[string]*groupExecution),
 		persistentJavaDrains:     make(map[uint64]javaVuserCapacityDrain),
 		lifecycleCoordinator:     lifecycleCoordinator,
-		stoppingTests:            lifecycleCoordinator.stoppingTests,
-		stoppingGenerations:      lifecycleCoordinator.stoppingGenerations,
-		stopCompletions:          lifecycleCoordinator.stopCompletions,
 		resCollector:             engine.NewResourceCollector(),
 		publishInterval:          time.Second,
 		completionTimers:         make(map[string]*time.Timer),
 		completionTokens:         make(map[string]uint64),
-		stageTimers:              lifecycleCoordinator.stageTimers,
-		stageTokens:              lifecycleCoordinator.stageTokens,
 		testExecutionLeases:      make(map[string]testExecutionLease),
 		testExecutionLeaseFences: make(map[string]uint64),
 		runSupervisions:          make(map[string]*runSupervisionLease),
@@ -2296,7 +2286,7 @@ func (s *Service) metricsBatchIsCurrentLocked(batch *pb.MetricsBatch) bool {
 		// one of the lifecycle states owned by this service.
 		return true
 	}
-	if _, stopping := s.stoppingTests[batch.GetTestId()]; stopping {
+	if s.lifecycleCoordinator.isStoppingLocked(batch.GetTestId()) {
 		return false
 	}
 	assignment, ok := s.assignments[batch.GetTestId()]

@@ -3,6 +3,7 @@ import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 're
 import { Project } from '../types'
 import { useProjectApi } from './api/useProjectApi'
 import { ProjectContext, type ProjectMutation } from './projectContext'
+import { catalogSnapshotCaughtUp, reconcileCommittedCatalog } from './catalogReconciliation'
 import { readStoredString, removeStoredItem, writeStoredString } from '../utils/browserStorage'
 
 const STORAGE_KEY = 'apexload.activeProjectId'
@@ -11,14 +12,6 @@ function projectRowsMatch(left: Project, right: Project) {
 	return JSON.stringify(left) === JSON.stringify(right)
 }
 
-function projectSnapshotCaughtUp(listed: Project, committed: Project) {
-	if (projectRowsMatch(listed, committed)) return true
-	const listedUpdatedAt = Date.parse(listed.updated_at)
-	const committedUpdatedAt = Date.parse(committed.updated_at)
-	return Number.isFinite(listedUpdatedAt)
-		&& Number.isFinite(committedUpdatedAt)
-		&& listedUpdatedAt > committedUpdatedAt
-}
 
 function deleteResponseFromError(cause: unknown): { deleted?: string } | null {
 	if (!cause || typeof cause !== 'object') return null
@@ -104,24 +97,14 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     try {
       const res = await api.listProjects()
       if (!requestIsCurrent()) return
-			const listedIds = new Set<string>()
-			const nextProjects = (res.projects || [])
-				.filter(project => !projectTombstonesRef.current.has(project.id))
-				.map(project => {
-					listedIds.add(project.id)
-					const committed = committedProjectsRef.current.get(project.id)
-					if (!committed) return project
-					if (projectSnapshotCaughtUp(project, committed)) {
-						committedProjectsRef.current.delete(project.id)
-						return project
-					}
-					return committed
-				})
-			committedProjectsRef.current.forEach(committed => {
-				if (!listedIds.has(committed.id) && !projectTombstonesRef.current.has(committed.id)) {
-					nextProjects.push(committed)
-				}
-			})
+      const reconciled = reconcileCommittedCatalog(res.projects || [], committedProjectsRef.current, {
+        identity: project => project.id,
+        belongsToScope: () => true,
+        acknowledged: (listed, committed) => catalogSnapshotCaughtUp(listed, committed, projectRowsMatch, project => project.updated_at),
+        tombstones: projectTombstonesRef.current,
+      })
+      committedProjectsRef.current = reconciled.committedById
+      const nextProjects = reconciled.rows
 			nextProjects.sort((left, right) => left.name.localeCompare(right.name))
 			projectsRef.current = nextProjects
       setProjects(nextProjects)

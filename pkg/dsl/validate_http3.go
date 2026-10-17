@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 // validateHTTP3PolicyIssues rejects settings that an HTTP/3 policy cannot

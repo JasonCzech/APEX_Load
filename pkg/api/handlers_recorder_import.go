@@ -131,7 +131,7 @@ func (s *Server) convertRecorderImport(r *http.Request, importReq *recorderImpor
 		Unsupported:      result.Unsupported,
 		Warnings:         result.Warnings,
 	}
-	augmented := draft.augment(r)
+	augmented := draft.Augment(r)
 	result.Warnings = augmented.Warnings
 	return result, augmented, nil
 }

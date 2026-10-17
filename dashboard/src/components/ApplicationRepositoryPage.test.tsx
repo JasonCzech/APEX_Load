@@ -21,6 +21,10 @@ const repositoryApiMock = {
   deleteRelease: vi.fn(),
 }
 
+vi.mock('../hooks/api/useApplicationApi', () => ({
+  useApplicationApi: () => repositoryApiMock,
+}))
+
 vi.mock('../hooks/api/useRepositoryApi', () => ({
   useRepositoryApi: () => repositoryApiMock,
 }))

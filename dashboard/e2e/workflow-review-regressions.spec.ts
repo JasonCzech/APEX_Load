@@ -153,3 +153,46 @@ test('device capture retries a committed response loss with the exact attested r
   const scripts = (await library.json()).scripts as Array<{ id: string; name: string }>
   expect(scripts.filter(item => item.name === name).map(item => item.id)).toEqual([savedIds[0]])
 })
+
+test('recorder pairing preserves an execution poll already in flight', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const workspace = await createWorkspace(page.context().request)
+  const id = 'recorder-pairing-poll'
+  const now = new Date().toISOString()
+  const record = { id, name: 'Execution before pairing', status: 'RUNNING', project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, created_at: now, started_at: now, duration: '10m', total_vusers: 1, groups: [] }
+  const pending = gate()
+  let hold = false
+  let pendingReads = 0
+  await page.route(`**/api/v1/tests/${id}`, async route => {
+    if (hold) {
+      pendingReads++
+      await pending.promise
+    }
+    return route.fulfill({ json: hold ? { ...record, name: 'Execution after pairing' } : record })
+  })
+  await page.clock.install()
+  try {
+    await page.goto(`/#/test/${id}?tab=overview&${scopeQuery(workspace)}`)
+    if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+    const runContext = page.getByLabel('Current context', { exact: true })
+    await expect(runContext.getByText(record.name, { exact: true })).toBeVisible()
+    await page.clock.pauseAt(new Date(Date.now() + 1000))
+    hold = true
+    await page.clock.runFor(2000)
+    await expect.poll(() => pendingReads).toBeGreaterThan(0)
+    const readsBeforePairing = pendingReads
+    await page.evaluate(() => {
+      const connection = { origin: 'http://127.0.0.1:27992', token: 'poll-fixture-token', session_id: 'poll-fixture-session', paired_at: new Date().toISOString() }
+      localStorage.setItem(`apexload.browserRecorderBridge.${location.origin}`, JSON.stringify(connection))
+      window.dispatchEvent(new CustomEvent('apexload:browser-recorder-bridge-changed', { detail: connection }))
+    })
+    await page.clock.runFor(100)
+    expect(pendingReads).toBe(readsBeforePairing)
+    const completed = page.waitForResponse(response => new URL(response.url()).pathname === `/api/v1/tests/${id}`)
+    pending.release()
+    await (await completed).finished()
+    await expect(runContext.getByText('Execution after pairing', { exact: true })).toBeVisible()
+  } finally {
+    pending.release()
+  }
+})

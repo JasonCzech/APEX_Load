@@ -3,8 +3,9 @@ package dsl
 import (
 	"encoding/json"
 	"fmt"
+
 	"github.com/jasonczech/apexload/pkg/protocol"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 func validateVerificationAction(index int, a Action) []string {

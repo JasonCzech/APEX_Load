@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/contentmutation"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -703,20 +704,31 @@ func filterArchivedScenarios(scenarios []*StoredScenario, state string) []*Store
 	return result
 }
 
-// Refresh a single scenario while holding the same local write fence used by
-// object mutations, so an unrelated catalog read cannot discard this snapshot.
+// Refresh a single scenario with detached durable reads. The publication fence
+// rejects snapshots overlapping content mutations or project deletion.
 func (tr *TestRunner) refreshArchivedScenario(id string) (*StoredScenario, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	full, groups, err := tr.scenarioStore.GetScenario(id)
+	revision := tr.contentRevision
+	scriptObservation, scenarioObservation := tr.scriptMutationMu.Observe(), tr.scenarioMutationMu.Observe()
+	type scenarioParts struct {
+		full   *storage.Scenario
+		groups []storage.ScenarioScript
+	}
+	parts, err := contentmutation.OutsideLock(&tr.mu, func() (scenarioParts, error) {
+		full, groups, err := tr.scenarioStore.GetScenario(id)
+		return scenarioParts{full, groups}, err
+	})
 	if err != nil {
 		return nil, err
 	}
-	bindings, err := tr.scenarioStore.ListScenarioDataPoolBindings(id)
+	bindings, err := contentmutation.OutsideLock(&tr.mu, func() ([]storage.ScenarioDataPoolBinding, error) {
+		return tr.scenarioStore.ListScenarioDataPoolBindings(id)
+	})
 	if err != nil {
 		return nil, err
 	}
-	schedules, err := tr.scenarioStore.ListScenarioSchedules(id)
+	schedules, err := contentmutation.OutsideLock(&tr.mu, func() ([]*storage.ScenarioSchedule, error) { return tr.scenarioStore.ListScenarioSchedules(id) })
 	if err != nil {
 		return nil, err
 	}
@@ -724,7 +736,10 @@ func (tr *TestRunner) refreshArchivedScenario(id string) (*StoredScenario, error
 	for _, schedule := range schedules {
 		copiedSchedules = append(copiedSchedules, cloneScenarioSchedule(schedule))
 	}
-	scenario := tr.buildStoredScenarioFromPartsLocked(full, groups, bindings, copiedSchedules)
+	scenario := tr.buildStoredScenarioFromPartsLocked(parts.full, parts.groups, bindings, copiedSchedules)
+	if tr.contentRevision != revision || !tr.scriptMutationMu.CanPublish(scriptObservation) || !tr.scenarioMutationMu.CanPublish(scenarioObservation) || tr.projectDeletionErrorLocked(scenario.ProjectID) != nil {
+		return tr.enrichScenarioSummaryLocked(scenario), nil
+	}
 	if previous := tr.scenarios[id]; previous != nil {
 		tr.removeRefKeyLocked(previous.RefKey)
 	}

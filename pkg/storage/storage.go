@@ -4,12 +4,13 @@ import (
 	"errors"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
-const DefaultProjectID = "unassigned"
+const DefaultProjectID = config.DefaultProjectID
 const DefaultDomainID = "default"
 const DefaultApplicationRepositoryID = "default-application-repository"
 const DefaultRepositoryCategoryID = "uncategorized"

@@ -12,7 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
-	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 	"github.com/jasonczech/apexload/pkg/selector"
 )
 

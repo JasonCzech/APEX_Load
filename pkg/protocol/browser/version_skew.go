@@ -6,13 +6,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 	playwright "github.com/mxschmitt/playwright-go"
 )
 
@@ -38,22 +37,15 @@ const (
 	maxDriverManifestBytes = 1 << 20
 )
 
-var browserVersionPattern = regexp.MustCompile(`^[0-9]{1,4}(\.[0-9]{1,6}){0,3}$`)
-
 // ValidBrowserVersion reports a dotted numeric browser version
 // (149.0.7827.55).
 func ValidBrowserVersion(version string) bool {
-	return browserVersionPattern.MatchString(version)
+	return browsercontract.ValidBrowserVersion(version)
 }
 
 // BrowserMajorVersion is a browser version's major number.
 func BrowserMajorVersion(version string) (int, bool) {
-	if !ValidBrowserVersion(version) {
-		return 0, false
-	}
-	major, _, _ := strings.Cut(version, ".")
-	value, err := strconv.Atoi(major)
-	return value, err == nil
+	return browsercontract.BrowserMajorVersion(version)
 }
 
 // browserVersionSkew is one difference between the launched browser's major

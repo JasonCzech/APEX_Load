@@ -5,7 +5,7 @@ import type {
   ScenarioRuntimeSettingsDraft,
   StoredScenario,
 } from '../types'
-import type { ScenarioFormGroup, ScenarioFormState } from './TestHub'
+import type { ScenarioFormGroup, ScenarioFormState } from '../types/scenarioAuthoring'
 import { DEFAULT_GROUP_VUSERS, type ScenarioSeed } from './scenarioWizardUtils'
 import { overrideFromRuntimeDraft, runtimeDraftFromOverride } from './runtimeSettingsModel'
 import { canonicalThinkTimeType, thinkTimeConfigForType } from './thinkTimeConfig'

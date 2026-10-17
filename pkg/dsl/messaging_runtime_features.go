@@ -1,9 +1,10 @@
 package dsl
 
 import (
-	eventhubsprotocol "github.com/jasonczech/apexload/pkg/protocol/eventhubs"
-	kafkaprotocol "github.com/jasonczech/apexload/pkg/protocol/kafka"
 	"strings"
+
+	eventhubsprotocol "github.com/jasonczech/apexload/pkg/protocol/eventhubs"
+	kafkaprotocol "github.com/jasonczech/apexload/pkg/protocol/kafkacontract"
 )
 
 // RequiredMessagingRuntimeFeatures rejects older or stub peers before execution.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/harsynth"
+	"github.com/jasonczech/apexload/pkg/recordbridge"
 )
 
 // Synthetic HAR fallback (D6). A run archive's retained browser network
@@ -156,20 +157,5 @@ func visitArchiveJSONLRows(ctx context.Context, source io.Reader, visit func([]b
 // event's own, or its error snapshot's when it has none) as a synthetic HAR.
 // The events are the replay report's, already redacted at capture.
 func writeReplaySyntheticHAR(events []engine.ReplayActionEvent, out io.Writer) (harsynth.Summary, error) {
-	writer := harsynth.NewWriter(out, harsynth.Metadata{CaptureMode: harsynth.CaptureReplayNetworkEntries})
-	for _, event := range events {
-		entries, pageURL := event.Network, event.PageURL
-		if len(entries) == 0 && event.Snapshot != nil {
-			entries = event.Snapshot.NetworkEntries
-			if pageURL == "" {
-				pageURL = event.Snapshot.PageURL
-			}
-		}
-		for _, entry := range entries {
-			if err := writer.Add(harsynth.Entry{RecordTime: event.StartedAt, ActionName: event.ActionName, PageURL: pageURL, Network: entry}); err != nil {
-				return harsynth.Summary{}, err
-			}
-		}
-	}
-	return writer.Close()
+	return recordbridge.WriteReplaySyntheticHAR(events, out)
 }

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"path"
 	"strings"
 	"sync"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 // A scoped extractor (protocol.ExtractorScope) searches more than the final
@@ -147,29 +147,7 @@ func onlyHeaders(headers http.Header, names []string) http.Header {
 // character is literal, and a pattern without wildcards matches as a
 // substring.
 func MatchScopeGlob(pattern, value string) bool {
-	pattern = strings.ToLower(strings.TrimSpace(pattern))
-	value = strings.ToLower(strings.TrimSpace(value))
-	if pattern == "" {
-		return true
-	}
-	if !strings.ContainsAny(pattern, "*?") {
-		return strings.Contains(value, pattern)
-	}
-	// path.Match treats "/" as a separator for "*" (LoadRunner's "*" spans
-	// it) and "[", "]" and "\" as syntax (LoadRunner's are literal).
-	var literal strings.Builder
-	for _, r := range pattern {
-		switch r {
-		case '/':
-			literal.WriteByte(0)
-			continue
-		case '[', ']', '\\':
-			literal.WriteByte('\\')
-		}
-		literal.WriteRune(r)
-	}
-	matched, err := path.Match(literal.String(), strings.ReplaceAll(value, "/", "\x00"))
-	return err == nil && matched
+	return httpcontract.MatchScopeGlob(pattern, value)
 }
 
 // chargeCandidates charges the shared extractor budget for every candidate

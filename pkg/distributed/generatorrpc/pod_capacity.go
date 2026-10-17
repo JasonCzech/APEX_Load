@@ -26,7 +26,7 @@ func standbyPodCapacityClaim(claim *pb.PodCapacityClaim) bool {
 }
 
 func (s *Service) idleForStandbyCapacityLocked() bool {
-	if len(s.assignments) != 0 || len(s.stoppingTests) != 0 ||
+	if len(s.assignments) != 0 || s.lifecycleCoordinator.stoppingCountLocked() != 0 ||
 		len(s.lifecycleCoordinator.pendingStages) != 0 || len(s.lifecycleCoordinator.pendingControls) != 0 {
 		return false
 	}
@@ -122,7 +122,7 @@ func (s *Service) ReservePodCapacity(ctx context.Context, claim *pb.PodCapacityC
 		if len(s.executions[claim.TestId]) > 0 || s.lifecycleCoordinator.pendingStages[claim.TestId] != nil || s.lifecycleCoordinator.pendingControls[claim.TestId] != nil {
 			return reject(fmt.Errorf("test still executing, staging or controlling"))
 		}
-		if _, ok := s.stoppingTests[claim.TestId]; ok {
+		if s.lifecycleCoordinator.isStoppingLocked(claim.TestId) {
 			return reject(fmt.Errorf("test is still draining"))
 		}
 		delete(s.podCapacityClaims, claim.TestId)
@@ -197,7 +197,7 @@ func (s *Service) ReservePodCapacity(ctx context.Context, claim *pb.PodCapacityC
 			return reject(fmt.Errorf("legacy assignment is staging"))
 		}
 	}
-	for id := range s.stoppingTests {
+	for _, id := range s.lifecycleCoordinator.stoppingIDsLocked() {
 		if s.podCapacityClaims[id] == nil {
 			return reject(fmt.Errorf("legacy assignment is draining"))
 		}

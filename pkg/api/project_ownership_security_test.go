@@ -400,13 +400,9 @@ func TestProjectAccessResolversReconcileAllReferencedObjects(t *testing.T) {
 
 func TestBrowserToHTTPRejectsReplaySessionFromAnotherProject(t *testing.T) {
 	server := NewServer(ServerConfig{})
-	server.browserReplay.mu.Lock()
-	server.browserReplay.sessions["replay-b"] = &BrowserReplaySession{
-		ID: "replay-b", ProjectID: "project-b", Status: BrowserReplayPaused, Protocol: "browser", stateChanged: make(chan struct{}),
-	}
-	server.browserReplay.mu.Unlock()
+	startPausedBrowserReplayFixture(t, server, "44444444-4444-4444-8444-444444444444", "project-b")
 	body, _ := json.Marshal(BrowserToHTTPPreviewRequest{
-		ProjectID: "project-a", ReplaySessionID: "replay-b",
+		ProjectID: "project-a", ReplaySessionID: "44444444-4444-4444-8444-444444444444",
 		SourceBrowserScript: &dsl.Script{Name: "Browser A", ProjectID: "project-a", Protocol: "browser"},
 		NetworkEntries:      []protocol.NetworkEntry{{URL: "https://example.test/api", Method: http.MethodGet}},
 	})
@@ -447,13 +443,9 @@ func TestBrowserToHTTPReplayProjectIsAuthorizedBeforeSessionRead(t *testing.T) {
 	defer store.Close()
 	server := NewServer(ServerConfig{Store: store})
 	enableTrustedHeaderAuth(t, server)
-	server.browserReplay.mu.Lock()
-	server.browserReplay.sessions["foreign-replay"] = &BrowserReplaySession{
-		ID: "foreign-replay", ProjectID: "project-b", Status: BrowserReplayPaused, Protocol: "browser", stateChanged: make(chan struct{}),
-	}
-	server.browserReplay.mu.Unlock()
+	startPausedBrowserReplayFixture(t, server, "55555555-5555-4555-8555-555555555555", "project-b")
 
-	unscopedBody, _ := json.Marshal(BrowserToHTTPPreviewRequest{ReplaySessionID: "foreign-replay"})
+	unscopedBody, _ := json.Marshal(BrowserToHTTPPreviewRequest{ReplaySessionID: "55555555-5555-4555-8555-555555555555"})
 	unscopedReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-to-http/preview", bytes.NewReader(unscopedBody))
 	unscopedReq.Header.Set("X-Auth-Request-User", "project-a-editor")
 	unscopedReq.Header.Set("X-APEXLoad-Project-Roles", storage.DefaultProjectID+"="+RoleEditor)
@@ -463,7 +455,7 @@ func TestBrowserToHTTPReplayProjectIsAuthorizedBeforeSessionRead(t *testing.T) {
 		t.Fatalf("unscoped replay status = %d, want %d body=%s", unscopedResp.Code, http.StatusBadRequest, unscopedResp.Body.String())
 	}
 
-	foreignBody, _ := json.Marshal(BrowserToHTTPPreviewRequest{ProjectID: "project-b", ReplaySessionID: "foreign-replay"})
+	foreignBody, _ := json.Marshal(BrowserToHTTPPreviewRequest{ProjectID: "project-b", ReplaySessionID: "55555555-5555-4555-8555-555555555555"})
 	foreignReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-to-http/preview", bytes.NewReader(foreignBody))
 	foreignReq.Header.Set("X-Auth-Request-User", "project-a-editor")
 	foreignReq.Header.Set("X-APEXLoad-Project-Roles", "project-a="+RoleEditor)

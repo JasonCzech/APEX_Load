@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +22,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/contentdecode"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/http/internal/h3transport"
+	"github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -142,11 +142,6 @@ func (p *httpBufferPool) put(buffer *bytes.Buffer) {
 	default:
 	}
 }
-
-var (
-	absoluteHTTPURLBoundaryWhitespace = regexp.MustCompile(`^(https?://[^/?#\s]+)\s+([/?#].*)$`)
-	leadingTemplateBaseURLPattern     = regexp.MustCompile(`^\{\{\s*(?:var|param)\.[^{}]+\s*\}\}\s*`)
-)
 
 func (h *HTTP) Name() string { return "http" }
 
@@ -1605,25 +1600,15 @@ func (h *HTTP) resolveURL(target string) string {
 }
 
 func ResolveURL(baseURL string, target string) string {
-	target = NormalizeURLTarget(target)
-	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
-		return target
-	}
-	baseURL = strings.TrimSpace(baseURL)
-	if baseURL == "" {
-		return target
-	}
-	target = TrimLeadingTemplateBaseURL(target)
-	return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(target, "/")
+	return httpcontract.ResolveURL(baseURL, target)
 }
 
 func NormalizeURLTarget(target string) string {
-	target = strings.TrimSpace(target)
-	return absoluteHTTPURLBoundaryWhitespace.ReplaceAllString(target, "$1$2")
+	return httpcontract.NormalizeURLTarget(target)
 }
 
 func TrimLeadingTemplateBaseURL(target string) string {
-	return leadingTemplateBaseURLPattern.ReplaceAllString(strings.TrimSpace(target), "")
+	return httpcontract.TrimLeadingTemplateBaseURL(target)
 }
 
 // parseTLSVersion converts a human-readable TLS version string to the crypto/tls constant.

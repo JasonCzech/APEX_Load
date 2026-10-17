@@ -1,0 +1,173 @@
+{
+  "source": "docs/swagger.yaml",
+  "tools": {
+    "list_tests": {
+      "query": {
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "folder_id": {
+            "type": "string"
+          },
+          "limit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "offset": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "release_id": {
+            "type": "string"
+          },
+          "scenario_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "run_list": {
+      "query": {
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "folder_id": {
+            "type": "string"
+          },
+          "limit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "offset": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "release_id": {
+            "type": "string"
+          },
+          "scenario_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "run_start": {
+      "path_params": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "payload": {
+        "properties": {
+          "expected_preparation_revision": {
+            "type": "string"
+          },
+          "override_capacity_shortfall": {
+            "type": "boolean"
+          },
+          "override_script_shakeout_failure": {
+            "type": "boolean"
+          },
+          "preparation_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "scenario_get": {
+      "path_params": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "query": {
+        "properties": {
+          "view": {
+            "enum": [
+              "authoring"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "script_get": {
+      "path_params": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "query": {
+        "properties": {
+          "view": {
+            "enum": [
+              "authoring"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "start_test": {
+      "path_params": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "payload": {
+        "properties": {
+          "expected_preparation_revision": {
+            "type": "string"
+          },
+          "override_capacity_shortfall": {
+            "type": "boolean"
+          },
+          "override_script_shakeout_failure": {
+            "type": "boolean"
+          },
+          "preparation_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    }
+  }
+}

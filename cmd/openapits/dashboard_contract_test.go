@@ -35,7 +35,7 @@ type dynamicCallRule struct {
 }
 
 // Device capture runs in the paired Recording Agent: its bridge mux
-// (pkg/api/browser_recording_bridge.go) serves these routes and the controller
+// (pkg/recordbridge/bridge_routes.go) serves these routes and the controller
 // does not, so the controller's OpenAPI document cannot describe them.
 var recordingAgentOnlyRoutes = []routeKey{
 	{Method: "GET", Path: "/api/v1/device-capture"},
@@ -213,7 +213,7 @@ func TestDashboardHookRoutesHaveGeneratedOpenAPIBindings(t *testing.T) {
 	if len(calls) < 300 {
 		t.Fatalf("dashboard route scanner found only %d calls; expected the API hook inventory", len(calls))
 	}
-	bridgeSource := string(mustReadFile(t, filepath.Join(root, "pkg", "api", "browser_recording_bridge.go")))
+	bridgeSource := string(mustReadFile(t, filepath.Join(root, "pkg", "recordbridge", "bridge_routes.go")))
 	agentOnly := make(map[routeKey]bool, len(recordingAgentOnlyRoutes))
 	for _, route := range recordingAgentOnlyRoutes {
 		if _, exists := openAPIRoutes[route]; exists {

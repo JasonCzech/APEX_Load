@@ -15,13 +15,12 @@ import (
 	"time"
 	"unicode"
 
-	"golang.org/x/net/http/httpguts"
-
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 	"github.com/jasonczech/apexload/pkg/protocol"
-	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browsercontract"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
+	"golang.org/x/net/http/httpguts"
 )
 
 // ValidateScriptIssues returns all validation issues for a script definition.

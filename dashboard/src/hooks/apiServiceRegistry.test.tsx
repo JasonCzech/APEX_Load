@@ -85,29 +85,15 @@ describe('mergeApiServiceGroups', () => {
     expect(onCollision).not.toHaveBeenCalled()
   })
 
-  it('stays silent on the audited duplicates but still reports anything else', () => {
-    const allowlisted = vi.fn()
-    mergeApiServiceGroups(
-      {
-        applications: { archiveRelease: 1, deleteRelease: 1 },
-        repository: { archiveRelease: 2, deleteRelease: 2 },
-      },
-      allowlisted,
-    )
-    expect(allowlisted).not.toHaveBeenCalled()
-
-    const mixed = vi.fn()
-    mergeApiServiceGroups(
-      {
-        applications: { archiveRelease: 1, listReleases: 1 },
-        repository: { archiveRelease: 2, listReleases: 2 },
-      },
-      mixed,
-    )
-    expect(mixed).toHaveBeenCalledTimes(1)
-    // Only the un-audited name reaches the message; the allowlisted one does not.
-    expect(mixed.mock.calls[0][0]).toContain('listReleases')
-    expect(mixed.mock.calls[0][0]).not.toContain('archiveRelease')
+  it('reports release collisions as well as every other duplicate', () => {
+    const onCollision = vi.fn()
+    mergeApiServiceGroups({
+      applications: { archiveRelease: 1, deleteRelease: 1 },
+      repository: { archiveRelease: 2, deleteRelease: 2 },
+    }, onCollision)
+    expect(onCollision).toHaveBeenCalledTimes(1)
+    expect(onCollision.mock.calls[0][0]).toContain('archiveRelease')
+    expect(onCollision.mock.calls[0][0]).toContain('deleteRelease')
   })
 
   it('warns through the default reporter, once per distinct message', () => {
@@ -196,7 +182,7 @@ describe('domain hook name space', () => {
     }
   })
 
-  it('keeps the known duplicates limited to useApplicationApi and useRepositoryApi', () => {
+  it('has no duplicate service owners', () => {
     const collisions = findApiServiceCollisions(groups)
     expect(collisions.map(({ key }) => key).sort()).toEqual([...KNOWN_DUPLICATE_SERVICE_NAMES].sort())
     collisions.forEach(({ groups: owners }) => {

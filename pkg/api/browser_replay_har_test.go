@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,6 +23,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/harsynth"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/recordbridge"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -36,7 +37,7 @@ func waitBrowserReplayTerminal(t *testing.T, manager *BrowserReplayManager, id s
 		}
 		// Terminal and settled: the worker has recorded its final state, so
 		// the session's HAR is final (a Stop is terminal before that).
-		if replaySessionStatusTerminal(session.Status) && session.workerSettled {
+		if replaySessionStatusTerminal(session.Status) && session.WorkerSettled() {
 			return session
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -125,6 +126,7 @@ func TestBrowserReplayActualNativeHAR(t *testing.T) {
 	t.Cleanup(fixture.Close)
 	server, _ := baselineTestServer(t)
 	enableTrustedHeaderAuth(t, server)
+	advanceClock := installReplayHARFixtureClock(t, server)
 	harDir := t.TempDir()
 	script := func(record bool) (*dsl.Script, BrowserReplayStartRequest) {
 		return &dsl.Script{Name: "Native replay HAR", Protocol: "browser", Version: "1.0.0", ProjectID: storage.DefaultProjectID,
@@ -158,15 +160,9 @@ func TestBrowserReplayActualNativeHAR(t *testing.T) {
 			t.Fatalf("the HAR directory kept %s", entry.Name())
 		}
 	}
-	server.browserReplay.mu.RLock()
-	copied := server.browserReplay.sessions["replay-native-true"].harCopy
-	server.browserReplay.mu.RUnlock()
-	if _, err := os.Stat(copied); err != nil {
-		t.Fatalf("no private copy: %v", err)
-	}
-	server.browserReplay.mu.Lock()
-	delete(server.browserReplay.sessions, "replay-native-true")
-	server.browserReplay.mu.Unlock()
+	copied := retainedReplayHARFixturePath(t, server, "replay-native-true")
+	waitForBrowserReplayFixture(t, server.browserReplay, "replay-native-true")
+	advanceClock(48 * time.Hour)
 	server.browserReplay.PruneExpired()
 	if _, err := os.Stat(copied); !os.IsNotExist(err) {
 		t.Fatalf("a pruned replay's HAR copy stayed: %v", err)
@@ -230,6 +226,7 @@ func registerReplayHARProtocol(t *testing.T, harDir string, publish func() []str
 func TestBrowserReplayHARCopiesBelongToTheirRecord(t *testing.T) {
 	server, _ := baselineTestServer(t)
 	enableTrustedHeaderAuth(t, server)
+	advanceClock := installReplayHARFixtureClock(t, server)
 	harDir := t.TempDir()
 	published := ""
 	var captureMu sync.Mutex
@@ -274,19 +271,12 @@ func TestBrowserReplayHARCopiesBelongToTheirRecord(t *testing.T) {
 	if err := json.Unmarshal(entries["har.json"], &metadata); err != nil || metadata.Fidelity != "native" || metadata.SHA256 != hex.EncodeToString(sum[:]) || metadata.Bytes != int64(len(entries["replay.har"])) || string(entries["replay.har"]) != reply.Body.String() {
 		t.Fatalf("streamed evidence %+v %v", metadata, err)
 	}
-	server.browserReplay.mu.RLock()
-	record := server.browserReplay.sessions["replay-har-reuse"]
-	server.browserReplay.mu.RUnlock()
-	first := record.harCopy
-
-	// The record is retired (its fence was lost), which removes its copy, and
-	// a retry reuses the ID without recording (recording is opt-in, so an
-	// unset record_har leaves the script's capture policy alone): it has its
-	// own synthetic HAR.
-	record.mu.Lock()
-	record.terminalFenceEstablished = false
-	record.mu.Unlock()
-	server.browserReplay.retireUnfencedSession(record)
+	first := retainedReplayHARFixturePath(t, server, "replay-har-reuse")
+	// Expiring the completed record removes its native copy and releases its
+	// ID. A retry without capture must use only its own synthetic evidence.
+	waitForBrowserReplayFixture(t, server.browserReplay, "replay-har-reuse")
+	advanceClock(48 * time.Hour)
+	server.browserReplay.PruneExpired()
 	if _, err := os.Stat(first); !os.IsNotExist(err) {
 		t.Fatalf("a retired record's copy stayed: %v", err)
 	}
@@ -323,47 +313,13 @@ func TestBrowserReplayHARCopiesBelongToTheirRecord(t *testing.T) {
 	}
 }
 
-// A copy is kept only when asked (a fenced, live record); the original is
-// retired either way, and a closed store refuses writes.
-func TestReplayHARStoreKeepsOnlyFencedCopies(t *testing.T) {
-	manager := NewBrowserReplayManager(nil)
-	harDir := t.TempDir()
-	original := publishFakeReplayHAR(t, harDir, "unfenced", "unfenced")
-	record := &BrowserReplaySession{ID: "unfenced"}
-	if copied := manager.retainReplayHAR(record, []protocol.BrowserHARArtifact{{Path: original}}, false); copied != "" {
-		t.Fatalf("an unfenced record kept %s", copied)
-	}
-	if _, err := os.Stat(original); !os.IsNotExist(err) {
-		t.Fatalf("the original was not retired: %v", err)
-	}
-	original = publishFakeReplayHAR(t, harDir, "kept", "kept")
-	copied := manager.retainReplayHAR(record, []protocol.BrowserHARArtifact{{Path: original}}, true)
-	if copied == "" || !strings.HasPrefix(copied, filepath.Join(os.TempDir(), replayHARRootName)) {
-		t.Fatalf("copy %q outside the managed root", copied)
-	}
-	manager.Close()
-	if _, err := os.Stat(copied); !os.IsNotExist(err) {
-		t.Fatalf("close kept the copy: %v", err)
-	}
-	if _, err := manager.har.write(record, strings.NewReader("{}"), 2); !errors.Is(err, errReplayHARStoreClosed) {
-		t.Fatalf("a closed store accepted a write: %v", err)
-	}
-	// A copy that cannot be kept still retires the original.
-	original = publishFakeReplayHAR(t, harDir, "uncopied", "uncopied")
-	if copied := manager.retainReplayHAR(record, []protocol.BrowserHARArtifact{{Path: original}}, true); copied != "" {
-		t.Fatalf("a closed store kept %s", copied)
-	}
-	if _, err := os.Stat(original); !os.IsNotExist(err) {
-		t.Fatalf("the original stayed after a failed copy: %v", err)
-	}
-}
-
 // A pruned record's copy is removed by the janitor's prune; a replay whose
 // protocol fails to start retires its recording; downloads are bounded and
 // release their slot.
 func TestBrowserReplayHARPruneInitFailureAndDownloadSlots(t *testing.T) {
 	server, _ := baselineTestServer(t)
 	enableTrustedHeaderAuth(t, server)
+	advanceClock := installReplayHARFixtureClock(t, server)
 	harDir := t.TempDir()
 	published := ""
 	failInit := false
@@ -388,16 +344,12 @@ func TestBrowserReplayHARPruneInitFailureAndDownloadSlots(t *testing.T) {
 	base := "/api/v1/browser-replay/sessions/replay-har-prune"
 
 	// Every download slot is taken: the next download waits its turn.
-	for i := 0; i < replayHARMaxDownloads; i++ {
-		server.browserReplay.harDownloads <- struct{}{}
-	}
+	releaseSlots := acquireAllReplayHARFixtureSlots(t, server.browserReplay)
 	busy := harDownloadRequest(t, server, base+"/har", "replay-editor", harEditor)
 	if busy.Code != http.StatusServiceUnavailable || busy.Header().Get("Retry-After") == "" {
 		t.Fatalf("a download beyond the slots: %d %v", busy.Code, busy.Header())
 	}
-	for i := 0; i < replayHARMaxDownloads; i++ {
-		<-server.browserReplay.harDownloads
-	}
+	releaseSlots()
 	for path, want := range map[string]int{base + "/har": http.StatusOK, base + "/evidence": http.StatusOK} {
 		if got := harDownloadRequest(t, server, path, "replay-editor", harEditor); got.Code != want {
 			t.Fatalf("%s: %d, want %d", path, got.Code, want)
@@ -407,34 +359,17 @@ func TestBrowserReplayHARPruneInitFailureAndDownloadSlots(t *testing.T) {
 	if got := harDownloadRequest(t, server, "/api/v1/browser-replay/sessions/missing/har", "replay-editor", harEditor); got.Code == http.StatusOK {
 		t.Fatal("an unknown session's HAR was served")
 	}
-	if held := len(server.browserReplay.harDownloads); held != 0 {
-		t.Fatalf("%d download slots were not released", held)
-	}
+	acquireAllReplayHARFixtureSlots(t, server.browserReplay)()
 
-	server.browserReplay.mu.RLock()
-	copied := server.browserReplay.sessions["replay-har-prune"].harCopy
-	server.browserReplay.mu.RUnlock()
-	if _, err := os.Stat(copied); err != nil {
-		t.Fatalf("no copy: %v", err)
-	}
-	later := time.Now().Add(48 * time.Hour)
-	server.browserReplay.mu.Lock()
-	server.browserReplay.retention.now = func() time.Time { return later }
-	server.browserReplay.mu.Unlock()
-	// The worker finishes just after the session turns terminal.
-	pruneDeadline := time.Now().Add(5 * time.Second)
-	for server.browserReplay.PruneExpired() == 0 {
-		if time.Now().After(pruneDeadline) {
-			t.Fatal("the terminal replay was not pruned")
-		}
-		time.Sleep(10 * time.Millisecond)
+	copied := retainedReplayHARFixturePath(t, server, "replay-har-prune")
+	waitForBrowserReplayFixture(t, server.browserReplay, "replay-har-prune")
+	advanceClock(48 * time.Hour)
+	if removed := server.browserReplay.PruneExpired(); removed != 1 {
+		t.Fatalf("pruned %d, want 1", removed)
 	}
 	if _, err := os.Stat(copied); !os.IsNotExist(err) {
 		t.Fatalf("a pruned record's copy stayed: %v", err)
 	}
-	server.browserReplay.mu.Lock()
-	server.browserReplay.retention.now = time.Now
-	server.browserReplay.mu.Unlock()
 
 	// The protocol fails to start after its recording opened.
 	failInit = true
@@ -450,183 +385,43 @@ func TestBrowserReplayHARPruneInitFailureAndDownloadSlots(t *testing.T) {
 	}
 }
 
-// The managed root is used only when it is a private directory; a link or a
-// shared one is never swept, and copies go to a private directory instead.
-// Directories left by ended processes are removed.
-func TestReplayHARStoreManagedRoot(t *testing.T) {
-	tmp := t.TempDir()
-	// os.TempDir reads TMPDIR on Unix and TMP (then TEMP) on Windows.
-	t.Setenv("TMPDIR", tmp)
-	t.Setenv("TMP", tmp)
-	t.Setenv("TEMP", tmp)
-	root := filepath.Join(tmp, replayHARRootName)
-	makeReplayHARRootPrivate(t, root)
-	if err := os.MkdirAll(filepath.Join(root, "manager-ended"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().Add(-2 * replayHARStaleAfter)
-	if err := os.Chtimes(filepath.Join(root, "manager-ended"), old, old); err != nil {
-		t.Fatal(err)
-	}
-	var store replayHARStore
-	copied, err := store.write(&BrowserReplaySession{ID: "a"}, strings.NewReader("{}"), 2)
-	if err != nil || filepath.Dir(filepath.Dir(copied)) != root {
-		t.Fatalf("copy %q under %q: %v", copied, root, err)
-	}
-	if _, err := os.Stat(filepath.Join(root, "manager-ended")); !os.IsNotExist(err) {
-		t.Fatalf("an ended process's directory stayed: %v", err)
-	}
-	store.close()
-
-	// The root is a link elsewhere: nothing there is touched.
-	elsewhere := t.TempDir()
-	victim := filepath.Join(elsewhere, "old")
-	if err := os.Mkdir(victim, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(victim, old, old); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.RemoveAll(root); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(elsewhere, root); err != nil {
-		t.Fatal(err)
-	}
-	var linked replayHARStore
-	copied, err = linked.write(&BrowserReplaySession{ID: "b"}, strings.NewReader("{}"), 2)
-	if err != nil || strings.HasPrefix(copied, root+string(os.PathSeparator)) || strings.HasPrefix(copied, elsewhere) {
-		t.Fatalf("copy %q through a linked root: %v", copied, err)
-	}
-	if _, err := os.Stat(victim); err != nil {
-		t.Fatalf("the sweep followed the link: %v", err)
-	}
-	linked.close()
-
-	// A root that is not private (another mode) is not adopted either.
-	if err := os.Remove(root); err != nil {
-		t.Fatal(err)
-	}
-	makeReplayHARRootPrivate(t, root)
-	makeReplayHARRootShared(t, root)
-	var shared replayHARStore
-	copied, err = shared.write(&BrowserReplaySession{ID: "c"}, strings.NewReader("{}"), 2)
-	if err != nil || strings.HasPrefix(copied, root+string(os.PathSeparator)) {
-		t.Fatalf("copy %q under a shared root: %v", copied, err)
-	}
-	shared.close()
-
-	// A live manager keeps its directory fresh, and makes it again if another
-	// process removed it.
-	makeReplayHARRootPrivateAgain(t, root)
-	var live replayHARStore
-	first, err := live.write(&BrowserReplaySession{ID: "d"}, strings.NewReader("{}"), 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(filepath.Dir(first), old, old); err != nil {
-		t.Fatal(err)
-	}
-	live.sweep(func(*BrowserReplaySession) bool { return true })
-	if info, err := os.Stat(filepath.Dir(first)); err != nil || time.Since(info.ModTime()) > time.Minute {
-		t.Fatalf("the sweep did not keep the live directory fresh: %v %v", info, err)
-	}
-	if err := os.RemoveAll(filepath.Dir(first)); err != nil {
-		t.Fatal(err)
-	}
-	if second, err := live.write(&BrowserReplaySession{ID: "e"}, strings.NewReader("{}"), 2); err != nil || second == "" {
-		t.Fatalf("a removed live directory was not made again: %q %v", second, err)
-	}
-	live.close()
-}
-
 // Right after Stop the session is terminal while its worker is still closing
 // the browser and retaining the HAR: a download is a conflict to retry, not
 // "no HAR", until the worker has recorded its final state.
 func TestBrowserReplayHARWaitsForTheWorker(t *testing.T) {
 	server, _ := baselineTestServer(t)
 	enableTrustedHeaderAuth(t, server)
-	stoppedAt := time.Now()
-	session := &BrowserReplaySession{ID: "replay-har-closing", ProjectID: storage.DefaultProjectID, Status: BrowserReplayStopped,
-		StartedAt: &stoppedAt, CompletedAt: &stoppedAt, lastActivityAt: stoppedAt, terminalAt: &stoppedAt, workerDone: make(chan struct{})}
-	server.browserReplay.mu.Lock()
-	server.browserReplay.sessions[session.ID] = session
-	server.browserReplay.mu.Unlock()
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	protocolName := registerReplayHARProtocol(t, t.TempDir(), func() []string { return nil }, func(map[string]any) error {
+		close(entered)
+		<-release
+		return errors.New("fixture initialization failed after cancellation")
+	})
+	session, err := server.browserReplay.Start("", &dsl.Script{Name: "Closing replay", Protocol: protocolName, ProjectID: storage.DefaultProjectID, Actions: []dsl.Action{{Name: "open", Type: "request", Target: "/"}}}, BrowserReplayStartRequest{ReplaySessionID: "replay-har-closing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not enter initialization")
+	}
+	server.browserReplay.Stop(session.ID)
 	for _, suffix := range []string{"/har", "/evidence"} {
 		reply := harDownloadRequest(t, server, "/api/v1/browser-replay/sessions/replay-har-closing"+suffix, "replay-editor", harEditor)
 		if reply.Code != http.StatusConflict || reply.Header().Get("Retry-After") == "" {
 			t.Fatalf("%s while the worker closes: %d %s", suffix, reply.Code, reply.Body)
 		}
 	}
-	// The worker records its final state (its HAR with it) before its
-	// completion hook runs and before it finishes: from then on the HAR is
-	// final.
-	session.mu.Lock()
-	session.workerRecordedTerminal = true
-	session.mu.Unlock()
+	// Let the real worker complete its failed initialization. Until this
+	// point the HTTP route must distinguish pending artifacts from absence.
+	unblock()
+	waitForBrowserReplayFixture(t, server.browserReplay, session.ID)
 	if reply := harDownloadRequest(t, server, "/api/v1/browser-replay/sessions/replay-har-closing/har", "replay-editor", harEditor); reply.Code != http.StatusNotFound {
 		t.Fatalf("a settled replay without a report or recording: %d %s", reply.Code, reply.Body)
-	}
-}
-
-// blockingReader yields its data only after release is closed.
-type blockingReader struct {
-	started chan struct{}
-	release chan struct{}
-	data    io.Reader
-	once    sync.Once
-}
-
-func (r *blockingReader) Read(p []byte) (int, error) {
-	r.once.Do(func() { close(r.started) })
-	<-r.release
-	return r.data.Read(p)
-}
-
-// A copy runs outside the store's lock: a slow copy never stalls a sweep, and
-// a store closed during the copy keeps nothing.
-func TestReplayHARStoreCopiesOutsideTheLock(t *testing.T) {
-	manager := NewBrowserReplayManager(nil)
-	t.Cleanup(manager.Close)
-	record := &BrowserReplaySession{ID: "slow"}
-	write := func() (*blockingReader, chan error, chan string) {
-		reader := &blockingReader{started: make(chan struct{}), release: make(chan struct{}), data: strings.NewReader("{}")}
-		errs, paths := make(chan error, 1), make(chan string, 1)
-		go func() {
-			path, err := manager.har.write(record, reader, 2)
-			errs <- err
-			paths <- path
-		}()
-		<-reader.started
-		return reader, errs, paths
-	}
-	reader, errs, paths := write()
-	swept := make(chan struct{})
-	go func() {
-		manager.har.sweep(func(*BrowserReplaySession) bool { return true })
-		close(swept)
-	}()
-	select {
-	case <-swept:
-	case <-time.After(5 * time.Second):
-		t.Fatal("a sweep waited for a copy in progress")
-	}
-	close(reader.release)
-	if err := <-errs; err != nil {
-		t.Fatal(err)
-	}
-	if path := <-paths; path == "" {
-		t.Fatal("the copy was not kept")
-	}
-
-	reader, errs, paths = write()
-	manager.har.close()
-	close(reader.release)
-	if err := <-errs; !errors.Is(err, errReplayHARStoreClosed) {
-		t.Fatalf("a copy finished after close: %v", err)
-	}
-	if path := <-paths; path != "" {
-		t.Fatalf("a closed store kept %s", path)
 	}
 }
 
@@ -729,4 +524,64 @@ func TestReplayHARsRecordedByTheScriptsOwnPolicy(t *testing.T) {
 	if _, err := os.Stat(published); !os.IsNotExist(err) {
 		t.Fatalf("the HAR directory kept a classic replay's recording: %v", err)
 	}
+}
+
+func installReplayHARFixtureClock(t *testing.T, server *Server) func(time.Duration) {
+	t.Helper()
+	var now atomic.Int64
+	now.Store(time.Now().UnixNano())
+	retention := recordbridge.DefaultReplayRetentionConfig()
+	retention.Now = func() time.Time { return time.Unix(0, now.Load()) }
+	replaceReplayFixtureManager(t, server, recordbridge.ReplayManagerOptions{Retention: &retention})
+	return func(delta time.Duration) { now.Add(int64(delta)) }
+}
+
+func retainedReplayHARFixturePath(t *testing.T, server *Server, id string) string {
+	t.Helper()
+	session, ok := server.browserReplay.Get(id)
+	if !ok {
+		t.Fatal("replay session disappeared")
+	}
+	har, ok, err := server.browserReplay.ReplayHARFor(session)
+	if err != nil || !ok {
+		t.Fatalf("retained HAR: %v, %v", ok, err)
+	}
+	defer har.Close()
+	file, ok := har.Reader().(*os.File)
+	if !ok {
+		t.Fatal("native HAR is not backed by its retained file")
+	}
+	return file.Name()
+}
+
+func acquireAllReplayHARFixtureSlots(t *testing.T, manager *BrowserReplayManager) func() {
+	t.Helper()
+	releases := make([]func(), 0, 4)
+	for i := 0; i < 4; i++ {
+		release, ok := manager.AcquireHARDownload()
+		if !ok {
+			for _, release := range releases {
+				release()
+			}
+			t.Fatalf("only %d download slots available", i)
+		}
+		releases = append(releases, release)
+	}
+	if release, ok := manager.AcquireHARDownload(); ok {
+		release()
+		for _, release := range releases {
+			release()
+		}
+		t.Fatal("download bound was exceeded")
+	}
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			for _, release := range releases {
+				release()
+			}
+		})
+	}
+	t.Cleanup(release)
+	return release
 }

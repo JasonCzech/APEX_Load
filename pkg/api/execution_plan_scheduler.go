@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/contentmutation"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -1098,18 +1099,27 @@ func (tr *TestRunner) persistExecutionPlanScheduleOccurrenceTransitionWithTerm(o
 		}
 		updated, writeErr = store.CompareAndSwapExecutionPlanScheduleOccurrence(occurrence, expectedRevision)
 	}
-	if writeErr == nil && updated {
+	resolution := contentmutation.ResolveWrite(updated, writeErr,
+		func() bool { return tr.executionLeaseTermCurrent(leaseTerm) },
+		func() (*storage.ExecutionPlanScheduleOccurrence, error) {
+			return tr.execPlanScheduleStore.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(occurrence.ScheduleID, occurrence.PlannedAt)
+		},
+		func(current *storage.ExecutionPlanScheduleOccurrence) bool {
+			return executionPlanScheduleOccurrenceTransitionMatches(current, occurrence, expectedRevision)
+		},
+	)
+	if resolution.State == contentmutation.WriteApplied {
+		if resolution.Current != nil {
+			*occurrence = *resolution.Current
+			occurrence.MaterializedAt = cloneTimePtr(resolution.Current.MaterializedAt)
+		}
 		return nil
 	}
-	if !tr.executionLeaseTermCurrent(leaseTerm) {
+	if resolution.State == contentmutation.WriteOwnershipLost {
+		occurrence.Revision = expectedRevision
 		return errNotExecutionLeader
 	}
-	current, reloadErr := tr.execPlanScheduleStore.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(occurrence.ScheduleID, occurrence.PlannedAt)
-	if reloadErr == nil && executionPlanScheduleOccurrenceTransitionMatches(current, occurrence, expectedRevision) {
-		*occurrence = *current
-		occurrence.MaterializedAt = cloneTimePtr(current.MaterializedAt)
-		return nil
-	}
+	current, reloadErr := resolution.Current, resolution.ReadError
 	occurrence.Revision = expectedRevision
 	if writeErr != nil {
 		if reloadErr != nil {
