@@ -739,6 +739,28 @@ message TDigestSnapshot {
   repeated TDigestCentroid centroids = 6;
 }
 
+// One non-empty bucket of a DurationSketchSnapshot.
+message DurationSketchBin {
+  sint32 index = 1;
+  uint64 count = 2;
+}
+
+// Version 2 duration distribution: logarithmic buckets whose values are within
+// alpha (0.5%) of every duration they hold, with exact count, sum, min and
+// max. Merging adds bucket counts, so it is exact in any order. Durations are
+// nanoseconds, as in TDigestSnapshot.
+message DurationSketchSnapshot {
+  int32 version = 1;
+  double alpha = 2;
+  uint64 count = 3;
+  double sum = 4;
+  double min = 5;
+  double max = 6;
+  uint64 zero_count = 7;
+  bool collapsed = 8;
+  repeated DurationSketchBin bins = 9;
+}
+
 message MetricAggregate {
   string name = 1;
   string dependency_type = 2;
@@ -763,6 +785,9 @@ message MetricAggregate {
   // Up to three requests from this window whose trace context was sent:
   // slowest success, first error and one sample (exemplars_v1).
   repeated TraceExemplar exemplars = 21;
+  // The duration distribution as a sketch (version 2). A generator that
+  // predates it leaves it unset, and the controller merges duration_digest.
+  DurationSketchSnapshot duration_sketch = 22;
 }
 
 message TraceExemplar {

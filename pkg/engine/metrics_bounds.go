@@ -145,6 +145,19 @@ func boundExternalMetrics(values map[string]float64) map[string]float64 {
 	return out
 }
 
+// durationDistributionBytes estimates the memory a window's duration
+// distributions retain.
+func durationDistributionBytes(digest *TDigestSnapshot, sketch *DurationSketchSnapshot) int {
+	bytes := 0
+	if digest != nil {
+		bytes += 80 + len(digest.Centroids)*16
+	}
+	if sketch != nil {
+		bytes += 64 + len(sketch.Bins)*16
+	}
+	return bytes
+}
+
 func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 	bytes := 1024
 	if documents := snapshot.BrowserDocuments; documents != nil {
@@ -156,9 +169,7 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 			if value == nil {
 				continue
 			}
-			if value.DurationDigest != nil {
-				bytes += 80 + len(value.DurationDigest.Centroids)*16
-			}
+			bytes += durationDistributionBytes(value.DurationDigest, value.DurationSketch)
 			bytes += len(value.Name) + len(value.DependencyType) + len(value.DependencyTarget) + len(value.LastErrorMessage)
 			for _, id := range value.CorrelationIDs {
 				bytes += len(id) + 16
@@ -215,8 +226,11 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 	estimateActions(snapshot.BySOAPOperation)
 	estimateActions(snapshot.ByNetworkProfile)
 	estimateActions(snapshot.ByRegion)
-	for key := range snapshot.ByGroup {
+	for key, value := range snapshot.ByGroup {
 		bytes += len(key) + 256
+		if value != nil {
+			bytes += durationDistributionBytes(value.DurationDigest, value.DurationSketch)
+		}
 	}
 	for key, transactions := range snapshot.ByGroupTransaction {
 		bytes += len(key) + 48

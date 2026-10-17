@@ -608,6 +608,7 @@ func resolvedAggregateTPS(aggregate generatorrpc.MetricAggregate, windowSec floa
 type rawMetricAccumulator struct {
 	metric    generatorrpc.MetricAggregate
 	digest    *engine.TDigest
+	sketch    *engine.DurationSketch
 	durations []float64
 }
 
@@ -615,6 +616,7 @@ func newRawMetricAccumulator(name string) *rawMetricAccumulator {
 	return &rawMetricAccumulator{
 		metric: generatorrpc.MetricAggregate{Name: name},
 		digest: engine.NewTDigest(200),
+		sketch: engine.NewDurationSketch(),
 	}
 }
 
@@ -637,6 +639,7 @@ func (a *rawMetricAccumulator) add(tx generatorrpc.TransactionMetric) {
 	a.metric.BytesReceived += tx.BytesReceived
 	a.durations = append(a.durations, tx.DurationMs)
 	a.digest.Add(tx.DurationMs * float64(time.Millisecond))
+	a.sketch.Add(tx.DurationMs * float64(time.Millisecond))
 }
 
 func (a *rawMetricAccumulator) finalize(windowSec float64) *generatorrpc.MetricAggregate {
@@ -653,8 +656,8 @@ func (a *rawMetricAccumulator) finalize(windowSec float64) *generatorrpc.MetricA
 	metric.TPS = float64(successfulMetricCount(metric.Count, metric.Errors)) / windowSec
 	sort.Float64s(a.durations)
 	metric.P50Ms, metric.P90Ms, metric.P95Ms, metric.P99Ms = percentilesFromSorted(a.durations)
-	digestSnapshot := a.digest.Snapshot()
-	metric.DurationDigest = &digestSnapshot
+	digestSnapshot, sketchSnapshot := a.digest.Snapshot(), a.sketch.Snapshot()
+	metric.DurationDigest, metric.DurationSketch = &digestSnapshot, &sketchSnapshot
 	return &metric
 }
 
@@ -1042,12 +1045,13 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		}
 		metrics.TPS = resolvedGroupTPS[groupName]
 		metrics.P50Ms, metrics.P90Ms, metrics.P95Ms, metrics.P99Ms = percentilesFromSorted(durations)
-		digest := engine.NewTDigest(200)
+		digest, sketch := engine.NewTDigest(200), engine.NewDurationSketch()
 		for _, duration := range durations {
 			digest.Add(duration * 1_000_000)
+			sketch.Add(duration * 1_000_000)
 		}
-		digestSnapshot := digest.Snapshot()
-		metrics.DurationDigest = &digestSnapshot
+		digestSnapshot, sketchSnapshot := digest.Snapshot(), sketch.Snapshot()
+		metrics.DurationDigest, metrics.DurationSketch = &digestSnapshot, &sketchSnapshot
 	}
 	sort.Strings(names)
 	if len(allDurations) > 0 {
@@ -1219,6 +1223,7 @@ func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batc
 			groupLive.P95Ms = group.Metrics.P95Ms
 			groupLive.P99Ms = group.Metrics.P99Ms
 			groupLive.DurationDigest = group.Metrics.DurationDigest
+			groupLive.DurationSketch = group.Metrics.DurationSketch
 		}
 		live.GroupMetrics[group.Name] = groupLive
 	}
@@ -1236,6 +1241,7 @@ func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batc
 			P95Ms:          live.P95Ms,
 			P99Ms:          live.P99Ms,
 			DurationDigest: fleet.DurationDigest,
+			DurationSketch: fleet.DurationSketch,
 		}
 	}
 
@@ -1307,6 +1313,7 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 	}
 	return &TxMetrics{
 		DurationDigest:     engine.CloneTDigestSnapshot(aggregate.DurationDigest),
+		DurationSketch:     engine.CloneDurationSketchSnapshot(aggregate.DurationSketch),
 		messagingAggregate: aggregate.MessagingVersion == 1 || aggregate.MessagingVersion == 2 || aggregate.Messaging != nil,
 		ServerTelemetry:    apiMessagingSummary(aggregate.Messaging),
 		Name:               aggregate.Name,
@@ -1782,6 +1789,9 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	out := generatorrpc.MetricAggregate{}
 	var durationDigest *engine.TDigest
 	durationDigestComplete := true
+	// Sketches merge exactly, so they are preferred when every counted
+	// aggregate carries one; the t-digest serves older generators.
+	durationSketch, durationSketchComplete := engine.NewDurationSketch(), true
 	var avgMsSum, dnsSum, connectSum, tlsSum, ttfbSum float64
 	for _, value := range values {
 		if value.Count == 0 {
@@ -1813,6 +1823,11 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		} else {
 			durationDigestComplete = false
 		}
+		if part := engine.DurationSketchForCount(value.DurationSketch, value.Count); part != nil {
+			durationSketch.Merge(part)
+		} else {
+			durationSketchComplete = false
+		}
 	}
 	if out.Count == 0 {
 		return nil
@@ -1835,14 +1850,25 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	out.AvgConnectMs = connectSum / divisor
 	out.AvgTLSMs = tlsSum / divisor
 	out.AvgTTFBMs = ttfbSum / divisor
-	if durationDigestComplete && durationDigest != nil && durationDigest.Count() == out.Count {
+	digestComplete := durationDigestComplete && durationDigest != nil && durationDigest.Count() == out.Count
+	if digestComplete {
+		snapshot := durationDigest.Snapshot()
+		out.DurationDigest = &snapshot
+	}
+	switch {
+	case durationSketchComplete && durationSketch.Count() == out.Count:
+		out.P50Ms = durationSketch.Quantile(0.50) / float64(time.Millisecond)
+		out.P90Ms = durationSketch.Quantile(0.90) / float64(time.Millisecond)
+		out.P95Ms = durationSketch.Quantile(0.95) / float64(time.Millisecond)
+		out.P99Ms = durationSketch.Quantile(0.99) / float64(time.Millisecond)
+		snapshot := durationSketch.Snapshot()
+		out.DurationSketch = &snapshot
+	case digestComplete:
 		out.P50Ms = durationDigest.Quantile(0.50) / float64(time.Millisecond)
 		out.P90Ms = durationDigest.Quantile(0.90) / float64(time.Millisecond)
 		out.P95Ms = durationDigest.Quantile(0.95) / float64(time.Millisecond)
 		out.P99Ms = durationDigest.Quantile(0.99) / float64(time.Millisecond)
-		snapshot := durationDigest.Snapshot()
-		out.DurationDigest = &snapshot
-	} else {
+	default:
 		out.P50Ms, out.P90Ms, out.P95Ms, out.P99Ms = weightedAggregatePercentiles(values)
 	}
 	return &out

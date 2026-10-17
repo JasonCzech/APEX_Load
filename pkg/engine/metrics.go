@@ -332,11 +332,13 @@ type GroupMetrics struct {
 	P90                         time.Duration
 	P95                         time.Duration
 	P99                         time.Duration
-	DurationDigest              *TDigestSnapshot `json:"-"`
+	DurationDigest              *TDigestSnapshot        `json:"-"`
+	DurationSketch              *DurationSketchSnapshot `json:"-"`
 }
 
 type ActionMetrics struct {
-	DurationDigest   *TDigestSnapshot `json:"-"`
+	DurationDigest   *TDigestSnapshot        `json:"-"`
+	DurationSketch   *DurationSketchSnapshot `json:"-"`
 	Name             string
 	DependencyType   string
 	DependencyTarget string
@@ -735,28 +737,30 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 
 	var totalDuration time.Duration
 	var totalDNSMs, totalConnectMs, totalTLSMs, totalTTFBMs, totalWaitMs float64
-	td := NewTDigest(200)
-	transactionDigests := make(map[string]*TDigest)
+	// The window's own percentiles and the group shares' are reported but
+	// never sent as distributions, so they need only the sketch.
+	windowSketch := NewDurationSketch()
+	transactionDigests := make(map[string]*durationDistribution)
 	transactionDurationSum := make(map[string]time.Duration)
-	actionDigests := make(map[string]*TDigest)
+	actionDigests := make(map[string]*durationDistribution)
 	actionDurationSum := make(map[string]time.Duration)
-	dependencyDigests := make(map[string]*TDigest)
+	dependencyDigests := make(map[string]*durationDistribution)
 	dependencyDurationSum := make(map[string]time.Duration)
-	soapDigests := make(map[string]*TDigest)
+	soapDigests := make(map[string]*durationDistribution)
 	soapDurationSum := make(map[string]time.Duration)
-	propertyDigests := make(map[string]*TDigest)
+	propertyDigests := make(map[string]*durationDistribution)
 	propertyDurationSum := make(map[string]time.Duration)
-	dimensionDigests := make(map[string]*TDigest)
+	dimensionDigests := make(map[string]*durationDistribution)
 	dimensionDurationSum := make(map[string]time.Duration)
-	jointDigests := make(map[string]*TDigest)
+	jointDigests := make(map[string]*durationDistribution)
 	jointDurationSum := make(map[string]time.Duration)
-	networkProfileDigests := make(map[string]*TDigest)
+	networkProfileDigests := make(map[string]*durationDistribution)
 	networkProfileDurationSum := make(map[string]time.Duration)
-	regionDigests := make(map[string]*TDigest)
+	regionDigests := make(map[string]*durationDistribution)
 	regionDurationSum := make(map[string]time.Duration)
-	groupDigests := make(map[string]*TDigest)
+	groupDigests := make(map[string]*durationDistribution)
 	groupDurationSum := make(map[string]time.Duration)
-	groupTransactionDigests := make(map[string]*TDigest)
+	groupTransactionSketches := make(map[string]*DurationSketch)
 	groupTransactionDurationSum := make(map[string]time.Duration)
 	groupTransactionEntries := 0
 
@@ -802,7 +806,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				}
 			}
 			totalDuration += r.Duration
-			td.Add(float64(r.Duration))
+			windowSketch.Add(float64(r.Duration))
 			totalDNSMs += durationToMilliseconds(r.DNSTime)
 			totalConnectMs += durationToMilliseconds(r.ConnectTime)
 			totalTLSMs += durationToMilliseconds(r.TLSTime)
@@ -850,7 +854,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				}
 				groupDurationSum[groupName] += r.Duration
 				if _, ok := groupDigests[groupName]; !ok {
-					groupDigests[groupName] = NewTDigest(200)
+					groupDigests[groupName] = newDurationDistribution()
 				}
 				groupDigests[groupName].Add(float64(r.Duration))
 				// The group's own share of the transaction, under the name
@@ -875,7 +879,12 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				if !r.Success {
 					gtm.Errors++
 				}
-				recordDurationSample(groupTransactionDigests, groupTransactionDurationSum, groupName+"\x00"+shareName, r.Duration)
+				shareKey := groupName + "\x00" + shareName
+				groupTransactionDurationSum[shareKey] += r.Duration
+				if groupTransactionSketches[shareKey] == nil {
+					groupTransactionSketches[shareKey] = NewDurationSketch()
+				}
+				groupTransactionSketches[shareKey].Add(float64(r.Duration))
 			}
 		}
 
@@ -1048,10 +1057,10 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		snap.AvgTTFBMs = totalTTFBMs / attempts
 		snap.AvgWaitMs = totalWaitMs / attempts
 
-		snap.P50 = time.Duration(td.Quantile(0.50))
-		snap.P90 = time.Duration(td.Quantile(0.90))
-		snap.P95 = time.Duration(td.Quantile(0.95))
-		snap.P99 = time.Duration(td.Quantile(0.99))
+		snap.P50 = time.Duration(windowSketch.Quantile(0.50))
+		snap.P90 = time.Duration(windowSketch.Quantile(0.90))
+		snap.P95 = time.Duration(windowSketch.Quantile(0.95))
+		snap.P99 = time.Duration(windowSketch.Quantile(0.99))
 	}
 	applyThroughputGap(&snap.TPS, snap.TargetTPS, &snap.ThroughputGapPct, &snap.ThroughputTargetMissed)
 	if snap.Requests > 0 {
@@ -1100,8 +1109,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			gm.P90 = time.Duration(gd.Quantile(0.90))
 			gm.P95 = time.Duration(gd.Quantile(0.95))
 			gm.P99 = time.Duration(gd.Quantile(0.99))
-			digestSnapshot := gd.Snapshot()
-			gm.DurationDigest = &digestSnapshot
+			gm.DurationDigest, gm.DurationSketch = gd.snapshots()
 		}
 		applyThroughputGap(&gm.TPS, gm.TargetTPS, &gm.ThroughputGapPct, &gm.ThroughputTargetMissed)
 	}
@@ -1118,9 +1126,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		for name, share := range transactions {
 			key := group + "\x00" + name
 			share.AvgDuration = groupTransactionDurationSum[key] / time.Duration(share.Count)
-			if td := groupTransactionDigests[key]; td != nil {
-				share.P50, share.P90 = time.Duration(td.Quantile(0.50)), time.Duration(td.Quantile(0.90))
-				share.P95, share.P99 = time.Duration(td.Quantile(0.95)), time.Duration(td.Quantile(0.99))
+			if sketch := groupTransactionSketches[key]; sketch != nil {
+				share.P50, share.P90 = time.Duration(sketch.Quantile(0.50)), time.Duration(sketch.Quantile(0.90))
+				share.P95, share.P99 = time.Duration(sketch.Quantile(0.95)), time.Duration(sketch.Quantile(0.99))
 			}
 		}
 	}
@@ -1222,31 +1230,30 @@ func mergeActionResult(metrics *ActionMetrics, result *protocol.Result) {
 	}
 }
 
-func recordDurationSample(digests map[string]*TDigest, totals map[string]time.Duration, key string, duration time.Duration) {
+func recordDurationSample(digests map[string]*durationDistribution, totals map[string]time.Duration, key string, duration time.Duration) {
 	if key == "" {
 		return
 	}
 	totals[key] += duration
 	if _, ok := digests[key]; !ok {
-		digests[key] = NewTDigest(200)
+		digests[key] = newDurationDistribution()
 	}
 	digests[key].Add(float64(duration))
 }
 
-func finalizeActionMetrics(metrics *ActionMetrics, totalDuration time.Duration, td *TDigest) {
+func finalizeActionMetrics(metrics *ActionMetrics, totalDuration time.Duration, distribution *durationDistribution) {
 	if metrics == nil || metrics.Count == 0 {
 		return
 	}
 	if totalDuration > 0 {
 		metrics.AvgDuration = totalDuration / time.Duration(metrics.Count)
 	}
-	if td != nil {
-		metrics.P50 = time.Duration(td.Quantile(0.50))
-		metrics.P90 = time.Duration(td.Quantile(0.90))
-		metrics.P95 = time.Duration(td.Quantile(0.95))
-		metrics.P99 = time.Duration(td.Quantile(0.99))
-		snapshot := td.Snapshot()
-		metrics.DurationDigest = &snapshot
+	if distribution != nil {
+		metrics.P50 = time.Duration(distribution.Quantile(0.50))
+		metrics.P90 = time.Duration(distribution.Quantile(0.90))
+		metrics.P95 = time.Duration(distribution.Quantile(0.95))
+		metrics.P99 = time.Duration(distribution.Quantile(0.99))
+		metrics.DurationDigest, metrics.DurationSketch = distribution.snapshots()
 	}
 	divisor := float64(metrics.Count)
 	metrics.AvgDNSMs /= divisor

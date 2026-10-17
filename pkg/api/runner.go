@@ -1430,6 +1430,9 @@ type TxMetrics struct {
 	P90Ms              float64                 `json:"p90_ms"`
 	P95Ms              float64                 `json:"p95_ms,omitempty"`
 	P99Ms              float64                 `json:"p99_ms"`
+	// DurationSketch is the mergeable distribution behind the percentiles;
+	// DurationDigest is kept for consumers that predate it.
+	DurationSketch *engine.DurationSketchSnapshot `json:"-"`
 	// Exemplars are this window's requests whose trace context was sent.
 	Exemplars []engine.TraceExemplar `json:"exemplars,omitempty"`
 	// Groups are the groups whose VUsers ran the transaction in the window,
@@ -1555,6 +1558,8 @@ type GroupLiveMetrics struct {
 	// distribution.
 	PercentileQuality string                  `json:"percentile_quality,omitempty"`
 	DurationDigest    *engine.TDigestSnapshot `json:"-"`
+	// DurationSketch is the mergeable distribution behind the percentiles.
+	DurationSketch *engine.DurationSketchSnapshot `json:"-"`
 }
 
 type StoredScript struct {

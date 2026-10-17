@@ -329,6 +329,7 @@ type MetricAggregate struct {
 	BytesReceived    int64
 	TPS              float64
 	DurationDigest   *engine.TDigestSnapshot
+	DurationSketch   *engine.DurationSketchSnapshot
 	Exemplars        []engine.TraceExemplar
 }
 
@@ -2042,6 +2043,7 @@ func metricAggregateFromProto(value *pb.MetricAggregate) *MetricAggregate {
 		BytesReceived:    value.GetBytesReceived(),
 		TPS:              value.GetTps(),
 		DurationDigest:   tdigestSnapshotFromProto(value.GetDurationDigest()),
+		DurationSketch:   durationSketchSnapshotFromProto(value.GetDurationSketch()),
 		Messaging:        messagingSummaryFromJSON(value.GetMessagingSummaryJson(), value.GetMessagingVersion()),
 		MessagingVersion: value.GetMessagingVersion(),
 		Exemplars:        traceExemplarsFromProto(value.GetExemplars()),
@@ -2108,9 +2110,59 @@ func metricAggregateToProto(value *MetricAggregate) *pb.MetricAggregate {
 		BytesReceived:        value.BytesReceived,
 		Tps:                  value.TPS,
 		DurationDigest:       tdigestSnapshotToProto(value.DurationDigest),
+		DurationSketch:       durationSketchSnapshotToProto(value.DurationSketch),
 		MessagingSummaryJson: messagingSummaryJSON(value.Messaging),
 		MessagingVersion:     value.MessagingVersion,
 		Exemplars:            traceExemplarsToProto(value.Exemplars),
+	}
+}
+
+// durationSketchSnapshotFromProto copies a peer's sketch. It is validated where
+// sketches are merged; a bucket list past the limit is cut to one entry over
+// it, so the copy stays bounded and the merge still refuses it.
+func durationSketchSnapshotFromProto(value *pb.DurationSketchSnapshot) *engine.DurationSketchSnapshot {
+	if value == nil || value.GetCount() == 0 {
+		return nil
+	}
+	bins := value.GetBins()
+	if len(bins) > engine.DurationSketchMaxBuckets {
+		bins = bins[:engine.DurationSketchMaxBuckets+1]
+	}
+	out := &engine.DurationSketchSnapshot{
+		Version:   int(value.GetVersion()),
+		Alpha:     value.GetAlpha(),
+		Count:     value.GetCount(),
+		Sum:       value.GetSum(),
+		Min:       value.GetMin(),
+		Max:       value.GetMax(),
+		ZeroCount: value.GetZeroCount(),
+		Collapsed: value.GetCollapsed(),
+		Bins:      make([]engine.DurationSketchBin, 0, len(bins)),
+	}
+	for _, bin := range bins {
+		out.Bins = append(out.Bins, engine.DurationSketchBin{Index: int(bin.GetIndex()), Count: bin.GetCount()})
+	}
+	return out
+}
+
+func durationSketchSnapshotToProto(value *engine.DurationSketchSnapshot) *pb.DurationSketchSnapshot {
+	if value == nil || value.Count == 0 {
+		return nil
+	}
+	bins := make([]*pb.DurationSketchBin, 0, len(value.Bins))
+	for _, bin := range value.Bins {
+		bins = append(bins, &pb.DurationSketchBin{Index: int32(bin.Index), Count: bin.Count})
+	}
+	return &pb.DurationSketchSnapshot{
+		Version:   int32(value.Version),
+		Alpha:     value.Alpha,
+		Count:     value.Count,
+		Sum:       value.Sum,
+		Min:       value.Min,
+		Max:       value.Max,
+		ZeroCount: value.ZeroCount,
+		Collapsed: value.Collapsed,
+		Bins:      bins,
 	}
 }
 

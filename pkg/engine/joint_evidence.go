@@ -180,11 +180,11 @@ type JointMetricsSnapshot struct {
 // jointAccumulator builds one window's joint snapshot.
 type jointAccumulator struct {
 	snapshot  *JointMetricsSnapshot
-	digests   map[string]*TDigest
+	digests   map[string]*durationDistribution
 	durations map[string]time.Duration
 	omitted   map[string]bool
 	otherSum  time.Duration
-	otherTD   *TDigest
+	otherTD   *durationDistribution
 }
 
 func newJointAccumulator(p *JointProjection) *jointAccumulator {
@@ -193,7 +193,7 @@ func newJointAccumulator(p *JointProjection) *jointAccumulator {
 	}
 	return &jointAccumulator{
 		snapshot:  &JointMetricsSnapshot{Version: JointEvidenceVersion, Population: p.Population, Dimensions: append([]string(nil), p.Dimensions...), Tuples: map[string]*ActionMetrics{}},
-		digests:   map[string]*TDigest{},
+		digests:   map[string]*durationDistribution{},
 		durations: map[string]time.Duration{},
 		omitted:   map[string]bool{},
 	}
@@ -228,7 +228,7 @@ func (a *jointAccumulator) add(p *JointProjection, r *protocol.Result, groupProt
 	snapshot.OmittedTuples = int64(len(a.omitted))
 	if snapshot.Other == nil {
 		snapshot.Other = &ActionMetrics{Name: "other", MinDuration: r.Duration, MaxDuration: r.Duration}
-		a.otherTD = NewTDigest(200)
+		a.otherTD = newDurationDistribution()
 	}
 	mergeActionResult(snapshot.Other, r)
 	a.otherSum += r.Duration

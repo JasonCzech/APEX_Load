@@ -372,6 +372,7 @@ type metricAccumulator struct {
 	bytesSent        int64
 	bytesReceived    int64
 	digest           *engine.TDigest
+	sketch           *engine.DurationSketch
 }
 
 const (
@@ -438,7 +439,7 @@ func newTransactionWindowAggregate() *transactionWindowAggregate {
 }
 
 func newMetricAccumulator(name string) *metricAccumulator {
-	return &metricAccumulator{name: name, digest: engine.NewTDigest(200)}
+	return &metricAccumulator{name: name, digest: engine.NewTDigest(200), sketch: engine.NewDurationSketch()}
 }
 
 func (a *transactionWindowAggregate) add(tx TransactionMetric) {
@@ -576,13 +577,14 @@ func (a *metricAccumulator) add(tx TransactionMetric) {
 	a.bytesSent += tx.BytesSent
 	a.bytesReceived += tx.BytesReceived
 	a.digest.Add(tx.DurationMs * float64(time.Millisecond))
+	a.sketch.Add(tx.DurationMs * float64(time.Millisecond))
 }
 
 func (a *metricAccumulator) finalize(windowSec float64) *MetricAggregate {
 	if a == nil || a.count == 0 {
 		return nil
 	}
-	digestSnapshot := a.digest.Snapshot()
+	digestSnapshot, sketchSnapshot := a.digest.Snapshot(), a.sketch.Snapshot()
 	successes := a.count - a.errors
 	count := float64(a.count)
 	return &MetricAggregate{
@@ -592,10 +594,10 @@ func (a *metricAccumulator) finalize(windowSec float64) *MetricAggregate {
 		Count:            a.count,
 		Errors:           a.errors,
 		AvgMs:            a.durationSumMs / count,
-		P50Ms:            a.digest.Quantile(0.50) / float64(time.Millisecond),
-		P90Ms:            a.digest.Quantile(0.90) / float64(time.Millisecond),
-		P95Ms:            a.digest.Quantile(0.95) / float64(time.Millisecond),
-		P99Ms:            a.digest.Quantile(0.99) / float64(time.Millisecond),
+		P50Ms:            a.sketch.Quantile(0.50) / float64(time.Millisecond),
+		P90Ms:            a.sketch.Quantile(0.90) / float64(time.Millisecond),
+		P95Ms:            a.sketch.Quantile(0.95) / float64(time.Millisecond),
+		P99Ms:            a.sketch.Quantile(0.99) / float64(time.Millisecond),
 		AvgDNSMs:         a.dnsSumMs / count,
 		AvgConnectMs:     a.connectSumMs / count,
 		AvgTLSMs:         a.tlsSumMs / count,
@@ -604,6 +606,7 @@ func (a *metricAccumulator) finalize(windowSec float64) *MetricAggregate {
 		BytesReceived:    a.bytesReceived,
 		TPS:              float64(successes) / windowSec,
 		DurationDigest:   &digestSnapshot,
+		DurationSketch:   &sketchSnapshot,
 	}
 }
 
@@ -3292,6 +3295,7 @@ func engineActionMetricsToAggregates(values map[string]*engine.ActionMetrics) []
 		}
 		out = append(out, MetricAggregate{
 			DurationDigest:   engine.CloneTDigestSnapshot(metrics.DurationDigest),
+			DurationSketch:   engine.CloneDurationSketchSnapshot(metrics.DurationSketch),
 			Messaging:        engineMessagingSummary(metrics.ServerTelemetry),
 			MessagingVersion: messagingSummaryVersion(metrics.ServerTelemetry),
 			Name:             firstNonEmptyString(metrics.Name, name),
@@ -3543,6 +3547,9 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	}
 	out := MetricAggregate{}
 	var durationDigest *engine.TDigest
+	// Sketches merge exactly, so they are preferred when every counted
+	// aggregate carries one; the t-digest serves older peers.
+	durationSketch, sketched := engine.NewDurationSketch(), true
 	var weightedAvgMs, weightedDNSMs, weightedConnectMs, weightedTLSMs, weightedTTFBMs float64
 	for _, value := range values {
 		if value.Count == 0 {
@@ -3571,6 +3578,11 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 			}
 			durationDigest.Merge(engine.NewTDigestFromSnapshot(*value.DurationDigest))
 		}
+		if part := engine.DurationSketchForCount(value.DurationSketch, value.Count); part != nil {
+			durationSketch.Merge(part)
+		} else {
+			sketched = false
+		}
 	}
 	if out.Count == 0 {
 		return nil
@@ -3593,14 +3605,25 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	out.AvgConnectMs = weightedConnectMs / divisor
 	out.AvgTLSMs = weightedTLSMs / divisor
 	out.AvgTTFBMs = weightedTTFBMs / divisor
-	if durationDigest != nil && durationDigest.Count() == out.Count {
+	digestComplete := durationDigest != nil && durationDigest.Count() == out.Count
+	if digestComplete {
+		snapshot := durationDigest.Snapshot()
+		out.DurationDigest = &snapshot
+	}
+	switch {
+	case sketched && durationSketch.Count() == out.Count:
+		out.P50Ms = durationSketch.Quantile(0.50) / float64(time.Millisecond)
+		out.P90Ms = durationSketch.Quantile(0.90) / float64(time.Millisecond)
+		out.P95Ms = durationSketch.Quantile(0.95) / float64(time.Millisecond)
+		out.P99Ms = durationSketch.Quantile(0.99) / float64(time.Millisecond)
+		snapshot := durationSketch.Snapshot()
+		out.DurationSketch = &snapshot
+	case digestComplete:
 		out.P50Ms = durationDigest.Quantile(0.50) / float64(time.Millisecond)
 		out.P90Ms = durationDigest.Quantile(0.90) / float64(time.Millisecond)
 		out.P95Ms = durationDigest.Quantile(0.95) / float64(time.Millisecond)
 		out.P99Ms = durationDigest.Quantile(0.99) / float64(time.Millisecond)
-		snapshot := durationDigest.Snapshot()
-		out.DurationDigest = &snapshot
-	} else {
+	default:
 		out.P50Ms, out.P90Ms, out.P95Ms, out.P99Ms = fallbackMergedPercentiles(values)
 	}
 	return &out
@@ -3749,7 +3772,7 @@ func groupTransactionsForWire(values []MetricAggregate) []MetricAggregate {
 	}
 	out := make([]MetricAggregate, len(values))
 	for index, value := range values {
-		value.DurationDigest = nil
+		value.DurationDigest, value.DurationSketch = nil, nil
 		out[index] = value
 	}
 	return out
@@ -3783,6 +3806,11 @@ func archiveTotalsFromBatch(batch *pb.MetricsBatch) (errors int64, successes int
 }
 
 func quantileFromMetricAggregate(aggregate *pb.MetricAggregate, transactions []*pb.TransactionMetric, percentile float64) float64 {
+	if aggregate != nil {
+		if sketch := engine.DurationSketchForCount(durationSketchSnapshotFromProto(aggregate.GetDurationSketch()), aggregate.GetCount()); sketch != nil {
+			return sketch.Quantile(percentile) / float64(time.Millisecond)
+		}
+	}
 	if aggregate != nil && aggregate.GetDurationDigest() != nil && aggregate.GetDurationDigest().GetCount() > 0 {
 		return engine.NewTDigestFromSnapshot(*tdigestSnapshotFromProto(aggregate.GetDurationDigest())).Quantile(percentile) / float64(time.Millisecond)
 	}

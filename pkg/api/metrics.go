@@ -188,6 +188,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 			P95Ms:                  float64(gm.P95.Microseconds()) / 1000.0,
 			P99Ms:                  float64(gm.P99.Microseconds()) / 1000.0,
 			DurationDigest:         gm.DurationDigest,
+			DurationSketch:         gm.DurationSketch,
 		}
 		if gm.CompletedIterationsReported {
 			iterations := gm.CompletedIterations
@@ -330,6 +331,7 @@ func buildTxMetricsFromAction(name string, am *engine.ActionMetrics, window time
 	}
 	return &TxMetrics{
 		DurationDigest:   engine.CloneTDigestSnapshot(am.DurationDigest),
+		DurationSketch:   engine.CloneDurationSketchSnapshot(am.DurationSketch),
 		Name:             name,
 		TPS:              tps,
 		DependencyType:   am.DependencyType,

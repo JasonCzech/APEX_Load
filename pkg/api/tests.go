@@ -577,6 +577,7 @@ func boundedTxMetricsMap(in map[string]*TxMetrics, limit int) map[string]*TxMetr
 		}
 		clone := *tx
 		clone.DurationDigest = engine.CloneTDigestSnapshot(tx.DurationDigest)
+		clone.DurationSketch = engine.CloneDurationSketchSnapshot(tx.DurationSketch)
 		out[key] = &clone
 	}
 	if len(out) == 0 {

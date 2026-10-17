@@ -8,9 +8,10 @@ import (
 
 // DurationSketch is a mergeable quantile sketch for durations with a bounded
 // relative error (DDSketch-style logarithmic buckets). Every quantile it
-// reports is within DurationSketchRelativeAccuracy of the value at that rank,
-// whatever the distribution, so a slow mode near a percentile's tail cannot be
-// reported as a value from the empty gap between modes. Count, sum, minimum
+// reports interpolates, as an exact percentile does, between two order
+// statistics that are each within DurationSketchRelativeAccuracy, whatever
+// the distribution, so a slow mode near a percentile's tail cannot be reported
+// as a value from the empty gap between modes. Count, sum, minimum
 // and maximum are exact. Merging adds bucket counts, so the result does not
 // depend on the order in which sketches are merged.
 //
@@ -181,8 +182,10 @@ func (s *DurationSketch) Collapsed() bool {
 	return s != nil && s.collapsed
 }
 
-// Quantile returns the value at quantile q (0 to 1): the value at rank
-// q*(count-1), within the relative accuracy, clamped to the exact extremes.
+// Quantile returns the value at quantile q (0 to 1). Like an exact percentile
+// it interpolates linearly between the two values bracketing rank q*(count-1);
+// each of those is within the relative accuracy, and the first and last ranks
+// are the exact minimum and maximum.
 func (s *DurationSketch) Quantile(q float64) float64 {
 	if s == nil || s.count == 0 {
 		return 0
@@ -194,13 +197,30 @@ func (s *DurationSketch) Quantile(q float64) float64 {
 		return s.max
 	}
 	rank := q * float64(s.count-1)
+	lower := math.Floor(rank)
+	low := s.valueAtRank(uint64(lower))
+	if fraction := rank - lower; fraction > 0 {
+		return low + fraction*(s.valueAtRank(uint64(lower)+1)-low)
+	}
+	return low
+}
+
+// valueAtRank returns the rank-th smallest value (0-based) within the relative
+// accuracy.
+func (s *DurationSketch) valueAtRank(rank uint64) float64 {
+	switch {
+	case rank == 0:
+		return s.min
+	case rank >= s.count-1:
+		return s.max
+	}
 	seen := s.zero
-	if float64(seen) > rank {
+	if seen > rank {
 		return s.min
 	}
 	for i, n := range s.bins {
 		seen += n
-		if float64(seen) > rank {
+		if seen > rank {
 			return math.Min(s.max, math.Max(s.min, durationSketchValue(s.offset+i)))
 		}
 	}
@@ -331,4 +351,55 @@ func DurationSketchFromSnapshot(snapshot DurationSketchSnapshot) (*DurationSketc
 		sketch.addToBucket(bin.Index, bin.Count)
 	}
 	return sketch, nil
+}
+
+// durationDistribution records one window's durations in both forms for a
+// release: the sketch, which reports percentiles, and the t-digest that
+// controllers predating the sketch still merge.
+type durationDistribution struct {
+	digest *TDigest
+	sketch *DurationSketch
+}
+
+func newDurationDistribution() *durationDistribution {
+	return &durationDistribution{digest: NewTDigest(200), sketch: NewDurationSketch()}
+}
+
+func (d *durationDistribution) Add(v float64) {
+	d.digest.Add(v)
+	d.sketch.Add(v)
+}
+
+func (d *durationDistribution) Quantile(q float64) float64 {
+	return d.sketch.Quantile(q)
+}
+
+// snapshots returns both portable forms.
+func (d *durationDistribution) snapshots() (*TDigestSnapshot, *DurationSketchSnapshot) {
+	digest, sketch := d.digest.Snapshot(), d.sketch.Snapshot()
+	return &digest, &sketch
+}
+
+// CloneDurationSketchSnapshot returns an independent copy, or nil.
+func CloneDurationSketchSnapshot(in *DurationSketchSnapshot) *DurationSketchSnapshot {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Bins = append([]DurationSketchBin(nil), in.Bins...)
+	return &out
+}
+
+// DurationSketchForCount restores a peer's or a persisted sketch when it is
+// valid and holds exactly count durations, and returns nil otherwise, so a
+// caller merges only distributions that describe every observation.
+func DurationSketchForCount(snapshot *DurationSketchSnapshot, count int64) *DurationSketch {
+	if snapshot == nil || count <= 0 {
+		return nil
+	}
+	sketch, err := DurationSketchFromSnapshot(*snapshot)
+	if err != nil || sketch.Count() != count {
+		return nil
+	}
+	return sketch
 }

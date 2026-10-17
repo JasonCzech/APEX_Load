@@ -358,7 +358,7 @@ func compactGroupFilteredMetricsForCache(point *LiveMetrics) {
 	point.ErrorEvidence = nil
 	for _, group := range point.GroupMetrics {
 		if group != nil {
-			group.DurationDigest = nil
+			group.DurationDigest, group.DurationSketch = nil, nil
 		}
 	}
 }
@@ -401,6 +401,7 @@ func cloneGroupLiveMetrics(metrics *GroupLiveMetrics) *GroupLiveMetrics {
 		digest.Centroids = append([]engine.TDigestCentroidSnapshot(nil), metrics.DurationDigest.Centroids...)
 		clone.DurationDigest = &digest
 	}
+	clone.DurationSketch = engine.CloneDurationSketchSnapshot(metrics.DurationSketch)
 	return &clone
 }
 
@@ -443,6 +444,8 @@ func applySelectedGroupAggregate(live *LiveMetrics, selected []*GroupLiveMetrics
 	var weightedDuration float64
 	mergedDigest := engine.NewTDigest(200)
 	digestCount := int64(0)
+	// Selected groups merge exactly when every one carries a sketch.
+	mergedSketch, sketched := engine.NewDurationSketch(), true
 	weightedPercentiles := map[string]float64{
 		"p50": 0,
 		"p90": 0,
@@ -472,6 +475,11 @@ func applySelectedGroupAggregate(live *LiveMetrics, selected []*GroupLiveMetrics
 			weightedPercentiles["p95"] += group.P95Ms * float64(groupAttempts)
 			weightedPercentiles["p99"] += group.P99Ms * float64(groupAttempts)
 			percentileWeight += groupAttempts
+			if part := engine.DurationSketchForCount(group.DurationSketch, groupAttempts); part != nil {
+				mergedSketch.Merge(part)
+			} else {
+				sketched = false
+			}
 		}
 		if group.DurationDigest != nil && group.DurationDigest.Count > 0 {
 			mergedDigest.Merge(engine.NewTDigestFromSnapshot(*group.DurationDigest))
@@ -487,12 +495,18 @@ func applySelectedGroupAggregate(live *LiveMetrics, selected []*GroupLiveMetrics
 		live.ErrorPct = float64(live.TotalErrors) / float64(attempts) * 100
 	}
 	applySelectedGroupRunTotals(live, selected)
-	if digestCount > 0 {
+	switch {
+	case sketched && mergedSketch.Count() > 0:
+		live.P50Ms = mergedSketch.Quantile(0.50) / 1_000_000
+		live.P90Ms = mergedSketch.Quantile(0.90) / 1_000_000
+		live.P95Ms = mergedSketch.Quantile(0.95) / 1_000_000
+		live.P99Ms = mergedSketch.Quantile(0.99) / 1_000_000
+	case digestCount > 0:
 		live.P50Ms = mergedDigest.Quantile(0.50) / 1_000_000
 		live.P90Ms = mergedDigest.Quantile(0.90) / 1_000_000
 		live.P95Ms = mergedDigest.Quantile(0.95) / 1_000_000
 		live.P99Ms = mergedDigest.Quantile(0.99) / 1_000_000
-	} else if percentileWeight > 0 {
+	case percentileWeight > 0:
 		live.P50Ms = weightedPercentiles["p50"] / float64(percentileWeight)
 		live.P90Ms = weightedPercentiles["p90"] / float64(percentileWeight)
 		live.P95Ms = weightedPercentiles["p95"] / float64(percentileWeight)
