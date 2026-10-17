@@ -701,11 +701,12 @@ func detectSOAPFault(body string) (string, string, string, bool) {
 		code = firstSOAPTagText(faultXML, "Value")
 	}
 	message := "soap fault"
-	if code != "" && reason != "" {
+	switch {
+	case code != "" && reason != "":
 		message = fmt.Sprintf("soap fault: %s: %s", code, reason)
-	} else if reason != "" {
+	case reason != "":
 		message = fmt.Sprintf("soap fault: %s", reason)
-	} else {
+	case code != "":
 		message = fmt.Sprintf("soap fault: %s", code)
 	}
 	return code, classifySOAPFaultCategory(code), message, true

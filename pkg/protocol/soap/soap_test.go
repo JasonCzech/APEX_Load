@@ -475,6 +475,35 @@ func TestSOAPExecuteFlagsSOAP12FaultEnvelope(t *testing.T) {
 	}
 }
 
+func TestSOAPExecuteNamesAFaultWithoutCodeOrReason(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><soapenv:Fault><detail><error>quota</error></detail></soapenv:Fault></soapenv:Body></soapenv:Envelope>`))
+	}))
+	defer ts.Close()
+
+	s := &SOAP{}
+	if err := s.Init(context.Background(), map[string]any{
+		"base_url":                 ts.URL,
+		"soap_version":             "1.1",
+		"soap_fault_fail_on_fault": true,
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	result, err := s.Execute(context.Background(), &protocol.Action{
+		Name:   "login",
+		Target: "/AuthService",
+		Body:   []byte(`<Envelope><Body><Login/></Body></Envelope>`),
+		SOAP:   &protocol.SOAPActionConfig{Action: "urn:auth#Login"},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Success || result.ErrorMessage != "soap fault" {
+		t.Fatalf("result = success %t, ErrorMessage %q; want a failed step named %q", result.Success, result.ErrorMessage, "soap fault")
+	}
+}
+
 func TestSOAPExecuteDoesNotFlagValueOutsideFault(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
