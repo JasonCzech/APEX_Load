@@ -7,6 +7,9 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"os/exec"
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -191,17 +194,93 @@ func TestHAROverflowFailsTheSessionExplicitly(t *testing.T) {
 	}
 }
 
+// This process's tree is listed with its resident memory, holding a child it
+// started, on every platform's sampler (Linux /proc, Windows Toolhelp, ps
+// elsewhere).
 func TestProcessTreeRSSIncludesTheRootAndDescendants(t *testing.T) {
-	total, err := processTreeRSSBytes(context.Background(), 1)
-	if err != nil {
-		t.Skipf("ps unavailable: %v", err)
+	child := exec.Command("sleep", "30")
+	if runtime.GOOS == "windows" {
+		child = exec.Command("ping", "-n", "31", "127.0.0.1")
 	}
-	if total <= 0 {
-		t.Fatal("init process tree has no resident memory")
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
+	self, pid := os.Getpid(), child.Process.Pid
+	var samples []processSample
+	var listed processSample
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		var err error
+		samples, err = listProcessTreeSamples(context.Background(), self)
+		if err != nil {
+			if runtime.GOOS != "linux" && runtime.GOOS != "windows" {
+				t.Skipf("ps unavailable: %v", err)
+			}
+			t.Fatal(err)
+		}
+		if i := slices.IndexFunc(samples, func(s processSample) bool { return s.PID == pid }); i >= 0 && samples[i].RSSKB > 0 {
+			listed = samples[i]
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("child %d is missing from this process's tree: %+v", pid, samples)
+		}
+	}
+	if listed.PPID != self {
+		t.Fatalf("child %+v is not under this process %d", listed, self)
+	}
+	i := slices.IndexFunc(samples, func(s processSample) bool { return s.PID == self })
+	if i < 0 || samples[i].RSSKB <= 0 {
+		t.Fatalf("this process %d is missing or has no resident memory: %+v", self, samples)
+	}
+	if total := processTreeRSS(samples, self); total < int64((samples[i].RSSKB+listed.RSSKB)*1024) {
+		t.Fatalf("tree RSS %d is below this process and its child", total)
+	}
+	if total, err := processTreeRSSBytes(context.Background(), pid); err != nil || total <= 0 {
+		t.Fatalf("the child's own tree: %d %v", total, err)
 	}
 	// A root missing from the list is a failed measurement, not an empty tree.
 	if missing, err := processTreeRSSBytes(context.Background(), 1<<30); err == nil || missing != 0 {
 		t.Fatalf("absent root %d %v", missing, err)
+	}
+}
+
+// The tree walk (Windows' sampler) follows listed children only when they
+// were created after their listed parent: a stale parent PID (the creator
+// exited and its PID was reused) neither adopts a process nor closes a cycle,
+// and an unreadable process is left out with its descendants.
+func TestProcessTreeWalkLeavesOutStaleAndUnreadableProcesses(t *testing.T) {
+	created := map[int]uint64{10: 100, 11: 150, 12: 160, 13: 50, 14: 60, 16: 170, 17: 180}
+	children := map[int][]int{
+		10: {11, 13, 15}, // 13 predates 10; 15 cannot be read
+		11: {12},
+		12: {10, 17}, // the root listed again: a stale link back into the tree
+		13: {14},     // under the stale 13
+		15: {16},     // under the unreadable 15
+		17: {12},     // a cycle back to 12
+	}
+	read := func(pid int) (processTreeEntry, bool) {
+		at, ok := created[pid]
+		return processTreeEntry{sample: processSample{PID: pid, PPID: -1, RSSKB: float64(pid)}, created: at}, ok
+	}
+	samples, err := walkProcessTree(context.Background(), 10, children, read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []processSample{{PID: 10, PPID: 0, RSSKB: 10}, {PID: 11, PPID: 10, RSSKB: 11}, {PID: 12, PPID: 11, RSSKB: 12}, {PID: 17, PPID: 12, RSSKB: 17}}
+	if !slices.Equal(samples, want) {
+		t.Fatalf("walked %+v, want %+v", samples, want)
+	}
+	if total := processTreeRSS(samples, 10); total != (10+11+12+17)*1024 {
+		t.Fatalf("tree RSS %d", total)
+	}
+	if samples, err := walkProcessTree(context.Background(), 99, children, read); err != nil || samples != nil {
+		t.Fatalf("unreadable root: %+v %v", samples, err)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := walkProcessTree(cancelled, 10, children, read); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled walk: %v", err)
 	}
 }
 

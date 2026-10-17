@@ -1,1 +1,0 @@
-import{lt as e}from"./vendor-CuPExQtE.js";var t=e(),n={blocker:`Blocker`,error:`Error`,warning:`Warning`,info:`Review note`,resolved:`Resolved`};function r({severity:e}){return(0,t.jsx)(`span`,{className:`import-issue-severity-tag ${e}`,children:n[e]})}export{r as t};

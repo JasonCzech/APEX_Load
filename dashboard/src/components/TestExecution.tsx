@@ -6,7 +6,7 @@ import ObjectHistory from './ObjectHistory'
 import ExecutionPlanRunLink from './ExecutionPlanRunLink'
 import { OrchestrationReturn } from './OrchestrationReturn'
 import RunOutcomeSummary from './RunOutcomeSummary'
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   MetricsHistoryPoint,
@@ -17,7 +17,6 @@ import { topbarRunStatusLabel } from '../appTopbar'
 import { useTopbarContribution, type TopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
 import { formatRunClock, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import { runActiveSeconds } from './runReport/executionPresentation'
-import TestExecutionArchive from './TestExecutionArchive'
 import { useExecutionActionBridge } from './useExecutionActionBridge'
 import { useExecutionArchiveResourceHistory } from './useExecutionArchiveResourceHistory'
 import { useExecutionArchiveSummaryHistory } from './useExecutionArchiveSummaryHistory'
@@ -36,7 +35,6 @@ import TestExecutionManifestCard from './TestExecutionManifestCard'
 import TestExecutionScenarioOverview from './TestExecutionScenarioOverview'
 import GenerateReportModal from './GenerateReportModal'
 import type { ReportProfileId } from './reportTypeOptions'
-import ReportComposer from './ReportComposer'
 import TestNotesDialog from './TestNotesDialog'
 import ConfirmRunActionModal from './ConfirmRunActionModal'
 import { pauseDurationNote } from './runActionConfirmation'
@@ -68,6 +66,13 @@ import { useExecutionTestManifest } from './useExecutionTestManifest'
 import './TestExecution.css'
 import { useOptionalApi } from '../hooks/useApi'
 import type { DashboardDefinition, DashboardDefinitionPanel } from '../hooks/api/useDashboardDefinitionsApi'
+import LazyLoadBoundary from './LazyLoadBoundary'
+import LoadingState from './ux/LoadingState'
+
+// A run's saved archive and the report composer appear only once a run has an
+// archive or a report is being composed, so the live route loads them on use.
+const TestExecutionArchive = lazy(() => import('./TestExecutionArchive'))
+const ReportComposer = lazy(() => import('./ReportComposer'))
 
 const GROUP_COLORS = [
   'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)',
@@ -551,51 +556,55 @@ export default function TestExecution({
       | 'action-summary'
       | 'transactions',
   ) => showArchiveSection ? (
-    <TestExecutionArchive
-      view={view}
-      hasArchive={hasArchive}
-      test={test}
-      archiveError={archiveError}
-      archiveLoading={archiveLoading}
-      archiveReport={archiveReport}
-      archiveAnalysis={archiveAnalysis}
-      archiveAnalysisLoading={archiveAnalysisLoading}
-      archiveAnalysisError={archiveAnalysisError}
-      loadImpactData={archiveLoadImpactData}
-      loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
-      loadImpactError={archiveLoadImpactError}
-      onDownloadBrowserDiagnostics={onDownloadBrowserDiagnostics}
-      onDownloadArchiveArtifact={onDownloadArchiveArtifact}
-      archiveActionEntries={archiveActionEntries}
-      selectedArchiveAction={selectedArchiveAction}
-      onSelectedArchiveActionChange={onSelectedArchiveActionChange}
-      archiveSOAPOperationEntries={archiveSOAPOperationEntries}
-      selectedArchiveSOAPOperation={selectedArchiveSOAPOperation}
-      onSelectedArchiveSOAPOperationChange={onSelectedArchiveSOAPOperationChange}
-      archiveGroups={archiveGroups}
-      selectedArchiveGroup={selectedArchiveGroup}
-      onSelectedArchiveGroupChange={onSelectedArchiveGroupChange}
-      archiveErrorsOnly={archiveErrorsOnly}
-      onArchiveErrorsOnlyChange={onArchiveErrorsOnlyChange}
-      archiveTransactionSort={archiveTransactionSort}
-      onArchiveTransactionSortChange={onArchiveTransactionSortChange}
-      archiveTransactionFilters={archiveTransactionFilters}
-      archiveTransactionFiltersActive={archiveTransactionFiltersActive}
-      onArchiveTransactionFilterChange={onArchiveTransactionFilterChange}
-      onArchiveTransactionFiltersReset={onArchiveTransactionFiltersReset}
-      archiveTransactionsLoading={archiveTransactionsLoading}
-      archiveTransactionsTotal={archiveTransactionsTotal}
-      archivePageStart={archivePageStart}
-      archivePageEnd={archivePageEnd}
-      archiveTransactionsOffset={archiveTransactionsOffset}
-      archivePageSize={archivePageSize}
-      onPageSizeChange={onPageSizeChange}
-      onPreviousPage={onPreviousPage}
-      onNextPage={onNextPage}
-      archiveTransactions={archiveTransactions}
-      expandedArchiveEvent={expandedArchiveEvent}
-      onExpandedArchiveEventChange={onExpandedArchiveEventChange}
-    />
+    <LazyLoadBoundary title="The saved run archive could not be loaded.">
+      <Suspense fallback={<LoadingState what="run archive" />}>
+        <TestExecutionArchive
+          view={view}
+          hasArchive={hasArchive}
+          test={test}
+          archiveError={archiveError}
+          archiveLoading={archiveLoading}
+          archiveReport={archiveReport}
+          archiveAnalysis={archiveAnalysis}
+          archiveAnalysisLoading={archiveAnalysisLoading}
+          archiveAnalysisError={archiveAnalysisError}
+          loadImpactData={archiveLoadImpactData}
+          loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
+          loadImpactError={archiveLoadImpactError}
+          onDownloadBrowserDiagnostics={onDownloadBrowserDiagnostics}
+          onDownloadArchiveArtifact={onDownloadArchiveArtifact}
+          archiveActionEntries={archiveActionEntries}
+          selectedArchiveAction={selectedArchiveAction}
+          onSelectedArchiveActionChange={onSelectedArchiveActionChange}
+          archiveSOAPOperationEntries={archiveSOAPOperationEntries}
+          selectedArchiveSOAPOperation={selectedArchiveSOAPOperation}
+          onSelectedArchiveSOAPOperationChange={onSelectedArchiveSOAPOperationChange}
+          archiveGroups={archiveGroups}
+          selectedArchiveGroup={selectedArchiveGroup}
+          onSelectedArchiveGroupChange={onSelectedArchiveGroupChange}
+          archiveErrorsOnly={archiveErrorsOnly}
+          onArchiveErrorsOnlyChange={onArchiveErrorsOnlyChange}
+          archiveTransactionSort={archiveTransactionSort}
+          onArchiveTransactionSortChange={onArchiveTransactionSortChange}
+          archiveTransactionFilters={archiveTransactionFilters}
+          archiveTransactionFiltersActive={archiveTransactionFiltersActive}
+          onArchiveTransactionFilterChange={onArchiveTransactionFilterChange}
+          onArchiveTransactionFiltersReset={onArchiveTransactionFiltersReset}
+          archiveTransactionsLoading={archiveTransactionsLoading}
+          archiveTransactionsTotal={archiveTransactionsTotal}
+          archivePageStart={archivePageStart}
+          archivePageEnd={archivePageEnd}
+          archiveTransactionsOffset={archiveTransactionsOffset}
+          archivePageSize={archivePageSize}
+          onPageSizeChange={onPageSizeChange}
+          onPreviousPage={onPreviousPage}
+          onNextPage={onNextPage}
+          archiveTransactions={archiveTransactions}
+          expandedArchiveEvent={expandedArchiveEvent}
+          onExpandedArchiveEventChange={onExpandedArchiveEventChange}
+        />
+      </Suspense>
+    </LazyLoadBoundary>
   ) : (
     <div className="empty-card">
       <p>Archive details are unavailable while this run is active.</p>
@@ -1083,12 +1092,16 @@ export default function TestExecution({
       )}
 
       {reportProfile && (
-        <ReportComposer
-          testId={testId}
-          testName={test?.name ?? testId}
-          profile={reportProfile}
-          onClose={() => setReportProfile(null)}
-        />
+        <LazyLoadBoundary title="The report composer could not be loaded.">
+          <Suspense fallback={<LoadingState what="report composer" />}>
+            <ReportComposer
+              testId={testId}
+              testName={test?.name ?? testId}
+              profile={reportProfile}
+              onClose={() => setReportProfile(null)}
+            />
+          </Suspense>
+        </LazyLoadBoundary>
       )}
 
       {showTestNotes && (

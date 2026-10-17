@@ -357,8 +357,54 @@ type processSample struct {
 	CPUTimeSeconds float64
 }
 
+// processTreeEntry is one process read for walkProcessTree: its sample and
+// its creation time, in any unit that orders creations.
+type processTreeEntry struct {
+	sample  processSample
+	created uint64
+}
+
+// walkProcessTree reads rootPID and then, breadth first, each listed child of
+// a process already in the tree; children lists, per PID, the processes that
+// name it as their creator. Windows keeps a creator's PID after the creator
+// exits and reuses PIDs, so a listed child created before its listed parent
+// was not started by it: it and its descendants are left out, which also
+// keeps the parent links acyclic. Each sample's parent is the process it was
+// reached from, and the root's is 0. A process that cannot be read is left
+// out; a root that cannot be read gives no samples. Only the Windows sampler
+// uses it; it is portable so its tests run everywhere.
+func walkProcessTree(ctx context.Context, rootPID int, children map[int][]int, read func(pid int) (processTreeEntry, bool)) ([]processSample, error) {
+	root, ok := read(rootPID)
+	if !ok {
+		return nil, nil
+	}
+	root.sample.PPID = 0
+	samples, queue, seen := []processSample{root.sample}, []processTreeEntry{root}, map[int]bool{rootPID: true}
+	for len(queue) > 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		parent := queue[0]
+		queue = queue[1:]
+		for _, pid := range children[parent.sample.PID] {
+			if seen[pid] {
+				continue
+			}
+			child, ok := read(pid)
+			if !ok || child.created < parent.created {
+				continue
+			}
+			seen[pid] = true
+			child.sample.PPID = parent.sample.PID
+			samples = append(samples, child.sample)
+			queue = append(queue, child)
+		}
+	}
+	return samples, nil
+}
+
 func processTreeSnapshot(ctx context.Context, rootPID int) (browserProcessSnapshot, error) {
-	samples, err := listProcessSamples(ctx)
+	samples, err := listProcessTreeSamples(ctx, rootPID)
 	if err != nil {
 		return browserProcessSnapshot{}, err
 	}
