@@ -150,7 +150,7 @@ func TestScheduleCompilationReleasesRunnerLockDuringStorage(t *testing.T) {
 	lockAcquired := make(chan struct{})
 	go func() {
 		runner.mu.Lock()
-		runner.mu.Unlock()
+		runner.mu.Unlock() //nolint:staticcheck // acquiring the lock is the signal the test waits for
 		close(lockAcquired)
 	}()
 	select {

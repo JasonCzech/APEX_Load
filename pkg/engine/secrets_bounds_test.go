@@ -142,7 +142,7 @@ func TestCachingSecretResolverAcceptsNilContext(t *testing.T) {
 	resolver := newCachingSecretResolver(SecretResolverFunc(func(name string) (string, bool) {
 		return "value-for-" + name, true
 	})).(*cachingSecretResolver)
-	value, ok := resolver.ResolveContext(nil, "TOKEN")
+	value, ok := resolver.ResolveContext(nil, "TOKEN") //nolint:staticcheck // the nil context is the input under test
 	if !ok || value != "value-for-TOKEN" {
 		t.Fatalf("ResolveContext(nil) = %q/%v", value, ok)
 	}

@@ -94,7 +94,7 @@ func TestProjectLiveTableReconciliationCannotUndoAttachmentPublication(t *testin
 			// Acquiring the metadata lock joins reconciliation before checking the
 			// authorization view, without consuming the worker's cleanup result.
 			rt.mu.Lock()
-			rt.mu.Unlock()
+			rt.mu.Unlock() //nolint:staticcheck // acquiring the lock joins reconciliation (see above)
 			err = rt.authorize(livetable.Request{ClientID: projectAttachmentPrefix(a.Incarnation) + "worker", Operation: livetable.OpPush})
 			if operation == "detach" {
 				if livetable.CodeOf(err) != livetable.CodeClosed {

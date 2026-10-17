@@ -113,7 +113,7 @@ func corpusDirScriptDirCount(dir string, limit int) int {
 	scriptDirs := map[string]struct{}{}
 	_ = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return nil //nolint:nilerr // this best-effort count skips entries it cannot read
 		}
 		if len(scriptDirs) >= limit {
 			return filepath.SkipAll

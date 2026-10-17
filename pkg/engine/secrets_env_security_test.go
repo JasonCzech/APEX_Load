@@ -1,6 +1,9 @@
 package engine
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestEnvSecretResolverCannotReadArbitraryProcessCredentials(t *testing.T) {
 	t.Setenv("APEXLOAD_GRPC_AUTH_TOKEN", "platform-control-token")
@@ -40,7 +43,7 @@ func TestExternalSecretResolversRejectRedactionSentinels(t *testing.T) {
 			resolver := SecretResolverFunc(func(string) (string, bool) {
 				return value, true
 			})
-			resolved, ok := ResolveSecret(nil, resolver, "SERVICE_TOKEN")
+			resolved, ok := ResolveSecret(context.Background(), resolver, "SERVICE_TOKEN")
 			if ok || resolved != "" {
 				t.Fatalf("ResolveSecret() = %q, %v; want missing", resolved, ok)
 			}

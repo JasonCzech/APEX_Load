@@ -1340,7 +1340,7 @@ func TestGetTestGroupParametersViewReleasesRunnerLockBeforeSummarizing(t *testin
 	writeAcquired := make(chan struct{})
 	go func() {
 		server.runner.mu.Lock()
-		server.runner.mu.Unlock()
+		server.runner.mu.Unlock() //nolint:staticcheck // acquiring the lock is the signal the test waits for
 		close(writeAcquired)
 	}()
 	select {

@@ -129,19 +129,19 @@ func TestInterruptedEvacuationPhasesRemainStoppingAfterTakeover(t *testing.T) {
 	for _, phase := range []string{runEvacuationPhasePrepared, runEvacuationPhaseStaged, runEvacuationPhaseSourceFenced} {
 		t.Run(phase, func(t *testing.T) {
 			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-			tr.armRunContinuity(nil, test, generation, owner, token, previous)
-			guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+			tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
+			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if phase != runEvacuationPhasePrepared {
-				guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+				guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
 				if err != nil {
 					t.Fatal(err)
 				}
 			}
 			if phase == runEvacuationPhaseSourceFenced {
-				guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+				guard, err = tr.markRunEvacuationSourceFenced(context.Background(), test, guard, generation, owner)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -174,20 +174,20 @@ func TestInterruptedEvacuationPhasesRemainStoppingAfterTakeover(t *testing.T) {
 
 func TestRunEvacuationCommittedSuccessorAdoptsExistingReplacement(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-	tr.armRunContinuity(nil, test, generation, owner, token, previous)
-	guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+	guard, err = tr.markRunEvacuationSourceFenced(context.Background(), test, guard, generation, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationReplacementCommitted(nil, test, guard, generation, owner)
+	guard, err = tr.markRunEvacuationReplacementCommitted(context.Background(), test, guard, generation, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,20 +224,20 @@ func TestRunEvacuationCommittedSuccessorAdoptsExistingReplacement(t *testing.T) 
 
 func TestLegacyCommittedEvacuationWaitsForCleanupProof(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-	tr.armRunContinuity(nil, test, generation, owner, token, previous)
-	guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+	guard, err = tr.markRunEvacuationSourceFenced(context.Background(), test, guard, generation, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationReplacementCommitted(nil, test, guard, generation, owner)
+	guard, err = tr.markRunEvacuationReplacementCommitted(context.Background(), test, guard, generation, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,20 +292,20 @@ func TestRunEvacuationCommitWaitsForReplacementCapacity(t *testing.T) {
 	if err := store.TransitionPodCapacity("gen-a", test.ID, "source-pod", "attempt", "releasing", executionLeaseName, owner, generation); err != nil {
 		t.Fatal(err)
 	}
-	tr.armRunContinuity(nil, test, generation, owner, token, previous)
-	guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+	guard, err = tr.markRunEvacuationSourceFenced(context.Background(), test, guard, generation, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tr.markRunEvacuationReplacementCommitted(nil, test, guard, generation, owner); err == nil || !strings.Contains(err.Error(), "no committed capacity reservation") {
+	if _, err := tr.markRunEvacuationReplacementCommitted(context.Background(), test, guard, generation, owner); err == nil || !strings.Contains(err.Error(), "no committed capacity reservation") {
 		t.Fatalf("pending replacement became adoptable: %v", err)
 	}
 	record, err := store.GetTest(test.ID)
@@ -315,8 +315,7 @@ func TestRunEvacuationCommitWaitsForReplacementCapacity(t *testing.T) {
 	if err := store.TransitionPodCapacity("gen-b", test.ID, "replacement-pod", "attempt", "committed", executionLeaseName, owner, generation); err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationReplacementCommitted(nil, test, guard, generation, owner)
-	if err != nil {
+	if _, err := tr.markRunEvacuationReplacementCommitted(context.Background(), test, guard, generation, owner); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {
@@ -354,24 +353,24 @@ func TestRunEvacuationCommitWaitsForReplacementCapacity(t *testing.T) {
 
 func TestRunEvacuationCommittedPromotionRejectsStaleLeaseAndReplay(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-	tr.armRunContinuity(nil, test, generation, owner, token, previous)
-	guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+	guard, err = tr.markRunEvacuationSourceFenced(context.Background(), test, guard, generation, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationReplacementCommitted(nil, test, guard, generation, owner)
+	guard, err = tr.markRunEvacuationReplacementCommitted(context.Background(), test, guard, generation, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tr.promoteCommittedRunEvacuationCheckpoint(nil, test, guard, generation, owner); err == nil {
+	if _, err := tr.promoteCommittedRunEvacuationCheckpoint(context.Background(), test, guard, generation, owner); err == nil {
 		t.Fatal("original generation promoted its own guard")
 	}
 	if err := store.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {
@@ -380,18 +379,18 @@ func TestRunEvacuationCommittedPromotionRejectsStaleLeaseAndReplay(t *testing.T)
 	successor := newExecutionLeadership(store, "promotion-successor")
 	successor.tick()
 	newOwner, newGeneration := successor.executionLeaseTerm()
-	if _, err := tr.promoteCommittedRunEvacuationCheckpoint(nil, test, guard, newGeneration, "wrong-owner"); err == nil {
+	if _, err := tr.promoteCommittedRunEvacuationCheckpoint(context.Background(), test, guard, newGeneration, "wrong-owner"); err == nil {
 		t.Fatal("wrong owner promoted checkpoint")
 	}
 	record, err := store.GetTest(test.ID)
 	if err != nil || record.ContinuityCheckpoint != guard {
 		t.Fatalf("rejected promotion changed durable guard: %v", err)
 	}
-	promoted, err := tr.promoteCommittedRunEvacuationCheckpoint(nil, test, guard, newGeneration, newOwner)
+	promoted, err := tr.promoteCommittedRunEvacuationCheckpoint(context.Background(), test, guard, newGeneration, newOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tr.promoteCommittedRunEvacuationCheckpoint(nil, test, guard, newGeneration, newOwner); err == nil {
+	if _, err := tr.promoteCommittedRunEvacuationCheckpoint(context.Background(), test, guard, newGeneration, newOwner); err == nil {
 		t.Fatal("replayed promotion overwrote completed topology")
 	}
 	record, err = store.GetTest(test.ID)
@@ -405,20 +404,20 @@ func TestRunEvacuationCommittedPromotionRejectsStaleLeaseAndReplay(t *testing.T)
 
 func TestRunEvacuationCommittedProofRejectsCorruption(t *testing.T) {
 	tr, _, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-	tr.armRunContinuity(nil, test, generation, owner, token, previous)
-	guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+	guard, err = tr.markRunEvacuationSourceFenced(context.Background(), test, guard, generation, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationReplacementCommitted(nil, test, guard, generation, owner)
+	guard, err = tr.markRunEvacuationReplacementCommitted(context.Background(), test, guard, generation, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -467,11 +466,11 @@ func TestRunEvacuationStagingRejectsInvalidProgress(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-			guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := tr.markRunEvacuationStaged(nil, test, guard, generation, owner, tc.targets); err == nil {
+			if _, err := tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, tc.targets); err == nil {
 				t.Fatal("invalid staged target set accepted")
 			}
 			record, err := store.GetTest(test.ID)
@@ -483,7 +482,7 @@ func TestRunEvacuationStagingRejectsInvalidProgress(t *testing.T) {
 	for _, fault := range []string{"wrong-owner", "wrong-generation", "stale-store", "lost-lease", "write-failure", "canceled", "replay"} {
 		t.Run(fault, func(t *testing.T) {
 			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-			guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -673,7 +672,7 @@ func TestRunEvacuationCheckpointRejectedCompletionRemainsUnarmed(t *testing.T) {
 }
 
 func TestRunEvacuationSourceFenceRejectsStaleOrUnownedProgress(t *testing.T) {
-	if _, err := (*TestRunner)(nil).markRunEvacuationSourceFenced(nil, nil, "", 0, ""); err == nil {
+	if _, err := (*TestRunner)(nil).markRunEvacuationSourceFenced(context.Background(), nil, "", 0, ""); err == nil {
 		t.Fatal("nil runner and test accepted")
 	}
 	for _, fault := range []string{"wrong-owner", "wrong-generation", "stage-mismatch", "stale-memory", "stale-store", "lost-lease", "write-failure", "canceled", "replay"} {
@@ -747,16 +746,16 @@ func TestRunEvacuationReplacementCommitRejectsInvalidProgress(t *testing.T) {
 	for _, fault := range []string{"unfenced", "wrong-owner", "wrong-generation", "stage-mismatch", "stale-store", "lost-lease", "write-failure", "canceled", "replay"} {
 		t.Run(fault, func(t *testing.T) {
 			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-			guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
 			if err != nil {
 				t.Fatal(err)
 			}
-			guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+			guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
 			if err != nil {
 				t.Fatal(err)
 			}
 			if fault != "unfenced" {
-				guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+				guard, err = tr.markRunEvacuationSourceFenced(context.Background(), test, guard, generation, owner)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -897,19 +896,19 @@ func TestRunEvacuationCheckpointPreservesHistoryAndRejectsInvalidCompletion(t *t
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
 	// A previous re-arm may have failed after recording an adoption in memory.
 	test.continuityFailovers = []RunFailover{{PriorGeneration: 1, Generation: 2, AdoptedAt: time.Now().UTC(), AdoptedGenerators: 1}}
-	guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+	guard, err = tr.markRunEvacuationSourceFenced(context.Background(), test, guard, generation, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationReplacementCommitted(nil, test, guard, generation, owner)
+	guard, err = tr.markRunEvacuationReplacementCommitted(context.Background(), test, guard, generation, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -970,7 +969,7 @@ func TestRunEvacuationCheckpointPreservesNonContinuityBehavior(t *testing.T) {
 		if policy == "continue" {
 			tr.continuityKeyWrapper = nil
 		}
-		guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+		guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
 		if err != nil || guard != "" {
 			t.Fatalf("unarmed %s run unexpectedly guarded: %v", policy, err)
 		}

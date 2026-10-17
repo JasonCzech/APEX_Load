@@ -225,7 +225,7 @@ func protocolBundleIsCodeEvidence(absolute string, info os.FileInfo) bool {
 	found := false
 	_ = filepath.WalkDir(absolute, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return nil //nolint:nilerr // this best-effort scan skips entries it cannot read
 		}
 		if entry.IsDir() {
 			// Dependency and VCS trees hold third-party sources, which say

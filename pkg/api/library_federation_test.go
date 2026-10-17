@@ -287,7 +287,7 @@ func TestLibraryRemoteJSONHonorsConfiguredTimeout(t *testing.T) {
 	defer slow.Close()
 	server := NewServer(ServerConfig{})
 
-	if _, err := server.remoteLibraryCapabilities(nil, LibraryRemote{BaseURL: slow.URL, AuthMethod: "none"}); err == nil {
+	if _, err := server.remoteLibraryCapabilities(context.Background(), LibraryRemote{BaseURL: slow.URL, AuthMethod: "none"}); err == nil {
 		t.Fatal("remoteLibraryCapabilities returned nil error, want timeout")
 	}
 }
@@ -318,7 +318,7 @@ func TestLibraryRemoteArchiveDownloadHonorsConfiguredTimeout(t *testing.T) {
 	defer slow.Close()
 	server := NewServer(ServerConfig{})
 
-	archiveImport, cleanup, err := server.remoteLibraryDownloadArchive(nil, LibraryRemote{BaseURL: slow.URL, AuthMethod: "none"}, "run-1")
+	archiveImport, cleanup, err := server.remoteLibraryDownloadArchive(context.Background(), LibraryRemote{BaseURL: slow.URL, AuthMethod: "none"}, "run-1")
 	if cleanup != nil {
 		defer cleanup()
 	}

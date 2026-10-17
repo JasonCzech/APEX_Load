@@ -243,7 +243,7 @@ func TestAccessReviewSignatureAndActionable(t *testing.T) {
 	if !accessReviewActionable(a) {
 		t.Fatalf("a review with flagged accounts is actionable")
 	}
-	if accessReviewSignature(a) != accessReviewSignature(a) {
+	if first, second := accessReviewSignature(a), accessReviewSignature(a); first != second {
 		t.Fatalf("signature must be deterministic")
 	}
 	b := a

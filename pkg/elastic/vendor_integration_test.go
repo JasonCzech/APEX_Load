@@ -118,7 +118,7 @@ func TestVendorQualification(t *testing.T) {
 		actions = append(actions, map[string]any{"add": map[string]any{"index": index, "alias": alias, "filter": map[string]any{"term": map[string]any{"apex.run_id": runID}}}})
 	}
 	admin("POST", "/_aliases", "application/json", encode(map[string]any{"actions": actions}))
-	credentials := Credentials{Username: username, Password: password}
+	var credentials Credentials
 	if product == ProductElasticsearch {
 		// Permission for product discovery is narrower than cluster monitor.
 		// In particular cluster health remains forbidden to this read principal.

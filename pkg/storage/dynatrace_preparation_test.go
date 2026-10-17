@@ -143,8 +143,7 @@ func TestDynatracePreparationFreezesFreshSameRevisionVerification(t *testing.T) 
 	if err := s.SaveTest(run); err != nil {
 		t.Fatal(err)
 	}
-	prep, err = s.ConsumePreparation(prep.ID, prep.Revision, prep.OwnerFence, "tester", "Tester")
-	if err != nil {
+	if _, err := s.ConsumePreparation(prep.ID, prep.Revision, prep.OwnerFence, "tester", "Tester"); err != nil {
 		t.Fatal(err)
 	}
 	c, err = s.GetDynatraceConnection(c.ID)

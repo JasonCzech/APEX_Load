@@ -235,14 +235,13 @@ func controlCertificatesForURI(t *testing.T, serverURI string) ([]byte, tls.Cert
 	if e != nil {
 		t.Fatal(e)
 	}
-	roots := x509.NewCertPool()
 	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	// Parse the generated CA so its public key and identifiers match validation.
 	parsed, e := x509.ParseCertificate(der)
 	if e != nil {
 		t.Fatal(e)
 	}
-	roots = x509.NewCertPool()
+	roots := x509.NewCertPool()
 	roots.AddCert(parsed)
 	leaf := func(serial int64, uri string) tls.Certificate {
 		private, e := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

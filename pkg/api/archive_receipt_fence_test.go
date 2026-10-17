@@ -76,7 +76,7 @@ func TestReceiptAcceptorStopsWhenTheSourceContextEnds(t *testing.T) {
 	if _, err := fenced(RunArchiveEvidenceArtifact{}); !errors.Is(err, context.Canceled) || calls != 1 {
 		t.Fatalf("ended source accepted: %v calls %d", err, calls)
 	}
-	if state, _ := fenceReceiptAcceptor(nil, accept)(RunArchiveEvidenceArtifact{}); state != storage.EvidenceReceiptAccepted || calls != 2 {
+	if state, _ := fenceReceiptAcceptor(nil, accept)(RunArchiveEvidenceArtifact{}); state != storage.EvidenceReceiptAccepted || calls != 2 { //nolint:staticcheck // a nil source context is the unfenced acceptor under test
 		t.Fatal("an unfenced acceptor was wrapped")
 	}
 }

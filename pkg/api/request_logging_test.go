@@ -184,7 +184,7 @@ func TestRequestLoggingRecoversPanicBeforeResponse(t *testing.T) {
 		w.Header().Set("ETag", `"stale"`)
 		w.Header().Set("Content-Disposition", "attachment; filename=report.pdf")
 		var m map[string]int
-		m["boom"]++ // nil-map write panics
+		m["boom"]++ //nolint:govet,staticcheck // the nil-map write is the runtime panic under test
 	}), httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/s1/launch", nil))
 
 	requestID := resp.Header().Get(requestIDHeader)

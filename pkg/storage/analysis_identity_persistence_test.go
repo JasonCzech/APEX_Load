@@ -29,8 +29,7 @@ func exerciseIdentityPersistence(t *testing.T, s *SQLiteStore, project string) (
 		t.Fatal(err)
 	}
 	in.State, in.Mapping = "mapped", identityPersistenceMapping()
-	in, err = s.SaveAnalysisImport(*in, in.Revision)
-	if err != nil {
+	if _, err := s.SaveAnalysisImport(*in, in.Revision); err != nil {
 		t.Fatal(err)
 	}
 	body, err := json.Marshal(identityPersistenceMapping())

@@ -78,7 +78,8 @@ func waitPortWorker(t *testing.T, done <-chan struct{}) {
 func TestReplayManagerPortsPreserveScopeAndCompletion(t *testing.T) {
 	sink := newTestEventSink()
 	lease := &portLease{done: make(chan struct{})}
-	epoch := context.WithValue(context.Background(), struct{}{}, "original epoch")
+	type epochKey struct{}
+	epoch := context.WithValue(context.Background(), epochKey{}, "original epoch")
 	var released atomic.Int32
 	completion := make(chan context.Context, 1)
 	manager := NewBrowserReplayManager(sink, ReplayManagerOptions{

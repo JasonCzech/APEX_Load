@@ -735,7 +735,7 @@ func TestBoundedSharedAzureTokenCacheAndExpiryAcrossClients(t *testing.T) {
 	}
 	overflow := cfg
 	overflow.ClientID = "overflow-client"
-	if sharedTokenState(overflow, Credentials{}) == sharedTokenState(overflow, Credentials{}) {
+	if first, second := sharedTokenState(overflow, Credentials{}), sharedTokenState(overflow, Credentials{}); first == second {
 		t.Fatal("overflow cache must remain isolated")
 	}
 }

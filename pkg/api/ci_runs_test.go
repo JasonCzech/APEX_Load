@@ -1193,8 +1193,11 @@ func TestCreateCIRunAdoptsConcurrentRunningMaterializationWithoutRestartingIt(t 
 	server.runner.mu.RLock()
 	retained := server.runner.tests[response.TestID]
 	server.runner.mu.RUnlock()
-	if retained != winningRuntime || retained == nil || retained.Status != "RUNNING" || retained.executionCtx != winningContext || retained.cancel == nil {
-		t.Fatalf("handler replaced or restarted concurrent winner: retained=%p winner=%p status=%q context_retained=%t cancel_retained=%t", retained, winningRuntime, retained.Status, retained != nil && retained.executionCtx == winningContext, retained != nil && retained.cancel != nil)
+	if retained == nil {
+		t.Fatalf("handler dropped the concurrent winner %p", winningRuntime)
+	}
+	if retained != winningRuntime || retained.Status != "RUNNING" || retained.executionCtx != winningContext || retained.cancel == nil {
+		t.Fatalf("handler replaced or restarted concurrent winner: retained=%p winner=%p status=%q context_retained=%t cancel_retained=%t", retained, winningRuntime, retained.Status, retained.executionCtx == winningContext, retained.cancel != nil)
 	}
 	durable, err := store.GetTest(response.TestID)
 	if err != nil || durable.Status != "RUNNING" {

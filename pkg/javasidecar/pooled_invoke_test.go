@@ -137,7 +137,7 @@ func TestPooledInvocationBusyAndCancellationPreservePeer(t *testing.T) {
 	}
 	capture := preparationRecord(f.run, q.ReservationID).captures[q.SlotID]
 	capture.mu.Lock()
-	capture.mu.Unlock() // wait for the server's closure receipt
+	capture.mu.Unlock() //nolint:staticcheck // waits for the server's closure receipt
 	_, usage := f.run.ledger.Snapshot()
 	if usage.Hosts != 1 || usage.VUsers != 1 {
 		t.Fatalf("cooperative cancellation reaped peer: %+v", usage)

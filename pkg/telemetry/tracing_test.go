@@ -28,7 +28,7 @@ func TestLoadConfigDisabledByDefault(t *testing.T) {
 }
 
 func TestDetachNilReturnsUsableBackgroundContext(t *testing.T) {
-	detached := Detach(nil)
+	detached := Detach(nil) //nolint:staticcheck // the nil context is the input under test
 	if detached == nil {
 		t.Fatal("Detach(nil) returned nil")
 	}

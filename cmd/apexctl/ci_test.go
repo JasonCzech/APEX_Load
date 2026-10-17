@@ -631,7 +631,7 @@ func TestLoadTrustedCIScriptSnapshotSupportsCheckoutBelowGitHubWorkspace(t *test
 	workspace := t.TempDir()
 	repository := filepath.Join(workspace, "source", "apexload")
 	trusted := `{"name":"nested-checkout","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"home","type":"request","method":"GET","target":"/"}]}`
-	repository, scriptPath, commit := newCIScriptRepositoryAt(t, repository, trusted, nil)
+	_, scriptPath, commit := newCIScriptRepositoryAt(t, repository, trusted, nil)
 
 	t.Setenv("GITHUB_ACTIONS", "true")
 	t.Setenv("GITHUB_WORKSPACE", workspace)

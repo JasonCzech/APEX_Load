@@ -173,8 +173,10 @@ func TestInFlightLimiterAcquireReleaseShed(t *testing.T) {
 	if l == nil {
 		t.Fatal("expected non-nil limiter for positive cap")
 	}
-	if !l.tryAcquire() || !l.tryAcquire() {
-		t.Fatal("expected first two acquires to succeed")
+	for range 2 {
+		if !l.tryAcquire() {
+			t.Fatal("expected first two acquires to succeed")
+		}
 	}
 	// At capacity: the next acquire must fail and record a shed.
 	if l.tryAcquire() {

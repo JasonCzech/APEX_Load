@@ -114,14 +114,14 @@ func TestRuntimeResourceProviderIsOptionalAndContainsPanics(t *testing.T) {
 		t.Fatal("invalid provider capacity accepted")
 	}
 	p.panicOnReserve = false
-	r, err := ReserveRuntimeResources(nil, p, RuntimeResourceDemand{1, 1, 1})
+	r, err := ReserveRuntimeResources(nil, p, RuntimeResourceDemand{1, 1, 1}) //nolint:staticcheck // the nil context is the input under test
 	if err != nil || r == nil {
 		t.Fatal(r, err)
 	}
 }
 func TestRuntimeResourceContextPreservesInvalidBindings(t *testing.T) {
 	r := &resourceReservationFixture{RuntimeResourceDemand{1, 1, 1}}
-	ctx := WithRuntimeResourceReservation(nil, " Resources_Test ", r)
+	ctx := WithRuntimeResourceReservation(nil, " Resources_Test ", r) //nolint:staticcheck // the nil context is the input under test
 	for _, c := range []context.Context{ctx, context.WithoutCancel(ctx)} {
 		if got, present := RuntimeResourceReservationFromContext(c, "resources_test"); !present || got != r {
 			t.Fatal("trusted binding lost")
@@ -134,7 +134,7 @@ func TestRuntimeResourceContextPreservesInvalidBindings(t *testing.T) {
 	if got, present := RuntimeResourceReservationFromContext(ctx, "resources_test"); !present || got != nil {
 		t.Fatal("nil binding became absent")
 	}
-	if _, present := RuntimeResourceReservationFromContext(nil, "resources_test"); present {
+	if _, present := RuntimeResourceReservationFromContext(nil, "resources_test"); present { //nolint:staticcheck // the nil context is the input under test
 		t.Fatal("nil context contains binding")
 	}
 }

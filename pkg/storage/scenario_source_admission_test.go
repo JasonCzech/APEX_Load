@@ -190,7 +190,7 @@ func TestScenarioSourceAdmissionBoundedEvidence(t *testing.T) {
 		mutate(&a)
 		assertSourceMutationRefused(t, store, old, a)
 	}
-	candidate, groups := sourceCandidate(old, true)
+	candidate, _ := sourceCandidate(old, true)
 	for _, bad := range [][]ScenarioScript{nil, {{ScriptID: " scn-script "}}, make([]ScenarioScript, maxScenarioSourceGroups+1)} {
 		if _, err := store.GetScenarioSourceAuthoringSnapshot(bad); err == nil {
 			t.Fatal("invalid groups accepted initially")
@@ -199,7 +199,7 @@ func TestScenarioSourceAdmissionBoundedEvidence(t *testing.T) {
 			t.Fatal("invalid groups accepted finally")
 		}
 	}
-	groups = make([]ScenarioScript, maxScenarioSourceGroups)
+	groups := make([]ScenarioScript, maxScenarioSourceGroups)
 	for i := range groups {
 		groups[i] = ScenarioScript{ScriptID: old.Scripts[0].ScriptID}
 	}

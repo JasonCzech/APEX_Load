@@ -34,10 +34,10 @@ func (l *pauseTestLease) Context() context.Context {
 func (l *pauseTestLease) Release() { l.released++ }
 func TestRuntimePauseBindingFailsClosed(t *testing.T) {
 	gate := &pauseTestGate{}
-	if g, present := RuntimePauseGateFromContext(nil, "eventhubs"); present || g != nil {
+	if g, present := RuntimePauseGateFromContext(nil, "eventhubs"); present || g != nil { //nolint:staticcheck // the nil context is the input under test
 		t.Fatal("invented binding")
 	}
-	ctx := WithRuntimePauseGate(nil, " EventHubs ", gate)
+	ctx := WithRuntimePauseGate(nil, " EventHubs ", gate) //nolint:staticcheck // the nil context is the input under test
 	if g, present := RuntimePauseGateFromContext(ctx, "eventhubs"); !present || g != gate {
 		t.Fatal("missing binding")
 	}

@@ -213,7 +213,7 @@ func TestExecutionCommitPublishesZeroLiveVUsersBeforeFutureBarrier(t *testing.T)
 
 	var running *pb.MetricsBatch
 	deadline := time.Now().Add(250 * time.Millisecond)
-	for running == nil && time.Now().Before(deadline) {
+	for time.Now().Before(deadline) {
 		batch := subscriber.pop()
 		if batch != nil && batch.GetLifecycleState() == "RUNNING" {
 			running = batch

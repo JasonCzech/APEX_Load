@@ -25,8 +25,10 @@ func TestJavaVuserRuntimeHealthCacheCachesWithinTTL(t *testing.T) {
 	if !cache.healthyNow(probe) {
 		t.Fatal("first probe result = false, want true")
 	}
-	if !cache.healthyNow(probe) || !cache.healthyNow(probe) {
-		t.Fatal("cached result = false, want true")
+	for range 2 {
+		if !cache.healthyNow(probe) {
+			t.Fatal("cached result = false, want true")
+		}
 	}
 	if got := probes.Load(); got != 1 {
 		t.Fatalf("probe executions = %d, want 1 (results cached within TTL)", got)

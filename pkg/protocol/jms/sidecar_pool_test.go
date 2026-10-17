@@ -399,7 +399,7 @@ func TestJMSSidecarDefaultsToOneShotTransport(t *testing.T) {
 func TestJMSSidecarPoolKeySeparatesConfigurations(t *testing.T) {
 	base := config{BrokerURL: "tcps://a.example:55443", Username: "one"}
 	other := config{BrokerURL: "tcps://a.example:55443", Username: "two"}
-	if sidecarPoolKey("/bin/sidecar", base) != sidecarPoolKey("/bin/sidecar", base) {
+	if first, second := sidecarPoolKey("/bin/sidecar", base), sidecarPoolKey("/bin/sidecar", base); first != second {
 		t.Fatal("pool key is not stable for identical inputs")
 	}
 	if sidecarPoolKey("/bin/sidecar", base) == sidecarPoolKey("/bin/sidecar", other) {

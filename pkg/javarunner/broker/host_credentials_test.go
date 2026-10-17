@@ -106,7 +106,7 @@ func TestHostCredentialsServerOnlyAndBoundToReservation(t *testing.T) {
 	if bytes.Contains(secret.Data["ca.crt"], []byte("PRIVATE")) || bytes.Equal(secret.Data["tls.key"], secret.Data["ca.crt"]) {
 		t.Fatal("signing authority exported")
 	}
-	encoded, _ := json.Marshal(m)
+	encoded, _ := json.Marshal(m) //nolint:staticcheck // the test asserts that marshaling exposes nothing
 	if string(encoded) != "{}" || strings.Contains(fmt.Sprintf("%+v %#v", m, m), "PRIVATE") {
 		t.Fatal("credential formatting exposed secrets")
 	}

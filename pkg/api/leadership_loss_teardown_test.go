@@ -35,7 +35,7 @@ func TestLockRWMutexWithContextRegistersWriterIntent(t *testing.T) {
 				default:
 				}
 				mu.RLock()
-				mu.RUnlock()
+				mu.RUnlock() //nolint:staticcheck // the readers only contend for the lock
 			}
 		}()
 	}

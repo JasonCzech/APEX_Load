@@ -12,7 +12,7 @@ func TestEvalSplitIsStableAndNearThirtySeventy(t *testing.T) {
 	calibration := 0
 	for i := 0; i < 2000; i++ {
 		seed := fmt.Sprintf("trial-%04d", i)
-		if EvalSplit(seed) != EvalSplit(seed) {
+		if first, second := EvalSplit(seed), EvalSplit(seed); first != second {
 			t.Fatal("split is not a function of the seed")
 		}
 		if EvalSplit(seed) == SplitCalibration {

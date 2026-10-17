@@ -76,7 +76,7 @@ func TestLockContextRejectsInvalidAndCancelledInputs(t *testing.T) {
 	if _, err := LockContext(ctx, file); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancel: %v", err)
 	}
-	release, err := LockContext(nil, file)
+	release, err := LockContext(nil, file) //nolint:staticcheck // the nil context is the input under test
 	if err != nil {
 		t.Fatal(err)
 	}

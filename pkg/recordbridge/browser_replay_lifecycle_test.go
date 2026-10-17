@@ -385,8 +385,8 @@ func TestBrowserReplayManagerCompletionHookRunsOffManagerLock(t *testing.T) {
 	t.Cleanup(manager.Close)
 	hookDone := make(chan struct{})
 	manager.SetCompletionHook(func(_ context.Context, projectID string, script *dsl.Script, report *engine.ReplayReport) {
-		manager.mu.Lock() //nolint:staticcheck // deadlocks (and fails the test) if the hook runs under m.mu.RLock
-		manager.mu.Unlock()
+		manager.mu.Lock()
+		manager.mu.Unlock() //nolint:staticcheck // deadlocks (and fails the test) if the hook runs under m.mu.RLock
 		close(hookDone)
 	})
 

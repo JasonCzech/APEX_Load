@@ -154,7 +154,7 @@ func collectOptInInventory(t *testing.T) optInInventory {
 func walkRepositoryTestFiles(root string, visit func(rel string, path string, content string)) error {
 	return filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
-			return nil // unreadable trees are not the guard's business
+			return nil //nolint:nilerr // unreadable trees are not the guard's business
 		}
 		if entry.IsDir() {
 			// Go's ./... pattern stops at a nested module, including visible
@@ -180,7 +180,7 @@ func walkRepositoryTestFiles(root string, visit func(rel string, path string, co
 		}
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
-			return nil
+			return nil //nolint:nilerr // unreadable files are not the guard's business
 		}
 		rel, relErr := filepath.Rel(root, path)
 		if relErr != nil {

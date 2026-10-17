@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"math"
 	"strings"
 	"testing"
@@ -125,7 +126,7 @@ func TestValidateScenarioRequestEnforcesGoalBoundsAndNewSLAThresholds(t *testing
 
 func TestScaleRampRejectsHardVUserLimitBeforeStartingWork(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
-	_, err := runner.startVUserScaleRamp(nil, "missing", "group", maxManagedTestVUsers+1, time.Second)
+	_, err := runner.startVUserScaleRamp(context.Background(), "missing", "group", maxManagedTestVUsers+1, time.Second)
 	if err == nil || !strings.Contains(err.Error(), "cannot exceed") {
 		t.Fatalf("startVUserScaleRamp error = %v, want hard-limit rejection", err)
 	}

@@ -533,7 +533,7 @@ func runAuthoringFidelityLibrarySnapshot(t *testing.T, server *Server, request C
 		}
 		return current
 	}
-	current := importOnce()
+	importOnce()
 	claim := libraryImportClaim{Prepared: true, Kind: item.Kind, RemoteID: remote, ProjectID: storage.DefaultProjectID, SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, MutationID: item.importMutationID, LocalItemID: before.ID, BeforeScenario: cloneStoredScenarioForRead(before), BeforeLink: cloneLibrarySyncLink(linkBefore), IntendedHash: server.libraryScenarioRequestRecoveryHash(incoming)}
 	if err := server.recoverLibraryImportClaim(claim); err != nil {
 		t.Fatal(err)
@@ -542,11 +542,10 @@ func runAuthoringFidelityLibrarySnapshot(t *testing.T, server *Server, request C
 	if !found || restored.WorkloadShapeID != shape || restored.Name != before.Name || !reflect.DeepEqual(restored.Scripts[0].TransactionResponseTimeSLAMs, before.Scripts[0].TransactionResponseTimeSLAMs) {
 		t.Fatal("owned library recovery failed to restore full named/SLA snapshot")
 	}
-	current = importOnce()
+	current := importOnce()
 	later := createScenarioRequestFromStored(current)
 	later.Name = "Later editor owns clear"
-	current, err = server.runner.UpdateScenarioIfUnchanged(current.ID, later, current.UpdatedAt)
-	if err != nil {
+	if _, err := server.runner.UpdateScenarioIfUnchanged(current.ID, later, current.UpdatedAt); err != nil {
 		t.Fatal(err)
 	}
 	if err := server.recoverLibraryImportClaim(claim); err != nil {

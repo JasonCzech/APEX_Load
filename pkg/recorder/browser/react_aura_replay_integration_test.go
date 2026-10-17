@@ -106,7 +106,7 @@ func TestRecordAndReplayReactAuraWithSessionCorrelation(t *testing.T) {
 		if u.Path == "/react.js" || u.Path == "/react-dom.js" {
 			assets[u.Path] = entry.Response.Status == 200
 		}
-		if err == nil && u.Path == "/aura" && entry.Request.Method == "POST" {
+		if u.Path == "/aura" && entry.Request.Method == "POST" {
 			if auraEntryID != 0 || entry.Response.Status != 200 {
 				t.Fatal("unexpected captured Aura batch count/status")
 			}

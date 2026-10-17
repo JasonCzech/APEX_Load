@@ -54,7 +54,7 @@ func TestDistributedPreparationSnapshotsAndRechecksReservations(t *testing.T) {
 	client := &preparationFixtureClient{check: func(ctx context.Context, id string, generation uint64, groups map[string]int32, token []byte) error {
 		// A control-plane RPC must not run under the runner state lock.
 		tr.mu.Lock()
-		tr.mu.Unlock()
+		tr.mu.Unlock() //nolint:staticcheck // acquiring tr.mu proves the RPC does not run under the runner lock
 		calls++
 		if id != test.ID || generation != 7 || !reflect.DeepEqual(groups, map[string]int32{"load": 2}) || len(token) != 3 || token[0] != 1 {
 			t.Errorf("readiness identity: %s %d %v %v", id, generation, groups, token)
