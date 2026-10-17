@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -451,7 +449,7 @@ func measureBrowserMemoryUsage(ctx context.Context) (int64, error) {
 // processTreeRSSBytes sums the resident memory of rootPID and its descendants.
 // A root missing from the process list is a measurement failure, never zero.
 func processTreeRSSBytes(ctx context.Context, rootPID int) (int64, error) {
-	samples, err := listProcessSamples(ctx)
+	samples, err := listProcessTreeSamples(ctx, rootPID)
 	if err != nil {
 		return 0, err
 	}
@@ -459,20 +457,6 @@ func processTreeRSSBytes(ctx context.Context, rootPID int) (int64, error) {
 		return 0, fmt.Errorf("process %d is not in the process list", rootPID)
 	}
 	return processTreeRSS(samples, rootPID), nil
-}
-
-// listProcessSamples lists processes with their parent, resident memory and
-// CPU time. Linux reads /proc directly: container images ship BusyBox ps,
-// whose RSS column is abbreviated (292m), or no ps at all.
-func listProcessSamples(ctx context.Context) ([]processSample, error) {
-	if runtime.GOOS != "linux" {
-		out, err := exec.CommandContext(ctx, "ps", "-eo", "pid=,ppid=,rss=,time=").Output()
-		if err != nil {
-			return nil, err
-		}
-		return parseProcessSamples(string(out)), nil
-	}
-	return readProcProcessSamples(ctx, "/proc")
 }
 
 // readProcProcessSamples reads each process's stat file once. A process that
