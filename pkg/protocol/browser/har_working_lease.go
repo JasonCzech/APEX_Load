@@ -59,6 +59,8 @@ type harCaptureOwner struct {
 	bound                 chan struct{}
 	boundOnce             sync.Once
 	closeOnce, finishOnce sync.Once
+	generationOnce        sync.Once
+	generationErr         error
 	descriptorOnce        sync.Once
 	descriptorErr         error
 	closeDone, finishDone chan struct{}
@@ -196,7 +198,7 @@ func checkHARWorkingAdmission(work *os.Root) error {
 			if isHARLedgerAuxiliary(e.Name()) {
 				auxiliary++
 				info, err := work.Lstat(e.Name())
-				if err != nil || auxiliary > maxHARRetirementRecords || validateHARPrivateInfo(info, true) != nil || info.Size() > maxHARRetirementLedgerBytes {
+				if err != nil || auxiliary > maxHARRetirementRecords || info.Size() > maxHARRetirementLedgerBytes || validateHARAuxiliary(work, e.Name()) != nil {
 					return fmt.Errorf("HAR retirement auxiliary state unavailable")
 				}
 				if info.Size() > maxRuntimeHARWorkingBytes-bytes {
@@ -249,6 +251,15 @@ func checkHARWorkingAdmission(work *os.Root) error {
 			return readErr
 		}
 	}
+}
+
+// validateHARAuxiliary proves a ledger auxiliary file private and regular.
+func validateHARAuxiliary(work *os.Root, name string) error {
+	f, err := openHARRegular(work, name, false)
+	if err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 // harWorkingGenerationEntries is how many files a generation may hold: the
@@ -567,7 +578,7 @@ func (o *harCaptureOwner) finalizeJoined(keep bool, redactor protocol.TextRedact
 	}
 	// A publication failure is observable, but a proven joined raw writer can
 	// still be retired. Unproven close never enters this function.
-	err = retireHARGeneration(n.work, o.root, o.generation, o.identity, false)
+	err = retireHARGeneration(n.work, o.root, o.generation, o.identity, false, o.closeGeneration)
 	if err == nil {
 		err = o.closeDescriptors()
 		retirementProven = err == nil
@@ -611,8 +622,10 @@ func (o *harCaptureOwner) publishScrubbed(ctx context.Context, parent *os.Root, 
 	return nil
 }
 
-func (o *harCaptureOwner) closeDescriptors() error {
-	o.descriptorOnce.Do(func() {
+// closeGeneration releases the generation's lease and closes it and the
+// generation root, once.
+func (o *harCaptureOwner) closeGeneration() error {
+	o.generationOnce.Do(func() {
 		var err error
 		if o.release != nil {
 			err = errors.Join(err, o.release())
@@ -623,6 +636,14 @@ func (o *harCaptureOwner) closeDescriptors() error {
 		if o.root != nil {
 			err = errors.Join(err, o.root.Close())
 		}
+		o.generationErr = err
+	})
+	return o.generationErr
+}
+
+func (o *harCaptureOwner) closeDescriptors() error {
+	o.descriptorOnce.Do(func() {
+		err := o.closeGeneration()
 		if o.work != nil {
 			err = errors.Join(err, o.work.Close())
 		}
@@ -679,17 +700,22 @@ func harWorkingGenerationSize(root *os.Root) (int64, error) {
 
 // retireHARGeneration retires a writer-joined generation or, when abandoned,
 // one whose recorded processes provably no longer exist (checked while the
-// caller holds its lease).
-func retireHARGeneration(work, root *os.Root, directoryName string, identity os.FileInfo, abandoned bool) error {
+// caller holds its lease). Every platform retires in one order: the
+// identity-bound record is made durable under the namespace lease; then
+// closeGeneration releases and closes the generation's lease and its root
+// (Windows cannot rename a directory or remove files that handles hold
+// open); then the directory is renamed to its tombstone, reopened, emptied
+// and closed, and removed.
+func retireHARGeneration(work, root *os.Root, directoryName string, identity os.FileInfo, abandoned bool, closeGeneration func() error) error {
 	generation, recognized := harGenerationFromDirectory(directoryName)
-	if !recognized {
+	if !recognized || closeGeneration == nil {
 		return errHAROwnershipUnproven
 	}
 	current, err := work.Lstat(directoryName)
 	if err != nil || !os.SameFile(identity, current) || !current.IsDir() || current.Mode()&os.ModeSymlink != 0 {
 		return errHAROwnershipUnproven
 	}
-	id, err := persistentHARIdentity(identity)
+	id, err := persistentHARIdentityAt(work, directoryName, identity)
 	if err != nil {
 		return err
 	}
@@ -722,12 +748,12 @@ func retireHARGeneration(work, root *os.Root, directoryName string, identity os.
 	if _, err := harWorkingGenerationSize(root); err != nil {
 		return err
 	}
+	if err := closeGeneration(); err != nil {
+		return errors.Join(err, errHAROwnershipUnproven)
+	}
 	tombstone := ".retired-" + generation
 	if directoryName != tombstone {
-		if _, err := work.Lstat(tombstone); !os.IsNotExist(err) {
-			return errHAROwnershipUnproven
-		}
-		if err := work.Rename(directoryName, tombstone); err != nil {
+		if err := renameHARNoReplace(work, directoryName, tombstone); err != nil {
 			return err
 		}
 		if err := syncHARRoot(work); err != nil {
@@ -738,14 +764,23 @@ func retireHARGeneration(work, root *os.Root, directoryName string, identity os.
 	if err != nil || !os.SameFile(identity, renamed) {
 		return errHAROwnershipUnproven
 	}
+	retired, err := openHARPrivateChild(work, tombstone, false)
+	if err != nil {
+		return err
+	}
 	// The synced namespace ledger preserves joined proof through every unlink,
 	// including a crash after removal of all generation control files.
+	var removeErr error
 	for _, name := range []string{"working.har", "scrubbed.part", "owner.lock", "writer-entered.json", "writer-joined.json", "manifest.json"} {
-		if err := root.Remove(name); err != nil && !os.IsNotExist(err) {
-			return err
+		if err := removeHAR(retired, name); err != nil && !os.IsNotExist(err) {
+			removeErr = err
+			break
 		}
 	}
-	if err := work.Remove(tombstone); err != nil {
+	if err := errors.Join(removeErr, retired.Close()); err != nil {
+		return err
+	}
+	if err := removeHAR(work, tombstone); err != nil {
 		return err
 	}
 	if err := syncHARRoot(work); err != nil {
@@ -1050,18 +1085,34 @@ func PruneRuntimeHARWorkingCandidate(ctx context.Context, c RuntimeHARWorkingPru
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, root.Close()) }()
+	var lease *os.File
+	var release func() error
+	var generationOnce sync.Once
+	var generationErr error
+	// closeGeneration releases the lease and closes it and the generation
+	// root, once: retirement calls it before renaming, and every return
+	// path does if retirement did not.
+	closeGeneration := func() error {
+		generationOnce.Do(func() {
+			if release != nil {
+				generationErr = errors.Join(generationErr, release())
+			}
+			if lease != nil {
+				generationErr = errors.Join(generationErr, lease.Close())
+			}
+			generationErr = errors.Join(generationErr, root.Close())
+		})
+		return generationErr
+	}
+	defer func() { err = errors.Join(err, closeGeneration()) }()
 	info, err := root.Stat(".")
 	if err != nil || !os.SameFile(info, c.identity) {
 		return errHAROwnershipUnproven
 	}
-	lease, err := openHARRegular(root, "owner.lock", false)
+	lease, err = openHARRegular(root, "owner.lock", false)
 	if err == nil {
-		defer func() { err = errors.Join(err, lease.Close()) }()
-		release, lockErr := filelock.LockContextOwned(ctx, lease)
-		if release != nil {
-			defer func() { err = errors.Join(err, release()) }()
-		}
+		var lockErr error
+		release, lockErr = filelock.LockContextOwned(ctx, lease)
 		if lockErr != nil {
 			return lockErr
 		}
@@ -1073,5 +1124,5 @@ func PruneRuntimeHARWorkingCandidate(ctx context.Context, c RuntimeHARWorkingPru
 	}
 	// A missing generation lease is accepted only with the prior synced,
 	// identity-bound writer-joined ledger record under the namespace lease.
-	return retireHARGeneration(n.work, root, c.directoryName, c.identity, c.Abandoned)
+	return retireHARGeneration(n.work, root, c.directoryName, c.identity, c.Abandoned, closeGeneration)
 }

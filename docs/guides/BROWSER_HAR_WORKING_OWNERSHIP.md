@@ -15,8 +15,10 @@ remain in effect.
 
 Before admitting a native context, capture setup creates a fresh unpredictable
 generation below .apexload-har-work/. The private staging directories use 0700;
-raw working.har, manifests, control files and scrubbed output use 0600. The
-raw file is durably reserved before the pinned local SDK truncates/writes it,
+raw working.har, manifests, control files and scrubbed output use 0600. On
+Windows the staging directory instead gets a protected DACL granting only the
+user and SYSTEM, which everything below it inherits (see [Windows](#windows)).
+The raw file is durably reserved before the pinned local SDK truncates/writes it,
 so default SDK file creation permissions do not become the capture policy.
 
 The permanent namespace lock and each generation's existing owner lock are
@@ -57,7 +59,8 @@ retention. Publication and durability failures return errors.
 
 A private, versioned retirements.json ledger records a completed artifact
 or proven writer-joined generation before rename or unlink. Its identity
-contains the original device, inode and owner UID. The shared namespace
+contains the original device, inode and owner UID (on Windows the volume
+serial number, the 128-bit file ID and the owner SID). The shared namespace
 descriptor lease serializes updates. Ledger replacement is checked; updates
 are synced before destructive steps, and records are cleared only after exact
 payload disappearance is checked and synced.
@@ -101,9 +104,10 @@ share the directory, or one host's reboot could be taken as proof that the
 other's live writer exited. On macOS an identity is the boot session UUID and
 the kernel process table, with no machine identity (macOS offers none without IOKit, and
 `kern.uuid` names the kernel build), so an earlier boot never proves an exit
-there. A writer record is completed before the path is handed out: one that
-cannot be written leaves no writer entered (and is removed), and one a crash
-left half-written counts as no writer.
+there. Windows identities are described under [Windows](#windows). A writer
+record is completed before the path is handed out: one that cannot be written
+leaves no writer entered (and is removed), and one a crash left half-written
+counts as no writer.
 
 Cleanup reclaims such a generation through the same retirement ledger only
 when its owner lease is free and every recorded process provably no longer
@@ -364,6 +368,101 @@ failed download, including one cut mid-body, leaves none) or to standard
 output with `--out -`. A download has ten minutes, independent of the CLI's
 ordinary request timeout.
 
+## Windows
+
+Native HAR ownership on Windows uses the same files, ledger and order as on
+Linux and macOS, built on Windows' own privacy, identity and namespace
+operations (`pkg/internal/winfs`).
+
+**Volume.** The HAR directory must be on a local fixed NTFS volume. UNC paths
+(`\\server\share`, `\\?\UNC\`), device paths, network and removable drives,
+and ReFS or FAT volumes are refused before anything is created or read
+there.
+
+**Private staging.** `.apexload-har-work` is created relative to the HAR
+directory's handle with the security descriptor
+`D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;<user SID>)` applied by the create itself, so
+it never exists with an inherited ACL. Generations, working files, control
+files and scrubbed output inherit that DACL. Every staging object is checked
+through the handle that opened it:
+
+- Its owner is the process token's user or the token's default owner.
+- Its DACL holds only allow entries for that user and SYSTEM. A missing or
+  NULL DACL, a deny entry, or an entry for any other SID is refused.
+- It is not a reparse point, so symbolic links and junctions are refused.
+- A file has exactly one link.
+
+A name component containing `:` (an alternate data stream), `/` or `\` is
+refused. The HAR directory itself keeps its own ACL. A published HAR is a hard
+link of a private staging file, so it keeps the private DACL.
+
+**Elevation.** An elevated administrator's token can name the Administrators
+group as its default owner, so the staging it creates is owned by that group.
+A non-elevated generator running as the same user does not accept that owner
+and refuses the staging. Do not alternate elevated and non-elevated
+generators on one HAR directory. On GitHub-hosted runners the token is
+elevated and its default owner is the user, so the case does not arise there.
+
+**Identity.** A retirement record binds the volume serial number (`device`),
+the 128-bit file ID from `FILE_ID_INFO` (`inode` holds its low 64 bits and
+`file_id_high` the high 64) and the owner SID (`owner`), with `uid` 0. The
+identity is read through a handle to the name. On Windows `os.Lstat` reads
+the file ID lazily, when it is compared, from whatever the path names by
+then, so the before-and-after checks on the HAR directory stat through
+handles instead.
+
+**Retirement order.** On every platform, retirement closes the owner lease and
+the generation's root before renaming the generation to its tombstone, then
+reopens the tombstone to unlink its files. Windows requires this order,
+because it refuses to rename a directory while any handle to a child is open.
+
+- Retirement renames and deletes go through handles with POSIX semantics. A
+  rename never replaces an existing name. A deleted name disappears at once,
+  even while a share-all reader such as an indexing or antivirus scan still
+  holds the file.
+- A name another program left delete-pending counts as removed.
+- Renames and removals that hit a sharing, lock or delete-pending conflict are
+  retried every 25 ms for up to 2 seconds. Two more errors are retried the
+  same way: `ERROR_ACCESS_DENIED` on the tombstone rename (a scan holding one
+  of the generation's files causes it) and `ERROR_DIR_NOT_EMPTY` on directory
+  removal (a delete-pending child causes it).
+- Past that bound the step fails and the generation is preserved. Its ledger
+  record lets a later sweep resume it.
+
+Directory entries are made durable with `FlushFileBuffers` on a write-access
+reopen of the directory.
+
+**Crash reclamation.** A Windows process identity is made of:
+
+- the machine: `MachineGuid` (under `HKLM\SOFTWARE\Microsoft\Cryptography`)
+  paired with the physical DNS host name;
+- the boot: the kernel's `BootId`, which increments at every boot;
+- the namespace `windows`, the PID and the process creation time.
+
+A process is proven gone when `OpenProcess` finds no such process, or the
+process has exited. An exited process whose handle someone still holds still
+answers `OpenProcess`, and counts as exited. Machines cloned from one image
+can share a `MachineGuid`, so, as on Linux, hosts sharing a HAR directory
+must differ in host name.
+
+Inside a Windows container (`ContainerType` set under
+`HKLM\SYSTEM\CurrentControlSet\Control`) the process IDs and the boot belong to
+the container. No identity is recorded there and crash reclamation is
+disabled: a killed generator's generations are preserved, like a writer with
+no recorded identity, until they are removed by hand.
+
+**Antivirus.** The retry bound covers brief scans. GitHub-hosted runners have
+Microsoft Defender real-time protection off, so behavior under on-access
+scanning has not been measured. A scanner that holds a staging file for more
+than 2 seconds fails retirement and leaves the generation for a later sweep.
+If that recurs, exclude the HAR directory from on-access scanning.
+
+**Replay store.** The managed browser-replay HAR root in `%TEMP%` is created
+the same way, with the private DACL applied by the create, and is proven
+private before use. A root with any other ACL is not adopted, for example one
+an older build made with the temporary directory's inherited ACL. The store
+then uses a fresh private directory of its own, without the idle sweep.
+
 ## Bounds and compatibility
 
 | Control | Candidate limit |
@@ -385,23 +484,27 @@ aggregate active-writer reservation and the memory bound are the
 generator-wide evidence budget (Feature completion Wave 1, D3); the per-HAR
 limiter still cannot observe all native in-memory buffering.
 
-This implementation uses Linux/macOS owner identity checks and Go's secure
-os.Root operations. Other platforms reject native HAR ownership until their
-private ACL, lock and durable publication behavior is qualified; Windows stays
-rejected. `browser.NativeHARSupported()` gives each platform's answer. Where
-it is false, a HAR-recording browser session runs without a native HAR and
-reports `browser_har_unavailable_har_platform_unsupported` once per context,
-as an exhausted HAR budget does; nothing creates, cleans or reads a HAR
-directory's staging (published-artifact reads fail with "native HAR capture
-is not supported"); and a browser replay asked for `record_har: true` is
-refused with 422 before it starts. The coordinated local runtime acceptance
-host is macOS, where the ownership, crash-reclamation and real-driver tests
-run; results are recorded separately in the QA bundle. The same ownership and crash-reclamation tests
-also pass as a static Linux binary in a container without browsers, so the
-real-driver crash test has not run on Linux. Windows acceptance must not be
-inferred from either. The filesystems and peer processes must honor the
-existing descriptor-lock contract. Only scrubbed, completed HARs leave a
-generator; raw working files never do.
+This implementation uses Go's secure os.Root operations with each platform's
+owner identity checks: Linux/macOS owner UIDs and modes, and on Windows
+security descriptors and handle file IDs (Windows qualified by three green
+runs in a row in CI: see the [Windows record](../qa/reviews/windows-native-har-2026-10-16/README.md)).
+Other platforms reject native HAR ownership until their private ACL, lock and
+durable publication behavior is qualified. `browser.NativeHARSupported()`
+gives each platform's answer. Where it is false, a HAR-recording browser
+session runs without a native HAR and reports
+`browser_har_unavailable_har_platform_unsupported` once per context, as an
+exhausted HAR budget does; nothing creates, cleans or reads a HAR directory's
+staging (published-artifact reads fail with "native HAR capture is not
+supported"); and a browser replay asked for `record_har: true` is refused
+with 422 before it starts. The coordinated local runtime acceptance host is
+macOS, where the ownership, crash-reclamation and real-driver tests run;
+results are recorded separately in the QA bundle. CI runs the same suites,
+real-driver crash test included, on Linux (the race lane, with Chromium and
+WebKit) and on Windows (the Windows leg of `desktop.yml`, recorded in the
+[Windows record](../qa/reviews/windows-native-har-2026-10-16/README.md)). The
+filesystems and peer processes must honor the existing descriptor-lock
+contract. Only scrubbed, completed HARs leave a generator; raw working files
+never do.
 
 Crash reclamation changed the on-disk generation format one way:
 `writer-entered.json` and version 2 manifests with `processes`. A build from

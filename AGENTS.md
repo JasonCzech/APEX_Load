@@ -96,7 +96,8 @@ pkg/
   importartifact/ — Content-addressed, encrypted immutable source bundles for governed runners
   fileasset/     — Bounded local file/asset opening for import paths
   internal/      — Cross-package internal guards: archiveingest, archivequota, boundedcache, boundedtext, diskspace,
-                   filelock, subprocessguard, zipbounds; paritytest is the test-only LoadRunner web
+                   filelock, subprocessguard, zipbounds, winfs (Windows private ACLs, file IDs and
+                   handle-relative rename/remove); paritytest is the test-only LoadRunner web
                    parity harness (fixture server, expected requests, one-iteration replay)
 api/
   proto/         — gRPC protobuf definitions (controller ↔ generator)

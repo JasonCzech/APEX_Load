@@ -18,10 +18,16 @@ const harRetirementLedgerName = "retirements.json"
 const maxHARRetirementLedgerBytes = 64 << 10
 const maxHARRetirementRecords = 128
 
+// harPersistentIdentity binds a retirement record to one object. On Unix it
+// is the device, inode and owning UID; on Windows the volume serial number,
+// the 128-bit file ID (low half in Inode, high half in FileIDHigh) and the
+// owner SID, with UID 0. Unix ledgers carry neither Windows field.
 type harPersistentIdentity struct {
-	Device uint64 `json:"device"`
-	Inode  uint64 `json:"inode"`
-	UID    uint32 `json:"uid"`
+	Device     uint64 `json:"device"`
+	Inode      uint64 `json:"inode"`
+	UID        uint32 `json:"uid"`
+	FileIDHigh uint64 `json:"file_id_high,omitempty"`
+	Owner      string `json:"owner,omitempty"`
 }
 type harRetirementRecord struct {
 	Kind       string                `json:"kind"`
@@ -83,7 +89,7 @@ func (r harRetirementRecord) names() (string, string) {
 	return r.Name, ".har-retired-" + r.Generation
 }
 func validHARLedgerRecord(r harRetirementRecord) bool {
-	if !validHARGeneration(r.Generation) || r.Identity.Inode == 0 || r.Identity.UID != uint32(os.Geteuid()) {
+	if !validHARGeneration(r.Generation) || !validHARPersistentIdentity(r.Identity) {
 		return false
 	}
 	if r.Kind == "working" {
@@ -198,11 +204,11 @@ func strictHARFields(data []byte, target any) error {
 			// encoding/json accepts null for integer and string destinations.
 			// Ownership contracts require actual typed scalars, including UID 0.
 			switch key {
-			case "version", "device", "inode", "uid", "pid":
+			case "version", "device", "inode", "uid", "pid", "file_id_high":
 				if value[0] < '0' || value[0] > '9' {
 					return nil, errHAROwnershipUnproven
 				}
-			case "kind", "generation", "state", "name", "role", "machine", "boot", "namespace", "start":
+			case "kind", "generation", "state", "name", "role", "machine", "boot", "namespace", "start", "owner":
 				if value[0] != '"' {
 					return nil, errHAROwnershipUnproven
 				}
@@ -250,7 +256,7 @@ func strictHARFields(data []byte, target any) error {
 			if err != nil {
 				return err
 			}
-			if _, err := check(record["identity"], []string{"device", "inode", "uid"}, nil); err != nil {
+			if _, err := check(record["identity"], []string{"device", "inode", "uid"}, []string{"file_id_high", "owner"}); err != nil {
 				return err
 			}
 		}
@@ -330,7 +336,7 @@ func writeHARRetirementLedger(work *os.Root, ledger harRetirementLedger, prior o
 	} else if err != nil || !os.SameFile(prior, current) {
 		return errHAROwnershipUnproven
 	}
-	if err := work.Rename(temp, harRetirementLedgerName); err != nil {
+	if err := replaceHAR(work, temp, harRetirementLedgerName); err != nil {
 		return err
 	}
 	return syncHARRoot(work)
@@ -416,7 +422,7 @@ func harRetirementPayload(root *os.Root, r harRetirementRecord) (string, os.File
 	if info == nil {
 		return tomb, nil, nil
 	}
-	actual, err := persistentHARIdentity(info)
+	actual, err := persistentHARIdentityAt(root, name, info)
 	if err != nil || actual != r.Identity || info.Mode()&os.ModeSymlink != 0 || (r.Kind == "working" && !info.IsDir()) || (r.Kind == "completed" && !info.Mode().IsRegular()) {
 		return "", nil, errHAROwnershipUnproven
 	}
@@ -445,7 +451,7 @@ func RemoveRuntimeHARArtifactAt(parent *os.Root, name string, identity os.FileIn
 		return err
 	}
 	defer work.Close()
-	id, err := persistentHARIdentity(info)
+	id, err := persistentHARIdentityAt(parent, name, info)
 	if err != nil {
 		return err
 	}
@@ -467,7 +473,7 @@ func resumeHARCompletedRetirement(parent, work *os.Root, r harRetirementRecord) 
 	_, tomb := r.names()
 	if info != nil {
 		if name != tomb {
-			if err := parent.Rename(name, tomb); err != nil {
+			if err := renameHARNoReplace(parent, name, tomb); err != nil {
 				return err
 			}
 			if err := syncHARRoot(parent); err != nil {
@@ -478,11 +484,11 @@ func resumeHARCompletedRetirement(parent, work *os.Root, r harRetirementRecord) 
 		if err != nil {
 			return err
 		}
-		id, err := persistentHARIdentity(actual)
+		id, err := persistentHARIdentityAt(parent, tomb, actual)
 		if err != nil || id != r.Identity {
 			return errHAROwnershipUnproven
 		}
-		if err := parent.Remove(tomb); err != nil {
+		if err := removeHAR(parent, tomb); err != nil {
 			return err
 		}
 	}

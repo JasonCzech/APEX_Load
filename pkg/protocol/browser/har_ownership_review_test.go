@@ -178,10 +178,22 @@ func TestHAROwnershipJoinedCandidateCarriesBoundedActualSize(t *testing.T) {
 	}
 }
 
+// lstatHARPath stats path with its identity fixed at the call, as the
+// namespace checks do.
+func lstatHARPath(path string) (os.FileInfo, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	return pinHARPathIdentity(path, info)
+}
+
 func TestHAROwnershipRawFileIsPrivateBeforeNativeWriterEnters(t *testing.T) {
 	o := fixtureHAROwner(t, t.TempDir())
-	info, err := os.Lstat(o.path)
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 || info.Size() != 0 {
+	// lstatHARPath fixes the identity at the call (on Windows os.Lstat reads
+	// it later, at os.SameFile).
+	info, err := lstatHARPath(o.path)
+	if err != nil || !info.Mode().IsRegular() || harPrivatePath(o.path, false) != nil || info.Size() != 0 {
 		t.Fatal("raw path was not privately reserved before native writer admission", err)
 	}
 	// The pinned local SDK uses ordinary writeFile/truncate, which preserves
@@ -189,8 +201,8 @@ func TestHAROwnershipRawFileIsPrivateBeforeNativeWriterEnters(t *testing.T) {
 	if err := os.WriteFile(o.path, []byte(ownedHARFixture), 0o666); err != nil {
 		t.Fatal(err)
 	}
-	after, err := os.Lstat(o.path)
-	if err != nil || !os.SameFile(info, after) || after.Mode().Perm() != 0o600 {
+	after, err := lstatHARPath(o.path)
+	if err != nil || !os.SameFile(info, after) || harPrivatePath(o.path, false) != nil {
 		t.Fatal("native-style truncate replaced private file identity or mode", err)
 	}
 	if _, err := finishFixtureHAR(t, o, true); err != nil {

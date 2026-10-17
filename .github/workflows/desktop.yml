@@ -103,20 +103,21 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      # Native HAR ownership is not qualified on Windows
-      # (docs/guides/BROWSER_HAR_WORKING_OWNERSHIP.md): a HAR-recording browser
-      # VUser must run without a HAR and say why, against real Chromium, and a
-      # replay asked to record one must be refused.
-      - name: Native HAR platform gate
+      # Native HAR ownership on Windows (docs/guides/BROWSER_HAR_WORKING_OWNERSHIP.md):
+      # the full HAR ownership, crash-reclamation and replay HAR suites against
+      # real Chromium and WebKit, plus the Windows filesystem primitives they
+      # rest on. This leg is the project's only Windows evidence.
+      - name: Native HAR ownership (Windows)
         if: runner.os == 'Windows'
         shell: bash
         env:
           APEXLOAD_BROWSER_TESTS: require
         run: |
           set -euo pipefail
-          go run github.com/mxschmitt/playwright-go/cmd/playwright@v0.6100.0 install chromium
-          go test -count=1 -v ./pkg/protocol/browser -run '^(TestNativeHARSupportedMatchesPlatform|TestUnsupportedPlatform.+)$'
-          go test -count=1 -v ./pkg/api -run '^(TestBrowserReplayRecordHARRefusedWithoutNativeHAR|TestNativeHARRecordsItsEvidenceGeneration)$'
+          go run github.com/mxschmitt/playwright-go/cmd/playwright@v0.6100.0 install chromium webkit
+          go test -count=1 -v ./pkg/internal/winfs
+          go test -count=1 -v -timeout 30m ./pkg/protocol/browser -run 'HAR'
+          go test -count=1 -v -timeout 30m ./pkg/api -run 'HAR|BrowserReplay'
 
       # Browser memory admission on Windows: the Playwright driver's process
       # tree is read natively (a Toolhelp snapshot, then each process's working

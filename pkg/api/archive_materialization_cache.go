@@ -508,7 +508,7 @@ func syncOpenedArchiveDirectory(root *os.Root) error {
 		return err
 	}
 	defer directory.Close()
-	return directory.Sync()
+	return syncArchiveDirectoryHandle(directory)
 }
 
 func (m *archiveMaterializationCoordinator) enforceRetention(scanRoot string) {

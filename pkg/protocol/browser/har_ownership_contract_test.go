@@ -12,26 +12,28 @@ import (
 )
 
 func TestHAROwnershipSetupFailurePrecedesNativeLaunch(t *testing.T) {
-	dir := t.TempDir()
-	alias := filepath.Join(dir, "alias")
-	if err := os.Symlink(t.TempDir(), alias); err != nil {
-		t.Fatal(err)
-	}
-	globalMutex.Lock()
-	beforeDriver, beforeBrowsers := globalPlaywright, len(globalBrowsers)
-	globalMutex.Unlock()
-	b := &Browser{}
-	if err := b.Init(context.Background(), map[string]any{"browser_har_capture": "always", "browser_har_dir": alias}); err == nil || !strings.Contains(err.Error(), "HAR") {
-		t.Fatal("unsafe HAR setup was not rejected", err)
-	}
-	globalMutex.Lock()
-	afterDriver, afterBrowsers := globalPlaywright, len(globalBrowsers)
-	globalMutex.Unlock()
-	if beforeDriver != afterDriver || beforeBrowsers != afterBrowsers {
-		t.Fatal("native launch preceded ownership setup")
-	}
-	if b.harOwner != nil || b.harWorkingPath != "" {
-		t.Fatal("failed setup left a consumable capture")
+	for _, kind := range harDirAliasKinds {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			alias := filepath.Join(dir, "alias")
+			makeHARDirAlias(t, kind, t.TempDir(), alias)
+			globalMutex.Lock()
+			beforeDriver, beforeBrowsers := globalPlaywright, len(globalBrowsers)
+			globalMutex.Unlock()
+			b := &Browser{}
+			if err := b.Init(context.Background(), map[string]any{"browser_har_capture": "always", "browser_har_dir": alias}); err == nil || !strings.Contains(err.Error(), "HAR") {
+				t.Fatal("unsafe HAR setup was not rejected", err)
+			}
+			globalMutex.Lock()
+			afterDriver, afterBrowsers := globalPlaywright, len(globalBrowsers)
+			globalMutex.Unlock()
+			if beforeDriver != afterDriver || beforeBrowsers != afterBrowsers {
+				t.Fatal("native launch preceded ownership setup")
+			}
+			if b.harOwner != nil || b.harWorkingPath != "" {
+				t.Fatal("failed setup left a consumable capture")
+			}
+		})
 	}
 }
 

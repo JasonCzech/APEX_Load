@@ -51,8 +51,10 @@ func TestHAROwnershipNativeContextFlushAndJoin(t *testing.T) {
 			if o == nil {
 				t.Fatal("native context has no private capture owner")
 			}
-			before, err := os.Stat(o.path)
-			if err != nil || before.Mode().Perm() != 0o600 {
+			// lstatHARPath fixes the identity at the call (on Windows
+			// os.Stat reads it later, at os.SameFile).
+			before, err := lstatHARPath(o.path)
+			if err != nil || harPrivatePath(o.path, false) != nil {
 				t.Fatal("native writer admitted without a private raw file", err)
 			}
 			navigate := func(browser *Browser) {
@@ -82,7 +84,7 @@ func TestHAROwnershipNativeContextFlushAndJoin(t *testing.T) {
 			if !errors.Is(err, errHAROwnershipUnproven) || o.retiredSuccessfully() {
 				t.Fatal("blocked native callback was reported as a completed join", err)
 			}
-			if current, err := os.Stat(o.path); err != nil || !os.SameFile(before, current) || current.Mode().Perm() != 0o600 {
+			if current, err := lstatHARPath(o.path); err != nil || !os.SameFile(before, current) || harPrivatePath(o.path, false) != nil {
 				t.Fatal("blocked native flush lost its exact private file", err)
 			}
 			if len(harArtifacts(t, dir)) != 0 || len(PlanRuntimeHARWorkingCleanup(dir, 128)) != 0 {
@@ -109,7 +111,7 @@ func TestHAROwnershipNativeContextFlushAndJoin(t *testing.T) {
 				t.Fatal("native flush published no valid loopback observations")
 			}
 			artifactInfo, err := os.Stat(artifact)
-			if err != nil || artifactInfo.Mode().Perm() != 0o600 || filepath.Dir(artifact) != filepath.Dir(filepath.Dir(filepath.Dir(o.path))) {
+			if err != nil || !artifactInfo.Mode().IsRegular() || harPrivatePath(artifact, false) != nil || filepath.Dir(artifact) != filepath.Dir(filepath.Dir(filepath.Dir(o.path))) {
 				t.Fatal("completed artifact lost protected flat discoverability", err)
 			}
 			navigate(sibling)
@@ -156,7 +158,7 @@ func TestHAROwnershipNativeCloseErrorRemainsExplicitAndPrivate(t *testing.T) {
 			if o.retiredSuccessfully() || calls.Load() != 1 {
 				t.Fatal("failed receipt retired or repeated the actual native owner")
 			}
-			if info, err := os.Stat(o.path); err != nil || info.Mode().Perm() != 0o600 {
+			if err := harPrivatePath(o.path, false); err != nil {
 				t.Fatal("failed native ownership lost protected raw evidence", err)
 			}
 			if len(harArtifacts(t, dir)) != 0 || len(PlanRuntimeHARWorkingCleanup(dir, 128)) != 0 {

@@ -13,40 +13,20 @@ import (
 	"path/filepath"
 	"strings"
 
-	"golang.org/x/sys/windows"
+	"github.com/jasonczech/apexload/pkg/internal/winfs"
 )
 
 const durableTombstoneDirectory = ".durable-delete"
 
 func validateDurableFilesystem(root string) error {
-	abs, err := filepath.Abs(root)
+	err := winfs.ValidateLocalVolume(root, "NTFS", "REFS")
+	if errors.Is(err, winfs.ErrUnsupportedVolume) {
+		return unsupportedImportVolume(err)
+	}
 	if err != nil {
-		return err
-	}
-	rootPtr, err := windows.UTF16PtrFromString(extendedWindowsPath(abs))
-	if err != nil {
-		return err
-	}
-	// A volume can be mounted below a long directory path. The traditional
-	// MAX_PATH-sized result buffer would reject that otherwise supported local
-	// NTFS/ReFS layout even though all subsequent operations use the extended
-	// namespace.
-	volumePath := make([]uint16, 32768)
-	if err := windows.GetVolumePathName(rootPtr, &volumePath[0], uint32(len(volumePath))); err != nil {
-		return fmt.Errorf("resolve protected import artifact volume: %w", err)
-	}
-	volumeRoot := windows.UTF16ToString(volumePath)
-	volumePtr, err := windows.UTF16PtrFromString(volumeRoot)
-	if err != nil {
-		return err
-	}
-	driveType := windows.GetDriveType(volumePtr)
-	filesystem := make([]uint16, 32)
-	if err := windows.GetVolumeInformation(volumePtr, nil, 0, nil, nil, nil, &filesystem[0], uint32(len(filesystem))); err != nil {
 		return fmt.Errorf("inspect protected import artifact volume: %w", err)
 	}
-	name := strings.ToUpper(strings.TrimSpace(windows.UTF16ToString(filesystem)))
-	return validateWindowsVolume(driveType, name)
+	return nil
 }
 
 // mkdirAllDurably publishes each missing directory with a same-volume,
@@ -117,7 +97,7 @@ func mkdirAllDurably(target string, mode os.FileMode) error {
 		if len(entries) != 0 {
 			return fmt.Errorf("protected import durable directory staging %q is not empty", temporary)
 		}
-		err = moveFileWriteThrough(temporary, destination, false)
+		err = winfs.MoveFileWriteThrough(temporary, destination, false)
 		if err == nil {
 			continue
 		}
@@ -146,48 +126,22 @@ func durableDirectoryPendingPath(destination string) string {
 }
 
 func validateWindowsVolume(driveType uint32, filesystem string) error {
-	if driveType != windows.DRIVE_FIXED {
-		return fmt.Errorf("%w: Windows protected imports require a local fixed NTFS or ReFS volume", ErrUnsupportedFilesystem)
+	return unsupportedImportVolume(winfs.ValidateVolume(driveType, filesystem, "NTFS", "REFS"))
+}
+
+func unsupportedImportVolume(err error) error {
+	if err == nil {
+		return nil
 	}
-	name := strings.ToUpper(strings.TrimSpace(filesystem))
-	if name != "NTFS" && name != "REFS" {
-		return fmt.Errorf("%w: Windows protected imports require NTFS or ReFS (found %s)", ErrUnsupportedFilesystem, name)
-	}
-	return nil
+	return fmt.Errorf("%w: Windows protected imports require a local fixed NTFS or ReFS volume: %v", ErrUnsupportedFilesystem, err)
 }
 
 func publishCreateOnly(existingPath, targetPath string) error {
-	return moveFileWriteThrough(existingPath, targetPath, false)
+	return winfs.MoveFileWriteThrough(existingPath, targetPath, false)
 }
 
 func renameWriteThrough(oldPath, newPath string) error {
-	return moveFileWriteThrough(oldPath, newPath, true)
-}
-
-func moveFileWriteThrough(oldPath, newPath string, replace bool) error {
-	oldPtr, err := windows.UTF16PtrFromString(extendedWindowsPath(oldPath))
-	if err != nil {
-		return err
-	}
-	newPtr, err := windows.UTF16PtrFromString(extendedWindowsPath(newPath))
-	if err != nil {
-		return err
-	}
-	flags := uint32(windows.MOVEFILE_WRITE_THROUGH)
-	if replace {
-		flags |= windows.MOVEFILE_REPLACE_EXISTING
-	}
-	if err := windows.MoveFileEx(oldPtr, newPtr, flags); err != nil {
-		switch {
-		case errors.Is(err, windows.ERROR_FILE_EXISTS), errors.Is(err, windows.ERROR_ALREADY_EXISTS):
-			return fmt.Errorf("%w: %v", fs.ErrExist, err)
-		case errors.Is(err, windows.ERROR_FILE_NOT_FOUND), errors.Is(err, windows.ERROR_PATH_NOT_FOUND):
-			return fmt.Errorf("%w: %v", fs.ErrNotExist, err)
-		default:
-			return err
-		}
-	}
-	return nil
+	return winfs.MoveFileWriteThrough(oldPath, newPath, true)
 }
 
 func removeWriteThrough(root, targetPath string) error {
@@ -212,7 +166,7 @@ func removeWriteThrough(root, targetPath string) error {
 		return err
 	}
 	tombstone := filepath.Join(tombstoneRoot, hex.EncodeToString(nonce[:]))
-	if err := moveFileWriteThrough(targetPath, tombstone, false); err != nil {
+	if err := winfs.MoveFileWriteThrough(targetPath, tombstone, false); err != nil {
 		return err
 	}
 	// The write-through move is the durability boundary. Cleanup is reclaimable
@@ -238,18 +192,4 @@ func cleanupDurableTombstones(root string) error {
 		_ = os.RemoveAll(filepath.Join(directory, entry.Name()))
 	}
 	return nil
-}
-
-func extendedWindowsPath(value string) string {
-	abs, err := filepath.Abs(value)
-	if err != nil {
-		return value
-	}
-	if strings.HasPrefix(abs, `\\?\`) {
-		return abs
-	}
-	if strings.HasPrefix(abs, `\\`) {
-		return `\\?\UNC\` + strings.TrimPrefix(abs, `\\`)
-	}
-	return `\\?\` + abs
 }

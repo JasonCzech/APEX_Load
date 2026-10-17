@@ -1,4 +1,4 @@
-//go:build darwin || linux
+//go:build darwin || linux || windows
 
 package browser
 
@@ -66,7 +66,7 @@ func TestHARProcessIdentityOfLiveAndExitedProcesses(t *testing.T) {
 	if harProcessGone(host, self, harProcessStart) {
 		t.Fatal("this process judged gone")
 	}
-	child := exec.Command("sleep", "30")
+	child := harTestSleeper(30)
 	if err := child.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestHAROwnershipReclaimsKilledGenerations(t *testing.T) {
 	for _, stage := range []string{"write", "scrub", "publish"} {
 		t.Run(stage, func(t *testing.T) {
 			dir := t.TempDir()
-			writer := exec.Command("sleep", "60")
+			writer := harTestSleeper(60)
 			if err := writer.Start(); err != nil {
 				t.Fatal(err)
 			}
@@ -177,7 +177,8 @@ func TestHAROwnershipReclaimsKilledGenerations(t *testing.T) {
 			if stage == "write" && len(PlanRuntimeHARWorkingCleanup(dir, 128)) != 0 {
 				t.Fatal("a live owner's generation was planned")
 			}
-			// kill -9, then reap it so no zombie keeps its identity.
+			// kill -9 (TerminateProcess on Windows), then reap it so no zombie
+			// keeps its identity.
 			if err := child.Process.Kill(); err != nil {
 				t.Fatal(err)
 			}
@@ -226,7 +227,7 @@ func TestHAROwnershipPreservesForeignAndUnprovenGenerations(t *testing.T) {
 		t.Fatal(err)
 	}
 	ended := func(role string) harProcessIdentity {
-		child := exec.Command("true")
+		child := harTestExiter()
 		if err := child.Start(); err != nil {
 			t.Fatal(err)
 		}
@@ -459,15 +460,9 @@ func testHAROwnershipReclaimsKilledNativeRecording(t *testing.T, engine string) 
 // record behind, so the owner can still close and its generation can be
 // reclaimed once the generator has gone.
 func TestHARBeginWriterFailureEntersNoWriter(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("permissions do not bind root")
-	}
 	o := fixtureHAROwner(t, t.TempDir())
 	generationDir := filepath.Dir(o.path)
-	if err := os.Chmod(generationDir, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(generationDir, 0o700) })
+	makeHARReadOnlyDir(t, generationDir)
 	if err := o.beginWriter(); err == nil {
 		t.Fatal("writer record written into a read-only generation")
 	}
@@ -506,7 +501,8 @@ func TestHARBeginWriterRemovesARecordItCouldNotSync(t *testing.T) {
 }
 
 // macOS records no machine identity (kern.uuid names the kernel build), so
-// an earlier boot never proves a process gone there.
+// an earlier boot never proves a process gone there; Linux and Windows pair
+// a machine ID with the host name.
 func TestHARHostMachineIdentityIsHostScoped(t *testing.T) {
 	host, err := currentHARHost()
 	if err != nil {
@@ -520,6 +516,15 @@ func TestHARHostMachineIdentityIsHostScoped(t *testing.T) {
 	case "linux":
 		if host.machine != "" && !strings.Contains(host.machine, "@") {
 			t.Fatalf("linux machine identity %q is not paired with the host name", host.machine)
+		}
+	case "windows":
+		// MachineGuid paired with the physical DNS host name; the boot is
+		// the kernel's boot sequence number.
+		if host.namespace != "windows" || host.machine != "" && !strings.Contains(host.machine, "@") {
+			t.Fatalf("windows host identity %+v", host)
+		}
+		if _, err := strconv.ParseUint(host.boot, 10, 64); err != nil {
+			t.Fatalf("windows boot identity %q: %v", host.boot, err)
 		}
 	}
 }

@@ -1030,9 +1030,9 @@ func writeArchiveArtifactDurableWithWriter(rootPath, name string, data []byte, p
 }
 
 func isIgnorableArchiveDirectorySyncError(err error) bool {
-	// Some Windows filesystems reject directory Sync with access denied even
-	// after atomic rename/write succeeds. Treat this as non-fatal so archives
-	// can still be published.
+	// A Windows directory that refuses the write-access reopen its flush needs
+	// (syncArchiveDirectoryHandle) has still taken the atomic rename or write.
+	// Treat that as non-fatal so archives can still be published.
 	return runtime.GOOS == "windows" && os.IsPermission(err)
 }
 

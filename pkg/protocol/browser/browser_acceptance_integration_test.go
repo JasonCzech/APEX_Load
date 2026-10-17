@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -62,6 +63,16 @@ func acceptanceEntry(t *testing.T, b *Browser, suffix string) protocol.NetworkEn
 		return false
 	})
 	return found
+}
+
+// acceptancePhaseUnavailable is why the evidence has no span for phase name.
+func acceptancePhaseUnavailable(e *protocol.BrowserResourceEvidence, name string) string {
+	for _, phase := range e.Phases {
+		if phase.Name == name {
+			return phase.UnavailableReason
+		}
+	}
+	return ""
 }
 
 func acceptancePhase(e *protocol.BrowserResourceEvidence, name string) (float64, bool) {
@@ -118,6 +129,20 @@ func TestBrowserAcceptanceWaterfallMatchesFixtureClockAndHAR(t *testing.T) {
 			entry := acceptanceEntry(t, b, "/slow")
 			serverWait, serverReceive := clock.durations("/slow")
 			wait, ok := acceptancePhase(entry.BrowserEvidence, "request_wait")
+			if !ok && engine == "webkit" && runtime.GOOS == "windows" && acceptancePhaseUnavailable(entry.BrowserEvidence, "request_wait") == "not_exposed" {
+				// Playwright's Windows WebKit reports no request start, so
+				// there is no request-wait span to reconcile; the evidence
+				// says so rather than inventing one. Its native HAR is still
+				// recorded and published.
+				if err := b.Teardown(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				harWait, harReceive, found := acceptanceHARTimings(t, b.TakeBrowserHARArtifacts(), "/slow")
+				if !found {
+					t.Fatal("native HAR has no /slow entry")
+				}
+				t.Skipf("WebKit on Windows exposes no request timing (native HAR wait=%.1f ms receive=%.1f ms): %+v", harWait, harReceive, entry.BrowserEvidence.Phases)
+			}
 			if !ok {
 				t.Fatalf("request_wait phase unavailable: %+v", entry.BrowserEvidence.Phases)
 			}

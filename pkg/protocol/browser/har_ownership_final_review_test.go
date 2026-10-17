@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -131,7 +132,26 @@ func TestHAROwnershipNamespaceRejectsWorkDirectoryReplacementAfterLockWait(t *te
 	<-entered
 	old := runtimeHARWorkingDirectory + "-preserved"
 	if err := first.root.Rename(runtimeHARWorkingDirectory, old); err != nil {
-		t.Fatal(err)
+		if runtime.GOOS != "windows" {
+			t.Fatal(err)
+		}
+		// Windows refuses to rename a directory while a handle to one of
+		// its children is open (both namespace.lock handles are), so the
+		// replacement cannot happen: the waiter takes the unchanged
+		// namespace once the holder closes.
+		t.Logf("replacing the held namespace directory was refused: %v", err)
+		if err := first.close(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case err := <-result:
+			if err != nil {
+				t.Errorf("waiter refused the unchanged namespace: %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Error("namespace waiter never acquired the unchanged namespace")
+		}
+		return
 	}
 	if err := first.root.Mkdir(runtimeHARWorkingDirectory, 0o700); err != nil {
 		t.Fatal(err)
