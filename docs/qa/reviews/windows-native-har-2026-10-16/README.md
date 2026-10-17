@@ -1,8 +1,9 @@
 # Native HAR capture on Windows
 
-Status: Wave 1 (platform gate, PR #228) delivered. Wave 2 (Phase 0 spike and
-`pkg/internal/winfs`) in this branch. Waves 3 and 4 (Windows ownership, portable
-tests, CI job, guide) follow.
+Status: Wave 1 (platform gate, PR #228) delivered. Waves 2–4 (spike and
+`pkg/internal/winfs`, Windows ownership, portable tests, CI job, guide) in PR
+#229. The full HAR step has passed on Windows once; qualification needs three
+green runs in a row on the final code (see [Repeat runs](#repeat-runs)).
 
 The project has no Windows machine. Every Windows statement below comes from
 the Windows leg of `.github/workflows/desktop.yml` on GitHub-hosted runners.
@@ -187,3 +188,115 @@ All three were test errors:
 The tests now compare the descriptors as Windows renders them and hold readers
 as scans do (share all). `pkg/importartifact`, switched to the shared volume
 policy and write-through move, passed in that job.
+
+## Wave 3: Windows ownership
+
+Native HAR ownership on Windows, as the
+[guide](../../../guides/BROWSER_HAR_WORKING_OWNERSHIP.md#windows) describes it:
+
+- **D1–D4** (464c57f00):
+  - handle-based privacy checks (owner, DACL, no reparse point, one link);
+  - private creation through `NtCreateFile` with the descriptor;
+  - identities read through handles, with the 128-bit file ID and owner SID in
+    the ledger;
+  - `:` refused in name components;
+  - one retirement order on every platform, with the Windows retry bounds.
+- **D6** (322e6270b): `MachineGuid` with the physical DNS host name, `BootId`,
+  process creation times; crash reclamation disabled inside containers.
+- **Replay store** (80c35d54e): the managed replay HAR root is created private;
+  a root that is not private is not adopted, and the store uses a fresh private
+  directory instead.
+- **Platform flip** (872476f60): `NativeHARSupported()` is true on Windows.
+
+## Wave 4: Windows tests and CI
+
+The desktop job's "Native HAR ownership (Windows)" step (60ffc6c5c) installs
+Chromium and WebKit and runs `pkg/internal/winfs`, the browser package's `HAR`
+tests and `pkg/api`'s `HAR|BrowserReplay` tests with
+`APEXLOAD_BROWSER_TESTS=require`. The runs, in order:
+
+1. **Run 38966884185, job 117195439328** (8c7fc92c0). The browser suite: 98
+   passed, 7 failed, and every failure was in a test (fixed in ad2108e01):
+   - Ledger fixtures renamed generations with their files still open, which
+     Windows refuses (D4).
+   - A fixture wrote its artifact straight into the HAR directory, so it
+     inherited `%TEMP%`'s ACL.
+   - An SDDL comparison used a string built from the SID, not the descriptor
+     Windows renders.
+   - A namespace-replacement test assumed the rename succeeds. Windows refuses
+     it while the lock is held.
+   - A read-only directory test was defeated by the runner token's enabled
+     backup privileges (below).
+   - A waterfall test expected WebKit request timing that Windows does not
+     expose.
+2. **Run 38970933046, job 117208848160** (a7d9f2922). The browser HAR suite
+   passed. Three `pkg/api` archive tests failed with
+   `sync <dir>: Access is denied.`: two archive directory-sync helpers did not
+   tolerate Windows' refusal of `File.Sync` on a directory. All six `pkg/api`
+   directory syncs now flush through `winfs.SyncDir` (760731aef).
+3. **CodeQL** reported a new path-injection alert. It was the same `os.Lstat`
+   of `browser_har_dir` that `main` reports as alerts #309, #310 and #316,
+   moved into a helper. The calls are back where `main` has them, and Windows
+   pins identity separately (cc23bf40c).
+4. **Run 38980828584, job 117241050682** (cc23bf40c; runner image
+   `windows-2025-vs2026` 20261007.264.1). **The whole step passed**:
+   `winfs`, the browser package (27.7 s) and `pkg/api` (22.1 s), 283 HAR and
+   replay tests. Three subtests skipped:
+   - WebKit's waterfall comparison, by design (below).
+   - Two subtests of `TestHARArtifactOwnershipRetiresEntireRecordedCompletedBatch`,
+     which built Unix identities. That test now builds platform identities
+     (b10a9e6a4).
+
+The job then failed in its later native analytics step, which `main` fails
+too; that is PR #230's subject.
+
+### Done criteria in run 38980828584
+
+| Criterion | Tests | Result |
+| --- | --- | --- |
+| A HAR-enabled browser VUser publishes a scrubbed HAR into the run archive | `TestHARCaptureAlwaysPersistsScrubbedArtifact` (real Chromium), `TestLocalRunArchiveRetainsBrowserHARs`, `TestDistributedArchiveTransfersHARsWithReceipts` | passed |
+| A browser replay with `record_har` serves its native HAR from a private store | `TestBrowserReplayActualNativeHAR` (real Chromium), `TestReplayHARRootIsPrivateOnWindows` | passed |
+| A killed generator's generation is reclaimed after restart | `TestHAROwnershipReclaimsKilledGenerations` (write, scrub, publish), `TestHAROwnershipReclaimsKilledNativeRecording` (Chromium and WebKit drivers killed with `TerminateProcess`) | passed |
+| `.apexload-har-work`'s DACL allows only the user and SYSTEM | `TestWindowsHARWorkingDirectoryDACLIsPrivate` | passed |
+| Unsafe ACLs, UNC paths, delete-pending names and identity across rename | `TestWindowsHARRefusesUnsafeWorkingDirectoryACLs` (inherited Users, Everyone, NULL DACL, foreign owner), `TestWindowsHARRefusesUNCDirectory`, `TestWindowsHARRemoveCountsDeletePendingAsRemoved`, `TestHARPersistentIdentityAtIsStableAcrossRename` | passed |
+| 200-cycle create, publish and retire stress | `TestWindowsHARCreatePublishRetireStress` (12.5 s) | passed |
+| The full HAR ownership suite passes on Windows, Linux and macOS | Windows: this step. Linux: CI's race lane (the browser package under `-race`) and the three `pkg/api` shards. macOS: local runs of the browser package's HAR tests and `pkg/api`'s HAR, archive and replay tests | Windows passed except the two since-ported subtests, which pass in repeat run 1. macOS passed. Linux passed on b10a9e6a4 (CI run 38986149051): race job 117260064411 ran 19,755 tests with no failures, including the browser package (2m 4s; its only skips are two env-gated benchmarks), and all three `pkg/api` shards passed |
+
+### What the runs showed about Windows
+
+- **Backup privileges.** The runner token has `SeBackupPrivilege` and
+  `SeRestorePrivilege` enabled. `os.Root` opens ask for backup intent, so this
+  process's own opens get past a DACL. The read-only directory test disables
+  both privileges for its duration, and the run logged that both had been
+  enabled.
+- **Rename of a locked directory.** Windows refuses to rename
+  `.apexload-har-work` while a handle to its `namespace.lock` is open
+  (`Access is denied.`). So the namespace-replacement attack the test simulates
+  cannot happen there, and the test now checks the refusal.
+- **WebKit timing.** Playwright's Windows WebKit exposes no request start, so
+  its request-wait phase reports `not_exposed`. Its native HAR still records
+  the server's timing: wait 301.6 ms and receive 202.6 ms against the
+  fixture's 300 ms and 200 ms.
+- **Token owner.** The runner's elevated token makes the user the owner of
+  what it creates (`TestWindowsHARAcceptsElevatedTokenOwner`).
+
+### Not shown on Windows
+
+- Behavior under on-access antivirus scanning: hosted runners run Defender
+  with real-time protection off.
+- Windows containers: the runner is not one. `TestWindowsHARHostIdentity`
+  shows only that the container check reads it as a non-container; the
+  disabled reclamation inside a container has not run.
+- ReFS volumes and SMB shares: only the UNC refusal runs against a real
+  path. `TestValidateVolume` checks the drive-type and filesystem policy with
+  synthetic values.
+
+### Repeat runs
+
+The Windows HAR step must pass three runs in a row on the final code
+(b10a9e6a4 and later). Each run is recorded here as it completes.
+
+| # | Run, job | Commit | HAR step |
+| --- | --- | --- | --- |
+| 1 | 38986149129, 117257968307 | b10a9e6a4 | passed: `winfs`, the browser package (40.1 s), `pkg/api` (39.0 s); 345 tests; the completed-batch subtests ran and passed; one skip, WebKit's waterfall comparison |
+
