@@ -24,6 +24,45 @@ func startRecordingSession(t *testing.T, engine string, server *httptest.Server)
 	return b
 }
 
+// Browser memory admission measures the Playwright driver's whole process
+// tree: the browser the driver launched is found under it, with resident
+// memory, on every platform's sampler.
+func TestBrowserMemoryUsageMeasuresTheDriverTree(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping browser integration test in -short mode")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	b := &Browser{}
+	if err := b.Init(ctx, map[string]any{"browser_engine": "chromium", "browser_headless": true}); err != nil {
+		requireBrowserRuntime(t, "chromium", err)
+	}
+	t.Cleanup(func() { _ = b.Teardown(context.Background()) })
+	driver := playwrightDriverPID()
+	if driver <= 0 {
+		t.Fatal("no Playwright driver is running")
+	}
+	samples, err := listProcessTreeSamples(ctx, driver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := processTreeRSS(samples, driver)
+	var driverRSS float64
+	for _, sample := range samples {
+		if sample.PID == driver {
+			driverRSS = sample.RSSKB
+		}
+	}
+	if driverRSS <= 0 || float64(tree) <= driverRSS*1024 {
+		t.Fatalf("the driver's tree (%d bytes, driver %.0f KiB, from %d listed processes) holds no browser process", tree, driverRSS, len(samples))
+	}
+	usage, err := measureBrowserMemoryUsage(ctx)
+	if err != nil || usage <= 0 {
+		t.Fatalf("browser memory usage %d %v", usage, err)
+	}
+	t.Logf("driver tree %d MiB (driver %.0f MiB); measured usage %d MiB", tree>>20, driverRSS/1024, usage>>20)
+}
+
 // A response that never finishes is buffered by the driver, never by the HAR
 // file; the memory watchdog closes the recording as an explicit resource-limit
 // failure, censors its document and gives back its reservation at close. The

@@ -543,7 +543,10 @@ func TestRuntimePauseCancellationStrippedTokenCannotMintNewAuthority(t *testing.
 			if cause == "hard-stop" {
 				g.beginTerminal(true)
 			} else {
-				<-ctx.Done()
+				// Wait on the lease's own context: a parent's Done closes
+				// before its children are cancelled, so the lease can still
+				// be live for a moment after ctx.Done().
+				<-action.Context().Done()
 			}
 			stripped := context.WithoutCancel(action.Context())
 			for _, kind := range []protocol.RuntimePauseActivity{protocol.RuntimePauseAction, protocol.RuntimePauseReceive, protocol.RuntimePauseCheckpoint} {
