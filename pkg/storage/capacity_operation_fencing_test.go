@@ -14,6 +14,12 @@ func TestCapacityOperationFencesAttemptAndLeaseAndCommitsWarmSize(t *testing.T) 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
+	checkCapacityOperationFencesAttemptAndLease(t, store)
+}
+
+// checkCapacityOperationFencesAttemptAndLease runs against both SQL dialects.
+func checkCapacityOperationFencesAttemptAndLease(t *testing.T, store *SQLiteStore) {
+	t.Helper()
 	pool := &FleetPool{ID: "capacity-pool", Name: "capacity pool", Status: "active", DesiredSize: 2}
 	if err := store.SaveFleetPool(pool); err != nil {
 		t.Fatal(err)
@@ -104,6 +110,13 @@ func TestCapacityOperationRollsBackRequestWhenWarmPublicationIsInvalid(t *testin
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
+	checkCapacityOperationRollsBackInvalidWarmPublication(t, store)
+}
+
+// checkCapacityOperationRollsBackInvalidWarmPublication runs against both SQL
+// dialects.
+func checkCapacityOperationRollsBackInvalidWarmPublication(t *testing.T, store *SQLiteStore) {
+	t.Helper()
 	request := &ProvisioningRequest{ID: "invalid-warm", Revision: 1, AttemptToken: "attempt", Status: "provisioning", FleetPoolID: "pool"}
 	if err := store.SaveProvisioningRequest(request); err != nil {
 		t.Fatal(err)
