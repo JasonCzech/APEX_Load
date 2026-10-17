@@ -1,0 +1,19 @@
+{
+  "go_exit_code": 0,
+  "go_before_kib": 1800260,
+  "go_after_kib": 8,
+  "go_reclaimed_kib": 1800252,
+  "frontend": [
+    {
+      "path": "dashboard/node_modules/.vite",
+      "removed_kib": 0,
+      "absent": true
+    },
+    {
+      "path": "dashboard/node_modules/.vite-temp",
+      "removed_kib": 0,
+      "absent": true
+    }
+  ],
+  "stderr": ""
+}

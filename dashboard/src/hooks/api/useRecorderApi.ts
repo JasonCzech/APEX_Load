@@ -4,7 +4,7 @@ import { type RecordingProfile, type RecordingProfilesResponse } from '../../typ
 import { type RecorderImportResult } from '../../types/scriptImports'
 import { request } from '../apiClient'
 
-type RecorderRequestRecord = {
+export type RecorderRequestRecord = {
   seq: number
   timestamp: string
   method: string
@@ -32,7 +32,7 @@ type RecorderRequestRecord = {
   excluded?: boolean
 }
 
-type RecorderSession = {
+export type RecorderSession = {
   id: string
   name: string
   status: string

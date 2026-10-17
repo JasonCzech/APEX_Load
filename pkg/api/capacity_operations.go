@@ -40,6 +40,16 @@ func (s *Server) startAsyncCapacityProvisioning(w http.ResponseWriter, r *http.R
 	if pool == nil || request == nil || strings.TrimSpace(pool.ExecutionTargetID) == "" || s.executionTargetStore == nil {
 		return false, nil
 	}
+	owner, err := s.capacityOperationOwner(request, r.Context())
+	if err != nil {
+		return true, err
+	}
+	launched := false
+	defer func() {
+		if !launched {
+			owner.cancel()
+		}
+	}()
 	target, err := s.executionTargetStore.GetExecutionTarget(pool.ExecutionTargetID)
 	if err != nil {
 		return true, fmt.Errorf("load execution target: %w", err)
@@ -60,7 +70,6 @@ func (s *Server) startAsyncCapacityProvisioning(w http.ResponseWriter, r *http.R
 		timeout = 5 * time.Minute
 	}
 	deadline := now.Add(timeout)
-	cleanupDeadline := now.Add(generatorMaxInstanceLifetime())
 	// Operator provisioning requests manage durable warm capacity. Ephemeral
 	// burst instances are owned by a run and are launched only by
 	// ensureRunCapacity, which gives them an archive-safe teardown owner.
@@ -76,9 +85,11 @@ func (s *Server) startAsyncCapacityProvisioning(w http.ResponseWriter, r *http.R
 		return true, fmt.Errorf("capacity preflight failed: %w", err)
 	}
 
-	intentStore, ok := s.store.(storage.CapacityInstanceIntentStore)
-	if plan.Launch > 0 && !ok {
-		return true, errors.New("storage backend does not support durable capacity instance intents")
+	if plan.Launch > 0 {
+		return true, fmt.Errorf("%w: this target only supports run-owned burst instances; operator provisioning requires durable warm capacity", compute.ErrUnsupportedOperation)
+	}
+	if !owner.current() {
+		return true, errNotExecutionLeader
 	}
 	request.Status = "provisioning"
 	request.ExecutionTargetID = target.ID
@@ -88,31 +99,17 @@ func (s *Server) startAsyncCapacityProvisioning(w http.ResponseWriter, r *http.R
 	if err := s.createProvisioningRequest(request); err != nil {
 		return true, err
 	}
-	intents := make([]*storage.CapacityInstanceIntent, 0, plan.Launch)
-	for index := 0; index < plan.Launch; index++ {
-		intent := &storage.CapacityInstanceIntent{
-			ID: uuid.NewString(), ExecutionTargetID: target.ID, FleetPoolID: pool.ID,
-			ProvisioningRequestID: request.ID, ClientToken: fmt.Sprintf("%s-%d", request.ID, index),
-			LaunchNonce: uuid.NewString(), GeneratorID: uuid.NewString(), CleanupDeadline: &cleanupDeadline,
-		}
-		if err := intentStore.CreateCapacityInstanceIntent(intent); err != nil {
-			s.markCapacityIntentsTerminated(intents, storage.CapacityArchiveTerminal)
-			s.failAsyncCapacityOperation(request.ID, "persist launch intent: "+err.Error())
-			return true, err
-		}
-		intents = append(intents, intent)
-	}
 	s.saveProvisioningEvent(request.ID, "requested", "asynchronous capacity operation accepted", now)
-	s.saveProvisioningEvent(request.ID, "preflight", fmt.Sprintf("planned %d standing and %d burst generator(s)", plan.Standing, plan.Launch), now)
-	if !s.beginFleetProvisioningAttempt(request.ID, request.AttemptToken) {
+	s.saveProvisioningEvent(request.ID, "preflight", fmt.Sprintf("planned %d standing generator(s)", plan.Standing), now)
+	if !s.beginCapacityOperation(owner) {
+		owner.cancel()
 		return true, errors.New("provisioning request already has an active reconcile attempt")
 	}
-	if !s.launchBackground(func() { s.reconcileAsyncCapacityOperation(request.ID, pool, backend, capacityRequest, intents) }) {
-		s.endFleetProvisioningAttempt(request.ID, request.AttemptToken)
-		s.markCapacityIntentsTerminated(intents, storage.CapacityArchiveTerminal)
-		s.failAsyncCapacityOperation(request.ID, "controller is stopping and cannot start a capacity operation")
+	if !s.launchBackground(func() { s.reconcileAsyncCapacityOperation(owner, pool, backend, capacityRequest, nil) }) {
+		owner.finish()
 		return true, errors.New("controller is stopping and cannot start a capacity operation")
 	}
+	launched = true
 	s.recordAuditEvent(r, "provisioning.request.create", "success", "provisioning_request", request.ID, request.ProjectID, map[string]any{
 		"fleet_pool_id": request.FleetPoolID, "execution_target_id": target.ID, "desired_count": request.DesiredCount, "status": request.Status,
 	})
@@ -121,152 +118,112 @@ func (s *Server) startAsyncCapacityProvisioning(w http.ResponseWriter, r *http.R
 	return true, nil
 }
 
-func (s *Server) reconcileAsyncCapacityOperation(requestID string, pool *storage.FleetPool, backend compute.Backend, base compute.CapacityRequest, intents []*storage.CapacityInstanceIntent) {
-	// endFleetProvisioningAttempt is token-fenced. Read the current token now so
-	// a later retry cannot be removed by this worker's deferred cleanup.
-	current, err := s.store.GetProvisioningRequest(requestID)
-	if err != nil {
+func (s *Server) reconcileAsyncCapacityOperation(owner *capacityOperationOwner, pool *storage.FleetPool, backend compute.Backend, base compute.CapacityRequest, intents []*storage.CapacityInstanceIntent) {
+	defer owner.finish()
+	attachCapacityLaunchIntents(&base, intents)
+	ctx, cancel := context.WithDeadline(owner.ctx, base.Deadline)
+	defer cancel()
+	if _, err := owner.request(); err != nil {
 		return
 	}
-	attemptToken := current.AttemptToken
-	defer s.endFleetProvisioningAttempt(requestID, attemptToken)
-	base.LaunchIntents = make([]compute.LaunchIntent, 0, len(intents))
-	for _, intent := range intents {
-		base.LaunchIntents = append(base.LaunchIntents, compute.LaunchIntent{ClientToken: intent.ClientToken, GeneratorID: intent.GeneratorID, LaunchNonce: intent.LaunchNonce})
-	}
-	ctx, cancel := context.WithDeadline(context.Background(), base.Deadline)
-	defer cancel()
-	var transientCordons []string
 	var drainingRunIDs []string
 	if pool != nil && base.Desired < pool.DesiredSize {
-		transientCordons, err = s.cordonFleetPoolForScaleDown(pool.ID)
+		var err error
+		err = s.cordonFleetPoolForScaleDown(pool.ID, owner)
 		if err != nil {
-			s.failAsyncCapacityOperation(requestID, "prepare scale-down drain: "+err.Error())
+			if request, loadErr := owner.request(); loadErr == nil {
+				now := time.Now().UTC()
+				revision := request.Revision
+				request.Revision++
+				request.Status, request.LastError, request.CompletedAt = "failed", "prepare scale-down drain: "+err.Error(), &now
+				_ = owner.transition(request, revision, owner.attemptToken)
+			}
 			return
 		}
 		drainingRunIDs = s.startedFleetPoolRunIDs(pool.ID)
-		defer s.restoreFleetPoolAfterScaleDown(transientCordons)
 	}
 	for {
-		if s.runner != nil && !s.runner.holdsExecutionLeadership() {
-			return
-		}
-		request, err := s.store.GetProvisioningRequest(requestID)
-		if err != nil || request.Status == "cancelled" || request.Status == "cancelling" {
+		request, err := owner.request()
+		if err != nil || !canCancelProvisioningStatus(request.Status) {
 			return
 		}
 		base.ProviderOperationIDs = decodeProviderOperationIDs(request.ProviderOperationID)
-		if ctx.Err() != nil || (!base.Deadline.IsZero() && !time.Now().UTC().Before(base.Deadline)) {
-			now := time.Now().UTC()
-			cancelCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			cancelErr := backend.Cancel(cancelCtx, base)
-			cancel()
-			if cancelErr == nil {
-				s.markCapacityIntentsTerminated(intents, storage.CapacityArchiveTerminal)
-			}
-			expectedRevision, expectedToken := request.Revision, request.AttemptToken
-			request.Revision++
-			request.Status = "timed_out"
-			request.LastError = "capacity readiness deadline exceeded"
-			if cancelErr != nil {
-				request.Status = "failed"
-				request.LastError += "; provider cleanup failed: " + cancelErr.Error()
-			}
-			request.CompletedAt = &now
-			if transitionErr := s.transitionProvisioningRequest(request, expectedRevision, expectedToken); transitionErr != nil {
-				slog.Error("persist timed-out capacity operation", "request_id", requestID, "error", transitionErr)
-			}
-			s.saveProvisioningEvent(request.ID, request.Status, request.LastError, now)
-			return
-		}
 		observation := compute.Observation{}
 		var reconcileErr error
-		if (len(drainingRunIDs) > 0 && !s.fleetPoolRunsArchiveTerminal(drainingRunIDs)) || (pool != nil && base.Desired < pool.DesiredSize && s.poolHasPodReservations(pool.ID)) {
+		if ctx.Err() != nil {
+			reconcileErr = errors.New("capacity readiness deadline exceeded")
+		} else if (len(drainingRunIDs) > 0 && !s.fleetPoolRunsArchiveTerminal(drainingRunIDs)) || (pool != nil && base.Desired < pool.DesiredSize && s.poolHasPodReservations(pool.ID)) {
 			observation = compute.Observation{
 				Requested: base.Desired, Draining: pool.DesiredSize - base.Desired,
 				RetryAfter: time.Second, Message: "waiting for active runs to drain before reducing provider capacity",
 			}
 		} else if ready, reason := s.capacitySweep.poolReady(base.FleetPoolID); !ready {
-			// A successor must finish its post-takeover sweep of this pool before
-			// any provider launch into it (capacityTakeoverSweep).
 			observation = compute.Observation{Requested: base.Desired, RetryAfter: 5 * time.Second, Message: reason}
 		} else {
 			observation, reconcileErr = backend.Reconcile(ctx, base)
 		}
-		observation = s.applyCapacityConnectivityReadiness(base, observation)
+		// Reconcile may ignore cancellation and return after takeover or retry.
+		// Do not publish its observations or undo a successor's provider work.
+		// Durable client tokens/nonces remain available for successor discovery.
+		latest, err := owner.request()
+		if err != nil || latest.Revision != request.Revision {
+			return
+		}
+		if reconcileErr == nil && ctx.Err() != nil {
+			reconcileErr = ctx.Err()
+		}
+		if reconcileErr == nil {
+			observation = s.applyCapacityConnectivityReadiness(base, observation, owner)
+		}
+		if _, err := owner.request(); err != nil {
+			return
+		}
 		now := time.Now().UTC()
-		expectedRevision, expectedToken := request.Revision, request.AttemptToken
+		expectedRevision := request.Revision
 		request.Revision++
 		request.ObservedCount, request.ReadyCount = observation.Observed, observation.Ready
 		request.PendingCount, request.DrainingCount, request.FailedCount = observation.Pending, observation.Draining, observation.Failed
 		if observation.ProviderOperationID != "" {
-			request.ProviderOperationID = encodeProviderOperationIDs(strings.Split(observation.ProviderOperationID, ","))
+			request.ProviderOperationID = encodeProviderOperationIDs(decodeProviderOperationIDs(observation.ProviderOperationID))
+			base.ProviderOperationIDs = decodeProviderOperationIDs(observation.ProviderOperationID)
 		}
-		// Persist provider identities before any terminal cleanup. A reconcile can
-		// return both an instance identity and an error; recording it first lets
-		// cancellation mark the exact intent terminated instead of losing the only
-		// durable link to a partially created resource.
-		s.updateCapacityIntentObservations(intents, observation.Instances)
+		s.updateCapacityIntentObservations(intents, observation.Instances, owner)
 		if reconcileErr != nil {
+			if _, err := owner.request(); err != nil {
+				return
+			}
 			request.LastError = reconcileErr.Error()
-			cleanupRequest := base
-			if providerIDs := decodeProviderOperationIDs(observation.ProviderOperationID); len(providerIDs) > 0 {
-				cleanupRequest.ProviderOperationIDs = providerIDs
-			}
-			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			cleanupErr := backend.Cancel(cleanupCtx, cleanupRequest)
+			// The readiness deadline can expire while we still own the operation.
+			// Cleanup has its own budget, but remains tied to the original epoch.
+			cleanupCtx, cleanupCancel := context.WithTimeout(owner.ctx, 30*time.Second)
+			cleanupErr := backend.Cancel(cleanupCtx, base)
 			cleanupCancel()
-			if cleanupErr == nil {
-				s.markCapacityIntentsTerminated(intents, storage.CapacityArchiveTerminal)
+			if _, err := owner.request(); err != nil {
+				return
 			}
-			if cleanupErr != nil {
+			if cleanupErr == nil {
+				s.markCapacityIntentsTerminated(intents, storage.CapacityArchiveTerminal, owner)
+			} else {
 				request.LastError += "; provider cleanup failed: " + cleanupErr.Error()
 			}
-			if ctx.Err() != nil || now.After(base.Deadline) {
+			request.Status, request.CompletedAt = "failed", &now
+			if ctx.Err() != nil || !now.Before(base.Deadline) {
 				request.Status = "timed_out"
-				request.CompletedAt = &now
-			} else {
-				request.Status = "failed"
-				request.CompletedAt = &now
 			}
 		} else if observation.Terminal {
-			request.Status = "success"
-			request.CompletedAt = &now
-			request.LastError = ""
+			request.Status, request.CompletedAt, request.LastError = "success", &now, ""
 		} else {
 			request.Status = "waiting_ready"
 		}
-		if err := s.transitionProvisioningRequest(request, expectedRevision, expectedToken); err != nil {
-			// Cancellation can race an in-flight provider request. If that request
-			// created capacity, use the returned provider identities to finish the
-			// cancellation instead of leaving an untracked billable resource.
-			latest, loadErr := s.store.GetProvisioningRequest(requestID)
-			if loadErr == nil && (latest.Status == "cancelling" || latest.Status == "cancelled") {
-				providerIDs := decodeProviderOperationIDs(observation.ProviderOperationID)
-				if len(providerIDs) == 0 {
-					providerIDs = decodeProviderOperationIDs(latest.ProviderOperationID)
-				}
-				if len(providerIDs) > 0 {
-					base.ProviderOperationIDs = providerIDs
-				}
-				cancelCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				cancelErr := backend.Cancel(cancelCtx, base)
-				cancel()
-				if cancelErr == nil {
-					s.markCapacityIntentsTerminated(intents, storage.CapacityArchiveTerminal)
-				}
-				if cancelErr != nil {
-					slog.Error("failed to cancel capacity created by an in-flight reconcile", "request_id", requestID, "error", cancelErr)
-				}
-			}
+		if err := owner.transition(request, expectedRevision, owner.attemptToken); err != nil {
+			return
+		}
+		if _, err := owner.request(); err != nil {
 			return
 		}
 		s.saveProvisioningEvent(request.ID, request.Status, firstNonEmpty(observation.Message, request.LastError, fmt.Sprintf("%d/%d generators ready", request.ReadyCount, request.DesiredCount)), now)
 		s.broadcastFleetEvent("provisioning_request_updated", map[string]any{"request_id": request.ID, "fleet_pool_id": request.FleetPoolID, "status": request.Status, "ready_count": request.ReadyCount, "desired_count": request.DesiredCount})
 		if request.CompletedAt != nil {
-			if request.Status == "success" && !isAutomaticRunCapacityRequest(request) {
-				_ = updateFleetPoolDesiredSize(s.store, request.FleetPoolID, request.DesiredCount)
-			}
 			return
 		}
 		wait := observation.RetryAfter
@@ -277,7 +234,6 @@ func (s *Server) reconcileAsyncCapacityOperation(requestID string, pool *storage
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			continue
 		case <-timer.C:
 		}
 	}
@@ -314,67 +270,33 @@ func (s *Server) poolHasPodReservations(poolID string) bool {
 	return false
 }
 
-func (s *Server) failAsyncCapacityOperation(requestID, message string) {
-	request, err := s.store.GetProvisioningRequest(requestID)
-	if err != nil {
-		return
-	}
-	now := time.Now().UTC()
-	expectedRevision, expectedToken := request.Revision, request.AttemptToken
-	request.Status = "failed"
-	request.LastError = message
-	request.CompletedAt = &now
-	request.Revision++
-	if err := s.transitionProvisioningRequest(request, expectedRevision, expectedToken); err != nil {
-		slog.Error("persist failed capacity operation", "request_id", requestID, "error", err)
-		return
-	}
-	s.saveProvisioningEvent(requestID, "failure", message, now)
-}
-
-func (s *Server) cordonFleetPoolForScaleDown(poolID string) ([]string, error) {
+func (s *Server) cordonFleetPoolForScaleDown(poolID string, owner *capacityOperationOwner) error {
 	if s == nil || s.store == nil || s.runner == nil {
-		return nil, errors.New("live generator drain coordination is unavailable")
+		return errors.New("live generator drain coordination is unavailable")
 	}
-	backend, ok := s.runner.getExecutionBackend().(identityDrainableExecutionBackend)
+	backend, ok := s.runner.getExecutionBackend().(capacityDrainBackend)
 	if !ok {
-		return nil, errors.New("execution backend does not support generator drain coordination")
+		return errors.New("execution backend does not support owned capacity drains")
 	}
 	members, err := s.store.ListFleetPoolMembers(poolID)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	cordoned := make([]string, 0, len(members))
+	generatorIDs := make([]string, 0, len(members))
 	for _, member := range members {
-		if member == nil || strings.TrimSpace(member.GeneratorID) == "" || backend.GeneratorTargetForID(member.GeneratorID) == "" {
-			continue
-		}
-		metadata, metadataErr := s.store.GetGeneratorMetadata(member.GeneratorID)
-		if metadataErr == nil && metadata != nil && metadata.Cordoned {
-			continue // preserve an operator-owned cordon
-		}
-		if _, err := backend.SetGeneratorDrainStateByID(member.GeneratorID, "cordoned"); err != nil {
-			s.restoreFleetPoolAfterScaleDown(cordoned)
-			return nil, err
-		}
-		cordoned = append(cordoned, member.GeneratorID)
-	}
-	return cordoned, nil
-}
-
-func (s *Server) restoreFleetPoolAfterScaleDown(generatorIDs []string) {
-	if s == nil || s.runner == nil {
-		return
-	}
-	backend, ok := s.runner.getExecutionBackend().(identityDrainableExecutionBackend)
-	if !ok {
-		return
-	}
-	for _, generatorID := range generatorIDs {
-		if _, err := backend.SetGeneratorDrainStateByID(generatorID, "active"); err != nil {
-			slog.Warn("restore generator after capacity scale-down", "generator_id", generatorID, "error", err)
+		if member != nil && strings.TrimSpace(member.GeneratorID) != "" && backend.GeneratorTargetForID(member.GeneratorID) != "" {
+			generatorIDs = append(generatorIDs, member.GeneratorID)
 		}
 	}
+	// Serialize with attempt transfer and cleanup. A slow membership lookup
+	// must not install an old attempt's overlay after cancellation or recovery.
+	s.fleetProvisioningMu.Lock()
+	defer s.fleetProvisioningMu.Unlock()
+	if _, err := owner.request(); err != nil {
+		return err
+	}
+	backend.setCapacityDrain(owner.ctx, owner.requestID, owner.attemptToken, generatorIDs)
+	return nil
 }
 
 func (s *Server) startedFleetPoolRunIDs(poolID string) []string {
@@ -475,6 +397,21 @@ func (s *Server) restartAsyncCapacityProvisioning(request *storage.ProvisioningR
 	if request == nil || pool == nil || request.ExecutionTargetID == "" || s.capacityBackends == nil {
 		return false, nil
 	}
+	expectedRevision, expectedToken := request.Revision, request.AttemptToken
+	next := *request
+	request = &next
+	request.Revision++
+	request.AttemptToken = uuid.NewString()
+	owner, err := s.capacityOperationOwner(request)
+	if err != nil {
+		return true, err
+	}
+	launched := false
+	defer func() {
+		if !launched {
+			owner.cancel()
+		}
+	}()
 	backend, target, err := s.capacityBackends.BackendForPool(context.Background(), pool)
 	if err != nil {
 		return true, err
@@ -492,19 +429,10 @@ func (s *Server) restartAsyncCapacityProvisioning(request *storage.ProvisioningR
 		timeout = 5 * time.Minute
 	}
 	deadline := now.Add(timeout)
-	expectedRevision, expectedToken := request.Revision, request.AttemptToken
 	request.Status = "provisioning"
 	request.CompletedAt = nil
 	request.LastError = ""
 	request.DeadlineAt = &deadline
-	request.Revision++
-	request.AttemptToken = uuid.NewString()
-	if err := s.transitionProvisioningRequest(request, expectedRevision, expectedToken); err != nil {
-		return true, err
-	}
-	if !s.beginFleetProvisioningAttempt(request.ID, request.AttemptToken) {
-		return true, errors.New("provisioning request already has an active reconcile attempt")
-	}
 	base := s.asyncCapacityRequest(pool, request)
 	if !isAutomaticRunCapacityRequest(request) {
 		applyStandingRollback(&base, pool, backend.Describe())
@@ -517,14 +445,30 @@ func (s *Server) restartAsyncCapacityProvisioning(request *storage.ProvisioningR
 		}
 	}
 	attachCapacityLaunchIntents(&base, intents)
-	if !s.launchBackground(func() { s.reconcileAsyncCapacityOperation(request.ID, pool, backend, base, intents) }) {
-		s.endFleetProvisioningAttempt(request.ID, request.AttemptToken)
+	plan, err := backend.Plan(context.Background(), base)
+	if err != nil {
+		return true, err
+	}
+	if plan.Launch > 0 {
+		return true, fmt.Errorf("%w: operator provisioning requires durable warm capacity; use a run for burst instances", compute.ErrUnsupportedOperation)
+	}
+	if !s.beginCapacityOperation(owner) {
+		owner.cancel()
+		return true, errors.New("provisioning request already has an active reconcile attempt")
+	}
+	if err := owner.transition(request, expectedRevision, expectedToken); err != nil {
+		owner.finish()
+		return true, err
+	}
+	if !s.launchBackground(func() { s.reconcileAsyncCapacityOperation(owner, pool, backend, base, intents) }) {
+		owner.finish()
 		return true, errors.New("controller is stopping and cannot resume the capacity operation")
 	}
+	launched = true
 	return true, nil
 }
 
-func (s *Server) updateCapacityIntentObservations(intents []*storage.CapacityInstanceIntent, instances []compute.Instance) {
+func (s *Server) updateCapacityIntentObservations(intents []*storage.CapacityInstanceIntent, instances []compute.Instance, owners ...*capacityOperationOwner) {
 	store, ok := s.store.(storage.CapacityInstanceIntentStore)
 	if !ok {
 		return
@@ -558,7 +502,7 @@ func (s *Server) updateCapacityIntentObservations(intents []*storage.CapacityIns
 		} else {
 			intent.State = storage.CapacityIntentLaunching
 		}
-		updated, err := store.UpdateCapacityInstanceIntentIfUnchanged(intent, expected)
+		updated, err := updateOwnedCapacityIntent(store, intent, expected, owners)
 		if err != nil || !updated {
 			slog.Warn("failed to persist capacity instance observation", "intent_id", intent.ID, "error", err)
 		}
@@ -600,6 +544,19 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if s == nil {
+		return nil
+	}
+	request := &storage.ProvisioningRequest{ID: uuid.NewString(), Revision: 1, AttemptToken: uuid.NewString(), Status: "provisioning"}
+	owner, err := s.capacityOperationOwner(request, ctx)
+	if err != nil {
+		return err
+	}
+	defer owner.finish()
+	operationCtx, operationCancel := context.WithCancel(ctx)
+	stopEpochCancellation := context.AfterFunc(owner.ctx, operationCancel)
+	defer func() { stopEpochCancellation(); operationCancel() }()
+	ctx = operationCtx
 	policy := compute.CapacityPolicy{}
 	if test != nil && test.preparationID != "" {
 		prepared, ok := s.store.(storage.PreparationStore)
@@ -663,12 +620,10 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 	now := time.Now().UTC()
 	deadline := now.Add(timeout)
 	cleanupDeadline := now.Add(generatorMaxInstanceLifetime())
-	request := &storage.ProvisioningRequest{
-		ID: uuid.NewString(), Revision: 1, AttemptToken: uuid.NewString(), FleetPoolID: pool.ID,
-		ProjectID: test.ProjectID, Status: "provisioning", DesiredCount: desired,
-		ExecutionTargetID: target.ID, IdempotencyKey: "run-" + test.ID, DeadlineAt: &deadline,
-		Reason: automaticRunCapacityReasonPrefix + test.ID,
-	}
+	request.FleetPoolID, request.ProjectID = pool.ID, test.ProjectID
+	request.DesiredCount, request.ExecutionTargetID = desired, target.ID
+	request.IdempotencyKey, request.DeadlineAt = "run-"+test.ID, &deadline
+	request.Reason = automaticRunCapacityReasonPrefix + test.ID
 	base := s.asyncCapacityRequest(pool, request)
 	// Automatic runs maintain the configured warm floor. A failed cold start
 	// cleans up burst instances but must not tear the warm service back down.
@@ -686,8 +641,14 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 	if err != nil {
 		return err
 	}
+	if !owner.current() {
+		return errNotExecutionLeader
+	}
 	if err := s.createProvisioningRequest(request); err != nil {
 		return err
+	}
+	if !s.beginCapacityOperation(owner) {
+		return errNotExecutionLeader
 	}
 	provisioned := false
 	readyCommitted := false
@@ -696,27 +657,28 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 		if provisioned {
 			return
 		}
-		cancelCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		latest, loadErr := owner.request()
+		if loadErr != nil {
+			return // the successor owns uncertain resources and durable intents
+		}
+		ownUnpublishedSuccess := readyCommitted && latest.Status == "success" && latest.Revision == request.Revision
+		if !canCancelProvisioningStatus(latest.Status) && !ownUnpublishedSuccess {
+			return
+		}
+		cancelCtx, cancel := context.WithTimeout(owner.ctx, 30*time.Second)
 		cancelErr := backend.Cancel(cancelCtx, base)
 		cancel()
+		if _, err := owner.request(); err != nil {
+			return
+		}
 		if cancelErr != nil {
 			slog.Error("failed to cancel partial run capacity", "test_id", test.ID, "request_id", request.ID, "error", cancelErr)
 		} else {
-			s.markCapacityIntentsTerminated(intents, storage.CapacityArchiveTerminal)
+			s.markCapacityIntentsTerminated(intents, storage.CapacityArchiveTerminal, owner)
 		}
 
-		latest, loadErr := s.store.GetProvisioningRequest(request.ID)
-		if loadErr != nil {
-			slog.Error("load failed run capacity request", "test_id", test.ID, "request_id", request.ID, "error", loadErr)
-			return
-		}
-		// Readiness can commit just before cancellation wins the in-memory
-		// publication fence. Roll back only this attempt's exact success write;
-		// never overwrite a later operator or worker transition.
-		ownUnpublishedSuccess := readyCommitted && latest.Status == "success" &&
-			latest.Revision == request.Revision && latest.AttemptToken == request.AttemptToken
-		if !canCancelProvisioningStatus(latest.Status) && !ownUnpublishedSuccess {
-			return // an operator cancellation or another fenced worker won
+		if request.ProviderOperationID != "" {
+			latest.ProviderOperationID = request.ProviderOperationID
 		}
 		now := time.Now().UTC()
 		expectedRevision, expectedToken := latest.Revision, latest.AttemptToken
@@ -735,7 +697,7 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 			latest.LastError = firstNonEmpty(latest.LastError, "run capacity failed") + "; provider cleanup failed: " + cancelErr.Error()
 		}
 		latest.Revision++
-		if err := s.transitionProvisioningRequest(latest, expectedRevision, expectedToken); err != nil {
+		if err := owner.transition(latest, expectedRevision, expectedToken); err != nil {
 			slog.Warn("persist failed run capacity request", "test_id", test.ID, "request_id", request.ID, "error", err)
 		}
 	}()
@@ -772,19 +734,25 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 			return fmt.Errorf("run capacity request changed concurrently to %s", latest.Status)
 		}
 		observation, err := backend.Reconcile(ctx, base)
+		if _, ownershipErr := owner.request(); ownershipErr != nil {
+			return ownershipErr
+		}
 		if observation.ProviderOperationID != "" {
 			base.ProviderOperationIDs = strings.Split(observation.ProviderOperationID, ",")
 			request.ProviderOperationID = encodeProviderOperationIDs(base.ProviderOperationIDs)
 		}
-		s.updateCapacityIntentObservations(intents, observation.Instances)
+		s.updateCapacityIntentObservations(intents, observation.Instances, owner)
 		if err != nil {
 			return err
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		observation = s.applyCapacityConnectivityReadiness(base, observation)
+		observation = s.applyCapacityConnectivityReadiness(base, observation, owner)
 		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if _, err := owner.request(); err != nil {
 			return err
 		}
 		request.ObservedCount, request.ReadyCount, request.PendingCount = observation.Observed, observation.Ready, observation.Pending
@@ -808,7 +776,7 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 			expectedRevision, expectedToken := request.Revision, request.AttemptToken
 			request.Status, request.CompletedAt = "success", &now
 			request.Revision++
-			if err := s.transitionProvisioningRequest(request, expectedRevision, expectedToken); err != nil {
+			if err := owner.transition(request, expectedRevision, expectedToken); err != nil {
 				return err
 			}
 			readyCommitted = true
@@ -823,6 +791,10 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 				if err := ctx.Err(); err != nil {
 					s.runner.mu.Unlock()
 					return err
+				}
+				if !owner.locallyCurrent() {
+					s.runner.mu.Unlock()
+					return errNotExecutionLeader
 				}
 				current := s.runner.tests[test.ID]
 				if (current != nil && current != test) || isTerminalTestStatus(test.Status) || test.Status == "STOPPING" || (test.executionCtx != nil && test.executionCtx.Err() != nil) {
@@ -845,7 +817,7 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 		expectedRevision, expectedToken := request.Revision, request.AttemptToken
 		request.Status = "waiting_ready"
 		request.Revision++
-		if err := s.transitionProvisioningRequest(request, expectedRevision, expectedToken); err != nil {
+		if err := owner.transition(request, expectedRevision, expectedToken); err != nil {
 			return err
 		}
 		wait := observation.RetryAfter
@@ -866,7 +838,7 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 // mistaken for usable generator capacity. Reverse targets require an
 // authenticated outbound session; direct targets require a successful gRPC
 // heartbeat to the provider-observed address.
-func (s *Server) applyCapacityConnectivityReadiness(request compute.CapacityRequest, observation compute.Observation) compute.Observation {
+func (s *Server) applyCapacityConnectivityReadiness(request compute.CapacityRequest, observation compute.Observation, owners ...*capacityOperationOwner) compute.Observation {
 	if s == nil || strings.TrimSpace(request.ConnectivityMode) == "" {
 		return observation
 	}
@@ -875,8 +847,11 @@ func (s *Server) applyCapacityConnectivityReadiness(request compute.CapacityRequ
 	message := "waiting for authenticated reverse generator sessions"
 	if request.ConnectivityMode == storage.ConnectivityReverse {
 		for _, generatorID := range s.reverseCapacitySessionIDs(request) {
+			if !capacityOwnersCurrent(owners) {
+				return compute.Observation{}
+			}
 			if strings.TrimSpace(request.FleetPoolID) != "" {
-				if err := s.associateDynamicGenerator(generatorID, generatorrpc.ReverseTargetPrefix+generatorID, request.FleetPoolID, "", "ready"); err != nil {
+				if err := s.associateDynamicGenerator(generatorID, generatorrpc.ReverseTargetPrefix+generatorID, request.FleetPoolID, "", "ready", owners...); err != nil {
 					slog.Warn("associate reverse generator with capacity pool", "generator_id", generatorID, "pool_id", request.FleetPoolID, "error", err)
 					continue
 				}
@@ -884,7 +859,7 @@ func (s *Server) applyCapacityConnectivityReadiness(request compute.CapacityRequ
 			sessionReady++
 		}
 	} else if request.ConnectivityMode == storage.ConnectivityDirect {
-		sessionReady = s.directGeneratorHeartbeatCount(request, observation.Instances)
+		sessionReady = s.directGeneratorHeartbeatCount(request, observation.Instances, owners)
 		message = "waiting for direct generator heartbeats"
 	} else {
 		return observation
@@ -938,7 +913,7 @@ func (s *Server) reverseCapacitySessionIDs(request compute.CapacityRequest) []st
 	return eligible
 }
 
-func (s *Server) directGeneratorHeartbeatCount(request compute.CapacityRequest, instances []compute.Instance) int {
+func (s *Server) directGeneratorHeartbeatCount(request compute.CapacityRequest, instances []compute.Instance, owners []*capacityOperationOwner) int {
 	if s == nil || s.runner == nil {
 		return 0
 	}
@@ -970,7 +945,11 @@ func (s *Server) directGeneratorHeartbeatCount(request compute.CapacityRequest, 
 	if len(candidates) == 0 {
 		return 0
 	}
-	probeCtx, cancel := context.WithTimeout(context.Background(), heartbeatTimeout)
+	probeParent := context.Background()
+	if len(owners) > 0 {
+		probeParent = owners[0].ctx
+	}
+	probeCtx, cancel := context.WithTimeout(probeParent, heartbeatTimeout)
 	defer cancel()
 	jobs := make(chan compute.Instance, len(candidates))
 	results := make(chan bool, len(candidates))
@@ -985,12 +964,12 @@ func (s *Server) directGeneratorHeartbeatCount(request compute.CapacityRequest, 
 				}
 				load := backend.probeGeneratorLoad(probeCtx, instance.Address, client)
 				_ = client.Close()
-				if !load.HeartbeatOK {
+				if !load.HeartbeatOK || !capacityOwnersCurrent(owners) {
 					results <- false
 					continue
 				}
 				if strings.TrimSpace(request.FleetPoolID) != "" {
-					if err := s.associateDynamicGenerator(load.GeneratorID, instance.Address, request.FleetPoolID, instance.ProviderID, instance.State); err != nil {
+					if err := s.associateDynamicGenerator(load.GeneratorID, instance.Address, request.FleetPoolID, instance.ProviderID, instance.State, owners...); err != nil {
 						slog.Warn("associate direct generator with capacity pool", "generator_id", load.GeneratorID, "pool_id", request.FleetPoolID, "error", err)
 						results <- false
 						continue
@@ -1012,7 +991,7 @@ func (s *Server) directGeneratorHeartbeatCount(request compute.CapacityRequest, 
 	return ready
 }
 
-func (s *Server) associateDynamicGenerator(generatorID, target, poolID, providerID, providerStatus string) error {
+func (s *Server) associateDynamicGenerator(generatorID, target, poolID, providerID, providerStatus string, owners ...*capacityOperationOwner) error {
 	if s == nil || s.store == nil || strings.TrimSpace(generatorID) == "" || strings.TrimSpace(poolID) == "" {
 		return errors.New("generator identity and fleet pool are required for dynamic capacity membership")
 	}
@@ -1036,11 +1015,14 @@ func (s *Server) associateDynamicGenerator(generatorID, target, poolID, provider
 	if providerStatus != "" {
 		patch.ProviderStatus = &providerStatus
 	}
+	if len(owners) > 0 {
+		return owners[0].patchGeneratorMetadata(strings.TrimSpace(generatorID), patch)
+	}
 	_, err := patcher.PatchGeneratorMetadata(strings.TrimSpace(generatorID), patch)
 	return err
 }
 
-func (s *Server) markCapacityIntentsTerminated(intents []*storage.CapacityInstanceIntent, archiveState string) {
+func (s *Server) markCapacityIntentsTerminated(intents []*storage.CapacityInstanceIntent, archiveState string, owners ...*capacityOperationOwner) {
 	store, ok := s.store.(storage.CapacityInstanceIntentStore)
 	if !ok {
 		return
@@ -1049,20 +1031,29 @@ func (s *Server) markCapacityIntentsTerminated(intents []*storage.CapacityInstan
 		PatchGeneratorMetadata(string, storage.GeneratorMetadataPatch) (*storage.GeneratorMetadata, error)
 	})
 	for _, intent := range intents {
-		if intent == nil {
+		if intent == nil || (len(owners) > 0 && strings.TrimSpace(intent.ProviderID) == "") {
 			continue
 		}
 		expected := intent.UpdatedAt
 		intent.State = storage.CapacityIntentTerminated
 		intent.ArchiveState = archiveState
-		if updated, err := store.UpdateCapacityInstanceIntentIfUnchanged(intent, expected); err != nil || !updated {
+		if updated, err := updateOwnedCapacityIntent(store, intent, expected, owners); err != nil || !updated {
 			slog.Warn("persist terminated capacity intent", "intent_id", intent.ID, "error", err)
+			continue
+		}
+		if len(owners) > 0 && !owners[0].current() {
+			return
 		}
 		if patcher != nil && strings.TrimSpace(intent.GeneratorID) != "" {
 			status := "terminated"
-			if _, err := patcher.PatchGeneratorMetadata(intent.GeneratorID, storage.GeneratorMetadataPatch{
-				FleetPoolIDSet: true, FleetPoolID: nil, ProviderStatus: &status,
-			}); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			patch := storage.GeneratorMetadataPatch{FleetPoolIDSet: true, FleetPoolID: nil, ProviderStatus: &status}
+			var err error
+			if len(owners) > 0 {
+				err = owners[0].patchGeneratorMetadata(intent.GeneratorID, patch)
+			} else {
+				_, err = patcher.PatchGeneratorMetadata(intent.GeneratorID, patch)
+			}
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				slog.Warn("detach terminated dynamic generator", "generator_id", intent.GeneratorID, "error", err)
 			}
 		}

@@ -816,6 +816,7 @@ func (s *Server) beginFleetProvisioningAttempt(requestID, attemptToken string) b
 	if s.fleetProvisioningActive == nil {
 		s.fleetProvisioningActive = make(map[string]string)
 	}
+	s.expireCapacityOperationLocked(requestID)
 	if _, active := s.fleetProvisioningActive[requestID]; active {
 		return false
 	}
@@ -827,13 +828,18 @@ func (s *Server) endFleetProvisioningAttempt(requestID, attemptToken string) {
 	s.fleetProvisioningMu.Lock()
 	defer s.fleetProvisioningMu.Unlock()
 	if s.fleetProvisioningActive[requestID] == attemptToken {
+		if owner := s.fleetCapacityOwners[requestID]; owner != nil {
+			owner.cancel()
+		}
 		delete(s.fleetProvisioningActive, requestID)
+		delete(s.fleetCapacityOwners, requestID)
 	}
 }
 
 func (s *Server) fleetProvisioningAttemptActive(requestID string) bool {
 	s.fleetProvisioningMu.Lock()
 	defer s.fleetProvisioningMu.Unlock()
+	s.expireCapacityOperationLocked(requestID)
 	_, active := s.fleetProvisioningActive[requestID]
 	return active
 }
@@ -1153,6 +1159,9 @@ func (s *Server) handleCancelProvisioningRequest(w http.ResponseWriter, r *http.
 	if !s.requireExecutionLeader(w) {
 		return
 	}
+	operationCtx, operationCancel := s.runner.executionOperationContext(r.Context())
+	defer operationCancel()
+	r = r.WithContext(operationCtx)
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
@@ -1210,7 +1219,13 @@ func (s *Server) handleCancelProvisioningRequest(w http.ResponseWriter, r *http.
 	req.Status = "cancelling"
 	req.Revision++
 	req.AttemptToken = uuid.New().String()
-	if err := s.transitionProvisioningRequest(req, expectedRevision, expectedAttemptToken); err != nil {
+	owner, ownerErr := s.capacityOperationOwner(req, r.Context())
+	if ownerErr != nil {
+		writeError(w, http.StatusServiceUnavailable, ownerErr.Error())
+		return
+	}
+	defer owner.cancel()
+	if err := owner.transition(req, expectedRevision, expectedAttemptToken); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to cancel provisioning request")
 		return
 	}
@@ -1218,25 +1233,25 @@ func (s *Server) handleCancelProvisioningRequest(w http.ResponseWriter, r *http.
 	// ownership entry explicitly; its deferred cleanup cannot clear a newer token.
 	s.endFleetProvisioningAttempt(req.ID, expectedAttemptToken)
 	if isAsyncCapacity {
-		if cancelErr := asyncCancelBackend.Cancel(r.Context(), asyncCancelRequest); cancelErr != nil {
-			expectedRevision, expectedAttemptToken = req.Revision, req.AttemptToken
-			req.Status = "failed"
-			req.LastError = "provider cancellation failed: " + cancelErr.Error()
-			req.Revision++
-			req.CompletedAt = &now
-			_ = s.transitionProvisioningRequest(req, expectedRevision, expectedAttemptToken)
-			writeError(w, http.StatusBadGateway, req.LastError)
+		if !s.beginCapacityOperation(owner) {
+			writeError(w, http.StatusConflict, "capacity cancellation ownership changed")
 			return
 		}
-		s.markCapacityIntentsTerminated(asyncCancelIntents, storage.CapacityArchiveTerminal)
-	}
-	expectedRevision, expectedAttemptToken = req.Revision, req.AttemptToken
-	req.Status = "cancelled"
-	req.Revision++
-	req.CompletedAt = &now
-	if err := s.transitionProvisioningRequest(req, expectedRevision, expectedAttemptToken); err != nil {
-		writeError(w, http.StatusConflict, "capacity cancellation completed but the request state changed; the active leader will reconcile it")
-		return
+		defer owner.finish()
+		if err := s.cancelOwnedCapacityOperation(owner, asyncCancelBackend, asyncCancelRequest, asyncCancelIntents); err != nil {
+			writeError(w, http.StatusBadGateway, "capacity cancellation did not complete: "+err.Error())
+			return
+		}
+		req.Status = "cancelled"
+	} else {
+		expectedRevision, expectedAttemptToken = req.Revision, req.AttemptToken
+		req.Status = "cancelled"
+		req.Revision++
+		req.CompletedAt = &now
+		if err := owner.transition(req, expectedRevision, expectedAttemptToken); err != nil {
+			writeError(w, http.StatusConflict, "capacity cancellation completed but the request state changed; the active leader will reconcile it")
+			return
+		}
 	}
 	s.saveProvisioningEvent(req.ID, "cancelled", "provisioning request cancelled by operator", now)
 	s.recordAuditEvent(r, "provisioning.request.cancel", "success", "provisioning_request", req.ID, req.ProjectID, map[string]any{
@@ -1391,6 +1406,8 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 	if s.store == nil || s.runner == nil || !s.runner.holdsExecutionLeadership() {
 		return nil
 	}
+	ctx, cancel := s.runner.executionOperationContext(ctx)
+	defer cancel()
 	const pageSize = 250
 	for offset := 0; ; offset += pageSize {
 		requests, err := s.store.ListProvisioningRequests("", pageSize, offset)
@@ -1405,7 +1422,7 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 			if req != nil {
 				status = strings.ToLower(strings.TrimSpace(req.Status))
 			}
-			if req == nil || (status != "provisioning" && status != "waiting_ready") || !s.runner.holdsExecutionLeadership() {
+			if req == nil || (status != "provisioning" && status != "waiting_ready" && status != "cancelling") || !s.runner.holdsExecutionLeadership() {
 				continue
 			}
 			if s.fleetProvisioningAttemptActive(req.ID) {
@@ -1417,7 +1434,14 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 				continue
 			}
 			if req.ExecutionTargetID != "" && s.capacityBackends != nil {
-				backend, target, backendErr := s.capacityBackends.BackendForPool(ctx, pool)
+				var backend compute.Backend
+				var target *storage.ExecutionTarget
+				var backendErr error
+				if status == "cancelling" {
+					backend, target, backendErr = s.capacityBackendForMaintenance(ctx, pool)
+				} else {
+					backend, target, backendErr = s.capacityBackends.BackendForPool(ctx, pool)
+				}
 				if backendErr == nil && target.Kind != storage.ExecutionTargetKubernetes {
 					intents, intentErr := loadCapacityLaunchIntents(s.store, req.ID)
 					if intentErr != nil {
@@ -1427,11 +1451,16 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 					expectedRevision, expectedToken := req.Revision, req.AttemptToken
 					req.Revision++
 					req.AttemptToken = uuid.NewString()
-					if !s.beginFleetProvisioningAttempt(req.ID, req.AttemptToken) {
+					owner, err := s.capacityOperationOwner(req, ctx)
+					if err != nil {
+						return err
+					}
+					if !s.beginCapacityOperation(owner) {
+						owner.cancel()
 						continue
 					}
-					if err := s.transitionProvisioningRequest(req, expectedRevision, expectedToken); err != nil {
-						s.endFleetProvisioningAttempt(req.ID, req.AttemptToken)
+					if err := owner.transition(req, expectedRevision, expectedToken); err != nil {
+						owner.finish()
 						continue
 					}
 					base := s.asyncCapacityRequest(pool, req)
@@ -1446,8 +1475,17 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 					}
 					base.ConnectivityMode = target.ConnectivityMode
 					attachCapacityLaunchIntents(&base, intents)
-					if !s.launchBackground(func() { s.reconcileAsyncCapacityOperation(req.ID, pool, backend, base, intents) }) {
-						s.endFleetProvisioningAttempt(req.ID, req.AttemptToken)
+					if !s.launchBackground(func() {
+						if status == "cancelling" {
+							defer owner.finish()
+							if err := s.cancelOwnedCapacityOperation(owner, backend, base, intents); err != nil {
+								slog.Warn("resume capacity cancellation", "request_id", owner.requestID, "error", err)
+							}
+							return
+						}
+						s.reconcileAsyncCapacityOperation(owner, pool, backend, base, intents)
+					}) {
+						owner.finish()
 						return errors.New("controller is stopping and cannot recover capacity operations")
 					}
 					continue
@@ -1456,6 +1494,9 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 					slog.Warn("failed to resolve capacity backend during recovery", "request_id", req.ID, "error", backendErr)
 					continue
 				}
+			}
+			if status == "cancelling" {
+				continue
 			}
 			if s.fleetScaler == nil || !s.fleetScaler.CanProvision() {
 				continue

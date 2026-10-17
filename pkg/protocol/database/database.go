@@ -758,7 +758,7 @@ func evaluateDatabaseAssertions(assertions []protocol.Assertion, result *protoco
 		return ""
 	}
 	var payload map[string]any
-	_ = json.Unmarshal([]byte(body), &payload)
+	_ = jsonextract.DecodeExact([]byte(body), &payload)
 	for _, assertion := range assertions {
 		switch strings.ToLower(strings.TrimSpace(assertion.Type)) {
 		case "row_count":
@@ -804,7 +804,7 @@ func evaluateDatabaseAssertions(assertions []protocol.Assertion, result *protoco
 
 func decodeDatabasePayload(body string) (map[string]any, error) {
 	var payload map[string]any
-	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+	if err := jsonextract.DecodeExact([]byte(body), &payload); err != nil {
 		return nil, fmt.Errorf("decode database response: %w", err)
 	}
 	return payload, nil

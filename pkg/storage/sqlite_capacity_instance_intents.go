@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"database/sql"
 	"errors"
 	"strings"
 	"time"
@@ -69,11 +70,56 @@ func (s *SQLiteStore) CreateCapacityInstanceIntent(intent *CapacityInstanceInten
 }
 
 func (s *SQLiteStore) UpdateCapacityInstanceIntentIfUnchanged(intent *CapacityInstanceIntent, expected time.Time) (bool, error) {
+	return updateCapacityInstanceIntentWithExecutor(s.db, intent, expected)
+}
+
+// UpdateCapacityInstanceIntentIfAttemptAndLeaseTermHeld fences observations and
+// cleanup against both operator retries/cancellation and controller takeover.
+// An empty lease name retains single-controller semantics.
+func (s *SQLiteStore) UpdateCapacityInstanceIntentIfAttemptAndLeaseTermHeld(intent *CapacityInstanceIntent, expected time.Time, requestID, attemptToken, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
+	var tx *storeTx
+	var err error
+	if leaseName != "" {
+		tx, err = s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
+	} else {
+		tx, err = s.db.Begin()
+	}
+	if err != nil || tx == nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	held, err := capacityAttemptHeldInTransaction(tx, s.db.dialect, requestID, attemptToken)
+	if err != nil || !held {
+		return false, err
+	}
+	if intent == nil || intent.ProvisioningRequestID != requestID {
+		return false, nil
+	}
+	var storedRequestID string
+	if err := tx.QueryRow(`SELECT COALESCE(provisioning_request_id, '') FROM capacity_instance_intents WHERE id=?`, intent.ID).Scan(&storedRequestID); err != nil {
+		return false, err
+	}
+	if storedRequestID != requestID {
+		return false, nil
+	}
+	changed, err := updateCapacityInstanceIntentWithExecutor(tx, intent, expected)
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return changed, nil
+}
+
+func updateCapacityInstanceIntentWithExecutor(exec interface {
+	Exec(string, ...any) (sql.Result, error)
+}, intent *CapacityInstanceIntent, expected time.Time) (bool, error) {
 	if intent == nil || expected.IsZero() {
 		return false, errors.New("capacity intent and expected updated_at are required")
 	}
 	intent.UpdatedAt = time.Now().UTC()
-	result, err := s.db.Exec(`UPDATE capacity_instance_intents SET provider_id=?, state=?, archive_state=?,
+	result, err := exec.Exec(`UPDATE capacity_instance_intents SET provider_id=?, state=?, archive_state=?,
 		cleanup_deadline=?, updated_at=? WHERE id=? AND updated_at=?`, nullableString(intent.ProviderID),
 		intent.State, intent.ArchiveState, intent.CleanupDeadline, intent.UpdatedAt, intent.ID, expected)
 	if err != nil {
@@ -113,4 +159,19 @@ func (s *SQLiteStore) ListCapacityInstanceIntents(executionTargetID, provisionin
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func capacityAttemptHeldInTransaction(tx *storeTx, dialect storeDialect, requestID, attemptToken string) (bool, error) {
+	if requestID == "" || attemptToken == "" {
+		return false, errors.New("capacity request and attempt token are required")
+	}
+	query := `SELECT COALESCE(attempt_token, '') FROM provisioning_requests WHERE id=?`
+	if dialect == storeDialectPostgres {
+		query += ` FOR UPDATE`
+	}
+	var token string
+	if err := tx.QueryRow(query, requestID).Scan(&token); err != nil {
+		return false, err
+	}
+	return token == attemptToken, nil
 }

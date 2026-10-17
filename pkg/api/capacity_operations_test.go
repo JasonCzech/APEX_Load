@@ -104,31 +104,6 @@ type fakeCapacityResolver struct {
 	target  *storage.ExecutionTarget
 }
 
-type fakeIdentityDrainBackend struct {
-	targets map[string]string
-	states  map[string]string
-}
-
-func (*fakeIdentityDrainBackend) Run(*TestRunner, *ManagedTest) {}
-func (b *fakeIdentityDrainBackend) SetGeneratorDrainStateByID(generatorID, state string) (string, error) {
-	if b.targets[generatorID] == "" {
-		return "", errors.New("generator is not connected")
-	}
-	b.states[generatorID] = state
-	return b.targets[generatorID], nil
-}
-func (b *fakeIdentityDrainBackend) GeneratorTargetForID(generatorID string) string {
-	return b.targets[generatorID]
-}
-func (b *fakeIdentityDrainBackend) GeneratorIDForTarget(target string) string {
-	for id, candidate := range b.targets {
-		if candidate == target {
-			return id
-		}
-	}
-	return ""
-}
-
 func (r fakeCapacityResolver) BackendForPool(context.Context, *storage.FleetPool) (compute.Backend, *storage.ExecutionTarget, error) {
 	return r.backend, r.target, nil
 }
@@ -186,7 +161,11 @@ func TestReconcileAsyncCapacityPersistsReadyProviderInstance(t *testing.T) {
 	}}
 	server := &Server{store: store, fleetProvisioningActive: map[string]string{request.ID: request.AttemptToken}}
 	base := server.asyncCapacityRequest(pool, request)
-	server.reconcileAsyncCapacityOperation(request.ID, pool, backend, base, []*storage.CapacityInstanceIntent{intent})
+	owner, ownerErr := server.capacityOperationOwner(request)
+	if ownerErr != nil {
+		t.Fatal(ownerErr)
+	}
+	server.reconcileAsyncCapacityOperation(owner, pool, backend, base, []*storage.CapacityInstanceIntent{intent})
 
 	got, err := store.GetProvisioningRequest(request.ID)
 	if err != nil {
@@ -219,7 +198,11 @@ func TestReconcileAsyncCapacityDeadlineCancelsInsteadOfSpinning(t *testing.T) {
 	backend := &fakeCapacityBackend{}
 	server := &Server{store: store, fleetProvisioningActive: map[string]string{request.ID: request.AttemptToken}}
 	base := server.asyncCapacityRequest(pool, request)
-	server.reconcileAsyncCapacityOperation(request.ID, pool, backend, base, nil)
+	owner, ownerErr := server.capacityOperationOwner(request)
+	if ownerErr != nil {
+		t.Fatal(ownerErr)
+	}
+	server.reconcileAsyncCapacityOperation(owner, pool, backend, base, nil)
 
 	got, err := store.GetProvisioningRequest(request.ID)
 	if err != nil {
@@ -389,40 +372,24 @@ func TestEnsureRunCapacityCancelsKnownPartialCapacityOnReconcileFailure(t *testi
 }
 
 func TestScaleDownCordonsConnectedPoolButPreservesOperatorCordon(t *testing.T) {
-	server, genericStore := newTimeslotServer(t)
-	store := genericStore.(*storage.SQLiteStore)
-	pool := &storage.FleetPool{ID: "pool-drain", Name: "drain", Status: "active"}
-	saveCapacityTestPool(t, store, pool)
-	poolID := pool.ID
-	for _, metadata := range []*storage.GeneratorMetadata{
-		{GeneratorID: "gen-auto", Target: "10.0.0.1:9090", FleetPoolID: &poolID},
-		{GeneratorID: "gen-operator", Target: "10.0.0.2:9090", FleetPoolID: &poolID, Cordoned: true},
-	} {
-		if err := store.SaveGeneratorMetadata(metadata); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := store.SaveFleetPoolMembers(pool.ID, []*storage.FleetPoolMember{
-		{ID: "member-auto", PoolID: pool.ID, GeneratorID: "gen-auto", Target: "10.0.0.1:9090"},
-		{ID: "member-operator", PoolID: pool.ID, GeneratorID: "gen-operator", Target: "10.0.0.2:9090"},
-	}); err != nil {
+	server, _, pool, request, backend := newScaleDownCapacityFixture(t, false)
+	if _, err := backend.SetGeneratorDrainStateByID("gen-operator", "cordoned"); err != nil {
 		t.Fatal(err)
 	}
-	backend := &fakeIdentityDrainBackend{targets: map[string]string{"gen-auto": "10.0.0.1:9090", "gen-operator": "10.0.0.2:9090"}, states: map[string]string{}}
-	server.runner.setExecutionBackend(backend)
-	cordoned, err := server.cordonFleetPoolForScaleDown(pool.ID)
+	owner, err := server.capacityOperationOwner(request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cordoned) != 1 || cordoned[0] != "gen-auto" || backend.states["gen-auto"] != "cordoned" {
-		t.Fatalf("transient cordons = %v states=%v", cordoned, backend.states)
+	defer owner.finish()
+	if err := server.cordonFleetPoolForScaleDown(pool.ID, owner); err != nil {
+		t.Fatal(err)
 	}
-	if _, changed := backend.states["gen-operator"]; changed {
-		t.Fatal("operator-owned cordon was modified")
+	if backend.GeneratorDrainStateByID("gen-auto") != "cordoned" || backend.GeneratorOperatorDrainStateByID("gen-auto") != "active" {
+		t.Fatal("missing transient capacity cordon")
 	}
-	server.restoreFleetPoolAfterScaleDown(cordoned)
-	if backend.states["gen-auto"] != "active" {
-		t.Fatalf("restored state = %q, want active", backend.states["gen-auto"])
+	server.restoreFleetPoolAfterScaleDown(owner)
+	if backend.GeneratorDrainStateByID("gen-auto") != "active" || backend.GeneratorDrainStateByID("gen-operator") != "cordoned" {
+		t.Fatal("capacity cleanup did not preserve operator intent")
 	}
 }
 
@@ -537,6 +504,31 @@ func TestCancelAsyncCapacityFencesWorkerAndCallsProvider(t *testing.T) {
 	}
 	if server.fleetProvisioningAttemptActive(request.ID) {
 		t.Fatal("cancelled request retained the old active-attempt fence")
+	}
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case message := <-server.hub.broadcast:
+			var event struct {
+				Event string `json:"event"`
+				Data  struct {
+					Status string `json:"status"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(message.payload, &event); err != nil {
+				t.Fatal(err)
+			}
+			if event.Event != "provisioning_request_cancelled" {
+				continue
+			}
+			if event.Data.Status != "cancelled" {
+				t.Fatalf("cancelled event status=%q", event.Data.Status)
+			}
+			return
+		case <-timer.C:
+			t.Fatal("missing capacity cancellation event")
+		}
 	}
 }
 

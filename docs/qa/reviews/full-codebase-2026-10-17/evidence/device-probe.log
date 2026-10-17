@@ -1,0 +1,48 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run src/components/full-review-device-probe.test.tsx -t fullreview --maxWorkers=1
+
+
+ RUN  v5.0.3 /Users/jasonczech/.codex/worktrees/monthly-code-review/Project_Stormrunner/dashboard
+
+ ❯ src/components/full-review-device-probe.test.tsx (3 tests | 1 failed | 2 skipped) 37ms
+   ❯ DeviceCapturePanel (3)
+     × fullreview retry retains exact attested payload 37ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/full-review-device-probe.test.tsx > DeviceCapturePanel > fullreview retry retains exact attested payload
+AssertionError: expected [ Array(1) ] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+@@ -10,11 +10,11 @@
+      ],
+      "folder_id": "f1",
+      "metadata": {
+        "import": {
+          "preserved": {
+-           "server_import_attestation_v1": "issued-1",
++           "server_import_attestation_v1": "issued-2",
+          },
+          "source": "browser_recording_har",
+        },
+      },
+      "name": "iPad",
+
+ ❯ src/components/full-review-device-probe.test.tsx:117:28
+    115|     expect(second).toMatchObject({ folder_id: 'f1', source_profile: 'b…
+    116|     expect(second.operation_id).toBe(first.operation_id)
+    117|     expect(second.scripts).toEqual(first.scripts)
+       |                            ^
+    118|     expect(onImported).toHaveBeenCalledWith({ scripts: [{ id: 's1', na…
+    119|     expect(button('Saved').disabled).toBe(true)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 skipped (3)
+   Start at  10:14:00
+   Duration  431ms (environment 58%, transform 21%, tests 10%, import 9%, setup 1%)

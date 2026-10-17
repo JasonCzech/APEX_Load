@@ -600,6 +600,34 @@ func (s *SQLiteStore) SaveGeneratorMetadata(metadata *GeneratorMetadata) error {
 // Concurrent PATCH requests therefore merge instead of restoring one another's
 // fields from stale read-modify-write snapshots.
 func (s *SQLiteStore) PatchGeneratorMetadata(generatorID string, patch GeneratorMetadataPatch) (*GeneratorMetadata, error) {
+	return s.patchGeneratorMetadata(generatorID, patch, nil)
+}
+
+// PatchGeneratorMetadataIfCapacityAttemptHeld keeps membership changes in the
+// same transaction as the original attempt and execution-term ownership check.
+func (s *SQLiteStore) PatchGeneratorMetadataIfCapacityAttemptHeld(generatorID string, patch GeneratorMetadataPatch, requestID, attemptToken, leaseName, leaseOwnerID string, leaseGeneration uint64) (*GeneratorMetadata, error) {
+	return s.patchGeneratorMetadata(generatorID, patch, func(tx *storeTx) error {
+		if leaseName != "" {
+			held, err := schedulerLeaseTermHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID, leaseGeneration)
+			if err != nil {
+				return err
+			}
+			if !held {
+				return errors.New("capacity execution term changed")
+			}
+		}
+		held, err := capacityAttemptHeldInTransaction(tx, s.db.dialect, requestID, attemptToken)
+		if err != nil {
+			return err
+		}
+		if !held {
+			return errors.New("capacity operation changed concurrently")
+		}
+		return nil
+	})
+}
+
+func (s *SQLiteStore) patchGeneratorMetadata(generatorID string, patch GeneratorMetadataPatch, checkOwner func(*storeTx) error) (*GeneratorMetadata, error) {
 	generatorID = strings.TrimSpace(generatorID)
 	if generatorID == "" {
 		return nil, errors.New("generator id is required")
@@ -631,6 +659,11 @@ func (s *SQLiteStore) PatchGeneratorMetadata(generatorID string, patch Generator
 		return nil, err
 	}
 	defer tx.Rollback()
+	if checkOwner != nil {
+		if err := checkOwner(tx); err != nil {
+			return nil, err
+		}
+	}
 	if patch.FleetPoolIDSet && patch.FleetPoolID != nil {
 		// Take the pool row's write lock in the same transaction as the metadata
 		// upsert. A concurrent pool deletion will therefore either detach this row
@@ -906,6 +939,45 @@ func (s *SQLiteStore) CreateProvisioningRequestIfAbsent(req *ProvisioningRequest
 }
 
 func (s *SQLiteStore) TransitionProvisioningRequest(req *ProvisioningRequest, expectedRevision int, expectedAttemptToken string) (bool, error) {
+	return transitionProvisioningRequestWithExecutor(s.db, req, expectedRevision, expectedAttemptToken)
+}
+
+// CommitCapacityOperation atomically publishes an attempt's state and, on warm
+// success, its desired pool size. An empty lease name is for single-controller
+// deployments; HA callers retain the exact launch-time durable term.
+func (s *SQLiteStore) CommitCapacityOperation(req *ProvisioningRequest, expectedRevision int, expectedAttemptToken, leaseName, leaseOwnerID string, leaseGeneration uint64, commitWarmSize bool) (bool, error) {
+	var tx *storeTx
+	var err error
+	if leaseName != "" {
+		tx, err = s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
+	} else {
+		tx, err = s.db.Begin()
+	}
+	if err != nil || tx == nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	changed, err := transitionProvisioningRequestWithExecutor(tx, req, expectedRevision, expectedAttemptToken)
+	if err != nil {
+		return false, err
+	}
+	if changed && commitWarmSize {
+		if req.Status != "success" {
+			return false, errors.New("warm capacity requires a successful operation")
+		}
+		if _, err := tx.Exec(`UPDATE fleet_pools SET desired_size=?, updated_at=? WHERE id=?`, req.DesiredCount, req.UpdatedAt, req.FleetPoolID); err != nil {
+			return false, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return changed, nil
+}
+
+func transitionProvisioningRequestWithExecutor(exec interface {
+	Exec(string, ...any) (sql.Result, error)
+}, req *ProvisioningRequest, expectedRevision int, expectedAttemptToken string) (bool, error) {
 	if req == nil {
 		return false, fmt.Errorf("provisioning request is required")
 	}
@@ -913,7 +985,7 @@ func (s *SQLiteStore) TransitionProvisioningRequest(req *ProvisioningRequest, ex
 		return false, fmt.Errorf("provisioning request revision must advance by one")
 	}
 	req.UpdatedAt = time.Now()
-	result, err := s.db.Exec(`UPDATE provisioning_requests SET revision=?, attempt_token=?, fleet_pool_id=?, project_id=?, status=?, desired_count=?,
+	result, err := exec.Exec(`UPDATE provisioning_requests SET revision=?, attempt_token=?, fleet_pool_id=?, project_id=?, status=?, desired_count=?,
 		execution_target_id=?, provider_operation_id=?, idempotency_key=?, observed_count=?, ready_count=?, pending_count=?,
 		draining_count=?, failed_count=?, deadline_at=?, last_error=?, reason=?, requested_by_subject=?, updated_at=?, completed_at=?
 		WHERE id=? AND COALESCE(revision, 1)=? AND COALESCE(attempt_token, '')=?`,

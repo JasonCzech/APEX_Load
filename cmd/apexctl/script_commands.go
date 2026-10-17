@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 )
 
 type scriptArgs struct {
@@ -31,9 +32,11 @@ type scriptValidationResult struct {
 }
 
 type scriptExplainResult struct {
-	Name           string   `json:"name"`
-	Protocol       string   `json:"protocol"`
-	BaseURL        string   `json:"base_url,omitempty"`
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
+	BaseURL  string `json:"base_url,omitempty"`
+	// Actions retains the count of root definitions in the main actions phase.
+	// Checks include every phase, branch, and embedded request definition.
 	Actions        int      `json:"actions"`
 	Assertions     int      `json:"assertions"`
 	Extractors     int      `json:"extractors"`
@@ -141,9 +144,20 @@ func explainScriptFile(path string) (scriptExplainResult, error) {
 	}
 	assertions := 0
 	extractors := 0
-	for _, action := range script.Actions {
-		assertions += len(action.Assertions)
-		extractors += len(action.Extractors)
+	if err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		if ref.Action != nil {
+			assertions += len(ref.Action.Assertions)
+			extractors += len(ref.Action.Extractors)
+		} else {
+			// ParseFile retains embedded request fields as JSON-shaped arrays.
+			requestAssertions, _ := ref.Request["assertions"].([]any)
+			requestExtractors, _ := ref.Request["extractors"].([]any)
+			assertions += len(requestAssertions)
+			extractors += len(requestExtractors)
+		}
+		return nil
+	}); err != nil {
+		return scriptExplainResult{}, fmt.Errorf("count script checks: %w", err)
 	}
 	result := scriptExplainResult{
 		Name:           script.Name,
@@ -156,7 +170,7 @@ func explainScriptFile(path string) (scriptExplainResult, error) {
 		GoalConfigured: script.GoalConfig != nil,
 		GeneratedBy:    script.GeneratedBy,
 		GeneratedFrom:  script.GeneratedFrom,
-		Summary:        fmt.Sprintf("%s is a %s script with %d action%s, %d assertion%s, and %d extractor%s.", script.Name, script.Protocol, len(script.Actions), plural(len(script.Actions)), assertions, plural(assertions), extractors, plural(extractors)),
+		Summary:        fmt.Sprintf("%s is a %s script with %d top-level action%s, %d assertion%s, and %d extractor%s across all phases and nested requests.", script.Name, script.Protocol, len(script.Actions), plural(len(script.Actions)), assertions, plural(assertions), extractors, plural(extractors)),
 	}
 	if len(script.DataSources) == 0 {
 		result.NextActions = append(result.NextActions, "Add data sources if this flow needs per-user or per-iteration variation.")

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { API_ORIGIN, ApiError } from '../hooks/apiClient'
 import type { BrowserRecorderBridgeConnection } from '../hooks/api/browserRecorderBridge'
 import {
   attestDeviceCaptureImport,
@@ -29,6 +30,24 @@ interface DeviceCapturePanelProps {
   // The recording profile selected in Recording Studio: the agent has no
   // project store, so the capture takes it along.
   recordingProfile?: RecordingProfile
+}
+
+interface DeviceCaptureSaveOperation {
+  preview: RecorderImportResult
+  scope: string
+  projectId?: string
+  request: CommitGenericImportBatchRequest
+  uncertain: boolean
+}
+
+// A receipt is replayed before draft validation. After an uncertain response,
+// only this definite rejection permits a fresh conversion; other conflicts
+// must retry the original payload, even after its expiry time.
+function draftWasRejected(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409 && (
+    error.code === 'import_draft_attestation_invalid'
+    || /^imported script \d+ (?:draft is invalid or expired|is missing its server capability); run the conversion again$/i.test(error.message)
+  )
 }
 
 function hostList(value: string): string[] {
@@ -63,9 +82,30 @@ export default function DeviceCapturePanel({
   const [saved, setSaved] = useState<StoredScript[] | null>(null)
   // A running capture's last refresh failed: the agent may have stopped.
   const [agentSilent, setAgentSilent] = useState(false)
-  // The save's batch id is kept across a retry of the same preview, so a
-  // save whose response was lost does not store the scripts twice.
-  const saveOperation = useRef<{ preview: RecorderImportResult; id: string } | null>(null)
+  // Keep the complete attested request, not only its ID. Tokens are part of
+  // the server's idempotency digest and cannot be reissued for a retry.
+  const saveOperation = useRef<DeviceCaptureSaveOperation | null>(null)
+  const [pendingSave, setPendingSave] = useState<DeviceCaptureSaveOperation | null>(null)
+  const [needsConversion, setNeedsConversion] = useState(false)
+  const busyRef = useRef(false)
+  const scope = JSON.stringify([projectId, connection.origin, connection.session_id, connection.token])
+  const saveScope = JSON.stringify([projectId, API_ORIGIN])
+  const saveScopeRef = useRef(saveScope)
+  saveScopeRef.current = saveScope
+  const scopeRef = useRef({ key: scope })
+  if (scopeRef.current.key !== scope) scopeRef.current = { key: scope }
+  const previousScope = useRef(scope)
+  useEffect(() => {
+    if (previousScope.current === scope) return
+    previousScope.current = scope
+    if (!saveOperation.current) {
+      setPreview(null)
+      setSaved(null)
+      setNeedsConversion(false)
+      setMessage(null)
+    }
+  }, [scope])
+  const saveScopeMatches = !pendingSave || pendingSave.scope === saveScope
 
   const refresh = useCallback(async () => {
     const state = await api.getState()
@@ -114,6 +154,8 @@ export default function DeviceCapturePanel({
   }, [api, setupURL])
 
   const run = async (action: () => Promise<void>, failure: string) => {
+    if (busyRef.current) return
+    busyRef.current = true
     setBusy(true)
     setMessage(null)
     try {
@@ -121,21 +163,25 @@ export default function DeviceCapturePanel({
     } catch (error) {
       setMessage({ text: getErrorMessage(error, failure), tone: 'error' })
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }
 
   const start = () => run(async () => {
+    if (saveOperation.current) throw new Error('Retry the pending save before starting another capture')
+    const startedScope = scopeRef.current
     const res = await api.start({
       name: name.trim() || 'Device capture',
       address,
       include_hosts: hostList(includeHosts),
       ...(recordingProfile ? { recording_profile: recordingProfile } : {}),
     })
+    if (scopeRef.current !== startedScope) return
     setCapture(res.capture)
     setPreview(null)
     setSaved(null)
-    saveOperation.current = null
+    setNeedsConversion(false)
   }, 'The device capture did not start')
 
   const stop = () => run(async () => {
@@ -146,28 +192,69 @@ export default function DeviceCapturePanel({
 
   const convert = () => run(async () => {
     if (!capture) return
+    if (saveOperation.current) throw new Error('Retry the pending save before converting again')
+    const startedScope = scopeRef.current
+    const converted = await api.previewConversion(capture.session_id, capture.name)
+    if (scopeRef.current !== startedScope) return
     setSaved(null)
-    setPreview(await api.previewConversion(capture.session_id, capture.name))
-    saveOperation.current = null
+    setPreview(converted)
+    setNeedsConversion(false)
   }, 'The capture did not convert')
 
   const save = () => run(async () => {
-    if (!preview) return
-    const scripts = preview.scripts?.length ? preview.scripts : preview.script ? [preview.script] : []
-    if (scripts.length === 0) throw new Error('The conversion produced no script to save')
-    const attested = await attestDeviceCaptureImport(scripts, projectId)
-    const remote = attested.scripts?.length ? attested.scripts : attested.script ? [attested.script] : []
-    if (remote.length !== scripts.length) throw new Error('The controller did not accept every converted script')
-    if (saveOperation.current?.preview !== preview) {
-      saveOperation.current = { preview, id: `device-capture-${createReplaySessionId()}` }
+    if (!preview || needsConversion) return
+    const startedScope = scopeRef.current
+    let operation = saveOperation.current
+    if (operation && (operation.scope !== saveScopeRef.current || operation.preview !== preview)) {
+      throw new Error('Return to the original project to retry the pending save')
     }
-    const response = await commitGenericImportBatch({
-      scripts: remote,
-      folder_id: remote[0]?.folder_id ?? folderId ?? null,
-      operation_id: saveOperation.current.id,
-      source_profile: 'browser_recorder',
-    })
+    if (!operation) {
+      const scripts = preview.scripts?.length ? preview.scripts : preview.script ? [preview.script] : []
+      if (scripts.length === 0) throw new Error('The conversion produced no script to save')
+      const attested = await attestDeviceCaptureImport(scripts, projectId)
+      if (scopeRef.current !== startedScope) return
+      const remote = attested.scripts?.length ? attested.scripts : attested.script ? [attested.script] : []
+      if (remote.length !== scripts.length) throw new Error('The controller did not accept every converted script')
+      operation = {
+        preview, scope: saveScope, projectId, uncertain: false,
+        request: JSON.parse(JSON.stringify({
+          scripts: remote, folder_id: remote[0]?.folder_id ?? folderId ?? null,
+          operation_id: `device-capture-${createReplaySessionId()}`, source_profile: 'browser_recorder',
+        })) as CommitGenericImportBatchRequest,
+      }
+      saveOperation.current = operation
+      setPendingSave(operation)
+    }
+    let response: CommitGenericImportBatchResponse
+    try {
+      response = await commitGenericImportBatch(operation.request)
+    } catch (error) {
+      if (draftWasRejected(error)) {
+        saveOperation.current = null
+        setPendingSave(null)
+        setNeedsConversion(true)
+        throw new Error('The controller rejected this expired or invalid draft. Convert to script again before saving.')
+      }
+      // A first definitive validation refusal has no earlier accepted request
+      // to reconcile. After response loss, even a later folder error may precede
+      // receipt replay, so it cannot justify replacing the original operation.
+      if (!operation.uncertain && error instanceof ApiError && [400, 403, 404, 422].includes(error.status)) {
+        saveOperation.current = null
+        setPendingSave(null)
+        setNeedsConversion(true)
+        throw new Error(`${error.message}. Correct the save destination or capture, then convert to script again.`)
+      }
+      operation.uncertain = true
+      throw error
+    }
     saveOperation.current = null
+    setPendingSave(null)
+    if (saveScopeRef.current !== operation.scope) {
+      setPreview(null)
+      setSaved(null)
+      setMessage({ text: `The pending capture was saved in project ${operation.projectId || 'default'}.`, tone: 'success' })
+      return
+    }
     setSaved(response.scripts)
     onImported?.({ scripts: response.scripts })
     setMessage({
@@ -221,6 +308,14 @@ export default function DeviceCapturePanel({
 
       {message && <div className={`rec-feedback ${message.tone}`} role={message.tone === 'error' ? 'alert' : 'status'}>{message.text}</div>}
 
+      {pendingSave && !busy && (
+        <p className="rec-feedback" role="status">
+          {saveScopeMatches
+            ? 'The previous save has not been confirmed. Retry it before converting again or starting another capture; the original project and folder will be used.'
+            : `A save is pending in project ${pendingSave.projectId || 'default'}. Return to that project to retry it.`}
+        </p>
+      )}
+
       {!recording && (
         <div className="rec-start-form">
           <label className="rec-form-row">
@@ -251,7 +346,7 @@ export default function DeviceCapturePanel({
               Records and converts with the recording profile <strong>{recordingProfile.name}</strong>.
             </p>
           )}
-          <button type="button" className="btn btn-primary" onClick={() => void start()} disabled={busy || !address}>
+          <button type="button" className="btn btn-primary" onClick={() => void start()} disabled={busy || !!pendingSave || !address}>
             Start device capture
           </button>
         </div>
@@ -315,7 +410,7 @@ export default function DeviceCapturePanel({
             </ul>
           )}
           <div className="rec-result-actions">
-            <button type="button" className="btn btn-primary" onClick={() => void convert()} disabled={busy || capture.request_count === 0}>
+            <button type="button" className="btn btn-primary" onClick={() => void convert()} disabled={busy || !!pendingSave || capture.request_count === 0}>
               Convert to script
             </button>
             <button type="button" className="btn btn-secondary" onClick={() => void exportHAR()} disabled={busy}>
@@ -362,7 +457,7 @@ export default function DeviceCapturePanel({
               )}
             </div>
           )}
-          <button type="button" className="btn btn-primary" onClick={() => void save()} disabled={busy || !!saved}>
+          <button type="button" className="btn btn-primary" onClick={() => void save()} disabled={busy || !!saved || needsConversion || !saveScopeMatches}>
             {saved ? 'Saved' : 'Save to script library'}
           </button>
         </div>

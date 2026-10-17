@@ -1,3 +1,5 @@
+import { useRecordingRequestSelection, type RecordingRequestUpdate } from "./useRecordingRequestSelection";
+import type { RecorderRequestRecord as RecordedRequest, RecorderSession as RecordingSession } from "../hooks/api/useRecorderApi";
 import { confirmAction } from './ux/confirmAction'
 import {
   useState,
@@ -91,58 +93,6 @@ import { isNoReusableCorrelationNote } from "./importIssueWorkspaceModel";
 import { requirementNeedsSecretBinding } from "./secretBindingUtils";
 import type { RecordingProfile } from "../types/recordingProfiles";
 import { formatDateTime } from "../utils/dateTime";
-
-interface RecordedRequest {
-  seq: number;
-  timestamp: string;
-  method: string;
-  url: string;
-  scheme?: string;
-  path: string;
-  query_string?: string;
-  host: string;
-  status_code: number;
-  response_time_ms: number;
-  content_type: string;
-  body: string;
-  body_encoding?: string;
-  body_size_bytes?: number;
-  body_truncated?: boolean;
-  response_body_encoding?: string;
-  response_body_size_bytes?: number;
-  response_body_truncated?: boolean;
-  think_time_ms: number;
-  is_static: boolean;
-  resource_type?: string;
-  step_name?: string;
-  transaction_name?: string;
-  note?: string;
-  excluded?: boolean;
-}
-
-interface RecordingSession {
-  id: string;
-  name: string;
-  status: string;
-  started_at: string;
-  stopped_at?: string;
-  base_url?: string;
-  requests?: RecordedRequest[];
-  request_count?: number;
-  last_seq?: number;
-  // Requests the proxy refused for their target (a private address) and the
-  // most recent such host; the browser got a 403 and nothing was recorded.
-  rejected_requests?: number;
-  last_rejected_host?: string;
-  // Transactions the tester marked while recording that are still open.
-  open_transactions?: string[];
-  filters: {
-    exclude_static: boolean;
-    exclude_hosts?: string[];
-    include_hosts?: string[];
-    capture_cookies?: boolean;
-  };
-}
 
 type RecentRecording =
   | { kind: "browser"; session: BrowserRecorderSession; at: string }
@@ -742,10 +692,10 @@ export default function RecordingStudio({
   const [feedbackType, setFeedbackType] = useState<"success" | "error">(
     "success",
   );
-  const [selectedSession, setSelectedSession] =
-    useState<RecordingSession | null>(null);
-  const [selectedRequest, setSelectedRequest] =
-    useState<RecordedRequest | null>(null);
+  const {
+    selectedSession, selectedRequest, requestDraft, setRequestDraft,
+    selectSession, selectRequest, clearSelection, beginRequestUpdate, acceptRequestUpdate, isRequestUpdateCurrent, isRequestUpdating, finishRequestUpdate,
+  } = useRecordingRequestSelection(JSON.stringify([activeProject?.id, api.browserRecorderRequestScope]));
   const requestTableRef = useRef<HTMLDivElement | null>(null);
   const selectedRequests = selectedSession?.requests || [];
   const virtualizeSelectedRequests = selectedRequests.length > 100;
@@ -763,13 +713,6 @@ export default function RecordingStudio({
   const selectedRequestPaddingBottom = selectedRequestVirtualRows.length > 0
     ? Math.max(0, selectedRequestVirtualizer.getTotalSize() - selectedRequestVirtualRows[selectedRequestVirtualRows.length - 1].end)
     : 0;
-  const [requestDraft, setRequestDraft] = useState({
-    step_name: "",
-    transaction_name: "",
-    note: "",
-    think_time_ms: 0,
-    excluded: false,
-  });
   const [showSetup, setShowSetup] = useState(false);
   const [parameterizeInputs, setParameterizeInputs] = useState(false);
   const [browserAvailability, setBrowserAvailability] =
@@ -1520,8 +1463,7 @@ export default function RecordingStudio({
     }
     setSessions([]);
     setActiveSession(null);
-    setSelectedSession(null);
-    setSelectedRequest(null);
+    clearSelection();
     setBrowserSessions([]);
     setBrowserPanelSessionId(null);
     setStorageStates([]);
@@ -1564,6 +1506,7 @@ export default function RecordingStudio({
   }, [
     activeProject?.id,
     recorderRequestScope,
+    clearSelection,
     advanceConvertedReviewGeneration,
     advanceSalesforceReviewGeneration,
     resetConvertTask,
@@ -1584,17 +1527,6 @@ export default function RecordingStudio({
     },
     [],
   );
-
-  useEffect(() => {
-    if (!selectedRequest) return;
-    setRequestDraft({
-      step_name: selectedRequest.step_name || "",
-      transaction_name: selectedRequest.transaction_name || "",
-      note: selectedRequest.note || "",
-      think_time_ms: selectedRequest.think_time_ms || 0,
-      excluded: !!selectedRequest.excluded,
-    });
-  }, [selectedRequest]);
 
   // Load device presets once for the launcher.
   useEffect(() => {
@@ -2023,64 +1955,46 @@ export default function RecordingStudio({
     }
   };
 
-  const replaceRequest = (sessionId: string, updated: RecordedRequest) => {
+  const replaceRequest = (update: RecordingRequestUpdate, updated: RecordedRequest, excludedOnly = false) => {
+    if (!acceptRequestUpdate(update, updated, excludedOnly)) return false;
     const apply = (session: RecordingSession | null) => {
-      if (!session || session.id !== sessionId) return session;
-      if (!session.requests) return session;
+      if (!session || session.id !== update.sessionId || !session.requests) return session;
       return {
         ...session,
-        requests: session.requests.map((req) =>
-          req.seq === updated.seq ? updated : req,
-        ),
+        requests: session.requests.map((req) => req.seq === updated.seq ? updated : req),
       };
     };
-    setSelectedSession(apply);
     setActiveSession(apply);
     setSessions((prev) => prev.map((session) => apply(session) || session));
-    setSelectedRequest((current) =>
-      current?.seq === updated.seq ? updated : current,
-    );
+    return true;
   };
 
-  const handleSelectSession = async (session: RecordingSession) => {
-    if (selectedSession?.id === session.id) {
-      setSelectedSession(null);
-      setSelectedRequest(null);
-      return;
-    }
-    setSelectedRequest(null);
-    if (session.requests && session.requests.length > 0) {
-      setSelectedSession(session);
-      return;
-    }
-    try {
-      const full = await api.getRecording(session.id, {
-        includeRequests: true,
-      });
-      if (!isCurrentProject()) return;
-      setSelectedSession({ ...full, requests: full.requests || [] });
-    } catch {
-      if (isCurrentProject()) setSelectedSession(session);
-    }
-  };
+  const handleSelectSession = (session: RecordingSession) =>
+    selectSession(session, (id) => api.getRecording(id, { includeRequests: true }));
 
   const handleToggleRequestExcluded = async (
     session: RecordingSession,
     req: RecordedRequest,
   ) => {
+    const update = beginRequestUpdate(session.id, req.seq);
+    if (!update) return;
     try {
       const updated = await api.updateRecordedRequest(session.id, req.seq, {
         excluded: !req.excluded,
       });
       if (!isCurrentProject()) return;
-      replaceRequest(session.id, updated);
+      replaceRequest(update, updated, true);
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, "error");
+      if (isCurrentProject() && isRequestUpdateCurrent(update)) showFeedback(e.message, "error");
+    } finally {
+      finishRequestUpdate(update);
     }
   };
 
   const handleSaveRequestDetails = async () => {
     if (!selectedSession || !selectedRequest) return;
+    const update = beginRequestUpdate(selectedSession.id, selectedRequest.seq);
+    if (!update) return;
     try {
       const updated = await api.updateRecordedRequest(
         selectedSession.id,
@@ -2088,10 +2002,11 @@ export default function RecordingStudio({
         requestDraft,
       );
       if (!isCurrentProject()) return;
-      replaceRequest(selectedSession.id, updated);
-      showFeedback(`Request #${updated.seq} updated`);
+      if (replaceRequest(update, updated)) showFeedback(`Request #${updated.seq} updated`);
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, "error");
+      if (isCurrentProject() && isRequestUpdateCurrent(update)) showFeedback(e.message, "error");
+    } finally {
+      finishRequestUpdate(update);
     }
   };
 
@@ -2724,7 +2639,7 @@ export default function RecordingStudio({
     try {
       await api.deleteRecording(id);
       if (!isCurrentProject()) return;
-      if (selectedSession?.id === id) setSelectedSession(null);
+      clearSelection(id);
       void refresh();
     } catch (e: any) {
       if (isCurrentProject()) showFeedback(e.message, "error");
@@ -4406,7 +4321,7 @@ export default function RecordingStudio({
                         type="button"
                         className="rec-request-select"
                         aria-pressed={selectedRequest?.seq === req.seq}
-                        onClick={() => setSelectedRequest(req)}
+                        onClick={() => selectRequest(req)}
                       >
                         {req.step_name || req.path}
                         {req.query_string ? `?${req.query_string}` : ""}
@@ -4439,6 +4354,7 @@ export default function RecordingStudio({
                       <button
                         type="button"
                         className="btn btn-sm btn-secondary"
+                        disabled={isRequestUpdating(selectedSession.id, req.seq)}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleToggleRequestExcluded(selectedSession, req);
@@ -4549,12 +4465,13 @@ export default function RecordingStudio({
                 <button
                   className="btn btn-primary btn-sm"
                   onClick={handleSaveRequestDetails}
+                  disabled={isRequestUpdating(selectedSession.id, selectedRequest.seq)}
                 >
                   Save request
                 </button>
                 <button
                   className="btn btn-secondary btn-sm"
-                  onClick={() => setSelectedRequest(null)}
+                  onClick={() => selectRequest(null)}
                 >
                   Close
                 </button>

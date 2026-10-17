@@ -1,0 +1,13 @@
+package jms
+import (
+ "testing"
+ "github.com/jasonczech/apexload/pkg/protocol"
+)
+func TestReviewJMSNumericObjectKey(t *testing.T) {
+ result := &protocol.Result{Extractions:map[string]string{}}
+ err := runExtractors([]protocol.Extractor{{Name:"count",Source:"body",Type:"jsonpath",Expression:`$.counts["123"]`,OnMiss:"fail"}}, result, message{Body:[]byte(`{"counts":{"123":"ok"}}`)})
+ if err != nil || result.Extractions["count"] != "ok" { t.Fatalf("numeric object key: extracted=%q err=%v; want ok",result.Extractions["count"],err) }
+}
+func TestReviewJMSArrayControl(t *testing.T) {
+ got,err := extractJSONPath(`$.items[1]`,[]byte(`{"items":["a","b"]}`)); if err != nil || got != "b" { t.Fatalf("got=%q err=%v",got,err) }
+}

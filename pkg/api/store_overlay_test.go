@@ -832,6 +832,15 @@ func (o *sqliteStoreOverlay) CommitBrunoNativeImport(a0 *storage.BrunoNativeImpo
 	return o.base().CommitBrunoNativeImport(a0)
 }
 
+func (o *sqliteStoreOverlay) CommitCapacityOperation(a0 *storage.ProvisioningRequest, a1 int, a2 string, a3 string, a4 string, a5 uint64, a6 bool) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		CommitCapacityOperation(*storage.ProvisioningRequest, int, string, string, string, uint64, bool) (bool, error)
+	}); ok {
+		return fake.CommitCapacityOperation(a0, a1, a2, a3, a4, a5, a6)
+	}
+	return o.base().CommitCapacityOperation(a0, a1, a2, a3, a4, a5, a6)
+}
+
 func (o *sqliteStoreOverlay) CommitGitHubScriptImport(a0 *dsl.Script, a1 *storage.GitHubScriptLink, a2 time.Time) (storage.GitHubScriptImportOutcome, error) {
 	if fake, ok := o.fake.(interface {
 		CommitGitHubScriptImport(*dsl.Script, *storage.GitHubScriptLink, time.Time) (storage.GitHubScriptImportOutcome, error)
@@ -5339,6 +5348,15 @@ func (o *sqliteStoreOverlay) PatchGeneratorMetadata(a0 string, a1 storage.Genera
 	return o.base().PatchGeneratorMetadata(a0, a1)
 }
 
+func (o *sqliteStoreOverlay) PatchGeneratorMetadataIfCapacityAttemptHeld(a0 string, a1 storage.GeneratorMetadataPatch, a2 string, a3 string, a4 string, a5 string, a6 uint64) (*storage.GeneratorMetadata, error) {
+	if fake, ok := o.fake.(interface {
+		PatchGeneratorMetadataIfCapacityAttemptHeld(string, storage.GeneratorMetadataPatch, string, string, string, string, uint64) (*storage.GeneratorMetadata, error)
+	}); ok {
+		return fake.PatchGeneratorMetadataIfCapacityAttemptHeld(a0, a1, a2, a3, a4, a5, a6)
+	}
+	return o.base().PatchGeneratorMetadataIfCapacityAttemptHeld(a0, a1, a2, a3, a4, a5, a6)
+}
+
 func (o *sqliteStoreOverlay) PatchMonitoringCollector(a0 string, a1 string, a2 *string, a3 *string, a4 *string, a5 *[]string) (bool, error) {
 	if fake, ok := o.fake.(interface {
 		PatchMonitoringCollector(string, string, *string, *string, *string, *[]string) (bool, error)
@@ -7121,6 +7139,15 @@ func (o *sqliteStoreOverlay) UpdateArchiveFinalizationRecordIfToken(a0 string, a
 		return fake.UpdateArchiveFinalizationRecordIfToken(a0, a1, a2)
 	}
 	return o.base().UpdateArchiveFinalizationRecordIfToken(a0, a1, a2)
+}
+
+func (o *sqliteStoreOverlay) UpdateCapacityInstanceIntentIfAttemptAndLeaseTermHeld(a0 *storage.CapacityInstanceIntent, a1 time.Time, a2 string, a3 string, a4 string, a5 string, a6 uint64) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		UpdateCapacityInstanceIntentIfAttemptAndLeaseTermHeld(*storage.CapacityInstanceIntent, time.Time, string, string, string, string, uint64) (bool, error)
+	}); ok {
+		return fake.UpdateCapacityInstanceIntentIfAttemptAndLeaseTermHeld(a0, a1, a2, a3, a4, a5, a6)
+	}
+	return o.base().UpdateCapacityInstanceIntentIfAttemptAndLeaseTermHeld(a0, a1, a2, a3, a4, a5, a6)
 }
 
 func (o *sqliteStoreOverlay) UpdateCapacityInstanceIntentIfUnchanged(a0 *storage.CapacityInstanceIntent, a1 time.Time) (bool, error) {

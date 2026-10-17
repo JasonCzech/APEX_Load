@@ -5633,6 +5633,52 @@ describe("RecordingStudio", () => {
       ),
     ).toBe(false);
   });
+  const clickRecordingControl = async (label: string) => {
+    const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+    expect(button).not.toBeNull();
+    await act(async () => button!.click());
+  };
+
+  it.each([false, true])("session selection response late=%s respects newest selection", async (late) => {
+    const a = recordingSelectionFixture("A");
+    const b = { ...recordingSelectionFixture("B"), requests: [recordedSelectionRequest("B")] };
+    let resolveA!: (value: typeof b) => void;
+    apiMock.listRecordings.mockResolvedValue({ sessions: [a, b] });
+    apiMock.getRecording.mockImplementation(() => new Promise(resolve => { resolveA = resolve; }));
+    await act(async () => root.render(<RecordingStudio />));
+    await flushPromises();
+
+    await clickRecordingControl("Select recording session A");
+    if (!late) await act(async () => resolveA({ ...a, requests: [recordedSelectionRequest("A")] }));
+    await clickRecordingControl("Select recording session B");
+    expect(container.textContent).toContain("Request detail: B");
+    if (late) await act(async () => resolveA({ ...a, requests: [recordedSelectionRequest("A")] }));
+    expect(container.textContent).toContain("Request detail: B");
+  });
+
+  it.each([false, true])("save response late=%s preserves another session draft", async (late) => {
+    const a = { ...recordingSelectionFixture("A"), requests: [recordedSelectionRequest("A")] };
+    const b = { ...recordingSelectionFixture("B"), requests: [recordedSelectionRequest("B")] };
+    let resolveSave!: (value: ReturnType<typeof recordedSelectionRequest>) => void;
+    apiMock.listRecordings.mockResolvedValue({ sessions: [a, b] });
+    apiMock.updateRecordedRequest.mockReset();
+    apiMock.updateRecordedRequest.mockImplementationOnce(() => new Promise(resolve => { resolveSave = resolve; }));
+    await act(async () => root.render(<RecordingStudio />));
+    await flushPromises();
+
+    await clickRecordingControl("Select recording session A");
+    await clickRecordingControl("Select request 1");
+    const save = Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Save request")!;
+    await act(async () => save.click());
+    if (!late) await act(async () => resolveSave({ ...recordedSelectionRequest("A"), step_name: "A saved" }));
+    await clickRecordingControl("Select recording session B");
+    await clickRecordingControl("Select request 1");
+    const draft = () => container.querySelector<HTMLInputElement>(".rec-request-editor input")!;
+    expect(draft().value).toBe("B");
+    if (late) await act(async () => resolveSave({ ...recordedSelectionRequest("A"), step_name: "A saved" }));
+    expect(draft().value).toBe("B");
+  });
+
 });
 
 function setInput(input: HTMLInputElement, value: string) {
@@ -5677,4 +5723,16 @@ async function openProxyAdvanced(container: HTMLElement) {
   }
   await flushPromises();
   expect(container.querySelector(".rec-setup-steps")).not.toBeNull();
+}
+
+function recordingSelectionFixture(name: string) {
+  return { id: name, name, status: "stopped", started_at: "2026-05-12T20:00:00Z", request_count: 1, filters: { exclude_static: true } };
+}
+
+function recordedSelectionRequest(name: string) {
+  return {
+    seq: 1, timestamp: "2026-05-12T20:00:01Z", method: "GET", url: `https://shop.example.com/${name}`,
+    path: `/${name}`, host: "shop.example.com", status_code: 200, response_time_ms: 1, think_time_ms: 0,
+    content_type: "", body: "", is_static: false, step_name: name, note: name,
+  };
 }
