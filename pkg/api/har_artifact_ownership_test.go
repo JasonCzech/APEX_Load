@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -175,7 +174,10 @@ func TestHARArtifactOwnershipRetiresEntireRecordedCompletedBatch(t *testing.T) {
 					if err != nil {
 						return err
 					}
-					file, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+					// Written privately in staging and linked out, as the owner
+					// publishes, so the artifact keeps the private file's ACL.
+					staged := filepath.Join(".apexload-har-work", ".fixture-"+generation+".part")
+					file, err := root.OpenFile(staged, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 					if err != nil {
 						return err
 					}
@@ -190,28 +192,13 @@ func TestHARArtifactOwnershipRetiresEntireRecordedCompletedBatch(t *testing.T) {
 					if err := file.Close(); err != nil {
 						return err
 					}
-					info, err := root.Stat(name)
-					if err != nil {
+					if err := root.Link(staged, name); err != nil {
 						return err
 					}
-					stat := reflect.Indirect(reflect.ValueOf(info.Sys()))
-					field := func(name string) uint64 {
-						t.Helper()
-						if stat.Kind() != reflect.Struct {
-							t.Skip("host has no qualified persistent HAR file identity")
-						}
-						value := stat.FieldByName(name)
-						switch value.Kind() {
-						case reflect.Int, reflect.Int32, reflect.Int64:
-							return uint64(value.Int())
-						case reflect.Uint, reflect.Uint32, reflect.Uint64:
-							return value.Uint()
-						default:
-							t.Skip("host has no qualified persistent HAR file identity")
-							return 0
-						}
+					if err := root.Remove(staged); err != nil {
+						return err
 					}
-					records = append(records, map[string]any{"kind": "completed", "generation": generation, "name": name, "identity": map[string]uint64{"device": field("Dev"), "inode": field("Ino"), "uid": field("Uid")}})
+					records = append(records, map[string]any{"kind": "completed", "generation": generation, "name": name, "identity": harArtifactTestIdentity(t, root, name)})
 					tombstones = append(tombstones, ".har-retired-"+generation)
 				}
 				// Persist the exact production ledger contract before deliberately
@@ -245,7 +232,7 @@ func TestHARArtifactOwnershipRetiresEntireRecordedCompletedBatch(t *testing.T) {
 					_ = work.Close()
 					return err
 				}
-				workSyncErr := errors.Join(workDir.Sync(), workDir.Close(), work.Close())
+				workSyncErr := errors.Join(syncArchiveDirectoryHandle(workDir), workDir.Close(), work.Close())
 				if workSyncErr != nil {
 					return workSyncErr
 				}
@@ -260,7 +247,7 @@ func TestHARArtifactOwnershipRetiresEntireRecordedCompletedBatch(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				syncErr := directory.Sync()
+				syncErr := syncArchiveDirectoryHandle(directory)
 				closeErr := directory.Close()
 				return errors.Join(syncErr, closeErr)
 			}); err != nil {
