@@ -560,9 +560,9 @@
         <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">Zero-Lock</div>
       </div>
 
-      <div class="node" id="tdigest" data-layer="engine" style="left:429px;top:570px;min-width:145px">
+      <div class="node" id="durationsketch" data-layer="engine" style="left:429px;top:570px;min-width:145px">
         <div class="node-icon">&#9733;</div>
-        <div class="node-title">T-Digest</div>
+        <div class="node-title">Duration Sketch</div>
         <div class="node-sub">Streaming percentiles</div>
         <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">p50/p95/p99</div>
       </div>
@@ -934,18 +934,18 @@ const COMPONENTS = {
     body: `<p>Collects execution results from all VUsers via buffered channels (capacity 10,000). The zero-lock design ensures the metrics pipeline never blocks the hot execution path.</p>
     <p>Aggregation: per-action metrics (TPS, latency, errors), per-group metrics, per-dependency-target breakdown, SOAP operation breakdown, network profile breakdown. Browser protocol adds device-level and Web Vitals metrics (LCP, CLS, INP, TTFB). Full-fidelity transaction evidence goes to archive artifacts, not SQL.</p>
     <p>Live counters use <code>atomic.Int64</code> for lock-free increments. Periodic snapshots (1s) are pushed to the WebSocket Hub for real-time dashboard updates.</p>`,
-    connections: ['VUser Engine &mdash; result channel input', 'T-Digest &mdash; percentile computation', 'WebSocket Hub &mdash; snapshot broadcast', 'Telemetry Export &mdash; scrape endpoint'],
+    connections: ['VUser Engine &mdash; result channel input', 'Duration Sketch &mdash; percentile computation', 'WebSocket Hub &mdash; snapshot broadcast', 'Telemetry Export &mdash; scrape endpoint'],
     files: ['pkg/engine/metrics.go', 'pkg/engine/sys_metrics.go']
   },
-  tdigest: {
-    title: 'T-Digest',
+  durationsketch: {
+    title: 'Duration Sketch',
     subtitle: 'Streaming Percentile Engine',
     layer: 'engine',
-    body: `<p>Implementation of the t-digest algorithm for accurate streaming percentile computation (p50, p90, p95, p99) without storing all data points.</p>
-    <p>Critical for performance testing where millions of latency samples must be summarized in real-time. Memory usage is O(compression factor), typically ~1 KB regardless of sample count.</p>
-    <p>Used by both the Metrics Collector (per-action percentiles) and the distributed aggregation layer (merging percentiles across generator pods).</p>`,
+    body: `<p>A mergeable duration sketch (logarithmic buckets in the style of DDSketch) for streaming percentiles (p50, p90, p95, p99) without storing all data points. Every percentile is within 0.5% of the value at its rank, whatever the distribution; count, sum, minimum and maximum are exact.</p>
+    <p>Critical for performance testing where millions of latency samples must be summarized in real time. A sketch holds at most 4,096 buckets (32 KiB) regardless of sample count, and merging sketches adds bucket counts, so it is exact in any order.</p>
+    <p>Used by the Metrics Collector (per-action percentiles), the distributed aggregation layer (merging generators' sketches) and archive reports beyond their exact-sample limits. For one release, a t-digest travels beside each sketch for older peers.</p>`,
     connections: ['Metrics Collector &mdash; feeds latency samples', 'Distributed Aggregation &mdash; merge across pods'],
-    files: ['pkg/engine/tdigest.go']
+    files: ['pkg/engine/duration_sketch.go', 'pkg/engine/duration_distribution_merge.go']
   },
   sqlite: {
     title: 'SQLite / PostgreSQL',
@@ -1288,7 +1288,7 @@ const CONNECTIONS = [
   { from: 'testrunner', to: 'sqlite', type: 'solid' },
   { from: 'scheduler', to: 'testrunner', type: 'solid' },
   { from: 'engine', to: 'metrics', type: 'solid' },
-  { from: 'metrics', to: 'tdigest', type: 'solid' },
+  { from: 'metrics', to: 'durationsketch', type: 'solid' },
   { from: 'metrics', to: 'otel', type: 'solid' },
   { from: 'metrics', to: 'wshub', type: 'ws' },
   { from: 'engine', to: 'proto-http', type: 'solid' },

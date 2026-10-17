@@ -32,7 +32,7 @@ The current controller can run in either local or distributed mode without chang
 - **Protocol plugins**: HTTP/1.1, HTTP/2, SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), Java Vuser sidecar bridge (governed and disabled unless runner config enables it), WebSocket, gRPC, JMS (Solace, IBM MQ; real Solace AMQP adapter via `-tags jms_solace_real`), Kafka (produce/consume/request-reply; in-memory mock broker by default, real franz-go adapter via `-tags kafka_real`), database (SQL), network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), browser (replay + canary diagnostics) — compiled-in, not runtime-loadable
 - **JSON DSL**: Human-readable test scripts with template variables and data sources
 - **Vendor-neutral telemetry**: Prometheus scrape metrics, W3C `traceparent` propagation, Dynatrace event webhooks, and opt-in OTLP traces for controller HTTP requests, test lifecycle/orchestration, sampled engine actions, and controller↔generator gRPC. Metrics and logs are not exported through OpenTelemetry.
-- **Streaming percentiles**: T-digest for accurate p95/p99 computation without storing all samples
+- **Streaming percentiles**: a mergeable duration sketch keeps every percentile within 0.5% of the value at its rank without storing all samples
 
 ## Core Components
 

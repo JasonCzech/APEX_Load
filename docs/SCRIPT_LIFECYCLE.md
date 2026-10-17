@@ -43,7 +43,7 @@ flowchart LR
         ENG["pkg/engine<br/>1 goroutine = 1 VUser"]
         PROTO["pkg/protocol/*<br/>http · ws · grpc · browser · jms …"]
         VAL --> ENG --> PROTO
-        PROTO -->|metrics| MET["t-digest + buffered channels"]
+        PROTO -->|metrics| MET["duration sketch + buffered channels"]
     end
     PROTO -.->|"extractions feed<br/>next iteration"| ENG
 ```
@@ -377,7 +377,7 @@ correlation an importer detected at Stage 1, now closing at runtime.
 
 Results are recorded through a **buffered channel** (cap 10,000) via
 `MetricsCollector.Record` (`pkg/engine/metrics.go`) to keep the hot path lock-free;
-percentiles are computed with a streaming t-digest. Think-time and inter-iteration pacing
+percentiles come from a mergeable duration sketch. Think-time and inter-iteration pacing
 live in `pkg/engine/pacing.go`.
 
 ---
@@ -420,7 +420,7 @@ flowchart LR
     CTRL -->|gRPC| GEN2["generator pod"]
     GEN1 --> U1["json.Unmarshal → dsl.Script<br/>engine.NewMultiGroup"]
     GEN2 --> U2["json.Unmarshal → dsl.Script<br/>engine.NewMultiGroup"]
-    LOCAL --> AGG["metrics aggregation<br/>(t-digest percentiles)"]
+    LOCAL --> AGG["metrics aggregation<br/>(duration-sketch percentiles)"]
     U1 -->|gRPC metric streams| AGG
     U2 -->|gRPC metric streams| AGG
 ```

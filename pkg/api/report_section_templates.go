@@ -128,6 +128,7 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
     .analyst { margin: 6px 0 14px; }
     .analyst p { margin: 0 0 8px; white-space: pre-wrap; }
     .muted, .section-copy { color: var(--slate); }
+    .approx { color: var(--slate); cursor: help; }
     .section-copy { margin: 0 0 12px; font-size: 13px; }
     .finding { border: 1px solid var(--line); margin-bottom: 12px; }
     .finding-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--silver); border-bottom: 1px solid var(--line); }
@@ -263,7 +264,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{define "verdict"}}
 <h2>{{sectionTitle "verdict"}}</h2>
 {{if .Report.MetricPopulations}}<table><thead><tr><th>Population</th><th class="num">Count</th><th class="num">Errors</th><th class="num">P95 (ms)</th><th class="num">Average attempts/s (elapsed run)</th></tr></thead><tbody>
-{{range $kind, $metrics := .Report.MetricPopulations}}<tr><td>{{if eq $kind "action"}}Requests / actions{{else if eq $kind "transaction"}}Named transactions{{else}}Unclassified legacy records{{end}}</td><td class="num">{{hint $metrics.Transactions}}</td><td class="num">{{hint $metrics.Errors}}</td><td class="num">{{if gt $metrics.Transactions 0}}{{f0 $metrics.P95Ms}}{{else}}No samples{{end}}</td><td class="num">{{populationRate $metrics.AverageRate}}</td></tr>{{end}}
+{{range $kind, $metrics := .Report.MetricPopulations}}<tr><td>{{if eq $kind "action"}}Requests / actions{{else if eq $kind "transaction"}}Named transactions{{else}}Unclassified legacy records{{end}}</td><td class="num">{{hint $metrics.Transactions}}</td><td class="num">{{hint $metrics.Errors}}</td><td class="num">{{if gt $metrics.Transactions 0}}{{approx $metrics.PercentileQuality}}{{f0 $metrics.P95Ms}}{{else}}No samples{{end}}</td><td class="num">{{populationRate $metrics.AverageRate}}</td></tr>{{end}}
 </tbody></table>{{end}}
 <p>Execution: {{executionLabel .Report.Manifest.TerminationReason}}. Planned duration: {{.Report.Manifest.Provenance.Duration}}. Elapsed: {{elapsedDuration .Report.Manifest}}. Planned load: {{.Report.Manifest.Provenance.TotalVUsers}} VUsers; observed peak: {{.Report.Overview.PeakActiveVUsers}}. Archive coverage applies to the captured period, not completion of the planned workload.</p>
 <div class="verdict">
@@ -283,7 +284,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{with headline .Report}}<p class="kpi-basis">Headline metrics: {{.Label}}</p>
 <div class="kpis">
   <div class="kpi"><b>Peak TPS (attempts/s)</b><div class="v">{{formatFloat .PeakTPS}}</div></div>
-  <div class="kpi"><b>P95 latency</b><div class="v">{{fms .P95Ms}}</div></div>
+  <div class="kpi"><b>P95 latency</b><div class="v">{{approx .PercentileQuality}}{{fms .P95Ms}}</div></div>
   <div class="kpi {{if gt .ErrorPct 0.0}}warn{{end}}"><b>Error rate</b><div class="v">{{formatPercent .ErrorPct}}</div></div>
   <div class="kpi"><b>Peak VUsers</b><div class="v">{{$.Report.Overview.PeakActiveVUsers}}</div></div>
 </div>{{end}}
@@ -304,7 +305,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{with headline .Report}}<p class="kpi-basis">Headline metrics: {{.Label}}</p>
 <div class="kpis">
   <div class="kpi"><b>Peak TPS (attempts/s)</b><div class="v">{{formatFloat .PeakTPS}}</div><div class="d">{{if gt $.Report.Overview.PeakTargetTPS 0.0}}target {{formatFloat $.Report.Overview.PeakTargetTPS}} TPS{{else}}observed peak{{end}}</div></div>
-  <div class="kpi"><b>P95 latency</b><div class="v">{{fms .P95Ms}}</div><div class="d">avg {{fms .AvgResponseMs}}</div></div>
+  <div class="kpi"><b>P95 latency</b><div class="v">{{approx .PercentileQuality}}{{fms .P95Ms}}</div><div class="d">avg {{fms .AvgResponseMs}}</div></div>
   <div class="kpi {{if gt .ErrorPct 0.0}}warn{{end}}"><b>Error rate</b><div class="v">{{formatPercent .ErrorPct}}</div><div class="d">{{hint .Errors}} of {{hint .Transactions}}</div></div>
   <div class="kpi"><b>Archive records</b><div class="v">{{hint $.Report.Overview.Transactions}}</div><div class="d">peak {{$.Report.Overview.PeakActiveVUsers}} VUsers</div></div>
 </div>
@@ -312,7 +313,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <caption>Table — Run summary ({{.Label}})</caption>
 <thead><tr><th>Metric</th><th class="num">Value</th><th>Metric</th><th class="num">Value</th></tr></thead>
 <tbody>
-<tr><td>P50 / P90 / P99</td><td class="num">{{f0 .P50Ms}} / {{f0 .P90Ms}} / {{f0 .P99Ms}} ms</td><td>Peak concurrent VUsers</td><td class="num">{{$.Report.Overview.PeakActiveVUsers}}</td></tr>
+<tr><td>P50 / P90 / P99</td><td class="num">{{approx .PercentileQuality}}{{f0 .P50Ms}} / {{f0 .P90Ms}} / {{f0 .P99Ms}} ms</td><td>Peak concurrent VUsers</td><td class="num">{{$.Report.Overview.PeakActiveVUsers}}</td></tr>
 <tr><td>Peak TPS (attempts/s)</td><td class="num">{{formatFloat .PeakTPS}}</td><td>Load generators</td><td class="num">{{if gt $.GeneratorCount 0}}{{$.GeneratorCount}}{{else}}Not recorded{{end}}</td></tr>
 <tr><td>Response range</td><td class="num">{{f0 .MinResponseMs}}–{{f0 .MaxResponseMs}} ms</td><td>Evidence coverage</td><td class="num">{{f0 $.Report.Completeness.ScorePct}}%</td></tr>
 <tr><td>Interval summaries</td><td class="num">{{hint $.Report.Overview.IntervalSummaries}}</td><td>Resource samples</td><td class="num">{{hint $.Report.Overview.ResourceSamples}}</td></tr>
@@ -332,7 +333,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
   <thead><tr><th>Transaction</th><th class="num">Volume</th><th class="num">P95 (ms)</th><th class="num">SLA (ms)</th><th>Result</th></tr></thead>
   <tbody>
   {{range .SLARows}}
-  <tr><td>{{.Name}}</td><td class="num">{{hint .Volume}}</td><td class="num">{{f0 .P95Ms}}</td><td class="num">{{if .HasSLA}}{{f0 .SLAMs}}{{else}}—{{end}}</td><td><span class="pill {{.ResultKind}}">{{.Result}}</span></td></tr>
+  <tr><td>{{.Name}}</td><td class="num">{{hint .Volume}}</td><td class="num">{{approx .PercentileQuality}}{{f0 .P95Ms}}</td><td class="num">{{if .HasSLA}}{{f0 .SLAMs}}{{else}}—{{end}}</td><td><span class="pill {{.ResultKind}}">{{.Result}}</span></td></tr>
   {{else}}<tr><td colspan="5" class="muted">No per-transaction SLA evidence was archived.</td></tr>{{end}}
   </tbody>
 </table>
@@ -360,7 +361,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <thead><tr><th>Transaction</th><th class="num">Volume</th><th class="num">P95 (ms)</th><th class="num">SLA (ms)</th><th class="num">Error rate</th><th>Result</th></tr></thead>
 <tbody>
 {{range .SLARows}}
-<tr><td>{{.Name}}</td><td class="num">{{hint .Volume}}</td><td class="num">{{f0 .P95Ms}}</td><td class="num">{{if .HasSLA}}{{f0 .SLAMs}}{{else}}—{{end}}</td><td class="num">{{formatPercent .ErrorPct}}</td><td><span class="pill {{.ResultKind}}">{{.Result}}</span></td></tr>
+<tr><td>{{.Name}}</td><td class="num">{{hint .Volume}}</td><td class="num">{{approx .PercentileQuality}}{{f0 .P95Ms}}</td><td class="num">{{if .HasSLA}}{{f0 .SLAMs}}{{else}}—{{end}}</td><td class="num">{{formatPercent .ErrorPct}}</td><td><span class="pill {{.ResultKind}}">{{.Result}}</span></td></tr>
 {{else}}
 <tr><td colspan="6" class="muted">No per-transaction archive data was recorded.</td></tr>
 {{end}}

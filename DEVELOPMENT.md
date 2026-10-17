@@ -28,7 +28,7 @@ The **VUser execution engine** — the heart of load generation.
 **Key Types:**
 - `Engine`: Main orchestrator; manages goroutine lifecycle, pacing, metrics collection
 - `VUser`: Individual goroutine representing a single user
-- `MetricsCollector`: Aggregates latency, throughput, errors; produces t-digest percentiles and exposes dropped-result telemetry so hot-path loss is visible
+- `MetricsCollector`: Aggregates latency, throughput, errors; produces duration-sketch percentiles and exposes dropped-result telemetry so hot-path loss is visible
 - `dsl.PacingConfig`: Per-script pacing between iterations (`none`, `fixed_delay`, `random_delay`, `fixed_interval`, `random_interval`, `tps`); the engine enforces it (see `pkg/engine/pacing.go`)
 
 **Hot Path Behavior:**
@@ -165,10 +165,10 @@ HTTP and JMS results stamp first-class correlation IDs plus dependency type/targ
 
 **Key Types:**
 - `MetricsSnapshot`: Point-in-time metrics (count, latency p50/p95/p99, errors)
-- `MetricsCollector`: Channels for sample ingestion, t-digest for percentile tracking
+- `MetricsCollector`: Channels for sample ingestion, a duration sketch for percentile tracking
 
 **Streaming Percentile Algorithm:**
-Uses t-digest (centroid-based) to compute accurate percentiles without storing all latency samples. Trade-off: Memory-efficient but slightly lossy compared to exact percentile computation.
+Uses a duration sketch (`engine.DurationSketch`, logarithmic buckets in the style of DDSketch) to compute percentiles without storing all latency samples. Every percentile is within 0.5% of the value at its rank, whatever the distribution; count, sum, minimum and maximum are exact, and merging sketches from generators is exact. A sketch holds at most 4,096 buckets (32 KiB). For one release, generators and archives also carry a t-digest for older peers.
 
 ## Frontend Architecture
 

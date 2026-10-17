@@ -361,6 +361,9 @@ type SLAComplianceRow struct {
 	ErrorPct   float64 `json:"error_pct"`
 	Result     string  `json:"result"`
 	ResultKind string  `json:"result_kind"` // "pass" | "warn" | "fail" | "na"
+	// PercentileQuality is the transaction row's: "approximate" when its
+	// percentiles came from the duration sketch.
+	PercentileQuality string `json:"percentile_quality,omitempty"`
 }
 
 // RunArchiveSLARollup summarizes the per-action SLA rows for dashboard
@@ -404,6 +407,7 @@ func buildSLAComplianceRows(report *RunArchiveReport) []SLAComplianceRow {
 			HasSLA:   hasSLA,
 		}
 		row.Result, row.ResultKind = evaluateSLARow(stats, hasSLA, slaMs, hasErrLimit, maxErrPct)
+		row.PercentileQuality = stats.PercentileQuality
 		rows = append(rows, row)
 	}
 	sort.Slice(rows, func(i, j int) bool {

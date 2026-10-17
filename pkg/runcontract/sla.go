@@ -7,6 +7,10 @@ type TransactionSLARuleResult struct {
 	Observed     *float64           `json:"observed,omitempty"`
 	MatchedCount int64              `json:"matched_count"`
 	Message      string             `json:"message"`
+	// PercentileQuality is "approximate" when a percentile rule's observed
+	// value came from the duration sketch, within 0.5% of the value at its
+	// rank, and empty when it used every matching observation.
+	PercentileQuality string `json:"percentile_quality,omitempty"`
 }
 
 type TransactionResponseTimeSLAResult struct {

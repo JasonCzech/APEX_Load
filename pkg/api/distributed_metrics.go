@@ -1129,6 +1129,7 @@ func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batc
 	live.P90Ms = fleet.P90Ms
 	live.P95Ms = fleet.P95Ms
 	live.P99Ms = fleet.P99Ms
+	live.PercentileQuality = fleet.PercentileQuality
 	live.AvgDNSMs = fleet.AvgDNSMs
 	live.AvgConnectMs = fleet.AvgConnectMs
 	live.AvgTLSMs = fleet.AvgTLSMs
@@ -1314,6 +1315,7 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 	return &TxMetrics{
 		DurationDigest:     engine.CloneTDigestSnapshot(aggregate.DurationDigest),
 		DurationSketch:     engine.CloneDurationSketchSnapshot(aggregate.DurationSketch),
+		PercentileQuality:  aggregate.PercentileQuality,
 		messagingAggregate: aggregate.MessagingVersion == 1 || aggregate.MessagingVersion == 2 || aggregate.Messaging != nil,
 		ServerTelemetry:    apiMessagingSummary(aggregate.Messaging),
 		Name:               aggregate.Name,
@@ -1784,6 +1786,11 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		copy := values[0]
 		copy.Messaging = copy.Messaging.Clone()
 		copy.Exemplars = append([]engine.TraceExemplar(nil), copy.Exemplars...)
+		if copy.PercentileQuality == "" && copy.DurationSketch == nil && copy.DurationDigest != nil {
+			// A generator that predates the sketch took its percentiles from
+			// its t-digest.
+			copy.PercentileQuality = percentileQualityTDigest
+		}
 		return &copy
 	}
 	out := generatorrpc.MetricAggregate{}
@@ -1836,14 +1843,18 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	out.AvgTTFBMs = ttfbSum / divisor
 	// Sketches merge exactly and are preferred; t-digests serve older
 	// generators.
-	if durations.Kind() != "" && durations.Count() == out.Count {
+	if kind := durations.Kind(); kind != "" && durations.Count() == out.Count {
 		out.DurationDigest, out.DurationSketch = durations.Snapshots()
 		out.P50Ms = durations.Quantile(0.50) / float64(time.Millisecond)
 		out.P90Ms = durations.Quantile(0.90) / float64(time.Millisecond)
 		out.P95Ms = durations.Quantile(0.95) / float64(time.Millisecond)
 		out.P99Ms = durations.Quantile(0.99) / float64(time.Millisecond)
+		if kind == engine.DurationDistributionTDigest {
+			out.PercentileQuality = percentileQualityTDigest
+		}
 	} else {
 		out.P50Ms, out.P90Ms, out.P95Ms, out.P99Ms = weightedAggregatePercentiles(values)
+		out.PercentileQuality = percentileQualityAveraged
 	}
 	return &out
 }

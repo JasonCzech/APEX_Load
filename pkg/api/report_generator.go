@@ -101,6 +101,14 @@ var profileHTMLFuncMap = template.FuncMap{
 		}
 		return fmt.Sprintf("%.1f", *rate)
 	},
+	// approx marks a percentile that is not exact, explained on hover.
+	"approx": func(quality string) template.HTML {
+		description := reportPercentileQualityDescription(quality)
+		if description == "" {
+			return ""
+		}
+		return template.HTML(`<span class="approx" title="` + template.HTMLEscapeString(description) + `">≈</span> `)
+	},
 	"headline":        reportHeadline,
 	"fms":             formatReportMs,
 	"executionLabel":  reportExecutionLabel,

@@ -349,6 +349,7 @@ func csvSLARows(write reportCSVWriteFunc, section string, rows []SLAComplianceRo
 			{"p90_ms", formatCSVFloat(row.P90Ms)},
 			{"p95_ms", formatCSVFloat(row.P95Ms)},
 			{"p99_ms", formatCSVFloat(row.P99Ms)},
+			{"percentile_quality", reportCSVPercentileQuality(row.PercentileQuality)},
 			{"max_ms", formatCSVFloat(row.MaxMs)},
 			{"sla_ms", sla},
 			{"error_pct", formatCSVFloat(row.ErrorPct)},
@@ -443,8 +444,8 @@ func pdfSLALines(lines *[]string, rows []SLAComplianceRow) {
 		if row.HasSLA {
 			sla = fmt.Sprintf("%.0f ms", row.SLAMs)
 		}
-		*lines = append(*lines, fmt.Sprintf("- %s: %s tx, p95 %.0f ms, SLA %s, %s errors - %s",
-			row.Name, formatPDFInt(row.Volume), row.P95Ms, sla, formatReportPercentage(row.ErrorPct), row.Result))
+		*lines = append(*lines, fmt.Sprintf("- %s: %s tx, p95 %.0f ms%s, SLA %s, %s errors - %s",
+			row.Name, formatPDFInt(row.Volume), row.P95Ms, reportPercentileQualitySuffix(row.PercentileQuality), sla, formatReportPercentage(row.ErrorPct), row.Result))
 	}
 }
 
@@ -639,7 +640,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			}
 			for _, key := range []string{"action", "transaction", "unknown"} {
 				if population, ok := report.MetricPopulations[key]; ok && population.Transactions > 0 {
-					*lines = append(*lines, fmt.Sprintf("%s: %d records, %d errors, p95 %.1f ms, average %s/s", reportPopulationLabel(key), population.Transactions, population.Errors, population.P95Ms, reportPopulationRate(population.AverageRate)))
+					*lines = append(*lines, fmt.Sprintf("%s: %d records, %d errors, p95 %.1f ms%s, average %s/s", reportPopulationLabel(key), population.Transactions, population.Errors, population.P95Ms, reportPercentileQualitySuffix(population.PercentileQuality), reportPopulationRate(population.AverageRate)))
 				}
 			}
 			headline := reportHeadline(report)
@@ -647,7 +648,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				fmt.Sprintf("Archive records: %s", formatPDFInt(report.Overview.Transactions)),
 				"Headline metrics: "+headline.Label,
 				fmt.Sprintf("Error rate: %s (%s of %s)", formatReportPercentage(headline.ErrorPct), formatPDFInt(headline.Errors), formatPDFInt(headline.Transactions)),
-				fmt.Sprintf("P95 latency: %s; average %s (min %.1f ms / max %.1f ms)", formatReportMs(headline.P95Ms), formatReportMs(headline.AvgResponseMs), headline.MinResponseMs, headline.MaxResponseMs),
+				fmt.Sprintf("P95 latency: %s%s; average %s (min %.1f ms / max %.1f ms)", formatReportMs(headline.P95Ms), reportPercentileQualitySuffix(headline.PercentileQuality), formatReportMs(headline.AvgResponseMs), headline.MinResponseMs, headline.MaxResponseMs),
 				fmt.Sprintf("Peak TPS (attempts/s): %.1f", headline.PeakTPS),
 				fmt.Sprintf("Peak active VUsers: %s", formatPDFInt(report.Overview.PeakActiveVUsers)),
 			)
@@ -665,7 +666,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			}
 			for _, key := range []string{"action", "transaction", "unknown"} {
 				if population, ok := report.MetricPopulations[key]; ok {
-					for _, item := range [][2]string{{"count", formatCSVInt(population.Transactions)}, {"errors", formatCSVInt(population.Errors)}, {"error_pct", formatCSVFloat(population.ErrorPct)}, {"p95_ms", formatCSVFloat(population.P95Ms)}, {"peak_tps", reportPopulationPeakTPS(population)}, {"average_rate_per_second", reportPopulationRate(population.AverageRate)}} {
+					for _, item := range [][2]string{{"count", formatCSVInt(population.Transactions)}, {"errors", formatCSVInt(population.Errors)}, {"error_pct", formatCSVFloat(population.ErrorPct)}, {"p95_ms", formatCSVFloat(population.P95Ms)}, {"percentile_quality", reportCSVPercentileQuality(population.PercentileQuality)}, {"peak_tps", reportPopulationPeakTPS(population)}, {"average_rate_per_second", reportPopulationRate(population.AverageRate)}} {
 						if err := write("metric_populations", key, item[0], item[1]); err != nil {
 							return err
 						}

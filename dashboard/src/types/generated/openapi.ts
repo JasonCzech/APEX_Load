@@ -1968,6 +1968,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions"?: number;
               "websocket"?: ({
                 "abnormal_closes"?: number;
@@ -2105,6 +2106,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions"?: number;
               "websocket"?: ({
                 "abnormal_closes"?: number;
@@ -2242,6 +2244,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions"?: number;
               "websocket"?: ({
                 "abnormal_closes"?: number;
@@ -2379,6 +2382,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions"?: number;
               "websocket"?: ({
                 "abnormal_closes"?: number;
@@ -2516,6 +2520,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions"?: number;
               "websocket"?: ({
                 "abnormal_closes"?: number;
@@ -2653,6 +2658,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions"?: number;
               "websocket"?: ({
                 "abnormal_closes"?: number;
@@ -2792,6 +2798,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions"?: number;
               "websocket"?: ({
                 "abnormal_closes"?: number;
@@ -2929,6 +2936,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions"?: number;
               "websocket"?: ({
                 "abnormal_closes"?: number;
@@ -3066,6 +3074,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions"?: number;
               "websocket"?: ({
                 "abnormal_closes"?: number;
@@ -3352,6 +3361,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "partial"?: boolean;
+              "percentile_quality"?: string;
               "requests"?: number;
               "stage_index"?: number;
               "target_vusers"?: number;
@@ -3924,6 +3934,7 @@ export interface operations {
                 "matched_count"?: number;
                 "message"?: string;
                 "observed"?: (number) | null;
+                "percentile_quality"?: string;
                 "rule"?: Record<string, unknown>;
                 "status"?: string;
               }>;
@@ -4033,6 +4044,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions"?: number;
               "websocket"?: ({
                 "abnormal_closes"?: number;
@@ -4343,6 +4355,7 @@ export interface operations {
               "peak_active_vusers"?: number;
               "peak_target_tps"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "resource_samples"?: number;
               "telemetry"?: ({
                 "breached_intervals"?: number;
@@ -4565,6 +4578,7 @@ export interface operations {
               "p90_ms"?: number;
               "p95_ms"?: number;
               "p99_ms"?: number;
+              "percentile_quality"?: string;
               "result"?: string;
               "result_kind"?: string;
               "sla_ms"?: number;
@@ -36808,6 +36822,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -36837,6 +36852,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -37330,6 +37346,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -37675,6 +37692,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -37712,6 +37730,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -37935,6 +37954,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -37944,6 +37964,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -37967,6 +37988,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -38049,6 +38071,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -38258,6 +38281,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -44466,6 +44490,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -44662,6 +44687,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -45416,6 +45442,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -45453,6 +45480,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -45697,6 +45725,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -45706,6 +45735,7 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "percentile_quality"?: string;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -45729,6 +45759,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -45811,6 +45842,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -46020,6 +46052,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -46143,6 +46176,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -46355,6 +46389,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -46931,6 +46966,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -47107,6 +47143,7 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "percentile_quality"?: string;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -47130,6 +47167,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -47379,6 +47417,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -47776,6 +47815,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -63748,6 +63788,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -63785,6 +63826,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -64029,6 +64071,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -64038,6 +64081,7 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "percentile_quality"?: string;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -64061,6 +64105,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -64143,6 +64188,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -64352,6 +64398,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -64471,6 +64518,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -64683,6 +64731,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -65259,6 +65308,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -65435,6 +65485,7 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "percentile_quality"?: string;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -65458,6 +65509,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -65707,6 +65759,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -66104,6 +66157,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -67920,6 +67974,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -67949,6 +68004,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -68442,6 +68498,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -68787,6 +68844,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -68824,6 +68882,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -69047,6 +69106,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -69056,6 +69116,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -69079,6 +69140,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -69161,6 +69223,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -69370,6 +69433,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -72941,6 +73005,7 @@ export interface operations {
               "matched_count": number;
               "message": string;
               "observed"?: (number) | null;
+              "percentile_quality"?: string;
               "rule": {
                 "comparator": string;
                 "group"?: string;
@@ -74025,6 +74090,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions": number;
               "websocket"?: ({
                 "abnormal_closes": number;
@@ -74170,6 +74236,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions": number;
               "websocket"?: ({
                 "abnormal_closes": number;
@@ -74315,6 +74382,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions": number;
               "websocket"?: ({
                 "abnormal_closes": number;
@@ -74460,6 +74528,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions": number;
               "websocket"?: ({
                 "abnormal_closes": number;
@@ -74605,6 +74674,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions": number;
               "websocket"?: ({
                 "abnormal_closes": number;
@@ -74750,6 +74820,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions": number;
               "websocket"?: ({
                 "abnormal_closes": number;
@@ -74897,6 +74968,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions": number;
               "websocket"?: ({
                 "abnormal_closes": number;
@@ -75042,6 +75114,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions": number;
               "websocket"?: ({
                 "abnormal_closes": number;
@@ -75187,6 +75260,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions": number;
               "websocket"?: ({
                 "abnormal_closes": number;
@@ -75477,6 +75551,7 @@ export interface operations {
               "p95_ms": number;
               "p99_ms": number;
               "partial"?: boolean;
+              "percentile_quality"?: string;
               "requests": number;
               "stage_index": number;
               "target_vusers": number;
@@ -76640,6 +76715,7 @@ export interface operations {
                 "matched_count": number;
                 "message": string;
                 "observed"?: (number) | null;
+                "percentile_quality"?: string;
                 "rule": {
                   "comparator": string;
                   "group"?: string;
@@ -76795,6 +76871,7 @@ export interface operations {
               "p95_ms"?: number;
               "p99_ms"?: number;
               "peak_tps"?: number;
+              "percentile_quality"?: string;
               "transactions": number;
               "websocket"?: ({
                 "abnormal_closes": number;
@@ -77128,6 +77205,7 @@ export interface operations {
               "peak_active_vusers": number;
               "peak_target_tps"?: number;
               "peak_tps": number;
+              "percentile_quality"?: string;
               "resource_samples": number;
               "telemetry"?: ({
                 "breached_intervals"?: number;
@@ -77362,6 +77440,7 @@ export interface operations {
               "p90_ms"?: number;
               "p95_ms": number;
               "p99_ms"?: number;
+              "percentile_quality"?: string;
               "result": string;
               "result_kind": string;
               "sla_ms"?: number;
@@ -83645,6 +83724,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -83841,6 +83921,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -84595,6 +84676,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -84632,6 +84714,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -84876,6 +84959,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -84885,6 +84969,7 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "percentile_quality"?: string;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -84908,6 +84993,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -84990,6 +85076,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -85199,6 +85286,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -85322,6 +85410,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -85534,6 +85623,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -86110,6 +86200,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -86286,6 +86377,7 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "percentile_quality"?: string;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -86309,6 +86401,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -86558,6 +86651,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -86955,6 +87049,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -105554,6 +105649,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -105750,6 +105846,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -106504,6 +106601,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -106541,6 +106639,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -106785,6 +106884,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -106794,6 +106894,7 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "percentile_quality"?: string;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -106817,6 +106918,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -106899,6 +107001,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -107108,6 +107211,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -107231,6 +107335,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -107443,6 +107548,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -108019,6 +108125,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -108195,6 +108302,7 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "percentile_quality"?: string;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -108218,6 +108326,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -108467,6 +108576,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -108864,6 +108974,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -122616,6 +122727,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -122645,6 +122757,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -123138,6 +123251,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -123483,6 +123597,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -123520,6 +123635,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -123743,6 +123859,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -123752,6 +123869,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -123775,6 +123893,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -123857,6 +123976,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -124066,6 +124186,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -124742,6 +124863,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -124771,6 +124893,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -125264,6 +125387,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -125609,6 +125733,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -125646,6 +125771,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -125869,6 +125995,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -125878,6 +126005,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -125901,6 +126029,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -125983,6 +126112,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -126192,6 +126322,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -126868,6 +126999,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -126897,6 +127029,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -127390,6 +127523,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -127735,6 +127869,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -127772,6 +127907,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -127995,6 +128131,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -128004,6 +128141,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -128027,6 +128165,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -128109,6 +128248,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -128318,6 +128458,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -128994,6 +129135,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -129023,6 +129165,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -129516,6 +129659,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -129861,6 +130005,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -129898,6 +130043,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -130121,6 +130267,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -130130,6 +130277,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -130153,6 +130301,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -130235,6 +130384,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -130444,6 +130594,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -131120,6 +131271,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -131149,6 +131301,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -131642,6 +131795,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -131987,6 +132141,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -132024,6 +132179,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -132247,6 +132403,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -132256,6 +132413,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms": number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -132279,6 +132437,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -132361,6 +132520,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -132570,6 +132730,7 @@ export interface operations {
                   "p90_ms": number;
                   "p95_ms"?: number;
                   "p99_ms": number;
+                  "percentile_quality"?: string;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -135086,6 +135247,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -135282,6 +135444,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -136036,6 +136199,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -136073,6 +136237,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -136317,6 +136482,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -136326,6 +136492,7 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "percentile_quality"?: string;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -136349,6 +136516,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -136431,6 +136599,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -136640,6 +136809,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -136763,6 +136933,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -136975,6 +137146,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -137551,6 +137723,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -137727,6 +137900,7 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "percentile_quality"?: string;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -137750,6 +137924,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -137999,6 +138174,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -138396,6 +138572,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -161201,6 +161378,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -161397,6 +161575,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -162151,6 +162330,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -162188,6 +162368,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -162432,6 +162613,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -162441,6 +162623,7 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "percentile_quality"?: string;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -162464,6 +162647,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -162546,6 +162730,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -162755,6 +162940,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -162878,6 +163064,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -163090,6 +163277,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -163666,6 +163854,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -163842,6 +164031,7 @@ export interface operations {
               "p90_ms": number;
               "p95_ms": number;
               "p99_ms": number;
+              "percentile_quality"?: string;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -163865,6 +164055,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -164114,6 +164305,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -164511,6 +164703,7 @@ export interface operations {
                 "p90_ms": number;
                 "p95_ms"?: number;
                 "p99_ms": number;
+                "percentile_quality"?: string;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;

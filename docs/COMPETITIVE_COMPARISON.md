@@ -397,7 +397,7 @@ These areas correspond to the `competitive_parity` dimensions in `GET /api/v1/sy
 
 A comprehensive audit of APEX Load against enterprise performance testing platform capabilities, compared against LoadRunner Enterprise, Gatling Enterprise, k6 Cloud, NeoLoad, and Locust.
 
-**Already built (representative):** goroutine VUser engine, multi-protocol support, JSON DSL, real-time dashboard, CLI, REST API, Enterprise Script Archive/JMeter import, distributed execution, live VUser controls, Parquet/JSONL archives, system metrics, t-digest percentiles, telemetry pipeline, capacity planning, browser recording, script editor, project/folder organization, shared data pools, error snapshots, browser replay, settings management.
+**Already built (representative):** goroutine VUser engine, multi-protocol support, JSON DSL, real-time dashboard, CLI, REST API, Enterprise Script Archive/JMeter import, distributed execution, live VUser controls, Parquet/JSONL archives, system metrics, duration-sketch percentiles, telemetry pipeline, capacity planning, browser recording, script editor, project/folder organization, shared data pools, error snapshots, browser replay, settings management.
 
 **Remaining significant gaps:**
 

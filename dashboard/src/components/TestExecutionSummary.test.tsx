@@ -26,6 +26,17 @@ describe('TestExecutionSummary', () => {
 		container.remove()
 	})
 
+	it('notes live percentiles that fell back from the merged duration sketch', async () => {
+		await act(async () => {
+			root.render(<TestExecutionSummary transactions={[]} metrics={{ p50_ms: 100, p90_ms: 200, p95_ms: 250, p99_ms: 300, percentile_quality: 'approximate_tdigest' }} />)
+		})
+		expect(container.querySelector('.percentile-quality-note')?.textContent).toContain('t-digests')
+		await act(async () => {
+			root.render(<TestExecutionSummary transactions={[]} metrics={{ p50_ms: 100, p90_ms: 200, p95_ms: 250, p99_ms: 300 }} />)
+		})
+		expect(container.querySelector('.percentile-quality-note')).toBeNull()
+	})
+
 	it('renders live server telemetry and previous-run deltas', async () => {
 		const current: TxMetrics = {
 			name: 'POST /checkout',

@@ -5578,6 +5578,8 @@ paths:
                           peak_tps:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           transactions:
                             type: integer
                             format: int64
@@ -5972,6 +5974,8 @@ paths:
                           peak_tps:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           transactions:
                             type: integer
                             format: int64
@@ -6366,6 +6370,8 @@ paths:
                           peak_tps:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           transactions:
                             type: integer
                             format: int64
@@ -6760,6 +6766,8 @@ paths:
                           peak_tps:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           transactions:
                             type: integer
                             format: int64
@@ -7154,6 +7162,8 @@ paths:
                           peak_tps:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           transactions:
                             type: integer
                             format: int64
@@ -7548,6 +7558,8 @@ paths:
                           peak_tps:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           transactions:
                             type: integer
                             format: int64
@@ -7952,6 +7964,8 @@ paths:
                           peak_tps:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           transactions:
                             type: integer
                             format: int64
@@ -8346,6 +8360,8 @@ paths:
                           peak_tps:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           transactions:
                             type: integer
                             format: int64
@@ -8740,6 +8756,8 @@ paths:
                           peak_tps:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           transactions:
                             type: integer
                             format: int64
@@ -9461,6 +9479,8 @@ paths:
                             format: double
                           partial:
                             type: boolean
+                          percentile_quality:
+                            type: string
                           requests:
                             type: integer
                             format: int64
@@ -10964,6 +10984,8 @@ paths:
                                 type: number
                                 format: double
                                 nullable: true
+                              percentile_quality:
+                                type: string
                               rule:
                                 type: object
                                 description: 'Go type: TransactionSLARule'
@@ -11266,6 +11288,8 @@ paths:
                           peak_tps:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           transactions:
                             type: integer
                             format: int64
@@ -12120,6 +12144,8 @@ paths:
                         peak_tps:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         resource_samples:
                           type: integer
                           format: int64
@@ -12726,6 +12752,8 @@ paths:
                           p99_ms:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           result:
                             type: string
                           result_kind:
@@ -90170,6 +90198,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -90269,6 +90299,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -91860,6 +91892,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             properties:
                               type: object
                               additionalProperties:
@@ -92962,6 +92996,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -93100,6 +93136,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -93856,6 +93894,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -93892,6 +93932,8 @@ paths:
                           p99_ms:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           properties:
                             type: object
                             additionalProperties:
@@ -93967,6 +94009,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -94243,6 +94287,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -94899,6 +94945,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -96792,6 +96840,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -96891,6 +96941,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -98482,6 +98534,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             properties:
                               type: object
                               additionalProperties:
@@ -99584,6 +99638,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -99722,6 +99778,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -100478,6 +100536,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -100514,6 +100574,8 @@ paths:
                           p99_ms:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           properties:
                             type: object
                             additionalProperties:
@@ -100589,6 +100651,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -100865,6 +100929,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -101521,6 +101587,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -103415,6 +103483,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -103514,6 +103584,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -105105,6 +105177,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             properties:
                               type: object
                               additionalProperties:
@@ -106207,6 +106281,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -106345,6 +106421,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -107101,6 +107179,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -107137,6 +107217,8 @@ paths:
                           p99_ms:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           properties:
                             type: object
                             additionalProperties:
@@ -107212,6 +107294,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -107488,6 +107572,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -108144,6 +108230,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -110050,6 +110138,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -110149,6 +110239,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -111740,6 +111832,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             properties:
                               type: object
                               additionalProperties:
@@ -112842,6 +112936,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -112980,6 +113076,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -113736,6 +113834,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -113772,6 +113872,8 @@ paths:
                           p99_ms:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           properties:
                             type: object
                             additionalProperties:
@@ -113847,6 +113949,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -114123,6 +114227,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -114779,6 +114885,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -116685,6 +116793,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -116784,6 +116894,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -118375,6 +118487,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             properties:
                               type: object
                               additionalProperties:
@@ -119477,6 +119591,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -119615,6 +119731,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -120371,6 +120489,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -120407,6 +120527,8 @@ paths:
                           p99_ms:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           properties:
                             type: object
                             additionalProperties:
@@ -120482,6 +120604,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -120758,6 +120882,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -121414,6 +121540,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -123320,6 +123448,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -123419,6 +123549,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -125010,6 +125142,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             properties:
                               type: object
                               additionalProperties:
@@ -126112,6 +126246,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -126250,6 +126386,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -127006,6 +127144,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -127042,6 +127182,8 @@ paths:
                           p99_ms:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           properties:
                             type: object
                             additionalProperties:
@@ -127117,6 +127259,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -127393,6 +127537,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -128049,6 +128195,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -129955,6 +130103,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -130054,6 +130204,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -131645,6 +131797,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             properties:
                               type: object
                               additionalProperties:
@@ -132747,6 +132901,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -132885,6 +133041,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -133641,6 +133799,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -133677,6 +133837,8 @@ paths:
                           p99_ms:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           properties:
                             type: object
                             additionalProperties:
@@ -133752,6 +133914,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -134028,6 +134192,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -134684,6 +134850,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 server_telemetry:
                                   type: object
                                   description: 'Go type: ServerTelemetrySummary'
@@ -348041,6 +348209,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -348745,6 +348915,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -351114,6 +351286,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -351249,6 +351423,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -352069,6 +352245,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -352104,6 +352282,8 @@ paths:
                         p99_ms:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         properties:
                           type: object
                           additionalProperties:
@@ -352179,6 +352359,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -352454,6 +352636,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -353108,6 +353292,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -353520,6 +353706,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -354279,6 +354467,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -356197,6 +356387,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -356839,6 +357031,8 @@ paths:
                       p99_ms:
                         type: number
                         format: double
+                      percentile_quality:
+                        type: string
                       properties:
                         type: object
                         additionalProperties:
@@ -356913,6 +357107,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -357794,6 +357990,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -359127,6 +359325,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -361918,6 +362118,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -362622,6 +362824,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -364991,6 +365195,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -365126,6 +365332,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -365946,6 +366154,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -365981,6 +366191,8 @@ paths:
                         p99_ms:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         properties:
                           type: object
                           additionalProperties:
@@ -366056,6 +366268,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -366331,6 +366545,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -366985,6 +367201,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -367397,6 +367615,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -368156,6 +368376,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -370074,6 +370296,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -370716,6 +370940,8 @@ paths:
                       p99_ms:
                         type: number
                         format: double
+                      percentile_quality:
+                        type: string
                       properties:
                         type: object
                         additionalProperties:
@@ -370790,6 +371016,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -371671,6 +371899,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -373004,6 +373234,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -384597,6 +384829,8 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        percentile_quality:
+                          type: string
                         rule:
                           type: object
                           properties:
@@ -388421,6 +388655,8 @@ paths:
                         peak_tps:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         transactions:
                           type: integer
                           format: int64
@@ -388959,6 +389195,8 @@ paths:
                         peak_tps:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         transactions:
                           type: integer
                           format: int64
@@ -389497,6 +389735,8 @@ paths:
                         peak_tps:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         transactions:
                           type: integer
                           format: int64
@@ -390035,6 +390275,8 @@ paths:
                         peak_tps:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         transactions:
                           type: integer
                           format: int64
@@ -390573,6 +390815,8 @@ paths:
                         peak_tps:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         transactions:
                           type: integer
                           format: int64
@@ -391111,6 +391355,8 @@ paths:
                         peak_tps:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         transactions:
                           type: integer
                           format: int64
@@ -391659,6 +391905,8 @@ paths:
                         peak_tps:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         transactions:
                           type: integer
                           format: int64
@@ -392197,6 +392445,8 @@ paths:
                         peak_tps:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         transactions:
                           type: integer
                           format: int64
@@ -392735,6 +392985,8 @@ paths:
                         peak_tps:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         transactions:
                           type: integer
                           format: int64
@@ -393631,6 +393883,8 @@ paths:
                           format: double
                         partial:
                           type: boolean
+                        percentile_quality:
+                          type: string
                         requests:
                           type: integer
                           format: int64
@@ -397299,6 +397553,8 @@ paths:
                               type: number
                               format: double
                               nullable: true
+                            percentile_quality:
+                              type: string
                             rule:
                               type: object
                               properties:
@@ -397825,6 +398081,8 @@ paths:
                         peak_tps:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         transactions:
                           type: integer
                           format: int64
@@ -398909,6 +399167,8 @@ paths:
                       peak_tps:
                         type: number
                         format: double
+                      percentile_quality:
+                        type: string
                       resource_samples:
                         type: integer
                         format: int64
@@ -399668,6 +399928,8 @@ paths:
                         p99_ms:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         result:
                           type: string
                         result_kind:
@@ -407750,6 +408012,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -408454,6 +408718,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -410823,6 +411089,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -410958,6 +411226,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -411778,6 +412048,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -411813,6 +412085,8 @@ paths:
                         p99_ms:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         properties:
                           type: object
                           additionalProperties:
@@ -411888,6 +412162,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -412163,6 +412439,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -412817,6 +413095,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -413229,6 +413509,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -413988,6 +414270,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -415906,6 +416190,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -416548,6 +416834,8 @@ paths:
                       p99_ms:
                         type: number
                         format: double
+                      percentile_quality:
+                        type: string
                       properties:
                         type: object
                         additionalProperties:
@@ -416622,6 +416910,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -417503,6 +417793,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -418836,6 +419128,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -421571,6 +421865,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -422275,6 +422571,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -424644,6 +424942,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -424779,6 +425079,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -425599,6 +425901,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -425634,6 +425938,8 @@ paths:
                         p99_ms:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         properties:
                           type: object
                           additionalProperties:
@@ -425709,6 +426015,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -425984,6 +426292,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -426638,6 +426948,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -427050,6 +427362,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -427809,6 +428123,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -429727,6 +430043,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -430369,6 +430687,8 @@ paths:
                       p99_ms:
                         type: number
                         format: double
+                      percentile_quality:
+                        type: string
                       properties:
                         type: object
                         additionalProperties:
@@ -430443,6 +430763,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -431324,6 +431646,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -432657,6 +432981,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -441456,6 +441782,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -442160,6 +442488,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -444529,6 +444859,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -444664,6 +444996,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -445484,6 +445818,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -445519,6 +445855,8 @@ paths:
                         p99_ms:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         properties:
                           type: object
                           additionalProperties:
@@ -445594,6 +445932,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -445869,6 +446209,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -446523,6 +446865,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -446935,6 +447279,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -447694,6 +448040,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -449612,6 +449960,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -450254,6 +450604,8 @@ paths:
                       p99_ms:
                         type: number
                         format: double
+                      percentile_quality:
+                        type: string
                       properties:
                         type: object
                         additionalProperties:
@@ -450328,6 +450680,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -451209,6 +451563,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -452542,6 +452898,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -460403,6 +460761,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -460538,6 +460898,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -461358,6 +461720,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -461393,6 +461757,8 @@ paths:
                         p99_ms:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         properties:
                           type: object
                           additionalProperties:
@@ -461468,6 +461834,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -461743,6 +462111,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -462397,6 +462767,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               server_telemetry:
                                 type: object
                                 additionalProperties: true
@@ -462797,6 +463169,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -463556,6 +463930,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -465474,6 +465850,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -466116,6 +466494,8 @@ paths:
                       p99_ms:
                         type: number
                         format: double
+                      percentile_quality:
+                        type: string
                       properties:
                         type: object
                         additionalProperties:
@@ -466190,6 +466570,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -467071,6 +467453,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:
@@ -468404,6 +468788,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             server_telemetry:
                               type: object
                               properties:

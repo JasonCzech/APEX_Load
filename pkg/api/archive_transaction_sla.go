@@ -216,6 +216,10 @@ func evaluateTransactionSLARule(rule TransactionSLARule, stats *transactionSLAAc
 		return result
 	}
 	result.Observed = &observed
+	switch rule.Metric {
+	case "p90_duration_ms", "p95_duration_ms", "p99_duration_ms":
+		result.PercentileQuality = stats.durations.PercentileQuality()
+	}
 	if compareTransactionSLA(observed, rule.Comparator, rule.Threshold) {
 		result.Status = "pass"
 		result.Message = formatTransactionSLAResult(rule, observed, "passed")

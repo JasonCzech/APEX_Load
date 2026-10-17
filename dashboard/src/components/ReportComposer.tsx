@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import Logo from './Logo'
 import MarkdownRenderer from './MarkdownRenderer'
+import PercentileQualityMark from './PercentileQualityMark'
 import ReportCharts from './ReportCharts'
 import { formatMs, formatNumber } from './runReport/runReportModel'
 import ReportRootCauseView from './rca/ReportRootCauseView'
@@ -500,7 +501,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
 						<td>{result.rule.transaction}{(result.rule.population || result.rule.protocol || result.rule.group) && <small> · {result.rule.population || 'transaction'} · {result.rule.protocol || 'all protocols'} · {result.rule.group || 'all groups'}</small>}</td>
 						<td>{result.rule.metric}</td>
 						<td>{result.rule.comparator} {result.rule.threshold}</td>
-						<td>{result.observed ?? 'Not evaluated'}</td>
+						<td>{result.observed !== undefined && <PercentileQualityMark quality={result.percentile_quality} />}{result.observed ?? 'Not evaluated'}</td>
 						<td>{result.rule.severity || 'fail'}</td>
 						<td>{result.status}</td>
 					  </tr>

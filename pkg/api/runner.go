@@ -1009,6 +1009,7 @@ type LiveMetrics struct {
 	P90Ms                      float64                               `json:"p90_ms"`
 	P95Ms                      float64                               `json:"p95_ms"`
 	P99Ms                      float64                               `json:"p99_ms"`
+	PercentileQuality          string                                `json:"percentile_quality,omitempty"`
 	AvgDNSMs                   float64                               `json:"avg_dns_ms,omitempty"`
 	AvgConnectMs               float64                               `json:"avg_connect_ms,omitempty"`
 	AvgTLSMs                   float64                               `json:"avg_tls_ms,omitempty"`
@@ -1430,6 +1431,7 @@ type TxMetrics struct {
 	P90Ms              float64                 `json:"p90_ms"`
 	P95Ms              float64                 `json:"p95_ms,omitempty"`
 	P99Ms              float64                 `json:"p99_ms"`
+	PercentileQuality  string                  `json:"percentile_quality,omitempty"`
 	// DurationSketch is the mergeable distribution behind the percentiles;
 	// DurationDigest is kept for consumers that predate it.
 	DurationSketch *engine.DurationSketchSnapshot `json:"-"`

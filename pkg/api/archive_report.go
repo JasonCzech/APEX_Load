@@ -353,6 +353,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		report.Overview.P90Ms = overallQuantiles.Quantile(0.90)
 		report.Overview.P95Ms = overallQuantiles.Quantile(0.95)
 		report.Overview.P99Ms = overallQuantiles.Quantile(0.99)
+		report.Overview.PercentileQuality = overallQuantiles.PercentileQuality()
 	}
 	if len(errorPatterns) > 0 {
 		report.ErrorPatterns = make([]RunArchiveErrorPattern, 0, len(errorPatterns))
@@ -695,18 +696,20 @@ func buildRunArchiveLoadLevelSummaries(summaries []IntervalSummaryRecord) []RunA
 			observedDuration = configured.Seconds()
 		}
 		var p50, p90, p95, p99 float64
+		quality := ""
 		if accumulator.durations.Kind() != "" && accumulator.durations.Count() == attempts {
 			p50 = accumulator.durations.Quantile(0.50) / float64(time.Millisecond)
 			p90 = accumulator.durations.Quantile(0.90) / float64(time.Millisecond)
 			p95 = accumulator.durations.Quantile(0.95) / float64(time.Millisecond)
 			p99 = accumulator.durations.Quantile(0.99) / float64(time.Millisecond)
+			quality = reportPercentileQuality(accumulator.durations.Kind())
 		}
 		result = append(result, RunArchiveLoadLevelSummary{
 			Group: accumulator.level.Group, StageIndex: accumulator.level.StageIndex, Name: accumulator.level.Name,
 			TargetVUsers: accumulator.level.TargetVUsers, ConfiguredDuration: accumulator.level.Duration,
 			ObservedDurationSeconds: observedDuration, Requests: accumulator.requests, Errors: accumulator.errors,
 			ErrorRatePct: errorPct, Throughput: accumulator.tps / weight, P50Ms: p50,
-			P90Ms: p90, P95Ms: p95, P99Ms: p99,
+			P90Ms: p90, P95Ms: p95, P99Ms: p99, PercentileQuality: quality,
 			Partial: configured > 0 && observedDuration+0.001 < configured.Seconds(),
 		})
 	}

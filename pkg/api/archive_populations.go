@@ -73,6 +73,7 @@ func (a *archivePopulationAccumulator) finish(window time.Duration) ArchiveMetri
 	result.ErrorPct = 100 * float64(a.stats.Errors) / float64(a.stats.Transactions)
 	result.P50Ms, result.P90Ms = a.digest.Quantile(.5), a.digest.Quantile(.9)
 	result.P95Ms, result.P99Ms = a.digest.Quantile(.95), a.digest.Quantile(.99)
+	result.PercentileQuality = a.digest.PercentileQuality()
 	return result
 }
 

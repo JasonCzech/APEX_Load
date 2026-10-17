@@ -684,6 +684,7 @@ type RunArchiveLoadLevelSummary struct {
 	P90Ms                   float64 `json:"p90_ms"`
 	P95Ms                   float64 `json:"p95_ms"`
 	P99Ms                   float64 `json:"p99_ms"`
+	PercentileQuality       string  `json:"percentile_quality,omitempty"`
 	Partial                 bool    `json:"partial,omitempty"`
 }
 
@@ -938,6 +939,7 @@ type RunArchiveOverview struct {
 	P90Ms                     float64                     `json:"p90_ms,omitempty"`
 	P95Ms                     float64                     `json:"p95_ms,omitempty"`
 	P99Ms                     float64                     `json:"p99_ms,omitempty"`
+	PercentileQuality         string                      `json:"percentile_quality,omitempty"`
 	ResourceSamples           int64                       `json:"resource_samples"`
 	IntervalSummaries         int64                       `json:"interval_summaries"`
 	PeakTPS                   float64                     `json:"peak_tps"`
@@ -1025,6 +1027,7 @@ type RunArchiveActionStats struct {
 	P90Ms              float64                      `json:"p90_ms,omitempty"`
 	P95Ms              float64                      `json:"p95_ms,omitempty"`
 	P99Ms              float64                      `json:"p99_ms,omitempty"`
+	PercentileQuality  string                       `json:"percentile_quality,omitempty"`
 	durations          []float64
 }
 

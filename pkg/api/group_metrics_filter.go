@@ -432,6 +432,7 @@ func clearLivePerformanceMetrics(live *LiveMetrics) {
 	live.P90Ms = 0
 	live.P95Ms = 0
 	live.P99Ms = 0
+	live.PercentileQuality = ""
 }
 
 func applySelectedGroupAggregate(live *LiveMetrics, selected []*GroupLiveMetrics) {
@@ -506,11 +507,13 @@ func applySelectedGroupAggregate(live *LiveMetrics, selected []*GroupLiveMetrics
 		live.P90Ms = mergedDigest.Quantile(0.90) / 1_000_000
 		live.P95Ms = mergedDigest.Quantile(0.95) / 1_000_000
 		live.P99Ms = mergedDigest.Quantile(0.99) / 1_000_000
+		live.PercentileQuality = percentileQualityTDigest
 	case percentileWeight > 0:
 		live.P50Ms = weightedPercentiles["p50"] / float64(percentileWeight)
 		live.P90Ms = weightedPercentiles["p90"] / float64(percentileWeight)
 		live.P95Ms = weightedPercentiles["p95"] / float64(percentileWeight)
 		live.P99Ms = weightedPercentiles["p99"] / float64(percentileWeight)
+		live.PercentileQuality = percentileQualityAveraged
 	}
 	if live.TargetTPS > 0 && live.TPS < live.TargetTPS {
 		live.ThroughputGapPct = ((live.TargetTPS - live.TPS) / live.TargetTPS) * 100

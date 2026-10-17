@@ -43,6 +43,23 @@ describe('TransactionSlaScoreboard', () => {
     expect(search.querySelectorAll('td')[3].textContent).toBe('—')
   })
 
+  it('marks percentiles that came from the duration sketch', async () => {
+    await act(async () => {
+      root.render(<TransactionSlaScoreboard rows={[{ ...rows[0], p50_ms: 310, p90_ms: 640, p99_ms: 980, percentile_quality: 'approximate' }, rows[1]]} />)
+    })
+    const [checkout, search] = ['Checkout', 'Search'].map(name => Array.from(container.querySelectorAll('.run-report-table tbody tr')).find(row => row.textContent?.startsWith(name))!)
+    const marks = checkout.querySelectorAll('.percentile-quality-mark')
+    expect(marks).toHaveLength(4)
+    expect(marks[0].getAttribute('title')).toContain('within 0.5%')
+    expect(checkout.querySelectorAll('td')[5].textContent).toContain('750')
+    expect(search.querySelectorAll('.percentile-quality-mark')).toHaveLength(0)
+    // A percentile the row lacks gets no mark.
+    await act(async () => {
+      root.render(<TransactionSlaScoreboard rows={[{ ...rows[0], percentile_quality: 'approximate' }]} />)
+    })
+    expect(container.querySelectorAll('.run-report-table tbody tr .percentile-quality-mark')).toHaveLength(1)
+  })
+
   it('filters by SLA result and emits selected transaction changes', async () => {
     const onSelect = vi.fn()
     await act(async () => {

@@ -5,6 +5,7 @@ import type { RunArchiveSLARow, TransactionEvent } from '../../types'
 import { formatMs, formatMsValue, formatNumber, formatPct } from './runReportModel'
 import { MISSING_VALUE } from './reportPresentation'
 import { formatDateTime } from '../../utils/dateTime'
+import PercentileQualityMark from '../PercentileQualityMark'
 
 type SortKey = 'name' | 'volume' | 'p50' | 'p90' | 'p95' | 'p99' | 'error' | 'result'
 type SortDir = 'asc' | 'desc'
@@ -73,10 +74,10 @@ function ScoreboardRow({ row, selected, onSelect }: { row: RunArchiveSLARow; sel
       <td>{row.name}</td>
       <td>{formatNumber(row.volume, 0)}</td>
       <td>{formatMsValue(row.min_ms)}</td>
-      <td>{formatMsValue(row.p50_ms)}</td>
-      <td>{formatMsValue(row.p90_ms)}</td>
-      <td>{formatMsValue(row.p95_ms)}</td>
-      <td>{formatMsValue(row.p99_ms)}</td>
+      <td><PercentileQualityMark quality={row.percentile_quality} value={row.p50_ms} />{formatMsValue(row.p50_ms)}</td>
+      <td><PercentileQualityMark quality={row.percentile_quality} value={row.p90_ms} />{formatMsValue(row.p90_ms)}</td>
+      <td><PercentileQualityMark quality={row.percentile_quality} value={row.p95_ms} />{formatMsValue(row.p95_ms)}</td>
+      <td><PercentileQualityMark quality={row.percentile_quality} value={row.p99_ms} />{formatMsValue(row.p99_ms)}</td>
       <td>{formatMsValue(row.max_ms)}</td>
       <td>{row.has_sla ? formatMsValue(row.sla_ms) : MISSING_VALUE}</td>
       <td>{formatPct(row.error_pct)}</td>

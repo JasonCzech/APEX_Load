@@ -20,6 +20,8 @@ export interface TransactionSLARuleResult {
   observed?: number
   matched_count: number
   message: string
+  /** 'approximate' when a percentile rule's observed value came from the duration sketch. */
+  percentile_quality?: string
 }
 
 export interface TransactionResponseTimeSLAResult {

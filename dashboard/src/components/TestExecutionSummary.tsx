@@ -8,6 +8,7 @@ import { websocketSummaryLines } from '../utils/websocketDiagnostics'
 import { GoalConfig, LiveDependencyMap, LiveErrorPattern, MetricsHistoryPoint, RunComparisonBaseline, TransactionResponseTimeSLAResult, TxMetrics } from '../types'
 import TransactionResponseTimeSLATable from './TransactionResponseTimeSLATable'
 import { formatDateTime } from '../utils/dateTime'
+import { isDegradedLivePercentileQuality, percentileQualityDescription } from '../utils/percentileQuality'
 
 interface MetricsSummary {
  properties?: Record<string, TxMetrics>
@@ -16,6 +17,7 @@ interface MetricsSummary {
   p90_ms?: number
   p95_ms?: number
   p99_ms?: number
+  percentile_quality?: string
   dependency_health?: Record<string, TxMetrics>
   dependency_map?: LiveDependencyMap
   error_patterns?: LiveErrorPattern[]
@@ -1026,6 +1028,9 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
             <span className="pct-value">{metrics.p99_ms?.toFixed(1)} ms</span>
           </div>
         </div>
+      )}
+      {metrics && isDegradedLivePercentileQuality(metrics.percentile_quality) && (
+        <p className="percentile-quality-note" role="note">{percentileQualityDescription(metrics.percentile_quality)}</p>
       )}
     </>
   )

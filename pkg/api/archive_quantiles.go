@@ -54,6 +54,70 @@ func (b *archiveQuantileBudget) release(bytes int64) {
 	}
 }
 
+// Percentile quality on report rows, SLA rule results, load levels and live
+// windows. A report percentile without one used every observation; a live one
+// came from the merged duration sketch.
+const (
+	// percentileQualityApproximate: from the duration sketch, within 0.5% of
+	// the value at its rank.
+	percentileQualityApproximate = "approximate"
+	// percentileQualityTDigest: merged from t-digests recorded before the
+	// sketch, with no error bound.
+	percentileQualityTDigest = "approximate_tdigest"
+	// percentileQualityAveraged: the count-weighted mean of the sources'
+	// percentiles, when a source sent no mergeable distribution.
+	percentileQualityAveraged = "averaged"
+)
+
+// reportPercentileQuality names the quality of report percentiles merged from
+// stored distributions of the given kind.
+func reportPercentileQuality(kind engine.DurationDistributionKind) string {
+	switch kind {
+	case engine.DurationDistributionSketch:
+		return percentileQualityApproximate
+	case engine.DurationDistributionTDigest:
+		return percentileQualityTDigest
+	}
+	return ""
+}
+
+// reportPercentileQualityDescription explains a percentile that is not exact,
+// in the dashboard's words, or returns "" for an exact one.
+func reportPercentileQualityDescription(quality string) string {
+	switch quality {
+	case percentileQualityApproximate:
+		return "Approximate: from a duration sketch, within 0.5% of the value at its rank."
+	case percentileQualityTDigest:
+		return "Approximate: merged from t-digests recorded before duration sketches, with no error bound."
+	case percentileQualityAveraged:
+		return "Averaged: a source sent no mergeable distribution, so these percentiles average the sources' own."
+	}
+	return ""
+}
+
+// reportCSVPercentileQuality names a percentile's quality in a CSV cell,
+// "exact" when it used every observation.
+func reportCSVPercentileQuality(quality string) string {
+	if quality == "" {
+		return "exact"
+	}
+	return quality
+}
+
+// reportPercentileQualitySuffix marks a percentile that is not exact in report
+// text.
+func reportPercentileQualitySuffix(quality string) string {
+	switch quality {
+	case percentileQualityApproximate:
+		return " (approximate)"
+	case percentileQualityTDigest:
+		return " (approximate, t-digest)"
+	case percentileQualityAveraged:
+		return " (averaged)"
+	}
+	return ""
+}
+
 type archiveQuantileAccumulator struct {
 	exact  []float64
 	sketch *engine.DurationSketch
@@ -102,6 +166,15 @@ func (acc *archiveQuantileAccumulator) promote() {
 		acc.sketch.Add(sample)
 	}
 	acc.exact = nil
+}
+
+// PercentileQuality is percentileQualityApproximate once the accumulator has
+// moved to the sketch, and empty while its percentiles are exact.
+func (acc *archiveQuantileAccumulator) PercentileQuality() string {
+	if acc != nil && acc.sketch != nil {
+		return percentileQualityApproximate
+	}
+	return ""
 }
 
 func (acc *archiveQuantileAccumulator) Count() int64 {

@@ -571,6 +571,7 @@ func finalizeRunArchiveActionStats(stats RunArchiveActionStats, quantiles *archi
 			stats.P90Ms = quantiles.Quantile(0.90)
 			stats.P95Ms = quantiles.Quantile(0.95)
 			stats.P99Ms = quantiles.Quantile(0.99)
+			stats.PercentileQuality = quantiles.PercentileQuality()
 		}
 	}
 	stats.durations = nil

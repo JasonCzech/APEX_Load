@@ -65,6 +65,7 @@ import { formatFixed, formatPercentValue } from '../utils/numberFormat'
 import { MISSING_VALUE } from './runReport/reportPresentation'
 import { formatMsValue } from './runReport/runReportModel'
 import { formatDateTime } from '../utils/dateTime'
+import PercentileQualityMark from './PercentileQualityMark'
 
 type ArchiveView =
   | 'all'
@@ -1103,7 +1104,7 @@ export default function TestExecutionArchive({
 							<div><h3 className="chart-title">Performance by Load Level</h3><p className="archive-section-copy">Retained interval evidence for each stepped-ramp group and aggregate load level.</p></div>
 						</div>
 						<div className="scenario-table-scroll"><table className="tx-table"><thead><tr><th>Group</th><th>Level</th><th>VUsers</th><th>Observed</th><th>Requests</th><th>Errors</th><th>Error Rate</th><th>TPS</th><th>P50</th><th>P90</th><th>P95</th><th>P99</th></tr></thead><tbody>
-							{archiveReport.load_level_summaries.map(level => <tr key={`${level.group}-${level.stage_index}-${level.target_vusers}`}><td>{level.group === '__total__' ? 'Total' : level.group}</td><td>{level.name}{level.partial ? ' (partial)' : ''}</td><td>{level.target_vusers}</td><td>{formatTimeCompact(level.observed_duration_seconds)}</td><td>{level.requests.toLocaleString()}</td><td>{level.errors.toLocaleString()}</td><td>{formatFixed(level.error_rate_pct, 2)}%</td><td>{formatFixed(level.throughput, 1)}</td><td>{formatFixed(level.p50_ms, 1)}</td><td>{formatFixed(level.p90_ms, 1)}</td><td>{formatFixed(level.p95_ms, 1)}</td><td>{formatFixed(level.p99_ms, 1)}</td></tr>)}
+							{archiveReport.load_level_summaries.map(level => <tr key={`${level.group}-${level.stage_index}-${level.target_vusers}`}><td>{level.group === '__total__' ? 'Total' : level.group}</td><td>{level.name}{level.partial ? ' (partial)' : ''}</td><td>{level.target_vusers}</td><td>{formatTimeCompact(level.observed_duration_seconds)}</td><td>{level.requests.toLocaleString()}</td><td>{level.errors.toLocaleString()}</td><td>{formatFixed(level.error_rate_pct, 2)}%</td><td>{formatFixed(level.throughput, 1)}</td><td><PercentileQualityMark quality={level.percentile_quality} />{formatFixed(level.p50_ms, 1)}</td><td><PercentileQualityMark quality={level.percentile_quality} />{formatFixed(level.p90_ms, 1)}</td><td><PercentileQualityMark quality={level.percentile_quality} />{formatFixed(level.p95_ms, 1)}</td><td><PercentileQualityMark quality={level.percentile_quality} />{formatFixed(level.p99_ms, 1)}</td></tr>)}
 						</tbody></table></div>
 					</div>
 				)}
@@ -1606,10 +1607,10 @@ export default function TestExecutionArchive({
                       <td className={(stats.errors || 0) > 0 ? 'error-cell' : ''}>{formatArchiveCount(stats.errors)}</td>
                       <td>{formatArchivePercent(stats.error_pct)}</td>
                       <td>{formatMsValue(stats.avg_response_ms)}</td>
-                      <td>{formatMsValue(stats.p50_ms)}</td>
-                      <td>{formatMsValue(stats.p90_ms)}</td>
-                      <td>{formatMsValue(stats.p95_ms)}</td>
-                      <td>{formatMsValue(stats.p99_ms)}</td>
+                      <td><PercentileQualityMark quality={stats.percentile_quality} value={stats.p50_ms} />{formatMsValue(stats.p50_ms)}</td>
+                      <td><PercentileQualityMark quality={stats.percentile_quality} value={stats.p90_ms} />{formatMsValue(stats.p90_ms)}</td>
+                      <td><PercentileQualityMark quality={stats.percentile_quality} value={stats.p95_ms} />{formatMsValue(stats.p95_ms)}</td>
+                      <td><PercentileQualityMark quality={stats.percentile_quality} value={stats.p99_ms} />{formatMsValue(stats.p99_ms)}</td>
                       <td>{formatMsValue(stats.max_response_ms)}</td>
                     </tr>
                   ))}

@@ -13,6 +13,11 @@ func ActionPropertyKey(action, property, value string) string {
 	return string(data)
 }
 
+// CloneTDigestSnapshot copies a digest. It returns nil for one with more than
+// 1,024 centroids, which no engine digest reaches and ValidateDurationDigest
+// refuses, so an oversized peer or stored digest is never retained. Merges
+// then use the duration sketch beside it; without one, the merged percentiles
+// are marked averaged (live) or unavailable (archives).
 func CloneTDigestSnapshot(in *TDigestSnapshot) *TDigestSnapshot {
 	if in == nil || len(in.Centroids) > 1024 {
 		return nil

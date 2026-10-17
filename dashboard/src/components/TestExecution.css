@@ -3013,6 +3013,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+.percentile-quality-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* Multi-group config bar */
 .group-config-bar {
   display: flex;

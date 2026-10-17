@@ -1340,6 +1340,8 @@ Request throughput counts protocol requests; transaction throughput counts named
 
 Percentiles describe the distribution: p95 means 95% of the measured samples were at or below that latency. Compare p95/p99 alongside sample counts, throughput, error rate and test phase. A percentile based on a handful of observations is not a stable baseline.
 
+Reports compute percentiles from every observation up to their exact limits (20,000 per transaction for SLA rules and the transaction tables, while a report's 40 MiB budget lasts) and from a duration sketch beyond them. A sketched percentile is marked ≈ ("approximate" in PDF and Word exports) and is within 0.5% of the value at its rank. In a distributed run, a generator older than duration sketches makes its window's live percentiles approximate, and the run view says so under the percentile bar.
+
 For baseline comparisons, hold target environment, release context, script version, data, load shape, runtime settings and measurement windows constant where possible. Explain intentional differences. Separate warm-up/ramp behavior from steady state, and inspect generator saturation before blaming the target.
 
 The run's validity verdict does that check: `suspect` when a load generator stayed saturated at a steady load, `invalid` when results were lost (an OOM-killed generator, dropped results, shed arrivals), and `unknown` when generator statistics are missing. A closed-model run whose throughput falls while latency rises stays valid; that is the system under test, reported as an anomaly. See [run validity](ANALYSIS_WORKFLOWS.md#run-validity) for the rules.

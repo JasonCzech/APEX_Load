@@ -1541,6 +1541,8 @@ export interface RunArchiveActionStats {
   p90_ms?: number
   p95_ms?: number
   p99_ms?: number
+  /** 'approximate' when the percentiles came from the duration sketch. */
+  percentile_quality?: string
 }
 
 export interface RunArchiveResourcePeaks {
@@ -1626,6 +1628,8 @@ export interface RunArchiveOverview {
   p90_ms?: number
   p95_ms?: number
   p99_ms?: number
+  /** 'approximate' when the percentiles came from the duration sketch. */
+  percentile_quality?: string
   resource_samples: number
   interval_summaries: number
   peak_tps: number
@@ -1741,6 +1745,8 @@ export interface RunArchiveSLARow {
   error_pct: number
   result: string
   result_kind: 'pass' | 'warn' | 'fail' | 'na' | string
+  /** 'approximate' when the percentiles came from the duration sketch. */
+  percentile_quality?: string
 }
 
 export interface RunArchiveSLARollup {
@@ -1860,6 +1866,8 @@ export interface RunArchiveLoadLevelSummary {
 	p95_ms: number
 	p99_ms: number
 	partial?: boolean
+	/** 'approximate' (duration sketch) or 'approximate_tdigest' (an archive older than the sketch). */
+	percentile_quality?: string
 }
 
 export interface RunArchiveNetworkPhaseSummary {
@@ -2430,6 +2438,8 @@ export interface LiveMetrics {
   p90_ms: number
   p95_ms: number
   p99_ms: number
+  /** Set when a distributed window fell back from the merged duration sketch: 'approximate_tdigest' or 'averaged'. */
+  percentile_quality?: string
   avg_dns_ms?: number
   avg_connect_ms?: number
   avg_tls_ms?: number
@@ -2751,6 +2761,8 @@ export interface TxMetrics {
   p90_ms: number
   p95_ms?: number
   p99_ms: number
+  /** Set when a distributed window fell back from the merged duration sketch: 'approximate_tdigest' or 'averaged'. */
+  percentile_quality?: string
   /** The groups whose VUsers ran it in the window, sorted; absent when the source does not attribute transactions. */
   groups?: string[]
   /** Each group's share, when more than one group ran it. */

@@ -331,6 +331,10 @@ type MetricAggregate struct {
 	DurationDigest   *engine.TDigestSnapshot
 	DurationSketch   *engine.DurationSketchSnapshot
 	Exemplars        []engine.TraceExemplar
+	// PercentileQuality is set where a controller merges aggregates, when
+	// their percentiles could not come from a merged sketch. It is never
+	// sent.
+	PercentileQuality string
 }
 
 type BrowserMetrics struct {

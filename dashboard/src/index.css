@@ -942,3 +942,9 @@ select option:checked {
   white-space: nowrap;
   border: 0;
 }
+
+/* A "≈" before a percentile that is not exact (PercentileQualityMark). */
+.percentile-quality-mark {
+  cursor: help;
+  color: var(--text-muted);
+}
