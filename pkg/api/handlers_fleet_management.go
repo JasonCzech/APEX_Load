@@ -877,6 +877,17 @@ func (s *Server) createProvisioningRequest(req *storage.ProvisioningRequest) err
 	return s.store.SaveProvisioningRequest(req)
 }
 
+// ownerScaleContext ends a synchronous scale when the caller goes away or the
+// operation's lease term is lost, whichever comes first.
+func ownerScaleContext(parent context.Context, owner *capacityOperationOwner) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	stop := context.AfterFunc(owner.ctx, cancel)
+	return ctx, func() {
+		stop()
+		cancel()
+	}
+}
+
 func (s *Server) transitionProvisioningRequest(req *storage.ProvisioningRequest, expectedRevision int, expectedAttemptToken string) error {
 	if cas, ok := s.store.(provisioningRequestCASStore); ok {
 		changed, err := cas.TransitionProvisioningRequest(req, expectedRevision, expectedAttemptToken)
@@ -960,13 +971,21 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 			return
 		}
 		// A real provisioner is wired: actually scale the pool's workload and
-		// drive the request through its lifecycle.
+		// drive the request through its lifecycle. The attempt belongs to this
+		// launch's lease term, as asynchronous capacity work does, so a scale
+		// that outlives the term cannot publish its result.
 		req.Status = "provisioning"
-		if !s.beginFleetProvisioningAttempt(req.ID, req.AttemptToken) {
+		owner, ownerErr := s.capacityOperationOwner(&req, r.Context())
+		if ownerErr != nil {
+			writeError(w, http.StatusServiceUnavailable, ownerErr.Error())
+			return
+		}
+		if !s.beginCapacityOperation(owner) {
+			owner.cancel()
 			writeError(w, http.StatusConflict, "provisioning request already has an active scale attempt")
 			return
 		}
-		defer s.endFleetProvisioningAttempt(req.ID, req.AttemptToken)
+		defer owner.finish()
 		if err := s.createProvisioningRequest(&req); err != nil {
 			writeProvisioningCreateError(w, err)
 			return
@@ -974,37 +993,35 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		s.saveProvisioningEvent(req.ID, "requested", "provisioning requested", now)
 		s.saveProvisioningEvent(req.ID, "provisioning", fmt.Sprintf("scaling pool %q toward %d generators", pool.Name, req.DesiredCount), now)
 
-		scaleCtx, cancelScale := s.runner.executionOperationContext(r.Context())
+		scaleCtx, cancelScale := ownerScaleContext(r.Context(), owner)
 		workload, scaledTo, perr := poolScaler.ScalePool(scaleCtx, pool, effectiveDesiredCount)
 		cancelScale()
-		if s.runner == nil || !s.runner.isExecutionLeader() {
+		if !owner.current() {
 			writeError(w, http.StatusConflict, "execution leadership changed while provisioning; result left for the active leader to reconcile")
 			return
 		}
 		done := time.Now()
 		expectedRevision := req.Revision
-		expectedAttemptToken := req.AttemptToken
 		req.Revision++
 		req.CompletedAt = &done
 		if perr != nil {
 			req.Status = "failed"
-			if err := s.transitionProvisioningRequest(&req, expectedRevision, expectedAttemptToken); err != nil {
+			if err := owner.transition(&req, expectedRevision, owner.attemptToken); err != nil {
 				slog.Error("failed to persist failed provisioning request", "request_id", req.ID, "error", err)
 				writeError(w, http.StatusInternalServerError, "provisioning failed and its terminal state could not be persisted")
 				return
 			}
 			s.saveProvisioningEvent(req.ID, "failure", "provisioning failed: "+perr.Error(), done)
 		} else {
+			// Success commits the pool's desired size in the same fenced
+			// transaction (scaledTo equals the validated desired count).
 			req.Status = "success"
-			if err := s.transitionProvisioningRequest(&req, expectedRevision, expectedAttemptToken); err != nil {
+			if err := owner.transition(&req, expectedRevision, owner.attemptToken); err != nil {
 				slog.Error("failed to persist successful provisioning request", "request_id", req.ID, "error", err)
 				writeError(w, http.StatusInternalServerError, "fleet was scaled but the provisioning result could not be persisted")
 				return
 			}
 			s.saveProvisioningEvent(req.ID, "success", fmt.Sprintf("scaled %s to %d replicas", workload, scaledTo), done)
-			if err := updateFleetPoolDesiredSize(s.store, pool.ID, scaledTo); err != nil {
-				slog.Warn("failed to persist pool desired size after provisioning", "pool_id", pool.ID, "err", err)
-			}
 		}
 		s.recordAuditEvent(r, "provisioning.request.create", "success", "provisioning_request", req.ID, req.ProjectID, map[string]any{
 			"fleet_pool_id": req.FleetPoolID, "desired_count": req.DesiredCount, "status": req.Status, "workload": workload,
@@ -1324,31 +1341,37 @@ func (s *Server) handleRetryProvisioningRequest(w http.ResponseWriter, r *http.R
 	req.Status = "provisioning"
 	req.Revision++
 	req.AttemptToken = uuid.New().String()
-	if !s.beginFleetProvisioningAttempt(req.ID, req.AttemptToken) {
+	owner, ownerErr := s.capacityOperationOwner(req, r.Context())
+	if ownerErr != nil {
+		writeError(w, http.StatusServiceUnavailable, ownerErr.Error())
+		return
+	}
+	if !s.beginCapacityOperation(owner) {
+		owner.cancel()
 		writeError(w, http.StatusConflict, "provisioning request already has an active scale attempt")
 		return
 	}
-	defer s.endFleetProvisioningAttempt(req.ID, req.AttemptToken)
-	if err := s.transitionProvisioningRequest(req, expectedRevision, expectedAttemptToken); err != nil {
+	defer owner.finish()
+	if err := owner.transition(req, expectedRevision, expectedAttemptToken); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to retry provisioning request")
 		return
 	}
 	s.saveProvisioningEvent(req.ID, "retry", "provisioning retry requested", now)
 
-	scaleCtx, cancelScale := s.runner.executionOperationContext(r.Context())
-	status, workload, scaledTo, message := s.executeProvisioningScale(scaleCtx, req, pool)
+	scaleCtx, cancelScale := ownerScaleContext(r.Context(), owner)
+	status, workload, _, message := s.executeProvisioningScale(scaleCtx, req, pool)
 	cancelScale()
-	if s.runner == nil || !s.runner.isExecutionLeader() {
+	if !owner.current() {
 		writeError(w, http.StatusConflict, "execution leadership changed while provisioning; result left for the active leader to reconcile")
 		return
 	}
 	done := time.Now()
 	expectedRevision = req.Revision
-	expectedAttemptToken = req.AttemptToken
 	req.Status = status
 	req.Revision++
 	req.CompletedAt = &done
-	if err := s.transitionProvisioningRequest(req, expectedRevision, expectedAttemptToken); err != nil {
+	// Success commits the pool's desired size in the same fenced transaction.
+	if err := owner.transition(req, expectedRevision, owner.attemptToken); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to persist provisioning retry result")
 		return
 	}
@@ -1357,11 +1380,6 @@ func (s *Server) handleRetryProvisioningRequest(w http.ResponseWriter, r *http.R
 		eventType = "failure"
 	}
 	s.saveProvisioningEvent(req.ID, eventType, message, done)
-	if status == "success" {
-		if err := updateFleetPoolDesiredSize(s.store, pool.ID, scaledTo); err != nil {
-			slog.Warn("failed to persist pool desired size after provisioning retry", "pool_id", pool.ID, "err", err)
-		}
-	}
 	s.recordAuditEvent(r, "provisioning.request.retry", "success", "provisioning_request", req.ID, req.ProjectID, map[string]any{
 		"fleet_pool_id": req.FleetPoolID, "desired_count": req.DesiredCount, "status": req.Status, "workload": workload,
 	})
@@ -1505,33 +1523,38 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 			expectedRevision, expectedToken := req.Revision, req.AttemptToken
 			req.Revision++
 			req.AttemptToken = uuid.New().String()
-			if !s.beginFleetProvisioningAttempt(req.ID, req.AttemptToken) {
+			owner, ownerErr := s.capacityOperationOwner(req, ctx)
+			if ownerErr != nil {
+				return ownerErr
+			}
+			if !s.beginCapacityOperation(owner) {
+				owner.cancel()
 				continue
 			}
-			if err := s.transitionProvisioningRequest(req, expectedRevision, expectedToken); err != nil {
-				s.endFleetProvisioningAttempt(req.ID, req.AttemptToken)
+			if err := owner.transition(req, expectedRevision, expectedToken); err != nil {
+				owner.finish()
 				continue
 			}
-			expectedRevision, expectedToken = req.Revision, req.AttemptToken
-			status, workload, scaledTo, message := s.executeProvisioningScale(ctx, req, pool)
-			s.endFleetProvisioningAttempt(req.ID, req.AttemptToken)
-			if ctx.Err() != nil || !s.runner.holdsExecutionLeadership() {
+			expectedRevision = req.Revision
+			scaleCtx, cancelScale := ownerScaleContext(ctx, owner)
+			status, workload, _, message := s.executeProvisioningScale(scaleCtx, req, pool)
+			cancelScale()
+			if ctx.Err() != nil || !owner.current() {
+				owner.finish()
 				return firstNonNilError(ctx.Err(), errNotExecutionLeader)
 			}
 			now := time.Now()
 			req.Status = status
 			req.Revision++
 			req.CompletedAt = &now
-			if err := s.transitionProvisioningRequest(req, expectedRevision, expectedToken); err != nil {
+			// Success commits the pool's desired size in the same fenced transaction.
+			err = owner.transition(req, expectedRevision, owner.attemptToken)
+			owner.finish()
+			if err != nil {
 				slog.Warn("provisioning reconcile lost race or failed to persist", "request_id", req.ID, "error", err)
 				continue
 			}
 			s.saveProvisioningEvent(req.ID, map[bool]string{true: "success", false: "failure"}[status == "success"], message, now)
-			if status == "success" {
-				if err := updateFleetPoolDesiredSize(s.store, pool.ID, scaledTo); err != nil {
-					slog.Warn("failed to persist pool desired size after provisioning reconcile", "pool_id", pool.ID, "error", err)
-				}
-			}
 			s.broadcastFleetEvent("provisioning_request_updated", map[string]any{"request_id": req.ID, "fleet_pool_id": req.FleetPoolID, "status": req.Status, "desired_count": req.DesiredCount, "workload": workload})
 		}
 		if len(requests) < pageSize {
