@@ -54,7 +54,7 @@ func JSONPath(expr string, body []byte) (string, error) {
 		return "", fmt.Errorf("invalid jsonpath: empty path segment")
 	}
 	var current any
-	if err := json.Unmarshal(body, &current); err != nil {
+	if err := DecodeExact(body, &current); err != nil {
 		return "", err
 	}
 	if expr == "" {
@@ -207,15 +207,18 @@ func Boundary(expr string, body []byte) (string, error) {
 	return text[start : start+end], nil
 }
 
-// Stringify renders an extracted JSON value as a string: "" for nil, the string
-// itself for strings, fmt.Sprint for scalars, and compact JSON for anything else.
+// Stringify renders nil as "", strings unchanged, and json.Number as its exact
+// token. Finite floats and composite values use compact JSON formatting; values
+// unsupported by JSON, including nonfinite floats, retain fmt.Sprint formatting.
 func Stringify(value any) string {
 	switch typed := value.(type) {
 	case nil:
 		return ""
 	case string:
 		return typed
-	case float64, bool, int, int64:
+	case json.Number:
+		return typed.String()
+	case bool, int, int64:
 		return fmt.Sprint(typed)
 	default:
 		data, err := json.Marshal(typed)

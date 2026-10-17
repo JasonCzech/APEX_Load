@@ -696,21 +696,17 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 			status = "AUTH_FAILED"
 		}
 		failure := CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciFailureOutcome(err), Status: status, TestID: deterministicCITestID(args.projectID, idempotencyKey)}
-		if args.abortOnCancel && ctx.Err() != nil {
-			failure.Outcome, failure.Status = ciOutcomeCancelled, "CANCELLED"
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				failure.Outcome, failure.Status = ciOutcomeTimedOut, "TIMED_OUT"
-			}
-			persistCICoreEvidenceBeforeAbort(args, failure)
-			if abortErr := abortControllerCIRun(context.Background(), auth, client, deterministicCITestID(args.projectID, idempotencyKey), ciAbortReason(ctx.Err())); abortErr != nil {
-				return failure, errors.Join(err, fmt.Errorf("controller may still be running the cancelled CI load: %w", abortErr))
-			}
+		if ctx.Err() != nil {
+			return finalizeControllerCICancellation(ctx, args, auth, client, failure, err)
 		}
 		return failure, err
 	}
 	result := ciResultFromResponse(created)
 
 	for {
+		if ctx.Err() != nil {
+			return finalizeControllerCICancellation(ctx, args, auth, client, result, nil)
+		}
 		if isTerminalCIResponse(created) {
 			classifyCIResult(&result)
 			if checkErr := enforceRequiredCICheck(args, created, &result); checkErr != nil {
@@ -723,26 +719,16 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 		}
 		select {
 		case <-ctx.Done():
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				result.Outcome = ciOutcomeTimedOut
-				result.Status = "TIMED_OUT"
-			} else {
-				result.Outcome = ciOutcomeCancelled
-				result.Status = "CANCELLED"
-			}
-			if args.abortOnCancel {
-				persistCICoreEvidenceBeforeAbort(args, result)
-				if abortErr := abortControllerCIRun(context.Background(), auth, client, created.TestID, ciAbortReason(ctx.Err())); abortErr != nil {
-					return result, errors.Join(ctx.Err(), fmt.Errorf("controller may still be running the cancelled CI load: %w", abortErr))
-				}
-			}
-			return result, ctx.Err()
+			return finalizeControllerCICancellation(ctx, args, auth, client, result, nil)
 		case <-time.After(ciPollInterval):
 		}
 		created, err = retryControllerCIRequest(ctx, auth, client, func() (*CIRunResponse, error) {
 			return client.GetCIRun(ctx, created.TestID)
 		})
 		if err != nil {
+			if ctx.Err() != nil {
+				return finalizeControllerCICancellation(ctx, args, auth, client, result, err)
+			}
 			result.Outcome = ciFailureOutcome(err)
 			result.Status = "STATUS_FAILED"
 			persistCICoreEvidenceBeforeAbort(args, result)
@@ -753,6 +739,31 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 		}
 		result = ciResultFromResponse(created)
 	}
+}
+
+// finalizeControllerCICancellation owns the result and abort policy for all
+// cancellation boundaries: creation, status/auth requests, retry backoff, and
+// the poll timer. Observation errors alone must never enter this path.
+func finalizeControllerCICancellation(ctx context.Context, args ciArgs, auth *ciAuthSession, client *ApiClient, result CIResult, requestErr error) (CIResult, error) {
+	cause := ctx.Err()
+	result.Outcome, result.Status = ciOutcomeCancelled, "CANCELLED"
+	if errors.Is(cause, context.DeadlineExceeded) {
+		result.Outcome, result.Status = ciOutcomeTimedOut, "TIMED_OUT"
+	}
+	if requestErr == nil {
+		requestErr = cause
+	} else if !errors.Is(requestErr, cause) {
+		requestErr = errors.Join(requestErr, cause)
+	}
+	persistCICoreEvidenceBeforeAbort(args, result)
+	if args.abortOnCancel {
+		// The workflow context has expired. Abort still needs its own bounded
+		// lifetime so the controller can confirm it stopped the accepted run.
+		if abortErr := abortControllerCIRun(context.Background(), auth, client, result.TestID, ciAbortReason(cause)); abortErr != nil {
+			return result, errors.Join(requestErr, fmt.Errorf("controller may still be running the cancelled CI load: %w", abortErr))
+		}
+	}
+	return result, requestErr
 }
 
 type ciFileProvenance struct {

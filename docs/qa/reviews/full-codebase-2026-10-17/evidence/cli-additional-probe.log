@@ -1,0 +1,55 @@
+=== RUN   TestFullReviewStatusSLAEvaluation
+=== RUN   TestFullReviewStatusSLAEvaluation/unevaluated_text
+    full_review_additional_probe_test.go:38: actual output: Test:   probe
+        Status: COMPLETE
+        SLA:    passing
+    full_review_additional_probe_test.go:48: unevaluated SLA was reported as passing: Test:   probe
+        Status: COMPLETE
+        SLA:    passing
+=== RUN   TestFullReviewStatusSLAEvaluation/unevaluated_json
+    full_review_additional_probe_test.go:38: actual output: {
+          "failed": false,
+          "sla_breached": false,
+          "status": "COMPLETE",
+          "test_id": "probe"
+        }
+    full_review_additional_probe_test.go:43: unevaluated SLA information must survive status JSON: {
+          "failed": false,
+          "sla_breached": false,
+          "status": "COMPLETE",
+          "test_id": "probe"
+        }
+=== RUN   TestFullReviewStatusSLAEvaluation/evaluated_text_control
+    full_review_additional_probe_test.go:38: actual output: Test:   probe
+        Status: COMPLETE
+        SLA:    passing
+--- FAIL: TestFullReviewStatusSLAEvaluation (0.00s)
+    --- FAIL: TestFullReviewStatusSLAEvaluation/unevaluated_text (0.00s)
+    --- FAIL: TestFullReviewStatusSLAEvaluation/unevaluated_json (0.00s)
+    --- PASS: TestFullReviewStatusSLAEvaluation/evaluated_text_control (0.00s)
+=== RUN   TestFullReviewExplainAllActionScopes
+=== RUN   TestFullReviewExplainAllActionScopes/top_level_control
+    full_review_additional_probe_test.go:67: actual result: main.scriptExplainResult{Name:"explain-probe", Protocol:"http", BaseURL:"https://example.com", Actions:1, Assertions:1, Extractors:1, DataSources:0, GoalConfigured:false, GeneratedBy:"", GeneratedFrom:"", Summary:"explain-probe is a http script with 1 action, 1 assertion, and 1 extractor.", NextActions:[]string{"Add data sources if this flow needs per-user or per-iteration variation.", "Add goal_config thresholds for CI/CD gating."}}
+=== RUN   TestFullReviewExplainAllActionScopes/nested_loop
+    full_review_additional_probe_test.go:67: actual result: main.scriptExplainResult{Name:"explain-probe", Protocol:"http", BaseURL:"https://example.com", Actions:1, Assertions:0, Extractors:0, DataSources:0, GoalConfigured:false, GeneratedBy:"", GeneratedFrom:"", Summary:"explain-probe is a http script with 1 action, 0 assertions, and 0 extractors.", NextActions:[]string{"Add data sources if this flow needs per-user or per-iteration variation.", "Add assertions for release-gate confidence.", "Review responses for dynamic tokens and add extractors where needed.", "Add goal_config thresholds for CI/CD gating."}}
+    full_review_additional_probe_test.go:69: lost known assertion/extractor from valid script: assertions=0 extractors=0
+    full_review_additional_probe_test.go:73: misleading missing-signal recommendation: Add assertions for release-gate confidence.
+    full_review_additional_probe_test.go:73: misleading missing-signal recommendation: Review responses for dynamic tokens and add extractors where needed.
+=== RUN   TestFullReviewExplainAllActionScopes/init_phase
+    full_review_additional_probe_test.go:67: actual result: main.scriptExplainResult{Name:"explain-probe", Protocol:"http", BaseURL:"https://example.com", Actions:1, Assertions:0, Extractors:0, DataSources:0, GoalConfigured:false, GeneratedBy:"", GeneratedFrom:"", Summary:"explain-probe is a http script with 1 action, 0 assertions, and 0 extractors.", NextActions:[]string{"Add data sources if this flow needs per-user or per-iteration variation.", "Add assertions for release-gate confidence.", "Review responses for dynamic tokens and add extractors where needed.", "Add goal_config thresholds for CI/CD gating."}}
+    full_review_additional_probe_test.go:69: lost known assertion/extractor from valid script: assertions=0 extractors=0
+    full_review_additional_probe_test.go:73: misleading missing-signal recommendation: Add assertions for release-gate confidence.
+    full_review_additional_probe_test.go:73: misleading missing-signal recommendation: Review responses for dynamic tokens and add extractors where needed.
+=== RUN   TestFullReviewExplainAllActionScopes/teardown_phase
+    full_review_additional_probe_test.go:67: actual result: main.scriptExplainResult{Name:"explain-probe", Protocol:"http", BaseURL:"https://example.com", Actions:1, Assertions:0, Extractors:0, DataSources:0, GoalConfigured:false, GeneratedBy:"", GeneratedFrom:"", Summary:"explain-probe is a http script with 1 action, 0 assertions, and 0 extractors.", NextActions:[]string{"Add data sources if this flow needs per-user or per-iteration variation.", "Add assertions for release-gate confidence.", "Review responses for dynamic tokens and add extractors where needed.", "Add goal_config thresholds for CI/CD gating."}}
+    full_review_additional_probe_test.go:69: lost known assertion/extractor from valid script: assertions=0 extractors=0
+    full_review_additional_probe_test.go:73: misleading missing-signal recommendation: Add assertions for release-gate confidence.
+    full_review_additional_probe_test.go:73: misleading missing-signal recommendation: Review responses for dynamic tokens and add extractors where needed.
+--- FAIL: TestFullReviewExplainAllActionScopes (0.00s)
+    --- PASS: TestFullReviewExplainAllActionScopes/top_level_control (0.00s)
+    --- FAIL: TestFullReviewExplainAllActionScopes/nested_loop (0.00s)
+    --- FAIL: TestFullReviewExplainAllActionScopes/init_phase (0.00s)
+    --- FAIL: TestFullReviewExplainAllActionScopes/teardown_phase (0.00s)
+FAIL
+FAIL	github.com/jasonczech/apexload/cmd/apexctl	1.063s
+FAIL

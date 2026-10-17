@@ -1,0 +1,51 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run src/components/full-review-recording-probe.test.tsx -t fullreview --maxWorkers=1
+
+
+ RUN  v5.0.3 /Users/jasonczech/.codex/worktrees/monthly-code-review/Project_Stormrunner/dashboard
+
+ ❯ src/components/full-review-recording-probe.test.tsx (94 tests | 2 failed | 90 skipped) 165ms
+   ❯ RecordingStudio (94)
+     × fullreview selection response late=true respects newest session 31ms
+     × fullreview save response late=true preserves other session draft 32ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/full-review-recording-probe.test.tsx > RecordingStudio > fullreview selection response late=true respects newest session
+AssertionError: expected 'Recording StudioRecord a browser sess…' to contain 'Request detail: B'
+
+Expected: "Request detail: B"
+Received: "Recording StudioRecord a browser session and convert it to a test scriptBrowser actionsHTTP proxy (advanced)Record a browser sessionOpens Chromium on this computer and records what you do.Start URLhttps://http://Session nameEmulated device presetDesktop (default)iphone 15 pro (ios)Presets emulate viewport, mobile mode and touch on the recording workstation. They do not qualify Chrome on a physical iPad.Capture side-car HAR (network traffic for protocol-level scripting)Advanced optionsStart browser recordingChromium opens on this computer with a small recording bar (pause, assert, stop) that you can drag along any edge or hide to a tab; its ⋯ button opens sections, transactions, notes and recent steps. Manage the session from there or from the control panel docked below.Capture a phone or tabletThe APEX Load Recording Agent records a device's apps through a proxy on a computer on the same network.Set up the Recording AgentHTTP proxy recorderCapture HTTP(S) traffic through the controller recording proxy when headed browser recording is unavailable.Proxy setupNew recordingSession nameInclude hosts (comma-separated, optional; each also covers its subdomains)Exclude hosts (comma-separated, optional; each also covers its subdomains)Capture cookies (may include secrets)Start recordingRecent recordingsParameterize input values when converting an HTTP proxy recording (promote recorded form/query inputs into a data source)AHTTP proxy1 requestsNo base URLMay 12, 2026, 4:00:00 PM EDTConvert to scriptExport HARDeleteBHTTP proxy1 requestsNo base URLMay 12, 2026, 4:00:00 PM EDTConvert to scriptExport HARDeleteRequest detail: A1 requests#MethodPathStatusTimeThinkTypeSizeUse1GETA2001ms——0BExclude"
+
+ ❯ src/components/full-review-recording-probe.test.tsx:5651:35
+    5649|     expect(container.textContent).toContain("Request detail: B");
+    5650|     if (late) await act(async()=>resolveA({...a,requests:[req("A")]}));
+    5651|     expect(container.textContent).toContain("Request detail: B");
+       |                                   ^
+    5652|   });
+    5653|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/full-review-recording-probe.test.tsx > RecordingStudio > fullreview save response late=true preserves other session draft
+AssertionError: expected 'A saved' to be 'B' // Object.is equality
+
+Expected: "B"
+Received: "A saved"
+
+ ❯ src/components/full-review-recording-probe.test.tsx:5672:27
+    5670|     expect(draft().value).toBe("B");
+    5671|     if(late) await act(async()=>resolveSave({...req("A"),step_name:"A …
+    5672|     expect(draft().value).toBe("B");
+       |                           ^
+    5673|   });
+    5674|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed | 90 skipped (94)
+   Start at  10:12:28
+   Duration  1.29s (environment 39%, transform 37%, tests 14%, import 9%, setup 1%)

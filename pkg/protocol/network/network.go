@@ -727,7 +727,7 @@ func evaluateNetworkAssertions(assertions []protocol.Assertion, result *protocol
 
 func decodeNetworkPayload(body string) (map[string]any, error) {
 	var payload map[string]any
-	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+	if err := jsonextract.DecodeExact([]byte(body), &payload); err != nil {
 		return nil, fmt.Errorf("decode network response: %w", err)
 	}
 	return payload, nil

@@ -1,0 +1,5 @@
+{
+  "declared_tools": 303,
+  "method_path_mismatches": [],
+  "scope": "Static method/path presence comparison only; request/response schema compatibility not established"
+}

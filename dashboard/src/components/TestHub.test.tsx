@@ -2453,6 +2453,61 @@ describe('TestHub', () => {
     expect(groupPayload?.runtime_settings?.run_logic).toEqual(expect.objectContaining({ iterations: 5 }))
   })
 
+  it.each([false, true])('scenario history failure=%s remains retryable', async (failure) => {
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [scenarioFixture('scenario-probe', 'History probe')], count: 1 })
+    apiMock.listScenarioResults.mockReset()
+    if (failure) apiMock.listScenarioResults.mockRejectedValueOnce(new Error('HTTP 503 transient failure'))
+    else apiMock.listScenarioResults.mockResolvedValueOnce({ tests: [], count: 0 })
+    apiMock.listScenarioResults.mockResolvedValue({ tests: [{ id: 'recovered-run', name: 'Recovered history', status: 'COMPLETE', duration: '1m', created_at: '2026-10-17T00:00:00Z' }], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    await clickButton('View runs')
+    await flushPromises()
+    expect(apiMock.listScenarioResults).toHaveBeenCalledTimes(1)
+    if (failure) expect(container.textContent).not.toContain('No runs for this scenario yet.')
+    else expect(container.textContent).toContain('No runs for this scenario yet.')
+    await clickButton('Hide runs')
+    await clickButton('View runs')
+    await flushPromises()
+    expect(apiMock.listScenarioResults).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('Recovered history')
+  })
+
+  it.each([false, true])('refreshes a successful history explicitly, initially populated=%s', async populated => {
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [scenarioFixture('scenario-refresh', 'History refresh')], count: 1 })
+    apiMock.listScenarioResults.mockReset()
+    const previous = { id: 'previous', name: 'Previous history run', status: 'RUNNING', duration: '1m', created_at: '2026-10-17T00:00:00Z' }
+    apiMock.listScenarioResults.mockResolvedValueOnce({ tests: populated ? [previous] : [], count: populated ? 1 : 0 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    await clickButton('View runs')
+    await flushPromises()
+    expect(container.textContent).toContain(populated ? 'Previous history run' : 'No runs for this scenario yet.')
+
+    const pending = deferred<{ tests: typeof previous[]; count: number }>()
+    apiMock.listScenarioResults.mockReturnValueOnce(pending.promise)
+    await clickButton('Refresh runs')
+    expect(container.querySelector<HTMLButtonElement>('.scenario-linked-runs-header button')?.disabled).toBe(true)
+    expect(container.textContent).toContain('Loading runs…')
+    // Reopening a pending refresh reuses that read rather than starting another.
+    await clickButton('Hide runs')
+    await clickButton('View runs')
+    expect(apiMock.listScenarioResults).toHaveBeenCalledTimes(2)
+    await act(async () => pending.resolve({ tests: [{ ...previous, id: 'new', name: 'Latest history run', status: 'COMPLETE' }], count: 1 }))
+    expect(container.textContent).toContain('Latest history run')
+    expect(container.textContent).not.toContain('Previous history run')
+
+    apiMock.listScenarioResults.mockRejectedValueOnce(new Error('Refresh temporarily unavailable'))
+    await clickButton('Refresh runs')
+    await flushPromises()
+    expect(container.textContent).toContain('Could not load scenario runs: Refresh temporarily unavailable')
+    expect(container.textContent).not.toContain('No runs for this scenario yet.')
+    apiMock.listScenarioResults.mockResolvedValueOnce({ tests: [], count: 0 })
+    await clickButton('Retry loading runs')
+    await flushPromises()
+    expect(container.textContent).toContain('No runs for this scenario yet.')
+  })
+
   it('shows saved assignment defaults in the scenario library', async () => {
     const onSelectTest = vi.fn()
     apiMock.listScenarios.mockResolvedValue({

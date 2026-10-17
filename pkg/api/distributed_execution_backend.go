@@ -311,6 +311,7 @@ type distributedExecutionBackend struct {
 	dial                    generatorDial
 	drainMu                 sync.RWMutex
 	drainStates             map[string]string
+	capacityDrains          map[string]capacityDrain
 	terminatingGeneratorIDs map[string]struct{}
 	testLeaseFences         map[distributedTestLeaseFenceKey]uint64
 	nextTestLeaseFence      uint64
@@ -677,6 +678,9 @@ func (b *distributedExecutionBackend) generatorDrainState(target string) string 
 	if state := b.drainStates[target]; state != "" {
 		return state
 	}
+	if b.capacityCordonedLocked(id) {
+		return "cordoned"
+	}
 	return "active"
 }
 
@@ -761,13 +765,13 @@ func (b *distributedExecutionBackend) GeneratorDrainStateByID(generatorID string
 	return b.generatorDrainStateByID(generatorID, true)
 }
 
-// GeneratorOperatorDrainStateByID excludes the transient pod shutdown overlay,
+// GeneratorOperatorDrainStateByID excludes transient pod and capacity overlays,
 // so metadata reconciliation and rollback cannot turn it into durable intent.
 func (b *distributedExecutionBackend) GeneratorOperatorDrainStateByID(generatorID string) string {
 	return b.generatorDrainStateByID(generatorID, false)
 }
 
-func (b *distributedExecutionBackend) generatorDrainStateByID(generatorID string, includeTermination bool) string {
+func (b *distributedExecutionBackend) generatorDrainStateByID(generatorID string, includeTransient bool) string {
 	generatorID = strings.TrimSpace(generatorID)
 	if generatorID == "" {
 		return "active"
@@ -775,7 +779,7 @@ func (b *distributedExecutionBackend) generatorDrainStateByID(generatorID string
 	target := b.GeneratorTargetForID(generatorID)
 	b.drainMu.RLock()
 	defer b.drainMu.RUnlock()
-	if _, terminating := b.terminatingGeneratorIDs[generatorID]; terminating && includeTermination {
+	if _, terminating := b.terminatingGeneratorIDs[generatorID]; terminating && includeTransient {
 		return "draining"
 	}
 	if state := b.drainStates[generatorID]; state != "" {
@@ -785,6 +789,9 @@ func (b *distributedExecutionBackend) generatorDrainStateByID(generatorID string
 		if state := b.drainStates[target]; state != "" {
 			return state
 		}
+	}
+	if includeTransient && b.capacityCordonedLocked(generatorID) {
+		return "cordoned"
 	}
 	return "active"
 }

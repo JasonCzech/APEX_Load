@@ -1,0 +1,5 @@
+{
+  "action": "docker builder prune --all --force",
+  "status": "timed_out_after_20_seconds",
+  "cleanup_confirmed": false
+}

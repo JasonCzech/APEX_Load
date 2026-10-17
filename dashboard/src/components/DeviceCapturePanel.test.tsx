@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DeviceCapture } from '../hooks/api/deviceCaptureApi'
 import DeviceCapturePanel from './DeviceCapturePanel'
+import { ApiError } from '../hooks/apiClient'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -68,6 +69,113 @@ describe('DeviceCapturePanel', () => {
   const button = (label: string) =>
     Array.from(container.querySelectorAll('button')).find(b => b.textContent === label) as HTMLButtonElement
 
+  const prepare = async (commit = vi.fn(), onImported = vi.fn()) => {
+    agent.getState.mockResolvedValue({ interfaces: [{ name: 'en0', address: '192.168.1.20' }], capture: capture({ status: 'stopped' }) })
+    agent.previewConversion.mockResolvedValue({ scripts: [script] })
+    agent.attest.mockImplementation(async () => ({ scripts: [{ ...script, project_id: 'p1', metadata: { import: { preserved: { server_import_attestation_v1: `token-${agent.attest.mock.calls.length}` } } } }] }))
+    await act(async () => root.render(<DeviceCapturePanel connection={connection} projectId="p1" folderId="f1" commitGenericImportBatch={commit} onImported={onImported} />))
+    await act(async () => button('Convert to script').click())
+    return { commit, onImported }
+  }
+
+  it('retains the original folder, project and token after response loss, including a later validation error', async () => {
+    const { commit } = await prepare()
+    commit.mockRejectedValueOnce(new Error('response lost'))
+    await act(async () => button('Save to script library').click())
+    expect(button('Convert to script').disabled).toBe(true)
+    expect(button('Start device capture').disabled).toBe(true)
+    const original = JSON.parse(JSON.stringify(commit.mock.calls[0][0]))
+
+    await act(async () => root.render(<DeviceCapturePanel connection={connection} projectId="p2" folderId="f2" commitGenericImportBatch={commit} />))
+    expect(button('Save to script library').disabled).toBe(true)
+    expect(container.textContent).toContain('A save is pending in project p1')
+    await act(async () => root.render(<DeviceCapturePanel connection={connection} projectId="p1" folderId="f2" commitGenericImportBatch={commit} />))
+    commit.mockRejectedValueOnce(new ApiError('folder not found', 404))
+    await act(async () => button('Save to script library').click())
+    expect(button('Convert to script').disabled).toBe(true)
+    commit.mockResolvedValueOnce({ scripts: [{ id: 'stored', name: 'iPad' }], count: 1 })
+    await act(async () => button('Save to script library').click())
+    expect(commit.mock.calls.map(call => call[0])).toEqual([original, original, original])
+    expect(agent.attest).toHaveBeenCalledTimes(1)
+    expect(button('Saved').disabled).toBe(true)
+  })
+
+  it('retries the controller save after re-pairing the Recording Agent', async () => {
+    const { commit } = await prepare()
+    commit.mockRejectedValueOnce(new Error('response lost'))
+    await act(async () => button('Save to script library').click())
+    const original = commit.mock.calls[0][0]
+    await act(async () => root.render(<DeviceCapturePanel connection={{ ...connection, session_id: 'new-pairing', token: 'new-token' }} projectId="p1" commitGenericImportBatch={commit} />))
+    expect(button('Save to script library').disabled).toBe(false)
+    commit.mockResolvedValueOnce({ scripts: [{ id: 'stored', name: 'iPad' }], count: 1 })
+    await act(async () => button('Save to script library').click())
+    expect(commit.mock.calls[1][0]).toEqual(original)
+    expect(agent.attest).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['project', 'project round trip', 'agent'] as const)('discards an attestation after its %s changes before submission', async change => {
+    const { commit } = await prepare()
+    let resolve!: (value: unknown) => void
+    agent.attest.mockImplementationOnce(() => new Promise(yes => { resolve = yes }))
+    await act(async () => button('Save to script library').click())
+    await act(async () => root.render(<DeviceCapturePanel connection={change === 'agent' ? { ...connection, token: 'rotated' } : connection} projectId={change.startsWith('project') ? 'p2' : 'p1'} commitGenericImportBatch={commit} />))
+    if (change === 'project round trip') await act(async () => root.render(<DeviceCapturePanel connection={connection} projectId="p1" commitGenericImportBatch={commit} />))
+    await act(async () => resolve({ scripts: [script] }))
+    expect(commit).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-testid="device-capture-review"]')).toBeNull()
+  })
+
+  it('does not publish a successful pending save into a newly selected project', async () => {
+    const { commit, onImported } = await prepare()
+    let resolve!: (value: unknown) => void
+    commit.mockImplementationOnce(() => new Promise(yes => { resolve = yes }))
+    await act(async () => button('Save to script library').click())
+    await act(async () => root.render(<DeviceCapturePanel connection={connection} projectId="p2" commitGenericImportBatch={commit} onImported={onImported} />))
+    await act(async () => resolve({ scripts: [{ id: 'stored', name: 'iPad' }], count: 1 }))
+    expect(onImported).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('saved in project p1')
+    expect(container.querySelector('[data-testid="device-capture-review"]')).toBeNull()
+  })
+
+  it('retries an exact expired request to recover a committed receipt', async () => {
+    const { commit } = await prepare()
+    agent.attest.mockResolvedValueOnce({ scripts: [script], import_draft_expires_at: new Date(Date.now() + 1000).toISOString() })
+    commit.mockRejectedValueOnce(new Error('response lost'))
+    await act(async () => button('Save to script library').click())
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    commit.mockResolvedValueOnce({ scripts: [{ id: 'stored', name: 'iPad' }], count: 1 })
+    await act(async () => button('Save to script library').click())
+    expect(commit.mock.calls[1][0]).toEqual(commit.mock.calls[0][0])
+    expect(agent.attest).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['expired', 'first validation'] as const)('requires an explicit new conversion after a definite %s rejection', async rejection => {
+    const { commit } = await prepare()
+    commit.mockRejectedValueOnce(new ApiError(rejection === 'expired'
+      ? 'imported script 1 draft is invalid or expired; run the conversion again'
+      : 'folder not found', rejection === 'expired' ? 409 : 404))
+    await act(async () => button('Save to script library').click())
+    const originalId = commit.mock.calls[0][0].operation_id
+    expect(button('Save to script library').disabled).toBe(true)
+    expect(button('Convert to script').disabled).toBe(false)
+    await act(async () => button('Convert to script').click())
+    commit.mockResolvedValueOnce({ scripts: [{ id: 'stored', name: 'iPad' }], count: 1 })
+    await act(async () => button('Save to script library').click())
+    expect(commit.mock.calls[1][0].operation_id).not.toBe(originalId)
+    expect(agent.attest).toHaveBeenCalledTimes(2)
+  })
+
+  it('can retry a pre-submission attestation failure without creating a save operation', async () => {
+    const { commit } = await prepare()
+    agent.attest.mockRejectedValueOnce(new Error('attestation unavailable'))
+    await act(async () => button('Save to script library').click())
+    expect(commit).not.toHaveBeenCalled()
+    expect(button('Convert to script').disabled).toBe(false)
+    commit.mockResolvedValueOnce({ scripts: [{ id: 'stored', name: 'iPad' }], count: 1 })
+    await act(async () => button('Save to script library').click())
+    expect(commit).toHaveBeenCalledTimes(1)
+  })
+
   it('starts a capture, shows the device setup and counts, then converts and saves', async () => {
     agent.getState.mockResolvedValue({ interfaces: [{ name: 'en0', address: '192.168.1.20' }], capture: null })
     agent.start.mockResolvedValue({ capture: capture() })
@@ -102,7 +210,7 @@ describe('DeviceCapturePanel', () => {
     expect(container.querySelector('[data-testid="device-capture-review"]')?.textContent).toContain('/services/data/v66.0/limits')
 
     // A save whose response is lost is retried with the same batch id.
-    agent.attest.mockResolvedValue({ scripts: [{ ...script, folder_id: 'f1' }] })
+    agent.attest.mockImplementation(async () => ({ scripts: [{ ...script, folder_id: 'f1', metadata: { import: { preserved: { server_import_attestation_v1: `issued-${agent.attest.mock.calls.length}` } } } }] }))
     commit.mockRejectedValueOnce(new Error('the batch save failed'))
     await act(async () => button('Save to script library').click())
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('the batch save failed')
@@ -113,6 +221,8 @@ describe('DeviceCapturePanel', () => {
     const [first, second] = commit.mock.calls.map(call => call[0])
     expect(second).toMatchObject({ folder_id: 'f1', source_profile: 'browser_recorder' })
     expect(second.operation_id).toBe(first.operation_id)
+    expect(second).toEqual(first)
+    expect(agent.attest).toHaveBeenCalledTimes(1)
     expect(onImported).toHaveBeenCalledWith({ scripts: [{ id: 's1', name: 'iPad' }] })
     expect(button('Saved').disabled).toBe(true)
   })

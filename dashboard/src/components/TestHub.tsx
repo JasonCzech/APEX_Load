@@ -1,3 +1,4 @@
+import { useScenarioRunHistory } from './useScenarioRunHistory'
 import MonitorRuleEditor from './MonitorRuleEditor'
 import ObjectHistory from './ObjectHistory'
 import ObjectArchiveControls from './ObjectArchiveControls'
@@ -925,8 +926,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const [sortField, setSortField] = useLibraryFilter<ScenarioSortField>(filterScope, 'sortField', 'updated_at', SCENARIO_SORT_FIELDS)
   const [sortDirection, setSortDirection] = useLibraryFilter<'asc' | 'desc'>(filterScope, 'sortDirection', 'desc', SORT_DIRECTIONS)
   const [expandedScenarioId, setExpandedScenarioId] = useState<string | null>(null)
-  const [scenarioRuns, setScenarioRuns] = useState<Record<string, TestSummary[]>>({})
-  const [loadingRunsFor, setLoadingRunsFor] = useState<string | null>(null)
+  const scenarioRunHistory = useScenarioRunHistory(activeProjectId)
   const [innerSortField, setInnerSortField] = useState<'name' | 'status' | 'release_id' | 'start_time' | 'duration'>('start_time')
   const [innerSortDirection, setInnerSortDirection] = useState<'asc' | 'desc'>('desc')
   const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
@@ -1006,8 +1006,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setDataPools([])
     setSelectedCloneScenarioId('')
     setExpandedScenarioId(null)
-    setScenarioRuns({})
-    setLoadingRunsFor(null)
     setSelectedScenarioIds(new Set())
     setDeletingScenarioIds(new Set())
     setGoalBaselineTests([])
@@ -1649,23 +1647,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     })
   }
 
-  const loadScenarioRuns = async (scenario: StoredScenario) => {
-    if (scenarioRuns[scenario.id]) return
-    setLoadingRunsFor(scenario.id)
-    try {
-      const res = await api.listScenarioResults(scenario.id)
-      const runs = (res.tests || []).sort((a: TestSummary, b: TestSummary) => {
-        const aTime = new Date(a.start_time || a.created_at || 0).getTime()
-        const bTime = new Date(b.start_time || b.created_at || 0).getTime()
-        return bTime - aTime
-      })
-      setScenarioRuns(prev => ({ ...prev, [scenario.id]: runs }))
-    } catch {
-      setScenarioRuns(prev => ({ ...prev, [scenario.id]: [] }))
-    } finally {
-      setLoadingRunsFor(null)
-    }
-  }
+  const loadScenarioRuns = (scenario: StoredScenario, refresh = false) => scenarioRunHistory.load(scenario.id, api.listScenarioResults, refresh)
 
   const toggleScenarioRuns = async (scenario: StoredScenario) => {
     if (expandedScenarioId === scenario.id) {
@@ -1673,7 +1655,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       return
     }
     setExpandedScenarioId(scenario.id)
-    await loadScenarioRuns(scenario)
+    await loadScenarioRuns(scenario, true)
   }
 
   // Reset every builder field to a pristine "new scenario" state. Does not touch
@@ -3561,20 +3543,29 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const builderHasProgress = !editingId && hasScenarioBuilderProgress({ form, scenarioStartChoice, maxVisitedWizardIndex })
 
   const renderScenarioRunsContent = (scenario: StoredScenario) => {
-    const runs = scenarioRuns[scenario.id] || []
-    const loading = loadingRunsFor === scenario.id
+    const history = scenarioRunHistory.entries[scenario.id]
+    const runs = history?.status === 'success' ? history.runs : []
+    const loading = !history || history.status === 'loading'
 
   return (
       <div className="scenario-linked-runs-content">
         <div className="scenario-linked-runs-header">
           <div>
             <strong>Past scenario runs</strong>
-            <span>{loading ? 'Loading runs…' : `${runs.length} linked run${runs.length === 1 ? '' : 's'}`}</span>
+            <span>{loading ? 'Loading runs…' : history?.status === 'error' ? 'Runs unavailable' : `${runs.length} linked run${runs.length === 1 ? '' : 's'}`}</span>
           </div>
           <span className="scenario-table-assignment-detail">{scenario.name}</span>
+          {history?.status !== 'error' && (
+            <button type="button" className="btn btn-sm btn-secondary" disabled={loading} onClick={(event) => { event.stopPropagation(); void loadScenarioRuns(scenario, true) }}>Refresh runs</button>
+          )}
         </div>
-        {runs.length === 0 ? (
-          <div className="cell-muted">{loading ? 'Loading runs…' : 'No runs for this scenario yet.'}</div>
+        {history?.status === 'error' ? (
+          <div role="alert">
+            <p>Could not load scenario runs: {history.message}</p>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={(event) => { event.stopPropagation(); void loadScenarioRuns(scenario) }}>Retry loading runs</button>
+          </div>
+        ) : runs.length === 0 ? (
+          <div className="cell-muted" role={loading ? 'status' : undefined}>{loading ? 'Loading runs…' : 'No runs for this scenario yet.'}</div>
         ) : (
           <div className="data-table">
             <table data-table-pagination="on">

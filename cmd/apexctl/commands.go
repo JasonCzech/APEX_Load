@@ -103,10 +103,11 @@ func statusCmd() {
 
 	if c.format == "json" {
 		out := map[string]any{
-			"test_id":      report.TestID,
-			"status":       report.Status,
-			"sla_breached": report.SLABreached,
-			"failed":       failed,
+			"test_id":       report.TestID,
+			"status":        report.Status,
+			"sla_evaluated": report.SLAEvaluated,
+			"sla_breached":  report.SLABreached,
+			"failed":        failed,
 		}
 		if len(report.Details) > 0 {
 			out["sla_details"] = report.Details
@@ -119,7 +120,10 @@ func statusCmd() {
 	} else {
 		fmt.Printf("Test:   %s\n", report.TestID)
 		fmt.Printf("Status: %s\n", report.Status)
-		sla := "passing"
+		sla := "not evaluated"
+		if report.SLAEvaluated {
+			sla = "passing"
+		}
 		if report.SLABreached {
 			sla = "breached"
 		}

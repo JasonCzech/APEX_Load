@@ -215,6 +215,7 @@ type Server struct {
 	clusterProbes                     *clusterProbeThrottle
 	fleetProvisioningMu               sync.Mutex
 	fleetProvisioningActive           map[string]string
+	fleetCapacityOwners               map[string]*capacityOperationOwner
 	leadership                        *executionLeadership
 	activeEndpointPublisher           ExecutionEndpointPublisher
 	activeEndpointMu                  sync.RWMutex

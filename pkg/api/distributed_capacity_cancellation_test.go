@@ -121,8 +121,8 @@ type capacityReadinessCommitStore struct {
 	afterSuccess func(*storage.ProvisioningRequest)
 }
 
-func (s *capacityReadinessCommitStore) TransitionProvisioningRequest(request *storage.ProvisioningRequest, revision int, token string) (bool, error) {
-	changed, err := s.SQLiteStore.TransitionProvisioningRequest(request, revision, token)
+func (s *capacityReadinessCommitStore) CommitCapacityOperation(request *storage.ProvisioningRequest, revision int, token, leaseName, leaseOwnerID string, leaseGeneration uint64, commitWarmSize bool) (bool, error) {
+	changed, err := s.SQLiteStore.CommitCapacityOperation(request, revision, token, leaseName, leaseOwnerID, leaseGeneration, commitWarmSize)
 	if err == nil && changed && request.Status == "success" && s.afterSuccess != nil {
 		s.afterSuccess(request)
 	}
@@ -192,8 +192,14 @@ func TestEnsureRunCapacityRollsBackUnpublishedReadiness(t *testing.T) {
 			backend.mu.Lock()
 			cancelCalls := backend.cancel
 			backend.mu.Unlock()
-			if cancelCalls != 1 {
-				t.Fatalf("provider cleanup calls = %d, want 1", cancelCalls)
+			wantCancelCalls := 1
+			if interruption == "newer durable transition" {
+				// A successor has taken ownership; its provider resources cannot
+				// be rolled back by the old run's deferred cleanup.
+				wantCancelCalls = 0
+			}
+			if cancelCalls != wantCancelCalls {
+				t.Fatalf("provider cleanup calls = %d, want %d", cancelCalls, wantCancelCalls)
 			}
 			requests, err := store.ListProvisioningRequests(pool.ID, 10, 0)
 			if err != nil || len(requests) != 1 {
