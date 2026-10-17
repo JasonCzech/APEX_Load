@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -3628,7 +3629,16 @@ func (tr *TestRunner) resolveEffectiveRedactionRules(projectID string, explicit 
 	}
 	projectID = normalizeProjectID(projectID)
 	project, err := tr.projectStore.GetProject(projectID)
-	if err != nil || project == nil || len(project.Settings.RedactionRules) == 0 {
+	// A project that does not exist contributes no rules. Any other failure,
+	// including settings that no longer decode, must not let a run or replay
+	// proceed without the project's redaction policy.
+	if errors.Is(err, sql.ErrNoRows) {
+		return merged, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load redaction rules for project %q: %w", projectID, err)
+	}
+	if project == nil || len(project.Settings.RedactionRules) == 0 {
 		return merged, nil
 	}
 	merged = append(merged, cloneRedactionRules(project.Settings.RedactionRules)...)
