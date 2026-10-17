@@ -221,6 +221,7 @@ type archiveIntervalSummary struct {
 	P95Ms               float64                                       `json:"p95_ms"`
 	P99Ms               float64                                       `json:"p99_ms"`
 	DurationDigest      *engine.TDigestSnapshot                       `json:"duration_digest,omitempty"`
+	DurationSketch      *engine.DurationSketchSnapshot                `json:"duration_sketch,omitempty"`
 	Groups              map[string]*archiveGroupLiveMetrics           `json:"groups,omitempty"`
 	Transactions        map[string]*archiveIntervalTransactionMetrics `json:"transactions,omitempty"`
 	ByRegion            map[string]*archiveIntervalTransactionMetrics `json:"by_region,omitempty"`
@@ -751,6 +752,7 @@ type parquetIntervalSummary struct {
 	P95Ms                 float64 `parquet:"name=p95_ms, type=DOUBLE"`
 	P99Ms                 float64 `parquet:"name=p99_ms, type=DOUBLE"`
 	DurationDigestJSON    string  `parquet:"name=duration_digest_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	DurationSketchJSON    string  `parquet:"name=duration_sketch_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	GroupsJSON            string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BrowserDocumentsJSON  string  `parquet:"name=browser_documents_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	MessagingProgressJSON string  `parquet:"name=messaging_progress_json, type=BYTE_ARRAY, convertedtype=UTF8"`
@@ -1902,6 +1904,7 @@ func toParquetSummaries(items []archiveIntervalSummary) []parquetIntervalSummary
 			P95Ms:                 item.P95Ms,
 			P99Ms:                 item.P99Ms,
 			DurationDigestJSON:    mustJSON(item.DurationDigest),
+			DurationSketchJSON:    mustJSON(item.DurationSketch),
 			GroupsJSON:            mustJSON(item.Groups),
 			MessagingJSON:         mustJSON(item.Messaging),
 			BrowserDocumentsJSON:  browserDocumentsJSON(item.BrowserDocuments),

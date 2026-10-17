@@ -59,6 +59,7 @@ func (j *NativeJointEvidence) Clone() *NativeJointEvidence {
 	if j.Other != nil {
 		other := *j.Other
 		other.DurationDigest = engine.CloneTDigestSnapshot(j.Other.DurationDigest)
+		other.DurationSketch = engine.CloneDurationSketchSnapshot(j.Other.DurationSketch)
 		out.Other = &other
 	}
 	return &out
@@ -90,6 +91,10 @@ type NativeIntervalMetric struct {
 	P90            float64                 `json:"p90"`
 	P95            float64                 `json:"p95"`
 	P99            float64                 `json:"p99"`
+	// DurationSketch is the version 2 distribution of the same durations.
+	// Readers prefer it; evidence recorded before it carries only the
+	// t-digest.
+	DurationSketch *engine.DurationSketchSnapshot `json:"duration_sketch,omitempty"`
 }
 
 func CloneNativeIntervalEvidence(in *NativeIntervalEvidence) *NativeIntervalEvidence {
@@ -121,6 +126,7 @@ func CloneNativeIntervalEvidence(in *NativeIntervalEvidence) *NativeIntervalEvid
 		values := make(map[string]NativeIntervalMetric, len(series))
 		for name, value := range series {
 			value.DurationDigest = engine.CloneTDigestSnapshot(value.DurationDigest)
+			value.DurationSketch = engine.CloneDurationSketchSnapshot(value.DurationSketch)
 			values[name] = value
 		}
 		out.Dimensions[dimension] = values

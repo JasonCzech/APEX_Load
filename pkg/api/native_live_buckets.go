@@ -24,7 +24,7 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 	type aggregate struct {
 		count, errors int64
 		sum           float64
-		digest        *engine.TDigest
+		durations     *engine.DurationDistributionMerge
 		invalid       bool
 	}
 	groups := map[string][]aggregate{}
@@ -268,7 +268,14 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 			if m.Count == 0 {
 				continue
 			}
-			if m.Count < 0 || m.Errors < 0 || m.Errors > m.Count || math.IsNaN(m.Avg) || math.IsInf(m.Avg, 0) || m.Avg < 0 || engine.ValidateDurationDigest(m.DurationDigest, m.Count) != nil {
+			if m.Count < 0 || m.Count > 1e12 || m.Errors < 0 || m.Errors > m.Count || math.IsNaN(m.Avg) || math.IsInf(m.Avg, 0) || m.Avg < 0 {
+				b.invalid = true
+				continue
+			}
+			if b.durations == nil {
+				b.durations = engine.NewDurationDistributionMerge()
+			}
+			if !b.durations.Add(m.Count, m.DurationDigest, m.DurationSketch) {
 				b.invalid = true
 				continue
 			}
@@ -278,10 +285,6 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 			b.count += m.Count
 			b.errors += m.Errors
 			b.sum += m.Avg * float64(m.Count)
-			if b.digest == nil {
-				b.digest = engine.NewTDigest(200)
-			}
-			b.digest.Merge(engine.NewTDigestFromSnapshot(*m.DurationDigest))
 		}
 	}
 	if publications > 0 && !supported {
@@ -299,6 +302,11 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 	for _, name := range names {
 		series := NativeEvidenceSeries{Name: name, Unit: nativeMetricUnit(q)}
 		for i, b := range groups[name] {
+			if b.count > 0 && b.durations.Kind() == "" {
+				// Its sources' distributions do not merge into one: some
+				// carried only a sketch and others only a t-digest.
+				b.invalid = true
+			}
 			from := out.From.Add(time.Duration(i*q.BucketSeconds) * time.Second)
 			to := from.Add(time.Duration(q.BucketSeconds) * time.Second)
 			if to.After(out.To) {
@@ -364,12 +372,12 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 				default:
 					switch q.Aggregation {
 					case "min":
-						value = b.digest.Quantile(0) / float64(time.Millisecond)
+						value = b.durations.Quantile(0) / float64(time.Millisecond)
 					case "max":
-						value = b.digest.Quantile(1) / float64(time.Millisecond)
+						value = b.durations.Quantile(1) / float64(time.Millisecond)
 					case "p50", "p90", "p95", "p99":
 						pct := map[string]float64{"p50": .5, "p90": .9, "p95": .95, "p99": .99}[q.Aggregation]
-						value = b.digest.Quantile(pct) / float64(time.Millisecond)
+						value = b.durations.Quantile(pct) / float64(time.Millisecond)
 					}
 				}
 				if math.IsNaN(value) || math.IsInf(value, 0) {

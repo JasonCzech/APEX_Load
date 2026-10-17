@@ -2084,6 +2084,7 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 		P95Ms:               quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.95),
 		P99Ms:               quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.99),
 		DurationDigest:      tdigestSnapshotFromProto(batch.GetFleetMetrics().GetDurationDigest()),
+		DurationSketch:      durationSketchSnapshotFromProto(batch.GetFleetMetrics().GetDurationSketch()),
 		Groups:              archiveSummaryGroupsFromBatch(batch),
 		Transactions:        archiveSummaryTransactionsFromBatch(batch.GetTransactionMetrics()),
 		ByRegion:            archiveSummaryTransactionsFromBatch(batch.GetRegionMetrics()),
@@ -3546,10 +3547,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 		return nil
 	}
 	out := MetricAggregate{}
-	var durationDigest *engine.TDigest
-	// Sketches merge exactly, so they are preferred when every counted
-	// aggregate carries one; the t-digest serves older peers.
-	durationSketch, sketched := engine.NewDurationSketch(), true
+	durations := engine.NewDurationDistributionMerge()
 	var weightedAvgMs, weightedDNSMs, weightedConnectMs, weightedTLSMs, weightedTTFBMs float64
 	for _, value := range values {
 		if value.Count == 0 {
@@ -3572,17 +3570,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 		out.BytesSent += value.BytesSent
 		out.BytesReceived += value.BytesReceived
 		out.TPS += value.TPS
-		if engine.ValidateDurationDigest(value.DurationDigest, value.Count) == nil {
-			if durationDigest == nil {
-				durationDigest = engine.NewTDigest(value.DurationDigest.Compression)
-			}
-			durationDigest.Merge(engine.NewTDigestFromSnapshot(*value.DurationDigest))
-		}
-		if part := engine.DurationSketchForCount(value.DurationSketch, value.Count); part != nil {
-			durationSketch.Merge(part)
-		} else {
-			sketched = false
-		}
+		durations.Add(value.Count, value.DurationDigest, value.DurationSketch)
 	}
 	if out.Count == 0 {
 		return nil
@@ -3605,25 +3593,14 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	out.AvgConnectMs = weightedConnectMs / divisor
 	out.AvgTLSMs = weightedTLSMs / divisor
 	out.AvgTTFBMs = weightedTTFBMs / divisor
-	digestComplete := durationDigest != nil && durationDigest.Count() == out.Count
-	if digestComplete {
-		snapshot := durationDigest.Snapshot()
-		out.DurationDigest = &snapshot
-	}
-	switch {
-	case sketched && durationSketch.Count() == out.Count:
-		out.P50Ms = durationSketch.Quantile(0.50) / float64(time.Millisecond)
-		out.P90Ms = durationSketch.Quantile(0.90) / float64(time.Millisecond)
-		out.P95Ms = durationSketch.Quantile(0.95) / float64(time.Millisecond)
-		out.P99Ms = durationSketch.Quantile(0.99) / float64(time.Millisecond)
-		snapshot := durationSketch.Snapshot()
-		out.DurationSketch = &snapshot
-	case digestComplete:
-		out.P50Ms = durationDigest.Quantile(0.50) / float64(time.Millisecond)
-		out.P90Ms = durationDigest.Quantile(0.90) / float64(time.Millisecond)
-		out.P95Ms = durationDigest.Quantile(0.95) / float64(time.Millisecond)
-		out.P99Ms = durationDigest.Quantile(0.99) / float64(time.Millisecond)
-	default:
+	// Sketches merge exactly and are preferred; t-digests serve older peers.
+	if durations.Kind() != "" && durations.Count() == out.Count {
+		out.DurationDigest, out.DurationSketch = durations.Snapshots()
+		out.P50Ms = durations.Quantile(0.50) / float64(time.Millisecond)
+		out.P90Ms = durations.Quantile(0.90) / float64(time.Millisecond)
+		out.P95Ms = durations.Quantile(0.95) / float64(time.Millisecond)
+		out.P99Ms = durations.Quantile(0.99) / float64(time.Millisecond)
+	} else {
 		out.P50Ms, out.P90Ms, out.P95Ms, out.P99Ms = fallbackMergedPercentiles(values)
 	}
 	return &out

@@ -36,6 +36,7 @@ const testRunManifestFileName = "test_manifest.json"
 
 const (
 	archivePercentileQualitySourceGenerator = "source_generator"
+	archivePercentileQualityMergedSketch    = "merged_sketch"
 	archivePercentileQualityMergedDigest    = "merged_tdigest"
 	archivePercentileQualityRecomputed      = "recomputed_from_transactions"
 	archivePercentileQualityUnavailable     = "unavailable"
@@ -477,12 +478,20 @@ type IntervalSummaryRecord struct {
 	// finalization consumes it into fleet scalar percentiles; controller archives
 	// keep the existing scalar reporting contract.
 	DurationDigest *engine.TDigestSnapshot `json:"duration_digest,omitempty"`
+	// DurationSketch stages the generator's version 2 distribution beside
+	// DurationDigest; finalization prefers it.
+	DurationSketch *engine.DurationSketchSnapshot `json:"duration_sketch,omitempty"`
+	// LoadLevelDurationSketches holds the version 2 distributions beside
+	// LoadLevelDurationDigests; the report prefers them.
+	LoadLevelDurationSketches map[string]*engine.DurationSketchSnapshot `json:"load_level_duration_sketches,omitempty"`
 	// PercentileQuality identifies how the interval percentile distribution was
 	// obtained. It is empty for legacy/local rows, "source_generator" for an
-	// unmerged generator row, "merged_tdigest" when generator digests were
-	// combined, "recomputed_from_transactions" when the controller rebuilt the
-	// fleet distribution, and "unavailable" when multiple generator
-	// distributions could not be merged without inventing a percentile.
+	// unmerged generator row, "merged_sketch" when generator sketches were
+	// combined, "merged_tdigest" when generator digests were (archives from
+	// generators that predate the sketch), "recomputed_from_transactions" when
+	// the controller rebuilt the fleet distribution, and "unavailable" when
+	// multiple generator distributions could not be merged without inventing a
+	// percentile.
 	PercentileQuality string                                 `json:"percentile_quality,omitempty"`
 	Groups            map[string]*GroupLiveMetrics           `json:"groups,omitempty"`
 	Transactions      map[string]*IntervalTransactionMetrics `json:"transactions,omitempty"`

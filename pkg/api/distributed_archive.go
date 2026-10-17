@@ -1786,8 +1786,7 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 		var aggregate IntervalSummaryRecord
 		var weightedResponse float64
 		var attempts, bucketTx, bucketErrors int64
-		var durationDigest *engine.TDigest
-		durationDigestComplete := true
+		durations := engine.NewDurationDistributionMerge()
 		var sourceThroughputGap float64
 		var sourceThroughputMissed bool
 		// Missing known peers or their interval rows do not prove zero work.
@@ -1836,14 +1835,7 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 			aggregate.TelemetryStatus = mergeRemoteArchiveSummaryTelemetryStatus(aggregate.TelemetryStatus, record.TelemetryStatus)
 			rowAttempts := record.TotalTx + record.TotalErrors
 			if rowAttempts > 0 {
-				if record.DurationDigest == nil || record.DurationDigest.Count <= 0 || record.DurationDigest.Count != rowAttempts {
-					durationDigestComplete = false
-				} else {
-					if durationDigest == nil {
-						durationDigest = engine.NewTDigest(record.DurationDigest.Compression)
-					}
-					durationDigest.Merge(engine.NewTDigestFromSnapshot(*record.DurationDigest))
-				}
+				durations.Add(rowAttempts, record.DurationDigest, record.DurationSketch)
 			}
 			attempts += rowAttempts
 			weightedResponse += record.AvgResponseMs * float64(rowAttempts)
@@ -1857,12 +1849,15 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 				aggregate.P95Ms = record.P95Ms
 				aggregate.P99Ms = record.P99Ms
 				aggregate.PercentileQuality = archivePercentileQualitySourceGenerator
-			} else if durationDigestComplete && durationDigest != nil && durationDigest.Count() == attempts {
-				aggregate.P50Ms = durationDigest.Quantile(0.50) / float64(time.Millisecond)
-				aggregate.P90Ms = durationDigest.Quantile(0.90) / float64(time.Millisecond)
-				aggregate.P95Ms = durationDigest.Quantile(0.95) / float64(time.Millisecond)
-				aggregate.P99Ms = durationDigest.Quantile(0.99) / float64(time.Millisecond)
+			} else if kind := durations.Kind(); kind != "" && durations.Count() == attempts {
+				aggregate.P50Ms = durations.Quantile(0.50) / float64(time.Millisecond)
+				aggregate.P90Ms = durations.Quantile(0.90) / float64(time.Millisecond)
+				aggregate.P95Ms = durations.Quantile(0.95) / float64(time.Millisecond)
+				aggregate.P99Ms = durations.Quantile(0.99) / float64(time.Millisecond)
 				aggregate.PercentileQuality = archivePercentileQualityMergedDigest
+				if kind == engine.DurationDistributionSketch {
+					aggregate.PercentileQuality = archivePercentileQualityMergedSketch
+				}
 			} else {
 				aggregate.P50Ms, aggregate.P90Ms, aggregate.P95Ms, aggregate.P99Ms = 0, 0, 0, 0
 				aggregate.PercentileQuality = archivePercentileQualityUnavailable

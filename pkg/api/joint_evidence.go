@@ -82,7 +82,7 @@ const (
 )
 
 func nativeJointMetric(m *TxMetrics) storage.NativeIntervalMetric {
-	return storage.NativeIntervalMetric{DurationDigest: engine.CloneTDigestSnapshot(m.DurationDigest), Count: m.Count, Errors: m.Errors, Avg: m.AvgMs, P50: m.P50Ms, P90: m.P90Ms, P95: m.P95Ms, P99: m.P99Ms}
+	return storage.NativeIntervalMetric{DurationDigest: engine.CloneTDigestSnapshot(m.DurationDigest), DurationSketch: engine.CloneDurationSketchSnapshot(m.DurationSketch), Count: m.Count, Errors: m.Errors, Avg: m.AvgMs, P50: m.P50Ms, P90: m.P90Ms, P95: m.P95Ms, P99: m.P99Ms}
 }
 
 // setNativeJointEvidence records a source's joint evidence on interval
@@ -180,20 +180,27 @@ const maxPendingJointPublications = 1024
 var maxPendingJointBytes int64 = 64 << 20
 
 // jointPublicationBytes estimates a pending publication's in-memory size:
-// its tuple keys, metrics and digest centroids.
+// its tuple keys, metrics, digest centroids and sketch buckets.
 func jointPublicationBytes(p *storage.NativePublicationEvidence) int64 {
 	if p == nil {
 		return 0
 	}
-	size := int64(256 + len(p.SourceID) + len(p.SourceEpoch))
-	for key, metric := range p.Dimensions[storage.NativeJointDimension] {
-		size += int64(len(key)) + 160
+	distributionBytes := func(metric storage.NativeIntervalMetric) int64 {
+		size := int64(0)
 		if metric.DurationDigest != nil {
 			size += int64(len(metric.DurationDigest.Centroids)) * 16
 		}
+		if metric.DurationSketch != nil {
+			size += int64(len(metric.DurationSketch.Bins)) * 16
+		}
+		return size
 	}
-	if p.Joint != nil && p.Joint.Other != nil && p.Joint.Other.DurationDigest != nil {
-		size += int64(len(p.Joint.Other.DurationDigest.Centroids)) * 16
+	size := int64(256 + len(p.SourceID) + len(p.SourceEpoch))
+	for key, metric := range p.Dimensions[storage.NativeJointDimension] {
+		size += int64(len(key)) + 160 + distributionBytes(metric)
+	}
+	if p.Joint != nil && p.Joint.Other != nil {
+		size += distributionBytes(*p.Joint.Other)
 	}
 	return size
 }

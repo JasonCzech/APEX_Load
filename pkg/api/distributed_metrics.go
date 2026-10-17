@@ -1787,11 +1787,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		return &copy
 	}
 	out := generatorrpc.MetricAggregate{}
-	var durationDigest *engine.TDigest
-	durationDigestComplete := true
-	// Sketches merge exactly, so they are preferred when every counted
-	// aggregate carries one; the t-digest serves older generators.
-	durationSketch, durationSketchComplete := engine.NewDurationSketch(), true
+	durations := engine.NewDurationDistributionMerge()
 	var avgMsSum, dnsSum, connectSum, tlsSum, ttfbSum float64
 	for _, value := range values {
 		if value.Count == 0 {
@@ -1815,19 +1811,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		out.BytesReceived += value.BytesReceived
 		out.TPS += value.TPS
 		out.Exemplars = engine.MergeTraceExemplars(out.Exemplars, value.Exemplars)
-		if engine.ValidateDurationDigest(value.DurationDigest, value.Count) == nil {
-			if durationDigest == nil {
-				durationDigest = engine.NewTDigest(value.DurationDigest.Compression)
-			}
-			durationDigest.Merge(engine.NewTDigestFromSnapshot(*value.DurationDigest))
-		} else {
-			durationDigestComplete = false
-		}
-		if part := engine.DurationSketchForCount(value.DurationSketch, value.Count); part != nil {
-			durationSketch.Merge(part)
-		} else {
-			durationSketchComplete = false
-		}
+		durations.Add(value.Count, value.DurationDigest, value.DurationSketch)
 	}
 	if out.Count == 0 {
 		return nil
@@ -1850,25 +1834,15 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	out.AvgConnectMs = connectSum / divisor
 	out.AvgTLSMs = tlsSum / divisor
 	out.AvgTTFBMs = ttfbSum / divisor
-	digestComplete := durationDigestComplete && durationDigest != nil && durationDigest.Count() == out.Count
-	if digestComplete {
-		snapshot := durationDigest.Snapshot()
-		out.DurationDigest = &snapshot
-	}
-	switch {
-	case durationSketchComplete && durationSketch.Count() == out.Count:
-		out.P50Ms = durationSketch.Quantile(0.50) / float64(time.Millisecond)
-		out.P90Ms = durationSketch.Quantile(0.90) / float64(time.Millisecond)
-		out.P95Ms = durationSketch.Quantile(0.95) / float64(time.Millisecond)
-		out.P99Ms = durationSketch.Quantile(0.99) / float64(time.Millisecond)
-		snapshot := durationSketch.Snapshot()
-		out.DurationSketch = &snapshot
-	case digestComplete:
-		out.P50Ms = durationDigest.Quantile(0.50) / float64(time.Millisecond)
-		out.P90Ms = durationDigest.Quantile(0.90) / float64(time.Millisecond)
-		out.P95Ms = durationDigest.Quantile(0.95) / float64(time.Millisecond)
-		out.P99Ms = durationDigest.Quantile(0.99) / float64(time.Millisecond)
-	default:
+	// Sketches merge exactly and are preferred; t-digests serve older
+	// generators.
+	if durations.Kind() != "" && durations.Count() == out.Count {
+		out.DurationDigest, out.DurationSketch = durations.Snapshots()
+		out.P50Ms = durations.Quantile(0.50) / float64(time.Millisecond)
+		out.P90Ms = durations.Quantile(0.90) / float64(time.Millisecond)
+		out.P95Ms = durations.Quantile(0.95) / float64(time.Millisecond)
+		out.P99Ms = durations.Quantile(0.99) / float64(time.Millisecond)
+	} else {
 		out.P50Ms, out.P90Ms, out.P95Ms, out.P99Ms = weightedAggregatePercentiles(values)
 	}
 	return &out

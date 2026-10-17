@@ -61,6 +61,9 @@ type JointIntervalRecord struct {
 	// bound are in its other row.
 	Incomplete    bool  `json:"incomplete,omitempty"`
 	OmittedTuples int64 `json:"omitted_tuples,omitempty"`
+	// DurationSketch is the version 2 distribution of the row's durations;
+	// rows from sources that predate it carry only the t-digest.
+	DurationSketch *engine.DurationSketchSnapshot `json:"duration_sketch,omitempty"`
 }
 
 type parquetJointInterval struct {
@@ -85,6 +88,7 @@ type parquetJointInterval struct {
 	P95Ms               float64 `parquet:"name=p95_ms, type=DOUBLE"`
 	P99Ms               float64 `parquet:"name=p99_ms, type=DOUBLE"`
 	DurationDigestJSON  string  `parquet:"name=duration_digest_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	DurationSketchJSON  string  `parquet:"name=duration_sketch_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	Incomplete          bool    `parquet:"name=incomplete, type=BOOLEAN"`
 	OmittedTuples       int64   `parquet:"name=omitted_tuples, type=INT64"`
 }
@@ -94,17 +98,21 @@ func toParquetJointInterval(row JointIntervalRecord) parquetJointInterval {
 	if row.Values != nil {
 		values = mustJSON(row.Values)
 	}
-	digest := ""
+	digest, sketch := "", ""
 	if row.DurationDigest != nil {
 		digest = mustJSON(row.DurationDigest)
 	}
-	return parquetJointInterval{SchemaVersion: row.SchemaVersion, TimestampUnixMs: row.Timestamp.UnixMilli(), WindowSeconds: row.WindowSeconds, SourceID: row.SourceID, SourceEpoch: row.SourceEpoch, ExecutionGeneration: int64(row.ExecutionGeneration), Sequence: int64(row.Sequence), Population: row.Population, DimensionsJSON: mustJSON(row.Dimensions), Availability: row.Availability, Reason: row.Reason, ValuesJSON: values, Other: row.Other, Count: row.Count, Errors: row.Errors, AvgMs: row.AvgMs, P50Ms: row.P50Ms, P90Ms: row.P90Ms, P95Ms: row.P95Ms, P99Ms: row.P99Ms, DurationDigestJSON: digest, Incomplete: row.Incomplete, OmittedTuples: row.OmittedTuples}
+	if row.DurationSketch != nil {
+		sketch = mustJSON(row.DurationSketch)
+	}
+	return parquetJointInterval{SchemaVersion: row.SchemaVersion, TimestampUnixMs: row.Timestamp.UnixMilli(), WindowSeconds: row.WindowSeconds, SourceID: row.SourceID, SourceEpoch: row.SourceEpoch, ExecutionGeneration: int64(row.ExecutionGeneration), Sequence: int64(row.Sequence), Population: row.Population, DimensionsJSON: mustJSON(row.Dimensions), Availability: row.Availability, Reason: row.Reason, ValuesJSON: values, Other: row.Other, Count: row.Count, Errors: row.Errors, AvgMs: row.AvgMs, P50Ms: row.P50Ms, P90Ms: row.P90Ms, P95Ms: row.P95Ms, P99Ms: row.P99Ms, DurationDigestJSON: digest, DurationSketchJSON: sketch, Incomplete: row.Incomplete, OmittedTuples: row.OmittedTuples}
 }
 
 func jointIntervalRow(base JointIntervalRecord, metric storage.NativeIntervalMetric) JointIntervalRecord {
 	base.Count, base.Errors, base.AvgMs = metric.Count, metric.Errors, metric.Avg
 	base.P50Ms, base.P90Ms, base.P95Ms, base.P99Ms = metric.P50, metric.P90, metric.P95, metric.P99
 	base.DurationDigest = engine.CloneTDigestSnapshot(metric.DurationDigest)
+	base.DurationSketch = engine.CloneDurationSketchSnapshot(metric.DurationSketch)
 	return base
 }
 

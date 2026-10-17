@@ -639,6 +639,7 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 		ELK:                      cloneELKCaptureStatus(live.ELK),
 		Dynatrace:                cloneDynatraceCaptureStatus(live.Dynatrace),
 	}
+	record.LoadLevelDurationSketches = loadLevelDurationSketches(live.GroupMetrics)
 	if err := w.summaryEncoder.Encode(record); err != nil {
 		w.flushErr = err
 		return err
@@ -735,6 +736,35 @@ func loadLevelDurationDigests(groups map[string]*GroupLiveMetrics) map[string]*e
 		copy.Centroids = append([]engine.TDigestCentroidSnapshot(nil), metrics.DurationDigest.Centroids...)
 		result[name] = &copy
 		total.Merge(engine.NewTDigestFromSnapshot(copy))
+	}
+	if total.Count() > 0 {
+		snapshot := total.Snapshot()
+		result["__total__"] = &snapshot
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// loadLevelDurationSketches mirrors loadLevelDurationDigests: each group's
+// sketch, and under __total__ their merge.
+func loadLevelDurationSketches(groups map[string]*GroupLiveMetrics) map[string]*engine.DurationSketchSnapshot {
+	if len(groups) == 0 {
+		return nil
+	}
+	result := make(map[string]*engine.DurationSketchSnapshot, len(groups)+1)
+	total := engine.NewDurationSketch()
+	for name, metrics := range groups {
+		if metrics == nil {
+			continue
+		}
+		sketch := engine.DurationSketchForCount(metrics.DurationSketch, metrics.Transactions+metrics.Errors)
+		if sketch == nil {
+			continue
+		}
+		result[name] = engine.CloneDurationSketchSnapshot(metrics.DurationSketch)
+		total.Merge(sketch)
 	}
 	if total.Count() > 0 {
 		snapshot := total.Snapshot()

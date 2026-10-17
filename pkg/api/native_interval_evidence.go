@@ -39,7 +39,7 @@ func nativeIntervalEvidence(live *LiveMetrics, actions map[string]*TxMetrics, ac
 				out.Incomplete = true
 				continue
 			}
-			values[key] = storage.NativeIntervalMetric{DurationDigest: engine.CloneTDigestSnapshot(m.DurationDigest), Count: m.Count, Errors: m.Errors, Avg: m.AvgMs, P50: m.P50Ms, P90: m.P90Ms, P95: m.P95Ms, P99: m.P99Ms}
+			values[key] = storage.NativeIntervalMetric{DurationDigest: engine.CloneTDigestSnapshot(m.DurationDigest), DurationSketch: engine.CloneDurationSketchSnapshot(m.DurationSketch), Count: m.Count, Errors: m.Errors, Avg: m.AvgMs, P50: m.P50Ms, P90: m.P90Ms, P95: m.P95Ms, P99: m.P99Ms}
 		}
 		out.Dimensions[dimension] = values
 	}
@@ -71,7 +71,7 @@ func addNativeJointEvidence(out *storage.NativeIntervalEvidence, joint map[strin
 		if m == nil {
 			continue
 		}
-		values[key] = storage.NativeIntervalMetric{Count: m.Count, Errors: m.Errors, Avg: m.AvgMs, P50: m.P50Ms, P90: m.P90Ms, P95: m.P95Ms, P99: m.P99Ms, DurationDigest: engine.CloneTDigestSnapshot(m.DurationDigest)}
+		values[key] = storage.NativeIntervalMetric{Count: m.Count, Errors: m.Errors, Avg: m.AvgMs, P50: m.P50Ms, P90: m.P90Ms, P95: m.P95Ms, P99: m.P99Ms, DurationDigest: engine.CloneTDigestSnapshot(m.DurationDigest), DurationSketch: engine.CloneDurationSketchSnapshot(m.DurationSketch)}
 	}
 	out.Dimensions["action_property"] = values
 }

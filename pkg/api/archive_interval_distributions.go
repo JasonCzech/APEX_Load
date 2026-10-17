@@ -25,12 +25,15 @@ const (
 	intervalDistributionSourceNative = "native_evidence"
 	intervalDistributionSourceRows   = "reconstructed_from_rows"
 
-	// Percentile quality per key.
+	// Percentile quality per key: the distribution kept beside the source's
+	// percentiles, or a rebuild from rows.
+	intervalPercentileNativeSketch = "native_sketch"
 	intervalPercentileNativeDigest = "native_tdigest"
 	intervalPercentileNativeScalar = "native_scalar"
 	intervalPercentileRows         = "reconstructed_from_rows"
 
-	// Engine digests hold nanoseconds; scalar percentiles are milliseconds.
+	// Engine distributions hold nanoseconds; scalar percentiles are
+	// milliseconds.
 	intervalDistributionDigestUnit = "ns"
 	// intervalDistributionCompression matches the engine's duration digests.
 	intervalDistributionCompression = 200
@@ -46,7 +49,7 @@ var (
 
 // IntervalDistributionRecord is one collection interval's duration
 // distributions, per dimension and key. Percentiles are never averaged across
-// intervals; merge the digests instead.
+// intervals; merge the distributions instead.
 type IntervalDistributionRecord struct {
 	Schema          string                                           `json:"schema"`
 	Timestamp       time.Time                                        `json:"timestamp"`
@@ -60,7 +63,7 @@ type IntervalDistributionRecord struct {
 
 // IntervalDistributionMetric is one key's distribution within an interval.
 // P50 to P99 are milliseconds as the source reported them, or quantiles of a
-// reconstructed digest.
+// reconstructed sketch.
 type IntervalDistributionMetric struct {
 	Count             int64                   `json:"count"`
 	Errors            int64                   `json:"errors"`
@@ -70,6 +73,9 @@ type IntervalDistributionMetric struct {
 	P90               float64                 `json:"p90_ms"`
 	P95               float64                 `json:"p95_ms"`
 	P99               float64                 `json:"p99_ms"`
+	// DurationSketch is the version 2 distribution of the same durations;
+	// intervals recorded before it carry only the t-digest.
+	DurationSketch *engine.DurationSketchSnapshot `json:"duration_sketch,omitempty"`
 }
 
 // persistIntervalDistributionArchive writes interval_distributions.jsonl once,
@@ -211,6 +217,10 @@ func intervalDistributionFromNative(m storage.NativeIntervalMetric) IntervalDist
 		out.DurationDigest = engine.CloneTDigestSnapshot(m.DurationDigest)
 		out.PercentileQuality = intervalPercentileNativeDigest
 	}
+	if engine.DurationSketchForCount(m.DurationSketch, m.Count) != nil {
+		out.DurationSketch = engine.CloneDurationSketchSnapshot(m.DurationSketch)
+		out.PercentileQuality = intervalPercentileNativeSketch
+	}
 	return out
 }
 
@@ -283,6 +293,7 @@ func reconstructIntervalDistributions(ctx context.Context, record *storage.RunAr
 	}
 	type accumulator struct {
 		digest        *engine.TDigest
+		sketch        *engine.DurationSketch
 		count, errors int64
 	}
 	// buckets[window][dimension][key]
@@ -327,7 +338,7 @@ func reconstructIntervalDistributions(ctx context.Context, record *storage.RunAr
 		}
 		acc := buckets[index][dimension][tx.ActionName]
 		if acc == nil {
-			acc = &accumulator{digest: engine.NewTDigest(intervalDistributionCompression)}
+			acc = &accumulator{digest: engine.NewTDigest(intervalDistributionCompression), sketch: engine.NewDurationSketch()}
 			buckets[index][dimension][tx.ActionName] = acc
 		}
 		acc.count++
@@ -335,6 +346,7 @@ func reconstructIntervalDistributions(ctx context.Context, record *storage.RunAr
 			acc.errors++
 		}
 		acc.digest.Add(tx.DurationMs * float64(time.Millisecond))
+		acc.sketch.Add(tx.DurationMs * float64(time.Millisecond))
 		return nil
 	})
 	if err != nil && !errors.Is(err, errStopIntervalReconstruction) {
@@ -357,11 +369,11 @@ func reconstructIntervalDistributions(ctx context.Context, record *storage.RunAr
 			metrics := make(map[string]IntervalDistributionMetric, len(keys))
 			for _, key := range keys {
 				acc := values[key]
-				snapshot := acc.digest.Snapshot()
+				digest, sketch := acc.digest.Snapshot(), acc.sketch.Snapshot()
 				metrics[key] = IntervalDistributionMetric{
-					Count: acc.count, Errors: acc.errors, DurationDigest: &snapshot, PercentileQuality: intervalPercentileRows,
-					P50: acc.digest.Quantile(.50) / float64(time.Millisecond), P90: acc.digest.Quantile(.90) / float64(time.Millisecond),
-					P95: acc.digest.Quantile(.95) / float64(time.Millisecond), P99: acc.digest.Quantile(.99) / float64(time.Millisecond),
+					Count: acc.count, Errors: acc.errors, DurationDigest: &digest, DurationSketch: &sketch, PercentileQuality: intervalPercentileRows,
+					P50: acc.sketch.Quantile(.50) / float64(time.Millisecond), P90: acc.sketch.Quantile(.90) / float64(time.Millisecond),
+					P95: acc.sketch.Quantile(.95) / float64(time.Millisecond), P99: acc.sketch.Quantile(.99) / float64(time.Millisecond),
 				}
 			}
 			out.Dimensions[dimension] = metrics

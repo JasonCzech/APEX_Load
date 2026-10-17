@@ -639,8 +639,7 @@ type archiveLoadLevelAccumulator struct {
 	requests    int64
 	errors      int64
 	tps         float64
-	digest      *engine.TDigest
-	digestValid bool
+	durations   *engine.DurationDistributionMerge
 	sampleCount int
 }
 
@@ -652,7 +651,7 @@ func buildRunArchiveLoadLevelSummaries(summaries []IntervalSummaryRecord) []RunA
 			key := fmt.Sprintf("%s\x00%d\x00%d", level.Group, level.StageIndex, level.TargetVUsers)
 			accumulator := accumulators[key]
 			if accumulator == nil {
-				accumulator = &archiveLoadLevelAccumulator{level: level, digestValid: true}
+				accumulator = &archiveLoadLevelAccumulator{level: level, durations: engine.NewDurationDistributionMerge()}
 				accumulators[key] = accumulator
 			}
 			var requests, errors int64
@@ -668,15 +667,7 @@ func buildRunArchiveLoadLevelSummaries(summaries []IntervalSummaryRecord) []RunA
 			}
 			attempts := requests + errors
 			if attempts > 0 {
-				snapshot := summary.LoadLevelDurationDigests[level.Group]
-				if snapshot == nil || snapshot.Count != attempts {
-					accumulator.digestValid = false
-				} else {
-					if accumulator.digest == nil {
-						accumulator.digest = engine.NewTDigest(snapshot.Compression)
-					}
-					accumulator.digest.Merge(engine.NewTDigestFromSnapshot(*snapshot))
-				}
+				accumulator.durations.Add(attempts, summary.LoadLevelDurationDigests[level.Group], summary.LoadLevelDurationSketches[level.Group])
 			}
 			accumulator.duration += seconds
 			accumulator.requests += requests
@@ -704,11 +695,11 @@ func buildRunArchiveLoadLevelSummaries(summaries []IntervalSummaryRecord) []RunA
 			observedDuration = configured.Seconds()
 		}
 		var p50, p90, p95, p99 float64
-		if accumulator.digestValid && accumulator.digest != nil && accumulator.digest.Count() == attempts {
-			p50 = accumulator.digest.Quantile(0.50) / float64(time.Millisecond)
-			p90 = accumulator.digest.Quantile(0.90) / float64(time.Millisecond)
-			p95 = accumulator.digest.Quantile(0.95) / float64(time.Millisecond)
-			p99 = accumulator.digest.Quantile(0.99) / float64(time.Millisecond)
+		if accumulator.durations.Kind() != "" && accumulator.durations.Count() == attempts {
+			p50 = accumulator.durations.Quantile(0.50) / float64(time.Millisecond)
+			p90 = accumulator.durations.Quantile(0.90) / float64(time.Millisecond)
+			p95 = accumulator.durations.Quantile(0.95) / float64(time.Millisecond)
+			p99 = accumulator.durations.Quantile(0.99) / float64(time.Millisecond)
 		}
 		result = append(result, RunArchiveLoadLevelSummary{
 			Group: accumulator.level.Group, StageIndex: accumulator.level.StageIndex, Name: accumulator.level.Name,
