@@ -9,12 +9,15 @@ run:
 # linter, run `golangci-lint run ./...` first and drop it if it reports
 # pre-existing violations.
 #
+# nilerr, ineffassign, staticcheck (SA checks) and govet's nilness were enabled
+# on 2026-10-17 after their findings were fixed or annotated with a reason.
+#
 # Evaluated and rejected (violation counts on the tree at the time of writing,
 # capped at 50 per linter): mnd 50+, canonicalheader 50+, copyloopvar 50+,
-# wastedassign 38, nilerr 32, predeclared 28, errchkjson 24, ineffassign 23,
-# iface 12, recvcheck 10, interfacebloat 9, mirror 8, dupword 8, errname 7,
-# fatcontext 6, protogetter 4, bodyclose 3, nilnil 3, sqlclosecheck 3,
-# gosmopolitan 3, makezero 1, usetesting 1. Several of those
+# wastedassign 38, predeclared 28, errchkjson 24, iface 12, recvcheck 10,
+# interfacebloat 9, mirror 8, dupword 8, errname 7, fatcontext 6,
+# protogetter 4, bodyclose 3, nilnil 3, sqlclosecheck 3, gosmopolitan 3,
+# makezero 1, usetesting 1. Several of those
 #
 # WARNING — the counts above are TRUNCATED and understate the real backlog.
 # golangci-lint defaults to max-same-issues=3 and max-issues-per-linter=50, so
@@ -42,6 +45,9 @@ linters:
     - reassign # mutating another package's exported package-level vars
     - spancheck # OpenTelemetry spans that are never ended
     - rowserrcheck # database row iteration errors must not silently truncate results
+    - nilerr # an error checked as non-nil and then dropped by returning nil
+    - ineffassign # a value assigned and never read, often a lost result
+    - staticcheck # SA bug checks only; see settings
     # Toolchain hygiene — a malformed directive fails silently and open.
     - gocheckcompilerdirectives # e.g. a typo'd //go:generate / //go:embed
     - nolintlint # malformed or no-longer-needed //nolint directives
@@ -54,6 +60,20 @@ linters:
     - goprintffuncname
     - misspell
     - unconvert
+  settings:
+    govet:
+      enable:
+        - nilness # conditions that are always true or false, and nil dereferences
+    staticcheck:
+      # Deprecations (SA1019) are tracked separately: each needs a migration,
+      # not a cleanup.
+      checks:
+        - SA*
+        - -SA1019
+    nolintlint:
+      # Every exception names the linter it silences and says why.
+      require-explanation: true
+      require-specific: true
   exclusions:
     paths:
       # Vendored JavaScript packages ship Go sources (for example

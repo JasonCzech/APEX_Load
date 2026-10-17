@@ -31,7 +31,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Tier-0
 | Go coverage floor enforced | 0 | 0 | 1 |
 | Packages with no test file | 6 | 11 | 3 |
 | Open inherited review defects | 11 | 1 | 0 |
-| Resource-leak linters enabled | 0 | 1 | 1 |
+| Resource-leak linters enabled | 0 | 2 | 1 |
 | Converter golden files | 0 | 30 | all registered converters |
 | Longest clean soak | none | none | 72 h on AKS |
 

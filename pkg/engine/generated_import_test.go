@@ -34,7 +34,7 @@ func TestGeneratedImportPreservesRepeatedRequestIDs(t *testing.T) {
 	for _, action := range applied.Actions {
 		resolved := vu.resolveAction(action)
 		var body map[string]string
-		if err := json.Unmarshal([]byte(resolved.Body), &body); err != nil {
+		if err := json.Unmarshal(resolved.Body, &body); err != nil {
 			t.Fatal(err)
 		}
 		if body["requestId"] == "" || body["requestId"] != body["parentRequestId"] || body["requestId"] == previous {

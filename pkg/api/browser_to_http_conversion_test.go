@@ -19,12 +19,12 @@ func TestBrowserToHTTPNetworkEntriesUsesRetainedReplayEvidence(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name    string
-		session BrowserReplaySession
+		session *BrowserReplaySession
 		paths   []string
 	}{
 		{
 			name: "final report replaces stale progress and includes snapshots",
-			session: BrowserReplaySession{
+			session: &BrowserReplaySession{
 				Status: BrowserReplayCompleted,
 				Events: []engine.ReplayActionEvent{{Network: []protocol.NetworkEntry{entry("stale")}}},
 				FinalReport: &engine.ReplayReport{Success: true, Events: []engine.ReplayActionEvent{
@@ -36,7 +36,7 @@ func TestBrowserToHTTPNetworkEntriesUsesRetainedReplayEvidence(t *testing.T) {
 		},
 		{
 			name: "live progress remains usable",
-			session: BrowserReplaySession{
+			session: &BrowserReplaySession{
 				Status: BrowserReplayRunning,
 				Events: []engine.ReplayActionEvent{{Network: []protocol.NetworkEntry{entry("live")}}},
 			},
@@ -44,7 +44,7 @@ func TestBrowserToHTTPNetworkEntriesUsesRetainedReplayEvidence(t *testing.T) {
 		},
 		{
 			name: "legacy terminal snapshot retains its event list",
-			session: BrowserReplaySession{
+			session: &BrowserReplaySession{
 				Status:      BrowserReplayCompleted,
 				Events:      []engine.ReplayActionEvent{{Network: []protocol.NetworkEntry{entry("legacy")}}},
 				FinalReport: &engine.ReplayReport{Success: true},
@@ -53,7 +53,7 @@ func TestBrowserToHTTPNetworkEntriesUsesRetainedReplayEvidence(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			entries, skipped, evidence, err := (&Server{}).browserToHTTPNetworkEntries(BrowserToHTTPPreviewRequest{ReplaySessionID: "retained"}, &test.session)
+			entries, skipped, evidence, err := (&Server{}).browserToHTTPNetworkEntries(BrowserToHTTPPreviewRequest{ReplaySessionID: "retained"}, test.session)
 			if err != nil || skipped != 0 || len(entries) != len(test.paths) || evidence.NetworkEntries != len(test.paths) || !evidence.AllEntriesBound {
 				t.Fatalf("entries=%#v skipped=%d evidence=%#v err=%v", entries, skipped, evidence, err)
 			}
