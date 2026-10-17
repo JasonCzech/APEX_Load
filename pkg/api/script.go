@@ -1152,6 +1152,11 @@ func (tr *TestRunner) ReplayScript(id string, opts engine.ReplayOptions) (*engin
 	)
 }
 
+// errRedactionPolicyUnavailable refuses a replay whose project redaction
+// policy cannot be read: a storage failure the client can retry, not a fault
+// in the script.
+var errRedactionPolicyUnavailable = errors.New("project redaction policy is unavailable")
+
 func (tr *TestRunner) ReplayScriptDefinition(script *dsl.Script, opts engine.ReplayOptions) (*engine.ReplayReport, error) {
 	return tr.ReplayScriptDefinitionContext(context.Background(), script, opts)
 }
@@ -1187,7 +1192,7 @@ func (tr *TestRunner) replayScriptDefinitionContext(
 	}
 	effectiveRedactionRules, err := tr.resolveEffectiveRedactionRules(script.ProjectID, opts.RedactionRules)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", errRedactionPolicyUnavailable, err)
 	}
 	opts.RedactionRules = effectiveRedactionRules
 	if opts.SecretResolver == nil {

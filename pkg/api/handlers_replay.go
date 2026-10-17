@@ -248,6 +248,10 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 		writeError(w, http.StatusServiceUnavailable, fenceErr.Error())
 		return
 	}
+	if errors.Is(err, errRedactionPolicyUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

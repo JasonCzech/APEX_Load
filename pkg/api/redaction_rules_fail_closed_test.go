@@ -14,6 +14,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -171,5 +172,39 @@ func TestGroupCompilationWithoutQuotaEvidenceFailsClosedOnProjectLookupError(t *
 
 	if err == nil || !strings.Contains(err.Error(), "resolve redaction rules") {
 		t.Fatalf("compile error = %v, want the redaction policy failure", err)
+	}
+}
+
+// A classic replay whose project redaction policy cannot be read answers 503,
+// a retryable server condition, and sends nothing to the target.
+func TestClassicReplayAnswersServiceUnavailableWithoutProjectRedactionPolicy(t *testing.T) {
+	var executed atomic.Int64
+	protocolName := registerReplayAPIProtocol(t, func(*protocol.Action) (*protocol.Result, error) {
+		executed.Add(1)
+		return &protocol.Result{Success: true, StatusCode: 200}, nil
+	})
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name: "Redaction-gated replay", Protocol: protocolName, Version: "1.0.0", ProjectID: "proj-a",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions: []dsl.Action{{Name: "Orders", Type: "GET", Target: "/orders"}},
+	})
+	replay := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/replay", strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		return resp
+	}
+
+	server.runner.projectStore = &redactionProjectStore{err: errors.New("connection reset by peer")}
+	if resp := replay(); resp.Code != http.StatusServiceUnavailable || executed.Load() != 0 {
+		t.Fatalf("status = %d (body %s), %d actions executed; want 503 and none", resp.Code, resp.Body.String(), executed.Load())
+	}
+
+	// Control: a project with no redaction settings replays.
+	server.runner.projectStore = &redactionProjectStore{err: sql.ErrNoRows}
+	if resp := replay(); resp.Code != http.StatusOK || executed.Load() == 0 {
+		t.Fatalf("control status = %d (body %s), %d actions executed", resp.Code, resp.Body.String(), executed.Load())
 	}
 }
