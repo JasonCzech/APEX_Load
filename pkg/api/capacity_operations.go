@@ -327,9 +327,9 @@ func (s *Server) asyncCapacityRequest(pool *storage.FleetPool, request *storage.
 		return compute.CapacityRequest{}
 	}
 	deadline := time.Now().UTC().Add(5 * time.Minute)
-	if request != nil && request.DeadlineAt != nil {
+	if request.DeadlineAt != nil {
 		deadline = request.DeadlineAt.UTC()
-	} else if pool != nil && pool.ReadinessTimeoutSeconds > 0 {
+	} else if pool.ReadinessTimeoutSeconds > 0 {
 		deadline = time.Now().UTC().Add(time.Duration(pool.ReadinessTimeoutSeconds) * time.Second)
 	}
 	warmFloor := request.DesiredCount

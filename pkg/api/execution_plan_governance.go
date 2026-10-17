@@ -258,7 +258,7 @@ func (tr *TestRunner) ResolveExecutionPlanApproval(planID, approvalID string, ap
 		approval.ResolvedAt = &now
 		approval.DecisionReason = reason
 		approval.UpdatedAt = now
-		return approval, true, nil
+		return approval, true, nil //nolint:nilerr // the decision is committed; a failed re-read returns the applied state rather than a failure
 	}
 	return fresh, true, nil
 }

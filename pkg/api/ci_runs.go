@@ -2259,7 +2259,7 @@ func ciSLAEvidenceComplete(config *GoalConfig, live *LiveMetrics) bool {
 	}
 	if config.MaxErrorCount != nil {
 		configured = true
-		if live == nil || live.TotalTx+live.TotalErrors <= 0 {
+		if live.TotalTx+live.TotalErrors <= 0 {
 			return false
 		}
 	}

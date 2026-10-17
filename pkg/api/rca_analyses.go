@@ -909,7 +909,7 @@ func (s *Server) runRCAAnalysis(ctx context.Context, store storage.RCAStore, ana
 	if runErr != nil && ctx.Err() != nil {
 		// Interrupted by shutdown, cancellation or a lost lease: leave the
 		// analysis to be re-claimed when its lease ends, or to stay cancelled.
-		return nil
+		return nil //nolint:nilerr // an interrupted analysis is re-claimed when its lease ends
 	}
 	if runErr != nil {
 		state, payload.Error = storage.RCAStateFailed, runErr.Error()

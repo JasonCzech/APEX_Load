@@ -1229,10 +1229,10 @@ func buildEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResult
 	summary.SalesforceReview = salesforceReviewValue(preserved["salesforce_review"])
 	summary.AgentforceReview = agentforceReviewValue(preserved["agentforce_review"])
 	summary.MuleSoftReview = mulesoftReviewValue(preserved["mulesoft_review"])
-	if summary.SalesforceReview != nil && summary.SalesforceReview.NativePreview != nil && summary.SalesforceReview.NativePreview.Script == nil && result != nil && result.Script != nil && result.Script.GeneratedBy == "apexload-salesforce-builder" {
+	if summary.SalesforceReview != nil && summary.SalesforceReview.NativePreview != nil && summary.SalesforceReview.NativePreview.Script == nil && result.Script != nil && result.Script.GeneratedBy == "apexload-salesforce-builder" {
 		summary.SalesforceReview.NativePreview.Script = result.Script
 	}
-	if summary.SalesforceReview != nil && summary.SalesforceReview.NativePreview != nil && result != nil && result.Script != nil && result.Script.GeneratedBy == "apexload-salesforce-builder" {
+	if summary.SalesforceReview != nil && summary.SalesforceReview.NativePreview != nil && result.Script != nil && result.Script.GeneratedBy == "apexload-salesforce-builder" {
 		preserved["generation_mode"] = "salesforce_native_http"
 		preserved["protocol_scope"] = "salesforce_http_family"
 	}

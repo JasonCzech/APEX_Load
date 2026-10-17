@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"errors"
@@ -131,7 +132,7 @@ func (tr *TestRunner) recoverQueuedCIRunForIdentityWithTerm(id string, identity 
 	shakeoutReviewSummary := strings.TrimSpace(test.Error)
 	tr.mu.RUnlock()
 	if err != nil {
-		return nil
+		return nil //nolint:nilerr // a test whose CI metadata does not decode is not a queued CI run this recovery resumes
 	}
 	if shakeoutReview {
 		message := "controller recovered a queued CI script shakeout requiring operator review"
@@ -360,7 +361,7 @@ func queuedCIRecoveryRetryJitter(id string, backoff time.Duration) time.Duration
 // recovery at a time. Every row retains an independent jittered exponential
 // schedule, avoiding both starvation and synchronized retry bursts.
 func (tr *TestRunner) runQueuedCIRecoveryCoordinator(term executionLeaseTerm, wake <-chan struct{}) {
-	ctx, cancel := tr.executionOperationContext(nil)
+	ctx, cancel := tr.executionOperationContext(context.Background())
 	defer cancel()
 	if tr.durableExecutionFence {
 		ctxTerm, ok := executionLeaseTermFromContext(ctx)

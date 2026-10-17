@@ -97,7 +97,7 @@ func (b *distributedExecutionBackend) prepareDistributedTestRunWithLifecycle(tr 
 	if tr.shuttingDown || tr.tests[test.ID] != test || test.Status != "INITIALIZING" || ctx == nil || ctx.Err() != nil || lifecycleCtx.Err() != nil || !tr.isExecutionLeader() {
 		tr.mu.Unlock()
 		lifecycleCancel()
-		return false, nil, nil
+		return false, nil, nil //nolint:nilerr // a run cancelled, replaced or fenced before preparation reports not prepared, not a failure
 	}
 	previousGoalControl := test.goalControl
 	previousControlGeneration := test.remoteControlGeneration
@@ -795,7 +795,9 @@ receiveLoop:
 				continue receiveLoop
 			}
 			for {
-				live, finalStatus, finalError, fresh, publication = b.applyStoredRemoteMetricsBatch(tr, test, target, fence)
+				// A stored window is never terminal (terminal batches take the
+				// branch below), so it carries no final status.
+				live, _, _, fresh, publication = b.applyStoredRemoteMetricsBatch(tr, test, target, fence)
 				if fresh {
 					break
 				}

@@ -215,7 +215,7 @@ func (s *Server) rcaImportedSeries(ctx context.Context, project, testID string, 
 		return nil, limitations, nil
 	case !stored || !rcaNativeAnalysisAvailable() || ensureAnalysisBackend(s.store) != nil || !analysisProjectEnabled(project):
 		note(limitationImportedDatasetUnavailable, fmt.Sprintf("native analysis is unavailable, so %d associated datasets were not judged", len(frozen)))
-		return nil, limitations, nil
+		return nil, limitations, nil //nolint:nilerr // an unavailable native backend is a limitation; only cancellation fails the read
 	}
 	var deadline time.Time
 	if readBudget > 0 {

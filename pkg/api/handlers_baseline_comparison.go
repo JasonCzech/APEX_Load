@@ -367,7 +367,7 @@ func (s *Server) handleListBaselineComparisons(w http.ResponseWriter, r *http.Re
 			} `json:"verdict"`
 		}
 		if json.Unmarshal(record.Payload, &snapshot) != nil {
-			return nil
+			return nil //nolint:nilerr // an unreadable saved comparison is left out of the list rather than failing it
 		}
 		summary := BaselineComparisonSummary{ID: record.ID, CreatedAt: record.CreatedAt, Baselines: snapshot.Baselines}
 		if !snapshot.CreatedAt.IsZero() {

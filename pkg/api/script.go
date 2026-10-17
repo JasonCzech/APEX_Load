@@ -986,10 +986,8 @@ func (tr *TestRunner) DeleteScriptDurableIfUnchanged(id string, expectedUpdatedA
 	if err := tr.rejectActivePrivateCISnapshotMutationLocked(id); err != nil {
 		return false, err
 	}
-	deleted := false
 	if store, ok := tr.scriptStore.(conditionalScriptDeletePersistence); ok {
-		var err error
-		deleted, err = contentmutation.OutsideLock(&tr.mu, func() (bool, error) { return store.DeleteScriptIfUnchanged(id, expectedUpdatedAt) })
+		deleted, err := contentmutation.OutsideLock(&tr.mu, func() (bool, error) { return store.DeleteScriptIfUnchanged(id, expectedUpdatedAt) })
 		if err != nil || !deleted {
 			return deleted, err
 		}
@@ -1003,7 +1001,6 @@ func (tr *TestRunner) DeleteScriptDurableIfUnchanged(id string, expectedUpdatedA
 		if err := contentmutation.WriteOutsideLock(&tr.mu, func() error { return tr.deleteStoredScript(id) }); err != nil {
 			return false, err
 		}
-		deleted = true
 	}
 	if previous := tr.scripts[id]; previous != nil {
 		tr.removeRefKeyLocked(previous.RefKey)

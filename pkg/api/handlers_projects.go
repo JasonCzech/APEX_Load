@@ -562,9 +562,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	externalSecretCleanupNames := make([]string, 0)
 	externalSecretCleanupProviders := make([]string, 0)
 	externalSecretCleanupPrefix := ""
-	externalSecretDiscoveryComplete := true
-	var externalSecretDiscoveryErr error
-	externalSecretDiscoveryComplete, externalSecretDiscoveryErr = s.discoverProjectSecretMetadata(r.Context(), id)
+	externalSecretDiscoveryComplete, externalSecretDiscoveryErr := s.discoverProjectSecretMetadata(r.Context(), id)
 	if externalSecretDiscoveryErr != nil {
 		externalSecretDiscoveryComplete = false
 		slog.Warn("external project secret discovery incomplete; continuing with indexed cleanup guidance", "project_id", id, "reason", "provider_unavailable")

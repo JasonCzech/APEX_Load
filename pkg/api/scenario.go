@@ -232,10 +232,8 @@ func (tr *TestRunner) DeleteScenarioIfUnchanged(id string, expectedUpdatedAt tim
 	if id == "" || expectedUpdatedAt.IsZero() {
 		return false, fmt.Errorf("scenario id and expected updated_at are required")
 	}
-	deleted := false
 	if store, ok := tr.scenarioStore.(conditionalScenarioDeletePersistence); ok {
-		var err error
-		deleted, err = contentmutation.OutsideLock(&tr.mu, func() (bool, error) { return store.DeleteScenarioIfUnchanged(id, expectedUpdatedAt) })
+		deleted, err := contentmutation.OutsideLock(&tr.mu, func() (bool, error) { return store.DeleteScenarioIfUnchanged(id, expectedUpdatedAt) })
 		if err != nil || !deleted {
 			return deleted, err
 		}
@@ -246,7 +244,6 @@ func (tr *TestRunner) DeleteScenarioIfUnchanged(id string, expectedUpdatedAt tim
 		if current == nil || !current.UpdatedAt.Equal(expectedUpdatedAt) || len(current.Schedules) != 0 || current.ResultCount != 0 {
 			return false, nil
 		}
-		deleted = true
 	}
 	if current := tr.scenarios[id]; current != nil {
 		tr.removeRefKeyLocked(current.RefKey)

@@ -118,9 +118,7 @@ func (s *Server) handleListProjectSecrets(w http.ResponseWriter, r *http.Request
 	if !s.ensureSecretProjectExists(w, projectID) {
 		return
 	}
-	discoveryComplete := true
-	var discoveryErr error
-	discoveryComplete, discoveryErr = s.discoverProjectSecretMetadata(r.Context(), projectID)
+	discoveryComplete, discoveryErr := s.discoverProjectSecretMetadata(r.Context(), projectID)
 	if discoveryErr != nil {
 		discoveryComplete = false
 		// Provider errors are deliberately not logged: an implementation may echo

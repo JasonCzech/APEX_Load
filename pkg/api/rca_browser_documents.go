@@ -50,7 +50,7 @@ func (s *Server) rcaBrowserBaselinePolicy(projectID string, manifest *RunArchive
 	}
 	if err != nil || definition == nil || definition.Kind != storage.AnalysisDefinitionKindBrowserPolicy {
 		out.Unavailable = "its revision was not found"
-		return out, nil
+		return out, nil //nolint:nilerr // a missing pinned revision is reported in Unavailable and the defaults apply
 	}
 	if digest := sha256.Sum256(definition.Definition); hex.EncodeToString(digest[:]) != pin.SHA256 {
 		out.Unavailable = "its revision no longer matches the pin"
@@ -59,7 +59,7 @@ func (s *Server) rcaBrowserBaselinePolicy(projectID string, manifest *RunArchive
 	var policy BrowserPolicyDefinition
 	if json.Unmarshal(definition.Definition, &policy) != nil || policy.validate() != nil {
 		out.Unavailable = "its revision is invalid"
-		return out, nil
+		return out, nil //nolint:nilerr // an invalid pinned revision is reported in Unavailable and the defaults apply
 	}
 	out.TimingMs, out.TimingRelative, out.CLS = policy.EffectFloors.TimingMs, policy.EffectFloors.TimingRelative, policy.EffectFloors.CLS
 	out.Mode, out.RunID = policy.Baseline.Mode, policy.Baseline.RunID
@@ -98,7 +98,7 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 		return nil, nil, ctxErr
 	}
 	if err != nil {
-		return nil, []rca.Limitation{{Code: limitationDetectionEvidenceUnreadable, Detail: "the browser document evidence could not be read: " + err.Error()}}, nil
+		return nil, []rca.Limitation{{Code: limitationDetectionEvidenceUnreadable, Detail: "the browser document evidence could not be read: " + err.Error()}}, nil //nolint:nilerr // unreadable evidence is a limitation; only cancellation fails the read
 	}
 	if accumulator == nil {
 		return nil, nil, nil

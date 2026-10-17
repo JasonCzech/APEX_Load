@@ -320,7 +320,7 @@ func (s *Server) replayCredentialPreservingAuthoringSessionCreate(
 		sourceProfile,
 	)
 	if err != nil {
-		return false, nil
+		return false, nil //nolint:nilerr // a draft that does not prepare is not a replayed create; the create path reports its error
 	}
 	sessionSource := normalizeAuthoringSessionSource(req.Source)
 	markImportedJavaVuserAuthoringDraft(safeDraft, sessionSource)

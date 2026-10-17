@@ -148,7 +148,7 @@ func (service *testRunnerExecutionPlanService) Validate(plan *storage.ExecutionP
 				}
 			case errors.Is(err, sql.ErrNoRows):
 				// Draft plans may intentionally name a scenario that will be created later.
-			case err != nil:
+			default:
 				return http.StatusInternalServerError, "failed to validate execution plan scenario ownership"
 			}
 			if err := validateExecutionPlanDataPoolProjects(service.store, planProject, entry.DataPools); err != nil {

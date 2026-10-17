@@ -507,11 +507,11 @@ func usageArchiveBytes(test *ManagedTest) int64 {
 	var total int64
 	_ = filepath.WalkDir(test.Archive.ArchivePath, func(path string, entry os.DirEntry, err error) error {
 		if err != nil || entry == nil || entry.IsDir() {
-			return nil
+			return nil //nolint:nilerr // a best-effort size total skips entries it cannot read
 		}
 		info, statErr := entry.Info()
 		if statErr != nil {
-			return nil
+			return nil //nolint:nilerr // a best-effort size total skips entries it cannot read
 		}
 		total += info.Size()
 		return nil

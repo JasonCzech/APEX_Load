@@ -452,19 +452,15 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 		return executionPlanMaterializeResultFromRun(existing), nil
 	}
 	runRevision := anchor.Revision
-	results := make([]executionPlanRunResult, 0, len(entries))
 	runEntries := make([]storage.ExecutionPlanRunEntry, 0, len(entries))
 	createdTests := make([]*ManagedTest, 0, len(entries))
 	created, failed := 0, 0
 	planTimeslotUsed := false
 	for entryIndex, entry := range entries {
-		res := executionPlanRunResult{Order: entry.Order, ScenarioID: entry.ScenarioID}
 		testID := executionPlanEntryTestID(runID, entryIndex, entry.Order)
 		runEntry := initialEntries[entryIndex]
 		if !entry.IsEnabled() {
-			res.Status, res.Detail = "skipped", "entry disabled"
 			runEntry.TestID, runEntry.Status, runEntry.Detail = "", "skipped", "entry disabled"
-			results = append(results, res)
 			runEntries = append(runEntries, runEntry)
 			continue
 		}
@@ -500,7 +496,6 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 				}
 			}
 			failed++
-			res.Status, res.Detail = "failed", err.Error()
 			runEntry.Status, runEntry.Detail = "failed", err.Error()
 		} else {
 			if !tr.executionLeaseTermCurrent(leaseTerm) {
@@ -508,14 +503,12 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 			}
 			created++
 			createdTests = append(createdTests, test)
-			res.Status, res.TestID = "created", test.ID
 			runEntry.Status, runEntry.TestID = "created", test.ID
 			if strings.TrimSpace(attribSubject) != "" {
 				tr.AttributeTestCreated(test.ID, attribSubject, attribDisplayName)
 			}
 			tr.AttributeTestExecutionPlanApproval(test.ID, gateApproval)
 		}
-		results = append(results, res)
 		runEntries = append(runEntries, runEntry)
 	}
 

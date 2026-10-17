@@ -441,7 +441,7 @@ func archiveDirectorySize(dir string) int64 {
 	}
 	_ = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil || entry == nil || entry.IsDir() {
-			return nil
+			return nil //nolint:nilerr // a best-effort size estimate skips entries it cannot read
 		}
 		if info, statErr := entry.Info(); statErr == nil {
 			total += info.Size()

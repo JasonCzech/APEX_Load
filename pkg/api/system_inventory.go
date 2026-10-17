@@ -335,7 +335,7 @@ func (s *Server) dataPlatformInventory() DataPlatformInventory {
 	cacheBackend := "memory"
 	cacheKeyPrefix := ""
 	cacheFanout := ""
-	if s != nil && s.cache != nil {
+	if s.cache != nil {
 		info := s.cache.Info()
 		cacheBackend = info.Backend
 		cacheKeyPrefix = info.KeyPrefix

@@ -38,11 +38,11 @@ type enterpriseArchiveCollectionMember struct {
 // requirements cannot be attributed to a different script in the package.
 func readEnterpriseArchiveCollection(data []byte) ([]archiveingest.File, bool, error) {
 	if err := archiveingest.ValidateZIPDirectory(data, enterprisearchive.MaxArchiveEntries); err != nil {
-		return nil, false, nil // The ordinary converter reports invalid ZIPs.
+		return nil, false, nil //nolint:nilerr // the ordinary converter reports invalid ZIPs
 	}
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		return nil, false, nil // The ordinary converter reports invalid ZIPs.
+		return nil, false, nil //nolint:nilerr // the ordinary converter reports invalid ZIPs
 	}
 	candidate := enterpriseArchiveCollectionCandidate(reader)
 	if !candidate && !enterpriseArchiveUnanchoredSourcesWithArchives(reader) {

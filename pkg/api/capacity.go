@@ -45,16 +45,6 @@ func (tr *TestRunner) countActiveTestsForProjectLocked(projectID string) int {
 	return active
 }
 
-func (tr *TestRunner) countActiveVUsersLocked() int {
-	total := 0
-	for _, test := range tr.tests {
-		if testReservesRuntimeCapacity(test) {
-			total = saturatingAddNonNegative(total, managedTestCapacityVUsers(test))
-		}
-	}
-	return total
-}
-
 func (tr *TestRunner) countActiveVUsersForProjectLocked(projectID string) int {
 	projectID = normalizeProjectID(projectID)
 	total := 0
@@ -249,13 +239,11 @@ func (tr *TestRunner) evaluateQuotaBlockWithTimeslotsAndProjectQuotaLocked(test 
 	}
 	globalActiveTests := tr.countActiveTestsLocked()
 	projectActiveTests := tr.countActiveTestsForProjectLocked(test.ProjectID)
-	globalActiveVUsers := tr.countActiveVUsersLocked()
 	projectActiveVUsers := tr.countActiveVUsersForProjectLocked(test.ProjectID)
 	if excludeTestID != "" {
 		if existing, ok := tr.tests[excludeTestID]; ok && testReservesRuntimeCapacity(existing) {
 			globalActiveTests--
 			projectActiveTests--
-			globalActiveVUsers -= managedTestCapacityVUsers(existing)
 			projectActiveVUsers -= managedTestCapacityVUsers(existing)
 		}
 	}

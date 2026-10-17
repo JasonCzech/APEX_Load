@@ -355,7 +355,6 @@ func (s *scenarioScheduler) RunDueSchedules() (runErr error) {
 	for _, currentSchedule := range schedules {
 		if !s.runner.executionLeaseTermCurrent(leaseTerm) {
 			scenarioSweep.err = errors.Join(scenarioSweep.err, errNotExecutionLeader)
-			scheduleSweepExhausted = true
 			break
 		}
 		schedule := cloneScenarioSchedule(currentSchedule)

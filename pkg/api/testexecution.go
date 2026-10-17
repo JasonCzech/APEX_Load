@@ -5408,7 +5408,7 @@ func (tr *TestRunner) recoverRunTestPanic(test *ManagedTest, recovered any, stac
 			}
 		}()
 		tr.mu.Lock()
-		tr.mu.Unlock()
+		tr.mu.Unlock() //nolint:staticcheck // acquiring tr.mu proves it is not orphaned; the lock is the signal, not a critical section
 		close(acquirable)
 		tr.terminalizePanickedRun(test, message)
 	}()
@@ -5843,7 +5843,7 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 	}
 	if tr.shuttingDown || test.Status != "INITIALIZING" || ctx.Err() != nil || !tr.isExecutionLeader() {
 		tr.mu.Unlock()
-		return ctx, nil, nil, false, nil
+		return ctx, nil, nil, false, nil //nolint:nilerr // a run cancelled, fenced, shutting down or no longer initializing reports not started, not a failure
 	}
 	tr.mu.Unlock()
 
@@ -5903,7 +5903,7 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 	tr.mu.Lock()
 	if tr.shuttingDown || test.Status != "INITIALIZING" || ctx.Err() != nil || !tr.isExecutionLeader() {
 		tr.mu.Unlock()
-		return ctx, nil, nil, false, nil
+		return ctx, nil, nil, false, nil //nolint:nilerr // a run cancelled, fenced, shutting down or no longer initializing reports not started, not a failure
 	}
 	previousMultiEngine := test.multiEngine
 	previousStartedAt := cloneTimePtr(test.StartedAt)
@@ -6182,7 +6182,7 @@ func (tr *TestRunner) enqueuePendingPromotionRetryWithTerm(term executionLeaseTe
 }
 
 func (tr *TestRunner) runPendingPromotionRetry(term executionLeaseTerm) {
-	ctx, cancel := tr.executionOperationContext(nil)
+	ctx, cancel := tr.executionOperationContext(context.Background())
 	defer cancel()
 	if tr.durableExecutionFence {
 		contextTerm, ok := executionLeaseTermFromContext(ctx)
@@ -6855,7 +6855,7 @@ func (tr *TestRunner) recordSystemTestAudit(action string, status string, test *
 	if tr == nil || tr.scenarioStore == nil || test == nil {
 		return
 	}
-	if lifecycleActivityAction(action) == "start" && test != nil {
+	if lifecycleActivityAction(action) == "start" {
 		tr.recordTestStartActivity(test, testCreationActor{})
 	}
 	if normalized := lifecycleActivityAction(action); normalized != "" && normalized != "start" {

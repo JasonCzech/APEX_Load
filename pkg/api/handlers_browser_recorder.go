@@ -939,7 +939,7 @@ func (s *Server) recoverStagedBrowserRecordingOwner(
 			return false, nil
 		}
 		if err := s.verifyBrowserRecordingSaveProvenance(script); err != nil {
-			return false, nil
+			return false, nil //nolint:nilerr // unverified save provenance is not a staged recording save; claim recovery handles it
 		}
 		if recordingID == "" {
 			recordingID = currentRecordingID
@@ -968,7 +968,7 @@ func (s *Server) recoverStagedBrowserRecordingOwner(
 	if err != nil || locator.RecordingID != recordingID || locator.ProjectID != projectID ||
 		(locator.State != browserRecordingSaveLocatorStaged && locator.State != browserRecordingSaveLocatorPublished) ||
 		locator.ReceiptID == "" || locator.OperationHash == "" || locator.RequestDigest == "" {
-		return false, nil
+		return false, nil //nolint:nilerr // an unreadable or mismatched locator is not a staged recording save; claim recovery handles it
 	}
 	scriptIDs := deterministicScriptIDsFromStored(stored)
 	if !slices.Equal(locator.ScriptIDs, scriptIDs) {
@@ -1821,7 +1821,7 @@ func (s *Server) validatePersistedBrowserRecordingHARBaselineForAdoption(
 		return false, nil
 	}
 	if err := validateRecordingActionGraph(record, httpStored.Script); err != nil {
-		return false, nil
+		return false, nil //nolint:nilerr // an invalid action graph is invalid baseline evidence for claim recovery; only read errors fail
 	}
 	return true, nil
 }

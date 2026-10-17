@@ -65,9 +65,9 @@ func findDesktopPackage(distDir, platform string) (string, error) {
 		case debErr != nil && tarErr != nil:
 			return "", tarErr
 		case debErr != nil:
-			return tarball, nil
+			return tarball, nil //nolint:nilerr // either Linux package serves the platform; only both missing is an error
 		case tarErr != nil:
-			return deb, nil
+			return deb, nil //nolint:nilerr // either Linux package serves the platform; only both missing is an error
 		}
 		debVersion, debOK := downloadPackageVersion(deb, desktopPackagePrefix, platform, ".deb")
 		tarVersion, tarOK := downloadPackageVersion(tarball, desktopPackagePrefix, platform, ".tar.gz")
