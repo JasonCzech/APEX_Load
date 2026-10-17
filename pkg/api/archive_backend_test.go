@@ -825,6 +825,24 @@ func TestRemoveLocalArchiveDirectoryRequiresRealContainedDirectory(t *testing.T)
 	}
 }
 
+func TestRemoveLocalArchiveDirectoryReportsMissingConfiguredRoot(t *testing.T) {
+	// An unmounted or deleted archive volume: the run path is inside the
+	// configured root, which no longer exists.
+	archiveRoot := filepath.Join(t.TempDir(), "unmounted-archive")
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveRoot)
+	t.Setenv("APEXLOAD_ARCHIVE_STAGING_DIR", "")
+
+	err := removeLocalArchiveDirectory(filepath.Join(archiveRoot, "run-1"))
+	if err == nil || !strings.Contains(err.Error(), "configured archive root") || !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("removeLocalArchiveDirectory error = %v, want the missing configured root", err)
+	}
+	err = removeLocalArchiveDirectory(filepath.Join(t.TempDir(), "run-1"))
+	if err == nil || !strings.Contains(err.Error(), "outside configured archive roots") {
+		t.Fatalf("removeLocalArchiveDirectory error = %v, want a path outside the configured roots", err)
+	}
+}
+
 func TestAtomicReplaceArchiveDirectoryRejectsLinkedOrNonDirectoryFinalRoot(t *testing.T) {
 	for _, kind := range []string{"symlink", "file"} {
 		t.Run(kind, func(t *testing.T) {

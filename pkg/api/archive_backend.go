@@ -660,18 +660,22 @@ func removeLocalArchiveDirectory(path string) error {
 		resolvedRoot, err := resolveArchiveDirectoryRoot(absRoot, false)
 		if err != nil {
 			if os.IsNotExist(err) {
+				// The path may still belong to this root; if no other root
+				// holds it, report the missing root rather than an outside path.
+				if _, within := archivePathBelowRoot(absRoot, absPath); within {
+					matchedRoot = true
+				}
 				continue
 			}
 			return fmt.Errorf("resolve configured archive root %q: %w", root, err)
 		}
-		relative, relErr := filepath.Rel(absRoot, absPath)
-		if relErr != nil || relative == "." || relative == "" || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			relative, relErr = filepath.Rel(resolvedRoot, absPath)
+		relative, within := archivePathBelowRoot(absRoot, absPath)
+		if !within {
+			relative, within = archivePathBelowRoot(resolvedRoot, absPath)
 		}
-		if relErr != nil || relative == "." || relative == "" || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		if !within {
 			continue
 		}
-		matchedRoot = true
 		relative, err = normalizeArchiveRelativeDirectory(relative)
 		if err != nil || relative == "." {
 			return fmt.Errorf("archive deletion path %q is not safe", path)
@@ -719,6 +723,16 @@ func removeLocalArchiveDirectory(path string) error {
 		return fmt.Errorf("configured archive root for %q does not exist", path)
 	}
 	return fmt.Errorf("archive path %q is outside configured archive roots", path)
+}
+
+// archivePathBelowRoot returns path relative to root when path names an entry
+// strictly below root.
+func archivePathBelowRoot(root, path string) (string, bool) {
+	relative, err := filepath.Rel(root, path)
+	if err != nil || relative == "." || relative == "" || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return relative, true
 }
 
 func ensureArchiveMaterialized(record *storage.RunArchiveRecord) error {
