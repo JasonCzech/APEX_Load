@@ -71,7 +71,7 @@ func (s *Server) handleImportCloudTest(w http.ResponseWriter, r *http.Request) {
 			},
 		}},
 	}
-	augmented := draft.augment(r)
+	augmented := draft.Augment(r)
 	result.Warnings = augmented.Warnings
 
 	// Reuse the existing encrypted candidate/session path for the primary asset

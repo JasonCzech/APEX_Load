@@ -15,6 +15,8 @@ type ArtifactMetadataReader interface {
 	GetImportSourceArtifact(id string, projectID string) (*storage.ImportSourceArtifact, error)
 }
 
+// StoreResolver supports external integrations with the retired Bruno runtime.
+// Deprecated: native import/source workflows use EncryptedStore directly.
 type StoreResolver struct {
 	Objects      *EncryptedStore
 	Metadata     ArtifactMetadataReader

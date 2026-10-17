@@ -32,22 +32,9 @@ export function findApiServiceCollisions(groups: ApiServiceGroups): ApiServiceCo
   return collisions
 }
 
-/**
- * Duplicated service names that have been audited and declared harmless.
- *
- * `useApplicationApi` and `useRepositoryApi` each declare their own
- * byte-identical `archiveRelease`/`deleteRelease` (same path, method and
- * response type), and separate components call each hook directly, so the
- * shadowing has no observable effect. They are listed here — not only in the
- * test — so the runtime reporter stays silent on them: a guard that logs the
- * same two names on every app boot trains developers to ignore it, and a
- * genuinely new collision would then arrive as a superset of a message nobody
- * reads.
- *
- * Anything not on this list is a new silent shadowing. Add the endpoint to
- * exactly one domain hook instead of extending this array.
- */
-export const KNOWN_DUPLICATE_SERVICE_NAMES: readonly string[] = ['archiveRelease', 'deleteRelease']
+// Every service name has one owner. Kept as an empty compatibility constant
+// for callers that inspect the registry; new duplicates must be consolidated.
+export const KNOWN_DUPLICATE_SERVICE_NAMES: readonly string[] = []
 
 /** Collisions that are not on the audited allowlist — the ones worth reporting. */
 export function unexpectedApiServiceCollisions(

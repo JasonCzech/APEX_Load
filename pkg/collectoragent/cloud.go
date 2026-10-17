@@ -102,9 +102,9 @@ func cloudUnit(unit string) (string, float64, error) {
 	case "Bytes":
 		return "bytes", 1, nil
 	case "Seconds":
-		return "ms", 1000, nil
+		return analysis.NormalizeUnit("s")
 	case "Milliseconds":
-		return "ms", 1, nil
+		return analysis.NormalizeUnit("ms")
 	case "Count/Second", "CountPerSecond":
 		return "count/s", 1, nil
 	case "Bytes/Second", "BytesPerSecond":

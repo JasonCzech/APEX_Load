@@ -115,6 +115,7 @@ func (tr *TestRunner) reloadStoredScriptsApplied() (bool, error) {
 	defer tr.contentReloadMu.Unlock()
 	tr.mu.RLock()
 	revision := tr.contentRevision
+	scriptObservation, scenarioObservation := tr.scriptMutationMu.Observe(), tr.scenarioMutationMu.Observe()
 	tr.mu.RUnlock()
 	scripts, err := tr.scriptStore.ListScripts("", nil)
 	if err != nil {
@@ -139,7 +140,7 @@ func (tr *TestRunner) reloadStoredScriptsApplied() (bool, error) {
 		}
 	}
 	tr.mu.Lock()
-	if tr.contentRevision != revision {
+	if tr.contentRevision != revision || !tr.scriptMutationMu.CanPublish(scriptObservation) || !tr.scenarioMutationMu.CanPublish(scenarioObservation) {
 		tr.mu.Unlock()
 		return false, nil
 	}
@@ -207,6 +208,7 @@ func (tr *TestRunner) reloadStoredScenariosApplied() (bool, error) {
 	defer tr.contentReloadMu.Unlock()
 	tr.mu.RLock()
 	revision := tr.contentRevision
+	scriptObservation, scenarioObservation := tr.scriptMutationMu.Observe(), tr.scenarioMutationMu.Observe()
 	tr.mu.RUnlock()
 	scenarios, err := tr.scenarioStore.ListScenarios()
 	if err != nil {
@@ -254,7 +256,7 @@ func (tr *TestRunner) reloadStoredScenariosApplied() (bool, error) {
 	tr.mu.RUnlock()
 	readinessProjection := schedulerReadinessProjectionForScenarios(loaded, time.Now().UTC())
 	tr.mu.Lock()
-	if tr.contentRevision != revision {
+	if tr.contentRevision != revision || !tr.scriptMutationMu.CanPublish(scriptObservation) || !tr.scenarioMutationMu.CanPublish(scenarioObservation) {
 		tr.mu.Unlock()
 		return false, nil
 	}
@@ -1841,8 +1843,8 @@ func (tr *TestRunner) forgetProject(projectID string) {
 			contentDeleted = true
 		}
 	}
+	tr.contentRevision++
 	if contentDeleted {
-		tr.contentRevision++
 		tr.publishRuntimeReadinessLocked(time.Now().UTC())
 	}
 	for id, test := range tr.tests {

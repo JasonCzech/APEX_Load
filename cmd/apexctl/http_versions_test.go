@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/apexload/pkg/api"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 )
 
 func TestHTTPVersionSummaryShowsRatiosOnlyWhenHTTP3WasUsed(t *testing.T) {
@@ -29,11 +29,11 @@ func TestHTTPVersionSummaryShowsRatiosOnlyWhenHTTP3WasUsed(t *testing.T) {
 	if summary["actions"] != int64(10) || summary["fallback_ratio"] != (protocol.Ratio{Numerator: 1, Denominator: 8, Value: 0.125}) {
 		t.Fatalf("json = %+v", summary)
 	}
-	live := &api.LiveMetrics{HTTPVersions: &api.RunArchiveHTTPVersionMix{HTTPVersionMix: *mixed}}
+	live := &runcontract.LiveMetrics{HTTPVersions: &runcontract.HTTPVersionMix{HTTPVersionMix: *mixed}}
 	if copied := httpVersionsFromLive(live); copied == nil || copied.Actions != 10 || copied == mixed {
 		t.Fatalf("copied = %+v", copied)
 	}
-	if httpVersionsFromLive(&api.LiveMetrics{}) != nil {
+	if httpVersionsFromLive(&runcontract.LiveMetrics{}) != nil {
 		t.Fatal("an older controller sends no mix")
 	}
 }

@@ -29,11 +29,12 @@ import (
 	"github.com/jasonczech/apexload/pkg/hostnet"
 	"github.com/jasonczech/apexload/pkg/internal/subprocessguard"
 	"github.com/jasonczech/apexload/pkg/javarunner"
+	"github.com/jasonczech/apexload/pkg/javarunner/ipc"
 )
 
 const (
-	harnessIPCContract   = "apexload.java_vuser.ipc.v2"
-	harnessEventContract = "apexload.java_vuser.lrapi_events.v2"
+	harnessIPCContract   = ipc.ContractV2
+	harnessEventContract = ipc.EventContractV2
 	harnessSessionPrefix = "APEXLOAD_JAVA_VUSER_V2 "
 	harnessValidationV1  = "java_vuser_validation_only_v1"
 	harnessClassloaderV1 = "java_vuser_dedicated_classloader_v1"
@@ -2316,12 +2317,7 @@ func (s *Server) verifyHarness(ctx context.Context, prepared preparedRuntime) *s
 	return nil
 }
 
-type harnessHealthEnvelope struct {
-	Contract      string   `json:"contract"`
-	Kind          string   `json:"kind"`
-	EventContract string   `json:"event_contract"`
-	Features      []string `json:"features"`
-}
+type harnessHealthEnvelope = ipc.HealthEnvelope
 
 func validHarnessHealth(stdout string) bool {
 	for _, raw := range strings.Split(stdout, "\n") {
@@ -2539,8 +2535,7 @@ func (s *Server) runProcessAcquired(ctx context.Context, prepared preparedRuntim
 		summary, hasSummary = parseHarnessSummary(outcome.stdout, requestID)
 		if hasSummary {
 			outcome.errorMessage = boundedHarnessError(summary.Error)
-			outcome.eventsTruncated = outcome.eventsTruncated || summary.EventsTruncated ||
-				(summary.EventFallbackUsed && outcome.stderrTruncated)
+			outcome.eventsTruncated = summary.EventCaptureTruncated(outcome.eventsTruncated, outcome.stderrTruncated)
 		}
 	}
 	if ctx.Err() != nil {
@@ -2744,31 +2739,10 @@ func addKnownEnvironment(environment map[string]string, command ActionCommand) {
 	}
 }
 
-type harnessSummary struct {
-	Contract          string `json:"contract"`
-	Kind              string `json:"kind"`
-	RequestID         string `json:"request_id"`
-	Success           *bool  `json:"success"`
-	Error             string `json:"error,omitempty"`
-	EventFallbackUsed bool   `json:"event_fallback_used"`
-	EventsTruncated   bool   `json:"events_truncated"`
-}
+type harnessSummary = ipc.SidecarSummary
 
 func parseHarnessSummary(stdout, requestID string) (harnessSummary, bool) {
-	lines := strings.Split(stdout, "\n")
-	for index := len(lines) - 1; index >= 0; index-- {
-		line := strings.TrimSpace(lines[index])
-		if !strings.HasPrefix(line, "{") {
-			continue
-		}
-		var summary harnessSummary
-		if json.Unmarshal([]byte(line), &summary) == nil &&
-			summary.Contract == harnessIPCContract && summary.Kind == "result" &&
-			summary.RequestID == requestID && summary.Success != nil {
-			return summary, true
-		}
-	}
-	return harnessSummary{}, false
+	return ipc.ParseBoundSidecarSummary(stdout, requestID)
 }
 
 func resolveWorkDir(raw string) (string, *safeFailure) {

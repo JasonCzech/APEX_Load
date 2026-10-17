@@ -1,5 +1,7 @@
 package api
 
+import draftreview "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"crypto/sha256"
 	"encoding/hex"
@@ -459,13 +461,4 @@ func applyImportRepair(script *dsl.Script, req ImportRepairRequest) ([]engine.Pa
 	return nil, nil
 }
 
-func requiresExactRepairDraft(s *dsl.Script) bool {
-	if _, ok := scriptBatch(s); ok {
-		return true
-	}
-	if s == nil || s.Metadata == nil || s.Metadata.Import == nil {
-		return false
-	}
-	value, _ := s.Metadata.Import.Preserved["guided_repair_candidate"].(bool)
-	return value
-}
+var requiresExactRepairDraft = draftreview.RequiresExactRepairDraft

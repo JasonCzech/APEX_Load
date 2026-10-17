@@ -42,7 +42,7 @@ func TestNativeSelectedSourceReviewDomainIsCopiedAndDurable(t *testing.T) {
 			t.Fatal("native review domain was not attached to a private selected copy")
 		}
 		draft := importDraft{Script: augmentation.Script, Source: augmentation.Source, SourceReview: result.SourceReview}
-		draft.augmentWithAgentforceTransform(false)
+		draft.AugmentWithAgentforceTransform(false)
 		wire, err := json.Marshal(augmentation.Script)
 		if err != nil {
 			t.Fatal(err)
@@ -80,7 +80,7 @@ func TestNativeReferencesBindAfterLastAgentforceTransform(t *testing.T) {
 	ensureScriptImportPreserved(native, "salesforce")["salesforce_review"] = responseReview
 	oldCorrelations := responseReview.NativePreview.Correlations
 	draft := importDraft{Script: native, Source: "salesforce_har", SourceReview: source}
-	draft.augmentWithAgentforceTransform(true)
+	draft.AugmentWithAgentforceTransform(true)
 	if len(native.Init) != 2 {
 		t.Fatal("real Agentforce transform did not prepend its token action")
 	}

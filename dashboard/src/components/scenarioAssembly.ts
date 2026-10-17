@@ -1,6 +1,6 @@
 import type { MonitorBinding } from '../types/runMonitoring'
 import type { GoalConfig, LoadStageDraft, ScenarioDraft, ScenarioDraftGroup, StoredScenario } from '../types'
-import type { ScenarioFormGroup, ScenarioFormState } from './TestHub'
+import type { ScenarioFormGroup, ScenarioFormState } from '../types/scenarioAuthoring'
 import type { CompositionTimelineGroup } from './ScenarioCompositionTimeline'
 import { assignmentFromForm, runtimeSettingsFromForm, scenarioFormStateFromStoredScenario } from './scenarioFormModel'
 import { buildCreateTestPayload, buildScenarioUpsertPayload, type CreateTestPayload, type ScenarioUpsertPayload } from './scenarioPayloadUtils'

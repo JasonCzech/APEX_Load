@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/contentmutation"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -1543,20 +1544,36 @@ func (tr *TestRunner) saveScenarioScheduleOccurrenceForSweepLocked(occurrence *s
 				err = fmt.Errorf("scenario schedule persistence does not support occurrence revision CAS")
 			}
 		}
-		if err == nil && !changed {
-			current, reloadErr := store.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(occurrence.ScheduleID, occurrence.PlannedAt)
-			if reloadErr != nil {
-				err = reloadErr
-			} else if scenarioScheduleOccurrenceTransitionMatches(current, occurrence, expectedRevision) {
-				*occurrence = *current
-				occurrence.MaterializedAt = cloneTimePtr(current.MaterializedAt)
-				changed = true
-			} else if !tr.executionLeaseTermCurrent(leaseTerm) {
-				err = errNotExecutionLeader
-			} else if current == nil {
+		resolution := contentmutation.ResolveWrite(changed, err,
+			func() bool { return tr.executionLeaseTermCurrent(leaseTerm) },
+			func() (*storage.ScenarioScheduleOccurrence, error) {
+				return store.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(occurrence.ScheduleID, occurrence.PlannedAt)
+			},
+			func(current *storage.ScenarioScheduleOccurrence) bool {
+				return scenarioScheduleOccurrenceTransitionMatches(current, occurrence, expectedRevision)
+			},
+		)
+		switch resolution.State {
+		case contentmutation.WriteApplied:
+			if resolution.Current != nil {
+				*occurrence = *resolution.Current
+				occurrence.MaterializedAt = cloneTimePtr(resolution.Current.MaterializedAt)
+			}
+			changed, err = true, nil
+		case contentmutation.WriteOwnershipLost:
+			occurrence.Revision = expectedRevision
+			err = errNotExecutionLeader
+		default:
+			occurrence.Revision = expectedRevision
+			if err != nil {
+				break
+			}
+			if resolution.ReadError != nil {
+				err = resolution.ReadError
+			} else if resolution.Current == nil {
 				err = fmt.Errorf("scenario schedule occurrence %q was deleted or not created", occurrence.ID)
 			} else {
-				err = fmt.Errorf("scenario schedule occurrence %q changed concurrently (expected revision %d, durable revision %d)", occurrence.ID, expectedRevision, current.Revision)
+				err = fmt.Errorf("scenario schedule occurrence %q changed concurrently (expected revision %d, durable revision %d)", occurrence.ID, expectedRevision, resolution.Current.Revision)
 			}
 		}
 		if err == nil && changed && tr.executionLeaseTermCurrent(leaseTerm) {

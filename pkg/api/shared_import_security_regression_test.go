@@ -78,15 +78,11 @@ func TestSharedImportResponseSentinelCannotEnterMigrationOrExecution(t *testing.
 	if err := json.Unmarshal(payload, &submitted); err != nil {
 		t.Fatal(err)
 	}
-	token := importDraftAttestationToken(&submitted)
-	record := server.importDraftAttestations[token]
-	if record == nil || record.Script == nil {
-		t.Fatalf("missing unavailable-placeholder attestation record for %q", token)
+	claim, claimErr := server.claimImportDraftAttestation(httptest.NewRequest(http.MethodPost, "/api/v1/scripts", nil), &submitted)
+	if claimErr != nil || claim == nil || claim.Script == nil {
+		t.Fatalf("claim unavailable placeholder draft: claim=%#v err=%v", claim, claimErr)
 	}
-	restored := cloneScriptDefinition(&submitted)
-	if err := reconcileMaskedScriptSecrets(restored, record.Script); err != nil {
-		t.Fatalf("restore unavailable placeholder: %v", err)
-	}
+	restored := claim.Script
 	fingerprint, err := fingerprintImportDraftCredentials(restored)
 	if err != nil {
 		t.Fatal(err)
@@ -97,16 +93,14 @@ func TestSharedImportResponseSentinelCannotEnterMigrationOrExecution(t *testing.
 			t.Fatal(err)
 		}
 	}
-	if fingerprint.FullDigest != record.FullDigest {
-		t.Fatalf("unavailable-placeholder digest mismatch: got %s want %s restored=%#v prior=%#v", fingerprint.FullDigest, record.FullDigest, restored.Actions[0].HeaderList, record.Script.Actions[0].HeaderList)
+	expectedDigest, err := fullImportDraftExecutionDigest(script)
+	if err != nil {
+		t.Fatal(err)
 	}
-	claim, claimErr := server.claimImportDraftAttestation(
-		httptest.NewRequest(http.MethodPost, "/api/v1/scripts", nil),
-		&submitted,
-	)
-	if claimErr != nil || claim == nil || claim.Script == nil {
-		t.Fatalf("claim unavailable placeholder draft: claim=%#v err=%v", claim, claimErr)
+	if fingerprint.FullDigest != expectedDigest {
+		t.Fatalf("unavailable-placeholder digest mismatch: got %s want %s restored=%#v prior=%#v", fingerprint.FullDigest, expectedDigest, restored.Actions[0].HeaderList, script.Actions[0].HeaderList)
 	}
+
 	server.releaseImportDraftAttestation(claim)
 	created := createAttestedImportScript(t, server, &submitted)
 	if created.Code != http.StatusCreated {

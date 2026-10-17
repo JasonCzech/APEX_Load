@@ -1149,7 +1149,7 @@ func TestBrowserRecordingLostResponseRetryReturnsSameDurableScript(t *testing.T)
 		t.Fatalf("save browser project: %v", err)
 	}
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
-	fake.install(server.browserRecording)
+	installBrowserRecorderBackend(t, server, fake)
 	id := startBrowserRecordingViaAPI(t, server)
 	stopBrowserRecordingViaAPI(t, server, id)
 
@@ -1203,7 +1203,7 @@ func TestBrowserRecordingRetryRejectsChangedCapturedCredential(t *testing.T) {
 	artifact.Steps[0].MarkSecret = true
 	artifact.Steps[0].Value = firstCredential
 	fake := newFakeBrowserRecorder(artifact)
-	fake.install(server.browserRecording)
+	installBrowserRecorderBackend(t, server, fake)
 	id := startBrowserRecordingViaAPI(t, server)
 	stopBrowserRecordingViaAPI(t, server, id)
 
@@ -1224,19 +1224,10 @@ func TestBrowserRecordingRetryRejectsChangedCapturedCredential(t *testing.T) {
 		t.Fatalf("first browser destination omitted the captured credential: %#v", stored)
 	}
 
-	server.browserRecording.mu.RLock()
-	session := server.browserRecording.sessions[id]
-	server.browserRecording.mu.RUnlock()
-	if session == nil {
-		t.Fatal("stopped browser recording session disappeared")
-	}
-	session.mu.Lock()
-	if session.final == nil || len(session.final.Steps) == 0 {
-		session.mu.Unlock()
-		t.Fatal("stopped browser recording has no editable final artifact")
-	}
-	session.final.Steps[0].Value = secondCredential
-	session.mu.Unlock()
+	// The backend owns this completed fixture. Simulate a changed source
+	// after the initial receipt without reaching inside the recording manager.
+	// Both conversion calls are synchronous and the recorder has stopped.
+	artifact.Steps[0].Value = secondCredential
 
 	conflict := postJSON(t, server, path, body, "")
 	if conflict.Code != http.StatusConflict {

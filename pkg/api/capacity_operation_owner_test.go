@@ -424,3 +424,69 @@ func TestOperatorCapacityAcceptsWarmCreateAndRetry(t *testing.T) {
 		})
 	}
 }
+
+func TestCapacityRecoveryPreservesPurposeAndUncertainIdentities(t *testing.T) {
+	for _, runOwned := range []bool{false, true} {
+		t.Run(map[bool]string{false: "operator warm refused", true: "run burst resumed"}[runOwned], func(t *testing.T) {
+			server, generic := newTimeslotServer(t)
+			store := generic.(*storage.SQLiteStore)
+			pool := &storage.FleetPool{ID: "recovered-aci-pool", Name: "ACI", Status: "active", ExecutionTargetID: "recovered-aci-target"}
+			saveCapacityTestPool(t, store, pool)
+			deadline := time.Now().UTC().Add(time.Minute)
+			request := &storage.ProvisioningRequest{ID: "recovered-aci", Revision: 1, AttemptToken: "prior-owner", FleetPoolID: pool.ID, ExecutionTargetID: pool.ExecutionTargetID, DesiredCount: 1, Status: "waiting_ready", ProviderOperationID: `["uncertain-instance"]`, DeadlineAt: &deadline}
+			intent := &storage.CapacityInstanceIntent{ID: "recovered-intent", ProvisioningRequestID: request.ID, ExecutionTargetID: pool.ExecutionTargetID, FleetPoolID: pool.ID, ClientToken: "original-token", GeneratorID: "original-generator", LaunchNonce: "original-nonce", ProviderID: "uncertain-instance"}
+			if runOwned {
+				request.Reason = automaticRunCapacityReasonPrefix + "original-run"
+				intent.TestID = "original-run"
+			}
+			if err := store.SaveProvisioningRequest(request); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.CreateCapacityInstanceIntent(intent); err != nil {
+				t.Fatal(err)
+			}
+			before, err := store.GetCapacityInstanceIntent(intent.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			target := &storage.ExecutionTarget{ID: pool.ExecutionTargetID, Kind: storage.ExecutionTargetAzureContainerInstances, BurstOwner: storage.CapacityOwnerApex, AzureContainerInstances: &storage.AzureContainerInstancesTargetSpec{ContainerGroupTemplate: "template"}}
+			backend := &plannedCapacityBackend{fakeCapacityBackend: &fakeCapacityBackend{observation: compute.Observation{Requested: 1, Ready: 1, Observed: 1, Terminal: true, ProviderOperationID: "uncertain-instance"}}, planner: &azure.InstancesBackend{Target: target}}
+			server.capacityBackends = fakeCapacityResolver{backend, target}
+			if err := server.reconcileProvisioningRequests(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			wantStatus := "failed"
+			if runOwned {
+				wantStatus = "success"
+			}
+			waitForCondition(t, 5*time.Second, func() bool {
+				got, err := store.GetProvisioningRequest(request.ID)
+				return err == nil && got.Status == wantStatus && !server.fleetProvisioningAttemptActive(request.ID)
+			}, "recovered capacity operation")
+			got, err := store.GetProvisioningRequest(request.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if runOwned {
+				if got.Status != "success" || backend.reconcile != 1 || backend.lastRequest.TestID != "original-run" || len(backend.lastRequest.LaunchIntents) != 1 {
+					t.Fatalf("run recovery lost ownership: request=%+v provider=%+v", got, backend.lastRequest)
+				}
+			} else {
+				after, err := store.GetCapacityInstanceIntent(intent.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got.Status != "failed" || got.LastError == "" || got.ProviderOperationID != request.ProviderOperationID || backend.reconcile != 0 || !reflect.DeepEqual(before, after) {
+					t.Fatalf("warm recovery created/forgot burst capacity: request=%+v intent=%+v", got, after)
+				}
+			}
+			if backend.cancel != 0 {
+				t.Fatal("recovery refusal cleaned up uncertain provider work")
+			}
+			updatedPool, err := store.GetFleetPool(pool.ID)
+			if err != nil || updatedPool.DesiredSize != pool.DesiredSize {
+				t.Fatalf("recovery changed warm intent: pool=%+v error=%v", updatedPool, err)
+			}
+		})
+	}
+}

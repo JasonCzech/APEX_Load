@@ -5,6 +5,7 @@ import { useApplicationApi } from './api/useApplicationApi'
 import { useRepositoryApi } from './api/useRepositoryApi'
 import { useProject } from './useProject'
 import { ApplicationContext } from './applicationContext'
+import { catalogSnapshotCaughtUp, reconcileCommittedCatalog } from './catalogReconciliation'
 import { readStoredString, removeStoredItem, writeStoredString } from '../utils/browserStorage'
 
 const STORAGE_KEY = 'apexload.activeApplicationId'
@@ -27,36 +28,6 @@ function catalogRowsMatch<T extends TimestampedCatalogRow>(left: T, right: T) {
   ))
 }
 
-function catalogSnapshotCaughtUp<T extends TimestampedCatalogRow>(listed: T, committed: T) {
-  if (catalogRowsMatch(listed, committed)) return true
-  const listedUpdatedAt = Date.parse(listed.updated_at)
-  const committedUpdatedAt = Date.parse(committed.updated_at)
-  return Number.isFinite(listedUpdatedAt)
-    && Number.isFinite(committedUpdatedAt)
-    && listedUpdatedAt > committedUpdatedAt
-}
-
-function reconcileCommittedCatalog<T extends TimestampedCatalogRow>(
-  listed: T[],
-  committedById: Map<string, T>,
-  belongsToScope: (row: T) => boolean,
-) {
-  const listedIds = new Set<string>()
-  const reconciled = listed.map(row => {
-    listedIds.add(row.id)
-    const committed = committedById.get(row.id)
-    if (!committed) return row
-    if (catalogSnapshotCaughtUp(row, committed)) {
-      committedById.delete(row.id)
-      return row
-    }
-    return committed
-  })
-  committedById.forEach(committed => {
-    if (belongsToScope(committed) && !listedIds.has(committed.id)) reconciled.push(committed)
-  })
-  return reconciled
-}
 
 export function ApplicationProvider({ children }: { children: ReactNode }) {
   const api = useApplicationApi()
@@ -216,11 +187,14 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     try {
       const res = await api.listReleases(appId)
       if (!requestIsCurrent()) return
-      const listed = reconcileCommittedCatalog(
-        (res.releases || []).filter(release => !releaseTombstonesRef.current.has(release.id)),
-        committedReleasesRef.current,
-        release => release.application_id === appId && !releaseTombstonesRef.current.has(release.id),
-      )
+      const reconciled = reconcileCommittedCatalog(res.releases || [], committedReleasesRef.current, {
+        identity: release => release.id,
+        belongsToScope: release => release.application_id === appId,
+        acknowledged: (listed, committed) => catalogSnapshotCaughtUp(listed, committed, catalogRowsMatch, release => release.updated_at),
+        tombstones: releaseTombstonesRef.current,
+      })
+      committedReleasesRef.current = reconciled.committedById
+      const listed = reconciled.rows
       const next = preserved
         && preserved.application_id === appId
         && !releaseTombstonesRef.current.has(preserved.id)
@@ -291,11 +265,14 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     try {
       const res = await api.listApplications(projectId)
       if (!requestIsCurrent()) return
-      const listed = reconcileCommittedCatalog(
-        (res.applications || []).filter(application => !applicationTombstonesRef.current.has(application.id)),
-        committedApplicationsRef.current,
-        application => application.project_id === projectId && !applicationTombstonesRef.current.has(application.id),
-      )
+      const reconciled = reconcileCommittedCatalog(res.applications || [], committedApplicationsRef.current, {
+        identity: application => application.id,
+        belongsToScope: application => application.project_id === projectId,
+        acknowledged: (listed, committed) => catalogSnapshotCaughtUp(listed, committed, catalogRowsMatch, application => application.updated_at),
+        tombstones: applicationTombstonesRef.current,
+      })
+      committedApplicationsRef.current = reconciled.committedById
+      const listed = reconciled.rows
       // A create response is authoritative for that row even if a list request
       // observes an older snapshot. Merge it into reconciliation so the newly
       // created selection cannot disappear after the mutation succeeds.

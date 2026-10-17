@@ -155,7 +155,7 @@ func (s *Server) processJMeterBatchRepair(w http.ResponseWriter, r *http.Request
 	evidence := &jmeter.ConvertResult{Scripts: b.Scripts, SourceReview: b.SourceReview, Unsupported: b.Advisories}
 	evidence.NormalizeReviewEvidence()
 	draft := importDraft{Source: "jmeter", ProjectID: b.ProjectID, Scripts: b.Scripts, SourceReview: b.SourceReview, Unsupported: evidence.Diagnostics, Warnings: evidence.Warnings}
-	augmented := draft.augment(r)
+	augmented := draft.Augment(r)
 	applyJMeterReviewPreflight(augmented.Preflight, evidence)
 	response := map[string]any{"batch": b.Identity, "preview_digest": digest, "before": before, "scripts": scripts, "scenario_draft": b.Scenario, "findings": findings, "readiness": readiness, "expires_at": b.ExpiresAt, "diagnostics": evidence.Diagnostics, "review_summary": evidence.ReviewSummary, "warnings": augmented.Warnings, "unsupported_elements": evidence.UnsupportedElements, "preflight": augmented.Preflight}
 	if !apply {

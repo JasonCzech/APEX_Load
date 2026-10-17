@@ -221,12 +221,9 @@ func NormalizeUnit(unit string) (string, float64, error) {
 		return "count/s", 1, nil
 	case "%":
 		return "percent", 1, nil
-	case "s":
-		return "ms", 1000, nil
-	case "us":
-		return "ms", 0.001, nil
-	case "ns":
-		return "ms", 0.000001, nil
+	case "s", "us", "ns":
+		scale, _ := DurationScale(unit, "ms")
+		return "ms", scale, nil
 	case "ms", "bytes", "count", "percent", "ratio", "bytes/s", "count/s", "cores", "score":
 		return unit, 1, nil
 	case "KiB":

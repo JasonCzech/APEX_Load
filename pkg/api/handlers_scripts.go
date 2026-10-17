@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"encoding/json"
 	"errors"
@@ -9,8 +11,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/agentforce"
-	"github.com/jasonczech/apexload/pkg/convert/clientids"
-	"github.com/jasonczech/apexload/pkg/convert/clienttimestamps"
+
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
@@ -76,45 +77,12 @@ type harImportRequest struct {
 // applyClientGeneratedUUIDs gives UUIDs the recorded client made up (no
 // response contains them) fresh values per replayed iteration; see package
 // clientids. It records what changed, or why detection was skipped.
-func applyClientGeneratedUUIDs(script *dsl.Script, harData []byte, result *har.ConvertResult) {
-	if script == nil || result == nil {
-		return
-	}
-	server, judged, err := clientids.ServerUUIDs(harData)
-	if err != nil {
-		return
-	}
-	var note string
-	if judged {
-		note = clientids.Apply(script, server).Warning()
-	} else if clientids.HasRequestUUIDs(script) {
-		note = "Client-generated UUIDs were not detected: too few recorded responses kept their bodies to tell which UUIDs the server sent, so request UUIDs keep their recorded values."
-	}
-	if note == "" {
-		return
-	}
-	result.Warnings = append(result.Warnings, note)
-	result.Unsupported = append(result.Unsupported, diag.Diagnostic{Code: "client_generated_uuids", Element: "Client-generated UUIDs", Location: "HAR requests", Detail: note, Severity: diag.Warning})
-}
+var applyClientGeneratedUUIDs = importreview.ApplyClientGeneratedUUIDs
 
 // applyClientTimestamps gives epoch timestamps the recorded client made up
 // (cache-busters, poll times) a fresh value at replay; see package
 // clienttimestamps.
-func applyClientTimestamps(script *dsl.Script, harData []byte, result *har.ConvertResult) {
-	if script == nil || result == nil {
-		return
-	}
-	evidence, err := clienttimestamps.FromHAR(harData)
-	if err != nil {
-		return
-	}
-	note := clienttimestamps.Apply(script, evidence).Warning()
-	if note == "" {
-		return
-	}
-	result.Warnings = append(result.Warnings, note)
-	result.Unsupported = append(result.Unsupported, diag.Diagnostic{Code: sample.ClientTimestampsDiagnosticCode, Element: "Client-generated timestamps", Location: "HAR requests", Detail: note, Severity: diag.Warning})
-}
+var applyClientTimestamps = importreview.ApplyClientTimestamps
 
 // noteSalvage records on a converted import that its HAR was truncated.
 func (req *harImportRequest) noteSalvage(result *har.ConvertResult) {
@@ -170,74 +138,13 @@ type web2MigrationReadinessReport struct {
 	NextActions               []string `json:"next_actions,omitempty"`
 }
 
-type trueClient2CompatReport struct {
-	SourceScriptType        string                                  `json:"source_script_type,omitempty"`
-	SourceProfile           string                                  `json:"source_profile,omitempty"`
-	ImportMode              string                                  `json:"import_mode,omitempty"`
-	PromotionStatus         string                                  `json:"promotion_status"`
-	PromotionAllowed        bool                                    `json:"promotion_allowed"`
-	ImportedSteps           int                                     `json:"imported_steps"`
-	ConvertedActions        int                                     `json:"converted_actions"`
-	SkippedReviewSteps      int                                     `json:"skipped_review_steps"`
-	SupportedStepFamilies   int                                     `json:"supported_step_families"`
-	ReviewOnlyStepFamilies  int                                     `json:"review_only_step_families"`
-	UnsupportedStepFamilies int                                     `json:"unsupported_step_families"`
-	SelectorConfidencePct   int                                     `json:"selector_confidence_pct"`
-	SelectorCandidateCount  int                                     `json:"selector_candidate_count"`
-	RuntimeParityStatus     string                                  `json:"runtime_parity_status"`
-	ReplayStatus            string                                  `json:"replay_status"`
-	JavaScriptReviewGate    string                                  `json:"javascript_review_gate"`
-	JavaScriptReview        *trueClientJavaScriptReviewPolicyReport `json:"javascript_review,omitempty"`
-	FrameWindowBlockers     int                                     `json:"frame_window_blockers"`
-	HTTPConversionReadiness string                                  `json:"http_conversion_readiness"`
-	FixtureContractStatus   map[string]string                       `json:"fixture_contract_status,omitempty"`
-	Findings                []string                                `json:"findings,omitempty"`
-	NextActions             []string                                `json:"next_actions,omitempty"`
-}
+type trueClient2CompatReport = importreview.TrueClient2CompatReport
 
-type trueClientJavaScriptReviewPolicyReport struct {
-	Status                 string                             `json:"status"`
-	Policy                 string                             `json:"policy"`
-	ApprovalRequired       bool                               `json:"approval_required"`
-	ReplayEvidenceRequired bool                               `json:"replay_evidence_required"`
-	RequiredActions        int                                `json:"required_actions"`
-	ApprovedActions        int                                `json:"approved_actions"`
-	PendingActions         int                                `json:"pending_actions"`
-	RejectedActions        int                                `json:"rejected_actions"`
-	SourceOnlyFragments    int                                `json:"source_only_fragments,omitempty"`
-	ActionReviews          []trueClientJavaScriptActionReview `json:"action_reviews,omitempty"`
-	Findings               []string                           `json:"findings,omitempty"`
-	NextActions            []string                           `json:"next_actions,omitempty"`
-}
+type trueClientJavaScriptReviewPolicyReport = importreview.TrueClientJavaScriptReviewPolicyReport
 
-type trueClientJavaScriptActionReview struct {
-	Index           int    `json:"index"`
-	Name            string `json:"name,omitempty"`
-	Type            string `json:"type,omitempty"`
-	Status          string `json:"status"`
-	Gate            string `json:"gate,omitempty"`
-	Reason          string `json:"reason,omitempty"`
-	Reviewer        string `json:"reviewer,omitempty"`
-	ApprovedAt      string `json:"approved_at,omitempty"`
-	Source          string `json:"source,omitempty"`
-	SourceStepID    string `json:"source_step_id,omitempty"`
-	SourceStepIndex string `json:"source_step_index,omitempty"`
-	ScriptPreview   string `json:"script_preview,omitempty"`
-}
+type trueClientJavaScriptActionReview = importreview.TrueClientJavaScriptActionReview
 
-type protocolCompatReport struct {
-	SourceFormat         string         `json:"source_format"`
-	CanonicalProtocol    string         `json:"canonical_protocol"`
-	ImportMode           string         `json:"import_mode"`
-	MappedSteps          int            `json:"mapped_steps"`
-	ReviewGatedSteps     int            `json:"review_gated_steps"`
-	UnsupportedFragments []string       `json:"unsupported_fragments,omitempty"`
-	RuntimeParity        map[string]int `json:"runtime_parity,omitempty"`
-	DataSources          int            `json:"data_sources"`
-	CorrelationCoverage  string         `json:"correlation_coverage"`
-	PromotionStatus      string         `json:"promotion_status"`
-	NextActions          []string       `json:"next_actions,omitempty"`
-}
+type protocolCompatReport = importreview.ProtocolCompatReport
 
 // handleImportEnterpriseArchive handles POST /api/v1/scripts/import/enterprise-script-archive.
 // Accepts a multipart form upload of a ZIP file containing enterprise C/VUser source files.
@@ -290,7 +197,7 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 		Warnings:         result.Warnings,
 		Accounting:       result.Accounting(),
 	}
-	augmented := draft.augment(r)
+	augmented := draft.Augment(r)
 	result.Warnings = augmented.Warnings
 
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{

@@ -1,4 +1,4 @@
-import type { ScenarioFormState, ScenarioStartChoice } from './TestHub'
+import type { ScenarioFormState, ScenarioStartChoice } from '../types/scenarioAuthoring'
 import type { ScenarioSourceMode, ScenarioWizardStep } from './scenarioWizardUtils'
 import { legacyFlatFormFieldsValid, migrateLegacyFlatForm } from './scenarioAuthoringDraftV2'
 import { emptyScenarioForm, emptyScenarioGroup } from './scenarioFormModel'

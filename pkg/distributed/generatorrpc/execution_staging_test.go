@@ -299,7 +299,7 @@ func TestAssignmentCoordinatorStageTimerExpiresUncommittedWork(t *testing.T) {
 	for {
 		service.mu.RLock()
 		_, assigned := service.assignments["expiring"]
-		_, timer := service.stageTimers["expiring"]
+		_, timer := service.lifecycleCoordinator.stageTimers["expiring"]
 		service.mu.RUnlock()
 		terminal := service.metricsBroker.terminalBatch(terminalBatchKey{testID: "expiring"})
 		if !assigned && !timer && terminal != nil {

@@ -25,6 +25,7 @@ import (
 	"github.com/antchfx/xmlquery"
 	"github.com/antchfx/xpath"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 	"github.com/jmespath/go-jmespath"
 	xhtml "golang.org/x/net/html"
 )
@@ -36,7 +37,7 @@ const (
 	// of keys admitted to the shared compiled-expression caches. It is exported
 	// so DSL validation can reject an oversized HTTP extractor before execution;
 	// the runtime check remains authoritative for direct protocol callers.
-	MaxExtractorExpressionBytes = 64 << 10
+	MaxExtractorExpressionBytes = httpcontract.MaxExtractorExpressionBytes
 )
 
 type compiledExtractorCache[T any] struct {

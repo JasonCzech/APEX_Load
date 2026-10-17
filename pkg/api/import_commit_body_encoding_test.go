@@ -22,15 +22,15 @@ func TestImportCommitProjectionBodyPreservesNoOpBase64Representation(t *testing.
 	if err != nil || !ok {
 		t.Fatalf("decodeImportCommitProjectionBody = %#v, %t, %v", body, ok, err)
 	}
-	if string(body.wire) != string(wire) {
-		t.Fatalf("wire = %q, want %q", body.wire, wire)
+	if string(body.Wire()) != string(wire) {
+		t.Fatalf("wire = %q, want %q", body.Wire(), wire)
 	}
-	if got := body.encode(append([]byte(nil), wire...)); got != stored {
+	if got := body.Encode(append([]byte(nil), wire...)); got != stored {
 		t.Fatalf("no-op encoding = %q, want original %q", got, stored)
 	}
 
 	changedWire := []byte(`{"safe":false}`)
-	changed := body.encode(changedWire)
+	changed := body.Encode(changedWire)
 	decoded, err := base64.StdEncoding.DecodeString(changed)
 	if err != nil || string(decoded) != string(changedWire) {
 		t.Fatalf("changed encoding decodes to %q, %v; want %q", decoded, err, changedWire)

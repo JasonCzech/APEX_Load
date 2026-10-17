@@ -74,7 +74,7 @@ describe('adapter retirement', () => {
   // Structural: some mirror names (the error flags, the browser fields) are
   // legitimate elsewhere, so the form's own members are checked by name.
   it('keeps every version 2 mirror field off the scenario form', () => {
-    const source = sources['./components/TestHub.tsx'] ?? ''
+    const source = sources['./types/scenarioAuthoring.ts'] ?? ''
     const start = source.indexOf('export interface ScenarioFormState {')
     expect(start).toBeGreaterThan(-1)
     const body = source.slice(start, source.indexOf('\n}\n', start))

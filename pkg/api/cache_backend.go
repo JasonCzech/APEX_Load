@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/recordbridge"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -210,24 +211,7 @@ func cacheRuntimeConfigFromEnv() cacheRuntimeConfig {
 }
 
 func firstConfiguredDuration(fallback time.Duration, names ...string) time.Duration {
-	for _, name := range names {
-		raw := strings.TrimSpace(os.Getenv(name))
-		if raw == "" {
-			continue
-		}
-		if strings.HasSuffix(name, "_SECONDS") {
-			seconds, err := strconv.ParseFloat(raw, 64)
-			if err == nil && seconds > 0 {
-				return time.Duration(seconds * float64(time.Second))
-			}
-			continue
-		}
-		parsed, err := time.ParseDuration(raw)
-		if err == nil && parsed > 0 {
-			return parsed
-		}
-	}
-	return fallback
+	return recordbridge.FirstConfiguredDuration(fallback, names...)
 }
 
 func envBool(name string) bool {

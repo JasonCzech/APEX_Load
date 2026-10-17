@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/identitypolicy"
-	kafkaprotocol "github.com/jasonczech/apexload/pkg/protocol/kafka"
+	kafkaprotocol "github.com/jasonczech/apexload/pkg/protocol/kafkacontract"
 )
 
 func validateKafkaScriptIssues(script *Script) []string {

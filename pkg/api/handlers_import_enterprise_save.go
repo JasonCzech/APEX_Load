@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -99,24 +98,19 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
-	attempt.retainUpdateRecovery(updateTargets)
-	finished := false
-	assetsCommitted := false
-	var transaction *createImportTransaction
+	batch := newImportBatchCommit(s, attempt, updateTargets)
 	defer func() {
-		if !finished && !assetsCommitted {
-			if cleanupErr := attempt.rollback(transaction); cleanupErr != nil {
-				slog.Warn("failed to fully compensate enterprise archive batch", "error", cleanupErr)
-			}
+		if cleanupErr := batch.close(); cleanupErr != nil {
+			slog.Warn("failed to fully compensate enterprise archive batch", "error", cleanupErr)
 		}
 	}()
 	if receiptReplay {
+		batch.finished = true
 		stored, _, loadErr := s.loadDirectImportReceiptAssets(attempt)
 		if loadErr != nil {
 			writeError(w, http.StatusConflict, "completed enterprise archive receipt is inconsistent: "+loadErr.Error())
 			return
 		}
-		finished = true
 		writeEnterpriseArchiveSaveResponse(w, stored)
 		return
 	}
@@ -138,9 +132,8 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 		if !s.fenceImportBatchAdoption(w, enterpriseArchiveSaveWorkflow, attempt, projectID, plannedIDs, "") {
 			return
 		}
-		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")
+		stored, _, loadErr := batch.loadRecovery(projectID, plannedIDs, "", nil, nil)
 		if loadErr == nil {
-			assetsCommitted = true
 			if !recoveredImportScriptBatchIdentityMatches(stored, requestScripts, func(script *dsl.Script) bool {
 				return script != nil && script.Metadata != nil && script.Metadata.Import != nil &&
 					enterpriseArchiveSourceProfile(script.Metadata.Import.Source)
@@ -148,11 +141,10 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 				writeError(w, http.StatusConflict, "a script from the prior enterprise archive batch changed before recovery; use a new operation id")
 				return
 			}
-			if completeErr := attempt.complete(stored, nil); completeErr != nil {
+			if completeErr := batch.complete(stored, nil); completeErr != nil {
 				writeError(w, http.StatusInternalServerError, "failed to reconcile enterprise archive batch receipt: "+completeErr.Error())
 				return
 			}
-			finished = true
 			writeEnterpriseArchiveSaveResponse(w, stored)
 			return
 		}
@@ -164,7 +156,7 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 	defer func() {
 		for _, claim := range claims {
 			if claim != nil {
-				if assetsCommitted {
+				if batch.assetsCommitted {
 					s.retainCommittedImportDraftAttestation(claim)
 				} else {
 					s.releaseImportDraftAttestation(claim)
@@ -264,76 +256,37 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 		if !s.fenceImportBatchAdoption(w, enterpriseArchiveSaveWorkflow, attempt, projectID, plannedIDs, "") {
 			return
 		}
-		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")
-		if loadErr == nil && importUpdatesPending(stored, prepared, updateTargets) {
-			// The earlier attempt did not update a script it was to update, so
-			// it did not finish: save normally (its creates, if any, replay).
-			loadErr = errImportUpdateTargetStale
-		}
+		stored, _, loadErr := batch.loadRecovery(projectID, plannedIDs, "", prepared, updateTargets)
 		if loadErr == nil {
-			assetsCommitted = true
 			if !directImportPreparedAssetsMatch(s, stored, prepared, nil, nil) {
 				writeError(w, http.StatusConflict, "a script from the prior enterprise archive batch changed before recovery; use a new operation id")
 				return
 			}
-			if completeErr := attempt.complete(stored, nil); completeErr != nil {
+			if completeErr := batch.complete(stored, nil); completeErr != nil {
 				writeError(w, http.StatusInternalServerError, "failed to reconcile enterprise archive batch receipt: "+completeErr.Error())
 				return
 			}
 			completeEnterpriseArchiveDraftClaims(s, claims, stored)
-			finished = true
 			writeEnterpriseArchiveSaveResponse(w, stored)
 			return
 		}
 	}
 
-	reconciledUpdates, validUpdates := s.reconcileImportUpdates(w, attempt, prepared, updateTargets, updates)
-	if !validUpdates {
+	stored, _, commitFailure := batch.commitPrepared(preparedImportBatch{
+		Source: enterpriseArchiveSaveProfile, Scripts: prepared, Updates: updates, Targets: updateTargets,
+		Claims: claims, Profiles: profiles,
+	})
+	if commitFailure != nil {
+		writeImportBatchFailure(w, commitFailure, enterpriseImportBatchMessages)
 		return
 	}
-	transaction, err = newImportTransaction(s, enterpriseArchiveSaveProfile, prepared, updates, "", nil)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to prepare enterprise archive batch: "+err.Error())
-		return
-	}
-	transaction.reconciledUpdates = reconciledUpdates
-
-	stored := make([]*StoredScript, 0, len(prepared))
-	for index, script := range prepared {
-		if err := attempt.renew(); err != nil {
-			writeError(w, http.StatusConflict, "enterprise archive batch receipt ownership was lost; retry the save")
-			return
-		}
-		if index < len(claims) && claims[index] != nil {
-			if err := s.assertImportDraftAttestationOwned(claims[index]); err != nil {
-				writeError(w, http.StatusConflict, "enterprise archive import draft lease was lost; retry the save")
-				return
-			}
-		}
-		created, err := transaction.saveImportedScript(script, profiles[index])
-		if errors.Is(err, errImportUpdateTargetStale) {
-			writeImportUpdateTargetStale(w, index, err)
-			return
-		}
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save enterprise archive script %d: %v", index+1, err))
-			return
-		}
-		stored = append(stored, created)
-	}
-	if err := transaction.commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit enterprise archive batch: "+err.Error())
-		return
-	}
-	assetsCommitted = true
 	if attempt != nil {
-		if err := attempt.complete(stored, nil); err != nil {
+		if err := batch.complete(stored, nil); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to finalize enterprise archive batch receipt: "+err.Error())
 			return
 		}
 	}
 	completeEnterpriseArchiveDraftClaims(s, claims, stored)
-	finished = true
 	writeEnterpriseArchiveSaveResponse(w, stored)
 }
 

@@ -1,6 +1,6 @@
 package dsl
 
-import httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+import httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 
 // Runtime hard limits are enforced both by validation and by allocation hot
 // paths. They are deliberately far above normal authoring values while keeping

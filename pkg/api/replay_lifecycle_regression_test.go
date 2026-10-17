@@ -17,6 +17,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/recordbridge"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -152,19 +153,9 @@ func TestRecorderImportReplayCancelsWhenExecutionLeadershipIsLost(t *testing.T) 
 
 func TestBrowserRecordingVerificationCancelsWhenExecutionLeadershipIsLost(t *testing.T) {
 	server := newAdmittedHAReplayServer(t)
-	recordingID := "recording-execution-epoch"
-	now := time.Now().UTC()
-	server.browserRecording.mu.Lock()
-	server.browserRecording.sessions[recordingID] = &BrowserRecordingSession{
-		ID:        recordingID,
-		Name:      "Epoch-bound recording",
-		ProjectID: "project-epoch",
-		Status:    BrowserRecordingStopped,
-		StartedAt: now.Add(-time.Minute),
-		StoppedAt: &now,
-		final:     recordedBrowserArtifact(),
-	}
-	server.browserRecording.mu.Unlock()
+	artifact := recordedBrowserArtifact()
+	info := stopBrowserRecordingFixture(t, server, artifact, "project-epoch", "Epoch-bound recording")
+	recordingID := info.ID
 
 	assertReplayEntryPointUsesExecutionEpoch(t, server, func(w http.ResponseWriter) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+recordingID+"/verify", nil)
@@ -229,51 +220,6 @@ func TestReplayManagersFenceLostExecutionEpochWithoutClosingManager(t *testing.T
 		}
 	})
 
-	t.Run("browser replay", func(t *testing.T) {
-		manager := NewBrowserReplayManager(nil)
-		t.Cleanup(manager.Close)
-		var completionHooks atomic.Int32
-		manager.setCompletionHook(func(context.Context, string, *dsl.Script, *engine.ReplayReport) {
-			completionHooks.Add(1)
-		})
-		epoch, loseLeadership := context.WithCancel(context.Background())
-		snapshot, err := manager.Start("browser-script", script, BrowserReplayStartRequest{
-			ReplaySessionID:  "browser-fast-fence-reuse",
-			StartPaused:      true,
-			executionContext: epoch,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		manager.mu.RLock()
-		runtime := manager.sessions[snapshot.ID]
-		manager.mu.RUnlock()
-		loseLeadership()
-		waitForReplayWorker(t, runtime.workerDone)
-		runtime.mu.RLock()
-		status, errMsg, finalReport := runtime.Status, runtime.Error, runtime.FinalReport
-		runtime.mu.RUnlock()
-		if status != BrowserReplayFailed || errMsg != errNotExecutionLeader.Error() || finalReport != nil {
-			t.Fatalf("browser runtime after leadership loss = status %q error %q report %#v", status, errMsg, finalReport)
-		}
-		if _, ok := manager.Get(snapshot.ID); ok {
-			t.Fatal("unfenced browser capability remained locally addressable after its global release")
-		}
-		if completionHooks.Load() != 0 {
-			t.Fatal("lost-epoch browser worker ran its completion/self-heal hook")
-		}
-
-		next, err := manager.Start("browser-script", script, BrowserReplayStartRequest{
-			ReplaySessionID: snapshot.ID,
-			StartPaused:     true,
-		})
-		if err != nil {
-			t.Fatalf("manager did not accept the retired session ID in the next epoch: %v", err)
-		}
-		if _, ok := manager.Stop(next.ID); !ok {
-			t.Fatal("could not stop next-epoch browser session")
-		}
-	})
 }
 
 func TestReplayManagersSuppressReportsThatFinishAfterExecutionFenceLoss(t *testing.T) {
@@ -355,45 +301,6 @@ func TestReplayManagersSuppressReportsThatFinishAfterExecutionFenceLoss(t *testi
 		}
 	})
 
-	t.Run("browser replay", func(t *testing.T) {
-		protocolName, started, release := newBlockedReplay(t)
-		manager := NewBrowserReplayManager(nil)
-		manager.retention.workerAbandonGrace = time.Second
-		t.Cleanup(manager.Close)
-		t.Cleanup(release)
-		var completionHooks atomic.Int32
-		manager.setCompletionHook(func(context.Context, string, *dsl.Script, *engine.ReplayReport) {
-			completionHooks.Add(1)
-		})
-		epoch, loseLeadership := context.WithCancel(context.Background())
-		snapshot, err := manager.Start("browser-script", &dsl.Script{
-			Name: "browser fence", Protocol: protocolName,
-			Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
-		}, BrowserReplayStartRequest{executionContext: epoch})
-		if err != nil {
-			t.Fatal(err)
-		}
-		manager.mu.RLock()
-		runtime := manager.sessions[snapshot.ID]
-		manager.mu.RUnlock()
-		waitStarted(t, started)
-		loseLeadership()
-		release()
-		waitForReplayWorker(t, runtime.workerDone)
-
-		runtime.mu.RLock()
-		status, errMsg, finalReport := runtime.Status, runtime.Error, runtime.FinalReport
-		runtime.mu.RUnlock()
-		if status != BrowserReplayFailed || errMsg != errNotExecutionLeader.Error() || finalReport != nil {
-			t.Fatalf("browser runtime after leadership loss = status %q error %q report %#v", status, errMsg, finalReport)
-		}
-		if _, ok := manager.Get(snapshot.ID); ok {
-			t.Fatal("lost-fence browser capability remained addressable after global release")
-		}
-		if completionHooks.Load() != 0 {
-			t.Fatal("lost-fence browser worker ran its completion/self-heal hook")
-		}
-	})
 }
 
 func TestReplayManagersDoNotRewriteNormalCompletionWhenOperationContextIsReleased(t *testing.T) {
@@ -456,32 +363,6 @@ func TestReplayManagersDoNotRewriteNormalCompletionWhenOperationContextIsRelease
 		}
 	})
 
-	t.Run("browser replay", func(t *testing.T) {
-		manager := NewBrowserReplayManager(nil)
-		t.Cleanup(manager.Close)
-		epoch, release, releaseStarted, unblock := newRelease(t)
-		snapshot, err := manager.Start("browser-script", script, BrowserReplayStartRequest{
-			executionContext:        epoch,
-			releaseExecutionContext: release,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		waitRelease(t, releaseStarted)
-		current, ok := manager.Get(snapshot.ID)
-		if !ok || current.Status != BrowserReplayCompleted || current.FinalReport == nil {
-			t.Fatalf("normal browser completion was rewritten while releasing its context: %#v", current)
-		}
-		manager.mu.RLock()
-		runtime := manager.sessions[snapshot.ID]
-		manager.mu.RUnlock()
-		unblock()
-		waitForReplayWorker(t, runtime.workerDone)
-		current, ok = manager.Get(snapshot.ID)
-		if !ok || current.Status != BrowserReplayCompleted || current.FinalReport == nil {
-			t.Fatalf("normal browser completion changed after operation-context release: %#v", current)
-		}
-	})
 }
 
 func TestScriptDebugReportRemainsPrivateUntilTerminalReservationIsRetained(t *testing.T) {
@@ -618,63 +499,6 @@ func TestReplayManagersAbandonWorkersThatIgnoreExecutionFenceLoss(t *testing.T) 
 		}
 	})
 
-	t.Run("browser replay", func(t *testing.T) {
-		protocolName, started, releaseWorker := newBlockedReplay(t)
-		manager := NewBrowserReplayManager(nil)
-		manager.retention.maxSessions = 1
-		manager.retention.workerAbandonGrace = 40 * time.Millisecond
-		t.Cleanup(manager.Close)
-		t.Cleanup(releaseWorker)
-		var activeReleased, allReleased atomic.Bool
-		manager.setSessionIDReserver(func(_ context.Context, requested, _ string) (string, func(), *replaySessionLeaseSignal, error) {
-			signal := newReplaySessionLeaseSignal()
-			if requested != "browser-wedged" {
-				return requested, func() {}, signal, nil
-			}
-			var activeOnce, allOnce sync.Once
-			signal.releaseAllFn = func() { allOnce.Do(func() { allReleased.Store(true) }) }
-			return requested, func() { activeOnce.Do(func() { activeReleased.Store(true) }) }, signal, nil
-		})
-		epoch, loseLeadership := context.WithCancel(context.Background())
-		snapshot, err := manager.Start("browser-script", &dsl.Script{
-			Name: "browser wedged", Protocol: protocolName,
-			Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
-		}, BrowserReplayStartRequest{ReplaySessionID: "browser-wedged", executionContext: epoch})
-		if err != nil {
-			t.Fatal(err)
-		}
-		manager.mu.RLock()
-		runtime := manager.sessions[snapshot.ID]
-		manager.mu.RUnlock()
-		waitStarted(t, started)
-		loseLeadership()
-
-		waitForReplayLifecycleCondition(t, "browser abandon backstop", func() bool {
-			runtime.mu.RLock()
-			status, errMsg, abandoned := runtime.Status, runtime.Error, runtime.workerAbandoned
-			runtime.mu.RUnlock()
-			_, addressable := manager.Get(snapshot.ID)
-			return abandoned && status == BrowserReplayFailed &&
-				strings.Contains(errMsg, "ignored cancellation") &&
-				!addressable && activeReleased.Load() && allReleased.Load()
-		})
-		if _, err := manager.Start("replacement-browser", &dsl.Script{
-			Name: "replacement", Protocol: protocolName,
-		}, BrowserReplayStartRequest{ReplaySessionID: snapshot.ID, StartPaused: true}); err != nil {
-			t.Fatalf("reuse exact browser session ID after abandon: %v", err)
-		}
-		releaseWorker()
-		waitForReplayWorker(t, runtime.workerDone)
-		runtime.mu.RLock()
-		finalReport := runtime.FinalReport
-		runtime.mu.RUnlock()
-		if finalReport != nil {
-			t.Fatalf("late browser worker published report after abandonment: %#v", finalReport)
-		}
-		if _, ok := manager.Stop(snapshot.ID); !ok {
-			t.Fatal("replacement browser replay could not be stopped")
-		}
-	})
 }
 
 func TestReplayManagerTerminalRetentionStartsWhenWorkerArtifactsBecomeVisible(t *testing.T) {
@@ -709,44 +533,6 @@ func TestReplayManagerTerminalRetentionStartsWhenWorkerArtifactsBecomeVisible(t 
 		})
 		return name, started, func() { releaseOnce.Do(func() { close(release) }) }
 	}
-
-	t.Run("browser replay", func(t *testing.T) {
-		_, readClock, advanceClock := newClock()
-		protocolName, started, releaseWorker := newBlockedProtocol(t)
-		manager := NewBrowserReplayManager(nil)
-		manager.retention.now = readClock
-		manager.retention.terminalTTL = time.Minute
-		manager.retention.workerAbandonGrace = time.Hour
-		t.Cleanup(manager.Close)
-		t.Cleanup(releaseWorker)
-
-		snapshot, err := manager.Start("browser-retention", &dsl.Script{
-			Name: "browser retention", Protocol: protocolName,
-			Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
-		}, BrowserReplayStartRequest{ReplaySessionID: "browser-retention"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		<-started
-		advanceClock(2 * time.Minute)
-		if _, ok := manager.Stop(snapshot.ID); !ok {
-			t.Fatal("stop browser replay")
-		}
-		advanceClock(2 * time.Minute)
-		releaseWorker()
-		manager.mu.RLock()
-		runtime := manager.sessions[snapshot.ID]
-		manager.mu.RUnlock()
-		waitForReplayWorker(t, runtime.workerDone)
-		advanceClock(30 * time.Second)
-		if removed := manager.PruneExpired(); removed != 0 {
-			t.Fatalf("pruned %d browser session(s) before the post-report TTL elapsed", removed)
-		}
-		current, ok := manager.Get(snapshot.ID)
-		if !ok || current.FinalReport == nil {
-			t.Fatalf("browser terminal report was not visible for its full TTL: %#v", current)
-		}
-	})
 
 	t.Run("script debugger", func(t *testing.T) {
 		_, readClock, advanceClock := newClock()
@@ -795,31 +581,24 @@ func TestReplaySessionOperationsRejectAuthorizedProjectSubstitution(t *testing.T
 	)
 
 	t.Run("browser replay", func(t *testing.T) {
-		manager := NewBrowserReplayManager(nil)
 		lastActivity := time.Date(2026, 7, 23, 10, 0, 0, 0, time.UTC)
-		// Pin the retention clock inside the idle-cancel window so the on-access
-		// prune cannot stop the session and mask a project-guard regression.
-		manager.retention.now = func() time.Time { return lastActivity.Add(time.Minute) }
-		runtime := &BrowserReplaySession{
-			ID:             sessionID,
-			ProjectID:      replacementOwner,
-			Status:         BrowserReplayRunning,
-			lastActivityAt: lastActivity,
-			stateChanged:   make(chan struct{}),
+		var clockNanos atomic.Int64
+		clockNanos.Store(lastActivity.UnixNano())
+		retention := recordbridge.DefaultReplayRetentionConfig()
+		retention.IdleCancel = 2 * time.Minute
+		retention.Now = func() time.Time { return time.Unix(0, clockNanos.Load()) }
+		manager := NewBrowserReplayManager(nil, recordbridge.ReplayManagerOptions{Retention: &retention})
+		t.Cleanup(manager.Close)
+		if _, err := manager.Start("", &dsl.Script{Name: "Project substitution", Protocol: "browser", ProjectID: replacementOwner}, BrowserReplayStartRequest{ReplaySessionID: sessionID, StartPaused: true}); err != nil {
+			t.Fatal(err)
 		}
-		manager.sessions[sessionID] = runtime
+		clockNanos.Add(int64(time.Minute))
 
 		request := httptest.NewRequest(http.MethodGet, "/api/v1/browser-replay/sessions/"+sessionID, nil)
 		request.SetPathValue("session_id", sessionID)
 		projectID, status, message := resolveBrowserReplaySessionProjectID(manager)(request)
 		if projectID != replacementOwner || status != 0 || message != "" {
 			t.Fatalf("authorization lookup = %q, %d, %q", projectID, status, message)
-		}
-		runtime.mu.RLock()
-		activityAfterLookup := runtime.lastActivityAt
-		runtime.mu.RUnlock()
-		if !activityAfterLookup.Equal(lastActivity) {
-			t.Fatalf("authorization lookup refreshed idle retention: %s -> %s", lastActivity, activityAfterLookup)
 		}
 
 		if session, ok := manager.GetForProject(sessionID, authorizedProject); ok || session != nil {
@@ -834,11 +613,12 @@ func TestReplaySessionOperationsRejectAuthorizedProjectSubstitution(t *testing.T
 		if session, ok := manager.StopForProject(sessionID, authorizedProject); ok || session != nil {
 			t.Fatalf("foreign StopForProject returned %#v", session)
 		}
-		runtime.mu.RLock()
-		statusAfter := runtime.Status
-		runtime.mu.RUnlock()
-		if statusAfter != BrowserReplayRunning {
-			t.Fatalf("foreign operation changed browser status to %q", statusAfter)
+		// Foreign operations and authorization lookup must not refresh idle time.
+		clockNanos.Store(lastActivity.Add(150 * time.Second).UnixNano())
+		manager.PruneExpired()
+		snapshot, ok := manager.GetForProject(sessionID, replacementOwner)
+		if !ok || snapshot.Status != BrowserReplayStopped {
+			t.Fatalf("foreign lookup refreshed the browser idle deadline: %#v", snapshot)
 		}
 
 		server := &Server{browserReplay: manager}
@@ -927,26 +707,6 @@ func TestReplayManagersStopServingCapabilitiesPastLocalLeaseFence(t *testing.T) 
 		return signal
 	}
 
-	t.Run("browser replay", func(t *testing.T) {
-		manager := NewBrowserReplayManager(nil)
-		manager.sessions["expired-browser"] = &BrowserReplaySession{
-			ID:           "expired-browser",
-			ProjectID:    "project-a",
-			Status:       BrowserReplayRunning,
-			stateChanged: make(chan struct{}),
-			reservation:  expiredSignal(),
-		}
-		if projectID, ok := manager.LookupProjectID("expired-browser"); ok || projectID != "" {
-			t.Fatalf("expired browser authorization lookup = %q, %v", projectID, ok)
-		}
-		if session, ok := manager.GetForProject("expired-browser", "project-a"); ok || session != nil {
-			t.Fatalf("expired browser GetForProject returned %#v", session)
-		}
-		if session, ok, changed := manager.PauseForProject("expired-browser", "project-a"); ok || changed || session != nil {
-			t.Fatalf("expired browser PauseForProject = %#v, %v, %v", session, ok, changed)
-		}
-	})
-
 	t.Run("script debugger", func(t *testing.T) {
 		manager := NewScriptDebugManager(nil)
 		manager.sessions["expired-debug"] = &ScriptDebugSession{
@@ -1031,17 +791,22 @@ func TestReplayStartHandlersRejectExecutionFollower(t *testing.T) {
 
 func TestCloseReplayManagersUsesOneCallerDeadline(t *testing.T) {
 	server := NewServer(ServerConfig{})
-	browserWorkerDone := make(chan struct{})
+	browserEntered, browserRelease := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	releaseBrowser := func() { releaseOnce.Do(func() { close(browserRelease) }) }
+	t.Cleanup(releaseBrowser)
 	debugWorkerDone := make(chan struct{})
-	server.browserReplay.closeTimeout = 2 * time.Second
+	replaceReplayFixtureManager(t, server, recordbridge.ReplayManagerOptions{CloseTimeout: 2 * time.Second})
 	server.scriptDebug.closeTimeout = 2 * time.Second
-	server.browserReplay.sessions["browser-blocked"] = &BrowserReplaySession{
-		ID:           "browser-blocked",
-		Status:       BrowserReplayRunning,
-		cancel:       func() {},
-		stateChanged: make(chan struct{}),
-		workerDone:   browserWorkerDone,
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		close(browserEntered)
+		<-browserRelease
+		return &protocol.Result{Success: true}, nil
+	})
+	if _, err := server.browserReplay.Start("", &dsl.Script{Name: "Blocked worker", Protocol: protocolName, Actions: []dsl.Action{{Type: "request", Target: "/"}}}, BrowserReplayStartRequest{ReplaySessionID: "browser-blocked"}); err != nil {
+		t.Fatal(err)
 	}
+	<-browserEntered
 	server.scriptDebug.sessions["debug-blocked"] = &ScriptDebugSession{
 		ID:           "debug-blocked",
 		Status:       ScriptDebugRunning,
@@ -1061,10 +826,12 @@ func TestCloseReplayManagersUsesOneCallerDeadline(t *testing.T) {
 		t.Fatalf("parallel replay-manager drain took %s, want caller deadline below 300ms", elapsed)
 	}
 
-	close(browserWorkerDone)
+	releaseBrowser()
 	close(debugWorkerDone)
+	browserClosed := make(chan struct{})
+	go func() { server.browserReplay.Close(); close(browserClosed) }()
 	for name, done := range map[string]<-chan struct{}{
-		"browser": server.browserReplay.closeDone,
+		"browser": browserClosed,
 		"debug":   server.scriptDebug.closeDone,
 	} {
 		select {

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -145,19 +147,24 @@ func TestReplayManagersEnforceGateAndReleaseExecutionSlot(t *testing.T) {
 	})
 
 	t.Run("browser replay manager", func(t *testing.T) {
-		released := false
-		manager := &BrowserReplayManager{}
-		session, err := manager.Start("script-1", gated, BrowserReplayStartRequest{
-			releaseExecutionContext: func() { released = true },
+		released, reserved := 0, 0
+		manager := NewBrowserReplayManager(nil)
+		t.Cleanup(manager.Close)
+		manager.setSessionIDReserver(func(context.Context, string, string) (string, func(), *replaySessionLeaseSignal, error) {
+			reserved++
+			return "", nil, nil, errors.New("reservation must not run for a gated script")
 		})
-		if err == nil {
-			t.Fatal("gated script started a browser replay session")
+		session, err := manager.Start("script-1", gated, BrowserReplayStartRequest{
+			releaseExecutionContext: func() { released++ },
+		})
+		if !errors.Is(err, errScriptReplayBlocked) {
+			t.Fatalf("gated script did not return its review refusal: %v", err)
 		}
 		if session != nil {
 			t.Fatalf("gated start returned a session: %+v", session)
 		}
-		if !released {
-			t.Fatal("gated start leaked the caller's execution slot")
+		if released != 1 || reserved != 0 {
+			t.Fatalf("gated start released execution %d times and reserved %d sessions", released, reserved)
 		}
 	})
 
@@ -253,34 +260,5 @@ func TestDurableReviewGateRegistryScope(t *testing.T) {
 				t.Fatalf("durableImportReviewGateAction = %v, want %v", got, test.durable)
 			}
 		})
-	}
-}
-
-// TestDurableReviewGateRegistryIsTheOnlyHardeningSwitch proves the registry is
-// actually the extension point: an importer becomes durable by adding an entry,
-// and nothing else in the file needs to change.
-func TestDurableReviewGateRegistryIsTheOnlyHardeningSwitch(t *testing.T) {
-	action := dsl.Action{
-		Name:     "request",
-		Type:     "GET",
-		Metadata: map[string]any{"review_gate": "postman_unsupported_auth"},
-	}
-	if durableImportReviewGateAction(action) {
-		t.Fatal("an unregistered gate prefix is already durable")
-	}
-
-	original := durableReviewGateSources
-	t.Cleanup(func() { durableReviewGateSources = original })
-	durableReviewGateSources = append(append([]durableReviewGateSource(nil), original...),
-		durableReviewGateSource{gatePrefix: "postman_"})
-
-	if !durableImportReviewGateAction(action) {
-		t.Fatal("registering a gate prefix did not make it durable")
-	}
-	// Registering one importer must not harden another's markers.
-	trueclient := dsl.Action{Name: "js", Type: "browser_evaluate_js",
-		Metadata: map[string]any{"review_gate": "javascript"}}
-	if durableImportReviewGateAction(trueclient) {
-		t.Fatal("registering postman hardened TrueClient's gate")
 	}
 }

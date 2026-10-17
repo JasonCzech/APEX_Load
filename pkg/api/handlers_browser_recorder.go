@@ -1,44 +1,29 @@
 package api
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/recordbridge"
 	"log/slog"
 	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
-	"github.com/jasonczech/apexload/pkg/convert/har"
-	"github.com/jasonczech/apexload/pkg/convert/paramize"
-	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
-	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
-	"github.com/jasonczech/apexload/pkg/recorder/marker"
-	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // browserRecordingAvailability reports whether this controller can launch a
 // headed recording browser, with a human-readable reason when it cannot.
-type browserRecordingAvailability struct {
-	Available bool   `json:"available"`
-	Code      string `json:"code,omitempty"`
-	Reason    string `json:"reason,omitempty"`
-}
+type browserRecordingAvailability = recordbridge.BrowserRecordingAvailability
 
 const (
 	browserRecordingUnavailableDisabled             = "disabled"
@@ -53,46 +38,14 @@ var browserRecordingDependencyProbe = recbrowser.CheckChromiumInstalled
 // advisory; POST /sessions fails closed on this check). Headed recording is
 // off in production posture unless explicitly enabled, and needs a display.
 func (s *Server) browserRecordingAvailability() browserRecordingAvailability {
-	switch strings.ToLower(envValue("APEXLOAD_BROWSER_RECORDER")) {
-	case "off", "disabled", "false", "0":
-		return browserRecordingAvailability{Code: browserRecordingUnavailableDisabled, Reason: "browser recording is disabled via APEXLOAD_BROWSER_RECORDER"}
-	case "on", "enabled", "true", "1":
-		// Explicit opt-in overrides the production-mode default-off.
-	default:
-		if productionMode() && !s.desktopMode && !s.bridgeMode {
-			return browserRecordingAvailability{Code: browserRecordingUnavailableProductionDisabled, Reason: "browser recording launches a headed browser on the controller host and is disabled in production mode (set APEXLOAD_BROWSER_RECORDER=on to override)"}
-		}
+	if s.recordingRuntime != nil {
+		return s.recordingRuntime.Availability()
 	}
-	if runtime.GOOS == "linux" && strings.TrimSpace(os.Getenv("DISPLAY")) == "" && strings.TrimSpace(os.Getenv("WAYLAND_DISPLAY")) == "" {
-		return browserRecordingAvailability{Code: browserRecordingUnavailableDisplayMissing, Reason: "no display detected on the controller host for a headed browser"}
-	}
-	if browserRecordingDependencyProbe != nil {
-		if err := browserRecordingDependencyProbe(); err != nil {
-			if availability, ok := browserRecordingAvailabilityFromStartError(err); ok {
-				return availability
-			}
-			return browserRecordingAvailability{Code: browserRecordingUnavailableBrowsersNotInstalled, Reason: "Playwright Chromium is not available on the controller host; install the recording browser and retry"}
-		}
-	}
-	return browserRecordingAvailability{Available: true}
+	return recordbridge.RecordingAvailability(s.desktopMode || s.bridgeMode, productionMode(), browserRecordingDependencyProbe)
 }
 
 func browserRecordingAvailabilityFromStartError(err error) (browserRecordingAvailability, bool) {
-	if err == nil {
-		return browserRecordingAvailability{}, false
-	}
-	msg := strings.ToLower(err.Error())
-	if strings.Contains(msg, "please install") ||
-		strings.Contains(msg, "playwright install") ||
-		strings.Contains(msg, "executable doesn't exist") ||
-		strings.Contains(msg, "executable does not exist") ||
-		strings.Contains(msg, "browser has not been installed") {
-		return browserRecordingAvailability{
-			Code:   browserRecordingUnavailableBrowsersNotInstalled,
-			Reason: "Playwright Chromium is not installed on the controller host; install the recording browser and retry",
-		}, true
-	}
-	return browserRecordingAvailability{}, false
+	return recordbridge.BrowserRecordingAvailabilityFromStartError(err)
 }
 
 // browserStorageStateDir is the confined subdirectory (under the export base)
@@ -105,11 +58,7 @@ const browserStorageStateFileSuffix = "-state.json"
 // browserStorageStateProjectDir is the project-scoped directory segment used by
 // browserStorageStateExportLocation; a nil/empty project maps to "unassigned".
 func browserStorageStateProjectDir(projectID string) string {
-	dir := sanitizeDownloadName(normalizeProjectID(projectID))
-	if dir == "" {
-		return "unassigned"
-	}
-	return dir
+	return recordbridge.BrowserStorageStateProjectDir(projectID)
 }
 
 // confineStorageStatePath resolves a client-supplied storage-state path to an
@@ -120,54 +69,13 @@ func browserStorageStateProjectDir(projectID string) string {
 // check a user could seed a new recording with another project's live session by
 // pointing storage_state_path at that project's export subdirectory.
 func confineStorageStatePath(raw, projectID string) (string, error) {
-	cleaned := strings.ReplaceAll(strings.TrimSpace(raw), "\\", "/")
-	if cleaned == "" || strings.HasPrefix(cleaned, "/") || filepath.IsAbs(cleaned) {
-		return "", fmt.Errorf("storage_state_path is not allowed: absolute paths are not permitted")
-	}
-	cleaned = strings.Trim(cleaned, "/")
-	cleaned = strings.TrimPrefix(cleaned, browserStorageStateDir+"/")
-	for _, part := range strings.Split(cleaned, "/") {
-		if part == "" || part == "." || part == ".." {
-			return "", fmt.Errorf("storage_state_path is not allowed: path traversal is not permitted")
-		}
-	}
-	// Reject a storage state belonging to a different project (the path is
-	// project-scoped as browserStorageStateDir/<project>/<file>).
-	if segments := strings.Split(cleaned, "/"); len(segments) < 2 || segments[0] != browserStorageStateProjectDir(projectID) {
-		return "", fmt.Errorf("storage_state_path is not allowed: it must belong to this recording's project")
-	}
-	dir, file := filepathSplitForward(cleaned)
-	resolved, err := resolveConfinedExportPath(exportBaseDir(), filepath.Join(browserStorageStateDir, dir), file)
-	if err != nil {
-		return "", fmt.Errorf("storage_state_path is not allowed: %w", err)
-	}
-	if _, statErr := os.Stat(resolved); statErr != nil {
-		return "", fmt.Errorf("storage_state_path %q not found under the export directory", raw)
-	}
-	return resolved, nil
+	return recordbridge.ConfineStorageStatePath(raw, projectID)
 }
 
-func filepathSplitForward(p string) (dir, file string) {
-	p = filepath.ToSlash(p)
-	idx := strings.LastIndex(p, "/")
-	if idx < 0 {
-		return "", p
-	}
-	return p[:idx], p[idx+1:]
-}
+func filepathSplitForward(p string) (dir, file string) { return recordbridge.FilepathSplitForward(p) }
 
 func browserStorageStateExportLocation(info *BrowserRecordingSession) (relativePath, stateFile string) {
-	projectDir := browserStorageStateProjectDir(info.ProjectID)
-	filename := sanitizeDownloadName(info.Name)
-	if filename == "" {
-		filename = "browser-recording"
-	}
-	if sessionID := sanitizeDownloadName(info.ID); sessionID != "" {
-		filename += "-" + sessionID
-	}
-	stateFile = filename + browserStorageStateFileSuffix
-	relativePath = filepath.ToSlash(filepath.Join(browserStorageStateDir, projectDir, stateFile))
-	return relativePath, stateFile
+	return recordbridge.BrowserStorageStateExportLocation(info)
 }
 
 // browserStorageStateSummary is a login state saved from one of a project's
@@ -189,140 +97,23 @@ var browserStorageStateIDSuffix = regexp.MustCompile(`-[0-9a-fA-F]{8}-[0-9a-fA-F
 // the project's browser recordings, newest first, so a recording can start
 // signed in. Expired states are pruned first, as a save does.
 func (s *Server) handleListBrowserRecordingStorageStates(w http.ResponseWriter, r *http.Request) {
-	projectID := authorizedProjectOr(r, strings.TrimSpace(r.URL.Query().Get("project_id")))
-	now := time.Now()
-	pruneBrowserStorageStateExports(now)
-	projectDir := browserStorageStateProjectDir(projectID)
-	states := []browserStorageStateSummary{}
-	// The directory a save writes into (handleExportBrowserRecordingStorageState).
-	probe, err := resolveConfinedExportPath(exportBaseDir(), filepath.Join(browserStorageStateDir, projectDir), "probe.json")
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	entries, err := os.ReadDir(filepath.Dir(probe))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		writeError(w, http.StatusInternalServerError, "list saved login states: "+err.Error())
-		return
-	}
-	// Name each state by the recording it came from while that recording is kept.
-	recordings := map[string]*BrowserRecordingSession{}
-	for _, session := range s.browserRecording.List(projectID) {
-		if session != nil {
-			recordings[sanitizeDownloadName(session.ID)] = session
-		}
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), browserStorageStateFileSuffix) {
-			continue
-		}
-		info, infoErr := entry.Info()
-		if infoErr != nil {
-			continue
-		}
-		stem := strings.TrimSuffix(entry.Name(), browserStorageStateFileSuffix)
-		state := browserStorageStateSummary{Path: projectDir + "/" + entry.Name(), Name: stem, SavedAt: info.ModTime().UTC()}
-		if name := browserStorageStateIDSuffix.ReplaceAllString(stem, ""); name != "" {
-			state.Name = name
-		}
-		if defaultBrowserRecordingRetention > 0 {
-			expires := info.ModTime().Add(defaultBrowserRecordingRetention).UTC()
-			state.ExpiresAt = &expires
-		}
-		for id, session := range recordings {
-			if id != "" && strings.HasSuffix(stem, "-"+id) {
-				state.RecordingID = session.ID
-				if name := strings.TrimSpace(session.Name); name != "" {
-					state.Name = name
-				}
-				break
-			}
-		}
-		states = append(states, state)
-	}
-	sort.SliceStable(states, func(i, j int) bool { return states[i].SavedAt.After(states[j].SavedAt) })
-	writeJSON(w, http.StatusOK, map[string]any{"states": states, "count": len(states)})
+	s.recordingHTTPService().HandleListBrowserRecordingStorageStates(w, r)
 }
 
 func pruneBrowserStorageStateExports(now time.Time) {
-	if defaultBrowserRecordingRetention <= 0 {
-		return
-	}
-	root := filepath.Join(exportBaseDir(), browserStorageStateDir)
-	cutoff := now.Add(-defaultBrowserRecordingRetention)
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || filepath.Ext(d.Name()) != ".json" {
-			return nil
-		}
-		info, statErr := d.Info()
-		if statErr != nil {
-			return nil
-		}
-		if info.ModTime().Before(cutoff) {
-			_ = os.Remove(path)
-		}
-		return nil
-	})
+	recordbridge.PruneBrowserStorageStateExports(now, defaultBrowserRecordingRetention)
 }
 
 func scrubBrowserStorageState(data []byte) ([]byte, error) {
-	var doc any
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, err
-	}
-	scrubBrowserStorageStateNode(doc, "")
-	return json.Marshal(doc)
+	return recordbridge.ScrubBrowserStorageState(data)
 }
 
 func scrubBrowserStorageStateNode(node any, parentKey string) {
-	switch typed := node.(type) {
-	case []any:
-		for _, item := range typed {
-			scrubBrowserStorageStateNode(item, parentKey)
-		}
-	case map[string]any:
-		if value, ok := typed["value"].(string); ok {
-			name, _ := typed["name"].(string)
-			switch {
-			case parentKey == "cookies":
-				typed["value"] = scrub.Redacted
-			case browserStorageStateSensitiveName(name):
-				typed["value"] = scrub.Redacted
-			default:
-				typed["value"] = scrub.Value(value, scrub.Policy{})
-			}
-		}
-		for key, value := range typed {
-			if text, ok := value.(string); ok {
-				if browserStorageStateSensitiveName(key) {
-					typed[key] = scrub.Redacted
-				} else {
-					typed[key] = scrub.Value(text, scrub.Policy{})
-				}
-				continue
-			}
-			scrubBrowserStorageStateNode(value, key)
-		}
-	}
+	recordbridge.ScrubBrowserStorageStateNode(node, parentKey)
 }
 
 func browserStorageStateSensitiveName(name string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(name))
-	normalized = strings.NewReplacer("-", "_", " ", "_").Replace(normalized)
-	if normalized == "" {
-		return false
-	}
-	for _, marker := range []string{
-		"authorization", "password", "passwd", "secret", "token", "access_token",
-		"refresh_token", "id_token", "api_key", "apikey", "session", "session_id",
-		"sessionid", "auth", "csrf", "xsrf", "client_secret", "private_key",
-		"jwt", "bearer", "cookie",
-	} {
-		if normalized == marker || strings.Contains(normalized, marker) {
-			return true
-		}
-	}
-	return false
+	return recordbridge.BrowserStorageStateSensitiveName(name)
 }
 
 // validateBrowserRecordingStartURL restricts recording targets to absolute
@@ -330,186 +121,47 @@ func browserStorageStateSensitiveName(name string) bool {
 // files or other schemes. Private/loopback hosts are intentionally allowed:
 // recording apps on localhost is the local-first use case.
 func validateBrowserRecordingStartURL(raw string) error {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed.Host == "" {
-		return fmt.Errorf("start_url must be an absolute http(s) URL")
-	}
-	switch strings.ToLower(parsed.Scheme) {
-	case "http", "https":
-		return nil
-	default:
-		return fmt.Errorf("start_url scheme %q is not allowed; use http or https", parsed.Scheme)
-	}
+	return recordbridge.ValidateBrowserRecordingStartURL(raw)
 }
 
 func (s *Server) handleStartBrowserRecording(w http.ResponseWriter, r *http.Request) {
-	availability := s.browserRecordingAvailability()
-	if !availability.Available {
-		writeError(w, http.StatusServiceUnavailable, availability.Reason)
-		return
-	}
-
-	var req BrowserRecordingStartRequest
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	if err := validateBrowserRecordingStartURL(req.StartURL); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if !validBrowserRecordingQUICMode(req.QUICMode) {
-		writeError(w, http.StatusBadRequest, "quic_mode must be auto or off")
-		return
-	}
-	// A storage-state path is a server-side file Playwright will read; confine
-	// it to the export directory so a client cannot point it at arbitrary host
-	// files (path traversal / absolute paths).
-	if strings.TrimSpace(req.StorageStatePath) != "" {
-		confined, err := confineStorageStatePath(req.StorageStatePath, req.ProjectID)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		req.StorageStatePath = confined
-	}
-
-	session, err := s.browserRecording.Start(req)
-	if err != nil {
-		if errors.Is(err, errBrowserRecordingActive) {
-			writeError(w, http.StatusConflict, err.Error())
-			return
-		}
-		if availability, ok := browserRecordingAvailabilityFromStartError(err); ok {
-			ref := logServerError(w, http.StatusServiceUnavailable, err, "code", availability.Code)
-			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-				"error":        availability.Reason,
-				"availability": availability,
-				"ref":          ref,
-			})
-			return
-		}
-		if reason, ok := browserRecordingNavigationFailure(err, req.StartURL); ok {
-			writeError(w, http.StatusUnprocessableEntity, reason)
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "failed to start browser recording: "+err.Error())
-		return
-	}
-
-	s.recordAuditEvent(r, "browser_recording.start", "success", "browser_recording", session.ID, session.ProjectID,
-		map[string]any{"name": session.Name, "start_url": scrub.ValueURL(session.StartURL, scrub.Policy{}), "capture_har": session.CaptureHAR})
-	writeJSON(w, http.StatusCreated, map[string]any{"session": session})
+	s.recordingHTTPService().HandleStartBrowserRecording(w, r)
 }
 
 func (s *Server) handleGetBrowserRecording(w http.ResponseWriter, r *http.Request) {
-	session, ok := s.browserRecording.Get(r.PathValue("id"))
-	if !ok {
-		writeError(w, http.StatusNotFound, "browser recording session not found")
-		return
-	}
-	raw := rawRecordingExportRequested(r)
-	if raw && !s.canExportRawRecording(r, session.ProjectID) {
-		s.recordAuditEvent(r, "browser_recording.read_raw", "denied", "browser_recording", session.ID, session.ProjectID, map[string]any{"reason": "insufficient_role"})
-		writeError(w, http.StatusForbidden, "raw browser recording view requires editor, project_admin, or system_admin access")
-		return
-	}
-	if !raw {
-		session = sanitizeBrowserRecordingSessionForResponse(session)
-		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
-	} else {
-		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+	s.recordingHTTPService().HandleGetBrowserRecording(w, r)
 }
 
 func (s *Server) handleListBrowserRecordings(w http.ResponseWriter, r *http.Request) {
-	projectID := authorizedProjectOr(r, strings.TrimSpace(r.URL.Query().Get("project_id")))
-	sessions := s.browserRecording.List(projectID)
-	for index := range sessions {
-		sessions[index] = sanitizeBrowserRecordingSessionForResponse(sessions[index])
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "count": len(sessions)})
+	s.recordingHTTPService().HandleListBrowserRecordings(w, r)
 }
 
 func (s *Server) handleDeleteBrowserRecording(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	session, ok, err := s.browserRecording.Delete(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "browser recording session not found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
-		return
-	}
-	s.recordAuditEvent(r, "browser_recording.delete", "success", "browser_recording", session.ID, session.ProjectID,
-		map[string]any{"status": session.Status, "step_count": session.StepCount})
-	writeJSON(w, http.StatusOK, map[string]any{"deleted": id, "session": session})
+	s.recordingHTTPService().HandleDeleteBrowserRecording(w, r)
 }
 
 func (s *Server) handleStopBrowserRecording(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	session, ok := s.browserRecording.Stop(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "browser recording session not found")
-		return
-	}
-	s.recordAuditEvent(r, "browser_recording.stop", "success", "browser_recording", session.ID, session.ProjectID,
-		map[string]any{"stop_reason": session.StopReason, "step_count": session.StepCount})
-	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+	s.recordingHTTPService().HandleStopBrowserRecording(w, r)
 }
 
 func (s *Server) handleForceStopBrowserRecording(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	session, ok, err := s.browserRecording.ForceStop(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "browser recording session not found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
-		return
-	}
-	s.recordAuditEvent(r, "browser_recording.force_stop", "success", "browser_recording", session.ID, session.ProjectID,
-		map[string]any{"stop_reason": session.StopReason, "step_count": session.StepCount})
-	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+	s.recordingHTTPService().HandleForceStopBrowserRecording(w, r)
 }
 
 func (s *Server) handlePauseBrowserRecording(w http.ResponseWriter, r *http.Request) {
-	session, ok, err := s.browserRecording.Pause(r.PathValue("id"))
-	s.writeBrowserRecordingControlResult(w, session, ok, err)
+	s.recordingHTTPService().HandlePauseBrowserRecording(w, r)
 }
 
 func (s *Server) handleResumeBrowserRecording(w http.ResponseWriter, r *http.Request) {
-	session, ok, err := s.browserRecording.Resume(r.PathValue("id"))
-	s.writeBrowserRecordingControlResult(w, session, ok, err)
+	s.recordingHTTPService().HandleResumeBrowserRecording(w, r)
 }
 
 func (s *Server) handleNavigateBrowserRecording(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		URL string `json:"url"`
-	}
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	// Same scheme allow-list as the start URL: the panel must not be able to
-	// point the recording browser at local files or other schemes.
-	if err := validateBrowserRecordingStartURL(req.URL); err != nil {
-		writeError(w, http.StatusBadRequest, strings.Replace(err.Error(), "start_url", "url", 1))
-		return
-	}
-	id := r.PathValue("id")
-	session, ok, err := s.browserRecording.Navigate(id, req.URL)
-	if ok && err == nil {
-		s.recordAuditEvent(r, "browser_recording.navigate", "success", "browser_recording", id, session.ProjectID,
-			map[string]any{"url": scrub.ValueURL(req.URL, scrub.Policy{})})
-	}
-	s.writeBrowserRecordingControlResult(w, session, ok, err)
+	s.recordingHTTPService().HandleNavigateBrowserRecording(w, r)
 }
 
 func (s *Server) handleFocusBrowserRecording(w http.ResponseWriter, r *http.Request) {
-	session, ok, err := s.browserRecording.Focus(r.PathValue("id"))
-	s.writeBrowserRecordingControlResult(w, session, ok, err)
+	s.recordingHTTPService().HandleFocusBrowserRecording(w, r)
 }
 
 type browserRecordingControlPanelRequest struct {
@@ -528,242 +180,48 @@ type browserRecordingBridgeConnectionSeed struct {
 }
 
 func (s *Server) handleOpenBrowserRecordingControlPanel(w http.ResponseWriter, r *http.Request) {
-	var req browserRecordingControlPanelRequest
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	if err := recbrowser.ValidateControlPanelURL(req.URL); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	panelOrigin, err := absoluteHTTPOrigin(req.URL)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "control panel url origin is invalid: "+err.Error())
-		return
-	}
-	if requestOrigin := strings.TrimSpace(r.Header.Get("Origin")); requestOrigin != "" {
-		normalizedRequestOrigin, err := absoluteHTTPOrigin(requestOrigin)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "request Origin is invalid: "+err.Error())
-			return
-		}
-		if normalizedRequestOrigin != panelOrigin {
-			writeError(w, http.StatusBadRequest, "control panel url must use the requesting dashboard origin")
-			return
-		}
-	}
-	localStorage := map[string]string{}
-	if req.BridgeConnection != nil {
-		key, value, err := req.BridgeConnection.localStorageEntry(req.URL)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		localStorage[key] = value
-	}
-
-	id := r.PathValue("id")
-	session, ok, err := s.browserRecording.OpenControlPanel(id, req.URL, localStorage)
-	if ok && err == nil {
-		s.recordAuditEvent(r, "browser_recording.control_panel", "success", "browser_recording", id, session.ProjectID,
-			map[string]any{"url": scrub.ValueURL(req.URL, scrub.Policy{})})
-	}
-	s.writeBrowserRecordingControlResult(w, session, ok, err)
+	s.recordingHTTPService().HandleOpenBrowserRecordingControlPanel(w, r)
 }
 
 func (b *browserRecordingBridgeConnectionSeed) localStorageEntry(panelURL string) (string, string, error) {
-	if b == nil {
-		return "", "", fmt.Errorf("bridge_connection is required")
-	}
-	remoteOrigin, err := absoluteHTTPOrigin(panelURL)
-	if err != nil {
-		return "", "", fmt.Errorf("control panel url origin is invalid: %w", err)
-	}
-	bridgeOrigin, err := absoluteHTTPOrigin(b.Origin)
-	if err != nil {
-		return "", "", fmt.Errorf("bridge_connection.origin is invalid: %w", err)
-	}
-	b.Origin = bridgeOrigin
-	b.Token = strings.TrimSpace(b.Token)
-	b.SessionID = strings.TrimSpace(b.SessionID)
-	if b.Token == "" || b.SessionID == "" {
-		return "", "", fmt.Errorf("bridge_connection token and session_id are required")
-	}
-	encoded, err := json.Marshal(b)
-	if err != nil {
-		return "", "", fmt.Errorf("encode bridge_connection: %w", err)
-	}
-	return recbrowser.BrowserRecorderBridgeStoragePrefix + remoteOrigin, string(encoded), nil
+	return (*recordbridge.BrowserRecordingBridgeConnectionSeed)(b).LocalStorageEntry(panelURL)
 }
 
-func absoluteHTTPOrigin(raw string) (string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("must be an absolute http(s) URL")
-	}
-	switch strings.ToLower(parsed.Scheme) {
-	case "http", "https":
-		return parsed.Scheme + "://" + parsed.Host, nil
-	default:
-		return "", fmt.Errorf("scheme %q is not allowed; use http or https", parsed.Scheme)
-	}
-}
+func absoluteHTTPOrigin(raw string) (string, error) { return recordbridge.AbsoluteHTTPOrigin(raw) }
 
 func (s *Server) handleStartBrowserRecordingTransaction(w http.ResponseWriter, r *http.Request) {
-	s.handleBrowserRecordingMarker(w, r, recbrowser.MarkerTransactionStart)
+	s.recordingHTTPService().HandleStartBrowserRecordingTransaction(w, r)
 }
 
 func (s *Server) handleEndBrowserRecordingTransaction(w http.ResponseWriter, r *http.Request) {
-	s.handleBrowserRecordingMarker(w, r, recbrowser.MarkerTransactionEnd)
+	s.recordingHTTPService().HandleEndBrowserRecordingTransaction(w, r)
 }
 
 func (s *Server) handleAddBrowserRecordingNote(w http.ResponseWriter, r *http.Request) {
-	s.handleBrowserRecordingMarker(w, r, recbrowser.MarkerNote)
+	s.recordingHTTPService().HandleAddBrowserRecordingNote(w, r)
 }
 
 func (s *Server) handleBrowserRecordingMarker(w http.ResponseWriter, r *http.Request, kind string) {
-	var req struct {
-		Name      string `json:"name,omitempty"`
-		Text      string `json:"text,omitempty"`
-		AtStepSeq int    `json:"at_step_seq,omitempty"`
-	}
-	if !decodeOptionalJSONBody(w, r, &req) {
-		return
-	}
-
-	session, marker, ok, err := s.browserRecording.AddMarker(r.PathValue("id"), kind, req.Name, req.Text, req.AtStepSeq)
-	if !ok {
-		writeError(w, http.StatusNotFound, "browser recording session not found")
-		return
-	}
-	if err != nil {
-		status := http.StatusBadRequest
-		if strings.Contains(err.Error(), "not live") {
-			status = http.StatusConflict
-		}
-		writeError(w, status, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"session": session, "marker": marker})
+	s.recordingHTTPService().HandleBrowserRecordingMarker(w, r, kind)
 }
 
 // writeBrowserRecordingControlResult maps the shared (session, found, error)
 // control-method result onto HTTP: 404 unknown id, 409 not-live, 502 backend
 // failures (the browser refused the command), 200 with the fresh snapshot.
 func (s *Server) writeBrowserRecordingControlResult(w http.ResponseWriter, session *BrowserRecordingSession, ok bool, err error) {
-	if !ok {
-		writeError(w, http.StatusNotFound, "browser recording session not found")
-		return
-	}
-	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			writeError(w, http.StatusNotFound, err.Error())
-			return
-		}
-		if strings.Contains(err.Error(), "not live") || strings.Contains(err.Error(), "no stopped artifact") {
-			// Both are client-state preconditions (session not live / not yet
-			// stopped), not backend failures — 409, not 502.
-			writeError(w, http.StatusConflict, err.Error())
-			return
-		}
-		writeError(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+	s.recordingHTTPService().WriteBrowserRecordingControlResult(w, session, ok, err)
 }
 
-type browserRecordingConvertRequest struct {
-	Name           string `json:"name"`
-	MaxThinkTimeMs int    `json:"max_think_time_ms,omitempty"`
-	// FolderID is save-only. Every script produced by this one atomic
-	// conversion is validated against the recording project and placed in the
-	// same scripts-category destination.
-	FolderID *string `json:"folder_id,omitempty"`
-	// StartSeq/EndSeq trim conversion to an inclusive step window (0 = open).
-	StartSeq int `json:"start_seq,omitempty"`
-	EndSeq   int `json:"end_seq,omitempty"`
-	// SplitAtTransactions emits one script per top-level transaction.
-	SplitAtTransactions bool `json:"split_at_transactions,omitempty"`
-	// AlsoCreateHTTPScript additionally generates a protocol-level HTTP script
-	// from the recorded HAR (dual-script generation).
-	AlsoCreateHTTPScript bool `json:"also_create_http_script,omitempty"`
-	// HTTPScriptLevel is "url" (default) or "html": an HTML-level HTTP script
-	// turns recorded link, image and form clicks into HTML-mode steps.
-	HTTPScriptLevel string `json:"http_script_level,omitempty" enums:"url,html"`
-	// AsyncScan (default on) turns requests a page repeated in the
-	// background into background conversations in the HTTP script; false
-	// keeps them as recorded steps.
-	AsyncScan *bool `json:"async_scan,omitempty"`
-	// RecordingProfileID names a project recording profile the HTTP script
-	// applies (filters, headers, think-time threshold, correlation settings,
-	// and the options above when left unset).
-	RecordingProfileID string `json:"recording_profile_id,omitempty"`
-	// HTTPVersionMode maps the HTTP script's captured versions to leaf
-	// policies: upgrade (default; captured h3 becomes auto+h3), exact (3) or
-	// inherit (none).
-	HTTPVersionMode string `json:"http_version_mode,omitempty" enums:"upgrade,exact,inherit"`
-	// Parameterize applies safe auto-parameterization suggestions to the
-	// converted browser script(s) before preview/save.
-	Parameterize bool `json:"parameterize,omitempty"`
-	// SecretBindings are save-time, value-free operator choices from the
-	// preview. They are applied to the fresh conversion before the atomic
-	// create transaction so a same-name "Use project secret" choice cannot be
-	// lost or depend on a fallible post-commit update.
-	SecretBindings []browserRecordingSecretBinding `json:"secret_bindings,omitempty"`
-	// ParameterizationSelections identify only the value-free suggestions the
-	// operator selected in the preview. The server re-derives those suggestions
-	// from the fresh conversion and applies them before the atomic create
-	// transaction; the browser never supplies mutation instructions.
-	ParameterizationSelections []browserRecordingParameterizationSelection `json:"parameterization_selections,omitempty"`
-	// ExpectedScriptCount fences the preview/save handoff. A changed conversion
-	// shape must fail before persistence rather than silently pairing reviewed
-	// scripts with a different fresh conversion.
-	ExpectedScriptCount int `json:"expected_script_count,omitempty"`
-}
+type browserRecordingConvertRequest = recordbridge.BrowserRecordingConvertRequest
 
 // browserRecordingPreviewRequest deliberately excludes save-only secret
 // bindings. Keeping a separate wire type makes the generated API contract
 // truthful and lets DisallowUnknownFields reject a binding sent to preview.
-type browserRecordingPreviewRequest struct {
-	Name                 string `json:"name"`
-	MaxThinkTimeMs       int    `json:"max_think_time_ms,omitempty"`
-	StartSeq             int    `json:"start_seq,omitempty"`
-	EndSeq               int    `json:"end_seq,omitempty"`
-	SplitAtTransactions  bool   `json:"split_at_transactions,omitempty"`
-	AlsoCreateHTTPScript bool   `json:"also_create_http_script,omitempty"`
-	HTTPScriptLevel      string `json:"http_script_level,omitempty" enums:"url,html"`
-	AsyncScan            *bool  `json:"async_scan,omitempty"`
-	RecordingProfileID   string `json:"recording_profile_id,omitempty"`
-	HTTPVersionMode      string `json:"http_version_mode,omitempty" enums:"upgrade,exact,inherit"`
-	Parameterize         bool   `json:"parameterize,omitempty"`
-}
+type browserRecordingPreviewRequest = recordbridge.BrowserRecordingPreviewRequest
 
-func (req browserRecordingPreviewRequest) convertRequest() browserRecordingConvertRequest {
-	return browserRecordingConvertRequest{
-		Name:                 req.Name,
-		MaxThinkTimeMs:       req.MaxThinkTimeMs,
-		StartSeq:             req.StartSeq,
-		EndSeq:               req.EndSeq,
-		SplitAtTransactions:  req.SplitAtTransactions,
-		AlsoCreateHTTPScript: req.AlsoCreateHTTPScript,
-		HTTPScriptLevel:      req.HTTPScriptLevel,
-		AsyncScan:            req.AsyncScan,
-		RecordingProfileID:   req.RecordingProfileID,
-		HTTPVersionMode:      req.HTTPVersionMode,
-		Parameterize:         req.Parameterize,
-	}
-}
+type browserRecordingSecretBinding = recordbridge.BrowserRecordingSecretBinding
 
-type browserRecordingSecretBinding struct {
-	RequirementID string `json:"requirement_id"`
-	SecretName    string `json:"secret_name"`
-	ScriptIndex   int    `json:"script_index"`
-}
-
-type browserRecordingParameterizationSelection struct {
-	ScriptIndex int      `json:"script_index"`
-	SelectedIDs []string `json:"selected_ids"`
-}
+type browserRecordingParameterizationSelection = recordbridge.BrowserRecordingParameterizationSelection
 
 const maxBridgedBrowserImportScripts = 64
 
@@ -789,7 +247,7 @@ const (
 	browserRecordingSaveLocatorStaged    = "staged"
 	browserRecordingSaveLocatorPublished = "published"
 )
-const maxBrowserRecordingParameterizationSelections = 4096
+const maxBrowserRecordingParameterizationSelections = recordbridge.MaxBrowserRecordingParameterizationSelections
 
 // handleAttestBridgedBrowserRecordingImport is an authenticated,
 // operator-asserted handoff for a reviewed draft from the local recording flow
@@ -933,231 +391,24 @@ func (s *Server) handleAttestBridgedBrowserRecordingImport(w http.ResponseWriter
 // save: catalog conversion plus the importer parameterization hook, wrapped in
 // the standard import-response envelope the review UI consumes.
 func (s *Server) convertBrowserRecording(artifact *recbrowser.Session, info *BrowserRecordingSession, req browserRecordingConvertRequest) *recbrowser.ConvertResult {
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		name = info.Name
-	}
-	result := recbrowser.Convert(artifact, recbrowser.ConvertOptions{
-		ScriptName:          name,
-		MaxThinkTimeMs:      req.MaxThinkTimeMs,
-		StepRange:           recbrowser.StepRange{StartSeq: req.StartSeq, EndSeq: req.EndSeq},
-		SplitAtTransactions: req.SplitAtTransactions,
-	})
-	projectID := normalizeProjectID(info.ProjectID)
-	for _, sc := range result.Scripts {
-		if sc == nil {
-			continue
-		}
-		sc.ProjectID = projectID
-		attachRecordingProvenance(sc, artifact, info)
-		if req.Parameterize {
-			applyAutoParameterization(sc)
-		}
-	}
-	if result.Script != nil {
-		result.Script.ProjectID = projectID
-	}
-	return result
+	return s.recordingHTTPService().ConvertBrowserRecording(artifact, info, req)
 }
 
-func validateBrowserRecordingSecretBindings(
-	bindings []browserRecordingSecretBinding,
-	scriptCount int,
-) error {
-	seen := make(map[string]struct{}, len(bindings))
-	for _, binding := range bindings {
-		requirementID := strings.TrimSpace(binding.RequirementID)
-		secretName := strings.TrimSpace(binding.SecretName)
-		if requirementID == "" || secretName == "" {
-			return errors.New("secret binding requirement_id and secret_name are required")
-		}
-		if binding.ScriptIndex < 0 || binding.ScriptIndex >= scriptCount {
-			return fmt.Errorf("secret binding for %q targets an unavailable converted script", requirementID)
-		}
-		key := strconv.Itoa(binding.ScriptIndex) + "\x00" + requirementID
-		if _, duplicate := seen[key]; duplicate {
-			return fmt.Errorf("secret binding requirement_id %q is duplicated", requirementID)
-		}
-		seen[key] = struct{}{}
-	}
-	return nil
-}
+var validateBrowserRecordingSecretBindings = recordbridge.ValidateBrowserRecordingSecretBindings
 
-func applyBrowserRecordingSecretBindings(
-	script *dsl.Script,
-	scriptIndex int,
-	bindings []browserRecordingSecretBinding,
-) (*dsl.Script, error) {
-	selected := make([]secretBindingSelection, 0)
-	for _, binding := range bindings {
-		if binding.ScriptIndex != scriptIndex {
-			continue
-		}
-		selected = append(selected, secretBindingSelection{
-			RequirementID: binding.RequirementID,
-			SecretName:    binding.SecretName,
-		})
-	}
-	if len(selected) == 0 {
-		return script, nil
-	}
-	resolved, _, err := applyCredentialPreservingSecretBindings(
-		script,
-		scriptIndex,
-		selected,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return resolved, nil
-}
+var applyBrowserRecordingSecretBindings = recordbridge.ApplyBrowserRecordingSecretBindings
 
-func validateBrowserRecordingParameterizationSelections(
-	selections []browserRecordingParameterizationSelection,
-	scriptCount int,
-) error {
-	total := 0
-	seen := make(map[string]struct{})
-	for _, selection := range selections {
-		if selection.ScriptIndex < 0 ||
-			(scriptCount >= 0 && selection.ScriptIndex >= scriptCount) {
-			return fmt.Errorf(
-				"parameterization selection targets unavailable converted script %d",
-				selection.ScriptIndex,
-			)
-		}
-		if len(selection.SelectedIDs) == 0 {
-			return fmt.Errorf(
-				"parameterization selection for script %d has no selected_ids",
-				selection.ScriptIndex,
-			)
-		}
-		for _, rawID := range selection.SelectedIDs {
-			id := strings.TrimSpace(rawID)
-			if id == "" {
-				return errors.New("parameterization selected_ids cannot contain an empty ID")
-			}
-			total++
-			if total > maxBrowserRecordingParameterizationSelections {
-				return fmt.Errorf(
-					"parameterization selection exceeds the %d-suggestion limit",
-					maxBrowserRecordingParameterizationSelections,
-				)
-			}
-			key := strconv.Itoa(selection.ScriptIndex) + "\x00" + id
-			if _, duplicate := seen[key]; duplicate {
-				return fmt.Errorf(
-					"parameterization suggestion %q is duplicated for script %d",
-					id,
-					selection.ScriptIndex,
-				)
-			}
-			seen[key] = struct{}{}
-		}
-	}
-	return nil
-}
+var validateBrowserRecordingParameterizationSelections = recordbridge.ValidateBrowserRecordingParameterizationSelections
 
-func applyBrowserRecordingParameterizationSelections(
-	script *dsl.Script,
-	scriptIndex int,
-	selections []browserRecordingParameterizationSelection,
-) (*dsl.Script, error) {
-	selected := make(map[string]bool)
-	for _, selection := range selections {
-		if selection.ScriptIndex != scriptIndex {
-			continue
-		}
-		for _, id := range selection.SelectedIDs {
-			selected[strings.TrimSpace(id)] = true
-		}
-	}
-	if len(selected) == 0 {
-		return script, nil
-	}
-	trusted := buildTrustedImportParameterization(script)
-	trustedByID := make(map[string]struct{}, len(trusted.Suggestions))
-	for _, suggestion := range trusted.Suggestions {
-		trustedByID[suggestion.ID] = struct{}{}
-	}
-	for id := range selected {
-		if _, ok := trustedByID[id]; !ok {
-			return nil, fmt.Errorf(
-				"selected suggestion %q is stale or unavailable for converted script %d",
-				id,
-				scriptIndex,
-			)
-		}
-	}
-	applied, _, err := paramize.ApplySuggestions(script, trusted.Suggestions, selected)
-	if err != nil {
-		return nil, err
-	}
-	return applied, nil
-}
+var applyBrowserRecordingParameterizationSelections = recordbridge.ApplyBrowserRecordingParameterizationSelections
 
 // attachRecordingProvenance stamps the saved script with enough metadata to
 // re-convert the recording later (recorder session id, device, step/marker
 // counts). Raw step values stay out of provenance; the HAR is referenced, not
 // embedded.
-func attachRecordingProvenance(script *dsl.Script, artifact *recbrowser.Session, info *BrowserRecordingSession) {
-	if script == nil {
-		return
-	}
-	if script.Metadata == nil {
-		script.Metadata = &dsl.ScriptMetadata{}
-	}
-	if script.Metadata.Import == nil {
-		script.Metadata.Import = &dsl.ImportMetadata{}
-	}
-	script.Metadata.Import.Source = "browser_recorder"
-	script.Metadata.Import.SourceScriptName = info.Name
-	if script.Metadata.Import.Preserved == nil {
-		script.Metadata.Import.Preserved = map[string]any{}
-	}
-	script.Metadata.Import.Preserved["recorder_session_id"] = artifact.ID
-	script.Metadata.Import.Preserved["recorded_steps"] = len(artifact.Steps)
-	script.Metadata.Import.Preserved["recorded_markers"] = len(artifact.Markers)
-	script.Metadata.Import.Preserved["har_available"] = len(artifact.HAR) > 0
-	recbrowser.AttachRecordingEnvironment(script, artifact.RecordingEnvironment)
-	if artifact.DeviceProfile != "" {
-		script.Metadata.Import.Preserved["device_profile"] = artifact.DeviceProfile
-	}
-	if len(artifact.Annotations) > 0 {
-		script.Metadata.Import.Preserved["recorded_annotations"] = len(artifact.Annotations)
-	}
-}
+var attachRecordingProvenance = recordbridge.AttachRecordingProvenance
 
-func stampBrowserRecordingSaveProvenance(
-	script *dsl.Script,
-	recordingID string,
-	index int,
-	count int,
-	actorHash string,
-	role string,
-	baselineRequired bool,
-) {
-	if script == nil {
-		return
-	}
-	if script.Metadata == nil {
-		script.Metadata = &dsl.ScriptMetadata{}
-	}
-	if script.Metadata.Import == nil {
-		script.Metadata.Import = &dsl.ImportMetadata{}
-	}
-	if script.Metadata.Import.Preserved == nil {
-		script.Metadata.Import.Preserved = make(map[string]any)
-	}
-	preserved := script.Metadata.Import.Preserved
-	preserved[browserRecordingSaveVersionKey] = browserRecordingSaveVersion
-	preserved[browserRecordingSaveSessionIDKey] = strings.TrimSpace(recordingID)
-	preserved[browserRecordingSaveIndexKey] = index
-	preserved[browserRecordingSaveCountKey] = count
-	preserved[browserRecordingSaveActorHashKey] = strings.TrimSpace(actorHash)
-	preserved[browserRecordingSaveRoleKey] = strings.TrimSpace(role)
-	preserved[browserRecordingHARBaselineNeededKey] = baselineRequired
-}
+var stampBrowserRecordingSaveProvenance = recordbridge.StampBrowserRecordingSaveProvenance
 
 func (s *Server) browserRecordingSaveActorFingerprint(recordingID, actorSubject string) (string, error) {
 	payload := struct {
@@ -1177,41 +428,9 @@ func (s *Server) browserRecordingSaveActorFingerprint(recordingID, actorSubject 
 	return directImportHMAC(key, browserRecordingSaveActorDomain, payload)
 }
 
-type browserRecordingSaveProvenanceProof struct {
-	Version          int    `json:"version"`
-	RecordingID      string `json:"recording_id"`
-	ScriptID         string `json:"script_id"`
-	ProjectID        string `json:"project_id"`
-	Index            int    `json:"index"`
-	Count            int    `json:"count"`
-	ActorHash        string `json:"actor_hash"`
-	Role             string `json:"role"`
-	BaselineRequired bool   `json:"baseline_required"`
-}
+type browserRecordingSaveProvenanceProof = recordbridge.BrowserRecordingSaveProvenanceProof
 
-func browserRecordingSaveProvenanceProofPayload(script *dsl.Script) (browserRecordingSaveProvenanceProof, error) {
-	preserved := browserRecordingImportPreserved(script)
-	if script == nil || preserved == nil {
-		return browserRecordingSaveProvenanceProof{}, errors.New("browser recording save provenance is missing")
-	}
-	baselineRequired, _ := preserved[browserRecordingHARBaselineNeededKey].(bool)
-	payload := browserRecordingSaveProvenanceProof{
-		Version:          browserRecordingPreservedInt(preserved, browserRecordingSaveVersionKey),
-		RecordingID:      browserRecordingPreservedString(preserved, browserRecordingSaveSessionIDKey),
-		ScriptID:         strings.TrimSpace(script.ID),
-		ProjectID:        normalizeProjectID(script.ProjectID),
-		Index:            browserRecordingPreservedInt(preserved, browserRecordingSaveIndexKey),
-		Count:            browserRecordingPreservedInt(preserved, browserRecordingSaveCountKey),
-		ActorHash:        browserRecordingPreservedString(preserved, browserRecordingSaveActorHashKey),
-		Role:             browserRecordingPreservedString(preserved, browserRecordingSaveRoleKey),
-		BaselineRequired: baselineRequired,
-	}
-	if payload.Version != browserRecordingSaveVersion || payload.RecordingID == "" || payload.ScriptID == "" ||
-		payload.ActorHash == "" || payload.Index < 0 || payload.Count <= 0 {
-		return browserRecordingSaveProvenanceProof{}, errors.New("browser recording save provenance is incomplete")
-	}
-	return payload, nil
-}
+var browserRecordingSaveProvenanceProofPayload = recordbridge.BrowserRecordingSaveProvenanceProofPayload
 
 func (s *Server) browserRecordingSaveProvenanceProof(script *dsl.Script) (string, error) {
 	payload, err := browserRecordingSaveProvenanceProofPayload(script)
@@ -2081,26 +1300,7 @@ func (s *Server) rollbackBrowserRecordingSave(
 	)
 }
 
-func applyAutoParameterization(script *dsl.Script) {
-	if script == nil {
-		return
-	}
-	result := paramize.Suggest(script, paramize.Options{EnableDataParams: true, EnableSecrets: true})
-	selected := make(map[string]bool)
-	for _, suggestion := range result.Suggestions {
-		if suggestion.AutoApply && !suggestion.HighRisk {
-			selected[suggestion.ID] = true
-		}
-	}
-	if len(selected) == 0 {
-		return
-	}
-	applied, _, err := paramize.ApplySuggestions(script, result.Suggestions, selected)
-	if err != nil || applied == nil {
-		return
-	}
-	*script = *applied
-}
+var applyAutoParameterization = recordbridge.ApplyAutoParameterization
 
 // createHTTPScriptFromHAR converts the recorded side-car HAR into a
 // protocol-level HTTP script via the shared HAR importer.
@@ -2114,8 +1314,7 @@ var browserRecordingImportWorkflow = importBatchWorkflow{
 }
 
 func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *BrowserRecordingSession, name string) (*dsl.Script, []string, []scriptImportReviewSection, error) {
-	generated, err := s.createHTTPScriptFromHARAtLevel(artifact, info, name, recbrowser.HTTPScriptLevelURL, browserHTTPScriptOptions{})
-	return generated.Script, generated.Warnings, generated.Sections, err
+	return s.recordingHTTPService().CreateHTTPScriptFromHAR(artifact, info, name)
 }
 
 // createHTTPScriptFromHARAtLevel builds the HTTP script at the requested
@@ -2123,155 +1322,24 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 // and form clicks against the replayed page.
 // browserHTTPScriptOptions are the conversion options of a browser
 // recording's HTTP script.
-type browserHTTPScriptOptions struct {
-	AsyncScan          *bool
-	RecordingProfileID string
-	HTTPVersionMode    string
-}
+type browserHTTPScriptOptions = recordbridge.BrowserHTTPScriptOptions
 
 // browserHTTPScript is a browser recording's generated HTTP script with its
 // conversion's warnings, review sections and correlations. Correlations has
 // the shape of a HAR import's: the shared converter's, or the native
 // Salesforce rewrite's when that replaced the script.
-type browserHTTPScript struct {
-	Script       *dsl.Script
-	Warnings     []string
-	Sections     []scriptImportReviewSection
-	Correlations any
-	// Baseline is the recorded observation of each request, keyed by its
-	// action index in Script.
-	Baseline []correlate.Observation
-}
+type browserHTTPScript = recordbridge.BrowserHTTPScript
 
 func (s *Server) createHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, info *BrowserRecordingSession, name, level string, scriptOptions browserHTTPScriptOptions) (browserHTTPScript, error) {
-	if len(artifact.HAR) == 0 {
-		return browserHTTPScript{}, fmt.Errorf("no side-car HAR is available to build an HTTP script")
-	}
-	profile, err := s.projectRecordingProfile(normalizeProjectID(info.ProjectID), scriptOptions.RecordingProfileID)
-	if err != nil {
-		return browserHTTPScript{}, err
-	}
-	if strings.TrimSpace(level) == "" && profile != nil {
-		level = profile.HTTPScriptLevel
-	}
-	httpName := strings.TrimSpace(name)
-	if httpName == "" {
-		httpName = info.Name
-	}
-	httpName += " (HTTP)"
-	options := har.ConvertOptions{ScriptName: httpName, AsyncScan: scriptOptions.AsyncScan, Profile: profile, HTTPVersionMode: scriptOptions.HTTPVersionMode}
-	// The HTTP script times the transactions marked while recording with the
-	// browser script's start and end markers, each request carries the
-	// transaction that was open when it started, and a note attaches to the
-	// request after it, as in the browser script.
-	for _, window := range artifact.TransactionWindows() {
-		options.Transactions = append(options.Transactions, sample.TransactionWindow(window))
-	}
-	for _, note := range marker.Notes(artifact.Markers) {
-		options.Notes = append(options.Notes, sample.TimedNote(note))
-	}
-	var levelNotes []string
-	switch strings.ToLower(strings.TrimSpace(level)) {
-	case "", recbrowser.HTTPScriptLevelURL:
-	case recbrowser.HTTPScriptLevelHTML:
-		options.HTMLSteps, levelNotes = recbrowser.HTMLLevelSteps(artifact.Steps, artifact.HAR)
-	default:
-		return browserHTTPScript{}, fmt.Errorf("http_script_level must be url or html")
-	}
-	result, err := har.Convert(artifact.HAR, options)
-	if err != nil {
-		return browserHTTPScript{}, err
-	}
-	result.Warnings = append(result.Warnings, levelNotes...)
-	if result.Script != nil {
-		result.Script.ProjectID = normalizeProjectID(info.ProjectID)
-		result.Script.GeneratedBy = "browser-recorder"
-		result.Script.GeneratedFrom = "browser_recording_har"
-	}
-	// Use the same native rewrite and review as a direct HAR import. Merely
-	// attaching its review leaves the executable script with recorded Aura state.
-	salesforceDraft := augmentHARImportWithSalesforce(result, artifact.HAR,
-		normalizeProjectID(info.ProjectID), httpName, "browser_recording_har", true, false, true)
-	result.Script = salesforceDraft.Script
-	applyClientGeneratedUUIDs(result.Script, artifact.HAR, result)
-	applyClientTimestamps(result.Script, artifact.HAR, result)
-
-	// Run the shared augmentation over the generated HTTP draft and hand its
-	// sections back. Before this the detectors ran here with their return value
-	// discarded, so an Anypoint or Agentforce finding was preserved on the
-	// script and never reached the operator.
-	// The HAR converter's source review is deliberately not attached here. It
-	// embeds a scrubbed copy of the capture, and this draft is persisted as a
-	// credential-preserving script whose recorded values must survive verbatim —
-	// the recorder already keeps the capture itself as the script's baseline.
-	draft := importDraft{
-		Source:           salesforceDraft.Source,
-		SourceScriptName: httpName,
-		ProjectID:        info.ProjectID,
-		Script:           result.Script,
-		Unsupported:      result.Unsupported,
-		Sections:         salesforceDraft.ReviewSections,
-		Warnings:         result.Warnings,
-	}
-	augmented := draft.augmentWithAgentforceTransform(false)
-	recbrowser.AttachRecordingEnvironment(result.Script, artifact.RecordingEnvironment)
-	return browserHTTPScript{Script: result.Script, Warnings: augmented.Warnings, Sections: augmented.Sections, Correlations: salesforceDraft.Correlations, Baseline: result.Baseline}, nil
+	return s.recordingHTTPService().CreateHTTPScriptFromHARAtLevel(artifact, info, name, level, scriptOptions)
 }
 
 func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, r *http.Request) {
-	artifact, info, ok := s.browserRecording.Artifact(r.PathValue("id"))
-	if !ok {
-		writeError(w, http.StatusNotFound, "browser recording session not found")
-		return
-	}
-	if artifact == nil {
-		writeError(w, http.StatusConflict, "browser recording has no captured session yet")
-		return
-	}
-
-	var previewReq browserRecordingPreviewRequest
-	if !decodeOptionalJSONBody(w, r, &previewReq) || !validHTTPVersionMode(w, previewReq.HTTPVersionMode) {
-		return
-	}
-	req := previewReq.convertRequest()
-
-	result := s.convertBrowserRecording(artifact, info, req)
-	warnings := append([]string(nil), result.Warnings...)
-	scripts := make([]any, 0, len(result.Scripts)+1)
-	for _, sc := range result.Scripts {
-		if sc != nil {
-			scripts = append(scripts, sc)
-		}
-	}
-	var httpScript *dsl.Script
-	var httpSections []scriptImportReviewSection
-	// Correlations are the HTTP output's: browser replay does not correlate.
-	var httpCorrelations any
-	if req.AlsoCreateHTTPScript {
-		generated, err := s.createHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel, browserHTTPScriptOptions{AsyncScan: req.AsyncScan, RecordingProfileID: req.RecordingProfileID, HTTPVersionMode: req.HTTPVersionMode})
-		if err != nil {
-			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
-		} else if generated.Script != nil {
-			httpScript, httpSections, httpCorrelations = generated.Script, generated.Sections, generated.Correlations
-			scripts = append(scripts, httpScript)
-			warnings = append(warnings, generated.Warnings...)
-		}
-	}
-	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Script:           result.Script,
-		Scripts:          scripts,
-		Warnings:         warnings,
-		Stats:            result.Stats,
-		Correlations:     httpCorrelations,
-		ReviewSections:   httpSections,
-		Parameterization: buildImportParameterization(result.Script, nil),
-	})
-	if httpScript != nil {
-		response["http_script"] = httpScript
-	}
-	writeScriptImportResponse(w, http.StatusOK, response)
+	s.recordingHTTPService().HandlePreviewBrowserRecordingConversion(w, r)
 }
 
+// Shared conversion preparation reports semantic review failures as 422.
+// OpenAPI-Responses: 422
 func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req browserRecordingConvertRequest
@@ -2308,159 +1376,15 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	result := s.convertBrowserRecording(artifact, info, req)
-
-	// Store every generated script (one for the single-script path, several
-	// when splitting at transactions).
-	preparedScripts := make([]*dsl.Script, 0, len(result.Scripts))
-	for scriptIndex, sc := range result.Scripts {
-		if sc == nil {
-			continue
-		}
-		parameterizedScript, err := applyBrowserRecordingParameterizationSelections(
-			sc,
-			scriptIndex,
-			req.ParameterizationSelections,
-		)
-		if err != nil {
-			writeError(w, http.StatusConflict, "browser recording parameterization selections are stale or invalid: "+err.Error())
-			return
-		}
-		boundScript, err := applyBrowserRecordingSecretBindings(
-			parameterizedScript,
-			scriptIndex,
-			req.SecretBindings,
-		)
-		if err != nil {
-			writeError(w, http.StatusConflict, "browser recording secret bindings are stale or invalid: "+err.Error())
-			return
-		}
-		result.Scripts[scriptIndex] = boundScript
-		if scriptIndex == 0 {
-			result.Script = boundScript
-		}
-		importedScript, err := preparePersistentImportedLibraryScript(
-			boundScript,
-			nil,
-			"browser_recorder",
-		)
-		if err != nil {
-			writeError(w, http.StatusUnprocessableEntity, "failed to prepare recorded credentials: "+err.Error())
-			return
-		}
-		if err := validateConvertedScriptForCommit(importedScript); err != nil {
-			writeError(w, http.StatusUnprocessableEntity, "browser recording did not produce an executable script: "+err.Error())
-			return
-		}
-		if strings.TrimSpace(importedScript.Version) == "" {
-			importedScript.Version = "1"
-		}
-		preparedScripts = append(preparedScripts, importedScript)
-	}
-	if len(preparedScripts) == 0 {
-		writeError(w, http.StatusUnprocessableEntity, "conversion produced no scripts")
+	prepared, preparationErr := s.recordingHTTPService().PrepareBrowserRecordingConversion(artifact, info, req, s.store != nil)
+	if preparationErr != nil {
+		writeError(w, preparationErr.Status, preparationErr.Message)
 		return
 	}
-
-	warnings := append([]string(nil), result.Warnings...)
-	var httpScript *dsl.Script
-	var preparedHTTPScript *dsl.Script
-	var httpCorrelationBaseline []correlate.Observation
-	var httpWarnings []string
-	if req.AlsoCreateHTTPScript {
-		var err error
-		// The convert route persists the drafts and answers with StoredScripts,
-		// which carry no review sections; the preview route above is where the
-		// generated HTTP draft's sections are shown.
-		var generated browserHTTPScript
-		generated, err = s.createHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel, browserHTTPScriptOptions{AsyncScan: req.AsyncScan, RecordingProfileID: req.RecordingProfileID, HTTPVersionMode: req.HTTPVersionMode})
-		httpScript, httpWarnings = generated.Script, generated.Warnings
-		if err != nil {
-			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
-		} else if httpScript == nil {
-			warnings = append(warnings, "HTTP script generation skipped: conversion produced no script")
-		} else {
-			httpScriptIndex := len(result.Scripts)
-			httpScript, err = applyBrowserRecordingParameterizationSelections(
-				httpScript,
-				httpScriptIndex,
-				req.ParameterizationSelections,
-			)
-			if err != nil {
-				writeError(w, http.StatusConflict, "browser recording HTTP parameterization selections are stale or invalid: "+err.Error())
-				return
-			}
-			httpScript, err = applyBrowserRecordingSecretBindings(
-				httpScript,
-				httpScriptIndex,
-				req.SecretBindings,
-			)
-			if err != nil {
-				writeError(w, http.StatusConflict, "browser recording HTTP secret bindings are stale or invalid: "+err.Error())
-				return
-			}
-			importedHTTPScript, prepareErr := preparePersistentImportedLibraryScript(
-				httpScript,
-				nil,
-				"browser_recording_har",
-			)
-			if prepareErr != nil {
-				warnings = append(warnings, "HTTP script persistence skipped: failed to prepare recorded credentials: "+prepareErr.Error())
-			} else if validationErr := validateConvertedScriptForCommit(importedHTTPScript); validationErr != nil {
-				warnings = append(warnings, "HTTP script persistence skipped: "+validationErr.Error())
-			} else {
-				if strings.TrimSpace(importedHTTPScript.Version) == "" {
-					importedHTTPScript.Version = "1"
-				}
-				preparedHTTPScript = importedHTTPScript
-				// The conversion's own baseline is keyed by each request's action
-				// index, which transaction markers and background conversations
-				// move away from its position among the recorded requests.
-				httpCorrelationBaseline = generated.Baseline
-			}
-		}
-	}
-	if err := validateBrowserRecordingHARBaselinePreparation(
-		s.store != nil,
-		preparedHTTPScript != nil,
-		httpCorrelationBaseline,
-	); err != nil {
-		writeError(w, http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-	availableScriptCount := len(result.Scripts)
-	if httpScript != nil {
-		availableScriptCount++
-	}
-	if err := validateBrowserRecordingSecretBindings(req.SecretBindings, availableScriptCount); err != nil {
-		writeError(w, http.StatusConflict, "browser recording secret bindings are stale or invalid: "+err.Error())
-		return
-	}
-	if err := validateBrowserRecordingParameterizationSelections(
-		req.ParameterizationSelections,
-		availableScriptCount,
-	); err != nil {
-		writeError(w, http.StatusConflict, "browser recording parameterization selections are stale or invalid: "+err.Error())
-		return
-	}
-
-	transactionScripts := append([]*dsl.Script(nil), preparedScripts...)
-	if preparedHTTPScript != nil {
-		transactionScripts = append(transactionScripts, preparedHTTPScript)
-	}
-	if req.ExpectedScriptCount > 0 &&
-		len(transactionScripts) != req.ExpectedScriptCount {
-		writeError(
-			w,
-			http.StatusConflict,
-			fmt.Sprintf(
-				"browser recording conversion changed from %d reviewed script(s) to %d persistable script(s); refresh the preview",
-				req.ExpectedScriptCount,
-				len(transactionScripts),
-			),
-		)
-		return
-	}
+	result, preparedScripts := prepared.Result, prepared.Scripts
+	httpScript, preparedHTTPScript := prepared.HTTPScript, prepared.PreparedHTTPScript
+	httpCorrelationBaseline, httpWarnings := prepared.HTTPBaseline, prepared.HTTPWarnings
+	warnings, transactionScripts := prepared.Warnings, prepared.TransactionScripts
 	projectID := normalizeProjectID(info.ProjectID)
 	for index, script := range transactionScripts {
 		if err := bindDraftScriptProject(script, projectID); err != nil {
@@ -2966,19 +1890,7 @@ func (s *Server) finalizeBrowserRecordingHARBaseline(
 	return validateExisting()
 }
 
-func validateBrowserRecordingHARBaselinePreparation(
-	durable bool,
-	hasHTTPCompanion bool,
-	observations []correlate.Observation,
-) error {
-	if !durable || !hasHTTPCompanion {
-		return nil
-	}
-	if len(observations) == 0 {
-		return errors.New("HTTP correlation baseline could not be prepared because the recorded HAR contains no persistable HTTP exchanges")
-	}
-	return nil
-}
+var validateBrowserRecordingHARBaselinePreparation = recordbridge.ValidateBrowserRecordingHARBaselinePreparation
 
 func splitBrowserRecordingStoredScripts(
 	all []*StoredScript,
@@ -3039,18 +1951,7 @@ func (s *Server) writeSavedBrowserRecordingConversion(
 	writeScriptImportResponse(w, http.StatusCreated, response)
 }
 
-func appendBrowserRecordingScripts(scripts []*dsl.Script, httpScript *dsl.Script) []any {
-	out := make([]any, 0, len(scripts)+1)
-	for _, script := range scripts {
-		if script != nil {
-			out = append(out, script)
-		}
-	}
-	if httpScript != nil {
-		out = append(out, httpScript)
-	}
-	return out
-}
+var appendBrowserRecordingScripts = recordbridge.AppendBrowserRecordingScripts
 
 func storedScriptsForResponse(scripts []*StoredScript, httpScript *StoredScript) []any {
 	out := make([]any, 0, len(scripts)+1)
@@ -3064,354 +1965,62 @@ func storedScriptsForResponse(scripts []*StoredScript, httpScript *StoredScript)
 }
 
 func (s *Server) handleSetBrowserRecordingSection(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Section string `json:"section"`
-	}
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	session, ok, err := s.browserRecording.SetSection(r.PathValue("id"), req.Section)
-	s.writeBrowserRecordingControlResult(w, session, ok, err)
+	s.recordingHTTPService().HandleSetBrowserRecordingSection(w, r)
 }
 
 func (s *Server) handleSetBrowserRecordingPickMode(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		On bool `json:"on"`
-	}
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	session, ok, err := s.browserRecording.SetAssertMode(r.PathValue("id"), req.On)
-	s.writeBrowserRecordingControlResult(w, session, ok, err)
+	s.recordingHTTPService().HandleSetBrowserRecordingPickMode(w, r)
 }
 
 func (s *Server) handleDeleteLastBrowserRecordingStep(w http.ResponseWriter, r *http.Request) {
-	session, ok, err := s.browserRecording.DeleteLastStep(r.PathValue("id"))
-	s.writeBrowserRecordingControlResult(w, session, ok, err)
+	s.recordingHTTPService().HandleDeleteLastBrowserRecordingStep(w, r)
 }
 
 func (s *Server) handleUpdateBrowserRecordingStep(w http.ResponseWriter, r *http.Request) {
-	seq, err := strconv.Atoi(r.PathValue("seq"))
-	if err != nil || seq <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid step sequence")
-		return
-	}
-	var req struct {
-		Excluded        *bool   `json:"excluded,omitempty"`
-		Secret          *bool   `json:"mark_secret,omitempty"`
-		Param           *bool   `json:"mark_param,omitempty"`
-		PromoteSelector *string `json:"promote_selector,omitempty"`
-	}
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	id := r.PathValue("id")
-	if req.Excluded != nil {
-		session, ok, err := s.browserRecording.SetStepExcluded(id, seq, *req.Excluded)
-		s.writeBrowserRecordingControlResult(w, session, ok, err)
-		return
-	}
-	if req.Secret != nil || req.Param != nil {
-		session, ok, err := s.browserRecording.PatchStepMark(id, seq, req.Secret, req.Param)
-		s.writeBrowserRecordingControlResult(w, session, ok, err)
-		return
-	}
-	if req.PromoteSelector != nil {
-		selector := strings.TrimSpace(*req.PromoteSelector)
-		if selector == "" {
-			writeError(w, http.StatusBadRequest, "promote_selector cannot be empty")
-			return
-		}
-		session, ok, err := s.browserRecording.PromoteStepSelector(id, seq, selector)
-		s.writeBrowserRecordingControlResult(w, session, ok, err)
-		return
-	}
-	writeError(w, http.StatusBadRequest, "no step update provided (excluded, mark_secret, mark_param, or promote_selector)")
+	s.recordingHTTPService().HandleUpdateBrowserRecordingStep(w, r)
 }
 
 func (s *Server) handleSuggestBrowserRecordingTransactions(w http.ResponseWriter, r *http.Request) {
-	suggestions, ok := s.browserRecording.SuggestTransactions(r.PathValue("id"))
-	if !ok {
-		writeError(w, http.StatusNotFound, "browser recording session not found")
-		return
-	}
-	if suggestions == nil {
-		suggestions = []recbrowser.TransactionSuggestion{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"suggestions": suggestions})
+	s.recordingHTTPService().HandleSuggestBrowserRecordingTransactions(w, r)
 }
 
 // handleListBrowserRecorderDevices returns the device presets available for
 // emulated recording.
 func (s *Server) handleListBrowserRecorderDevices(w http.ResponseWriter, r *http.Request) {
-	devices := browserprotocol.ListDevices()
-	out := make([]map[string]any, 0, len(devices))
-	for _, d := range devices {
-		out = append(out, map[string]any{
-			"name":                d.Name,
-			"platform":            d.Platform,
-			"width":               d.Width,
-			"height":              d.Height,
-			"device_scale_factor": d.DeviceScaleFactor,
-			"mobile":              d.Mobile,
-			"has_touch":           d.HasTouch,
-		})
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"devices": out})
+	s.recordingHTTPService().HandleListBrowserRecorderDevices(w, r)
 }
 
 // handleExportBrowserRecordingStorageState writes the recording's exported
 // Playwright storage state to a confined export path so it can be reused to
 // skip login on a later recording.
 func (s *Server) handleExportBrowserRecordingStorageState(w http.ResponseWriter, r *http.Request) {
-	artifact, info, ok := s.browserRecording.Artifact(r.PathValue("id"))
-	if !ok {
-		writeError(w, http.StatusNotFound, "browser recording session not found")
-		return
-	}
-	if artifact == nil || len(artifact.StorageState) == 0 {
-		writeError(w, http.StatusConflict, "no storage state is available (the recording is still running or captured none)")
-		return
-	}
-	// persist_only=true keeps the state for later recordings without sending
-	// even the scrubbed copy; it fails unless the state was kept.
-	persistOnly := r.URL.Query().Get("persist_only") == "true"
-	var data []byte
-	if !persistOnly {
-		scrubbed, err := scrubBrowserStorageState(artifact.StorageState)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to scrub storage state: "+err.Error())
-			return
-		}
-		data = scrubbed
-	}
-	relativePath, stateFile := browserStorageStateExportLocation(info)
-	// Persist a confined copy under the export dir so it can be supplied as a
-	// storage_state_path on a later recording. This copy MUST be the RAW storage
-	// state: it is read only server-side to seed a Playwright context (login
-	// reuse), never served to a client — seeding a context with the scrubbed
-	// [REDACTED] cookie values silently breaks session restore. The client
-	// download below still receives the scrubbed state. For a download the copy
-	// is best effort (a failure still allows the download); persist_only fails
-	// unless it was kept.
-	pruneBrowserStorageStateExports(time.Now())
-	persisted := false
-	if confined, err := resolveConfinedExportPath(exportBaseDir(), filepath.Dir(relativePath), filepath.Base(relativePath)); err == nil {
-		if mkErr := os.MkdirAll(filepath.Dir(confined), 0o755); mkErr == nil {
-			if writeErr := os.WriteFile(confined, artifact.StorageState, 0o600); writeErr == nil {
-				w.Header().Set("X-APEXLoad-StorageState-Path", relativePath)
-				persisted = true
-			}
-		}
-	}
-	if persistOnly {
-		if !persisted {
-			writeError(w, http.StatusInternalServerError, "the login state could not be kept on this recorder")
-			return
-		}
-		// The path in the form the saved-state list and a recording start use.
-		writeJSON(w, http.StatusOK, map[string]any{"path": browserStorageStateProjectDir(info.ProjectID) + "/" + stateFile})
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, stateFile))
-	w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
-	w.WriteHeader(http.StatusOK)
-	w.Write(data)
+	s.recordingHTTPService().HandleExportBrowserRecordingStorageState(w, r)
 }
 
-type browserRecordingVerifyRequest struct {
-	Conversion      browserRecordingConvertRequest `json:"conversion,omitempty"`
-	ScriptIndex     int                            `json:"script_index,omitempty"`
-	ReplaySessionID string                         `json:"replay_session_id,omitempty"`
-	// VisibleBrowser replays in a visible browser rather than a headless
-	// one. Some sites refuse a headless browser they let a person's browser
-	// through; on the Recording Agent that browser opens on the workstation.
-	VisibleBrowser bool `json:"visible_browser,omitempty"`
-}
+type browserRecordingVerifyRequest = recordbridge.BrowserRecordingVerifyRequest
 
-type browserRecordingVerifyResponse struct {
-	ReplaySessionID string                `json:"replay_session_id"`
-	ReplaySession   *BrowserReplaySession `json:"replay_session"`
-	Warnings        []string              `json:"warnings,omitempty"`
-}
+type browserRecordingVerifyResponse = recordbridge.BrowserRecordingVerifyResponse
 
 // handleVerifyBrowserRecording converts the stopped recording in-memory and
 // replays it immediately through the browser-replay engine so the user can see
 // per-step pass/fail and self-heal suggestions without saving anything.
 // OpenAPI-Responses: 409, 500, 503
 func (s *Server) handleVerifyBrowserRecording(w http.ResponseWriter, r *http.Request) {
-	if !s.requireExecutionLeader(w) {
-		return
-	}
-	var req browserRecordingVerifyRequest
-	if !decodeOptionalJSONBody(w, r, &req) {
-		return
-	}
-	if !validHTTPVersionMode(w, req.Conversion.HTTPVersionMode) {
-		return
-	}
-	if err := validateExternalReplaySessionID(req.ReplaySessionID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	id := r.PathValue("id")
-	artifact, info, ok := s.browserRecording.Artifact(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "browser recording session not found")
-		return
-	}
-	if artifact == nil {
-		writeError(w, http.StatusConflict, "browser recording has no captured session yet")
-		return
-	}
-	if info.Status != BrowserRecordingStopped {
-		writeError(w, http.StatusConflict, "stop the recording before verifying it")
-		return
-	}
-	result := s.convertBrowserRecording(artifact, info, req.Conversion)
-	scripts := append([]*dsl.Script(nil), result.Scripts...)
-	if req.Conversion.AlsoCreateHTTPScript {
-		generated, err := s.createHTTPScriptFromHARAtLevel(artifact, info, req.Conversion.Name, req.Conversion.HTTPScriptLevel, browserHTTPScriptOptions{AsyncScan: req.Conversion.AsyncScan, RecordingProfileID: req.Conversion.RecordingProfileID, HTTPVersionMode: req.Conversion.HTTPVersionMode})
-		if err != nil {
-			writeError(w, http.StatusUnprocessableEntity, "HTTP conversion failed: "+err.Error())
-			return
-		}
-		result.Warnings = append(result.Warnings, generated.Warnings...)
-		if generated.Script != nil {
-			scripts = append(scripts, generated.Script)
-		}
-	}
-	if req.Conversion.ExpectedScriptCount < 0 || req.ScriptIndex < 0 || req.ScriptIndex >= len(scripts) ||
-		(req.Conversion.ExpectedScriptCount > 0 && req.Conversion.ExpectedScriptCount != len(scripts)) {
-		writeError(w, http.StatusConflict, "conversion outputs changed; refresh the preview before verifying")
-		return
-	}
-	if err := validateBrowserRecordingParameterizationSelections(req.Conversion.ParameterizationSelections, len(scripts)); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := validateBrowserRecordingSecretBindings(req.Conversion.SecretBindings, len(scripts)); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	script, err := applyBrowserRecordingParameterizationSelections(scripts[req.ScriptIndex], req.ScriptIndex, req.Conversion.ParameterizationSelections)
-	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
-		return
-	}
-	script, err = applyBrowserRecordingSecretBindings(script, req.ScriptIndex, req.Conversion.SecretBindings)
-	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
-		return
-	}
-	if script == nil || len(script.Actions)+len(script.Init)+len(script.Teardown) == 0 {
-		writeError(w, http.StatusUnprocessableEntity, "the recording produced no replayable actions")
-		return
-	}
-	if script.ID == "" {
-		script.ID = uuid.New().String()
-	}
-	if req.VisibleBrowser && strings.EqualFold(strings.TrimSpace(script.Protocol), "browser") {
-		headless := false
-		script = applyBrowserReplayOverrides(script, BrowserReplayStartRequest{Browser: &dsl.BrowserConfig{Headless: &headless}})
-	}
-	ignoreThink := true
-	executionCtx, releaseExecutionCtx := s.runner.executionOperationContext(context.Background())
-	replay, replayErr := s.browserReplay.Start(script.ID, script, BrowserReplayStartRequest{
-		GroupName:               script.Name + " — verify",
-		ReplaySessionID:         req.ReplaySessionID,
-		IgnoreThinkTime:         &ignoreThink,
-		executionContext:        executionCtx,
-		releaseExecutionContext: releaseExecutionCtx,
-	})
-	if replayErr != nil {
-		releaseExecutionCtx()
-		writeBrowserReplayStartError(w, replayErr)
-		return
-	}
-	s.recordAuditEvent(r, "browser_recording.verify", "success", "browser_recording", id, info.ProjectID,
-		map[string]any{"replay_session_id": replay.ID, "actions": result.Stats.ConvertedActions})
-	response := browserRecordingVerifyResponse{
-		ReplaySessionID: replay.ID,
-		ReplaySession:   replay,
-		Warnings:        result.Warnings,
-	}
-	writeJSON(w, http.StatusCreated, response)
+	s.recordingHTTPService().HandleVerifyBrowserRecording(w, r)
 }
 
 // handleBrowserRecorderInstall provisions the Playwright driver/Chromium in the
 // background so a controller without browsers can become recording-capable.
 func (s *Server) handleBrowserRecorderInstall(w http.ResponseWriter, r *http.Request) {
-	availability := s.browserRecordingAvailability()
-	if !availability.Available {
-		switch availability.Code {
-		case browserRecordingUnavailableDisabled, browserRecordingUnavailableProductionDisabled:
-			writeJSON(w, http.StatusForbidden, map[string]any{
-				"error":        availability.Reason,
-				"availability": availability,
-			})
-			return
-		}
-	}
-	state := s.browserInstall.start(func() error { return recbrowser.EnsureBrowsers() })
-	s.recordAuditEvent(r, "browser_recording.install", "pending", "browser_recording", "", "", map[string]any{"status": state.Status})
-	writeJSON(w, http.StatusAccepted, map[string]any{"install": state})
+	s.recordingHTTPService().HandleBrowserRecorderInstall(w, r)
 }
 
 func (s *Server) handleGetBrowserRecorderInstall(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"install": s.browserInstall.snapshot()})
+	s.recordingHTTPService().HandleGetBrowserRecorderInstall(w, r)
 }
 
 func (s *Server) handleExportBrowserRecording(w http.ResponseWriter, r *http.Request) {
-	extendArtifactWriteDeadline(w)
-	artifact, info, ok := s.browserRecording.Artifact(r.PathValue("id"))
-	if !ok {
-		writeError(w, http.StatusNotFound, "browser recording session not found")
-		return
-	}
-	format := strings.ToLower(r.URL.Query().Get("format"))
-	if format == "" {
-		format = "har"
-	}
-	if format != "har" {
-		writeError(w, http.StatusBadRequest, "unsupported browser recording export format: "+format)
-		return
-	}
-	if artifact == nil || len(artifact.HAR) == 0 {
-		writeError(w, http.StatusConflict, "no side-car HAR is available for this recording (HAR capture disabled or recording still running)")
-		return
-	}
-
-	data := artifact.HAR
-	raw := rawRecordingExportRequested(r)
-	if raw && !s.canExportRawRecording(r, info.ProjectID) {
-		s.recordAuditEvent(r, "browser_recording.export_har_raw", "denied", "browser_recording", info.ID, info.ProjectID, map[string]any{"reason": "insufficient_role"})
-		writeError(w, http.StatusForbidden, "raw browser recording export requires editor, project_admin, or system_admin access")
-		return
-	}
-
-	sensitivity := scrub.SensitivityRaw
-	if !raw {
-		scrubbed, err := scrub.HAR(data, scrub.Policy{})
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to scrub HAR: "+err.Error())
-			return
-		}
-		data = scrubbed
-		sensitivity = scrub.SensitivityScrubbed
-	}
-	s.recordAuditEvent(r, "browser_recording.export_har", "success", "browser_recording", info.ID, info.ProjectID, map[string]any{"sensitivity": sensitivity, "raw": raw})
-
-	filename := sanitizeDownloadName(info.Name)
-	if filename == "" {
-		filename = "browser-recording"
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.har"`, filename))
-	w.Header().Set("X-APEXLoad-Sensitivity", sensitivity)
-	w.WriteHeader(http.StatusOK)
-	w.Write(data)
+	s.recordingHTTPService().HandleExportBrowserRecording(w, r)
 }
 
 var browserNavigationErrorCode = regexp.MustCompile(`net::(ERR_[A-Z_]+)`)
@@ -3420,25 +2029,5 @@ var browserNavigationErrorCode = regexp.MustCompile(`net::(ERR_[A-Z_]+)`)
 // (net::ERR_* from the browser) into a reason the operator can act on,
 // instead of a 500 carrying the browser engine's call log.
 func browserRecordingNavigationFailure(err error, startURL string) (string, bool) {
-	match := browserNavigationErrorCode.FindStringSubmatch(err.Error())
-	if match == nil {
-		return "", false
-	}
-	code := match[1]
-	var why string
-	switch {
-	case code == "ERR_NAME_NOT_RESOLVED":
-		why = "its host name could not be resolved"
-	case code == "ERR_CONNECTION_REFUSED":
-		why = "the connection was refused"
-	case code == "ERR_SSL_PROTOCOL_ERROR" || strings.HasPrefix(code, "ERR_CERT_") || strings.HasPrefix(code, "ERR_SSL_"):
-		why = "the secure (TLS) connection failed"
-	case code == "ERR_CONNECTION_TIMED_OUT" || code == "ERR_TIMED_OUT":
-		why = "the connection timed out"
-	case code == "ERR_ADDRESS_UNREACHABLE" || code == "ERR_INTERNET_DISCONNECTED" || code == "ERR_NETWORK_CHANGED":
-		why = "the address is unreachable from the recording machine"
-	default:
-		why = "the page did not load"
-	}
-	return fmt.Sprintf("The recording browser could not open %s: %s (%s). Check the address and that the recording machine can reach it, then start again.", scrub.ValueURL(startURL, scrub.Policy{}), why, code), true
+	return recordbridge.BrowserRecordingNavigationFailure(err, startURL)
 }

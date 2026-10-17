@@ -244,7 +244,7 @@ func TestEnterpriseArchiveCollectionRejectsLooseSourceBesideNestedProjects(t *te
 				if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 					t.Fatal(err)
 				}
-				if payload["script"] != nil || payload["scripts"] != nil || len(server.importDraftAttestations) > 0 || len(server.sourceSecretSessions) > 0 {
+				if payload["script"] != nil || payload["scripts"] != nil || server.memoryImportDraftOwner().Len() > 0 || len(server.sourceSecretSessions) > 0 {
 					t.Fatal("ambiguous package published a partial executable draft or review capabilities")
 				}
 			})
@@ -513,13 +513,13 @@ func TestEnterpriseArchiveCollectionDiscardsCapabilitiesWhenNotPublished(t *test
 				}
 			case "published":
 				server.handleImportEnterpriseArchive(response, request)
-				if response.Code != http.StatusOK || len(server.sourceSecretSessions) == 0 || len(server.importDraftAttestations) == 0 {
-					t.Fatalf("published review lost its usable capabilities: status=%d source sessions=%d drafts=%d", response.Code, len(server.sourceSecretSessions), len(server.importDraftAttestations))
+				if response.Code != http.StatusOK || len(server.sourceSecretSessions) == 0 || server.memoryImportDraftOwner().Len() == 0 {
+					t.Fatalf("published review lost its usable capabilities: status=%d source sessions=%d drafts=%d", response.Code, len(server.sourceSecretSessions), server.memoryImportDraftOwner().Len())
 				}
 				return
 			}
-			if len(server.sourceSecretSessions) != 0 || len(server.importDraftAttestations) != 0 {
-				t.Fatalf("unpublished collection retained source sessions=%d drafts=%d", len(server.sourceSecretSessions), len(server.importDraftAttestations))
+			if len(server.sourceSecretSessions) != 0 || server.memoryImportDraftOwner().Len() != 0 {
+				t.Fatalf("unpublished collection retained source sessions=%d drafts=%d", len(server.sourceSecretSessions), server.memoryImportDraftOwner().Len())
 			}
 		})
 	}
@@ -635,8 +635,8 @@ func TestEnterpriseArchiveCollectionCanceledBeforeConversionDoesNotAllocateDraft
 		response := httptest.NewRecorder()
 		server.handleImportEnterpriseArchive(response, request.WithContext(ctx))
 		cancel()
-		if response.Code != http.StatusRequestTimeout || len(server.importDraftAttestations) != 0 || len(server.sourceSecretSessions) != 0 {
-			t.Fatalf("canceled collection: timeout=%v status=%d drafts=%d sources=%d", timeout, response.Code, len(server.importDraftAttestations), len(server.sourceSecretSessions))
+		if response.Code != http.StatusRequestTimeout || server.memoryImportDraftOwner().Len() != 0 || len(server.sourceSecretSessions) != 0 {
+			t.Fatalf("canceled collection: timeout=%v status=%d drafts=%d sources=%d", timeout, response.Code, server.memoryImportDraftOwner().Len(), len(server.sourceSecretSessions))
 		}
 	}
 }

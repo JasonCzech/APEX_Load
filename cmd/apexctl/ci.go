@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/cmd/apexctl/internal/ciclient"
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
@@ -686,84 +687,55 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 	}
 	client := NewApiClientWithAuth(args.controllerURL, clientAPIKey, "")
 	auth := &ciAuthSession{mode: strings.ToLower(args.authMode), projectID: args.projectID}
-	created, err := retryControllerCIRequest(ctx, auth, client, func() (*CIRunResponse, error) {
+	coordinator := newCIRequestCoordinator(auth, client)
+	coordinator.Transport.Create = func(ctx context.Context) (*CIRunResponse, error) {
 		return client.CreateCIRun(ctx, request, idempotencyKey)
-	})
+	}
+	persistEvidence := func(state ciclient.State[*CIRunResponse], err error) {
+		persistCICoreEvidenceBeforeAbort(args, controllerCIResult(state, err))
+	}
+	coordinator.BeforeAbort = persistEvidence
+	coordinator.OnObservationFailure = persistEvidence
+	state, err := coordinator.Run(ctx, deterministicCITestID(args.projectID, idempotencyKey), args.abortOnCancel)
+	result := controllerCIResult(state, err)
 	if err != nil {
-		status := "CREATE_FAILED"
-		var authFailure *ciControllerAuthFailure
-		if errors.As(err, &authFailure) {
-			status = "AUTH_FAILED"
-		}
-		failure := CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciFailureOutcome(err), Status: status, TestID: deterministicCITestID(args.projectID, idempotencyKey)}
-		if ctx.Err() != nil {
-			return finalizeControllerCICancellation(ctx, args, auth, client, failure, err)
-		}
-		return failure, err
+		return result, err
 	}
-	result := ciResultFromResponse(created)
-
-	for {
-		if ctx.Err() != nil {
-			return finalizeControllerCICancellation(ctx, args, auth, client, result, nil)
-		}
-		if isTerminalCIResponse(created) {
-			classifyCIResult(&result)
-			if checkErr := enforceRequiredCICheck(args, created, &result); checkErr != nil {
-				return result, checkErr
-			}
-			if args.waitAnalysis > 0 {
-				result.RootCause = waitForCIRootCause(ctx, auth, client, created, args.waitAnalysis)
-			}
-			return result, nil
-		}
-		select {
-		case <-ctx.Done():
-			return finalizeControllerCICancellation(ctx, args, auth, client, result, nil)
-		case <-time.After(ciPollInterval):
-		}
-		created, err = retryControllerCIRequest(ctx, auth, client, func() (*CIRunResponse, error) {
-			return client.GetCIRun(ctx, created.TestID)
-		})
-		if err != nil {
-			if ctx.Err() != nil {
-				return finalizeControllerCICancellation(ctx, args, auth, client, result, err)
-			}
-			result.Outcome = ciFailureOutcome(err)
-			result.Status = "STATUS_FAILED"
-			persistCICoreEvidenceBeforeAbort(args, result)
-			// A polling/transport failure is not workflow cancellation. The
-			// controller continues to own the run and its Check lifecycle, so do
-			// not turn a temporary observation failure into a destructive abort.
-			return result, err
-		}
-		result = ciResultFromResponse(created)
+	classifyCIResult(&result)
+	if checkErr := enforceRequiredCICheck(args, state.Response, &result); checkErr != nil {
+		return result, checkErr
 	}
+	if args.waitAnalysis > 0 {
+		result.RootCause = waitForCIRootCause(ctx, auth, client, state.Response, args.waitAnalysis)
+	}
+	return result, nil
 }
 
-// finalizeControllerCICancellation owns the result and abort policy for all
-// cancellation boundaries: creation, status/auth requests, retry backoff, and
-// the poll timer. Observation errors alone must never enter this path.
-func finalizeControllerCICancellation(ctx context.Context, args ciArgs, auth *ciAuthSession, client *ApiClient, result CIResult, requestErr error) (CIResult, error) {
-	cause := ctx.Err()
-	result.Outcome, result.Status = ciOutcomeCancelled, "CANCELLED"
-	if errors.Is(cause, context.DeadlineExceeded) {
-		result.Outcome, result.Status = ciOutcomeTimedOut, "TIMED_OUT"
+// Result and exit policy stay in the command adapter; the coordinator returns
+// the last complete response plus the boundary that ended observation.
+func controllerCIResult(state ciclient.State[*CIRunResponse], err error) CIResult {
+	result := CIResult{SchemaVersion: ciSchemaVersion, TestID: state.TestID}
+	if state.Observed {
+		result = ciResultFromResponse(state.Response)
 	}
-	if requestErr == nil {
-		requestErr = cause
-	} else if !errors.Is(requestErr, cause) {
-		requestErr = errors.Join(requestErr, cause)
-	}
-	persistCICoreEvidenceBeforeAbort(args, result)
-	if args.abortOnCancel {
-		// The workflow context has expired. Abort still needs its own bounded
-		// lifetime so the controller can confirm it stopped the accepted run.
-		if abortErr := abortControllerCIRun(context.Background(), auth, client, result.TestID, ciAbortReason(cause)); abortErr != nil {
-			return result, errors.Join(requestErr, fmt.Errorf("controller may still be running the cancelled CI load: %w", abortErr))
+	if state.Cancellation != nil {
+		result.Outcome, result.Status = ciOutcomeCancelled, "CANCELLED"
+		if errors.Is(state.Cancellation, context.DeadlineExceeded) {
+			result.Outcome, result.Status = ciOutcomeTimedOut, "TIMED_OUT"
+		}
+	} else if err != nil {
+		result.Outcome = ciFailureOutcome(err)
+		result.Status = "CREATE_FAILED"
+		if state.Observed {
+			result.Status = "STATUS_FAILED"
+		} else {
+			var authFailure *ciControllerAuthFailure
+			if errors.As(err, &authFailure) {
+				result.Status = "AUTH_FAILED"
+			}
 		}
 	}
-	return result, requestErr
+	return result
 }
 
 type ciFileProvenance struct {
@@ -1139,196 +1111,77 @@ func validCIGitObjectID(value string) bool {
 	return true
 }
 
-type ciControllerAuthFailure struct {
-	err error
+// Compatibility helpers adapt existing command tests and callers to an
+// instance-owned coordinator. Retry knobs are copied at construction, so the
+// internal package never reads command globals or environment variables.
+type ciControllerAuthFailure = ciclient.AuthError
+
+func ciRetryPolicy() ciclient.RetryPolicy {
+	return ciclient.RetryPolicy{
+		Attempts: ciControllerRequestAttempts, BaseDelay: ciControllerRetryBaseDelay,
+		MaxDelay: ciControllerRetryMaxDelay, Window: ciControllerRetryWindow,
+	}
 }
 
-func (e *ciControllerAuthFailure) Error() string {
-	if e == nil || e.err == nil {
-		return "controller CI authentication failed"
+func classifyCIRequestError(err error) ciclient.Failure {
+	failure := ciclient.Failure{}
+	var configurationFailure *ciConfigurationFailure
+	failure.Permanent = errors.As(err, &configurationFailure)
+	var apiErr *CIAPIError
+	if errors.As(err, &apiErr) {
+		failure.HTTPStatus, failure.RetryAfter = apiErr.StatusCode, apiErr.RetryAfter
 	}
-	return fmt.Sprintf("controller CI authentication failed: %v", e.err)
+	return failure
 }
 
-func (e *ciControllerAuthFailure) Unwrap() error {
-	if e == nil {
-		return nil
+func newCIRequestCoordinator(auth *ciAuthSession, client *ApiClient) *ciclient.Coordinator[*CIRunResponse] {
+	coordinator := &ciclient.Coordinator[*CIRunResponse]{
+		Retry: ciRetryPolicy(), PollInterval: ciPollInterval, AbortTimeout: ciAbortConfirmationTimeout,
+		Classify: classifyCIRequestError,
+		Transport: ciclient.Transport[*CIRunResponse]{
+			Get: client.GetCIRun,
+			Abort: func(ctx context.Context, id, reason string) (bool, error) {
+				response, err := client.AbortCIRunWithReason(ctx, id, reason)
+				return response != nil && isTerminalCIStatus(response.Status), err
+			},
+			Inspect: func(response *CIRunResponse) ciclient.Observation {
+				if response == nil {
+					return ciclient.Observation{}
+				}
+				return ciclient.Observation{TestID: response.TestID, Terminal: isTerminalCIResponse(response)}
+			},
+		},
 	}
-	return e.err
+	if auth != nil {
+		coordinator.Auth = auth.forClient(client)
+	}
+	return coordinator
 }
 
 func retryControllerCIRequest(ctx context.Context, auth *ciAuthSession, client *ApiClient, operation func() (*CIRunResponse, error)) (*CIRunResponse, error) {
-	if operation == nil {
-		return nil, fmt.Errorf("controller CI operation is required")
-	}
-	attempts := ciControllerRequestAttempts
-	if attempts < 1 {
-		attempts = 1
-	}
-	started := time.Now()
-	var lastErr error
-	lastFailureWasAuth := false
-	refreshedUnauthorized := false
-	for attempt := 0; attempt < attempts; attempt++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if auth != nil && client != nil {
-			if err := auth.ensure(ctx, client); err != nil {
-				lastErr = err
-				lastFailureWasAuth = true
-			} else {
-				response, err := operation()
-				if err == nil {
-					return response, nil
-				}
-				lastErr = err
-				lastFailureWasAuth = false
-				var apiErr *CIAPIError
-				if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized && auth.mode != "api-key" && !refreshedUnauthorized {
-					refreshedUnauthorized = true
-					client.BearerToken = ""
-					auth.expiresAt = time.Time{}
-					continue
-				}
-			}
-		}
-		if !ciControllerRequestRetryable(lastErr) || attempt == attempts-1 {
-			return nil, classifyControllerRetryError(lastErr, lastFailureWasAuth)
-		}
-		delay := ciControllerRetryDelay(attempt, lastErr)
-		if ciControllerRetryWindow > 0 {
-			remaining := ciControllerRetryWindow - time.Since(started)
-			if remaining <= 0 {
-				return nil, classifyControllerRetryError(lastErr, lastFailureWasAuth)
-			}
-			if delay > remaining {
-				delay = remaining
-			}
-		}
-		if err := waitForControllerCIRetry(ctx, delay); err != nil {
-			return nil, err
-		}
-	}
-	return nil, classifyControllerRetryError(lastErr, lastFailureWasAuth)
-}
-
-func classifyControllerRetryError(err error, authentication bool) error {
-	if err == nil || !authentication {
-		return err
-	}
-	return &ciControllerAuthFailure{err: err}
+	return newCIRequestCoordinator(auth, client).Request(ctx, operation)
 }
 
 func ciControllerRetryDelay(attempt int, err error) time.Duration {
-	delay := ciControllerRetryBaseDelay
-	if delay < 0 {
-		delay = 0
-	}
-	maxDelay := ciControllerRetryMaxDelay
-	if maxDelay > 0 {
-		for step := 0; step < attempt && delay < maxDelay; step++ {
-			if delay > maxDelay/2 {
-				delay = maxDelay
-				break
-			}
-			delay *= 2
-		}
-		if delay > maxDelay {
-			delay = maxDelay
-		}
-	} else {
-		for step := 0; step < attempt; step++ {
-			if delay >= time.Duration(1<<62) {
-				delay = time.Duration(1<<63 - 1)
-				break
-			}
-			delay *= 2
-		}
-	}
-	var apiErr *CIAPIError
-	if errors.As(err, &apiErr) && apiErr.RetryAfter > delay {
-		delay = apiErr.RetryAfter
-	}
-	return delay
+	return ciRetryPolicy().Delay(attempt, classifyCIRequestError(err))
 }
 
 func waitForControllerCIRetry(ctx context.Context, delay time.Duration) error {
-	if delay <= 0 {
-		return ctx.Err()
-	}
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
+	return ciclient.Wait(ctx, delay)
 }
 
 func ciControllerRequestRetryable(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return false
-	}
-	var configurationFailure *ciConfigurationFailure
-	if errors.As(err, &configurationFailure) {
-		return false
-	}
-	var apiErr *CIAPIError
-	if !errors.As(err, &apiErr) {
-		return true
-	}
-	return apiErr.StatusCode == http.StatusRequestTimeout || apiErr.StatusCode == http.StatusTooManyRequests || apiErr.StatusCode >= 500
+	return ciclient.Retryable(err, classifyCIRequestError(err))
 }
 
 func abortControllerCIRun(parent context.Context, auth *ciAuthSession, client *ApiClient, testID string, reason string) error {
 	if strings.TrimSpace(testID) == "" || auth == nil || client == nil {
 		return nil
 	}
-	abortCtx, cancel := context.WithTimeout(parent, ciAbortConfirmationTimeout)
-	defer cancel()
-	for attempt := 0; ; attempt++ {
-		if err := abortCtx.Err(); err != nil {
-			return err
-		}
-		var retryErr error
-		if err := auth.ensure(abortCtx, client); err != nil {
-			retryErr = err
-		} else {
-			response, err := client.AbortCIRunWithReason(abortCtx, testID, reason)
-			if err == nil {
-				if response != nil && isTerminalCIStatus(response.Status) {
-					return nil
-				}
-				status, statusErr := client.GetCIRun(abortCtx, testID)
-				if statusErr == nil {
-					if status != nil && isTerminalCIResponse(status) {
-						return nil
-					}
-					retryErr = errCIAbortConfirmationPending
-				} else {
-					retryErr = statusErr
-				}
-			} else {
-				retryErr = err
-			}
-			var apiErr *CIAPIError
-			if errors.As(retryErr, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized && auth.mode != "api-key" {
-				client.BearerToken = ""
-				auth.expiresAt = time.Time{}
-			}
-		}
-		if !ciAbortRetryable(retryErr) {
-			return retryErr
-		}
-		if err := waitForControllerCIRetry(abortCtx, ciControllerRetryDelay(attempt, retryErr)); err != nil {
-			return err
-		}
-	}
+	return newCIRequestCoordinator(auth, client).Abort(parent, testID, reason)
 }
 
-var errCIAbortConfirmationPending = errors.New("controller has not confirmed CI run abort")
+var errCIAbortConfirmationPending = ciclient.ErrAbortConfirmationPending
 
 func isTerminalCIStatus(status string) bool {
 	switch strings.ToUpper(strings.TrimSpace(status)) {
@@ -1339,71 +1192,48 @@ func isTerminalCIStatus(status string) bool {
 	}
 }
 
-func ciAbortReason(err error) string {
-	if errors.Is(err, context.DeadlineExceeded) {
-		return "timed_out"
-	}
-	if errors.Is(err, context.Canceled) {
-		return "cancelled"
-	}
-	return ""
-}
+func ciAbortReason(err error) string { return ciclient.AbortReason(err) }
 
 func ciAbortRetryable(err error) bool {
-	if errors.Is(err, errCIAbortConfirmationPending) {
-		return true
-	}
-	var apiErr *CIAPIError
-	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
-		return true
-	}
-	return ciControllerRequestRetryable(err)
+	return ciclient.AbortRetryable(err, classifyCIRequestError(err))
 }
 
 type ciAuthSession struct {
-	mode      string
-	projectID string
-	expiresAt time.Time
-	discovery *CIDiscovery
+	mode, projectID string
+	client          *ApiClient
+	session         *ciclient.Session
+}
+
+func (a *ciAuthSession) forClient(client *ApiClient) *ciclient.Session {
+	if a.session == nil || a.client != client {
+		a.client = client
+		a.session = &ciclient.Session{Mode: a.mode, ProjectID: a.projectID, Ports: ciclient.AuthPorts{
+			APIKey:         func() string { return client.APIKey },
+			BearerToken:    func() string { return client.BearerToken },
+			SetBearerToken: func(token string) { client.BearerToken = token },
+			Discover: func(ctx context.Context) (ciclient.Discovery, error) {
+				discovery, err := client.DiscoverCI(ctx)
+				if err != nil {
+					return ciclient.Discovery{}, err
+				}
+				return ciclient.Discovery{Audience: discovery.OIDCAudience, Modes: discovery.AuthModes}, nil
+			},
+			RequestIDToken: requestGitHubIDToken,
+			Exchange: func(ctx context.Context, token, projectID string) (ciclient.Token, error) {
+				exchanged, err := client.ExchangeGitHubOIDC(ctx, CIExchangeRequest{IDToken: token, ProjectID: projectID})
+				if err != nil {
+					return ciclient.Token{}, err
+				}
+				return ciclient.Token{Value: exchanged.AccessToken, ExpiresAt: exchanged.ExpiresAt, ExpiresIn: exchanged.ExpiresIn}, nil
+			},
+			ConfigurationError: func(message string) error { return ciConfigurationErrorf("%s", message) },
+		}}
+	}
+	return a.session
 }
 
 func (a *ciAuthSession) ensure(ctx context.Context, client *ApiClient) error {
-	if a.mode == "api-key" {
-		if strings.TrimSpace(client.APIKey) == "" {
-			return ciConfigurationErrorf("APEXLOAD_API_KEY is not set")
-		}
-		return nil
-	}
-	if client.BearerToken != "" && time.Until(a.expiresAt) > time.Minute {
-		return nil
-	}
-	if a.discovery == nil {
-		discovery, err := client.DiscoverCI(ctx)
-		if err != nil {
-			return fmt.Errorf("discover controller CI authentication: %w", err)
-		}
-		if !containsCIString(discovery.AuthModes, "oidc") || strings.TrimSpace(discovery.OIDCAudience) == "" {
-			return ciConfigurationErrorf("controller does not advertise GitHub Actions OIDC")
-		}
-		a.discovery = discovery
-	}
-	idToken, err := requestGitHubIDToken(ctx, a.discovery.OIDCAudience)
-	if err != nil {
-		return err
-	}
-	exchanged, err := client.ExchangeGitHubOIDC(ctx, CIExchangeRequest{IDToken: idToken, ProjectID: a.projectID})
-	if err != nil {
-		return fmt.Errorf("exchange GitHub OIDC token: %w", err)
-	}
-	client.BearerToken = exchanged.AccessToken
-	a.expiresAt = exchanged.ExpiresAt
-	if a.expiresAt.IsZero() && exchanged.ExpiresIn > 0 {
-		a.expiresAt = time.Now().Add(time.Duration(exchanged.ExpiresIn) * time.Second)
-	}
-	if a.expiresAt.IsZero() {
-		a.expiresAt = time.Now().Add(5 * time.Minute)
-	}
-	return nil
+	return a.forClient(client).Ensure(ctx)
 }
 
 func requestGitHubIDToken(ctx context.Context, audience string) (string, error) {
@@ -1663,27 +1493,13 @@ func ciValidityVerdict(validity *CIRunValidity) string {
 // outcome is already decided; a poll that fails or the overall deadline only
 // end the wait.
 func waitForCIRootCause(ctx context.Context, auth *ciAuthSession, client *ApiClient, response *CIRunResponse, wait time.Duration) *CIRunRootCause {
-	rootCause := response.RootCause.clone()
-	if !rootCause.pending() {
-		return rootCause
+	latest := newCIRequestCoordinator(auth, client).WaitFor(ctx, response, wait, func(current *CIRunResponse) bool {
+		return current != nil && current.RootCause.pending()
+	})
+	if latest == nil {
+		return nil
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, wait)
-	defer cancel()
-	for rootCause.pending() {
-		select {
-		case <-waitCtx.Done():
-			return rootCause
-		case <-time.After(ciPollInterval):
-		}
-		latest, err := retryControllerCIRequest(waitCtx, auth, client, func() (*CIRunResponse, error) {
-			return client.GetCIRun(waitCtx, response.TestID)
-		})
-		if err != nil || latest == nil {
-			return rootCause
-		}
-		rootCause = latest.RootCause.clone()
-	}
-	return rootCause
+	return latest.RootCause.clone()
 }
 
 func ciResultFromResponse(response *CIRunResponse) CIResult {

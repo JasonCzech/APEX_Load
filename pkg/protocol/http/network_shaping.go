@@ -9,6 +9,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 type networkSimulationProfile struct {
@@ -184,6 +186,5 @@ func roundDurationToMillis(value time.Duration) time.Duration {
 // custom mode that resolves to latency or bandwidth, or any jitter or loss.
 // Shaping wraps TCP connections only, which is why QUIC policies reject it.
 func NetworkShapingActive(mode, preset string, latencyMS, bandwidthKbps, jitterMS int, packetLossPct float64) bool {
-	latency, bandwidth := resolveNetworkProfile(mode, preset, latencyMS, bandwidthKbps)
-	return latency > 0 || bandwidth > 0 || jitterMS > 0 || packetLossPct > 0
+	return httpcontract.NetworkShapingActive(mode, preset, latencyMS, bandwidthKbps, jitterMS, packetLossPct)
 }

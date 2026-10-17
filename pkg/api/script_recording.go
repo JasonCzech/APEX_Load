@@ -1,8 +1,10 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/recordbridge"
+
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,24 +36,9 @@ type attestedRecordingBaseline struct {
 	observations []correlate.Observation
 }
 
-func recordingBaselineSnapshotDigest(session *recorder.Session) (string, error) {
-	payload, err := json.Marshal(recorder.SessionBaseline(session))
-	if err != nil {
-		return "", fmt.Errorf("marshal recording baseline snapshot: %w", err)
-	}
-	sum := sha256.Sum256(payload)
-	return "sha256:" + hex.EncodeToString(sum[:]), nil
-}
+var recordingBaselineSnapshotDigest = recordbridge.RecordingBaselineSnapshotDigest
 
-type correlationActionGraph struct {
-	Protocol    string           `json:"protocol"`
-	Config      dsl.ScriptConfig `json:"config"`
-	DataSources []dsl.DataSource `json:"data_sources"`
-	Parameters  []dsl.Parameter  `json:"parameters"`
-	Init        []dsl.Action     `json:"init"`
-	Actions     []dsl.Action     `json:"actions"`
-	Teardown    []dsl.Action     `json:"teardown"`
-}
+type correlationActionGraph = importreview.CorrelationActionGraph
 
 // scriptCorrelationActionGraphDigest returns a stable identity for the exact
 // executable action topology and request surfaces to which correlation
@@ -61,39 +48,7 @@ type correlationActionGraph struct {
 // display-only fields are deliberately excluded. encoding/json sorts
 // string-keyed maps, and the non-nil slice projection makes nil and empty
 // action sections equivalent.
-func scriptCorrelationActionGraphDigest(script *dsl.Script) (string, error) {
-	if script == nil {
-		return "", fmt.Errorf("script is required")
-	}
-	actions := func(input []dsl.Action) []dsl.Action {
-		if len(input) == 0 {
-			return []dsl.Action{}
-		}
-		return input
-	}
-	dataSources := script.DataSources
-	if len(dataSources) == 0 {
-		dataSources = []dsl.DataSource{}
-	}
-	parameters := script.Parameters
-	if len(parameters) == 0 {
-		parameters = []dsl.Parameter{}
-	}
-	payload, err := json.Marshal(correlationActionGraph{
-		Protocol:    strings.ToLower(strings.TrimSpace(script.Protocol)),
-		Config:      script.Config,
-		DataSources: dataSources,
-		Parameters:  parameters,
-		Init:        actions(script.Init),
-		Actions:     actions(script.Actions),
-		Teardown:    actions(script.Teardown),
-	})
-	if err != nil {
-		return "", fmt.Errorf("marshal script action graph: %w", err)
-	}
-	sum := sha256.Sum256(payload)
-	return "sha256:" + hex.EncodeToString(sum[:]), nil
-}
+var scriptCorrelationActionGraphDigest = importreview.ScriptCorrelationActionGraphDigest
 
 func validateRecordingActionGraph(record *storage.ScriptRecordingRecord, script *dsl.Script) error {
 	if record == nil {

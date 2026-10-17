@@ -72,7 +72,7 @@ func TestAssignWorkStagesNewGroupAfterCommitWithoutReopeningLiveRun(t *testing.T
 
 	service.mu.RLock()
 	assignment := service.assignments[first.GetTestId()]
-	_, hasStageTimer := service.stageTimers[first.GetTestId()]
+	_, hasStageTimer := service.lifecycleCoordinator.stageTimers[first.GetTestId()]
 	firstExecution := service.executions[first.GetTestId()][first.GetGroupName()]
 	lateExecution := service.executions[first.GetTestId()]["group-b"]
 	service.mu.RUnlock()
@@ -98,7 +98,7 @@ func TestAssignWorkStagesNewGroupAfterCommitWithoutReopeningLiveRun(t *testing.T
 	}
 	service.mu.RLock()
 	assignment = service.assignments[first.GetTestId()]
-	_, hasStageTimer = service.stageTimers[first.GetTestId()]
+	_, hasStageTimer = service.lifecycleCoordinator.stageTimers[first.GetTestId()]
 	lateStarted := service.executions[first.GetTestId()]["group-b"].started.Load()
 	service.mu.RUnlock()
 	if !assignment.committed || !lateStarted || hasStageTimer {
@@ -300,7 +300,7 @@ func TestGracefulStopDiscardsLateStagedGroupBeforeRunningGroupDrains(t *testing.
 	}
 	service.mu.RLock()
 	_, stagedStillTracked := service.executions[first.GetTestId()]["staged"]
-	_, hasStageTimer := service.stageTimers[first.GetTestId()]
+	_, hasStageTimer := service.lifecycleCoordinator.stageTimers[first.GetTestId()]
 	service.mu.RUnlock()
 	if stagedStillTracked || hasStageTimer {
 		t.Fatalf("graceful stop retained staged state: execution=%v timer=%v", stagedStillTracked, hasStageTimer)
@@ -310,7 +310,7 @@ func TestGracefulStopDiscardsLateStagedGroupBeforeRunningGroupDrains(t *testing.
 	for {
 		service.mu.RLock()
 		_, assigned := service.assignments[first.GetTestId()]
-		_, stopping := service.stoppingTests[first.GetTestId()]
+		_, stopping := service.lifecycleCoordinator.stoppingTests[first.GetTestId()]
 		service.mu.RUnlock()
 		if !assigned && !stopping {
 			break
@@ -434,7 +434,7 @@ func TestStoppingAssignmentRejectsEveryMutableControl(t *testing.T) {
 		groups:       map[string]int32{"group": 2},
 		activeGroups: map[string]int32{"group": 2},
 	}
-	service.stoppingTests["run"] = struct{}{}
+	service.lifecycleCoordinator.stoppingTests["run"] = struct{}{}
 
 	assertStopping := func(name string, err error) {
 		t.Helper()
@@ -495,7 +495,7 @@ func TestArchiveWriteFailureIsStickyAndFailsActiveAssignment(t *testing.T) {
 	for {
 		service.mu.RLock()
 		_, assigned := service.assignments["run"]
-		_, stopping := service.stoppingTests["run"]
+		_, stopping := service.lifecycleCoordinator.stoppingTests["run"]
 		service.mu.RUnlock()
 		if !assigned && !stopping {
 			break

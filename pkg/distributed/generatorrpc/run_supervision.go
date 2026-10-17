@@ -415,7 +415,7 @@ func (s *Service) validateRunMutationTokenLocked(testID string, generation uint6
 			return status.Error(codes.FailedPrecondition, "run supervision token does not match the terminal assignment")
 		}
 		if s.runSupervisionRequired {
-			if stoppingGeneration, stopping := s.lifecycleCoordinator.stoppingGenerations[testID]; stopping && stoppingGeneration == generation {
+			if stoppingGeneration, stopping := s.lifecycleCoordinator.stoppingGenerationLocked(testID); stopping && stoppingGeneration == generation {
 				return status.Error(codes.FailedPrecondition, "run supervision token is required for the stopping assignment")
 			}
 			if terminalGeneration, terminal := s.terminalGenerationLocked(testID); terminal && terminalGeneration == generation {

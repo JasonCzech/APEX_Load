@@ -15,6 +15,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/recorder"
+	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -635,17 +636,10 @@ func TestHandleCreateScriptMasksForeignRecordingSessionsAsNotFound(t *testing.T)
 	}
 	converted.Script.ProjectID = "project-a"
 
-	browserManager := NewBrowserRecordingManager(nil)
-	browserManager.sessions["foreign-browser"] = &BrowserRecordingSession{
-		ID:        "foreign-browser",
-		Name:      "Browser",
-		ProjectID: "project-b",
-		Status:    BrowserRecordingStopped,
-		StartedAt: time.Now(),
-	}
+	stubBrowserRecordingDependencyProbe(t, nil)
 	server := NewServer(ServerConfig{Store: store})
 	server.recorder = proxyRecorder
-	server.browserRecording = browserManager
+	browserSession := stopBrowserRecordingFixture(t, server, &recbrowser.Session{StartURL: "https://shop.example.test"}, "project-b", "Browser")
 
 	probe := func(sessionID string) (int, string) {
 		t.Helper()
@@ -668,7 +662,7 @@ func TestHandleCreateScriptMasksForeignRecordingSessionsAsNotFound(t *testing.T)
 	if wantStatus != http.StatusNotFound {
 		t.Fatalf("missing recording status = %d body=%s, want 404", wantStatus, wantBody)
 	}
-	for _, sessionID := range []string{proxySession.ID, "foreign-browser"} {
+	for _, sessionID := range []string{proxySession.ID, browserSession.ID} {
 		status, body := probe(sessionID)
 		if status != wantStatus || body != wantBody {
 			t.Errorf("recording %q response = %d %q, want absent response %d %q", sessionID, status, body, wantStatus, wantBody)
@@ -686,7 +680,10 @@ func TestAttestRecordingBaselineCaptureDoesNotMapBrowserUIActionsToProxyObservat
 	// Deliberately create the same id in both recorder namespaces. The browser
 	// session must win source resolution: UI steps do not share action indexes
 	// with proxy/HAR requests, so attaching the proxy baseline would be unsafe.
-	const sessionID = "shared-recording-id"
+	stubBrowserRecordingDependencyProbe(t, nil)
+	server := NewServer(ServerConfig{Store: store})
+	browserSession := stopBrowserRecordingFixture(t, server, &recbrowser.Session{StartURL: "https://shop.example.test"}, "project-a", "Browser")
+	sessionID := browserSession.ID
 	proxyRecorder := recorder.New("127.0.0.1:0")
 	proxySession, err := proxyRecorder.StartSessionForProject(sessionID, "Proxy", "project-a", recorder.SessionFilters{}, nil)
 	if err != nil {
@@ -694,15 +691,7 @@ func TestAttestRecordingBaselineCaptureDoesNotMapBrowserUIActionsToProxyObservat
 	}
 	proxySession.Requests = append(proxySession.Requests, recorder.RecordedRequest{Seq: 1, Method: "GET", URL: "https://shop.example.test/api/cart"})
 
-	browserManager := NewBrowserRecordingManager(nil)
-	browserManager.sessions[sessionID] = &BrowserRecordingSession{
-		ID:        sessionID,
-		Name:      "Browser",
-		ProjectID: "project-a",
-		Status:    BrowserRecordingStopped,
-		StartedAt: time.Now(),
-	}
-	server := &Server{store: store, recorder: proxyRecorder, browserRecording: browserManager}
+	server.recorder = proxyRecorder
 	if _, err := server.attestRecordingBaselineCapture("project-a", recordingDigestTestScript(), sessionID); !errors.Is(err, errRecordingCaptureUnattested) {
 		t.Fatalf("browser recording attestation error = %v, want unattested", err)
 	}

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 )
 
 func TestDoStatusReadContextStopsDuringRetryAfterDelay(t *testing.T) {
@@ -381,7 +381,7 @@ func TestResolveTestResultFailsWhenSLAStatusUnavailable(t *testing.T) {
 	}))
 	defer server.Close()
 	client := NewApiClient(server.URL)
-	result, err := client.resolveTestResult("test-1", &api.ManagedTest{Status: "COMPLETE"}, time.Second)
+	result, err := client.resolveTestResult("test-1", &runcontract.TestStatus{Status: "COMPLETE"}, time.Second)
 	if result == nil || err == nil || !strings.Contains(err.Error(), "fetch SLA status") {
 		t.Fatalf("result=%#v error=%v, want explicit SLA retrieval failure", result, err)
 	}
@@ -391,7 +391,7 @@ func TestResolveTestResultFailsWhenSLAStatusUnavailable(t *testing.T) {
 }
 
 func TestCreateTestIncludesGoalConfig(t *testing.T) {
-	var captured api.CreateTestRequest
+	var captured runcontract.CreateTestRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/tests" {
 			t.Fatalf("path = %q, want /api/v1/tests", r.URL.Path)
@@ -408,7 +408,7 @@ func TestCreateTestIncludesGoalConfig(t *testing.T) {
 	client := NewApiClient(server.URL)
 	p95LatencyMs := 800.0
 	maxErrorPct := 2.5
-	testID, err := client.createTest("script-1", 25, "5m", "30s", &api.GoalConfig{
+	testID, err := client.createTest("script-1", 25, "5m", "30s", &runcontract.GoalConfig{
 		P95LatencyMs: &p95LatencyMs,
 		MaxErrorPct:  &maxErrorPct,
 	})

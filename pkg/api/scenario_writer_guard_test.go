@@ -54,7 +54,7 @@ var scenarioAuthoredWriterCallers = map[string]string{
 	"TestRunner.DeleteScenarioDurable":             "runner side of the guarded delete",
 	"TestRunner.DeleteScenario":                    "unconditioned runner delete kept for tests and internal callers; no route reaches it",
 	"TestRunner.storeScenarioLockedWithSources":    "save builder shared by create, PUT and import; each caller supplies its own fence",
-	"TestRunner.backfillScenarioRefKeysLocked":     "server-owned ref-key backfill at startup; not authored content",
+	"TestRunner.backfillScenarioRefKeys":           "server-owned ref-key backfill at startup; not authored content",
 	"TestRunner.repairLegacyStoredScenarioRuntime": "startup repair of legacy runtime credentials under the updated_at CAS",
 	"updateScenarioAggregateIfUnchanged":           "updated_at CAS helper for legacy-adapter saves",
 	"updateScenarioAuthoringAggregate":             "final write of the conditioned PUT",

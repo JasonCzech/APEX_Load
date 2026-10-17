@@ -14,9 +14,7 @@ import { trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTi
 import { initialStageLevel, maxStageVUsers, stageBoundarySeconds, stageLevelAt, stageRampStepSeconds, stageScheduleSeconds } from './workloadStages'
 import { engineLevelAtDeadline, engineRampDownLevel, engineRampDownSeconds, engineRampUpLevel, engineRampUpSeconds } from './loadPlanSteps'
 
-export type ScenarioWizardStep = 'scripts' | 'source' | 'run' | 'data' | 'review'
-
-export type ScenarioSourceMode = 'shape' | 'existing' | 'traffic_profile' | 'csv_driven'
+export type { ScenarioWizardStep, ScenarioSourceMode } from '../types/scenarioAuthoring'
 
 export type ScenarioModelFamilyId = 'fixed-vusers' | 'stepped' | 'goal' | 'traffic-profile'
 

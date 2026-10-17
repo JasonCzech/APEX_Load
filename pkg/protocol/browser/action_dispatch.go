@@ -11,12 +11,13 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 	playwright "github.com/mxschmitt/playwright-go"
 )
 
 // DefaultDialogWaitMS is shared with the DSL action catalog so the authoring
 // contract and runtime cannot advertise different implicit dialog budgets.
-const DefaultDialogWaitMS = 1000
+const DefaultDialogWaitMS = browsercontract.DefaultDialogWaitMS
 
 func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, result *protocol.Result) (error, bool) {
 	switch action.Type {

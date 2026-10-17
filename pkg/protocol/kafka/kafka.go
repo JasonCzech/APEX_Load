@@ -24,6 +24,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
+	"github.com/jasonczech/apexload/pkg/protocol/kafkacontract"
 	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 )
 
@@ -59,14 +60,14 @@ const kafkaTransactionAbortTimeout = 5 * time.Second
 // normal Kafka values while preventing integer casts and data-driven identifiers
 // from becoming generator-sized allocations or long-lived map keys.
 const (
-	MaxConfiguredTimeout       = time.Hour
-	MaxConfiguredPartitions    = 1_000_000
-	MaxConfiguredMessageBytes  = 64 << 20
-	MaxConfiguredSchemaBytes   = 1 << 20
-	MaxConfiguredSubjectBytes  = 4 << 10
-	MaxConfiguredRegistryBytes = 8 << 10
-	MaxKafkaTopicBytes         = 249
-	MaxKafkaIdentifierBytes    = 4 << 10
+	MaxConfiguredTimeout       = kafkacontract.MaxConfiguredTimeout
+	MaxConfiguredPartitions    = kafkacontract.MaxConfiguredPartitions
+	MaxConfiguredMessageBytes  = kafkacontract.MaxConfiguredMessageBytes
+	MaxConfiguredSchemaBytes   = kafkacontract.MaxConfiguredSchemaBytes
+	MaxConfiguredSubjectBytes  = kafkacontract.MaxConfiguredSubjectBytes
+	MaxConfiguredRegistryBytes = kafkacontract.MaxConfiguredRegistryBytes
+	MaxKafkaTopicBytes         = kafkacontract.MaxKafkaTopicBytes
+	MaxKafkaIdentifierBytes    = kafkacontract.MaxKafkaIdentifierBytes
 	maxKafkaBrokers            = 256
 	maxKafkaProperties         = 256
 	maxKafkaConfigMapBytes     = 1 << 20
@@ -1412,15 +1413,7 @@ func intValue(cfg map[string]any, key string, fallback int) int {
 }
 
 func boundedConfigInt(cfg map[string]any, key string, fallback, minimum, maximum int) (int, error) {
-	value, exists := cfg[key]
-	if !exists {
-		return fallback, nil
-	}
-	parsed, err := numericInt64(value)
-	if err != nil || parsed < int64(minimum) || parsed > int64(maximum) {
-		return 0, fmt.Errorf("kafka %s must be an integer between %d and %d", strings.TrimPrefix(key, "kafka_"), minimum, maximum)
-	}
-	return int(parsed), nil
+	return kafkacontract.BoundedConfigInt(cfg, key, fallback, minimum, maximum)
 }
 
 func optionalBoundedParamInt(params map[string]any, key string, minimum, maximum int) (int, bool, error) {
@@ -1439,21 +1432,7 @@ func optionalBoundedParamInt(params map[string]any, key string, minimum, maximum
 }
 
 func numericInt64(value any) (int64, error) {
-	switch typed := value.(type) {
-	case int:
-		return int64(typed), nil
-	case int64:
-		return typed, nil
-	case float64:
-		if math.IsNaN(typed) || math.IsInf(typed, 0) || math.Trunc(typed) != typed || typed < math.MinInt64 || typed > math.MaxInt64 {
-			return 0, fmt.Errorf("not an integer")
-		}
-		return int64(typed), nil
-	case string:
-		return strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
-	default:
-		return 0, fmt.Errorf("not an integer")
-	}
+	return kafkacontract.NumericInt64(value)
 }
 
 func durationValue(cfg map[string]any, key string, fallback time.Duration) time.Duration {

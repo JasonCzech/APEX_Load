@@ -384,11 +384,11 @@ func TestClientClaimExecutionEpochWithAdoptionsRoundTrip(t *testing.T) {
 func TestAdoptionReportsAlreadyStoppingRun(t *testing.T) {
 	service, token := startAdoptableRun(t, 30*time.Second, 5*time.Second)
 	service.mu.Lock()
-	service.stoppingTests["run"] = struct{}{}
+	service.lifecycleCoordinator.stoppingTests["run"] = struct{}{}
 	service.mu.Unlock()
 	t.Cleanup(func() {
 		service.mu.Lock()
-		delete(service.stoppingTests, "run")
+		delete(service.lifecycleCoordinator.stoppingTests, "run")
 		service.mu.Unlock()
 	})
 	ack := claimWithAdoptions(t, service, 2, &pb.RunAdoption{TestId: "run", PriorGeneration: 1, PriorRunSupervisionToken: token, NewRunSupervisionToken: supervisionTestToken(31)})

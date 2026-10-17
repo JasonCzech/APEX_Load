@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jasonczech/apexload/pkg/api"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 )
 
 // httpVersionsFromLive copies a controller's run-to-date mix into the CLI's
 // final snapshot.
-func httpVersionsFromLive(live *api.LiveMetrics) *protocol.HTTPVersionMix {
+func httpVersionsFromLive(live *runcontract.LiveMetrics) *protocol.HTTPVersionMix {
 	if live == nil || live.HTTPVersions == nil {
 		return nil
 	}

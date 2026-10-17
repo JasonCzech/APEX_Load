@@ -245,7 +245,7 @@ func TestJavaVuserApprovalEvidenceProjectionPreservesOnlyGovernanceEnvelope(t *t
 		t.Fatal("maskScriptSecrets returned nil")
 	}
 	evidence, ok := readJavaVuserAuthoringApproval(projected)
-	if !ok || evidence.sessionID != sessionID || evidence.contentHash == "" {
+	if !ok || evidence.SessionID != sessionID || evidence.ContentHash == "" {
 		t.Fatalf("approval evidence = %#v, want intact server governance envelope", evidence)
 	}
 	if exactHash, projectedHash := hashLibraryScript(script), hashLibraryScript(projected); exactHash != projectedHash {
@@ -271,7 +271,7 @@ func TestApprovedCombinedJavaVuserSurvivesPersistenceAndLaunchPreflight(t *testi
 		t.Fatalf("GetScriptDurable: found=%v script=%#v err=%v", found, persisted, err)
 	}
 	evidence, ok := readJavaVuserAuthoringApproval(persisted.Script)
-	if !ok || evidence.sessionID == "" || evidence.sessionID == maskedScriptSecret {
+	if !ok || evidence.SessionID == "" || evidence.SessionID == maskedScriptSecret {
 		t.Fatalf("persisted approval evidence = %#v, want durable authoring session provenance", evidence)
 	}
 	if conflict := server.runner.javaVuserApprovalConflict(persisted.Script); conflict != "" {
@@ -304,11 +304,11 @@ func TestApprovedCombinedJavaVuserAuthoringEvidenceCannotBeDeleted(t *testing.T)
 	server := newJavaVuserGovernanceServer(t, projectID)
 	approved := approveCombinedJavaVuserThroughAPI(t, server, projectID)
 	evidence, ok := readJavaVuserAuthoringApproval(approved.Script.Script)
-	if !ok || evidence.sessionID == "" {
+	if !ok || evidence.SessionID == "" {
 		t.Fatalf("approval evidence = %#v, want authoring session id", evidence)
 	}
 
-	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/scripts/authoring/sessions/"+evidence.sessionID, nil)
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/scripts/authoring/sessions/"+evidence.SessionID, nil)
 	deleteResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(deleteResp, deleteReq)
 	if deleteResp.Code != http.StatusConflict ||
@@ -330,7 +330,7 @@ func TestApprovedCombinedJavaVuserRetryRejectsReusedLibraryScriptID(t *testing.T
 	server := newJavaVuserGovernanceServer(t, projectID)
 	approved := approveCombinedJavaVuserThroughAPI(t, server, projectID)
 	evidence, ok := readJavaVuserAuthoringApproval(approved.Script.Script)
-	if !ok || evidence.sessionID == "" {
+	if !ok || evidence.SessionID == "" {
 		t.Fatalf("approval evidence = %#v, want authoring session id", evidence)
 	}
 
@@ -361,7 +361,7 @@ func TestApprovedCombinedJavaVuserRetryRejectsReusedLibraryScriptID(t *testing.T
 		t.Fatalf("create replacement status=%d body=%s", createResp.Code, createResp.Body.String())
 	}
 
-	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+evidence.sessionID+"/approve", nil)
+	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+evidence.SessionID+"/approve", nil)
 	retryResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(retryResp, retryReq)
 	if retryResp.Code != http.StatusConflict ||
@@ -616,8 +616,8 @@ func TestJavaVuserPUTCannotSupplyOrInvalidateApprovalEvidence(t *testing.T) {
 		}
 		incoming := cloneScriptDefinition(approved.Script.Script)
 		writeJavaVuserAuthoringApproval(incoming, javaVuserApprovalEvidence{
-			sessionID:   "fbc3b494-0f47-4e97-9805-939cad94db74",
-			contentHash: "sha256:" + strings.Repeat("0", sha256HexLength),
+			SessionID:   "fbc3b494-0f47-4e97-9805-939cad94db74",
+			ContentHash: "sha256:" + strings.Repeat("0", sha256HexLength),
 		})
 		body, err := json.Marshal(map[string]any{"script": incoming})
 		if err != nil {
@@ -818,8 +818,8 @@ func TestUntrustedDurableWritersCannotForgeJavaVuserApprovalOrGrandfathering(t *
 	forged := cloneScriptDefinition(persisted.Script)
 	forged.Actions[0].Target = "ForgedRemoteActions"
 	writeJavaVuserAuthoringApproval(forged, javaVuserApprovalEvidence{
-		sessionID:   evidence.sessionID,
-		contentHash: hashLibraryScript(forged),
+		SessionID:   evidence.SessionID,
+		ContentHash: hashLibraryScript(forged),
 	})
 	if _, _, err := server.runner.UpdateScriptDurableIfUnchanged(forged, persisted.Script); err == nil ||
 		!strings.Contains(err.Error(), "local authoring-session review") {

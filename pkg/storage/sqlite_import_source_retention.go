@@ -1,5 +1,7 @@
 package storage
 
+import "github.com/jasonczech/apexload/pkg/internal/contentcontract"
+
 import (
 	"crypto/sha256"
 	"database/sql"
@@ -14,7 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-const ImportSourceCommitFenceMetadataKey = "protected_source_commit_fence_v1"
+const ImportSourceCommitFenceMetadataKey = contentcontract.ImportSourceCommitFenceMetadataKey
 
 var ErrImportSourceScriptChanged = errors.New("import source retention target script changed")
 

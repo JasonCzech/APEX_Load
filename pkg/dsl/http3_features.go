@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"strings"
 
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 // FeatureNativeHTTP3V1 is the generator capability for exact HTTP/3 (policy

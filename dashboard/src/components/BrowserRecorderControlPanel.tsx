@@ -1,7 +1,7 @@
 import { confirmAction } from './ux/confirmAction'
 import { type ReactNode, useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 
-import { useApi } from '../hooks/useApi'
+import { useRecordingApi } from '../hooks/useApi'
 import { hasDesktopApiCapability } from '../hooks/apiClient'
 import { getErrorMessage } from '../utils/errorUtils'
 import { downloadBlob } from '../utils/fileUtils'
@@ -254,7 +254,7 @@ export default function BrowserRecorderControlPanel({
   recordingProfileId,
   recordingProfileHTTPScriptLevel,
 }: BrowserRecorderControlPanelProps) {
-  const api = useApi()
+  const api = useRecordingApi()
   const genericBatchSaveRef = useRef<{
     source: RecorderImportResult | SalesforceImportResult
     projectId?: string

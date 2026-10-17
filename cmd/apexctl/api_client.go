@@ -15,8 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/archivecontract"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 )
 
 type ApiClient struct {
@@ -248,7 +249,7 @@ type ApiTestResult struct {
 	SLASummary        *SLASummary
 }
 
-func (c *ApiClient) RunTest(scriptPath string, vusers int, duration string, rampUp string, format string, goalConfig *api.GoalConfig) (*ApiTestResult, error) {
+func (c *ApiClient) RunTest(scriptPath string, vusers int, duration string, rampUp string, format string, goalConfig *runcontract.GoalConfig) (*ApiTestResult, error) {
 	file, err := os.ReadFile(scriptPath)
 	if err != nil {
 		return nil, fmt.Errorf("read script: %w", err)
@@ -256,7 +257,7 @@ func (c *ApiClient) RunTest(scriptPath string, vusers int, duration string, ramp
 	return c.RunPreparedTest(scriptPath, file, vusers, duration, rampUp, format, goalConfig)
 }
 
-func (c *ApiClient) RunPreparedTest(scriptName string, scriptBody []byte, vusers int, duration string, rampUp string, format string, goalConfig *api.GoalConfig) (*ApiTestResult, error) {
+func (c *ApiClient) RunPreparedTest(scriptName string, scriptBody []byte, vusers int, duration string, rampUp string, format string, goalConfig *runcontract.GoalConfig) (*ApiTestResult, error) {
 	ctx := context.Background()
 	cancel := func() {}
 	if c.PollTimeout > 0 {
@@ -266,7 +267,7 @@ func (c *ApiClient) RunPreparedTest(scriptName string, scriptBody []byte, vusers
 	return c.runPreparedTestContext(ctx, scriptName, scriptBody, vusers, duration, rampUp, format, goalConfig)
 }
 
-func (c *ApiClient) runPreparedTestContext(ctx context.Context, scriptName string, scriptBody []byte, vusers int, duration string, rampUp string, format string, goalConfig *api.GoalConfig) (*ApiTestResult, error) {
+func (c *ApiClient) runPreparedTestContext(ctx context.Context, scriptName string, scriptBody []byte, vusers int, duration string, rampUp string, format string, goalConfig *runcontract.GoalConfig) (*ApiTestResult, error) {
 	commandStarted := time.Now()
 	// 1. Upload script
 	scriptID, err := c.uploadScriptContext(ctx, scriptName, scriptBody)
@@ -367,12 +368,12 @@ func (c *ApiClient) UploadScriptWithProjectContext(ctx context.Context, scriptNa
 	return id, nil
 }
 
-func (c *ApiClient) createTest(scriptID string, vusers int, duration, rampUp string, goalConfig *api.GoalConfig) (string, error) {
+func (c *ApiClient) createTest(scriptID string, vusers int, duration, rampUp string, goalConfig *runcontract.GoalConfig) (string, error) {
 	return c.createTestContext(context.Background(), scriptID, vusers, duration, rampUp, goalConfig)
 }
 
-func (c *ApiClient) createTestContext(ctx context.Context, scriptID string, vusers int, duration, rampUp string, goalConfig *api.GoalConfig) (string, error) {
-	reqBody := api.CreateTestRequest{
+func (c *ApiClient) createTestContext(ctx context.Context, scriptID string, vusers int, duration, rampUp string, goalConfig *runcontract.GoalConfig) (string, error) {
+	reqBody := runcontract.CreateTestRequest{
 		Name:     "CLI Run " + time.Now().Format("2006-01-02 15:04:05"),
 		Duration: duration,
 		ScriptID: scriptID,
@@ -396,7 +397,7 @@ func (c *ApiClient) createTestContext(ctx context.Context, scriptID string, vuse
 		return "", fmt.Errorf("bad status: %s, %s", resp.Status, string(b))
 	}
 
-	var test api.ManagedTest
+	var test runcontract.TestStatus
 	if err := json.NewDecoder(resp.Body).Decode(&test); err != nil {
 		return "", fmt.Errorf("decode create-test response: %w", err)
 	}
@@ -506,7 +507,7 @@ func (c *ApiClient) pollTestContext(ctx context.Context, testID string, format s
 						Evaluated:              sla.SLAEvaluated,
 						Breached:               sla.SLABreached,
 						Details:                append([]string(nil), sla.Details...),
-						TransactionRuleResults: append([]api.TransactionSLARuleResult(nil), sla.TransactionRuleResults...),
+						TransactionRuleResults: append([]runcontract.TransactionSLARuleResult(nil), sla.TransactionRuleResults...),
 					}
 					if sla.SLABreached {
 						return res, fmt.Errorf("SLA breached: %s", strings.Join(sla.Details, "; "))
@@ -529,11 +530,11 @@ func (c *ApiClient) waitForTestPoll(ctx context.Context, delay time.Duration) er
 }
 
 // GetTestStatus fetches the current managed-test record (status + live metrics).
-func (c *ApiClient) GetTestStatus(testID string) (*api.ManagedTest, error) {
+func (c *ApiClient) GetTestStatus(testID string) (*runcontract.TestStatus, error) {
 	return c.GetTestStatusContext(context.Background(), testID)
 }
 
-func (c *ApiClient) GetTestStatusContext(ctx context.Context, testID string) (*api.ManagedTest, error) {
+func (c *ApiClient) GetTestStatusContext(ctx context.Context, testID string) (*runcontract.TestStatus, error) {
 	resp, err := c.doStatusReadContext(ctx, "/api/v1/tests/"+url.PathEscape(testID))
 	if err != nil {
 		return nil, err
@@ -546,7 +547,7 @@ func (c *ApiClient) GetTestStatusContext(ctx context.Context, testID string) (*a
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, &controllerHTTPStatusError{operation: fmt.Sprintf("test %s status", testID), status: resp.Status, statusCode: resp.StatusCode, detail: string(detail)}
 	}
-	var test api.ManagedTest
+	var test runcontract.TestStatus
 	if err := json.NewDecoder(resp.Body).Decode(&test); err != nil {
 		return nil, err
 	}
@@ -580,7 +581,7 @@ func (c *ApiClient) WaitForTest(testID, format string, timeout time.Duration) (*
 	return c.waitForTestContext(ctx, testID, format, timeout, start, test)
 }
 
-func (c *ApiClient) waitForTestContext(ctx context.Context, testID, format string, timeout time.Duration, start time.Time, initial *api.ManagedTest) (*ApiTestResult, error) {
+func (c *ApiClient) waitForTestContext(ctx context.Context, testID, format string, timeout time.Duration, start time.Time, initial *runcontract.TestStatus) (*ApiTestResult, error) {
 	lastStatus := ""
 	timeoutError := func() error {
 		if lastStatus == "" {
@@ -624,7 +625,7 @@ func (c *ApiClient) waitForTestContext(ctx context.Context, testID, format strin
 	}
 }
 
-func (c *ApiClient) getTestStatusWithTolerance(ctx context.Context, testID, format string) (*api.ManagedTest, error) {
+func (c *ApiClient) getTestStatusWithTolerance(ctx context.Context, testID, format string) (*runcontract.TestStatus, error) {
 	for consecutiveErrors := 0; ; {
 		test, err := c.GetTestStatusContext(ctx, testID)
 		if err == nil {
@@ -650,11 +651,11 @@ func (c *ApiClient) getTestStatusWithTolerance(ctx context.Context, testID, form
 }
 
 // resolveTestResult builds an ApiTestResult (with SLA verdict) from a terminal test.
-func (c *ApiClient) resolveTestResult(testID string, test *api.ManagedTest, elapsed time.Duration) (*ApiTestResult, error) {
+func (c *ApiClient) resolveTestResult(testID string, test *runcontract.TestStatus, elapsed time.Duration) (*ApiTestResult, error) {
 	return c.resolveTestResultContext(context.Background(), testID, test, elapsed)
 }
 
-func (c *ApiClient) resolveTestResultContext(ctx context.Context, testID string, test *api.ManagedTest, elapsed time.Duration) (*ApiTestResult, error) {
+func (c *ApiClient) resolveTestResultContext(ctx context.Context, testID string, test *runcontract.TestStatus, elapsed time.Duration) (*ApiTestResult, error) {
 	res := &ApiTestResult{Status: test.Status, Duration: elapsed}
 	if test.LiveMetrics != nil {
 		res.TotalTransactions = test.LiveMetrics.TotalTx
@@ -674,7 +675,7 @@ func (c *ApiClient) resolveTestResultContext(ctx context.Context, testID string,
 			Evaluated:              sla.SLAEvaluated,
 			Breached:               sla.SLABreached,
 			Details:                append([]string(nil), sla.Details...),
-			TransactionRuleResults: append([]api.TransactionSLARuleResult(nil), sla.TransactionRuleResults...),
+			TransactionRuleResults: append([]runcontract.TransactionSLARuleResult(nil), sla.TransactionRuleResults...),
 		}
 	}
 	if isFailedTestStatus(test.Status) {
@@ -684,14 +685,14 @@ func (c *ApiClient) resolveTestResultContext(ctx context.Context, testID string,
 }
 
 func isTerminalStatus(status string) bool {
-	return api.IsTerminalTestStatus(status)
+	return runcontract.IsTerminalTestStatus(status)
 }
 
 // VerifyArchive re-verifies an archived run against the SHA-256 hashes recorded in
 // its manifest, returning the per-artifact match/mismatch/missing verdict. A
 // tampered or corrupt archive comes back as a populated report (not an error); a
 // transport failure or a missing archive returns an error.
-func (c *ApiClient) VerifyArchive(testID string) (*api.RunArchiveIntegrityReport, error) {
+func (c *ApiClient) VerifyArchive(testID string) (*archivecontract.RunArchiveIntegrityReport, error) {
 	resp, err := c.doStatusRead("/api/v1/tests/" + url.PathEscape(testID) + "/archive/verify")
 	if err != nil {
 		return nil, err
@@ -707,18 +708,18 @@ func (c *ApiClient) VerifyArchive(testID string) (*api.RunArchiveIntegrityReport
 		return nil, fmt.Errorf("bad status: %s: %s", resp.Status, strings.TrimSpace(string(detail)))
 	}
 
-	var report api.RunArchiveIntegrityReport
+	var report archivecontract.RunArchiveIntegrityReport
 	if err := json.NewDecoder(resp.Body).Decode(&report); err != nil {
 		return nil, fmt.Errorf("decode integrity report: %w", err)
 	}
 	return &report, nil
 }
 
-func (c *ApiClient) GetSLAStatus(testID string) (*api.SLABreachReport, error) {
+func (c *ApiClient) GetSLAStatus(testID string) (*runcontract.SLABreachReport, error) {
 	return c.GetSLAStatusContext(context.Background(), testID)
 }
 
-func (c *ApiClient) GetSLAStatusContext(ctx context.Context, testID string) (*api.SLABreachReport, error) {
+func (c *ApiClient) GetSLAStatusContext(ctx context.Context, testID string) (*runcontract.SLABreachReport, error) {
 	resp, err := c.doStatusReadContext(ctx, "/api/v1/tests/"+url.PathEscape(testID)+"/sla-status")
 	if err != nil {
 		return nil, err
@@ -729,7 +730,7 @@ func (c *ApiClient) GetSLAStatusContext(ctx context.Context, testID string) (*ap
 		return nil, &controllerHTTPStatusError{operation: "SLA status request", status: resp.Status, statusCode: resp.StatusCode, detail: string(detail)}
 	}
 
-	var report api.SLABreachReport
+	var report runcontract.SLABreachReport
 	if err := json.NewDecoder(resp.Body).Decode(&report); err != nil {
 		return nil, err
 	}

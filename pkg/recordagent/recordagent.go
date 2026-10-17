@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/api"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
+	"github.com/jasonczech/apexload/pkg/recordbridge"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
 )
 
@@ -169,16 +169,16 @@ func Run(ctx context.Context, args Args, stdout io.Writer, program string) error
 	token := strings.TrimSpace(args.Token)
 	generated := token == ""
 	if generated {
-		fresh, err := api.GenerateBrowserRecorderBridgeToken()
+		fresh, err := recordbridge.GenerateBrowserRecorderBridgeToken()
 		if err != nil {
 			return fmt.Errorf("generate bridge token: %w", err)
 		}
 		token = fresh
-	} else if err := api.ValidateBrowserRecorderBridgePairingToken(token); err != nil {
+	} else if err := recordbridge.ValidateBrowserRecorderBridgePairingToken(token); err != nil {
 		return fmt.Errorf("invalid bridge pairing token: %w", err)
 	}
 
-	server := api.NewBrowserRecorderBridgeServer(api.BrowserRecorderBridgeConfig{
+	server := recordbridge.NewBrowserRecorderBridgeServer(recordbridge.BrowserRecorderBridgeConfig{
 		Addr:           args.Addr,
 		PairingToken:   token,
 		PairingTTL:     args.PairingTTL,
@@ -271,7 +271,7 @@ func InstallBrowsers(stdout io.Writer) error {
 	return nil
 }
 
-func waitForBind(ctx context.Context, server *api.Server, requestedAddr string, errCh <-chan error) error {
+func waitForBind(ctx context.Context, server *recordbridge.Bridge, requestedAddr string, errCh <-chan error) error {
 	deadline := time.NewTimer(3 * time.Second)
 	defer deadline.Stop()
 	tick := time.NewTicker(10 * time.Millisecond)

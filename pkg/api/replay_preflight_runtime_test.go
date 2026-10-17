@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"strings"
@@ -28,7 +30,7 @@ func TestStaticPreflightDoesNotClaimRuntimeAvailability(t *testing.T) {
 
 func TestSAPSessionBehaviorProjectionIsBounded(t *testing.T) {
 	for _, value := range []string{"attach", "new_session", "reuse", "secret-canary"} {
-		got := projectScriptNode(map[string]any{"session_behavior": value}, scriptProjectionContext{key: "sapgui"}).(map[string]any)["session_behavior"]
+		got := projectScriptNode(map[string]any{"session_behavior": value}, importreview.ScriptProjectionContextFor("sapgui", false, false)).(map[string]any)["session_behavior"]
 		if dsl.IsSAPGUISessionBehavior(value) && got != value {
 			t.Fatalf("lost configuration %s", value)
 		}
@@ -36,7 +38,7 @@ func TestSAPSessionBehaviorProjectionIsBounded(t *testing.T) {
 			t.Fatal("arbitrary session material leaked")
 		}
 	}
-	got := projectScriptNode(map[string]any{"session_behavior": "attach"}, scriptProjectionContext{key: "sapgui", metadata: true}).(map[string]any)["session_behavior"]
+	got := projectScriptNode(map[string]any{"session_behavior": "attach"}, importreview.ScriptProjectionContextFor("sapgui", true, false)).(map[string]any)["session_behavior"]
 	if got == "attach" {
 		t.Fatal("opaque metadata must remain protected")
 	}

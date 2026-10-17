@@ -2,11 +2,12 @@ package enterprisearchive
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
-	"strings"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 func applyExtraResources(fn ParsedFunction, action *dsl.Action) {

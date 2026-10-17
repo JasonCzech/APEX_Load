@@ -115,15 +115,10 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 		writeAsyncAPIBatchCommitResponse(w, stored)
 		return
 	}
-	attempt.retainUpdateRecovery(updateTargets)
-	finished := false
-	assetsCommitted := false
-	var transaction *createImportTransaction
+	batch := newImportBatchCommit(s, attempt, updateTargets)
 	defer func() {
-		if !finished && !assetsCommitted {
-			if cleanupErr := attempt.rollback(transaction); cleanupErr != nil {
-				slog.Warn("failed to fully compensate AsyncAPI batch", "error", cleanupErr)
-			}
+		if cleanupErr := batch.close(); cleanupErr != nil {
+			slog.Warn("failed to fully compensate AsyncAPI batch", "error", cleanupErr)
 		}
 	}()
 	assetIdentitySeed := ""
@@ -165,9 +160,8 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 			writeError(w, http.StatusConflict, "the prior AsyncAPI batch is still finalizing; retry the save")
 			return
 		}
-		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")
+		stored, _, loadErr := batch.loadRecovery(projectID, plannedIDs, "", nil, nil)
 		if loadErr == nil {
-			assetsCommitted = true
 			if !recoveredImportScriptBatchIdentityMatches(stored, requestScripts, func(script *dsl.Script) bool {
 				return script != nil && script.Metadata != nil && script.Metadata.Import != nil &&
 					strings.EqualFold(strings.TrimSpace(script.Metadata.Import.Source), asyncAPIBatchCommitProfile)
@@ -175,11 +169,10 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 				writeError(w, http.StatusConflict, "a script from the prior AsyncAPI batch changed before recovery; use a new operation id")
 				return
 			}
-			if completeErr := attempt.complete(stored, nil); completeErr != nil {
+			if completeErr := batch.complete(stored, nil); completeErr != nil {
 				writeError(w, http.StatusInternalServerError, "failed to reconcile AsyncAPI batch receipt")
 				return
 			}
-			finished = true
 			writeAsyncAPIBatchCommitResponse(w, stored)
 			return
 		}
@@ -189,7 +182,7 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 	defer func() {
 		for _, claim := range claims {
 			if claim != nil {
-				if assetsCommitted {
+				if batch.assetsCommitted {
 					s.retainCommittedImportDraftAttestation(claim)
 				} else {
 					s.releaseImportDraftAttestation(claim)
@@ -282,74 +275,35 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 			writeError(w, http.StatusConflict, "the prior AsyncAPI batch is still finalizing; retry the save")
 			return
 		}
-		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")
-		if loadErr == nil && importUpdatesPending(stored, prepared, updateTargets) {
-			// The earlier attempt did not update a script it was to update, so
-			// it did not finish: save normally (its creates, if any, replay).
-			loadErr = errImportUpdateTargetStale
-		}
+		stored, _, loadErr := batch.loadRecovery(projectID, plannedIDs, "", prepared, updateTargets)
 		if loadErr == nil {
-			assetsCommitted = true
 			if !directImportPreparedAssetsMatch(s, stored, prepared, nil, nil) {
 				writeError(w, http.StatusConflict, "a script from the prior AsyncAPI batch changed before recovery; use a new operation id")
 				return
 			}
-			if completeErr := attempt.complete(stored, nil); completeErr != nil {
+			if completeErr := batch.complete(stored, nil); completeErr != nil {
 				writeError(w, http.StatusInternalServerError, "failed to reconcile AsyncAPI batch receipt")
 				return
 			}
 			completeAsyncAPIBatchDraftClaims(s, claims, stored)
-			finished = true
 			writeAsyncAPIBatchCommitResponse(w, stored)
 			return
 		}
 	}
 
-	reconciledUpdates, validUpdates := s.reconcileImportUpdates(w, attempt, prepared, updateTargets, updates)
-	if !validUpdates {
+	stored, _, commitFailure := batch.commitPrepared(preparedImportBatch{
+		Source: asyncAPIBatchCommitProfile, Scripts: prepared, Updates: updates, Targets: updateTargets,
+		Claims: claims, DefaultProfile: asyncAPIBatchCommitProfile,
+	})
+	if commitFailure != nil {
+		writeImportBatchFailure(w, commitFailure, asyncAPIImportBatchMessages)
 		return
 	}
-	transaction, err = newImportTransaction(s, asyncAPIBatchCommitProfile, prepared, updates, "", nil)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to prepare AsyncAPI batch: "+err.Error())
-		return
-	}
-	transaction.reconciledUpdates = reconciledUpdates
-
-	stored := make([]*StoredScript, 0, len(prepared))
-	for index, script := range prepared {
-		if err := attempt.renew(); err != nil {
-			writeError(w, http.StatusConflict, "AsyncAPI batch receipt ownership was lost; retry the save")
-			return
-		}
-		if claims[index] != nil {
-			if err := s.assertImportDraftAttestationOwned(claims[index]); err != nil {
-				writeError(w, http.StatusConflict, "AsyncAPI import draft lease was lost; retry the save")
-				return
-			}
-		}
-		created, createErr := transaction.saveImportedScript(script, asyncAPIBatchCommitProfile)
-		if errors.Is(createErr, errImportUpdateTargetStale) {
-			writeImportUpdateTargetStale(w, index, createErr)
-			return
-		}
-		if createErr != nil {
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save AsyncAPI script %d: %v", index+1, createErr))
-			return
-		}
-		stored = append(stored, created)
-	}
-	if err := transaction.commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit AsyncAPI batch: "+err.Error())
-		return
-	}
-	assetsCommitted = true
-	if err := attempt.complete(stored, nil); err != nil {
+	if err := batch.complete(stored, nil); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to finalize AsyncAPI batch receipt")
 		return
 	}
 	completeAsyncAPIBatchDraftClaims(s, claims, stored)
-	finished = true
 	writeAsyncAPIBatchCommitResponse(w, stored)
 }
 

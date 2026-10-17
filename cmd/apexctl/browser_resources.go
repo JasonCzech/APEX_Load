@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/browserresource"
 )
 
 // runBrowserResourcesCommand is dispatched before the broad management flag
@@ -89,7 +89,7 @@ func runBrowserResourcesCommand(ctx context.Context, args []string, out io.Write
 	if invalidEmpty {
 		return errors.New("explicit resource filters must not be empty")
 	}
-	if _, err := api.ParseBrowserResourcePageQuery(values); err != nil {
+	if _, err := browserresource.ParseBrowserResourcePageQuery(values); err != nil {
 		return errors.New("invalid browser-resources query")
 	}
 	client := NewApiClientWithAuth(strings.TrimSpace(*endpoint), *apiKey, *bearerToken)
@@ -106,7 +106,7 @@ func (c *ApiClient) readBrowserResources(ctx context.Context, id, project string
 	if id == "" {
 		return errors.New("canonical managed run ID is required")
 	}
-	admittedQuery, err := api.ParseBrowserResourcePageQuery(query)
+	admittedQuery, err := browserresource.ParseBrowserResourcePageQuery(query)
 	if err != nil {
 		return errors.New("invalid browser-resources query")
 	}
@@ -147,17 +147,17 @@ func (c *ApiClient) readBrowserResources(ctx context.Context, id, project string
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("browser-resources controller returned HTTP %d", response.StatusCode)
 	}
-	raw, err := io.ReadAll(io.LimitReader(response.Body, api.MaxBrowserResourcePageBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(response.Body, browserresource.MaxBrowserResourcePageBytes+1))
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		return errors.New("browser-resources response could not be read")
 	}
-	if len(raw) > api.MaxBrowserResourcePageBytes {
+	if len(raw) > browserresource.MaxBrowserResourcePageBytes {
 		return errors.New("browser-resources response exceeds bounds")
 	}
-	page, err := api.DecodeBrowserResourcePage(raw)
+	page, err := browserresource.DecodeBrowserResourcePage(raw)
 	if err != nil {
 		return errors.New("invalid browser-resources controller projection")
 	}

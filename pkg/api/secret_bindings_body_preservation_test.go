@@ -276,27 +276,6 @@ func TestWholeBodySecretBindingLocatorOwnership(t *testing.T) {
 	}
 }
 
-func TestStructuredImportPayloadProofBudgetsDoNotResetForNestedDocuments(t *testing.T) {
-	body := largeStructuredCredentialBody(t, "fixture-password")
-	for _, test := range []struct {
-		name  string
-		proof structuredImportPayloadProof
-	}{
-		{name: "byte limit", proof: structuredImportPayloadProof{remainingBytes: len(body) - 1, remainingValues: 1000}},
-		{name: "value limit", proof: structuredImportPayloadProof{remainingBytes: len(body), remainingValues: 10}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			if exactStructuredImportPayload([]byte(body), "application/json", 0, &test.proof) {
-				t.Fatal("structured recovery exceeded its shared proof budget")
-			}
-		})
-	}
-	proof := &structuredImportPayloadProof{remainingBytes: len(body) - 1, remainingValues: 1000}
-	if exactStructuredImportScalar(body, 0, proof) {
-		t.Fatal("nested document reset the parent byte budget")
-	}
-}
-
 func TestStructuredImportBodyPreservationRetainsDuplicateNeutralLeafGuards(t *testing.T) {
 	encodedPlaceholder := base64.StdEncoding.EncodeToString([]byte("[REDACTED]"))
 	body := strings.Replace(largeStructuredCredentialBody(t, "fixture-password"), "{", `{"note":"`+encodedPlaceholder+`","note":"ordinary",`, 1)

@@ -2,38 +2,30 @@ package api
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
-	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/importsession"
+	"github.com/jasonczech/apexload/pkg/internal/importreview"
 )
 
-const (
-	importDraftAttestationMetadataKey      = "server_import_attestation_v1"
-	importDraftRecordingLineageMetadataKey = "server_recording_lineage_v1"
-	importDraftProtectedTokenPrefix        = "protected:"
-	importDraftAttestationTTL              = 30 * time.Minute
-	importDraftAttestationCapacity         = 128
-)
+const importDraftAttestationMetadataKey = importreview.ImportDraftAttestationMetadataKey
+const importDraftAttestationTTL = importreview.ImportDraftAttestationTTL
+const importDraftAttestationCapacity = importreview.ImportDraftAttestationCapacity
+const importDraftProtectedTokenPrefix = importreview.ImportDraftProtectedTokenPrefix
+const importDraftRecordingLineageMetadataKey = importreview.ImportDraftRecordingLineageMetadataKey
 
-var errImportDraftAttestationInvalid = errors.New("import draft attestation is invalid or expired")
+var errImportDraftAttestationInvalid = importreview.ErrDraftAttestationInvalid
 
 // errImportDraftAttestationBusy reports a still-valid import draft (protected
 // session or in-memory attestation) that another in-flight request currently
 // holds. Unlike an invalid draft it is retryable; telling the operator to
 // re-run the conversion would only repeat the race.
-var errImportDraftAttestationBusy = errors.New("import draft is in use by another request")
+var errImportDraftAttestationBusy = importreview.ErrDraftAttestationBusy
 
 // writeImportDraftBusy answers a claim that failed only because another
 // in-flight request holds the same, still-valid draft, whether it reached the
@@ -59,33 +51,7 @@ func writeProtectedImportSessionConflict(w http.ResponseWriter, message string) 
 	})
 }
 
-type importDraftAttestation struct {
-	Token                string
-	Profile              string
-	ProjectID            string
-	Actor                string
-	Protocol             string
-	CredentialDigests    map[string]int
-	StructureDigest      string
-	ExecutionGraphDigest string
-	FullDigest           string
-	// HasUnavailableCredentialValues records an exact source placeholder or
-	// unsafe encoding. It grants no literal-preservation authority; it only lets
-	// commit replace that unchanged slot with a governed reference.
-	HasUnavailableCredentialValues bool
-	// Script is the exact server-owned candidate. Responses carry only its
-	// disclosure projection plus Token; expiry is policy-controlled.
-	Script                  *dsl.Script
-	RecordingSessionID      string
-	RecordingSnapshotDigest string
-	ExpiresAt               time.Time
-	ExpirationDisabled      bool
-	Claimed                 bool
-	// Retained marks a capability whose assets committed but whose cleanup did
-	// not finish. It stays claimed so it cannot be consumed again, and it is
-	// reported as invalid rather than as a request still in flight.
-	Retained bool
-}
+type importDraftAttestation = importreview.DraftAttestation
 
 type importDraftAttestationClaim struct {
 	Token          string
@@ -118,13 +84,7 @@ type importDraftAttestationClaim struct {
 	SubmittedExecutionGraphDigest string
 }
 
-type importDraftCredentialFingerprint struct {
-	CredentialDigests    map[string]int
-	StructureDigest      string
-	ExecutionGraphDigest string
-	FullDigest           string
-	HasRawCredentials    bool
-}
+type importDraftCredentialFingerprint = importreview.ImportDraftCredentialFingerprint
 
 // attachImportDraftAttestations gives legacy import screens a server-owned
 // proof that the credential literals in their editable draft came from this
@@ -151,7 +111,7 @@ func (s *Server) attachImportDraftAttestations(
 		expiresAt, projected, err := s.attachImportDraftAttestationProjecting(
 			r,
 			script,
-			opts.textMemo,
+			opts.TextMemo,
 			opts.DisableDraftExpiration,
 			opts.RecordingSessionID,
 			opts.RecordingSnapshotDigest,
@@ -163,41 +123,24 @@ func (s *Server) attachImportDraftAttestations(
 			return err
 		}
 		if !expiresAt.IsZero() &&
-			(opts.draftAttestationExpiresAt.IsZero() ||
-				expiresAt.Before(opts.draftAttestationExpiresAt)) {
-			opts.draftAttestationExpiresAt = expiresAt
+			(opts.DraftAttestationExpiresAt.IsZero() ||
+				expiresAt.Before(opts.DraftAttestationExpiresAt)) {
+			opts.DraftAttestationExpiresAt = expiresAt
 		}
 		if importDraftAttestationToken(script) != "" {
 			attached = append(attached, script)
 		}
 		if projected != nil {
-			if opts.attestedProjections == nil {
-				opts.attestedProjections = make(map[*dsl.Script]*dsl.Script, len(scripts))
+			if opts.AttestedProjections == nil {
+				opts.AttestedProjections = make(map[*dsl.Script]*dsl.Script, len(scripts))
 			}
-			opts.attestedProjections[script] = projected
+			opts.AttestedProjections[script] = projected
 		}
 	}
 	return nil
 }
 
-func importDraftScriptPointers(values ...any) []*dsl.Script {
-	result := make([]*dsl.Script, 0)
-	for _, value := range values {
-		switch typed := value.(type) {
-		case *dsl.Script:
-			result = append(result, typed)
-		case []*dsl.Script:
-			result = append(result, typed...)
-		case []dsl.Script:
-			for index := range typed {
-				result = append(result, &typed[index])
-			}
-		case []any:
-			result = append(result, importDraftScriptPointers(typed...)...)
-		}
-	}
-	return result
-}
+var importDraftScriptPointers = importreview.ImportDraftScriptPointers
 
 func (s *Server) attachImportDraftAttestation(r *http.Request, script *dsl.Script) error {
 	_, err := s.attachImportDraftAttestationWithExpiry(r, script)
@@ -234,48 +177,23 @@ func (s *Server) attachImportDraftAttestationProjecting(
 	disableExpiration bool,
 	recordingSessionIDs ...string,
 ) (time.Time, *dsl.Script, error) {
-	if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || strings.TrimSpace(script.Metadata.Import.Source) == "" {
 		return time.Time{}, nil, nil
-	}
-	profile := strings.ToLower(strings.TrimSpace(script.Metadata.Import.Source))
-	if profile == "" {
-		return time.Time{}, nil, nil
-	}
-	ensureCredentialPreservingImportMetadata(script, profile)
-	fingerprint, projection, err := fingerprintImportDraftCredentialsWithProjection(script, memo)
-	if err != nil {
-		return time.Time{}, nil, err
-	}
-	recordingSessionID := ""
-	recordingSnapshotDigest := ""
-	if len(recordingSessionIDs) > 0 {
-		recordingSessionID = strings.TrimSpace(recordingSessionIDs[0])
-	}
-	if len(recordingSessionIDs) > 1 {
-		recordingSnapshotDigest = strings.TrimSpace(recordingSessionIDs[1])
-	}
-	if recordingSessionID != "" && recordingSnapshotDigest == "" {
-		return time.Time{}, nil, errors.New("recording preview snapshot digest is required")
-	}
-	hasUnavailableCredentials := scriptHasUnavailableImportCredentialValuesFromProjection(script, projection) || requiresExactRepairDraft(script)
-	if hasUnavailableCredentials && fingerprint.FullDigest == "" {
-		fingerprint.FullDigest, err = fullImportDraftExecutionDigest(script)
-		if err != nil {
-			return time.Time{}, nil, err
-		}
-	}
-	if !fingerprint.HasRawCredentials && !hasUnavailableCredentials && recordingSessionID == "" {
-		stripImportDraftAttestation(script)
-		return time.Time{}, projection.script, nil
-	}
-	exactCandidate := cloneScriptDefinition(script)
-	if exactCandidate == nil {
-		return time.Time{}, nil, errors.New("failed to clone import draft")
 	}
 	_, actor, _ := s.resolveAuditActor(r)
-	now := time.Now().UTC()
-	token := uuid.NewString()
-	projectID := importDraftProjectIDForRequest(r, script)
+	options := importreview.DraftAttachOptions{Scope: importreview.DraftScope{Actor: actor, ProjectID: importDraftProjectIDForRequest(r, script)}, DisableExpiration: disableExpiration, TextMemo: memo}
+	if len(recordingSessionIDs) > 0 {
+		options.RecordingSessionID = recordingSessionIDs[0]
+	}
+	if len(recordingSessionIDs) > 1 {
+		options.RecordingSnapshotDigest = recordingSessionIDs[1]
+	}
+	record, projection, err := importreview.PrepareDraftAttestation(script, options)
+	if err != nil || record == nil {
+		return time.Time{}, projection, err
+	}
+	profile, projectID := record.Profile, record.ProjectID
+	recordingSessionID, recordingSnapshotDigest := record.RecordingSessionID, record.RecordingSnapshotDigest
 
 	protectedStorePresent, err := s.brunoArtifactStorePresent()
 	if err != nil {
@@ -303,7 +221,7 @@ func (s *Server) attachImportDraftAttestationProjecting(
 			preserved[importDraftRecordingLineageMetadataKey] = map[string]any{
 				"recording_session_id":      recordingSessionID,
 				"recording_snapshot_digest": recordingSnapshotDigest,
-				"execution_graph_digest":    fingerprint.ExecutionGraphDigest,
+				"execution_graph_digest":    record.ExecutionGraphDigest,
 			}
 		}
 		sessionID, expiresAt, err := s.registerImportCandidateSessionWithExpirationPolicy(
@@ -323,48 +241,15 @@ func (s *Server) attachImportDraftAttestationProjecting(
 			preserved := ensureScriptImportPreserved(script, profile)
 			preserved[importDraftAttestationMetadataKey] =
 				importDraftProtectedTokenPrefix + sessionID
-			return expiresAt, projection.script, nil
+			return expiresAt, projection, nil
 		}
 	}
 	if s.haExecution {
 		return time.Time{}, nil, errors.New("credential-preserving legacy import saves require shared protected sessions in HA mode")
 	}
 
-	expiresAt := now.Add(importDraftAttestationTTL)
-	if disableExpiration {
-		expiresAt = time.Time{}
-	}
-	record := &importDraftAttestation{
-		Token:                          token,
-		Profile:                        profile,
-		ProjectID:                      projectID,
-		Actor:                          actor,
-		Protocol:                       strings.ToLower(strings.TrimSpace(script.Protocol)),
-		CredentialDigests:              fingerprint.CredentialDigests,
-		StructureDigest:                fingerprint.StructureDigest,
-		ExecutionGraphDigest:           fingerprint.ExecutionGraphDigest,
-		FullDigest:                     fingerprint.FullDigest,
-		HasUnavailableCredentialValues: hasUnavailableCredentials,
-		Script:                         exactCandidate,
-		RecordingSessionID:             recordingSessionID,
-		RecordingSnapshotDigest:        recordingSnapshotDigest,
-		ExpiresAt:                      expiresAt,
-		ExpirationDisabled:             disableExpiration,
-	}
-
-	s.importDraftAttestationMu.Lock()
-	defer s.importDraftAttestationMu.Unlock()
-	s.sweepImportDraftAttestationsLocked(now)
-	if s.importDraftAttestations == nil {
-		s.importDraftAttestations = make(map[string]*importDraftAttestation)
-	}
-	if len(s.importDraftAttestations) >= importDraftAttestationCapacity {
-		return time.Time{}, nil, errors.New("credential-preserving import save capacity is busy")
-	}
-	s.importDraftAttestations[token] = record
-	preserved := ensureScriptImportPreserved(script, profile)
-	preserved[importDraftAttestationMetadataKey] = token
-	return record.ExpiresAt, projection.script, nil
+	expiresAt, err := s.memoryImportDraftOwner().AttachPrepared(script, record)
+	return expiresAt, projection, err
 }
 
 // claimImportDraftMutation authenticates an exact credential-bearing import
@@ -464,84 +349,21 @@ func (s *Server) claimImportDraftAttestationWithJavaReview(
 		return s.claimProtectedImportDraftAttestationWithJavaReview(r, script, token, javaReview)
 	}
 	_, actor, _ := s.resolveAuditActor(r)
-	now := time.Now().UTC()
-
-	s.importDraftAttestationMu.Lock()
-	defer s.importDraftAttestationMu.Unlock()
-	s.sweepImportDraftAttestationsLocked(now)
-	record := s.importDraftAttestations[token]
-	if record == nil ||
-		record.ProjectID != normalizeProjectID(script.ProjectID) ||
-		record.Actor != actor ||
-		record.Protocol != strings.ToLower(strings.TrimSpace(script.Protocol)) ||
-		script.Metadata == nil || script.Metadata.Import == nil ||
-		!strings.EqualFold(strings.TrimSpace(script.Metadata.Import.Source), record.Profile) {
-		return nil, errImportDraftAttestationInvalid
-	}
-	if record.Claimed {
-		if record.Retained {
-			return nil, errImportDraftAttestationInvalid
-		}
-		return nil, errImportDraftAttestationBusy
-	}
-	javaReviewDraft := javaReview && strings.EqualFold(strings.TrimSpace(record.Protocol), "java_vuser")
 	var requestedAssets []dsl.JavaClasspathAsset
-	if javaReviewDraft {
-		var err error
-		script, requestedAssets, err = s.prepareAuthoringJavaClasspathAttestation(script, record.Script)
-		if err != nil {
-			return nil, err
-		}
+	transform := &importreview.DraftClaimTransform{JavaReview: javaReview,
+		Prepare: func(submitted, baseline *dsl.Script) (*dsl.Script, error) {
+			var err error
+			submitted, requestedAssets, err = s.prepareAuthoringJavaClasspathAttestation(submitted, baseline)
+			return submitted, err
+		},
+		Verify: verifyAuthoringJavaClasspathBaseline,
+		Finish: func(restored *dsl.Script) { restored.Config.JavaVuser.ClasspathAssets = requestedAssets },
 	}
-	restored := cloneScriptDefinition(script)
-	if restored == nil || record.Script == nil ||
-		reconcileMaskedScriptSecrets(restored, record.Script) != nil {
-		return nil, errImportDraftAttestationInvalid
-	}
-	if javaReviewDraft {
-		if err := verifyAuthoringJavaClasspathBaseline(restored, record.Script); err != nil {
-			return nil, err
-		}
-	}
-	fingerprint, err := fingerprintImportDraftCredentials(restored)
+	claim, err := s.memoryImportDraftOwner().Claim(importreview.DraftScope{Actor: actor, ProjectID: script.ProjectID}, script, transform)
 	if err != nil {
-		return nil, errImportDraftAttestationInvalid
+		return nil, err
 	}
-	if record.HasUnavailableCredentialValues && fingerprint.FullDigest == "" {
-		fingerprint.FullDigest, err = fullImportDraftExecutionDigest(restored)
-		if err != nil {
-			return nil, errImportDraftAttestationInvalid
-		}
-	}
-	credentialAllowed := (fingerprint.HasRawCredentials || record.HasUnavailableCredentialValues) &&
-		importDraftFingerprintAllowed(record, fingerprint)
-	if record.HasUnavailableCredentialValues && !fingerprint.HasRawCredentials {
-		credentialAllowed = fingerprint.FullDigest != "" && fingerprint.FullDigest == record.FullDigest
-	}
-	lineageAllowed := record.RecordingSessionID != "" &&
-		record.ExecutionGraphDigest != "" &&
-		record.ExecutionGraphDigest == fingerprint.ExecutionGraphDigest
-	if !credentialAllowed && !lineageAllowed {
-		return nil, errImportDraftAttestationInvalid
-	}
-	if javaReviewDraft {
-		restored.Config.JavaVuser.ClasspathAssets = requestedAssets
-	}
-	record.Claimed = true
-	claim := &importDraftAttestationClaim{
-		Token:                         token,
-		Profile:                       record.Profile,
-		ExpirationDisabled:            record.ExpirationDisabled,
-		AttestedExecutionGraphDigest:  record.ExecutionGraphDigest,
-		SubmittedExecutionGraphDigest: fingerprint.ExecutionGraphDigest,
-		Script:                        restored,
-		JavaClasspathReviewChecked:    javaReviewDraft,
-	}
-	if lineageAllowed {
-		claim.RecordingSessionID = record.RecordingSessionID
-		claim.RecordingSnapshotDigest = record.RecordingSnapshotDigest
-	}
-	return claim, nil
+	return &importDraftAttestationClaim{Token: claim.Token, Profile: claim.Profile, Script: claim.Script, ExpirationDisabled: claim.ExpirationDisabled, JavaClasspathReviewChecked: claim.JavaClasspathReviewChecked, RecordingSessionID: claim.RecordingSessionID, RecordingSnapshotDigest: claim.RecordingSnapshotDigest, AttestedExecutionGraphDigest: claim.AttestedExecutionGraphDigest, SubmittedExecutionGraphDigest: claim.SubmittedExecutionGraphDigest}, nil
 }
 
 func (s *Server) claimProtectedImportDraftAttestation(
@@ -714,31 +536,7 @@ func importDraftFingerprintAllowed(
 	record *importDraftAttestation,
 	fingerprint importDraftCredentialFingerprint,
 ) bool {
-	if record == nil {
-		return false
-	}
-	if record.FullDigest != "" || fingerprint.FullDigest != "" {
-		return record.FullDigest != "" &&
-			fingerprint.FullDigest != "" &&
-			record.FullDigest == fingerprint.FullDigest
-	}
-	if len(record.CredentialDigests) == 0 ||
-		len(fingerprint.CredentialDigests) == 0 {
-		return false
-	}
-	// Credential digests are bound to both the exact value and its executable
-	// path/occurrence. That is the authority this one-shot capability grants.
-	// Non-credential authoring changes (pacing, timeout, display metadata,
-	// protocol profile, and similar import-screen options) do not need to be
-	// byte-identical to the inspection response and must not force the operator
-	// to re-import or re-enter a password. A new, moved, or changed credential
-	// produces a different location-bound digest and is still rejected below.
-	for digest, count := range fingerprint.CredentialDigests {
-		if count <= 0 || record.CredentialDigests[digest] < count {
-			return false
-		}
-	}
-	return len(fingerprint.CredentialDigests) > 0
+	return importreview.DraftFingerprintAllowed(record, fingerprint)
 }
 
 func (s *Server) releaseImportDraftAttestation(claim *importDraftAttestationClaim) {
@@ -754,11 +552,7 @@ func (s *Server) releaseImportDraftAttestation(claim *importDraftAttestationClai
 		s.releaseImportCandidateClaim(claim.ProtectedClaim)
 		return
 	}
-	s.importDraftAttestationMu.Lock()
-	defer s.importDraftAttestationMu.Unlock()
-	if record := s.importDraftAttestations[claim.Token]; record != nil {
-		record.Claimed = false
-	}
+	s.memoryImportDraftOwner().Release(claim.Token)
 }
 
 // retainCommittedImportDraftAttestation drops process-local sensitive bytes and
@@ -785,11 +579,7 @@ func (s *Server) retainCommittedImportDraftAttestation(claim *importDraftAttesta
 		}
 	}
 	if claim.ProtectedClaim == nil {
-		s.importDraftAttestationMu.Lock()
-		if record := s.importDraftAttestations[claim.Token]; record != nil && record.Claimed {
-			record.Retained = true
-		}
-		s.importDraftAttestationMu.Unlock()
+		s.memoryImportDraftOwner().RetainCommitted(claim.Token)
 	}
 }
 
@@ -809,12 +599,7 @@ func (s *Server) completeImportDraftAttestation(claim *importDraftAttestationCla
 		}
 		return s.completeImportCandidateClaim(claim.Context, claim.ProtectedClaim)
 	}
-	s.importDraftAttestationMu.Lock()
-	defer s.importDraftAttestationMu.Unlock()
-	if record := s.importDraftAttestations[claim.Token]; record != nil && record.Claimed {
-		record.Script = nil
-		delete(s.importDraftAttestations, claim.Token)
-	}
+	s.memoryImportDraftOwner().Complete(claim.Token)
 	return nil
 }
 
@@ -850,12 +635,7 @@ func (s *Server) discardImportDraftAttestation(r *http.Request, script *dsl.Scri
 		})
 		return
 	}
-	s.importDraftAttestationMu.Lock()
-	if record := s.importDraftAttestations[token]; record != nil {
-		record.Script = nil
-	}
-	delete(s.importDraftAttestations, token)
-	s.importDraftAttestationMu.Unlock()
+	s.memoryImportDraftOwner().Discard(token)
 }
 
 func importDraftProjectIDForRequest(r *http.Request, script *dsl.Script) string {
@@ -872,33 +652,18 @@ func importDraftProjectIDForRequest(r *http.Request, script *dsl.Script) string 
 	return normalizeProjectID(projectID)
 }
 
-func (s *Server) sweepImportDraftAttestationsLocked(now time.Time) {
-	for token, record := range s.importDraftAttestations {
-		if record == nil || (!record.ExpirationDisabled && !record.ExpiresAt.After(now)) {
-			if record != nil {
-				record.Script = nil
-			}
-			delete(s.importDraftAttestations, token)
-		}
+func (s *Server) memoryImportDraftOwner() *importreview.MemoryDraftOwner {
+	s.importDraftAttestationMu.Lock()
+	defer s.importDraftAttestationMu.Unlock()
+	if s.importDraftOwner == nil {
+		s.importDraftOwner = importreview.NewMemoryDraftOwner()
 	}
+	return s.importDraftOwner
 }
 
-func importDraftAttestationToken(script *dsl.Script) string {
-	if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
-		return ""
-	}
-	token, _ := script.Metadata.Import.Preserved[importDraftAttestationMetadataKey].(string)
-	return strings.TrimSpace(token)
-}
+var importDraftAttestationToken = importreview.ImportDraftAttestationToken
 
-func stripImportDraftAttestation(script *dsl.Script) {
-	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
-		script.Metadata.Import.Preserved == nil {
-		return
-	}
-	delete(script.Metadata.Import.Preserved, importDraftAttestationMetadataKey)
-	delete(script.Metadata.Import.Preserved, importDraftRecordingLineageMetadataKey)
-}
+var stripImportDraftAttestation = importreview.StripImportDraftAttestation
 
 func protectedImportDraftRecordingLineage(script *dsl.Script) (string, string, string) {
 	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
@@ -921,371 +686,47 @@ func protectedImportDraftRecordingLineage(script *dsl.Script) (string, string, s
 	return sessionID, snapshotDigest, digest
 }
 
-func fingerprintImportDraftCredentials(
-	script *dsl.Script,
-) (importDraftCredentialFingerprint, error) {
-	fingerprint, _, err := fingerprintImportDraftCredentialsWithProjection(script, nil)
-	return fingerprint, err
-}
+var fingerprintImportDraftCredentials = importreview.FingerprintImportDraftCredentials
 
 // importDraftProjection is a draft's maskScriptSecrets projection (script, nil
 // when projecting failed) with the JSON forms of the draft and of script that
 // fingerprinting compared (nil when not built). Projecting and converting a
 // large draft cost more than the rest of an import response, so callers that
 // need them again reuse these. Nothing may modify them.
-type importDraftProjection struct {
-	script                 *dsl.Script
-	rawJSON, projectedJSON any
-}
+type importDraftProjection = importreview.ImportDraftProjection
 
 // fingerprintImportDraftCredentialsWithProjection also returns the projection
 // it fingerprinted, which is empty when fingerprinting failed before
 // projecting. The projection scrubs text through memo (nil for a memo of its
 // own).
-func fingerprintImportDraftCredentialsWithProjection(
-	script *dsl.Script,
-	memo *importProjectionTextMemo,
-) (importDraftCredentialFingerprint, importDraftProjection, error) {
-	if script == nil {
-		return importDraftCredentialFingerprint{}, importDraftProjection{}, errors.New("import draft is required")
-	}
-	executionGraphDigest, err := canonicalImportDraftExecutionGraphDigest(script)
-	if err != nil {
-		return importDraftCredentialFingerprint{}, importDraftProjection{}, err
-	}
-	raw := importResponseRawScriptValue(script)
-	projectedScript := maskScriptSecretsWithMemo(script, memo)
-	projection := importDraftProjection{script: projectedScript}
-	if _, converted := raw.(map[string]any); converted {
-		projection.rawJSON = raw
-	}
-	if projectedScript == nil {
-		digest, err := fullImportDraftExecutionDigest(script)
-		return importDraftCredentialFingerprint{
-			ExecutionGraphDigest: executionGraphDigest,
-			FullDigest:           digest,
-			HasRawCredentials:    err == nil,
-		}, projection, err
-	}
-	projected := importResponseRawScriptValue(projectedScript)
-	if _, converted := projected.(map[string]any); converted {
-		projection.projectedJSON = projected
-	}
-	requirements := secretBindingRequirementsForImportScripts(projected)
-	if opaqueImportSourceProjectionChanged(raw, projected) || unlocatedRequestBodyProjectionChanged(script, projectedScript, requirements) {
-		digest, err := fullImportDraftExecutionDigest(script)
-		return importDraftCredentialFingerprint{
-			ExecutionGraphDigest: executionGraphDigest,
-			FullDigest:           digest,
-			HasRawCredentials:    err == nil,
-		}, projection, err
-	}
-	if len(requirements) == 0 {
-		if runtimeCredentialSourceProjectionChanged(script, projectedScript) ||
-			importHeaderFidelityProjectionChanged(script, projectedScript) {
-			digest, err := fullImportDraftExecutionDigest(script)
-			return importDraftCredentialFingerprint{
-				ExecutionGraphDigest: executionGraphDigest,
-				FullDigest:           digest,
-				HasRawCredentials:    err == nil,
-			}, projection, err
-		}
-		return importDraftCredentialFingerprint{
-			ExecutionGraphDigest: executionGraphDigest,
-		}, projection, nil
-	}
-	values := sourceSecretValuesForImportNodes(raw, projected, requirements)
-	if len(values) == 0 {
-		return importDraftCredentialFingerprint{
-			ExecutionGraphDigest: executionGraphDigest,
-		}, projection, nil
-	}
-	if len(values) != len(requirements) {
-		digest, err := fullImportDraftExecutionDigest(script)
-		return importDraftCredentialFingerprint{
-			ExecutionGraphDigest: executionGraphDigest,
-			FullDigest:           digest,
-			HasRawCredentials:    err == nil,
-		}, projection, err
-	}
-	digests := make(map[string]int, len(values))
-	requirementsByID := make(map[string]SecretBindingRequirement, len(requirements))
-	ids := make([]string, 0, len(requirements))
-	for _, requirement := range requirements {
-		requirementsByID[requirement.ID] = requirement
-		if _, available := values[requirement.ID]; available {
-			ids = append(ids, requirement.ID)
-		}
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		requirement := requirementsByID[id]
-		location := requirement.Path + "\x00" +
-			fmt.Sprintf("%d", requirement.Occurrence)
-		sum := sha256.Sum256([]byte(
-			"apexload.import-draft-credential.v2\x00" +
-				location + "\x00" + values[id],
-		))
-		digests[hex.EncodeToString(sum[:])]++
-	}
-	structureDigest, err := canonicalImportDraftStructureDigestFromProjection(projectedScript)
-	if err != nil {
-		return importDraftCredentialFingerprint{}, projection, err
-	}
-	return importDraftCredentialFingerprint{
-		CredentialDigests:    digests,
-		StructureDigest:      structureDigest,
-		ExecutionGraphDigest: executionGraphDigest,
-		HasRawCredentials:    true,
-	}, projection, nil
-}
+var fingerprintImportDraftCredentialsWithProjection = importreview.FingerprintImportDraftCredentialsWithProjection
 
 // opaqueImportSourceProjectionChanged detects exact, inert source payloads
 // whose credentials cannot be represented as ordinary guided binding
 // requirements. Any such delta is full-digest attested so a legacy save cannot
 // silently persist the disclosure projection in place of the operator's exact
 // source.
-func opaqueImportSourceProjectionChanged(raw, projected any) bool {
-	switch rawValue := raw.(type) {
-	case map[string]any:
-		projectedValue, _ := projected.(map[string]any)
-		for key, child := range rawValue {
-			projectedChild := projectedValue[key]
-			if isOpaqueImportSourcePayloadKey(key) {
-				rawPayload, rawErr := json.Marshal(child)
-				projectedPayload, projectedErr := json.Marshal(projectedChild)
-				if rawErr != nil || projectedErr != nil ||
-					string(rawPayload) != string(projectedPayload) {
-					return true
-				}
-				continue
-			}
-			if opaqueImportSourceProjectionChanged(child, projectedChild) {
-				return true
-			}
-		}
-	case []any:
-		projectedValue, _ := projected.([]any)
-		for index, child := range rawValue {
-			// Ordinary review/provenance arrays may be shortened by disclosure
-			// sanitization. That is not an opaque executable-source delta by itself.
-			// Continue into a missing child with nil so only a nested key explicitly
-			// recognized by isOpaqueImportSourcePayloadKey can authorize a full-draft
-			// attestation.
-			var projectedChild any
-			if index < len(projectedValue) {
-				projectedChild = projectedValue[index]
-			}
-			if opaqueImportSourceProjectionChanged(child, projectedChild) {
-				return true
-			}
-		}
-	}
-	return false
-}
+var opaqueImportSourceProjectionChanged = importreview.OpaqueImportSourceProjectionChanged
 
 func canonicalImportDraftStructureDigest(script *dsl.Script) (string, error) {
 	projected := maskScriptSecrets(script)
 	return canonicalImportDraftStructureDigestFromProjection(projected)
 }
 
-func canonicalImportDraftStructureDigestFromProjection(projected *dsl.Script) (string, error) {
-	// Fingerprinting already has a private disclosure copy. Clone it before
-	// canonicalization rather than performing the full credential projection a
-	// second time; callers retain ownership of their immutable projection.
-	projected = cloneScriptDefinition(projected)
-	if projected == nil {
-		return "", errors.New("project import draft structure")
-	}
-	stripImportDraftAttestation(projected)
-	if err := sanitizePersistentImportReviewSurfaces(projected); err != nil {
-		return "", err
-	}
-	// A disclosure response may already carry the transient marker before
-	// projection runs again. It identifies response-only masking, not source
-	// behavior. Keep all durable review gates in the digest, but do not let
-	// this marker prevent receipt recovery for the same authoritative draft.
-	if err := dslwalk.Walk(projected, func(ref dslwalk.SurfaceRef) error {
-		metadata := ref.Metadata()
-		if scriptProjectionResponseGateMarker(metadata) {
-			delete(metadata, scriptProjectionResponseGateMetadataKey)
-		}
-		return nil
-	}); err != nil {
-		return "", fmt.Errorf("inspect projected import draft markers: %w", err)
-	}
-	// An import save stamps the digest of what it writes; a draft never
-	// carries it.
-	projected.Metadata = withoutImportedContentDigest(projected.Metadata)
-	projected.ID = ""
-	projected.RefKey = ""
-	projected.Name = ""
-	projected.ProjectID = ""
-	projected.FolderID = nil
-	projected.CreatedAt = time.Time{}
-	projected.UpdatedAt = time.Time{}
-	value, err := scriptAsJSONValue(projected)
-	if err != nil {
-		return "", err
-	}
-	value = canonicalizeImportDraftCredentialTokens(value)
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return "", fmt.Errorf("marshal import draft structure: %w", err)
-	}
-	sum := sha256.Sum256(payload)
-	return hex.EncodeToString(sum[:]), nil
-}
+var canonicalImportDraftStructureDigestFromProjection = importreview.CanonicalImportDraftStructureDigestFromProjection
 
-func canonicalImportDraftExecutionGraphDigest(script *dsl.Script) (string, error) {
-	// Recording lineage is an authorization boundary, not an equivalence
-	// comparison. Hash the exact executable graph, including credential bytes
-	// and exact secret-reference names. Server-owned binding/parameterization
-	// endpoints rotate the capability after their mutation, so no
-	// credential-canonicalization is necessary or safe here.
-	return scriptCorrelationActionGraphDigest(script)
-}
+var canonicalImportDraftExecutionGraphDigest = importreview.CanonicalImportDraftExecutionGraphDigest
 
-func canonicalizeImportDraftCredentialTokens(value any) any {
-	switch typed := value.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(typed))
-		for key, child := range typed {
-			out[key] = canonicalizeImportDraftCredentialTokens(child)
-		}
-		return out
-	case []any:
-		out := make([]any, len(typed))
-		for index, child := range typed {
-			out[index] = canonicalizeImportDraftCredentialTokens(child)
-		}
-		return out
-	case string:
-		const slot = "__APEXLOAD_IMPORTED_CREDENTIAL_SLOT__"
-		normalized := strings.ReplaceAll(typed, maskedScriptSecret, slot)
-		return scriptSecretTemplatePattern.ReplaceAllString(normalized, slot)
-	default:
-		return value
-	}
-}
+var canonicalizeImportDraftCredentialTokens = importreview.CanonicalizeImportDraftCredentialTokens
 
-func runtimeCredentialSourceProjectionChanged(raw, projected *dsl.Script) bool {
-	if raw == nil || projected == nil {
-		return false
-	}
-	if len(raw.Config.JavaVuser.AdditionalVMParameters) !=
-		len(projected.Config.JavaVuser.AdditionalVMParameters) {
-		return true
-	}
-	for index := range raw.Config.JavaVuser.AdditionalVMParameters {
-		if raw.Config.JavaVuser.AdditionalVMParameters[index] !=
-			projected.Config.JavaVuser.AdditionalVMParameters[index] {
-			return true
-		}
-	}
-	if unlocatedRequestBodyProjectionChanged(raw, projected, nil) {
-		return true
-	}
-	if len(raw.DataSources) != len(projected.DataSources) ||
-		len(raw.Parameters) != len(projected.Parameters) {
-		return false
-	}
-	for index := range raw.DataSources {
-		if raw.DataSources[index].InlineData != projected.DataSources[index].InlineData {
-			return true
-		}
-	}
-	for index := range raw.Parameters {
-		if len(raw.Parameters[index].Values) != len(projected.Parameters[index].Values) {
-			return false
-		}
-		for valueIndex := range raw.Parameters[index].Values {
-			if raw.Parameters[index].Values[valueIndex] != projected.Parameters[index].Values[valueIndex] {
-				return true
-			}
-		}
-	}
-	return false
-}
+var runtimeCredentialSourceProjectionChanged = importreview.RuntimeCredentialSourceProjectionChanged
 
 // Changed wire bytes are guided only when every projected span has a complete
 // existing locator. Encoded/nested values without such locators require an
 // exact execution digest even when another header/body has guided credentials.
-func unlocatedRequestBodyProjectionChanged(raw, projected *dsl.Script, requirements []SecretBindingRequirement) bool {
-	type bodyIdentity struct{ body, encoding string }
-	bodies := map[string]bodyIdentity{}
-	readBody := func(ref dslwalk.SurfaceRef) bodyIdentity {
-		if ref.Action != nil {
-			return bodyIdentity{ref.Action.Body, ref.Action.BodyEncoding}
-		}
-		body, _ := ref.Request["body"].(string)
-		encoding, _ := ref.Request["body_encoding"].(string)
-		return bodyIdentity{body, encoding}
-	}
-	covered := map[string][]SecretBindingRequirement{}
-	for _, requirement := range requirements {
-		covered[requirement.Path] = append(covered[requirement.Path], requirement)
-	}
-	if err := dslwalk.Walk(raw, func(ref dslwalk.SurfaceRef) error { bodies[ref.Path] = readBody(ref); return nil }); err != nil {
-		return true
-	}
-	changed := false
-	visited := 0
-	if err := dslwalk.Walk(projected, func(ref dslwalk.SurfaceRef) error {
-		expected, exists := bodies[ref.Path]
-		actual := readBody(ref)
-		visited++
-		if !exists || expected.encoding != actual.encoding {
-			changed = true
-			return nil
-		}
-		if expected.body == actual.body {
-			return nil
-		}
-		bodyRequirements := covered[dslWalkPathJSONPointer(ref.Path)+"/body"]
-		removed, aligned := extractLinearlyProjectedRedactions(expected.body, actual.body)
-		if !aligned || len(removed) == 0 || len(removed) != len(bodyRequirements) {
-			changed = true
-			return nil
-		}
-		seen := map[int]bool{}
-		for _, requirement := range bodyRequirements {
-			if requirement.Occurrence < 0 || requirement.Occurrence >= len(removed) || seen[requirement.Occurrence] {
-				changed = true
-				return nil
-			}
-			seen[requirement.Occurrence] = true
-		}
-		return nil
-	}); err != nil || changed || visited != len(bodies) {
-		return true
-	}
-	return false
-}
+var unlocatedRequestBodyProjectionChanged = importreview.UnlocatedRequestBodyProjectionChanged
 
-func fullImportDraftExecutionDigest(script *dsl.Script) (string, error) {
-	clone := cloneScriptDefinition(script)
-	if clone == nil {
-		return "", errors.New("clone import draft")
-	}
-	stripImportDraftAttestation(clone)
-	if err := sanitizePersistentImportReviewSurfaces(clone); err != nil {
-		return "", fmt.Errorf("sanitize import draft fingerprint: %w", err)
-	}
-	clone.ID = ""
-	clone.RefKey = ""
-	clone.Name = ""
-	clone.ProjectID = ""
-	clone.FolderID = nil
-	clone.CreatedAt = time.Time{}
-	clone.UpdatedAt = time.Time{}
-	payload, err := json.Marshal(clone)
-	if err != nil {
-		return "", fmt.Errorf("marshal import draft fingerprint: %w", err)
-	}
-	sum := sha256.Sum256(payload)
-	return hex.EncodeToString(sum[:]), nil
-}
+var fullImportDraftExecutionDigest = importreview.FullImportDraftExecutionDigest
 
 // completeImportDraftMutations rotates the capabilities of a whole batch of
 // credential-preserving drafts, lifting completeImportDraftMutation's two-phase

@@ -101,7 +101,7 @@ func TestPodCapacityStandbyRequiresIdleUnsharedFullBudget(t *testing.T) {
 		{"control", func(s *Service, c *pb.PodCapacityClaim) {
 			s.lifecycleCoordinator.pendingControls["legacy"] = &pendingAssignmentControl{}
 		}},
-		{"stopping", func(s *Service, c *pb.PodCapacityClaim) { s.stoppingTests["legacy"] = struct{}{} }},
+		{"stopping", func(s *Service, c *pb.PodCapacityClaim) { s.lifecycleCoordinator.stoppingTests["legacy"] = struct{}{} }},
 		{"execution", func(s *Service, c *pb.PodCapacityClaim) {
 			s.executions["legacy"] = map[string]*groupExecution{"group": {}}
 		}},
@@ -121,7 +121,7 @@ func TestPodCapacityStandbyRequiresIdleUnsharedFullBudget(t *testing.T) {
 			s.assignments = make(map[string]assignedTest)
 			s.lifecycleCoordinator.pendingStages = make(map[string]*pendingAssignmentStage)
 			s.lifecycleCoordinator.pendingControls = make(map[string]*pendingAssignmentControl)
-			s.stoppingTests = make(map[string]struct{})
+			s.lifecycleCoordinator.stoppingTests = make(map[string]struct{})
 			s.executions = make(map[string]map[string]*groupExecution)
 			_, stored := s.podCapacityClaims[claim.TestId]
 			s.mu.Unlock()
@@ -248,7 +248,7 @@ func TestPodCapacityStandbyRechecksIdleOnTransferAndActivation(t *testing.T) {
 				case "control":
 					s.lifecycleCoordinator.pendingControls[claim.TestId] = &pendingAssignmentControl{}
 				case "stopping":
-					s.stoppingTests[claim.TestId] = struct{}{}
+					s.lifecycleCoordinator.stoppingTests[claim.TestId] = struct{}{}
 				case "execution":
 					s.executions[claim.TestId] = map[string]*groupExecution{"soap": {}}
 				}
@@ -261,7 +261,7 @@ func TestPodCapacityStandbyRechecksIdleOnTransferAndActivation(t *testing.T) {
 				delete(s.assignments, claim.TestId)
 				delete(s.lifecycleCoordinator.pendingStages, claim.TestId)
 				delete(s.lifecycleCoordinator.pendingControls, claim.TestId)
-				delete(s.stoppingTests, claim.TestId)
+				delete(s.lifecycleCoordinator.stoppingTests, claim.TestId)
 				delete(s.executions, claim.TestId)
 				same := proto.Equal(s.podCapacityClaims[claim.TestId], claim)
 				s.mu.Unlock()

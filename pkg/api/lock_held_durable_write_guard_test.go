@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"sort"
 	"strings"
@@ -131,6 +132,7 @@ func uncountedLockHeldStoreWrites(fn *ast.FuncDecl) []lockHeldWriteSite {
 	events := muLockEvents(fn)
 	deferredUnlock := deferredMuUnlockPositions(fn)
 	tracked := trackDurableWriteSpans(fn)
+	outside := outsideContentLockSpans(fn)
 	sectionOpensAt, hasSection := firstDurableWriteSectionPos(fn)
 	startsHeld := strings.HasSuffix(fn.Name.Name, "Locked")
 
@@ -203,6 +205,11 @@ func uncountedLockHeldStoreWrites(fn *ast.FuncDecl) []lockHeldWriteSite {
 		}
 		if hasSection && call.Pos() > sectionOpensAt {
 			return true
+		}
+		for _, span := range outside {
+			if call.Pos() >= span.start && call.End() <= span.end {
+				return true
+			}
 		}
 		for _, span := range tracked {
 			if call.Pos() >= span.start && call.End() <= span.end {
@@ -295,4 +302,68 @@ func firstDurableWriteSectionPos(fn *ast.FuncDecl) (token.Pos, bool) {
 		return true
 	})
 	return first, found
+}
+
+// outsideContentLockSpans recognizes only the verified helper with the actual
+// live runner mutex, and only exempts its callback body. Passing another lock
+// or evaluating a store argument before the callback must remain visible.
+func outsideContentLockSpans(fn *ast.FuncDecl) []struct{ start, end token.Pos } {
+	var spans []struct{ start, end token.Pos }
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || len(call.Args) != 2 {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || (selector.Sel.Name != "OutsideLock" && selector.Sel.Name != "WriteOutsideLock") {
+			return true
+		}
+		pkg, ok := selector.X.(*ast.Ident)
+		if !ok || pkg.Name != "contentmutation" {
+			return true
+		}
+		address, ok := call.Args[0].(*ast.UnaryExpr)
+		if !ok || address.Op != token.AND {
+			return true
+		}
+		mutex, ok := address.X.(*ast.SelectorExpr)
+		if !ok || mutex.Sel.Name != "mu" {
+			return true
+		}
+		receiver, ok := mutex.X.(*ast.Ident)
+		if !ok || receiver.Name != "tr" {
+			return true
+		}
+		callback, ok := call.Args[1].(*ast.FuncLit)
+		if !ok {
+			return true
+		}
+		spans = append(spans, struct{ start, end token.Pos }{callback.Body.Pos(), callback.Body.End()})
+		return true
+	})
+	return spans
+}
+
+func TestContentRepositoryLockGuardRecognizesOnlyLiveLockRelease(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		uncounted  int
+	}{
+		{"direct write", `tr.mu.Lock(); defer tr.mu.Unlock(); tr.scriptStore.SaveScript(script)`, 1},
+		{"outside live lock", `tr.mu.Lock(); defer tr.mu.Unlock(); contentmutation.WriteOutsideLock(&tr.mu, func() error { return tr.scriptStore.SaveScript(script) })`, 0},
+		{"different mutex", `tr.mu.Lock(); defer tr.mu.Unlock(); contentmutation.WriteOutsideLock(&other.mu, func() error { return tr.scriptStore.SaveScript(script) })`, 1},
+		{"wrong helper", `tr.mu.Lock(); defer tr.mu.Unlock(); other.WriteOutsideLock(&tr.mu, func() error { return tr.scriptStore.SaveScript(script) })`, 1},
+		{"following write remains counted", `tr.mu.Lock(); defer tr.mu.Unlock(); contentmutation.WriteOutsideLock(&tr.mu, func() error { return tr.scriptStore.SaveScript(script) }); tr.scriptStore.DeleteScript(id)`, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			file, err := parser.ParseFile(token.NewFileSet(), "fixture.go", "package api; func (tr *TestRunner) mutation() {"+tc.body+"}", 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fn := file.Decls[0].(*ast.FuncDecl)
+			if got := len(uncountedLockHeldStoreWrites(fn)); got != tc.uncounted {
+				t.Fatalf("uncounted writes = %d, want %d", got, tc.uncounted)
+			}
+		})
+	}
 }

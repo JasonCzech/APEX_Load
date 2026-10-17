@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/harsynth"
+	"github.com/jasonczech/apexload/pkg/recordbridge"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -193,9 +194,5 @@ func (s *Server) handleDownloadRunArchiveBrowserHAR(w http.ResponseWriter, r *ht
 }
 
 func writeBrowserHARHeaders(w http.ResponseWriter, filename, fidelity string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("X-APEXLoad-HAR-Fidelity", fidelity)
+	recordbridge.WriteBrowserHARHeaders(w, filename, fidelity)
 }

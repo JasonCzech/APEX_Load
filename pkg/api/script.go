@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 // Script persistence + draft replay: CRUD for stored scripts (store, get,
 // list/filter, move, update, delete, usage) plus draft replay entry points and
 // summary enrichment. Extracted from runner.go; methods hang off *TestRunner.
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/contentmutation"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/refkey"
@@ -44,10 +47,8 @@ type conditionalScriptDeletePersistence interface {
 	DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.Time) (bool, error)
 }
 
-var (
-	errScriptConcurrentChange           = errors.New("script changed concurrently; reload and retry")
-	errScriptCredentialBindingsRequired = errors.New("script contains executable credentials that require logical secret bindings")
-)
+var errScriptConcurrentChange = importreview.ErrScriptConcurrentChange
+var errScriptCredentialBindingsRequired = importreview.ErrScriptCredentialBindingsRequired
 
 func validatePersistentLibraryScript(script *dsl.Script) error {
 	if isCIScriptSnapshot(script) {
@@ -66,193 +67,28 @@ func validatePersistentLibraryScript(script *dsl.Script) error {
 // maskScriptSecrets. On a masked read-modify-write, reconciliation restores
 // unchanged durable values from prior rather than asking the operator to enter
 // them again.
-func preparePersistentLibraryScript(script, prior *dsl.Script) (*dsl.Script, error) {
-	return preparePersistentLibraryScriptWithImportTrust(script, prior, false, "")
-}
+var preparePersistentLibraryScript = importreview.PreparePersistentLibraryScript
 
 // preparePersistentImportedLibraryScript is the only create-time entry point
 // that may establish the credential-preserving import policy. Callers must
 // already be inside an authenticated importer commit/session workflow; ordinary
 // script JSON is never an attestation, even if a client forges the same metadata
 // marker.
-func preparePersistentImportedLibraryScript(
-	script, prior *dsl.Script,
-	sourceProfile string,
-) (*dsl.Script, error) {
-	return preparePersistentLibraryScriptWithImportTrust(
-		script,
-		prior,
-		true,
-		sourceProfile,
-	)
-}
+var preparePersistentImportedLibraryScript = importreview.PreparePersistentImportedLibraryScript
 
-func preparePersistentLibraryScriptWithImportTrust(
-	script, prior *dsl.Script,
-	trustedImport bool,
-	sourceProfile string,
-) (*dsl.Script, error) {
-	candidate := cloneScriptDefinition(script)
-	if candidate == nil {
-		return nil, fmt.Errorf("failed to clone script for persistence")
-	}
-	// This opaque, short-lived capability authorizes one compatibility save;
-	// it is never durable import provenance and must not enter storage.
-	stripImportDraftAttestation(candidate)
-	script = candidate
-	// Only an authenticated importer commit or a durable server-owned prior may
-	// carry exact credential-bearing JVM argv. Structural/process-control
-	// validation remains universal.
-	preserveImportedCredentials := trustedImport || isCredentialPreservingImport(prior)
-	if err := validateJavaVMParameterSafety(script, preserveImportedCredentials); err != nil {
-		return nil, err
-	}
-	// A durable prior marker is server-owned evidence because ordinary create
-	// paths below cannot establish it. This permits masked read-modify-write
-	// without requiring credential re-entry while rejecting a forged marker on
-	// a new or previously ordinary script.
-	if preserveImportedCredentials {
-		preserved := script
-		if trustedImport {
-			// Adapter provenance is selected by the authenticated import route,
-			// never by the submitted draft. Besides being audit evidence, the
-			// profile controls source-specific gates and reconciliation rules.
-			// Stamp it even when a client supplied a different non-empty value.
-			if strings.TrimSpace(sourceProfile) == "" && prior != nil &&
-				prior.Metadata != nil && prior.Metadata.Import != nil {
-				sourceProfile = prior.Metadata.Import.Source
-			}
-			if preserved.Metadata == nil {
-				preserved.Metadata = &dsl.ScriptMetadata{}
-			}
-			if preserved.Metadata.Import == nil {
-				preserved.Metadata.Import = &dsl.ImportMetadata{}
-			}
-			preserved.Metadata.Import.Source = strings.TrimSpace(sourceProfile)
-		}
-		if prior != nil && prior.Metadata != nil && prior.Metadata.Import != nil {
-			if !trustedImport {
-				// Source profile is durable server-owned provenance. An ordinary
-				// editor may omit it but cannot relabel an imported script to a
-				// different adapter profile (which can also change
-				// source-specific replay-gate interpretation).
-				sourceProfile = prior.Metadata.Import.Source
-				if preserved.Metadata == nil {
-					preserved.Metadata = &dsl.ScriptMetadata{}
-				}
-				if preserved.Metadata.Import == nil {
-					preserved.Metadata.Import = &dsl.ImportMetadata{}
-				}
-				preserved.Metadata.Import.Source = sourceProfile
-			}
-		}
-		// Import provenance is server-owned durable state. An ordinary editor may
-		// omit or mask it, but cannot erase the attestation while executable
-		// imported values are being reconciled from the durable prior.
-		ensureCredentialPreservingImportMetadata(preserved, sourceProfile)
-		if err := reconcileMaskedScriptSecretsWithTrust(
-			preserved,
-			prior,
-			trustedImport,
-		); err != nil {
-			return nil, err
-		}
-		if !trustedImport && prior != nil {
-			if err := restoreServerOwnedImportSecurityMetadata(
-				preserved,
-				prior,
-			); err != nil {
-				return nil, err
-			}
-		}
-		if err := sanitizePersistentImportReviewSurfaces(preserved); err != nil {
-			return nil, err
-		}
-		if !trustedImport && prior != nil {
-			if err := validatePreservedImportCredentialEdits(preserved, prior); err != nil {
-				return nil, err
-			}
-		}
-		return preserved, nil
-	}
-	// The disclosure projection is a read/response and export concern. It is
-	// computed here only to run the logical-secret binding gate below; it is
-	// never what gets stored. Persisting it silently replaced operator-supplied
-	// values with [REDACTED]/{{secret.*}} stubs, so the durable row could be a
-	// script that can never run. Durable storage always keeps the executable
-	// script.
-	projected := maskScriptSecrets(script)
-	if projected == nil {
-		return nil, fmt.Errorf("failed to project script for durable secret binding")
-	}
-	if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
-		return nil, errScriptCredentialBindingsRequired
-	}
-	// A source commit fence is server-owned protected-import retry state that an
-	// ordinary write can neither establish nor carry forward. maskScriptSecrets
-	// dropped it on the way to storage; keep that boundary now that the
-	// executable script is what gets persisted.
-	stripProtectedImportSourceCommitFence(script)
-	if err := reconcileMaskedScriptSecrets(script, prior); err != nil {
-		return nil, err
-	}
-	if err := sanitizePersistentImportReviewSurfaces(script); err != nil {
-		return nil, err
-	}
-	return script, nil
-}
+var preparePersistentLibraryScriptWithImportTrust = importreview.PreparePersistentLibraryScriptWithImportTrust
 
-func ensureCredentialPreservingImportMetadata(script *dsl.Script, sourceProfile string) {
-	if script == nil {
-		return
-	}
-	sourceProfile = strings.TrimSpace(sourceProfile)
-	if script.Metadata == nil {
-		script.Metadata = &dsl.ScriptMetadata{}
-	}
-	if script.Metadata.Import == nil {
-		script.Metadata.Import = &dsl.ImportMetadata{}
-	}
-	if strings.TrimSpace(script.Metadata.Import.Source) == "" {
-		script.Metadata.Import.Source = sourceProfile
-	}
-	markCredentialPreservingImportScript(script)
-}
+var ensureCredentialPreservingImportMetadata = importreview.EnsureCredentialPreservingImportMetadata
 
-func isCredentialPreservingImport(script *dsl.Script) bool {
-	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
-		strings.TrimSpace(script.Metadata.Import.Source) == "" {
-		return false
-	}
-	policy, _ := script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey].(string)
-	return strings.EqualFold(
-		strings.TrimSpace(policy),
-		dsl.ImportPreservedCredentialPolicyPreserve,
-	)
-}
+var isCredentialPreservingImport = importreview.IsCredentialPreservingImport
 
 // validateStoredExecutionScript is for server-owned durable import/session
 // snapshots. A trusted import may retain credential-bearing Java VM argv, but
 // all ordinary DSL validation and every structural JVM option rule still
 // applies.
-func validateStoredExecutionScript(script *dsl.Script) []string {
-	if isCredentialPreservingImport(script) {
-		return dsl.ValidateScriptIssuesWithPreservedImportCredentials(script)
-	}
-	return dsl.ValidateScriptIssues(script)
-}
+var validateStoredExecutionScript = importreview.ValidateStoredExecutionScript
 
-func markCredentialPreservingImportScript(script *dsl.Script) {
-	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
-		strings.TrimSpace(script.Metadata.Import.Source) == "" {
-		return
-	}
-	if script.Metadata.Import.Preserved == nil {
-		script.Metadata.Import.Preserved = make(map[string]any)
-	}
-	script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey] =
-		dsl.ImportPreservedCredentialPolicyPreserve
-}
+var markCredentialPreservingImportScript = importreview.MarkCredentialPreservingImportScript
 
 func (tr *TestRunner) rejectActivePrivateCISnapshotMutationLocked(id string) error {
 	if tr != nil && tr.privateCISnapshots[strings.TrimSpace(id)] > 0 {
@@ -282,7 +118,7 @@ func (tr *TestRunner) durableScriptForMutationLocked(id string) (*dsl.Script, er
 		}
 		return cloneScriptDefinition(stored.Script), nil
 	}
-	script, err := reader.GetScript(id)
+	script, err := contentmutation.OutsideLock(&tr.mu, func() (*dsl.Script, error) { return reader.GetScript(id) })
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -440,6 +276,9 @@ func (tr *TestRunner) prepareGitHubScriptImportLocked(script *dsl.Script) (*dsl.
 // without mutating durable or cached state. Bulk import runs this for every
 // remote JSON file before committing the first candidate.
 func (tr *TestRunner) PreflightGitHubScriptImport(script *dsl.Script, target storage.GitHubScriptSyncTarget) error {
+	tr.scriptMutationMu.Lock()
+	defer tr.scriptMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	_, current, err := tr.prepareGitHubScriptImportLocked(script)
@@ -450,7 +289,7 @@ func (tr *TestRunner) PreflightGitHubScriptImport(script *dsl.Script, target sto
 	if !ok {
 		return fmt.Errorf("durable script store does not support github link preflight")
 	}
-	link, err := linkStore.GetGitHubScriptLink(current.ID)
+	link, err := contentmutation.OutsideLock(&tr.mu, func() (*storage.GitHubScriptLink, error) { return linkStore.GetGitHubScriptLink(current.ID) })
 	if err != nil {
 		return err
 	}
@@ -479,10 +318,13 @@ func (tr *TestRunner) StoreGitHubScriptImportDurable(
 		return nil, storage.GitHubScriptImportConflict, err
 	}
 	defer releaseReferenceMutation()
+	tr.scriptMutationMu.Lock()
+	defer tr.scriptMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
+	releaseProjectMutation := tr.acquireProjectTestMutation(script.ProjectID)
+	defer releaseProjectMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
 	projected, current, err := tr.prepareGitHubScriptImportLocked(script)
 	if err != nil {
 		return nil, storage.GitHubScriptImportConflict, err
@@ -528,7 +370,9 @@ func (tr *TestRunner) StoreGitHubScriptImportDurable(
 	if !ok {
 		return nil, storage.GitHubScriptImportConflict, fmt.Errorf("durable script store does not support atomic github imports")
 	}
-	outcome, err := importStore.CommitGitHubScriptImport(projected, &linkCopy, expectedUpdatedAt)
+	outcome, err := contentmutation.OutsideLock(&tr.mu, func() (storage.GitHubScriptImportOutcome, error) {
+		return importStore.CommitGitHubScriptImport(projected, &linkCopy, expectedUpdatedAt)
+	})
 	if err != nil || outcome == storage.GitHubScriptImportConflict {
 		return nil, outcome, err
 	}
@@ -595,6 +439,7 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 	}
 	tr.scriptMutationMu.Lock()
 	defer tr.scriptMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
 
 	scriptID := strings.TrimSpace(script.ID)
 	if scriptID == "" {
@@ -858,10 +703,13 @@ func (tr *TestRunner) createScriptDurable(
 	if err := validatePersistentLibraryScript(script); err != nil {
 		return nil, false, err
 	}
+	tr.scriptMutationMu.Lock()
+	defer tr.scriptMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
+	releaseProjectMutation := tr.acquireProjectTestMutation(script.ProjectID)
+	defer releaseProjectMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
 	scriptID := strings.TrimSpace(script.ID)
 	if scriptID == "" {
 		scriptID = uuid.New().String()
@@ -900,13 +748,17 @@ func (tr *TestRunner) createScriptDurable(
 		if err := tr.prepareNewScriptRefKeyLocked(script); err != nil {
 			return nil, false, err
 		}
-		mutation, err := store.CreateScriptAuthoringIfAbsent(script)
+		mutation, err := contentmutation.OutsideLock(&tr.mu, func() (*storage.ScriptAuthoringMutationResult, error) {
+			return store.CreateScriptAuthoringIfAbsent(script)
+		})
 		if errors.Is(err, storage.ErrScriptRefKeyTaken) {
 			// Another replica took the key since this one indexed its scripts.
 			if err := tr.assignNextScriptRefKeyLocked(script); err != nil {
 				return nil, false, err
 			}
-			mutation, err = store.CreateScriptAuthoringIfAbsent(script)
+			mutation, err = contentmutation.OutsideLock(&tr.mu, func() (*storage.ScriptAuthoringMutationResult, error) {
+				return store.CreateScriptAuthoringIfAbsent(script)
+			})
 		}
 		if err != nil {
 			return nil, false, err
@@ -932,18 +784,18 @@ func (tr *TestRunner) createScriptDurable(
 		if err := tr.prepareNewScriptRefKeyLocked(script); err != nil {
 			return nil, false, err
 		}
-		created, err = store.CreateScriptIfAbsent(script)
+		created, err = contentmutation.OutsideLock(&tr.mu, func() (bool, error) { return store.CreateScriptIfAbsent(script) })
 		if errors.Is(err, storage.ErrScriptRefKeyTaken) {
 			if err := tr.assignNextScriptRefKeyLocked(script); err != nil {
 				return nil, false, err
 			}
-			created, err = store.CreateScriptIfAbsent(script)
+			created, err = contentmutation.OutsideLock(&tr.mu, func() (bool, error) { return store.CreateScriptIfAbsent(script) })
 		}
 		if err != nil {
 			return nil, false, err
 		}
 		if !created {
-			existing, err := store.GetScript(script.ID)
+			existing, err := contentmutation.OutsideLock(&tr.mu, func() (*dsl.Script, error) { return store.GetScript(script.ID) })
 			if err != nil {
 				return nil, false, fmt.Errorf("load conflicting script %s: %w", script.ID, err)
 			}
@@ -977,7 +829,7 @@ func (tr *TestRunner) createScriptDurable(
 		if err := tr.prepareNewScriptRefKeyLocked(script); err != nil {
 			return nil, false, err
 		}
-		if err := tr.saveStoredScriptWithImportTrust(script, nil, trustedImport, sourceProfile); err != nil {
+		if err := contentmutation.WriteOutsideLock(&tr.mu, func() error { return tr.saveStoredScriptWithImportTrust(script, nil, trustedImport, sourceProfile) }); err != nil {
 			return nil, false, err
 		}
 	}
@@ -1028,10 +880,13 @@ func (tr *TestRunner) UpdateScriptDurableIfUnchanged(script, expected *dsl.Scrip
 		return nil, false, err
 	}
 	defer releaseReferenceMutation()
+	tr.scriptMutationMu.Lock()
+	defer tr.scriptMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
+	releaseProjectMutation := tr.acquireProjectTestMutation(expected.ProjectID)
+	defer releaseProjectMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
 	if strings.TrimSpace(script.ID) == "" || script.ID != expected.ID {
 		return nil, false, fmt.Errorf("conditional script update requires a matching id")
 	}
@@ -1067,7 +922,7 @@ func (tr *TestRunner) UpdateScriptDurableIfUnchanged(script, expected *dsl.Scrip
 	script.CreatedAt = expected.CreatedAt
 
 	if store, ok := tr.scriptStore.(conditionalScriptPersistence); ok {
-		updated, err := store.UpdateScriptIfUnchanged(script, expected.UpdatedAt)
+		updated, err := contentmutation.OutsideLock(&tr.mu, func() (bool, error) { return store.UpdateScriptIfUnchanged(script, expected.UpdatedAt) })
 		if err != nil || !updated {
 			return nil, updated, err
 		}
@@ -1078,7 +933,7 @@ func (tr *TestRunner) UpdateScriptDurableIfUnchanged(script, expected *dsl.Scrip
 		if current == nil || current.Script == nil || !equivalentCreateOnlyScript(current.Script, expected) {
 			return nil, false, nil
 		}
-		if err := tr.saveStoredScriptWithImportTrust(script, expected, false, ""); err != nil {
+		if err := contentmutation.WriteOutsideLock(&tr.mu, func() error { return tr.saveStoredScriptWithImportTrust(script, expected, false, "") }); err != nil {
 			return nil, false, err
 		}
 	}
@@ -1117,10 +972,13 @@ func (tr *TestRunner) DeleteScriptDurableIfUnchanged(id string, expectedUpdatedA
 		return false, err
 	}
 	defer releaseReferenceMutation()
+	tr.scriptMutationMu.Lock()
+	defer tr.scriptMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
+	releaseProjectMutation := tr.acquireProjectTestMutation(tr.scriptProjectIDForSecretReferenceMutation(id))
+	defer releaseProjectMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
 	id = strings.TrimSpace(id)
 	if id == "" || expectedUpdatedAt.IsZero() {
 		return false, fmt.Errorf("script id and expected updated_at are required")
@@ -1131,7 +989,7 @@ func (tr *TestRunner) DeleteScriptDurableIfUnchanged(id string, expectedUpdatedA
 	deleted := false
 	if store, ok := tr.scriptStore.(conditionalScriptDeletePersistence); ok {
 		var err error
-		deleted, err = store.DeleteScriptIfUnchanged(id, expectedUpdatedAt)
+		deleted, err = contentmutation.OutsideLock(&tr.mu, func() (bool, error) { return store.DeleteScriptIfUnchanged(id, expectedUpdatedAt) })
 		if err != nil || !deleted {
 			return deleted, err
 		}
@@ -1142,7 +1000,7 @@ func (tr *TestRunner) DeleteScriptDurableIfUnchanged(id string, expectedUpdatedA
 		if current == nil || current.Script == nil || !current.Script.UpdatedAt.Equal(expectedUpdatedAt) {
 			return false, nil
 		}
-		if err := tr.deleteStoredScript(id); err != nil {
+		if err := contentmutation.WriteOutsideLock(&tr.mu, func() error { return tr.deleteStoredScript(id) }); err != nil {
 			return false, err
 		}
 		deleted = true
@@ -1236,8 +1094,9 @@ func (tr *TestRunner) getScriptDurableIncludingPending(id string) (*StoredScript
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
+	revision, observation := tr.contentRevision, tr.scriptMutationMu.Observe()
 	if store, ok := tr.scriptStore.(createOnlyScriptPersistence); ok {
-		script, err := store.GetScript(id)
+		script, err := contentmutation.OutsideLock(&tr.mu, func() (*dsl.Script, error) { return store.GetScript(id) })
 		if err != nil {
 			return nil, false, err
 		}
@@ -1253,6 +1112,9 @@ func (tr *TestRunner) getScriptDurableIncludingPending(id string) (*StoredScript
 			Version: script.Version, ProjectID: script.ProjectID, FolderID: cloneStringPtr(script.FolderID),
 			ArchivedAt: cloneTimePtr(script.ArchivedAt),
 			CreatedAt:  createdAt, AuthoringHealth: buildStoredScriptAuthoringHealth(script), Script: cloneScriptDefinition(script),
+		}
+		if tr.contentRevision != revision || !tr.scriptMutationMu.CanPublish(observation) || tr.projectDeletionErrorLocked(stored.ProjectID) != nil {
+			return cloneStoredScriptForReadLocked(stored), true, nil
 		}
 		if previous := tr.scripts[id]; previous != nil {
 			tr.removeRefKeyLocked(previous.RefKey)
@@ -1389,15 +1251,18 @@ func (tr *TestRunner) MoveScriptDurable(id string, folderID *string) (bool, erro
 // delete/recreate or edit on another HA replica cannot be moved by a request
 // authorized against an older row with the same ID.
 func (tr *TestRunner) MoveScriptDurableInProject(id string, folderID *string, expectedProjectID string) (bool, error) {
+	tr.scriptMutationMu.Lock()
+	defer tr.scriptMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
+	releaseProjectMutation := tr.acquireProjectTestMutation(tr.scriptProjectIDForSecretReferenceMutation(id))
+	defer releaseProjectMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
 	id = tr.resolveRefKeyLocked(id)
 	if err := tr.rejectActivePrivateCISnapshotMutationLocked(id); err != nil {
 		return false, err
 	}
-	cached := tr.scripts[id]
+	cached := cloneStoredScriptForReadLocked(tr.scripts[id])
 	if cached == nil {
 		return false, nil
 	}
@@ -1418,7 +1283,7 @@ func (tr *TestRunner) MoveScriptDurableInProject(id string, folderID *string, ex
 	if tr.scriptStore != nil {
 		store, ok := tr.scriptStore.(conditionalScriptPersistence)
 		if !ok {
-			if err := tr.scriptStore.MoveScript(id, folderID); err != nil {
+			if err := contentmutation.WriteOutsideLock(&tr.mu, func() error { return tr.scriptStore.MoveScript(id, folderID) }); err != nil {
 				return false, err
 			}
 			current.FolderID = cloneStringPtr(folderID)
@@ -1429,7 +1294,7 @@ func (tr *TestRunner) MoveScriptDurableInProject(id string, folderID *string, ex
 			if err != nil {
 				return false, err
 			}
-			moved, err := store.UpdateScriptIfUnchanged(candidate, current.UpdatedAt)
+			moved, err := contentmutation.OutsideLock(&tr.mu, func() (bool, error) { return store.UpdateScriptIfUnchanged(candidate, current.UpdatedAt) })
 			if err != nil {
 				return false, err
 			}
@@ -1446,6 +1311,7 @@ func (tr *TestRunner) MoveScriptDurableInProject(id string, folderID *string, ex
 		cached.Script.FolderID = cloneStringPtr(current.FolderID)
 		cached.Script.UpdatedAt = current.UpdatedAt
 	}
+	tr.scripts[id] = cached
 	tr.contentRevision++
 	return true, nil
 }
@@ -1581,10 +1447,13 @@ func (tr *TestRunner) updateScriptDurableInProject(
 		return nil, false, err
 	}
 	defer releaseReferenceMutation()
+	tr.scriptMutationMu.Lock()
+	defer tr.scriptMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
+	releaseProjectMutation := tr.acquireProjectTestMutation(mutationProjectID)
+	defer releaseProjectMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
 	var expectedContent *storage.ScriptAuthoringPrecondition
 	if len(contentPreconditions) > 0 {
 		expectedContent = contentPreconditions[0]
@@ -1601,11 +1470,11 @@ func (tr *TestRunner) updateScriptDurableInProject(
 	if expectedContent != nil && !supportsAuthoring {
 		return nil, false, errScriptAuthoringUnsupported
 	}
-	existing := tr.scripts[id]
+	existing := cloneStoredScriptForReadLocked(tr.scripts[id])
 	var current *dsl.Script
 	var observed *storage.ScriptAuthoringSnapshot
 	if supportsAuthoring {
-		observed, err = authoringStore.GetScriptAuthoringSnapshot(id)
+		observed, err = contentmutation.OutsideLock(&tr.mu, func() (*storage.ScriptAuthoringSnapshot, error) { return authoringStore.GetScriptAuthoringSnapshot(id) })
 		if errors.Is(err, storage.ErrScriptAuthoringNotFound) || errors.Is(err, sql.ErrNoRows) {
 			return nil, false, nil
 		}
@@ -1673,7 +1542,7 @@ func (tr *TestRunner) updateScriptDurableInProject(
 		return nil, false, fmt.Errorf("Java Vuser scripts must be changed through local authoring-session review and approval")
 	}
 	if scriptRequiresJavaApproval {
-		if conflict := tr.javaVuserApprovalConflict(script); conflict != "" {
+		if conflict, _ := contentmutation.OutsideLock(&tr.mu, func() (string, error) { return tr.javaVuserApprovalConflict(script), nil }); conflict != "" {
 			return nil, false, fmt.Errorf("%s", conflict)
 		}
 	}
@@ -1722,9 +1591,13 @@ func (tr *TestRunner) updateScriptDurableInProject(
 		}
 		var mutation *storage.ScriptAuthoringMutationResult
 		if strings.TrimSpace(rulesetID) != "" {
-			mutation, err = authoringStore.UpdateScriptAuthoringIfCurrentAndCorrelationRulesetCurrent(script, precondition, rulesetID, expectedProjectID, expectedRulesetUpdatedAt)
+			mutation, err = contentmutation.OutsideLock(&tr.mu, func() (*storage.ScriptAuthoringMutationResult, error) {
+				return authoringStore.UpdateScriptAuthoringIfCurrentAndCorrelationRulesetCurrent(script, precondition, rulesetID, expectedProjectID, expectedRulesetUpdatedAt)
+			})
 		} else {
-			mutation, err = authoringStore.UpdateScriptAuthoringIfCurrent(script, precondition)
+			mutation, err = contentmutation.OutsideLock(&tr.mu, func() (*storage.ScriptAuthoringMutationResult, error) {
+				return authoringStore.UpdateScriptAuthoringIfCurrent(script, precondition)
+			})
 		}
 		if errors.Is(err, storage.ErrScriptAuthoringConflict) {
 			return nil, false, errors.Join(errScriptConcurrentChange, err)
@@ -1746,13 +1619,15 @@ func (tr *TestRunner) updateScriptDurableInProject(
 			if !ok {
 				return nil, false, fmt.Errorf("atomic correlation ruleset apply is not supported by the configured storage")
 			}
-			updated, err := store.UpdateScriptIfUnchangedAndCorrelationRulesetCurrent(
-				script,
-				current.UpdatedAt,
-				rulesetID,
-				expectedProjectID,
-				expectedRulesetUpdatedAt,
-			)
+			updated, err := contentmutation.OutsideLock(&tr.mu, func() (bool, error) {
+				return store.UpdateScriptIfUnchangedAndCorrelationRulesetCurrent(
+					script,
+					current.UpdatedAt,
+					rulesetID,
+					expectedProjectID,
+					expectedRulesetUpdatedAt,
+				)
+			})
 			if err != nil {
 				return nil, false, err
 			}
@@ -1760,16 +1635,18 @@ func (tr *TestRunner) updateScriptDurableInProject(
 				return nil, false, errScriptConcurrentChange
 			}
 		} else if store, ok := tr.scriptStore.(conditionalScriptPersistence); !ok {
-			if err := tr.saveStoredScriptWithImportTrust(
-				script,
-				current,
-				trustedImport,
-				sourceProfile,
-			); err != nil {
+			if err := contentmutation.WriteOutsideLock(&tr.mu, func() error {
+				return tr.saveStoredScriptWithImportTrust(
+					script,
+					current,
+					trustedImport,
+					sourceProfile,
+				)
+			}); err != nil {
 				return nil, false, err
 			}
 		} else {
-			updated, err := store.UpdateScriptIfUnchanged(script, current.UpdatedAt)
+			updated, err := contentmutation.OutsideLock(&tr.mu, func() (bool, error) { return store.UpdateScriptIfUnchanged(script, current.UpdatedAt) })
 			if err != nil {
 				return nil, false, err
 			}
@@ -1825,10 +1702,13 @@ func (tr *TestRunner) DeleteScriptDurableInProject(id string, expectedProjectID 
 		return false, err
 	}
 	defer releaseReferenceMutation()
+	tr.scriptMutationMu.Lock()
+	defer tr.scriptMutationMu.Unlock()
+	defer tr.flushContentReferenceFloors()
+	releaseProjectMutation := tr.acquireProjectTestMutation(mutationProjectID)
+	defer releaseProjectMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
 	id = tr.resolveRefKeyLocked(id)
 	if err := tr.rejectActivePrivateCISnapshotMutationLocked(id); err != nil {
 		return false, err
@@ -1854,11 +1734,11 @@ func (tr *TestRunner) DeleteScriptDurableInProject(id string, expectedProjectID 
 	if tr.scriptStore != nil {
 		store, ok := tr.scriptStore.(conditionalScriptDeletePersistence)
 		if !ok {
-			if err := tr.deleteStoredScript(id); err != nil {
+			if err := contentmutation.WriteOutsideLock(&tr.mu, func() error { return tr.deleteStoredScript(id) }); err != nil {
 				return false, err
 			}
 		} else {
-			deleted, err := store.DeleteScriptIfUnchanged(id, current.UpdatedAt)
+			deleted, err := contentmutation.OutsideLock(&tr.mu, func() (bool, error) { return store.DeleteScriptIfUnchanged(id, current.UpdatedAt) })
 			if err != nil {
 				return false, err
 			}

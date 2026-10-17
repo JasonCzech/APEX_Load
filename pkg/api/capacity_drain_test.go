@@ -117,7 +117,7 @@ func TestScaleDownDrainTransfersAcrossLeaseReacquisition(t *testing.T) {
 	oldRelease, releaseOld := capacityTestBarrier(t)
 	newRelease, releaseNew := capacityTestBarrier(t)
 	provider := &fakeCapacityBackend{reconcileStarted: started, reconcileRelease: oldRelease, observation: compute.Observation{Requested: 1, Ready: 1, Observed: 1, Terminal: true}}
-	server.capacityBackends = fakeCapacityResolver{provider, &storage.ExecutionTarget{ID: pool.ExecutionTargetID, Kind: storage.ExecutionTargetAWSECSFargate}}
+	server.capacityBackends = fakeCapacityResolver{&warmCapacityBackend{provider}, &storage.ExecutionTarget{ID: pool.ExecutionTargetID, Kind: storage.ExecutionTargetAWSECSFargate}}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

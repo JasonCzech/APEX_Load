@@ -58,6 +58,7 @@ const apiMock = {
 
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
+  useRecordingApi: () => apiMock,
 }))
 
 vi.mock('../hooks/useWebSocket', () => ({

@@ -639,7 +639,7 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 		Warnings:         result.Warnings,
 		Accounting:       result.Accounting(),
 	}
-	augmented := draft.augment(r)
+	augmented := draft.Augment(r)
 	result.Warnings = augmented.Warnings
 	applyJMeterReviewPreflight(augmented.Preflight, result)
 	if len(result.Scripts) == 1 {
@@ -821,15 +821,10 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusCreated, savedJMeterImportResponse(storedScripts, storedScenario))
 		return
 	}
-	attempt.retainUpdateRecovery(updateTargets)
-	finished := false
-	assetsCommitted := false
-	var transaction *createImportTransaction
+	batch := newImportBatchCommit(s, attempt, updateTargets)
 	defer func() {
-		if !finished && !assetsCommitted {
-			if cleanupErr := attempt.rollback(transaction); cleanupErr != nil {
-				slog.Warn("failed to fully compensate JMeter import", "error", cleanupErr)
-			}
+		if cleanupErr := batch.close(); cleanupErr != nil {
+			slog.Warn("failed to fully compensate JMeter import", "error", cleanupErr)
 		}
 	}()
 	assetIdentitySeed := ""
@@ -892,15 +887,10 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		if !s.fenceImportBatchAdoption(w, jmeterImportWorkflow, attempt, projectID, plannedScriptIDs, plannedScenarioID) {
 			return
 		}
-		storedScripts, storedScenario, loadErr := s.loadDirectImportAssetsByIDs(
-			projectID,
-			plannedScriptIDs,
-			plannedScenarioID,
-		)
+		storedScripts, storedScenario, loadErr := batch.loadRecovery(projectID, plannedScriptIDs, plannedScenarioID, nil, nil)
 		if loadErr == nil {
 			// Existing assets must remain receipt-bound on any verification error;
 			// rolling them back here would destroy a previously committed import.
-			assetsCommitted = true
 			if !recoveredJMeterImportIdentityMatches(
 				s,
 				storedScripts,
@@ -911,11 +901,10 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 				writeError(w, http.StatusConflict, "an asset from the prior JMeter import changed before recovery; use a new operation id")
 				return
 			}
-			if completeErr := attempt.complete(storedScripts, storedScenario); completeErr != nil {
+			if completeErr := batch.complete(storedScripts, storedScenario); completeErr != nil {
 				writeError(w, http.StatusInternalServerError, "failed to reconcile JMeter import receipt: "+completeErr.Error())
 				return
 			}
-			finished = true
 			writeJSON(
 				w,
 				http.StatusCreated,
@@ -929,7 +918,7 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 	defer func() {
 		for _, claim := range claims {
 			if claim != nil {
-				if assetsCommitted {
+				if batch.assetsCommitted {
 					s.retainCommittedImportDraftAttestation(claim)
 				} else {
 					s.releaseImportDraftAttestation(claim)
@@ -1088,30 +1077,19 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		if !s.fenceImportBatchAdoption(w, jmeterImportWorkflow, attempt, projectID, deterministicScriptIDs(preparedScripts), scenarioID) {
 			return
 		}
-		storedScripts, storedScenario, loadErr := s.loadDirectImportAssetsByIDs(
-			projectID,
-			deterministicScriptIDs(preparedScripts),
-			scenarioID,
-		)
-		if loadErr == nil && importUpdatesPending(storedScripts, preparedScripts, updateTargets) {
-			// The earlier attempt did not update a script it was to update, so
-			// it did not finish: save normally (its creates, if any, replay).
-			loadErr = errImportUpdateTargetStale
-		}
+		storedScripts, storedScenario, loadErr := batch.loadRecovery(projectID, deterministicScriptIDs(preparedScripts), scenarioID, preparedScripts, updateTargets)
 		if loadErr == nil {
-			assetsCommitted = true
 			if !directImportPreparedAssetsMatch(
 				s, storedScripts, preparedScripts, storedScenario, scenarioRequest,
 			) {
 				writeError(w, http.StatusConflict, "an asset from the prior JMeter import changed before recovery; use a new operation id")
 				return
 			}
-			if completeErr := attempt.complete(storedScripts, storedScenario); completeErr != nil {
+			if completeErr := batch.complete(storedScripts, storedScenario); completeErr != nil {
 				writeError(w, http.StatusInternalServerError, "failed to reconcile JMeter import receipt: "+completeErr.Error())
 				return
 			}
 			completeJMeterImportDraftClaims(s, claims)
-			finished = true
 			writeJSON(
 				w,
 				http.StatusCreated,
@@ -1121,65 +1099,17 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	reconciledUpdates, validUpdates := s.reconcileImportUpdates(w, attempt, preparedScripts, updateTargets, updates)
-	if !validUpdates {
+	storedScripts, storedScenario, commitFailure := batch.commitPrepared(preparedImportBatch{
+		Source: "jmeter", Scripts: preparedScripts, Updates: updates, Targets: updateTargets,
+		Claims: claims, DefaultProfile: "jmeter",
+		ScenarioID: scenarioID, Scenario: scenarioRequest, RenewBeforeCommit: true,
+	})
+	if commitFailure != nil {
+		writeImportBatchFailure(w, commitFailure, jmeterImportBatchMessages)
 		return
 	}
-	transaction, err = newImportTransaction(s, "jmeter", preparedScripts, updates, scenarioID, scenarioRequest)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to prepare imported assets: "+err.Error())
-		return
-	}
-
-	transaction.reconciledUpdates = reconciledUpdates
-
-	storedScripts := make([]*StoredScript, 0, len(preparedScripts))
-	for index, safeScript := range preparedScripts {
-		if err := attempt.renew(); err != nil {
-			writeError(w, http.StatusConflict, "JMeter import receipt ownership was lost; retry the save")
-			return
-		}
-		if claims[index] != nil {
-			if err := s.assertImportDraftAttestationOwned(claims[index]); err != nil {
-				writeError(w, http.StatusConflict, "JMeter import draft lease was lost; retry the save")
-				return
-			}
-		}
-		stored, err := transaction.saveImportedScript(safeScript, "jmeter")
-		if errors.Is(err, errImportUpdateTargetStale) {
-			writeImportUpdateTargetStale(w, index, err)
-			return
-		}
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
-			return
-		}
-		storedScripts = append(storedScripts, stored)
-	}
-
-	var storedScenario *StoredScenario
-	if scenarioRequest != nil {
-		if err := attempt.renew(); err != nil {
-			writeError(w, http.StatusConflict, "JMeter import receipt ownership was lost; retry the save")
-			return
-		}
-		storedScenario, err = transaction.createScenario(scenarioID, *scenarioRequest)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to save scenario draft: "+err.Error())
-			return
-		}
-	}
-	if err := attempt.renew(); err != nil {
-		writeError(w, http.StatusConflict, "JMeter import receipt ownership was lost; retry the save")
-		return
-	}
-	if err := transaction.commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit imported assets: "+err.Error())
-		return
-	}
-	assetsCommitted = true
 	if attempt != nil {
-		if err := attempt.complete(storedScripts, storedScenario); err != nil {
+		if err := batch.complete(storedScripts, storedScenario); err != nil {
 			// Keep the pending receipt and deterministic assets. A stale retry
 			// will verify and finalize them; compensating after the transaction's
 			// durable commit would reintroduce a lost-response race.
@@ -1188,7 +1118,6 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	completeJMeterImportDraftClaims(s, claims)
-	finished = true
 	writeJSON(
 		w,
 		http.StatusCreated,

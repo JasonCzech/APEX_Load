@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"encoding/json"
 	"fmt"
@@ -10,11 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/convert/agentforce"
 	"github.com/jasonczech/apexload/pkg/convert/asyncapi"
 	"github.com/jasonczech/apexload/pkg/convert/brokerconfig"
 	"github.com/jasonczech/apexload/pkg/convert/eventhubscapture"
-	"github.com/jasonczech/apexload/pkg/convert/mulesoft"
+
 	"github.com/jasonczech/apexload/pkg/convert/openapi"
 	"github.com/jasonczech/apexload/pkg/convert/postman"
 	"github.com/jasonczech/apexload/pkg/convert/raml"
@@ -97,7 +98,7 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		Warnings:         result.Warnings,
 		Accounting:       result.Accounting(),
 	}
-	augmented := draft.augment(r)
+	augmented := draft.Augment(r)
 	result.Warnings = augmented.Warnings
 	preparedCredentialReview, credentialReviewErr := prepareImportCredentialReview(
 		[]*dsl.Script{result.Script}, protectedRequirements, nil,
@@ -257,7 +258,7 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 	if ramlSummaryReportsPolicy(result.Summary, "client_id_enforcement") {
 		draft.SuppressedMuleSoftPolicies = []string{"client_id_enforcement"}
 	}
-	augmented := draft.augment(r)
+	augmented := draft.Augment(r)
 	result.Warnings = augmented.Warnings
 
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
@@ -287,56 +288,16 @@ func ramlSummaryReportsPolicy(summary raml.ReviewSummary, policy string) bool {
 // dropMulesoftPolicies removes named Anypoint policies, and the credential
 // blockers they raise, from a MuleSoft review. It is used when another review
 // section already reports the same policy from the converter's own summary.
-func dropMulesoftPolicies(review *mulesoft.Review, policies ...string) {
-	if review == nil || len(policies) == 0 {
-		return
-	}
-	dropped := make(map[string]struct{}, len(policies))
-	for _, policy := range policies {
-		dropped[policy] = struct{}{}
-	}
-	kept := review.PolicyFindings[:0]
-	for _, finding := range review.PolicyFindings {
-		if _, drop := dropped[finding.Policy]; !drop {
-			kept = append(kept, finding)
-		}
-	}
-	review.PolicyFindings = kept
-	if _, drop := dropped["client_id_enforcement"]; !drop {
-		return
-	}
-	blockers := review.Blockers[:0]
-	for _, blocker := range review.Blockers {
-		if !strings.Contains(blocker, "client_id/client_secret") {
-			blockers = append(blockers, blocker)
-		}
-	}
-	review.Blockers = blockers
-}
+var dropMulesoftPolicies = importreview.DropMulesoftPolicies
 
-func mulesoftReviewHasContent(review *mulesoft.Review) bool {
-	return review != nil && (len(review.Domains) > 0 || len(review.PolicyFindings) > 0 || len(review.AuthFindings) > 0 || len(review.Blockers) > 0)
-}
+var mulesoftReviewHasContent = importreview.MulesoftReviewHasContent
 
 // attachMuleSoftReview runs the MuleSoft/Anypoint analyzer and, when the draft
 // carries Anypoint signals, preserves the review on the script and returns the
 // review section appended to the supplied sections. suppressedPolicies drops
 // policies a caller's own section already reports, so the same Anypoint finding
 // is not shown twice.
-func attachMuleSoftReview(script *dsl.Script, source string, sections []scriptImportReviewSection, suppressedPolicies ...string) []scriptImportReviewSection {
-	review := mulesoft.Analyze(script)
-	if !review.Detected {
-		return sections
-	}
-	dropMulesoftPolicies(review, suppressedPolicies...)
-	if !mulesoftReviewHasContent(review) {
-		return sections
-	}
-	if script != nil {
-		ensureScriptImportPreserved(script, source)["mulesoft_review"] = review
-	}
-	return append(sections, mulesoftReviewSection(review))
-}
+var attachMuleSoftReview = importreview.AttachMuleSoftReview
 
 func ramlReviewItems(result *raml.ConvertResult) []string {
 	items := []string{"OAuth2 security schemes create an http_oauth2_token init action when an accessTokenUri is present."}
@@ -346,39 +307,7 @@ func ramlReviewItems(result *raml.ConvertResult) []string {
 	return append(items, result.Summary.Resources...)
 }
 
-func mulesoftReviewSection(review *mulesoft.Review) scriptImportReviewSection {
-	severity := "info"
-	if len(review.Blockers) > 0 {
-		severity = "warning"
-	}
-	items := make([]string, 0)
-	for _, domain := range review.Domains {
-		items = append(items, fmt.Sprintf("Anypoint domain: %s (%s, %d request(s))", domain.Host, domain.Kind, domain.Count))
-	}
-	for _, policy := range review.PolicyFindings {
-		items = append(items, fmt.Sprintf("Policy: %s — %s", policy.Policy, policy.Detail))
-	}
-	for _, auth := range review.AuthFindings {
-		items = append(items, fmt.Sprintf("Auth: %s — %s", auth.Type, auth.Detail))
-	}
-	for _, blocker := range review.Blockers {
-		items = append(items, "Blocker: "+blocker)
-	}
-	for _, action := range review.NextActions {
-		items = append(items, "Next action: "+action)
-	}
-	summary := "MuleSoft/Anypoint signals were not detected."
-	if review.Detected {
-		summary = fmt.Sprintf("Detected MuleSoft/Anypoint signals across %d domain(s) with %d policy and %d auth finding(s).", len(review.Domains), len(review.PolicyFindings), len(review.AuthFindings))
-	}
-	return scriptImportReviewSection{
-		Key:      "mulesoft_review",
-		Title:    "MuleSoft / Anypoint Review",
-		Severity: severity,
-		Summary:  summary,
-		Items:    items,
-	}
-}
+var mulesoftReviewSection = importreview.MulesoftReviewSection
 
 // attachAgentforceReview runs the Agentforce analyzer and, when an Agent API
 // conversation is detected, preserves the review on the script and returns the
@@ -386,85 +315,15 @@ func mulesoftReviewSection(review *mulesoft.Review) scriptImportReviewSection {
 // also rewrites the script in place to be replay-ready (token acquisition,
 // session correlation, SSE, end-session teardown) and records the applied
 // changes; transform is opt-in so default imports stay non-destructive.
-func attachAgentforceReview(script *dsl.Script, source string, sections []scriptImportReviewSection, transform bool) []scriptImportReviewSection {
-	review := agentforce.Analyze(script)
-	if !review.Detected {
-		return sections
-	}
-	var changes []agentforce.Change
-	if transform && script != nil {
-		changes = agentforce.Transform(script)
-	}
-	if script != nil {
-		preserved := ensureScriptImportPreserved(script, source)
-		preserved["agentforce_review"] = review
-		if len(changes) > 0 {
-			preserved["agentforce_transform"] = changes
-		}
-	}
-	return append(sections, agentforceReviewSection(review, changes))
-}
+var attachAgentforceReview = importreview.AttachAgentforceReview
 
-func agentforceReviewSection(review *agentforce.Review, changes []agentforce.Change) scriptImportReviewSection {
-	severity := "info"
-	if len(review.Blockers) > 0 {
-		severity = "warning"
-	}
-	items := make([]string, 0)
-	for _, step := range review.Lifecycle {
-		items = append(items, fmt.Sprintf("Lifecycle: %s — %s %s", step.Step, step.Method, step.Path))
-	}
-	for _, sessionVar := range review.SessionVars {
-		items = append(items, fmt.Sprintf("Correlation: extract %s via %s %q", sessionVar.Name, sessionVar.Type, sessionVar.Expression))
-	}
-	for _, hint := range review.Assertions {
-		items = append(items, "Assertion: "+hint.Detail)
-	}
-	for _, blocker := range review.Blockers {
-		items = append(items, "Blocker: "+blocker)
-	}
-	for _, action := range review.NextActions {
-		items = append(items, "Next action: "+action)
-	}
-	for _, change := range changes {
-		if change.ActionName != "" {
-			items = append(items, fmt.Sprintf("Applied (%s): %s — %s", change.Step, change.ActionName, change.Detail))
-		} else {
-			items = append(items, fmt.Sprintf("Applied (%s): %s", change.Step, change.Detail))
-		}
-	}
-	streaming := "non-streaming"
-	if review.Streaming {
-		streaming = "streaming (SSE)"
-	}
-	summary := fmt.Sprintf("Detected an Agentforce Agent API conversation (%s) across %d lifecycle step(s).", streaming, len(review.Lifecycle))
-	if len(changes) > 0 {
-		summary += fmt.Sprintf(" Applied %d replay-readiness change(s).", len(changes))
-	}
-	return scriptImportReviewSection{
-		Key:      "agentforce_review",
-		Title:    "Agentforce Agent API Review",
-		Severity: severity,
-		Summary:  summary,
-		Items:    items,
-	}
-}
+var agentforceReviewSection = importreview.AgentforceReviewSection
 
 // agentforceTransformRequested reports whether the caller opted into the
 // Agentforce replay-readiness transform via ?agentforce_transform=true. It reads
 // the query string (independent of the JSON/multipart body) so every import entry
 // point can honor it uniformly.
-func agentforceTransformRequested(r *http.Request) bool {
-	if r == nil {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("agentforce_transform"))) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
-}
+var agentforceTransformRequested = importreview.AgentforceTransformRequested
 
 func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 	importReq, ok := readWSDLImportRequest(w, r)
@@ -494,7 +353,7 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 		Warnings:         result.Warnings,
 		Accounting:       result.Accounting(),
 	}
-	augmented := draft.augment(r)
+	augmented := draft.Augment(r)
 	result.Warnings = augmented.Warnings
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:                 result,
@@ -551,7 +410,7 @@ func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Reque
 		Warnings:         result.Warnings,
 		Accounting:       result.Accounting(),
 	}
-	augmented := draft.augmentWithAgentforceTransform(agentforceTransform)
+	augmented := draft.AugmentWithAgentforceTransform(agentforceTransform)
 	result.Warnings = augmented.Warnings
 	preparedCredentialReview, credentialReviewErr := prepareImportCredentialReview(
 		[]*dsl.Script{result.Script}, protectedRequirements, nil,
@@ -649,7 +508,7 @@ func (s *Server) handleImportAsyncAPI(w http.ResponseWriter, r *http.Request) {
 		Warnings:         result.Warnings,
 		Accounting:       result.Accounting(),
 	}
-	augmented := draft.augment(r)
+	augmented := draft.Augment(r)
 	result.Warnings = augmented.Warnings
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:                 result,
@@ -708,7 +567,7 @@ func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Req
 		Sections:         buildEventHubsCaptureReviewSections(result),
 		Warnings:         result.Warnings,
 	}
-	augmented := draft.augment(r)
+	augmented := draft.Augment(r)
 	result.Warnings = augmented.Warnings
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:           result,
@@ -805,7 +664,7 @@ func (s *Server) handleImportBrokerConfig(w http.ResponseWriter, r *http.Request
 		Sections:         buildBrokerConfigReviewSections(result),
 		Warnings:         result.Warnings,
 	}
-	augmented := draft.augment(r)
+	augmented := draft.Augment(r)
 	result.Warnings = augmented.Warnings
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:           result,

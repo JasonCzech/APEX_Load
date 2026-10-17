@@ -44,10 +44,13 @@ pkg/
   engine/        — VUser goroutine engine, metrics collection, pacing
   dsl/           — JSON DSL parser, type definitions, action catalog
   controller/    — Test orchestration, scheduling, distribution, aggregation
+  contentmutation/ — Local content mutation ordering and cache publication fences
+  runcontract/   — Passive run, workload, goal, and SLA contracts shared by server and clients
   distributed/   — Generator-side gRPC worker (controller ↔ generator)
   api/           — REST API server, WebSocket hub, test runner, middleware
   api/static/    — Embedded dashboard build output (from dashboard/)
   storage/       — SQLite (default) / PostgreSQL persistence layer
+  archivecontract/ — Passive archive integrity and source-coverage contracts
   recorder/      — HTTP recording + HAR conversion + browser recording
   recordingprofile/ — Project recording profiles (VuGen-style recording options) shared by the recorders and HAR import
   qrcode/        — Dependency-free QR code drawing for short texts (the Recording Agent phone setup URL)
@@ -55,6 +58,7 @@ pkg/
   selector/      — Shared element-selector model (CSS/XPath/role/text) + replay self-heal
   scrub/         — PII/credential redaction for recorder artifacts and HAR exports
   harsynth/      — Synthetic HAR 1.2 from retained browser network evidence (never invents timings or content)
+  browserresource/ — Portable retained browser-resource page contracts and wire decoding
   refkey/        — Human-readable, environment-aware reference keys
   buildinfo/     — Build metadata (version/commit/build-time) via -ldflags
   config/        — Configuration types
@@ -63,9 +67,11 @@ pkg/
                    token, or Azure AD service principal for AKS. NewRemoteClient reaches
                    registered external clusters; see docs/CLUSTERS_AND_CLOUD.md.
   recordagent/   — Local recording-agent runtime (Playwright/Chromium provisioning + bridge)
+  recordbridge/  — Standalone recording bridge and shared recording/replay session services
   collectoragent/ — Monitoring collector with signed jobs, sealed credentials, Linux/Prometheus, SSH, OTLP and restricted Java packs
   compute/       — Provider-neutral async capacity backends (Kubernetes, Azure Container Apps/Jobs, ECS Fargate)
   telemetry/     — Opt-in OpenTelemetry tracing setup + HTTP instrumentation (off unless APEXLOAD_OTEL_ENABLED)
+  telemetrypolicy/ — Pure telemetry policy receipts, validation, and hashing
   trafficprofile/ — Production time-series parsing, normalization, shaping, and runtime profile contracts
   debugserver/   — Optional net/http/pprof listener, gated by APEXLOAD_PPROF_ADDR
   runtimetuning/ — GOMAXPROCS/GOMEMLIMIT resolution from cgroup limits
@@ -93,6 +99,7 @@ pkg/
   Import and asset plumbing:
   dslwalk/       — Bounded deterministic traversal of every action incl. nested control flow
   importsession/ — Importer-neutral protected policy-governed inspection sessions
+  librarycontract/ — Portable library transfer and import response contracts
   importartifact/ — Content-addressed, encrypted immutable source bundles for governed runners
   fileasset/     — Bounded local file/asset opening for import paths
   internal/      — Cross-package internal guards: archiveingest, archivequota, boundedcache, boundedtext, diskspace,

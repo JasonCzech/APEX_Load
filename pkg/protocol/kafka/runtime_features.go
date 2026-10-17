@@ -1,9 +1,12 @@
 package kafka
 
-import "github.com/jasonczech/apexload/pkg/protocol"
+import (
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/kafkacontract"
+)
 
-const FeatureRealSeekV1 = "kafka_real_seek_v1"
-const FeatureConsumerTransactionsV1 = "kafka_consumer_transactions_v1"
+const FeatureRealSeekV1 = kafkacontract.FeatureRealSeekV1
+const FeatureConsumerTransactionsV1 = kafkacontract.FeatureConsumerTransactionsV1
 
 // Capability discovery performs no network I/O and preserves mock availability.
 func (*Kafka) RuntimeCapabilities() protocol.RuntimeCapabilities {

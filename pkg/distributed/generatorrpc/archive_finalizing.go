@@ -28,7 +28,7 @@ func (s *Service) archiveStillFinalizing(testID string) bool {
 	if s.lifecycleCoordinator == nil {
 		return false
 	}
-	_, stopping := s.lifecycleCoordinator.stoppingTests[testID]
+	stopping := s.lifecycleCoordinator.isStoppingLocked(testID)
 	return stopping
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/importsession"
+	"github.com/jasonczech/apexload/pkg/internal/importreview"
 )
 
 const (
@@ -435,9 +436,7 @@ func clearImportCandidateEnvelopeCredentials(requirements []importCandidateCrede
 }
 
 func clearCredentialRequirementValues(requirements []credentialpolicy.Requirement) {
-	for index := range requirements {
-		requirements[index].Value = ""
-	}
+	importreview.ClearCredentialRequirementValues(requirements)
 }
 
 func clearProtectedImportCandidate(candidate *protectedImportCandidate) {

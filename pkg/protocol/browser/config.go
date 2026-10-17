@@ -7,15 +7,16 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 	"github.com/jasonczech/apexload/pkg/selector"
 	playwright "github.com/mxschmitt/playwright-go"
 )
 
 const (
-	MaxConfiguredViewportDimension = 8192
-	MaxConfiguredViewportPixels    = 16 << 20
-	MaxConfiguredBrowserDelay      = time.Hour
-	MaxConfiguredNetworkKbps       = 100_000_000
+	MaxConfiguredViewportDimension = browsercontract.MaxConfiguredViewportDimension
+	MaxConfiguredViewportPixels    = browsercontract.MaxConfiguredViewportPixels
+	MaxConfiguredBrowserDelay      = browsercontract.MaxConfiguredBrowserDelay
+	MaxConfiguredNetworkKbps       = browsercontract.MaxConfiguredNetworkKbps
 	maxBrowserDeviceScaleFactor    = 4
 	maxBrowserDevicePixels         = 32 << 20
 	maxBrowserCPUThrottleRate      = 100
@@ -76,15 +77,15 @@ func (b *Browser) applyDefaultConfig() {
 	b.storageState = nil
 	b.documentMetricsEnabled = false
 	b.newUserPolicy = "persistent_context"
-	b.engine = "chromium"
+	b.engine = browsercontract.DefaultEngine
 	b.baseURL = ""
 	b.currentURL = ""
 	b.deviceProfile = ""
 	b.devicePlatform = ""
 	b.deviceTier = ""
-	b.headless = true
-	b.cacheEnabled = true
-	b.cacheContentURLs = true
+	b.headless = browsercontract.DefaultHeadless
+	b.cacheEnabled = browsercontract.DefaultCacheEnabled
+	b.cacheContentURLs = browsercontract.DefaultCacheContentURLs
 	b.cacheContentURLsConfigured = false
 	b.checkNewerVersions = false
 	b.recordedResourcesAvailable = false
@@ -95,7 +96,7 @@ func (b *Browser) applyDefaultConfig() {
 	b.networkPreset = ""
 	b.networkBandwidthKB = 0
 	b.networkLatencyMS = 0
-	b.downloadResources = "all"
+	b.downloadResources = browsercontract.DefaultDownloadResources
 	b.slowMo = 0
 	b.userAgent = ""
 	b.locale = ""
@@ -117,13 +118,13 @@ func (b *Browser) applyDefaultConfig() {
 	b.runMode = browserRunModeReplay
 	b.mobile = false
 	b.touchMode = false
-	b.orientation = "landscape"
+	b.orientation = browsercontract.DefaultOrientation
 	b.orientationExplicit = false
-	b.deviceScaleFactor = 1
-	b.cpuThrottleRate = 1
+	b.deviceScaleFactor = browsercontract.DefaultDeviceScaleFactor
+	b.cpuThrottleRate = browsercontract.DefaultCPUThrottleRate
 	b.cpuThrottleExplicit = false
-	b.viewportW = 1440
-	b.viewportH = 900
+	b.viewportW = browsercontract.DefaultViewportWidth
+	b.viewportH = browsercontract.DefaultViewportHeight
 	b.harCapturePolicy = HARCaptureOff
 	b.harDir = ""
 	b.harSLABreachThreshold = 0

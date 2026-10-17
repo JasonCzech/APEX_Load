@@ -185,7 +185,7 @@ func waitForDetachedStoppingAssignment(t *testing.T, service *Service, testID st
 	defer ticker.Stop()
 	for {
 		service.mu.RLock()
-		_, stopping := service.stoppingTests[testID]
+		_, stopping := service.lifecycleCoordinator.stoppingTests[testID]
 		_, assigned := service.assignments[testID]
 		service.mu.RUnlock()
 		if stopping && !assigned {

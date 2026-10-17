@@ -12,7 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/tmpl"
 	"github.com/jasonczech/apexload/pkg/dsl"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 func applyJMeterCacheManager(node *xmlNode, script *dsl.Script) {

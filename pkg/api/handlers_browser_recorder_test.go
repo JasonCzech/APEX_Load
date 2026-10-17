@@ -36,7 +36,7 @@ func newBrowserRecorderTestServerWithStore(t *testing.T, fake *fakeBrowserRecord
 		t.Setenv("DISPLAY", ":0") // satisfy the headed-display availability probe in CI
 	}
 	server := NewServer(ServerConfig{Store: store})
-	fake.install(server.browserRecording)
+	installBrowserRecorderBackend(t, server, fake)
 	return server
 }
 
@@ -47,7 +47,7 @@ func newHABrowserRecorderTestServerWithStore(t *testing.T, fake *fakeBrowserReco
 		t.Setenv("DISPLAY", ":0")
 	}
 	server := NewServer(ServerConfig{Store: store, HAExecutionLeadership: true})
-	fake.install(server.browserRecording)
+	installBrowserRecorderBackend(t, server, fake)
 	return server
 }
 
@@ -499,7 +499,6 @@ func TestHandleGetAndStopBrowserRecording(t *testing.T) {
 
 func TestHandleGetBrowserRecordingScrubsViewerAndGatesRawView(t *testing.T) {
 	server := NewServer(ServerConfig{})
-	now := time.Now().UTC()
 	artifact := &recbrowser.Session{
 		ID:       "browser-sensitive",
 		StartURL: "https://start-user:start-password@app.example/login?access_token=start-token",
@@ -514,18 +513,7 @@ func TestHandleGetBrowserRecordingScrubsViewerAndGatesRawView(t *testing.T) {
 		NavEvents:   []recbrowser.NavEvent{{URL: "https://app.example/callback?token=navigation-token"}},
 		Annotations: []recbrowser.Annotation{{Text: "authorization=annotation-token", URL: "https://app.example/error?api_key=annotation-key"}},
 	}
-	info := &BrowserRecordingSession{
-		ID:        artifact.ID,
-		Name:      "Sensitive",
-		ProjectID: "project-a",
-		Status:    BrowserRecordingStopped,
-		StartURL:  artifact.StartURL,
-		StartedAt: now,
-		final:     artifact,
-	}
-	server.browserRecording.mu.Lock()
-	server.browserRecording.sessions[info.ID] = info
-	server.browserRecording.mu.Unlock()
+	info := stopBrowserRecordingFixture(t, server, artifact, "project-a", "Sensitive")
 
 	viewer := &AuthenticatedUser{
 		GlobalRoles:  map[string]struct{}{},
@@ -881,7 +869,7 @@ func TestHandleConvertBrowserRecordingPersistsEveryScriptInSelectedFolder(t *tes
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	server := NewServer(ServerConfig{Store: store})
-	fake.install(server.browserRecording)
+	installBrowserRecorderBackend(t, server, fake)
 	if err := store.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project"}); err != nil {
 		t.Fatal(err)
 	}
@@ -1036,7 +1024,7 @@ func TestHandleConvertBrowserRecordingMasksCredentialRepeatedAsDetachedName(t *t
 		t.Fatalf("SaveProject: %v", err)
 	}
 	fake := newFakeBrowserRecorder(artifact)
-	fake.install(server.browserRecording)
+	installBrowserRecorderBackend(t, server, fake)
 	id := startBrowserRecordingViaAPI(t, server)
 	stopBrowserRecordingViaAPI(t, server, id)
 	drainHubBroadcasts(t, server.hub)
@@ -1145,9 +1133,7 @@ func TestHandleConvertBrowserRecordingPreservesHARCredentialInDurableScript(t *t
 	if !strings.Contains(resp.Body.String(), "browser-recorded-token") {
 		t.Fatalf("convert response did not preserve recorded credential: %s", resp.Body.String())
 	}
-	server.importDraftAttestationMu.Lock()
-	attestationCount := len(server.importDraftAttestations)
-	server.importDraftAttestationMu.Unlock()
+	attestationCount := server.memoryImportDraftOwner().Len()
 	if attestationCount != 0 {
 		t.Fatalf("already-committed browser response retained %d unused draft attestation(s)", attestationCount)
 	}

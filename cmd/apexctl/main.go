@@ -14,11 +14,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/api"
 	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/engine"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 )
 
 var apexctlCommandHandlers = map[string]func(){
@@ -315,7 +315,7 @@ type runArgs struct {
 	maxAvgServerProcessingMs *float64
 	maxAvgTransferMs         *float64
 	maxErrorCount            *int
-	transactionRules         []api.TransactionSLARule
+	transactionRules         []runcontract.TransactionSLARule
 	transactionRulesFile     string
 }
 
@@ -409,7 +409,7 @@ func parseRunArgs(args []string) runArgs {
 		r.err = err
 	} else if err := mergeTransactionSLARuleFile(&r); err != nil {
 		r.err = err
-	} else if err := api.ValidateTransactionSLARules(r.transactionRules); err != nil {
+	} else if err := runcontract.ValidateTransactionSLARules(r.transactionRules); err != nil {
 		r.err = fmt.Errorf("invalid transaction SLA rule: %w", err)
 	} else if r.timeout == 0 {
 		r.timeout = r.duration + 30*time.Minute

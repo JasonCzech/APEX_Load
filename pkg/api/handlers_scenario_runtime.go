@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/contentmutation"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -121,15 +122,18 @@ func (s *Server) handleApplyScenarioRuntimeToGroups(w http.ResponseWriter, r *ht
 // (unmasked) scenario plus an apply/skip summary. ok=false means the scenario was
 // not found.
 func (tr *TestRunner) ApplyScenarioRuntimeToGroups(id string, req ApplyRuntimeToGroupsRequest, guard ...*storage.ScenarioWriterGuard) (*ApplyRuntimeToGroupsResponse, bool, error) {
+	tr.scenarioMutationMu.Lock()
+	defer tr.scenarioMutationMu.Unlock()
+	releaseProjectMutation := tr.acquireProjectTestMutation(tr.scenarioProjectIDForContentMutation(id))
+	defer releaseProjectMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
 	id = tr.resolveRefKeyLocked(id)
 	stored, ok := tr.scenarios[id]
 	if !ok {
 		return nil, false, nil
 	}
+	stored = cloneStoredScenarioForReadLocked(stored)
 	n := len(stored.Scripts)
 	if n == 0 {
 		return nil, true, fmt.Errorf("scenario has no groups")
@@ -202,50 +206,76 @@ func (tr *TestRunner) ApplyScenarioRuntimeToGroups(id string, req ApplyRuntimeTo
 
 	updated := *stored
 	updated.Scripts = refs
-	if err := tr.validateScenarioRuntimeMutationLocked(&updated); err != nil {
+	scriptObservation := tr.scriptMutationMu.Observe()
+	snapshot, _, buildFence := tr.managedTestBuildSnapshotLocked(createTestRequestFromScenario(CreateTestRequest{}, &updated))
+	if err := contentmutation.WriteOutsideLock(&tr.mu, func() error {
+		snapshot.mu.Lock()
+		defer snapshot.mu.Unlock()
+		return snapshot.validateScenarioRuntimeMutationLocked(&updated)
+	}); err != nil {
 		return nil, true, fmt.Errorf("applied runtime settings are invalid: %w", err)
+	}
+	// Compilation used detached source scripts. A completed edit changes the
+	// content revision; an in-flight edit may have committed without publishing
+	// yet, so its mutation observation must also remain valid.
+	if tr.contentRevision != buildFence.contentRevision || !tr.scriptMutationMu.CanPublish(scriptObservation) {
+		return nil, true, errScenarioConcurrentChange
 	}
 
 	revision := ""
-	if tr.scenarioStore != nil {
-		toSave := storedScenarioToStorage(&updated)
-		scripts := storedScenarioRefsToStorage(&updated)
-		guardedStore, canGuard := tr.scenarioStore.(storage.ScenarioGuardedWriterStore)
-		if len(guard) > 0 && guard[0] != nil && canGuard {
-			persisted, committed, err := guardedStore.UpdateScenarioWithDataPoolBindingsGuarded(
-				toSave,
-				scripts,
-				append([]storage.ScenarioDataPoolBinding(nil), stored.DataPools...),
-				stored.UpdatedAt,
-				*guard[0],
-			)
-			if err != nil {
-				return nil, true, err
+	if err := contentmutation.WriteOutsideLock(&tr.mu, func() error {
+		if tr.scenarioStore != nil {
+			toSave := storedScenarioToStorage(&updated)
+			scripts := storedScenarioRefsToStorage(&updated)
+			guardedStore, canGuard := tr.scenarioStore.(storage.ScenarioGuardedWriterStore)
+			if len(guard) > 0 && guard[0] != nil && canGuard {
+				persisted, committed, err := guardedStore.UpdateScenarioWithDataPoolBindingsGuarded(
+					toSave,
+					scripts,
+					append([]storage.ScenarioDataPoolBinding(nil), stored.DataPools...),
+					stored.UpdatedAt,
+					*guard[0],
+				)
+				if err != nil {
+					return err
+				}
+				if !persisted {
+					return errScenarioConcurrentChange
+				}
+				revision = committed
+			} else if store, ok := tr.scenarioStore.(conditionalScenarioPersistence); ok {
+				persisted, err := store.UpdateScenarioWithDataPoolBindingsIfUnchanged(
+					toSave,
+					scripts,
+					append([]storage.ScenarioDataPoolBinding(nil), stored.DataPools...),
+					stored.UpdatedAt,
+				)
+				if err != nil {
+					return err
+				}
+				if !persisted {
+					return errScenarioConcurrentChange
+				}
+			} else if err := tr.scenarioStore.SaveScenario(toSave, scripts); err != nil {
+				return err
 			}
-			if !persisted {
-				return nil, true, errScenarioConcurrentChange
-			}
-			revision = committed
-		} else if store, ok := tr.scenarioStore.(conditionalScenarioPersistence); ok {
-			persisted, err := store.UpdateScenarioWithDataPoolBindingsIfUnchanged(
-				toSave,
-				scripts,
-				append([]storage.ScenarioDataPoolBinding(nil), stored.DataPools...),
-				stored.UpdatedAt,
-			)
-			if err != nil {
-				return nil, true, err
-			}
-			if !persisted {
-				return nil, true, errScenarioConcurrentChange
-			}
-		} else if err := tr.scenarioStore.SaveScenario(toSave, scripts); err != nil {
-			return nil, true, err
+			updated.UpdatedAt = toSave.UpdatedAt
+		} else {
+			updated.UpdatedAt = time.Now().UTC()
 		}
-		updated.UpdatedAt = toSave.UpdatedAt
-	} else {
-		updated.UpdatedAt = time.Now().UTC()
+		return nil
+	}); err != nil {
+		return nil, true, err
 	}
+	// Schedule transitions can complete while content persistence is in flight.
+	// They own their own durable revisions and must survive this content publish.
+	if current := tr.scenarios[id]; current != nil {
+		updated.Schedules = make([]*storage.ScenarioSchedule, 0, len(current.Schedules))
+		for _, schedule := range current.Schedules {
+			updated.Schedules = append(updated.Schedules, cloneScenarioSchedule(schedule))
+		}
+	}
+
 	tr.scenarios[id] = &updated
 	tr.contentRevision++
 

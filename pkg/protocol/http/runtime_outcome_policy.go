@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 type replayOutcomePolicy struct {
@@ -23,7 +24,7 @@ type replayOutcomePolicy struct {
 
 // AuraRecordedFailurePolicies are the config.http.aura_recorded_failures
 // values; empty means require_success.
-var AuraRecordedFailurePolicies = []string{"", "require_success", "accept_recorded"}
+var AuraRecordedFailurePolicies = httpcontract.AuraRecordedFailurePolicies
 
 func parseReplayOutcomePolicy(config map[string]any) replayOutcomePolicy {
 	p := replayOutcomePolicy{legacyChecks: true}

@@ -16,11 +16,13 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/archivecontract"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/hostnet"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/rca"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 )
 
 const archiveSchemaVersion = "apexload.archive.v4"
@@ -41,20 +43,9 @@ const (
 
 // RunArchiveSourceCoverage records the controller's source snapshot used for
 // collection. It does not prove complete shard history or zero measurement loss.
-type RunArchiveSourceCoverage struct {
-	Mode    string             `json:"mode"`
-	Sources []RunArchiveSource `json:"sources"`
-}
+type RunArchiveSourceCoverage = archivecontract.RunArchiveSourceCoverage
 
-type RunArchiveSource struct {
-	Target    string `json:"target"`
-	Collected bool   `json:"collected"`
-	// GeneratorID, Region and Groups name the generator and the groups it ran,
-	// so a missing source says which part of the load has no evidence.
-	GeneratorID string   `json:"generator_id,omitempty"`
-	Region      string   `json:"region,omitempty"`
-	Groups      []string `json:"groups,omitempty"`
-}
+type RunArchiveSource = archivecontract.RunArchiveSource
 
 type RunArchiveManifest struct {
 	SourceCoverage      *RunArchiveSourceCoverage   `json:"source_coverage,omitempty"`
@@ -193,30 +184,12 @@ type RunArchiveManifest struct {
 	PhaseEventsTruncated bool   `json:"phase_events_truncated,omitempty"`
 }
 
-type TransactionSLARuleResult struct {
-	Rule         TransactionSLARule `json:"rule"`
-	Status       string             `json:"status"`
-	Observed     *float64           `json:"observed,omitempty"`
-	MatchedCount int64              `json:"matched_count"`
-	Message      string             `json:"message"`
-}
+type TransactionSLARuleResult = runcontract.TransactionSLARuleResult
 
 // TransactionResponseTimeSLAResult is the authoritative compliance result for
 // one named business transaction within one scenario group. Failed protocol
 // samples remain visible but are deliberately excluded from latency compliance.
-type TransactionResponseTimeSLAResult struct {
-	Group                string  `json:"group"`
-	Transaction          string  `json:"transaction"`
-	ThresholdMs          float64 `json:"threshold_ms"`
-	TotalCount           int64   `json:"total_count"`
-	EligibleSuccessCount int64   `json:"eligible_success_count"`
-	ExcludedErrorCount   int64   `json:"excluded_error_count"`
-	MissedCount          int64   `json:"missed_count"`
-	MissedPct            float64 `json:"missed_pct"`
-	MetPct               float64 `json:"met_pct"`
-	RequiredMetPct       float64 `json:"required_met_pct"`
-	Status               string  `json:"status"`
-}
+type TransactionResponseTimeSLAResult = runcontract.TransactionResponseTimeSLAResult
 
 type RunArchiveMessageDetailCapture struct {
 	RetainedItems  int64            `json:"retained_items"`

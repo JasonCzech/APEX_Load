@@ -11,6 +11,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -1025,14 +1026,7 @@ func (a *runArtifacts) enqueueArchivePersistenceRetry(test *ManagedTest, archive
 	})
 }
 
-func isTerminalTestStatus(status string) bool {
-	switch strings.ToUpper(strings.TrimSpace(status)) {
-	case "COMPLETE", "FAILED", "ABORTED":
-		return true
-	default:
-		return false
-	}
-}
+func isTerminalTestStatus(status string) bool { return runcontract.IsTerminalTestStatus(status) }
 
 // IsTerminalTestStatus exposes the controller's terminal-state vocabulary to
 // first-party clients and contract tests without duplicating lifecycle rules.

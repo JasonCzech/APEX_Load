@@ -1,10 +1,12 @@
 package api
 
+import draftreview "github.com/jasonczech/apexload/pkg/internal/importreview"
+
 import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
+
 	"errors"
 	"fmt"
 	"log/slog"
@@ -278,11 +280,11 @@ func applySuggestedImportCommitSecretBindings(
 			RequestKey:  ref.Path,
 			NamePrefix:  firstNonEmpty(ref.Name(), "request"),
 			Registry:    registry,
-			ProvenVars:  importCommitProvenBodyVariables(body.text(), ref.Path, dynamicReadiness),
+			ProvenVars:  importCommitProvenBodyVariables(body.Text(), ref.Path, dynamicReadiness),
 			TargetField: "body",
 		}
 		projected, result, err := credentialpolicy.ProjectRequestBody(
-			body.wire,
+			body.Wire(),
 			importCommitSurfaceContentType(ref),
 			options,
 		)
@@ -308,7 +310,7 @@ func applySuggestedImportCommitSecretBindings(
 				result.PreservedTargets,
 			))
 		}
-		protectedBodies[ref.Path] = body.encode(projected)
+		protectedBodies[ref.Path] = body.Encode(projected)
 		// Keep the body out of the generic free-text projection. It is restored
 		// by stable traversal path after every other executable field is masked
 		// and auto-bound through the existing compatibility workflow.
@@ -355,90 +357,13 @@ func stripCredentialPreservingImportPolicy(script *dsl.Script) {
 	)
 }
 
-func importCommitSurfaceBody(ref dslwalk.SurfaceRef) (string, bool) {
-	if ref.Action != nil {
-		return ref.Action.Body, strings.TrimSpace(ref.Action.Body) != ""
-	}
-	if ref.Request == nil {
-		return "", false
-	}
-	body, ok := ref.Request["body"].(string)
-	return body, ok && strings.TrimSpace(body) != ""
-}
+var importCommitSurfaceBody = draftreview.ImportCommitSurfaceBody
 
-func setImportCommitSurfaceBody(ref dslwalk.SurfaceRef, body string) {
-	if ref.Action != nil {
-		ref.Action.Body = body
-		return
-	}
-	if ref.Request != nil {
-		ref.Request["body"] = body
-	}
-}
+var setImportCommitSurfaceBody = draftreview.SetImportCommitSurfaceBody
 
-func importCommitSurfaceContentType(ref dslwalk.SurfaceRef) string {
-	if ref.Action != nil {
-		if len(ref.Action.HeaderList) > 0 {
-			value := ""
-			for _, header := range ref.Action.HeaderList {
-				if strings.EqualFold(strings.TrimSpace(header.Name), "Content-Type") {
-					value = header.Value
-				}
-			}
-			return value
-		}
-		return importCommitHeaderMapContentType(ref.Action.Headers)
-	}
-	if ref.Request == nil {
-		return ""
-	}
-	if raw, exists := ref.Request["header_list"]; exists {
-		payload, err := json.Marshal(raw)
-		if err == nil {
-			var headers dsl.HeaderList
-			if json.Unmarshal(payload, &headers) == nil && len(headers) > 0 {
-				value := ""
-				for _, header := range headers {
-					if strings.EqualFold(strings.TrimSpace(header.Name), "Content-Type") {
-						value = header.Value
-					}
-				}
-				return value
-			}
-		}
-	}
-	raw, exists := ref.Request["headers"]
-	if !exists {
-		return ""
-	}
-	payload, err := json.Marshal(raw)
-	if err != nil {
-		return ""
-	}
-	var headers map[string]string
-	if json.Unmarshal(payload, &headers) != nil {
-		return ""
-	}
-	return importCommitHeaderMapContentType(headers)
-}
+var importCommitSurfaceContentType = draftreview.ImportCommitSurfaceContentType
 
-func importCommitHeaderMapContentType(headers map[string]string) string {
-	if len(headers) == 0 {
-		return ""
-	}
-	keys := make([]string, 0, len(headers))
-	for key := range headers {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	value := ""
-	for _, key := range keys {
-		if strings.EqualFold(strings.TrimSpace(key), "Content-Type") {
-			value = headers[key]
-		}
-	}
-	return value
-}
+var importCommitHeaderMapContentType = draftreview.ImportCommitHeaderMapContentType
 
 func importCommitProvenBodyVariables(
 	body string,

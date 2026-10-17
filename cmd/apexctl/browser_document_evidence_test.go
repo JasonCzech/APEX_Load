@@ -12,9 +12,26 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/api"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 )
+
+// These fixtures contain the fields consumed by the CLI. API-side compatibility
+// tests verify the corresponding projection against the controller's real DTOs.
+type browserDocumentProvenanceFixture struct {
+	ProjectID string `json:"project_id,omitempty"`
+}
+type browserDocumentManifestFixture struct {
+	TestID     string                           `json:"test_id"`
+	Error      string                           `json:"error,omitempty"`
+	Provenance browserDocumentProvenanceFixture `json:"provenance"`
+}
+type browserDocumentArchiveFixture struct {
+	Manifest                         *browserDocumentManifestFixture       `json:"manifest"`
+	BrowserDocuments                 *protocol.BrowserDocumentSummary      `json:"browser_documents,omitempty"`
+	BrowserDocumentEvidence          []protocol.BrowserDocumentObservation `json:"browser_document_evidence,omitempty"`
+	BrowserDocumentEvidenceTruncated bool                                  `json:"browser_document_evidence_truncated,omitempty"`
+}
 
 func browserDocumentCLIFixture() (*protocol.BrowserDocumentSummary, protocol.BrowserDocumentObservation) {
 	now := time.Now().UTC()
@@ -49,7 +66,7 @@ func TestBrowserDocumentCLIReadsDistinctLiveAndArchivePopulations(t *testing.T) 
 					if r.URL.Path != "/api/v1/tests/run/archive/report" || r.URL.Query().Get("include_release_trend") != "false" {
 						t.Errorf("bad archive request %s", r.URL)
 					}
-					_ = json.NewEncoder(w).Encode(api.RunArchiveReport{Manifest: &api.RunArchiveManifest{TestID: "run", Error: "DO-NOT-PUBLISH"}, BrowserDocuments: summary, BrowserDocumentEvidence: []protocol.BrowserDocumentObservation{observation}, BrowserDocumentEvidenceTruncated: true})
+					_ = json.NewEncoder(w).Encode(browserDocumentArchiveFixture{Manifest: &browserDocumentManifestFixture{TestID: "run", Error: "DO-NOT-PUBLISH"}, BrowserDocuments: summary, BrowserDocumentEvidence: []protocol.BrowserDocumentObservation{observation}, BrowserDocumentEvidenceTruncated: true})
 					return
 				}
 				_ = json.NewEncoder(w).Encode(data)
@@ -300,9 +317,9 @@ func TestBrowserDocumentCLIRealArchiveManifestIdentity(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
 				if r.URL.Path == "/api/v1/tests/run/archive/report" {
-					_ = json.NewEncoder(w).Encode(api.RunArchiveReport{Manifest: &api.RunArchiveManifest{TestID: returned, Error: "DO-NOT-PUBLISH"}, BrowserDocuments: summary})
+					_ = json.NewEncoder(w).Encode(browserDocumentArchiveFixture{Manifest: &browserDocumentManifestFixture{TestID: returned, Error: "DO-NOT-PUBLISH"}, BrowserDocuments: summary})
 				} else if r.URL.Path == "/api/v1/tests/run" {
-					_ = json.NewEncoder(w).Encode(api.ManagedTest{ID: returned, RefKey: "unrelated-refkey", ProjectID: "project-1"})
+					_ = json.NewEncoder(w).Encode(runcontract.TestStatus{ID: returned, RefKey: "unrelated-refkey", ProjectID: "project-1"})
 				} else {
 					t.Errorf("unexpected lookup %s", r.URL.Path)
 				}
@@ -334,16 +351,16 @@ func TestBrowserDocumentCLIArchiveRefKeyIdentityLookup(t *testing.T) {
 					t.Error("lookup changed read/auth ownership")
 				}
 				if r.URL.Path == "/api/v1/tests/TEST-FLOW-ALIAS/archive/report" {
-					manifest := &api.RunArchiveManifest{TestID: "canonical-run"}
+					manifest := &browserDocumentManifestFixture{TestID: "canonical-run"}
 					if suppliedProject {
 						manifest.Provenance.ProjectID = "project-1"
 					}
-					_ = json.NewEncoder(w).Encode(api.RunArchiveReport{Manifest: manifest, BrowserDocuments: summary})
+					_ = json.NewEncoder(w).Encode(browserDocumentArchiveFixture{Manifest: manifest, BrowserDocuments: summary})
 				} else if r.URL.Path == "/api/v1/tests/TEST-FLOW-ALIAS" {
 					if r.URL.RawQuery != "" {
 						t.Error("lookup requested history or a guessed projection")
 					}
-					_ = json.NewEncoder(w).Encode(api.ManagedTest{ID: "canonical-run", RefKey: "TEST-FLOW-ALIAS", ProjectID: "project-1", Name: "DO-NOT-PUBLISH"})
+					_ = json.NewEncoder(w).Encode(runcontract.TestStatus{ID: "canonical-run", RefKey: "TEST-FLOW-ALIAS", ProjectID: "project-1", Name: "DO-NOT-PUBLISH"})
 				} else {
 					t.Errorf("unexpected lookup %s", r.URL.Path)
 				}
@@ -398,7 +415,7 @@ func TestBrowserDocumentCLIRejectsUnqualifiedAliasLookup(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
 				if calls == 1 {
-					_ = json.NewEncoder(w).Encode(api.RunArchiveReport{Manifest: &api.RunArchiveManifest{TestID: "canonical-run", Provenance: api.RunArchiveProvenance{ProjectID: "project-1"}}})
+					_ = json.NewEncoder(w).Encode(browserDocumentArchiveFixture{Manifest: &browserDocumentManifestFixture{TestID: "canonical-run", Provenance: browserDocumentProvenanceFixture{ProjectID: "project-1"}}})
 					return
 				}
 				if strings.Contains(body, "secret") {
@@ -456,7 +473,7 @@ func TestBrowserDocumentCLIAliasLookupHonorsCancellationAndBounds(t *testing.T) 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
 				if calls == 1 {
-					_ = json.NewEncoder(w).Encode(api.RunArchiveReport{Manifest: &api.RunArchiveManifest{TestID: "canonical-run"}})
+					_ = json.NewEncoder(w).Encode(browserDocumentArchiveFixture{Manifest: &browserDocumentManifestFixture{TestID: "canonical-run"}})
 					return
 				}
 				switch mode {

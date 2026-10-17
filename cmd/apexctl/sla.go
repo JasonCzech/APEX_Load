@@ -5,42 +5,42 @@ import (
 	"sort"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/api"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 )
 
 type SLASummary struct {
-	Evaluated              bool                           `json:"evaluated"`
-	Breached               bool                           `json:"breached"`
-	Details                []string                       `json:"details,omitempty"`
-	TransactionRuleResults []api.TransactionSLARuleResult `json:"transaction_rule_results,omitempty"`
+	Evaluated              bool                                   `json:"evaluated"`
+	Breached               bool                                   `json:"breached"`
+	Details                []string                               `json:"details,omitempty"`
+	TransactionRuleResults []runcontract.TransactionSLARuleResult `json:"transaction_rule_results,omitempty"`
 }
 
-func resolveGoalConfig(script *dsl.Script, args runArgs) *api.GoalConfig {
+func resolveGoalConfig(script *dsl.Script, args runArgs) *runcontract.GoalConfig {
 	return mergeGoalConfigs(goalConfigFromScript(script), buildGoalConfigFromArgs(args))
 }
 
-func buildGoalConfigFromArgs(args runArgs) *api.GoalConfig {
+func buildGoalConfigFromArgs(args runArgs) *runcontract.GoalConfig {
 	if args.p95LatencyMs == nil && args.maxErrorPct == nil && args.maxAvgServerProcessingMs == nil && args.maxAvgTransferMs == nil && args.maxErrorCount == nil && len(args.transactionRules) == 0 {
 		return nil
 	}
-	return &api.GoalConfig{
+	return &runcontract.GoalConfig{
 		P95LatencyMs:             args.p95LatencyMs,
 		MaxErrorPct:              args.maxErrorPct,
 		MaxAvgServerProcessingMs: args.maxAvgServerProcessingMs,
 		MaxAvgTransferMs:         args.maxAvgTransferMs,
 		MaxErrorCount:            args.maxErrorCount,
-		TransactionRules:         append([]api.TransactionSLARule(nil), args.transactionRules...),
+		TransactionRules:         append([]runcontract.TransactionSLARule(nil), args.transactionRules...),
 	}
 }
 
-func goalConfigFromScript(script *dsl.Script) *api.GoalConfig {
+func goalConfigFromScript(script *dsl.Script) *runcontract.GoalConfig {
 	if script == nil || script.GoalConfig == nil {
 		return nil
 	}
 	goal := script.GoalConfig
-	resolved := &api.GoalConfig{
+	resolved := &runcontract.GoalConfig{
 		TargetAverageTPS:         cloneFloat64(goal.TargetAverageTPS),
 		P95LatencyMs:             cloneFloat64(goal.P95LatencyMs),
 		MaxErrorPct:              cloneFloat64(goal.MaxErrorPct),
@@ -60,7 +60,7 @@ func goalConfigFromScript(script *dsl.Script) *api.GoalConfig {
 	return resolved
 }
 
-func mergeGoalConfigs(base, override *api.GoalConfig) *api.GoalConfig {
+func mergeGoalConfigs(base, override *runcontract.GoalConfig) *runcontract.GoalConfig {
 	if !hasGoalConfig(base) && !hasGoalConfig(override) {
 		return nil
 	}
@@ -78,20 +78,20 @@ func mergeGoalConfigs(base, override *api.GoalConfig) *api.GoalConfig {
 	merged.MaxAvgTransferMs = firstFloat64(override.MaxAvgTransferMs, merged.MaxAvgTransferMs)
 	merged.MaxErrorCount = firstInt(override.MaxErrorCount, merged.MaxErrorCount)
 	if len(override.TransactionRules) > 0 {
-		merged.TransactionRules = append([]api.TransactionSLARule(nil), override.TransactionRules...)
+		merged.TransactionRules = append([]runcontract.TransactionSLARule(nil), override.TransactionRules...)
 	}
 	return merged
 }
 
-func hasGoalConfig(goal *api.GoalConfig) bool {
+func hasGoalConfig(goal *runcontract.GoalConfig) bool {
 	return goal != nil && (goal.TargetAverageTPS != nil || goal.P95LatencyMs != nil || goal.MaxErrorPct != nil || goal.MaxAvgServerProcessingMs != nil || goal.MaxAvgTransferMs != nil || goal.MaxErrorCount != nil || goal.MinVUsers != nil || goal.MaxVUsers != nil || len(goal.TransactionRules) > 0 || goal.StopOnSLABreach || goal.StopOnMaxErrors)
 }
 
-func cloneGoalConfig(goal *api.GoalConfig) *api.GoalConfig {
+func cloneGoalConfig(goal *runcontract.GoalConfig) *runcontract.GoalConfig {
 	if goal == nil {
 		return nil
 	}
-	return &api.GoalConfig{
+	return &runcontract.GoalConfig{
 		TargetAverageTPS:         cloneFloat64(goal.TargetAverageTPS),
 		P95LatencyMs:             cloneFloat64(goal.P95LatencyMs),
 		MaxErrorPct:              cloneFloat64(goal.MaxErrorPct),
@@ -103,17 +103,17 @@ func cloneGoalConfig(goal *api.GoalConfig) *api.GoalConfig {
 		StopOnSLABreach:          goal.StopOnSLABreach,
 		StopOnMaxErrors:          goal.StopOnMaxErrors,
 		SLABreachWindow:          goal.SLABreachWindow,
-		TransactionRules:         append([]api.TransactionSLARule(nil), goal.TransactionRules...),
+		TransactionRules:         append([]runcontract.TransactionSLARule(nil), goal.TransactionRules...),
 	}
 }
 
-func convertDSLTransactionSLARules(rules []dsl.TransactionSLARule) []api.TransactionSLARule {
+func convertDSLTransactionSLARules(rules []dsl.TransactionSLARule) []runcontract.TransactionSLARule {
 	if len(rules) == 0 {
 		return nil
 	}
-	converted := make([]api.TransactionSLARule, len(rules))
+	converted := make([]runcontract.TransactionSLARule, len(rules))
 	for index, rule := range rules {
-		converted[index] = api.TransactionSLARule{
+		converted[index] = runcontract.TransactionSLARule{
 			Transaction: rule.Transaction,
 			Population:  rule.Population, Protocol: rule.Protocol, Group: rule.Group,
 			Metric:     rule.Metric,
@@ -156,7 +156,7 @@ func firstInt(primary, fallback *int) *int {
 	return cloneInt(fallback)
 }
 
-func evaluateLocalSLA(result *engine.RunResult, goalConfig *api.GoalConfig) *SLASummary {
+func evaluateLocalSLA(result *engine.RunResult, goalConfig *runcontract.GoalConfig) *SLASummary {
 	if result == nil || goalConfig == nil {
 		return nil
 	}

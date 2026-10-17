@@ -18,6 +18,10 @@ import (
 // dialect-rewrite guard test can drive the real schema through rewriteSQL — see
 // TestPostgresSchemaBooleanColumnsRewriteToBoolean.
 func schemaCreateTableStatements() []string {
+	return schemaCreateTableStatementsFor(storeDialectSQLite)
+}
+
+func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 	return append([]string{
 		schemaMigrationLedgerDDL,
 		`CREATE TABLE IF NOT EXISTS prometheus_connections (
@@ -293,8 +297,8 @@ func schemaCreateTableStatements() []string {
 			start_delay TEXT,
 			scenario_mode TEXT,
  termination_mode TEXT NOT NULL DEFAULT 'duration',
-			shakeout_enabled INTEGER DEFAULT 0,
-			resource_baseline_enabled INTEGER DEFAULT 0,
+			shakeout_enabled ` + dialect.booleanColumnDDL(false, false) + `,
+			resource_baseline_enabled ` + dialect.booleanColumnDDL(false, false) + `,
 			assignment_json TEXT,
 			goal_config_json TEXT,
 			runtime_settings_json TEXT,
@@ -313,7 +317,7 @@ func schemaCreateTableStatements() []string {
 			release_id TEXT,
 			timeslot_id TEXT,
 			run_name_template TEXT,
-			enabled INTEGER DEFAULT 1,
+			enabled ` + dialect.booleanColumnDDL(false, true) + `,
 			approval_policy TEXT,
 			missed_run_policy TEXT,
 			conflict_summary TEXT,
@@ -672,8 +676,8 @@ func schemaCreateTableStatements() []string {
 			folder_id TEXT REFERENCES folders(id),
 			scenario_mode TEXT,
  termination_mode TEXT NOT NULL DEFAULT 'duration',
-			shakeout_enabled INTEGER DEFAULT 0,
-			resource_baseline_enabled INTEGER DEFAULT 0,
+			shakeout_enabled ` + dialect.booleanColumnDDL(false, false) + `,
+			resource_baseline_enabled ` + dialect.booleanColumnDDL(false, false) + `,
 			start_delay TEXT,
 			assignment_json TEXT,
 			total_vusers INTEGER,
@@ -686,7 +690,7 @@ func schemaCreateTableStatements() []string {
 			cumulative_pause_ns INTEGER NOT NULL DEFAULT 0,
 			capacity_window_start_at DATETIME,
 			capacity_window_end_at DATETIME,
-			baseline_pinned INTEGER DEFAULT 0,
+			baseline_pinned ` + dialect.booleanColumnDDL(false, false) + `,
 			baseline_pinned_at DATETIME,
 			end_time DATETIME,
 			error TEXT,
@@ -925,7 +929,7 @@ func schemaCreateTableStatements() []string {
 			remote_commit_sha TEXT,
 			base_branch TEXT,
 			base_blob_sha TEXT,
-			base_missing INTEGER NOT NULL DEFAULT 0,
+			base_missing ` + dialect.booleanColumnDDL(true, false) + `,
 			content_hash TEXT,
 			synced_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
@@ -1082,7 +1086,7 @@ func schemaCreateTableStatements() []string {
 			owner_id TEXT,
 			contact_email TEXT,
 			key_hash TEXT NOT NULL UNIQUE,
-			active INTEGER NOT NULL DEFAULT 1,
+			active ` + dialect.booleanColumnDDL(true, true) + `,
 			global_roles_json TEXT,
 			project_roles_json TEXT,
 			domain_roles_json TEXT,
@@ -1100,7 +1104,7 @@ func schemaCreateTableStatements() []string {
 			subject TEXT NOT NULL UNIQUE,
 			email TEXT,
 			display_name TEXT,
-			active INTEGER NOT NULL DEFAULT 1,
+			active ` + dialect.booleanColumnDDL(true, true) + `,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
 			last_seen_at DATETIME,
@@ -1532,7 +1536,7 @@ func schemaCreateTableStatements() []string {
 			timezone TEXT,
 			release_id TEXT,
 			run_name_template TEXT,
-			enabled INTEGER DEFAULT 1,
+			enabled ` + dialect.booleanColumnDDL(false, true) + `,
 			missed_run_policy TEXT,
 			conflict_summary TEXT,
 			next_required_action TEXT,
@@ -1597,7 +1601,7 @@ func schemaCreateTableStatements() []string {
 			description TEXT,
 			source TEXT,
 			objects_json TEXT,
-			auto_promote_on_heal INTEGER DEFAULT 0,
+			auto_promote_on_heal ` + dialect.booleanColumnDDL(false, false) + `,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
@@ -1627,7 +1631,7 @@ func schemaCreateTableStatements() []string {
             incident_key TEXT NOT NULL,
             severity TEXT NOT NULL,
             payload_json TEXT NOT NULL,
-            active INTEGER NOT NULL DEFAULT 1,
+            active ` + dialect.booleanColumnDDL(true, true) + `,
             first_seen_at DATETIME NOT NULL,
             last_seen_at DATETIME NOT NULL,
             resolved_at DATETIME,
@@ -1733,10 +1737,8 @@ func schemaCreateTableStatements() []string {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
-		// The `enabled INTEGER DEFAULT 1` fragment is written byte-for-byte to match a
-		// rewriteSQL boolean-column entry (see sqlite.go), so Postgres gets BOOLEAN with
-		// zero new rewrite rules; TestPostgresSchemaBooleanColumnsRewriteToBoolean guards
-		// this. Any deviation silently breaks Postgres.
+		// The dialect selects this boolean type and default explicitly; the
+		// schema parity tests guard compatibility with existing databases.
 		`CREATE TABLE IF NOT EXISTS grafana_dashboards (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL,
@@ -1746,7 +1748,7 @@ func schemaCreateTableStatements() []string {
 			source_uid TEXT,
 			source_sha256 TEXT NOT NULL,
 			schema_version INTEGER NOT NULL DEFAULT 0,
-			enabled INTEGER DEFAULT 1,
+			enabled ` + dialect.booleanColumnDDL(false, true) + `,
 			panels_json TEXT NOT NULL,
 			bindings_json TEXT,
 			diagnostics_json TEXT,
@@ -1990,8 +1992,8 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.joint_evidence_json", query: `ALTER TABLE tests ADD COLUMN joint_evidence_json TEXT`},
 		{name: "tests.start_authorization_json", query: `ALTER TABLE tests ADD COLUMN start_authorization_json TEXT`},
 		{name: "tests.timeslot_id", query: `ALTER TABLE tests ADD COLUMN timeslot_id TEXT`},
-		{name: "tests.shakeout_enabled", query: `ALTER TABLE tests ADD COLUMN shakeout_enabled INTEGER DEFAULT 0`},
-		{name: "tests.resource_baseline_enabled", query: `ALTER TABLE tests ADD COLUMN resource_baseline_enabled INTEGER DEFAULT 0`},
+		booleanColumnMigration("tests", "shakeout_enabled", false, false),
+		booleanColumnMigration("tests", "resource_baseline_enabled", false, false),
 		{name: "tests.start_delay", query: `ALTER TABLE tests ADD COLUMN start_delay TEXT`},
 		{name: "tests.initial_provenance_json", query: `ALTER TABLE tests ADD COLUMN initial_provenance_json TEXT`},
 		{name: "tests.continuity_checkpoint_json", query: `ALTER TABLE tests ADD COLUMN continuity_checkpoint_json TEXT`},
@@ -2000,7 +2002,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "scenarios.traffic_profile_json", query: `ALTER TABLE scenarios ADD COLUMN traffic_profile_json TEXT`},
 		{name: "tests.assignment_json", query: `ALTER TABLE tests ADD COLUMN assignment_json TEXT`},
 		{name: "scripts.metadata_json", query: `ALTER TABLE scripts ADD COLUMN metadata_json TEXT`},
-		{name: "object_repositories.auto_promote_on_heal", query: `ALTER TABLE object_repositories ADD COLUMN auto_promote_on_heal INTEGER DEFAULT 0`},
+		booleanColumnMigration("object_repositories", "auto_promote_on_heal", false, false),
 		{name: "projects.settings_json", query: `ALTER TABLE projects ADD COLUMN settings_json TEXT`},
 		{name: "projects.domain_id", query: `ALTER TABLE projects ADD COLUMN domain_id TEXT REFERENCES domains(id)`},
 		{name: "projects.category_id", query: `ALTER TABLE projects ADD COLUMN category_id TEXT REFERENCES repository_categories(id)`},
@@ -2032,7 +2034,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.scheduled_start_at", query: `ALTER TABLE tests ADD COLUMN scheduled_start_at DATETIME`},
 		{name: "tests.started_at", query: `ALTER TABLE tests ADD COLUMN started_at DATETIME`},
 		{name: "tests.pending_since", query: `ALTER TABLE tests ADD COLUMN pending_since DATETIME`},
-		{name: "tests.baseline_pinned", query: `ALTER TABLE tests ADD COLUMN baseline_pinned INTEGER DEFAULT 0`},
+		booleanColumnMigration("tests", "baseline_pinned", false, false),
 		{name: "tests.baseline_pinned_at", query: `ALTER TABLE tests ADD COLUMN baseline_pinned_at DATETIME`},
 		{name: "shared_data_pools.project_id", query: `ALTER TABLE shared_data_pools ADD COLUMN project_id TEXT REFERENCES projects(id)`},
 		{name: "shared_data_pools.rows_revision", query: `ALTER TABLE shared_data_pools ADD COLUMN rows_revision BIGINT NOT NULL DEFAULT 0`},
@@ -2064,7 +2066,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "test_interval_summaries.browser_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN browser_json TEXT`},
 		{name: "test_interval_summaries.browser_by_device_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN browser_by_device_json TEXT`},
 		{name: "test_interval_summaries.latency_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN latency_json TEXT`},
-		{name: "service_accounts.active", query: `ALTER TABLE service_accounts ADD COLUMN active INTEGER NOT NULL DEFAULT 1`},
+		booleanColumnMigration("service_accounts", "active", true, true),
 		{name: "service_accounts.expires_at", query: `ALTER TABLE service_accounts ADD COLUMN expires_at DATETIME`},
 		{name: "service_accounts.key_rotated_at", query: `ALTER TABLE service_accounts ADD COLUMN key_rotated_at DATETIME`},
 		{name: "service_accounts.rotation_interval_days", query: `ALTER TABLE service_accounts ADD COLUMN rotation_interval_days INTEGER`},
@@ -2114,7 +2116,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "github_script_links.remote_commit_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_commit_sha TEXT`},
 		{name: "github_script_links.base_branch", query: `ALTER TABLE github_script_links ADD COLUMN base_branch TEXT`},
 		{name: "github_script_links.base_blob_sha", query: `ALTER TABLE github_script_links ADD COLUMN base_blob_sha TEXT`},
-		{name: "github_script_links.base_missing", query: `ALTER TABLE github_script_links ADD COLUMN base_missing INTEGER NOT NULL DEFAULT 0`},
+		booleanColumnMigration("github_script_links", "base_missing", true, false),
 		{name: "github_check_links.pending_conclusion", query: `ALTER TABLE github_check_links ADD COLUMN pending_conclusion TEXT`},
 		{name: "github_check_links.kind", query: `ALTER TABLE github_check_links ADD COLUMN kind TEXT`},
 		{name: "github_check_intents.creation_claim", query: `ALTER TABLE github_check_intents ADD COLUMN creation_claim TEXT`},
@@ -2384,7 +2386,7 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensureCompatibleImportPhysicalTableLayout(); err != nil {
 		return err
 	}
-	for _, q := range schemaCreateTableStatements() {
+	for _, q := range schemaCreateTableStatementsFor(s.db.dialect) {
 		if _, err := s.db.Exec(q); err != nil {
 			return fmt.Errorf("failed to run migration query: %w", err)
 		}
@@ -2710,7 +2712,7 @@ func (s *SQLiteStore) applyTimescaleDB() error {
 
 func (s *SQLiteStore) applyOptionalSchemaMigrations(migrations []optionalSchemaMigration) error {
 	for _, migration := range migrations {
-		if _, err := s.db.Exec(migration.query); err != nil && !isDuplicateColumnErr(err) {
+		if _, err := s.db.Exec(migration.statement(s.db.dialect)); err != nil && !isDuplicateColumnErr(err) {
 			return fmt.Errorf("failed to apply schema migration %s: %w", migration.name, err)
 		}
 	}

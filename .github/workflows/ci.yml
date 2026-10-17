@@ -265,6 +265,46 @@ jobs:
       - name: Validate documentation references
         run: python3 scripts/check-docs.py
 
+      - name: Validate MCP routes and generated input schemas
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          python3 -m venv "${RUNNER_TEMP}/apexload-mcp-venv"
+          "${RUNNER_TEMP}/apexload-mcp-venv/bin/python" -m pip install --disable-pip-version-check -r mcp/requirements.txt
+          "${RUNNER_TEMP}/apexload-mcp-venv/bin/python" -m pytest mcp -q
+
+  content-concurrency:
+    name: Content and CLI concurrency
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.id == github.event.repository.id && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'apexload-ci-unprivileged' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+          persist-credentials: false
+      - name: Setup Go from go.mod
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Repeat isolated ownership and cancellation regressions
+        run: |
+          set -euo pipefail
+          mkdir -p test-results
+          # These owners and their tests have no server/storage dependency.
+          # Keep the bounded race gate independent of browser/database setup.
+          go test -race -shuffle=on -count=20 -timeout=2m -json \
+            ./pkg/contentmutation ./cmd/apexctl/internal/ciclient \
+            > test-results/content-concurrency.json
+      - name: Upload concurrency evidence
+        if: always()
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: content-concurrency
+          path: test-results/content-concurrency.json
+
   go-tests:
     name: Go tests (${{ matrix.lane }})
     if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.id == github.event.repository.id && github.event.pull_request.head.repo.full_name == github.repository)
@@ -1266,6 +1306,7 @@ jobs:
       - workflow-policy
       - go-quality
       - go-tests
+      - content-concurrency
       - build
       - protocol-tags
       - dashboard
@@ -1287,7 +1328,7 @@ jobs:
           set -euo pipefail
 
           full_ci_jobs=(
-            workflow-policy go-quality go-tests build protocol-tags dashboard
+            workflow-policy go-quality go-tests content-concurrency build protocol-tags dashboard
             deployment-artifacts containers govulncheck codeql
           )
           expected_success=()

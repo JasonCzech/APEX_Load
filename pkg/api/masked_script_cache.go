@@ -1,9 +1,6 @@
 package api
 
-import (
-	"container/list"
-	"sync"
-)
+import "github.com/jasonczech/apexload/pkg/internal/importreview"
 
 // maskScriptSecrets is a pure function of the script's content, and one import
 // request masks the same script several times: the draft claim's credential
@@ -12,60 +9,15 @@ import (
 // Its costly projection is kept by a digest of the unmasked script's JSON, as
 // masked JSON, so a repeat costs one decode and a few cheap restores. Only
 // masked output is held, and the cache is bounded by entries and bytes.
-const (
-	maskedScriptCacheEntries = 16
-	maskedScriptCacheBytes   = 64 << 20
-)
+const maskedScriptCacheBytes = importreview.MaskedScriptCacheBytes
+const maskedScriptCacheEntries = importreview.MaskedScriptCacheEntries
 
-var maskedScripts = newMaskedScriptCache(maskedScriptCacheEntries, maskedScriptCacheBytes)
+var maskedScripts = importreview.MaskedScripts
 
-type maskedScriptCache struct {
-	mu         sync.Mutex
-	maxEntries int
-	maxBytes   int
-	bytes      int
-	order      *list.List
-	entries    map[[32]byte]*list.Element
-}
+type maskedScriptCache = importreview.MaskedScriptCache
 
-type maskedScriptEntry struct {
-	key     [32]byte
-	encoded []byte
-}
+type maskedScriptEntry = importreview.MaskedScriptEntry
 
-func newMaskedScriptCache(maxEntries, maxBytes int) *maskedScriptCache {
-	return &maskedScriptCache{maxEntries: maxEntries, maxBytes: maxBytes, order: list.New(), entries: make(map[[32]byte]*list.Element)}
-}
+var newMaskedScriptCache = importreview.NewMaskedScriptCache
 
 // get returns the masked JSON for key, or nil. Callers decode their own copy.
-func (c *maskedScriptCache) get(key [32]byte) []byte {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	element, ok := c.entries[key]
-	if !ok {
-		return nil
-	}
-	c.order.MoveToFront(element)
-	return element.Value.(*maskedScriptEntry).encoded
-}
-
-func (c *maskedScriptCache) put(key [32]byte, encoded []byte) {
-	if len(encoded) > c.maxBytes {
-		return
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if element, ok := c.entries[key]; ok {
-		c.order.MoveToFront(element)
-		return
-	}
-	c.entries[key] = c.order.PushFront(&maskedScriptEntry{key: key, encoded: encoded})
-	c.bytes += len(encoded)
-	for c.order.Len() > c.maxEntries || c.bytes > c.maxBytes {
-		oldest := c.order.Back()
-		entry := oldest.Value.(*maskedScriptEntry)
-		c.order.Remove(oldest)
-		delete(c.entries, entry.key)
-		c.bytes -= len(entry.encoded)
-	}
-}

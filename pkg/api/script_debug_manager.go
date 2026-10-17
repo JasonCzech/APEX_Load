@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/recordbridge"
 )
 
 const (
@@ -886,16 +887,7 @@ func (m *ScriptDebugManager) abandonUnresponsiveWorker(session *ScriptDebugSessi
 }
 
 func sessionRetentionSortTime(startedAt *time.Time, terminalAt *time.Time, lastActivityAt time.Time) time.Time {
-	if terminalAt != nil {
-		return *terminalAt
-	}
-	if !lastActivityAt.IsZero() {
-		return lastActivityAt
-	}
-	if startedAt != nil {
-		return *startedAt
-	}
-	return time.Time{}
+	return recordbridge.SessionRetentionSortTime(startedAt, terminalAt, lastActivityAt)
 }
 
 func (m *ScriptDebugManager) handleReplayProgress(ctx context.Context, session *ScriptDebugSession, event engine.ReplayProgressEvent) {
@@ -2544,46 +2536,11 @@ func replayRuntimeProfileForDebug(script *dsl.Script, req ScriptDebugStartReques
 }
 
 func replayRuntimeProfileForBrowser(script *dsl.Script, req BrowserReplayStartRequest, ignoreThinkTime bool) engine.ReplayRuntimeProfile {
-	profile := engine.ReplayRuntimeProfile{
-		Name:            "browser canary",
-		CaptureMode:     "browser_evidence",
-		LogLevel:        "info",
-		IgnoreThinkTime: ignoreThinkTime,
-	}
-	if script != nil {
-		profile.BrowserEngine = strings.TrimSpace(script.Config.Browser.Engine)
-		profile.DeviceProfile = strings.TrimSpace(script.Config.Browser.DeviceProfile)
-		if script.Config.Browser.Headless != nil {
-			headless := *script.Config.Browser.Headless
-			profile.Headless = &headless
-		}
-		profile.FailurePolicy = debugFailurePolicy(debugContinueOnError(req.ContinueOnError, script))
-	}
-	if req.Browser != nil {
-		if req.Browser.Engine != "" {
-			profile.BrowserEngine = strings.TrimSpace(req.Browser.Engine)
-		}
-		if req.Browser.DeviceProfile != "" {
-			profile.DeviceProfile = strings.TrimSpace(req.Browser.DeviceProfile)
-		}
-		if req.Browser.Headless != nil {
-			headless := *req.Browser.Headless
-			profile.Headless = &headless
-		}
-	}
-	return profile
+	return recordbridge.ReplayRuntimeProfileForBrowser(script, recordbridge.BrowserReplayStartRequest{Browser: req.Browser, ContinueOnError: req.ContinueOnError}, ignoreThinkTime)
 }
 
 func cloneEngineReplayRuntimeProfile(profile *engine.ReplayRuntimeProfile) engine.ReplayRuntimeProfile {
-	if profile == nil {
-		return engine.ReplayRuntimeProfile{}
-	}
-	cloned := *profile
-	if profile.Headless != nil {
-		headless := *profile.Headless
-		cloned.Headless = &headless
-	}
-	return cloned
+	return recordbridge.CloneEngineReplayRuntimeProfile(profile)
 }
 
 func normalizeDebugLogLevel(level string) string {

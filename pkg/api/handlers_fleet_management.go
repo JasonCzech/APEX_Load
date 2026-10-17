@@ -1483,7 +1483,7 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 							}
 							return
 						}
-						s.reconcileAsyncCapacityOperation(owner, pool, backend, base, intents)
+						s.recoverCapacityOperation(owner, pool, backend, base, intents)
 					}) {
 						owner.finish()
 						return errors.New("controller is stopping and cannot recover capacity operations")

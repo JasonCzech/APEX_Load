@@ -83,50 +83,14 @@ func (a *Agent) collectProviderJob(ctx context.Context, job RunJob, envelope Sig
 		if now.Before(until) {
 			return nil
 		}
-		from, to := job.QueryFromUTC, job.QueryUntilUTC
-		if from.IsZero() {
-			from = job.StartedAt
-		}
-		if to.IsZero() {
-			to = now
-		}
-		if job.LoadEndedAt != nil && to.After(*job.LoadEndedAt) {
-			to = *job.LoadEndedAt
-		}
+		from, to := providerQueryWindow(job, now)
 		if !to.After(from) {
 			return nil
 		}
 		leaseCtx, cancel := context.WithDeadline(ctx, job.LeaseExpiresAt)
 		result, collectErr := collect(leaseCtx, from, to)
 		cancel()
-		// Failed provider reads may still produce capability/coverage evidence. Keep
-		// them visible without inventing zero-valued measurements.
-		if collectErr != nil && len(result.Coverage) == 0 {
-			key := "collection"
-			if job.Pack == monitorprovider.PackDynatrace {
-				key = "controller"
-			}
-			if job.Prometheus != nil {
-				// Prometheus ingestion accepts this bounded failure capability even
-				// when no approved query could execute. Keep the failed read durable
-				// so its receipt can clear the spool and a later poll can recover.
-				key = "query"
-			}
-			result.Coverage = map[string]monitorprovider.Coverage{key: {Status: "unavailable", From: from, To: to, Message: "provider collection failed"}}
-		}
-		if job.Prometheus != nil && result.Progress.TotalQueries == 0 {
-			total := len(job.Prometheus.Selection.Queries)
-			if job.Prometheus.Selection.Targets {
-				total++
-			}
-			if job.Prometheus.Selection.Alerts {
-				total++
-			}
-			if job.Reconciling {
-				total += len(job.TerminalWindows)
-			}
-			result.Progress = monitorprovider.QueryProgress{TotalQueries: total, NextQuery: job.Prometheus.Selection.QueryOffset, NextTime: job.Prometheus.Selection.QueryTime}
-		}
+		result = completeProviderResult(job, result, collectErr, from, to)
 		chunks, err := providerBatches(job, envelope, result, to)
 		if err != nil {
 			return err
@@ -174,16 +138,7 @@ func (a *Agent) collectProviderJob(ctx context.Context, job RunJob, envelope Sig
 			a.pendingBatches[job.ID] = pending
 		} else {
 			pending = nil
-			a.nextCollection[job.ID] = now.Add(time.Duration(job.IntervalSeconds) * time.Second)
-			if job.Reconciling {
-				a.nextCollection[job.ID] = now.Add(15 * time.Second)
-			}
-			if acknowledged.Progress != nil && !acknowledged.Progress.Complete {
-				a.nextCollection[job.ID] = now
-			}
-			if job.Prometheus != nil && job.Reconciling && acknowledged.Progress == nil {
-				a.nextCollection[job.ID] = now
-			}
+			a.nextCollection[job.ID] = providerNextCollectionTime(now, job, acknowledged)
 		}
 		err = a.saveSpool()
 		a.stateMu.Unlock()

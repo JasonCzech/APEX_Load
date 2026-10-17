@@ -2,46 +2,17 @@ package kafka
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/protocol/kafkacontract"
 	"golang.org/x/sync/semaphore"
 )
 
-type producerTuning struct {
-	Retries, LingerMs, BatchBytes, BufferBytes, AdmissionTimeoutMs, DeliveryTimeoutMs, RequestTimeoutMs *int
-}
+type producerTuning = kafkacontract.ProducerTuning
 
 func parseProducerTuning(values map[string]any) (producerTuning, error) {
-	var p producerTuning
-	for _, f := range []struct {
-		key      string
-		dst      **int
-		min, max int
-	}{
-		{"retries", &p.Retries, 0, 2147483647}, {"linger_ms", &p.LingerMs, 0, 3600000}, {"batch_bytes", &p.BatchBytes, 512, 67108864}, {"buffer_bytes", &p.BufferBytes, 1, 1073741824}, {"admission_timeout_ms", &p.AdmissionTimeoutMs, 0, 3600000}, {"delivery_timeout_ms", &p.DeliveryTimeoutMs, 1, 3600000}, {"request_timeout_ms", &p.RequestTimeoutMs, 1, 3600000},
-	} {
-		key := "kafka_producer_" + f.key
-		if _, ok := values[key]; !ok {
-			continue
-		}
-		value, err := boundedConfigInt(values, key, 0, f.min, f.max)
-		if err != nil {
-			return p, err
-		}
-		*f.dst = &value
-	}
-	if p.DeliveryTimeoutMs != nil && p.RequestTimeoutMs != nil {
-		linger := 0
-		if p.LingerMs != nil {
-			linger = *p.LingerMs
-		}
-		if *p.DeliveryTimeoutMs < *p.RequestTimeoutMs+linger {
-			return p, fmt.Errorf("Kafka delivery timeout must include request timeout and linger")
-		}
-	}
-	return p, nil
+	return kafkacontract.ParseProducerTuning(values)
 }
 
 type producerAdmission struct {
@@ -103,42 +74,13 @@ func (a *producerAdmission) admit(ctx context.Context, bytes int64, metadata fun
 }
 
 func producerTLSVersions(c config) (uint16, uint16, error) {
-	min, max := uint16(tls.VersionTLS12), uint16(0)
-	parse := func(v string) (uint16, error) {
-		switch v {
-		case "1.2":
-			return tls.VersionTLS12, nil
-		case "1.3":
-			return tls.VersionTLS13, nil
-		default:
-			return 0, fmt.Errorf("Kafka TLS version must be 1.2 or 1.3")
-		}
-	}
-	var err error
-	if c.TLSMinVersion != "" {
-		min, err = parse(c.TLSMinVersion)
-		if err != nil {
-			return 0, 0, err
-		}
-	}
-	if c.TLSMaxVersion != "" {
-		max, err = parse(c.TLSMaxVersion)
-		if err != nil {
-			return 0, 0, err
-		}
-	}
-	if max != 0 && min > max {
-		return 0, 0, fmt.Errorf("Kafka TLS minimum exceeds maximum")
-	}
-	return min, max, nil
+	return kafkacontract.TLSVersions(c.TLSMinVersion, c.TLSMaxVersion)
 }
 
 // ValidateProducerSettings applies the same bounds used by the runtime map.
 func ValidateProducerSettings(values map[string]any) error {
-	_, err := parseProducerTuning(values)
-	return err
+	return kafkacontract.ValidateProducerSettings(values)
 }
 func ValidateTLSVersions(min, max string) error {
-	_, _, err := producerTLSVersions(config{TLSMinVersion: min, TLSMaxVersion: max})
-	return err
+	return kafkacontract.ValidateTLSVersions(min, max)
 }

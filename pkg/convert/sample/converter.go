@@ -3,12 +3,12 @@ package sample
 import (
 	"errors"
 	"fmt"
-	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
@@ -18,7 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
-	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 

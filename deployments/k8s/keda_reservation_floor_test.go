@@ -2,11 +2,25 @@ package k8s_test
 
 import (
 	"encoding/json"
+	"os/exec"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 )
+
+// The generator owns only query expressions; its tests also pin all surrounding
+// deployment-specific fields and reject partial or ambiguous generation.
+func TestKEDAQueryGeneration(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 is required for query generation checks")
+	}
+	command := exec.Command(python, "../../scripts/generate_keda_queries_test.py")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("KEDA query generation: %v\n%s", err, output)
+	}
+}
 
 // Every trigger-list overlay must retain the ordinal floor: replacing the list
 // must not allow KEDA to delete an occupied high StatefulSet ordinal.
@@ -17,6 +31,7 @@ func TestKEDAReservationFloorParity(t *testing.T) {
 		"local/generator-keda-scaledobject.yaml",
 		"onprem/generator-keda-scaledobject.yaml",
 		"onprem-autoscaling/generator-keda-scaledobject.yaml",
+		"onprem-ha-autoscaling/generator-keda-scaledobject.yaml",
 		"aks-azure-monitor/generator-keda-azure-monitor-patch.yaml",
 	} {
 		t.Run(path, func(t *testing.T) {
@@ -73,7 +88,7 @@ func TestKEDAQueriesMatchPrometheusFixtures(t *testing.T) {
 			known[item.Expr] = true
 		}
 	}
-	for _, path := range []string{"aks/generator-keda-scaledobject.yaml", "eks/generator-keda-scaledobject.yaml", "local/generator-keda-scaledobject.yaml", "onprem/generator-keda-scaledobject.yaml", "onprem-autoscaling/generator-keda-scaledobject.yaml", "aks-azure-monitor/generator-keda-azure-monitor-patch.yaml", "../helm/apexload/templates/keda.yaml"} {
+	for _, path := range []string{"aks/generator-keda-scaledobject.yaml", "eks/generator-keda-scaledobject.yaml", "local/generator-keda-scaledobject.yaml", "onprem/generator-keda-scaledobject.yaml", "onprem-autoscaling/generator-keda-scaledobject.yaml", "onprem-ha-autoscaling/generator-keda-scaledobject.yaml", "aks-azure-monitor/generator-keda-azure-monitor-patch.yaml", "../helm/apexload/templates/keda.yaml"} {
 		count := 0
 		for _, line := range strings.Split(readTextFile(t, path), "\n") {
 			if !strings.HasPrefix(strings.TrimSpace(line), "query:") {

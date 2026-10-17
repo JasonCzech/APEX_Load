@@ -988,7 +988,7 @@ func TestServiceExecutionFailureCancelsSiblingsAndRetainsCapacityUntilTheyExit(t
 		t.Fatalf("terminal error = %q, want first execution error", assignment.terminalError)
 	}
 	service.mu.RLock()
-	_, stopping := service.stoppingTests["test-1"]
+	_, stopping := service.lifecycleCoordinator.stoppingTests["test-1"]
 	service.mu.RUnlock()
 	if !stopping {
 		t.Fatal("failed execution did not install a terminal assignment fence")

@@ -63,7 +63,7 @@ func (s *Service) CheckPreparation(ctx context.Context, req *pb.PreparationCheck
 	if !exists || assignment.executionGeneration != req.ExecutionGeneration || !assignment.prepareOnly || assignment.committed {
 		return nil, status.Error(codes.FailedPrecondition, "prepared assignment no longer available")
 	}
-	if _, stopping := s.lifecycleCoordinator.stoppingTests[req.TestId]; stopping || s.lifecycleCoordinator.pendingStages[req.TestId] != nil || s.lifecycleCoordinator.pendingControls[req.TestId] != nil {
+	if stopping := s.lifecycleCoordinator.isStoppingLocked(req.TestId); stopping || s.lifecycleCoordinator.pendingStages[req.TestId] != nil || s.lifecycleCoordinator.pendingControls[req.TestId] != nil {
 		return nil, status.Error(codes.FailedPrecondition, "prepared assignment is changing")
 	}
 	// Preparation retains an uncommitted STAGED supervision claim. Reuse the
