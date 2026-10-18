@@ -9664,6 +9664,10 @@ paths:
                           type: string
                         error:
                           type: string
+                        executor_completed_at:
+                          type: string
+                          format: date-time
+                          nullable: true
                         exemplar_count:
                           type: integer
                           format: int64
@@ -9854,6 +9858,9 @@ paths:
                               type: object
                               additionalProperties: true
                               nullable: true
+                            execution_generation:
+                              type: integer
+                              format: int64
                             execution_settings:
                               type: object
                               additionalProperties: true
@@ -10366,6 +10373,9 @@ paths:
                               type: object
                               additionalProperties: true
                               nullable: true
+                            execution_generation:
+                              type: integer
+                              format: int64
                             execution_settings:
                               type: object
                               additionalProperties: true
@@ -378617,6 +378627,10 @@ paths:
                     type: string
                   error:
                     type: string
+                  executor_completed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
                   exemplar_count:
                     type: integer
                     format: int64
@@ -378955,6 +378969,9 @@ paths:
                         required:
                           - connection_id
                         nullable: true
+                      execution_generation:
+                        type: integer
+                        format: int64
                       execution_settings:
                         type: object
                         properties:
@@ -382005,6 +382022,9 @@ paths:
                         required:
                           - connection_id
                         nullable: true
+                      execution_generation:
+                        type: integer
+                        format: int64
                       execution_settings:
                         type: object
                         properties:
@@ -394136,6 +394156,10 @@ paths:
                         type: string
                       error:
                         type: string
+                      executor_completed_at:
+                        type: string
+                        format: date-time
+                        nullable: true
                       exemplar_count:
                         type: integer
                         format: int64
@@ -394445,6 +394469,9 @@ paths:
                             required:
                               - connection_id
                             nullable: true
+                          execution_generation:
+                            type: integer
+                            format: int64
                           execution_settings:
                             type: object
                             properties:
@@ -396067,6 +396094,9 @@ paths:
                             required:
                               - connection_id
                             nullable: true
+                          execution_generation:
+                            type: integer
+                            format: int64
                           execution_settings:
                             type: object
                             properties:

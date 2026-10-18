@@ -36,6 +36,10 @@ func newManagedTestStartPersistenceSnapshot(test *ManagedTest) managedTestStartP
 		snapshot.testID = test.ID
 		snapshot.executionFence = test.executionFence
 		snapshot.executionGeneration = test.executionGeneration
+		if snapshot.record != nil {
+			// The fenced Start commit stamps this term on the durable row.
+			snapshot.record.ExecutionGeneration = test.executionGeneration
+		}
 	}
 	return snapshot
 }

@@ -2313,6 +2313,9 @@ func (tr *TestRunner) persistInitialArchiveProvenance(test *ManagedTest, provena
 		return RunArchiveProvenance{}, fmt.Errorf("test and initial archive provenance are required")
 	}
 	masked := maskRunArchiveProvenance(*provenance)
+	// The executing term belongs to the final provenance refreshed when the
+	// archive is finalized; admission-time captures do not know it yet.
+	masked.ExecutionGeneration = 0
 	tr.mu.Lock()
 	if test.initialArchiveProvenance == nil {
 		test.initialArchiveProvenance = &masked

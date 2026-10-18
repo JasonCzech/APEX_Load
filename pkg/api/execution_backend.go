@@ -367,6 +367,7 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 		snapshot = copied
 	}
 	provenance = buildRunArchiveProvenanceFromSnapshot(snapshot)
+	provenance.ExecutionGeneration = snapshot.executionGeneration
 	if tr != nil {
 		provenance.RequestedAt = archiveRunTimestamp(snapshot.CreatedAt, tr.testStore)
 	}

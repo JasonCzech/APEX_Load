@@ -714,7 +714,8 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 			execution_plan_json TEXT,
 			initial_provenance_json TEXT,
 			timeslot_id TEXT,
-			continuity_checkpoint_json TEXT
+			continuity_checkpoint_json TEXT,
+			execution_generation BIGINT NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE IF NOT EXISTS test_history (
 			test_id TEXT,
@@ -1997,6 +1998,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.start_delay", query: `ALTER TABLE tests ADD COLUMN start_delay TEXT`},
 		{name: "tests.initial_provenance_json", query: `ALTER TABLE tests ADD COLUMN initial_provenance_json TEXT`},
 		{name: "tests.continuity_checkpoint_json", query: `ALTER TABLE tests ADD COLUMN continuity_checkpoint_json TEXT`},
+		{name: "tests.execution_generation", query: `ALTER TABLE tests ADD COLUMN execution_generation BIGINT NOT NULL DEFAULT 0`},
 		{name: "scenarios.assignment_json", query: `ALTER TABLE scenarios ADD COLUMN assignment_json TEXT`},
 		{name: "scenarios.start_delay", query: `ALTER TABLE scenarios ADD COLUMN start_delay TEXT`},
 		{name: "scenarios.traffic_profile_json", query: `ALTER TABLE scenarios ADD COLUMN traffic_profile_json TEXT`},
