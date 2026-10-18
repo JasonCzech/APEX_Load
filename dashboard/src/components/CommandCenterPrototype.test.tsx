@@ -1346,6 +1346,137 @@ describe('CommandCenterPrototype', () => {
     expect(container.querySelector('.charts-grid.command-center-graphs.command-center-compact')).not.toBeNull()
   })
 
+  it('pages four or nine selected graphs and restores the saved layout', async () => {
+    await renderPrototype()
+    await click(buttonNamed('Graph Wall'))
+    await click(buttonNamed('Configure Graphs'))
+    await click(inputByLabel('Show P50 Response Time (ms)'))
+    await click(inputByLabel('Show P90 Response Time (ms)'))
+    await click(buttonWithin(container.querySelector('.charts-config-drawer')!, 'Close'))
+
+    const displayedChartIds = () => Array.from(container.querySelectorAll('.command-runtime-graphs .chart-card[data-chart-id]'))
+      .map(chart => chart.getAttribute('data-chart-id'))
+    const layout = () => container.querySelector('[aria-label="Graph layout"]')!
+    const initiallySelectedChartIds = displayedChartIds()
+    expect(initiallySelectedChartIds).toHaveLength(9)
+    expect(buttonWithin(layout(), '3x3').getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelector('[aria-label="Graph pages"]')?.textContent).toContain('Graphs 1–9 of 9 · Page 1 of 1')
+
+    await click(buttonWithin(layout(), '2x2'))
+
+    expect(displayedChartIds()).toEqual(initiallySelectedChartIds.slice(0, 4))
+    expect(buttonByAriaLabel('Previous graph page').disabled).toBe(true)
+    expect(window.localStorage.getItem('apexload.commandCenter.grafana.chartDensity')).toBe('standard')
+    expect(container.querySelector('.charts-grid.command-center-compact')).toBeNull()
+
+    await click(buttonByAriaLabel('Next graph page'))
+
+    expect(displayedChartIds()).toEqual(initiallySelectedChartIds.slice(4, 8))
+    expect(container.querySelector('[aria-label="Graph pages"]')?.textContent).toContain('Graphs 5–8 of 9 · Page 2 of 3')
+
+    await click(buttonByAriaLabel('Next graph page'))
+
+    expect(displayedChartIds()).toEqual(initiallySelectedChartIds.slice(8))
+    expect(buttonByAriaLabel('Next graph page').disabled).toBe(true)
+
+    await click(buttonByAriaLabel('Previous graph page'))
+    expect(displayedChartIds()).toEqual(initiallySelectedChartIds.slice(4, 8))
+
+    await click(buttonWithin(layout(), '3x3'))
+
+    expect(displayedChartIds()).toEqual(initiallySelectedChartIds)
+    expect(container.querySelector('[aria-label="Graph pages"]')?.textContent).toContain('Page 1 of 1')
+    expect(window.localStorage.getItem('apexload.commandCenter.grafana.chartDensity')).toBe('command_center')
+    expect(container.querySelector('.charts-grid.command-center-compact')).not.toBeNull()
+
+    await click(buttonWithin(layout(), '2x2'))
+    await click(buttonNamed('OPS View'))
+    await click(buttonNamed('Graph Wall'))
+
+    expect(buttonWithin(layout(), '2x2').getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelector('.charts-grid.command-center-compact')).toBeNull()
+    expect(displayedChartIds()).toEqual(initiallySelectedChartIds.slice(0, 4))
+  })
+
+  it('keeps expansion on its graph page, clamps hidden cards, and resets graph tabs', async () => {
+    await renderPrototype()
+    await click(buttonNamed('Graph Wall'))
+    await click(buttonNamed('2x2'))
+    await click(buttonByAriaLabel('Next graph page'))
+
+    const graphCards = () => Array.from(container.querySelectorAll<HTMLElement>('.command-runtime-graphs .chart-card[data-chart-id]'))
+    const laterPageCards = graphCards().map(chart => chart.dataset.chartId)
+    expect(laterPageCards).toHaveLength(3)
+    const expandedId = laterPageCards[1]
+    await click(graphCards()[1].querySelector<HTMLButtonElement>('.btn-expand')!)
+
+    expect(graphCards().map(chart => chart.dataset.chartId)).toEqual([
+      expandedId,
+      ...laterPageCards.filter(id => id !== expandedId),
+    ])
+    expect(container.querySelector('[aria-label="Graph pages"]')?.textContent).toContain('Page 2 of 2')
+
+    await click(buttonByAriaLabel('Previous graph page'))
+
+    expect(container.querySelector('.chart-card.expanded')).toBeNull()
+    await click(buttonByAriaLabel('Next graph page'))
+    expect(graphCards().map(chart => chart.dataset.chartId)).toEqual(laterPageCards)
+
+    // Hide every card on the final page, leaving the earlier selected cards.
+    const laterPageTitles = graphCards().map(chart => chart.querySelector('.chart-title')!.textContent)
+    await click(buttonNamed('Configure Graphs'))
+    for (const title of laterPageTitles) await click(inputByLabel(`Show ${title}`))
+    await click(buttonWithin(container.querySelector('.charts-config-drawer')!, 'Close'))
+
+    expect(graphCards()).toHaveLength(4)
+    expect(container.querySelector('[aria-label="Graph pages"]')?.textContent).toContain('Graphs 1–4 of 4 · Page 1 of 1')
+    expect(buttonByAriaLabel('Next graph page').disabled).toBe(true)
+
+    await click(tabNamed('Infrastructure'))
+    await click(buttonByAriaLabel('Next graph page'))
+    expect(container.querySelector('[aria-label="Graph pages"]')?.textContent).toContain('Page 2 of 2')
+
+    await click(tabNamed('Live Metrics'))
+    expect(container.querySelector('[aria-label="Graph pages"]')?.textContent).toContain('Page 1 of 1')
+    expect(graphCards().some(chart => laterPageCards.includes(chart.dataset.chartId))).toBe(false)
+
+    await click(tabNamed('Infrastructure'))
+    expect(container.querySelector('[aria-label="Graph pages"]')?.textContent).toContain('Page 1 of 2')
+  })
+
+  it('follows keyboard-reordered graphs across pages and restores handle focus', async () => {
+    await renderPrototype()
+    await click(buttonNamed('Graph Wall'))
+    await click(buttonNamed('2x2'))
+
+    const cards = () => Array.from(container.querySelectorAll<HTMLElement>('.command-runtime-graphs .chart-card[data-chart-id]'))
+    const handleFor = (id: string) => cards().find(card => card.dataset.chartId === id)!.querySelector<HTMLButtonElement>('.chart-drag-handle')!
+    const move = async (id: string, key: string) => {
+      const handle = handleFor(id)
+      handle.focus()
+      await act(async () => handle.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
+      expect(document.activeElement).toBe(handleFor(id))
+    }
+
+    const firstId = cards()[0].dataset.chartId!
+    await move(firstId, 'End')
+    expect(cards()[cards().length - 1].dataset.chartId).toBe(firstId)
+    expect(container.querySelector('[aria-label="Graph pages"]')?.textContent).toContain('Page 2 of 2')
+
+    await move(firstId, 'Home')
+    expect(cards()[0].dataset.chartId).toBe(firstId)
+    expect(container.querySelector('[aria-label="Graph pages"]')?.textContent).toContain('Page 1 of 2')
+
+    const fourthId = cards()[3].dataset.chartId!
+    await move(fourthId, 'ArrowDown')
+    expect(cards()[0].dataset.chartId).toBe(fourthId)
+    expect(container.querySelector('[aria-label="Graph pages"]')?.textContent).toContain('Page 2 of 2')
+
+    await move(fourthId, 'ArrowUp')
+    expect(cards()[3].dataset.chartId).toBe(fourthId)
+    expect(container.querySelector('[aria-label="Graph pages"]')?.textContent).toContain('Page 1 of 2')
+  })
+
   it('updates local run state and staged VUser targets', async () => {
     await renderPrototype()
 

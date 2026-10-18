@@ -606,6 +606,8 @@ export default function TestExecutionCharts({
   const [selectedMetricByChart, setSelectedMetricByChart] = useState<Record<string, string | null>>({})
   const [localActiveGraphGroupTab, setLocalActiveGraphGroupTab] = useState<GraphGroupTabId>('test_results')
   const [activeImportedDashboardId, setActiveImportedDashboardId] = useState('')
+  const [graphPage, setGraphPage] = useState({ scope: '', index: 0 })
+  const [keyboardReorderedChartId, setKeyboardReorderedChartId] = useState<string | null>(null)
   const [selectedRouteLatencyKey, setSelectedRouteLatencyKey] = useState('')
   const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
   const [chartActionError, setChartActionError] = useState('')
@@ -1006,14 +1008,53 @@ export default function TestExecutionCharts({
   const displayModeCharts = activeGraphGroupTab === 'imported' && activeImportedDashboardId
     ? unscopedDisplayModeCharts.filter(chart => chart.importedPanel?.dashboardId === activeImportedDashboardId)
     : unscopedDisplayModeCharts
+  const paginateGraphs = commandCenterSurface && enableGraphGroupTabs && !dedicatedHeatmapMode
+  const graphPageSize = chartDensity === 'command_center' ? 9 : 4
+  const graphPageScope = JSON.stringify([storageScope, runId, activeGraphGroupTab, activeImportedDashboardId, chartDensity, underLoadDisplayMode])
+  const graphPageCount = Math.max(1, Math.ceil(displayModeCharts.length / graphPageSize))
+  const keyboardReorderedChartIndex = keyboardReorderedChartId
+    ? displayModeCharts.findIndex(chart => chart.id === keyboardReorderedChartId)
+    : -1
+  const requestedGraphPageIndex = keyboardReorderedChartIndex >= 0
+    ? Math.floor(keyboardReorderedChartIndex / graphPageSize)
+    : graphPage.scope === graphPageScope ? graphPage.index : 0
+  const graphPageIndex = Math.min(requestedGraphPageIndex, graphPageCount - 1)
+  const graphPageStart = graphPageIndex * graphPageSize
+  const pageCharts = paginateGraphs
+    ? displayModeCharts.slice(graphPageStart, graphPageStart + graphPageSize)
+    : displayModeCharts
+  // Slice first so expanding a card on a later page keeps that page's cards.
   const displayedCharts = expandedChart
     ? [
-        ...displayModeCharts.filter(chart => chart.id === expandedChart),
-        ...displayModeCharts.filter(chart => chart.id !== expandedChart),
+        ...pageCharts.filter(chart => chart.id === expandedChart),
+        ...pageCharts.filter(chart => chart.id !== expandedChart),
       ]
-    : displayModeCharts
+    : pageCharts
   const displayedChartIds = displayedCharts.map(chart => chart.id)
   const displayedChartIdSignature = displayedChartIds.join('|')
+  const expandedChartIsDisplayed = expandedChart === null || displayedChartIds.includes(expandedChart)
+
+  useEffect(() => {
+    // Reset when changing graph groups/layout, and retain the closest available
+    // page when hiding cards or refreshing a monitoring pack removes a page.
+    setGraphPage(previous => previous.scope === graphPageScope && previous.index === graphPageIndex
+      ? previous
+      : { scope: graphPageScope, index: graphPageIndex })
+  }, [graphPageIndex, graphPageScope])
+
+  useEffect(() => {
+    if (paginateGraphs && !expandedChartIsDisplayed) {
+      onExpandedChartChange(null)
+    }
+  }, [expandedChartIsDisplayed, onExpandedChartChange, paginateGraphs])
+
+  useEffect(() => {
+    if (!keyboardReorderedChartId) return
+    // Reordering across a page boundary mounts a different card set. Follow the
+    // moved card and restore its handle instead of leaving focus on the body.
+    chartCardRefs.current[keyboardReorderedChartId]?.querySelector<HTMLButtonElement>('.chart-drag-handle')?.focus()
+    setKeyboardReorderedChartId(null)
+  }, [displayedChartIdSignature, keyboardReorderedChartId])
 
   useEffect(() => {
     if (typeof ResizeObserver === 'undefined') return
@@ -1066,7 +1107,7 @@ export default function TestExecutionCharts({
     )
   }
 
-  const contextChart = chartMenu ? displayModeCharts.find(chart => chart.id === chartMenu.chartId) : undefined
+  const contextChart = chartMenu ? displayedCharts.find(chart => chart.id === chartMenu.chartId) : undefined
   const graphGroupCounts: Record<GraphGroupTabId, number> = { test_results: 0, under_load: 0, infrastructure: 0, prometheus: 0, imported: 0 }
   visibleCharts.forEach(chart => {
     graphGroupCounts[graphGroupForChart(chart)] += 1
@@ -1705,8 +1746,9 @@ export default function TestExecutionCharts({
         moveChartToBoundary(chartId, 'end')
         break
       default:
-        break
+        return
     }
+    setKeyboardReorderedChartId(chartId)
   }
 
   const resetCharts = () => {
@@ -1722,6 +1764,7 @@ export default function TestExecutionCharts({
       setHiddenChartIds(defaultHiddenChartIds(allChartConfigs, loadImpactIds))
     }
     setChartDensity(densityFallback)
+    setGraphPage({ scope: graphPageScope, index: 0 })
     setShowGradientUnderlays(true)
     setDownsampleDenseCharts(true)
     if (commandCenterSurface) {
@@ -2646,6 +2689,30 @@ export default function TestExecutionCharts({
         <p className="scenario-script-status error" role="alert">
           {`Open-model load shed — ${(latestMetrics?.telemetry?.shedded_arrivals ?? 0).toLocaleString()} arrival${(latestMetrics?.telemetry?.shedded_arrivals ?? 0) === 1 ? '' : 's'} dropped because the system under test could not keep up with the offered rate. In-flight workers are capped to protect the generator, so effective throughput is below target — lower the TPS or raise run_logic.max_in_flight.`}
         </p>
+      )}
+
+      {paginateGraphs && displayModeCharts.length > 0 && (
+        <nav className="archive-pagination-bar graph-pagination-bar" aria-label="Graph pages">
+          <span className="archive-pagination-copy" aria-live="polite">
+            Graphs {graphPageStart + 1}–{Math.min(graphPageStart + graphPageSize, displayModeCharts.length)} of {displayModeCharts.length} · Page {graphPageIndex + 1} of {graphPageCount}
+          </span>
+          <div className="archive-pagination-actions">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              aria-label="Previous graph page"
+              disabled={graphPageIndex === 0}
+              onClick={() => setGraphPage({ scope: graphPageScope, index: graphPageIndex - 1 })}
+            >Previous</button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              aria-label="Next graph page"
+              disabled={graphPageIndex + 1 >= graphPageCount}
+              onClick={() => setGraphPage({ scope: graphPageScope, index: graphPageIndex + 1 })}
+            >Next</button>
+          </div>
+        </nav>
       )}
 
       {displayModeCharts.length === 0 ? (

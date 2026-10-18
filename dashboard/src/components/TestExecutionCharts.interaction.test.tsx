@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { MetricsHistoryPoint } from '../types'
+import type { ImportedDashboardResult, MetricsHistoryPoint } from '../types'
 import { downloadTextFile } from '../utils/fileUtils'
 import TestExecutionCharts, { BoundedChartTooltipContent, chartTimeAxisPresentation, formatChartTimeMetricValue, formatMetricTableValue } from './TestExecutionCharts'
 import { transactionChartSeriesKey } from './transactionChartSeries'
@@ -1886,6 +1886,86 @@ describe('TestExecutionCharts context menu', () => {
     expect(impactChart?.textContent).toContain('CPU saturation')
     expect(impactChart?.textContent).toContain('Generator imbalance')
     expect(impactChart?.textContent).toContain('n/a')
+  })
+
+  it('pages imported graphs by nine and resets or clamps pages as the dashboard changes', async () => {
+    const dashboard = (id: string, count: number): ImportedDashboardResult => ({
+      dashboard_id: id,
+      dashboard_title: `Dashboard ${id}`,
+      panels: Array.from({ length: count }, (_, panelId) => ({
+        panel_id: panelId,
+        title: `Panel ${panelId}`,
+        kind: 'line',
+        series: [],
+      })),
+    })
+    const renderImported = async (dashboards: ImportedDashboardResult[], runId = 'run-a') => {
+      await act(async () => {
+        root.render(
+          <TestExecutionCharts
+            filteredData={[]}
+            expandedChart={null}
+            onExpandedChartChange={vi.fn()}
+            onChartMouseDown={vi.fn()}
+            onChartMouseMove={vi.fn()}
+            onZoom={vi.fn()}
+            onResetZoom={vi.fn()}
+            showRefArea={false}
+            refAreaLeft=""
+            refAreaEnd=""
+            timeRange="all"
+            onTimeRangeChange={vi.fn()}
+            isMultiGroup={false}
+            groupNames={[]}
+            groupColors={[]}
+            showLoadImpact={false}
+            surface="command-center"
+            storageScope="apexload.commandCenter.grafana"
+            runId={runId}
+            enableGraphGroupTabs
+            activeGraphGroupTab="imported"
+            importedDashboards={dashboards}
+          />,
+        )
+      })
+    }
+    const ids = () => Array.from(container.querySelectorAll<HTMLElement>('.chart-card[data-chart-id]')).map(card => card.dataset.chartId)
+    const pageSummary = () => container.querySelector('[aria-label="Graph pages"]')?.textContent
+    const nextPage = async () => {
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Next graph page"]')!.click())
+    }
+
+    const dashboards = [dashboard('a', 12), dashboard('b', 11)]
+    await renderImported(dashboards)
+    expect(ids()).toEqual(Array.from({ length: 9 }, (_, id) => `gdash_a_${id}`))
+    expect(pageSummary()).toContain('Graphs 1–9 of 12 · Page 1 of 2')
+
+    await nextPage()
+    expect(ids()).toEqual(['gdash_a_9', 'gdash_a_10', 'gdash_a_11'])
+
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('[aria-label="Imported dashboards"] button'))
+      .find(button => button.textContent?.startsWith('Dashboard b'))!.click())
+    expect(ids()).toEqual(Array.from({ length: 9 }, (_, id) => `gdash_b_${id}`))
+    expect(pageSummary()).toContain('Page 1 of 2')
+
+    await nextPage()
+    expect(ids()).toEqual(['gdash_b_9', 'gdash_b_10'])
+
+    await renderImported([dashboards[0], dashboard('b', 2)])
+    expect(ids()).toEqual(['gdash_b_0', 'gdash_b_1'])
+    expect(pageSummary()).toContain('Page 1 of 1')
+
+    await renderImported(dashboards)
+    expect(pageSummary()).toContain('Page 1 of 2')
+    await nextPage()
+    await renderImported(dashboards, 'run-b')
+    expect(pageSummary()).toContain('Page 1 of 2')
+
+    await nextPage()
+    await act(async () => buttonByText('Configure Graphs')!.click())
+    await act(async () => buttonByText('Reset Graphs')!.click())
+    expect(pageSummary()).toContain('Page 1 of 2')
+    expect(ids()).toHaveLength(9)
   })
 
   it('renders compact command-center graph cards with a shared cursor crosshair', async () => {

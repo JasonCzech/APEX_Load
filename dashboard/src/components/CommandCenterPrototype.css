@@ -2242,18 +2242,11 @@ button.command-group-name:focus-visible {
     border-left: 1px solid var(--border);
   }
 
-  .command-control-shelf,
-  .command-layout-ops,
-  .command-grafana-grid {
+  .command-control-shelf {
     grid-template-columns: 1fr;
   }
 
   .command-graph-grid.dense {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .command-layout-grafana .charts-grid.command-center-graphs,
-  .command-layout-grafana .charts-grid.command-center-graphs.command-center-compact {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -2291,9 +2284,7 @@ button.command-group-name:focus-visible {
 
   .command-graph-grid.standard,
   .command-graph-grid.dense,
-  .command-load-model-row,
-  .command-layout-grafana .charts-grid.command-center-graphs,
-  .command-layout-grafana .charts-grid.command-center-graphs.command-center-compact {
+  .command-load-model-row {
     grid-template-columns: 1fr;
   }
 
@@ -2350,6 +2341,11 @@ button.command-group-name:focus-visible {
 }
 
 @media (max-width: 820px) {
+  .command-layout-ops,
+  .command-grafana-grid {
+    grid-template-columns: 1fr;
+  }
+
   .command-panel-header,
   .command-chart-header,
   .command-graph-toolbar {
@@ -2368,8 +2364,6 @@ button.command-group-name:focus-visible {
   .command-graph-grid.standard,
   .command-graph-grid.dense,
   .command-load-model-stats,
-  .command-layout-grafana .charts-grid.command-center-graphs,
-  .command-layout-grafana .charts-grid.command-center-graphs.command-center-compact,
   .command-error-detail dl {
     grid-template-columns: 1fr;
   }
@@ -2444,11 +2438,12 @@ button.command-group-name:focus-visible {
 .command-runtime-graphs .chart-title { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
 .command-runtime-graphs .chart-card-actions { flex-wrap: wrap; margin-left: auto; }
 .command-runtime-graphs .chart-series-legend-item { white-space: normal; overflow-wrap: anywhere; }
-.command-runtime-graphs { container-type: inline-size; }
-@container (max-width: 1050px) {
+.command-runtime-graphs { container: runtime-graphs / inline-size; }
+/* Fit columns to the graph pane, including space taken by the right sidebar. */
+@container runtime-graphs (max-width: 740px) {
   .command-layout-grafana .charts-grid.command-center-graphs.command-center-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@container (max-width: 620px) {
+@container runtime-graphs (max-width: 500px) {
   .command-layout-grafana .charts-grid.command-center-graphs.command-center-compact,
   .command-layout-grafana .charts-grid.command-center-graphs { grid-template-columns: minmax(0, 1fr); }
 }
