@@ -1707,7 +1707,7 @@ func (s *SQLiteStore) ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, e
 	query := strings.Builder{}
 	query.WriteString(`SELECT id, action, actor_type, actor_subject, actor_display_name, COALESCE(project_id, ''), COALESCE(domain_id, ''), resource_type, resource_id, status, details_json, created_at FROM audit_events`)
 	query.WriteString(where)
-	query.WriteString(` ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
+	query.WriteString(` ORDER BY created_at DESC, ` + s.db.dialect.auditEventTieBreak() + ` LIMIT ? OFFSET ?`)
 	args = append(args, filter.Limit, filter.Offset)
 	rows, err := s.db.Query(query.String(), args...)
 	if err != nil {
