@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
-import type { ReactNode } from 'react'
+import { act, isValidElement } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { MetricsHistoryPoint } from '../types'
+import type { ImportedDashboardResult, MetricsHistoryPoint } from '../types'
 import { downloadTextFile } from '../utils/fileUtils'
 import TestExecutionCharts, { BoundedChartTooltipContent, chartTimeAxisPresentation, formatChartTimeMetricValue, formatMetricTableValue } from './TestExecutionCharts'
+import ContinuousStackedArea from './ContinuousStackedArea'
 import { transactionChartSeriesKey } from './transactionChartSeries'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -83,9 +84,11 @@ vi.mock('recharts', () => {
   }
 
   return {
-    Area: ({ dataKey, name, yAxisId, fill, connectNulls }: { dataKey?: string; name?: string; yAxisId?: string | number; fill?: string; connectNulls?: boolean }) => (
-      <path data-testid="mock-area" data-key={dataKey} data-name={name} data-y-axis-id={String(yAxisId ?? '')} data-fill={fill ?? ''} data-connect-nulls={String(connectNulls ?? false)} />
-    ),
+    Area: ({ dataKey, name, yAxisId, fill, connectNulls, shape }: { dataKey?: string; name?: string; yAxisId?: string | number; fill?: string; connectNulls?: boolean; shape?: unknown }) => {
+      const continuousShape = isValidElement<{ stackKeys: string[] }>(shape) && shape.type === ContinuousStackedArea ? shape : undefined
+      return <path data-testid="mock-area" data-key={dataKey} data-name={name} data-y-axis-id={String(yAxisId ?? '')} data-fill={fill ?? ''} data-connect-nulls={String(connectNulls ?? false)} data-gap-shape={continuousShape ? 'continuous-stacked' : undefined} data-gap-stack-keys={continuousShape?.props.stackKeys.join(',')} />
+    },
+    AreaRevealShape: Mock,
     CartesianGrid: Mock,
     ComposedChart: MockChart,
     Legend: Mock,
@@ -539,6 +542,105 @@ describe('TestExecutionCharts context menu', () => {
     expect(tpsChart?.querySelector('path[data-testid="mock-line"][data-key="Checkout_tps"]')).toBeNull()
     expect(tpsChart?.querySelector('path[data-testid="mock-line"][data-key="Search_tps"]')).not.toBeNull()
     expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"tps":["tps","Search_tps"]')
+  })
+
+  it('connects sparse network phases, emphasis, and overlays without inventing measurements', async () => {
+    const base = { vusers: 10, tps: 5, avgMs: 100, errorPct: 0, p50: 80, p90: 120, p99: 160 }
+    const samples: MetricsHistoryPoint[] = [
+      { ...base, time: '10:00:00', txDnsMs: 2, txConnectMs: 4, txTlsMs: 6, txTtfbMs: 8, txWaitMs: 10 },
+      { ...base, time: '10:00:01', tps: Number.NaN },
+      { ...base, time: '10:00:02', txDnsMs: 6, txConnectMs: 8, txTlsMs: 10, txTtfbMs: 12, txWaitMs: 14 },
+    ]
+    await renderGraphSourceState({ filteredData: samples, activeGraphGroupTab: 'infrastructure', expandedChart: 'tx_network_phases' })
+    const chart = container.querySelector<HTMLElement>('[data-chart-id="tx_network_phases"]')!
+    const phaseKeys = ['txDnsMs', 'txConnectMs', 'txTlsMs', 'txTtfbMs', 'txWaitMs']
+    for (const [index, key] of phaseKeys.entries()) {
+      const area = chart.querySelector(`path[data-testid="mock-area"][data-key="${key}__smoothed"]`)
+      expect(area, `${key} phase area`).not.toBeNull()
+      // Keep missing stack inputs missing; only the drawing shape connects them.
+      expect(area?.getAttribute('data-connect-nulls')).toBe('false')
+      expect(area?.getAttribute('data-gap-shape')).toBe('continuous-stacked')
+      expect(area?.getAttribute('data-gap-stack-keys')).toBe(phaseKeys.slice(0, index + 1).map(phase => `${phase}__smoothed`).join(','))
+    }
+
+    const dnsButton = Array.from(chart.querySelectorAll<HTMLButtonElement>('.chart-metric-name'))
+      .find(button => button.textContent === 'DNS')!
+    await act(async () => dnsButton.click())
+    const emphasis = chart.querySelector('path[data-testid="mock-line"][data-key="txDnsMs__smoothed"]')
+    expect(emphasis?.getAttribute('data-connect-nulls')).toBe('true')
+    expect(Number(emphasis?.getAttribute('data-stroke-width'))).toBeGreaterThan(3)
+    expect(dnsButton.closest('tr')?.querySelectorAll('td')[3].textContent?.replace(/\s/g, '')).toBe('4ms')
+
+    await act(async () => chart.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    await act(async () => menuButton('Overlay TPS')!.click())
+    const overlay = chart.querySelector('path[data-testid="mock-line"][data-name="TPS"]')
+    expect(overlay?.getAttribute('data-connect-nulls')).toBe('true')
+
+    await act(async () => chart.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    await act(async () => menuButton('Export Graph Data')!.click())
+    const downloads = vi.mocked(downloadTextFile).mock.calls
+    const csvRows = downloads[downloads.length - 1][0].split('\n')
+    // All five phases and the TPS overlay are absent at the middle timestamp.
+    // Connecting their paths must not export zero or a fabricated interpolation.
+    expect(csvRows[2].split(',').slice(0, 7)).toEqual(['10:00:01', '', '', '', '', '', ''])
+    expect(csvRows[1].split(',').slice(0, 6)).toEqual(['10:00:00', '2', '4', '6', '8', '10'])
+    expect(csvRows[3].split(',').slice(0, 6)).toEqual(['10:00:02', '6', '8', '10', '12', '14'])
+    expect(samples[1].txDnsMs).toBeUndefined()
+    expect(samples[1].tps).toBeNaN()
+
+    // A protocol with no TLS measurements must not suppress its later phases.
+    const withoutTls = samples.map(point => {
+      const next = { ...point }
+      delete next.txTlsMs
+      return next
+    })
+    await renderGraphSourceState({ filteredData: withoutTls, activeGraphGroupTab: 'infrastructure', expandedChart: 'tx_network_phases' })
+    const ttfb = chart.querySelector('[data-testid="mock-area"][data-key="txTtfbMs__smoothed"]')
+    const wait = chart.querySelector('[data-testid="mock-area"][data-key="txWaitMs__smoothed"]')
+    expect(ttfb?.getAttribute('data-gap-stack-keys')).toBe('txDnsMs__smoothed,txConnectMs__smoothed,txTtfbMs__smoothed')
+    expect(wait?.getAttribute('data-gap-stack-keys')).toBe('txDnsMs__smoothed,txConnectMs__smoothed,txTtfbMs__smoothed,txWaitMs__smoothed')
+  })
+
+  it('connects sparse group lines and their gradient underlays while exports retain gaps', async () => {
+    const base = { vusers: 10, tps: 5, avgMs: 100, errorPct: 0, p50: 80, p90: 120, p99: 160, Search_tps: 5 }
+    const samples: MetricsHistoryPoint[] = [
+      { ...base, time: '10:00:00', Checkout_tps: 20 },
+      { ...base, time: '10:00:01' },
+      { ...base, time: '10:00:02', Checkout_tps: 40 },
+    ]
+    await renderGraphSourceState({
+      filteredData: samples,
+      isMultiGroup: true,
+      groupNames: ['Checkout', 'Search'],
+      groupColors: ['#00a3ff', '#ffaa00'],
+      expandedChart: 'tps',
+    })
+    const chart = container.querySelector<HTMLElement>('[data-chart-id="tps"]')!
+    const groupLine = chart.querySelector('path[data-testid="mock-line"][data-name="Checkout"]')
+    const underlay = chart.querySelector('path[data-testid="mock-area"][data-name="Checkout"]')
+    expect(groupLine?.getAttribute('data-connect-nulls')).toBe('true')
+    expect(underlay?.getAttribute('data-connect-nulls')).toBe('true')
+
+    const highlight = Array.from(chart.querySelectorAll<HTMLButtonElement>('.chart-metric-name'))
+      .find(button => button.textContent === 'Checkout')!
+    await act(async () => highlight.click())
+    const groupPaths = chart.querySelectorAll('path[data-testid="mock-line"][data-key="Checkout_tps__smoothed"]')
+    expect(groupPaths).toHaveLength(2)
+    expect(Array.from(groupPaths).every(path => path.getAttribute('data-connect-nulls') === 'true')).toBe(true)
+    expect(highlight.closest('tr')?.textContent).toContain('30')
+
+    await act(async () => chart.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    await act(async () => menuButton('Export Graph Data')!.click())
+    const downloads = vi.mocked(downloadTextFile).mock.calls
+    const csvRows = downloads[downloads.length - 1][0].split('\n')
+    const headers = csvRows[0].split(',')
+    const groupColumn = headers.findIndex(header => header.includes('[Checkout_tps]'))
+    const totalColumn = headers.findIndex(header => header.includes('[tps]'))
+    expect(groupColumn).toBeGreaterThan(0)
+    expect(totalColumn).toBeGreaterThan(0)
+    expect(csvRows.slice(1).map(row => row.split(',')[groupColumn])).toEqual(['20', '', '40'])
+    expect(csvRows[2].split(',')[totalColumn]).toBe('5')
+    expect(samples[1].Checkout_tps).toBeUndefined()
   })
 
   it('renders every live transaction and gates sole-group duplicates after response carry-forward', async () => {
@@ -1242,6 +1344,40 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.hiddenCharts')).toContain('load_impact_heatmap')
   })
 
+  it.each([undefined, false])('does not advertise unconfirmed graph sources (%s) during loading or errors', async available => {
+    const availability = { prometheusAvailable: available, importedDashboardsAvailable: available }
+    await renderGraphSourceState({ ...availability, prometheusLoading: true, importedDashboardsLoading: true })
+    expect(container.querySelector('[role="tablist"][aria-label="Graph groups"]')?.textContent).not.toMatch(/Prometheus|Dashboards/)
+    expect(container.textContent).not.toContain('Loading Prometheus')
+
+    await renderGraphSourceState({ ...availability, prometheusError: 'Query failed', importedDashboardsError: 'Query failed' })
+    expect(container.querySelector('[role="tablist"][aria-label="Graph groups"]')?.textContent).not.toMatch(/Prometheus|Dashboards/)
+  })
+
+  it('retains confirmed source tabs and the selected tab through empty, loading and failed refreshes', async () => {
+    const availability = { prometheusAvailable: true, importedDashboardsAvailable: true, filteredData: [] }
+    const sourceTab = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find(tab => tab.textContent?.includes(label))
+    await renderGraphSourceState(availability)
+    expect(sourceTab('Prometheus')).toBeDefined()
+    expect(sourceTab('Dashboards')).toBeDefined()
+    await act(async () => sourceTab('Dashboards')!.click())
+
+    await renderGraphSourceState({ ...availability, prometheusLoading: true, importedDashboardsLoading: true })
+    expect(sourceTab('Prometheus')).toBeDefined()
+    expect(sourceTab('Dashboards')?.getAttribute('aria-selected')).toBe('true')
+
+    await renderGraphSourceState({ ...availability, prometheusError: 'Query failed', importedDashboardsError: 'Query failed' })
+    expect(sourceTab('Prometheus')).toBeDefined()
+    expect(sourceTab('Dashboards')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.textContent).toContain('Imported dashboards unavailable')
+
+    await renderGraphSourceState({ prometheusAvailable: false, importedDashboardsAvailable: false })
+    expect(sourceTab('Prometheus')).toBeUndefined()
+    expect(sourceTab('Dashboards')).toBeUndefined()
+    expect(sourceTab('Live Metrics')?.getAttribute('aria-selected')).toBe('true')
+  })
+
   it('shows Prometheus graphs as a graph group and supports metric row filtering', async () => {
     await act(async () => {
       root.render(
@@ -1888,6 +2024,86 @@ describe('TestExecutionCharts context menu', () => {
     expect(impactChart?.textContent).toContain('n/a')
   })
 
+  it('pages imported graphs by nine and resets or clamps pages as the dashboard changes', async () => {
+    const dashboard = (id: string, count: number): ImportedDashboardResult => ({
+      dashboard_id: id,
+      dashboard_title: `Dashboard ${id}`,
+      panels: Array.from({ length: count }, (_, panelId) => ({
+        panel_id: panelId,
+        title: `Panel ${panelId}`,
+        kind: 'line',
+        series: [],
+      })),
+    })
+    const renderImported = async (dashboards: ImportedDashboardResult[], runId = 'run-a') => {
+      await act(async () => {
+        root.render(
+          <TestExecutionCharts
+            filteredData={[]}
+            expandedChart={null}
+            onExpandedChartChange={vi.fn()}
+            onChartMouseDown={vi.fn()}
+            onChartMouseMove={vi.fn()}
+            onZoom={vi.fn()}
+            onResetZoom={vi.fn()}
+            showRefArea={false}
+            refAreaLeft=""
+            refAreaEnd=""
+            timeRange="all"
+            onTimeRangeChange={vi.fn()}
+            isMultiGroup={false}
+            groupNames={[]}
+            groupColors={[]}
+            showLoadImpact={false}
+            surface="command-center"
+            storageScope="apexload.commandCenter.grafana"
+            runId={runId}
+            enableGraphGroupTabs
+            activeGraphGroupTab="imported"
+            importedDashboards={dashboards}
+          />,
+        )
+      })
+    }
+    const ids = () => Array.from(container.querySelectorAll<HTMLElement>('.chart-card[data-chart-id]')).map(card => card.dataset.chartId)
+    const pageSummary = () => container.querySelector('[aria-label="Graph pages"]')?.textContent
+    const nextPage = async () => {
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Next graph page"]')!.click())
+    }
+
+    const dashboards = [dashboard('a', 12), dashboard('b', 11)]
+    await renderImported(dashboards)
+    expect(ids()).toEqual(Array.from({ length: 9 }, (_, id) => `gdash_a_${id}`))
+    expect(pageSummary()).toContain('Graphs 1–9 of 12 · Page 1 of 2')
+
+    await nextPage()
+    expect(ids()).toEqual(['gdash_a_9', 'gdash_a_10', 'gdash_a_11'])
+
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('[aria-label="Imported dashboards"] button'))
+      .find(button => button.textContent?.startsWith('Dashboard b'))!.click())
+    expect(ids()).toEqual(Array.from({ length: 9 }, (_, id) => `gdash_b_${id}`))
+    expect(pageSummary()).toContain('Page 1 of 2')
+
+    await nextPage()
+    expect(ids()).toEqual(['gdash_b_9', 'gdash_b_10'])
+
+    await renderImported([dashboards[0], dashboard('b', 2)])
+    expect(ids()).toEqual(['gdash_b_0', 'gdash_b_1'])
+    expect(pageSummary()).toContain('Page 1 of 1')
+
+    await renderImported(dashboards)
+    expect(pageSummary()).toContain('Page 1 of 2')
+    await nextPage()
+    await renderImported(dashboards, 'run-b')
+    expect(pageSummary()).toContain('Page 1 of 2')
+
+    await nextPage()
+    await act(async () => buttonByText('Configure Graphs')!.click())
+    await act(async () => buttonByText('Reset Graphs')!.click())
+    expect(pageSummary()).toContain('Page 1 of 2')
+    expect(ids()).toHaveLength(9)
+  })
+
   it('renders compact command-center graph cards with a shared cursor crosshair', async () => {
     const onActiveCursorChange = vi.fn()
     window.localStorage.setItem('apexload.commandCenter.ops.chartDensity', 'six_up')
@@ -2199,7 +2415,7 @@ describe('TestExecutionCharts context menu', () => {
   }
 
   function menuButton(label: string) {
-    return Array.from(container.querySelectorAll('.chart-context-menu button')).find(button => button.textContent === label)
+    return Array.from(container.querySelectorAll<HTMLButtonElement>('.chart-context-menu button')).find(button => button.textContent === label)
   }
 
   function buttonByText(label: string) {
@@ -2248,6 +2464,37 @@ describe('TestExecutionCharts context menu', () => {
     Object.defineProperty(event, 'clientX', { value: coordinates.clientX ?? 0 })
     Object.defineProperty(event, 'clientY', { value: coordinates.clientY ?? 0 })
     element.dispatchEvent(event)
+  }
+
+  async function renderGraphSourceState(overrides: Partial<ComponentProps<typeof TestExecutionCharts>>) {
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130 },
+            { time: '10:00:01', vusers: 4, tps: 2, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p99: 135 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="all"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={[]}
+          showLoadImpact={false}
+          surface="command-center"
+          enableGraphGroupTabs
+          {...overrides}
+        />,
+      )
+    })
   }
 
   async function renderCharts(expandedChart: string | null = null, showLoadImpact = true, commandCenter = false, runId?: string) {

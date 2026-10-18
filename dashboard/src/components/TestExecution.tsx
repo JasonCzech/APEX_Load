@@ -245,11 +245,13 @@ export default function TestExecution({
   })
   const {
     prometheusGraphs,
+    prometheusAvailable,
     prometheusLoading,
     prometheusError,
   } = usePrometheusGraphs(test, filteredData)
   const {
     importedDashboards,
+    importedDashboardsAvailable,
     importedDashboardsLoading,
     importedDashboardsError,
   } = useImportedDashboardGraphs(test, filteredData, test?.project_id)
@@ -752,12 +754,14 @@ export default function TestExecution({
           loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
           loadImpactError={archiveLoadImpactError}
           prometheusGraphs={prometheusGraphs}
+          prometheusAvailable={prometheusAvailable}
           prometheusLoading={prometheusLoading}
           prometheusError={prometheusError}
           importedDashboards={importedDashboards}
+          importedDashboardsAvailable={importedDashboardsAvailable}
           importedDashboardsLoading={importedDashboardsLoading}
           importedDashboardsError={importedDashboardsError}
-          enableGraphGroupTabs={prometheusGraphs.length > 0 || prometheusLoading || Boolean(prometheusError) || importedDashboards.length > 0 || importedDashboardsLoading || Boolean(importedDashboardsError)}
+          enableGraphGroupTabs={prometheusAvailable || importedDashboardsAvailable}
           latestLatency={latestMetrics?.latency ?? test?.live_metrics?.latency}
           latestMetrics={latestMetrics ?? test?.live_metrics}
           terminalStatus={test?.status === 'FAILED' || test?.status === 'ABORTED' ? test.status : undefined}
@@ -957,12 +961,14 @@ export default function TestExecution({
           loadImpactLoading={false}
           loadImpactError=""
           prometheusGraphs={prometheusGraphs}
+          prometheusAvailable={prometheusAvailable}
           prometheusLoading={prometheusLoading}
           prometheusError={prometheusError}
           importedDashboards={importedDashboards}
+          importedDashboardsAvailable={importedDashboardsAvailable}
           importedDashboardsLoading={importedDashboardsLoading}
           importedDashboardsError={importedDashboardsError}
-          enableGraphGroupTabs={prometheusGraphs.length > 0 || prometheusLoading || Boolean(prometheusError) || importedDashboards.length > 0 || importedDashboardsLoading || Boolean(importedDashboardsError)}
+          enableGraphGroupTabs={prometheusAvailable || importedDashboardsAvailable}
           latestLatency={latestMetrics?.latency ?? test?.live_metrics?.latency}
           latestMetrics={latestMetrics ?? test?.live_metrics}
           terminalStatus={test?.status === 'FAILED' || test?.status === 'ABORTED' ? test.status : undefined}

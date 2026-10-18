@@ -1184,11 +1184,11 @@ export default function CommandCenterPrototype({
   // Only genuine live runs query Prometheus. Passing an empty window (null test +
   // no data) keeps usePrometheusGraphs in its reset branch, so the prototype/mock
   // modes — whose chartData is seeded mock history — never hit the network.
-  const { prometheusGraphs, prometheusLoading, prometheusError } = usePrometheusGraphs(
+  const { prometheusGraphs, prometheusAvailable, prometheusLoading, prometheusError } = usePrometheusGraphs(
     liveMode ? displayTest : null,
     liveMode ? chartData : [],
   )
-  const { importedDashboards, importedDashboardsLoading, importedDashboardsError } = useImportedDashboardGraphs(
+  const { importedDashboards, importedDashboardsAvailable, importedDashboardsLoading, importedDashboardsError } = useImportedDashboardGraphs(
     liveMode ? displayTest : null,
     liveMode ? chartData : [],
     liveMode ? (displayTest.project_id || projectId) : undefined,
@@ -1886,9 +1886,11 @@ export default function CommandCenterPrototype({
           groupScopedChartData={graphScopedChartData}
           groupScopedMetrics={graphScopedMetrics}
           prometheusGraphs={prometheusGraphs}
+          prometheusAvailable={prometheusAvailable}
           prometheusLoading={prometheusLoading}
           prometheusError={prometheusError}
           importedDashboards={importedDashboards}
+          importedDashboardsAvailable={importedDashboardsAvailable}
           importedDashboardsLoading={importedDashboardsLoading}
           importedDashboardsError={importedDashboardsError}
           expandedChart={expandedCharts.grafana}
@@ -2356,9 +2358,11 @@ interface GrafanaWallViewProps extends CommonViewProps {
   groupVisibility: Record<string, boolean>
   onGroupVisibilityToggle: (groupKey: string) => void
   prometheusGraphs?: PrometheusGraph[]
+  prometheusAvailable?: boolean
   prometheusLoading?: boolean
   prometheusError?: string
   importedDashboards?: ImportedDashboardResult[]
+  importedDashboardsAvailable?: boolean
   importedDashboardsLoading?: boolean
   importedDashboardsError?: string
 }
@@ -2667,9 +2671,11 @@ function GrafanaWallView({
   groupVisibility,
   onGroupVisibilityToggle,
   prometheusGraphs,
+  prometheusAvailable,
   prometheusLoading,
   prometheusError,
   importedDashboards,
+  importedDashboardsAvailable,
   importedDashboardsLoading,
   importedDashboardsError,
   metrics,
@@ -2708,9 +2714,11 @@ function GrafanaWallView({
           groupScopedChartData={groupScopedChartData}
           groupScopedMetrics={groupScopedMetrics}
           prometheusGraphs={prometheusGraphs}
+          prometheusAvailable={prometheusAvailable}
           prometheusLoading={prometheusLoading}
           prometheusError={prometheusError}
           importedDashboards={importedDashboards}
+          importedDashboardsAvailable={importedDashboardsAvailable}
           importedDashboardsLoading={importedDashboardsLoading}
           importedDashboardsError={importedDashboardsError}
           expandedChart={expandedChart}
@@ -3924,9 +3932,11 @@ interface CommandRuntimeGraphsProps {
   groupScopedChartData?: MetricsHistoryPoint[]
   groupScopedMetrics?: LiveMetrics
   prometheusGraphs?: PrometheusGraph[]
+  prometheusAvailable?: boolean
   prometheusLoading?: boolean
   prometheusError?: string
   importedDashboards?: ImportedDashboardResult[]
+  importedDashboardsAvailable?: boolean
   importedDashboardsLoading?: boolean
   importedDashboardsError?: string
   expandedChart: string | null
@@ -3957,9 +3967,11 @@ function CommandRuntimeGraphs({
   groupScopedChartData,
   groupScopedMetrics,
   prometheusGraphs,
+  prometheusAvailable,
   prometheusLoading,
   prometheusError,
   importedDashboards,
+  importedDashboardsAvailable,
   importedDashboardsLoading,
   importedDashboardsError,
   expandedChart,
@@ -4021,9 +4033,11 @@ function CommandRuntimeGraphs({
         showLoadImpact={false}
         loadImpactData={loadImpactSourceData}
         prometheusGraphs={prometheusGraphs}
+        prometheusAvailable={prometheusAvailable}
         prometheusLoading={prometheusLoading}
         prometheusError={prometheusError}
         importedDashboards={importedDashboards}
+        importedDashboardsAvailable={importedDashboardsAvailable}
         importedDashboardsLoading={importedDashboardsLoading}
         importedDashboardsError={importedDashboardsError}
         latestLatency={activeMetrics?.latency}

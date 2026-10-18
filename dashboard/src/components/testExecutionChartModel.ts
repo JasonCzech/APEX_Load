@@ -1004,7 +1004,7 @@ export function downsampleGraphData(data: MetricsHistoryPoint[], metricKeys: str
     return Array.from(retainedIndexes).sort((left, right) => left - right).map(index => data[index])
   }
 
-  // Always keep gap-boundary spacer rows so visible data gaps survive downsampling.
+  // Keep gap-boundary spacer rows so missing observations survive downsampling.
   for (let index = 0; index < data.length; index += 1) {
     if (data[index].isGapBoundary) retainedIndexes.add(index)
   }
@@ -1104,7 +1104,7 @@ export function autoGranularitySeconds(points: MetricsHistoryPoint[]): number {
 
 // aggregateByGranularity averages consecutive points that fall in the same
 // [t0, t0+bucket) window. Gap-boundary spacer rows are preserved (and flush the
-// current bucket) so breaks survive. Returns the input unchanged for bucket≤0.
+// current bucket) so missing observations survive. Returns the input unchanged for bucket≤0.
 export function aggregateByGranularity(points: MetricsHistoryPoint[], bucketSeconds: number): MetricsHistoryPoint[] {
   if (bucketSeconds <= 0 || points.length === 0) return points
   const bucketMs = bucketSeconds * 1000

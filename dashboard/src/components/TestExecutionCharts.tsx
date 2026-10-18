@@ -30,6 +30,7 @@ import { buildGeneratorImpactView, type GeneratorImpactVerdict } from './generat
 import LoadImpactHeatmap from './LoadImpactHeatmap'
 import StatTile from './StatTile'
 import PrometheusPanelCard from './PrometheusPanelCard'
+import ContinuousStackedArea from './ContinuousStackedArea'
 import {
   buildLoadImpactModel,
   formatLoadImpactValue,
@@ -162,9 +163,11 @@ interface Props {
   loadImpactLoading?: boolean
   loadImpactError?: string
   prometheusGraphs?: PrometheusGraph[]
+  prometheusAvailable?: boolean
   prometheusLoading?: boolean
   prometheusError?: string
   importedDashboards?: ImportedDashboardResult[]
+  importedDashboardsAvailable?: boolean
   importedDashboardsLoading?: boolean
   importedDashboardsError?: string
   latestLatency?: NetworkLatency
@@ -526,9 +529,11 @@ export default function TestExecutionCharts({
   loadImpactLoading = false,
   loadImpactError = '',
   prometheusGraphs = EMPTY_PROMETHEUS_GRAPHS,
+  prometheusAvailable,
   prometheusLoading = false,
   prometheusError = '',
   importedDashboards = EMPTY_IMPORTED_DASHBOARDS,
+  importedDashboardsAvailable,
   importedDashboardsLoading = false,
   importedDashboardsError = '',
   latestLatency,
@@ -606,6 +611,8 @@ export default function TestExecutionCharts({
   const [selectedMetricByChart, setSelectedMetricByChart] = useState<Record<string, string | null>>({})
   const [localActiveGraphGroupTab, setLocalActiveGraphGroupTab] = useState<GraphGroupTabId>('test_results')
   const [activeImportedDashboardId, setActiveImportedDashboardId] = useState('')
+  const [graphPage, setGraphPage] = useState({ scope: '', index: 0 })
+  const [keyboardReorderedChartId, setKeyboardReorderedChartId] = useState<string | null>(null)
   const [selectedRouteLatencyKey, setSelectedRouteLatencyKey] = useState('')
   const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
   const [chartActionError, setChartActionError] = useState('')
@@ -957,8 +964,11 @@ export default function TestExecutionCharts({
   }, [latencyKeys, selectedRouteLatencyKey])
 
   const latest = filteredData[filteredData.length - 1] || loadImpactSourceData[loadImpactSourceData.length - 1] || {}
-  const showPrometheusTab = prometheusGraphCharts.length > 0 || prometheusLoading || Boolean(prometheusError)
-  const showImportedTab = importedDashboardCharts.length > 0 || importedDashboardsLoading || Boolean(importedDashboardsError)
+  // Loading and query failures do not establish that a graph source exists.
+  // Live callers retain confirmed availability while refreshing; callers with
+  // retained graph definitions can establish availability from those instead.
+  const showPrometheusTab = prometheusAvailable ?? prometheusGraphCharts.length > 0
+  const showImportedTab = importedDashboardsAvailable ?? importedDashboardCharts.length > 0
   const visibleGraphGroupTabs = graphGroupTabs.filter(tab => {
     if (tab.id === 'prometheus') return showPrometheusTab
     if (tab.id === 'imported') return showImportedTab
@@ -1006,14 +1016,53 @@ export default function TestExecutionCharts({
   const displayModeCharts = activeGraphGroupTab === 'imported' && activeImportedDashboardId
     ? unscopedDisplayModeCharts.filter(chart => chart.importedPanel?.dashboardId === activeImportedDashboardId)
     : unscopedDisplayModeCharts
+  const paginateGraphs = commandCenterSurface && enableGraphGroupTabs && !dedicatedHeatmapMode
+  const graphPageSize = chartDensity === 'command_center' ? 9 : 4
+  const graphPageScope = JSON.stringify([storageScope, runId, activeGraphGroupTab, activeImportedDashboardId, chartDensity, underLoadDisplayMode])
+  const graphPageCount = Math.max(1, Math.ceil(displayModeCharts.length / graphPageSize))
+  const keyboardReorderedChartIndex = keyboardReorderedChartId
+    ? displayModeCharts.findIndex(chart => chart.id === keyboardReorderedChartId)
+    : -1
+  const requestedGraphPageIndex = keyboardReorderedChartIndex >= 0
+    ? Math.floor(keyboardReorderedChartIndex / graphPageSize)
+    : graphPage.scope === graphPageScope ? graphPage.index : 0
+  const graphPageIndex = Math.min(requestedGraphPageIndex, graphPageCount - 1)
+  const graphPageStart = graphPageIndex * graphPageSize
+  const pageCharts = paginateGraphs
+    ? displayModeCharts.slice(graphPageStart, graphPageStart + graphPageSize)
+    : displayModeCharts
+  // Slice first so expanding a card on a later page keeps that page's cards.
   const displayedCharts = expandedChart
     ? [
-        ...displayModeCharts.filter(chart => chart.id === expandedChart),
-        ...displayModeCharts.filter(chart => chart.id !== expandedChart),
+        ...pageCharts.filter(chart => chart.id === expandedChart),
+        ...pageCharts.filter(chart => chart.id !== expandedChart),
       ]
-    : displayModeCharts
+    : pageCharts
   const displayedChartIds = displayedCharts.map(chart => chart.id)
   const displayedChartIdSignature = displayedChartIds.join('|')
+  const expandedChartIsDisplayed = expandedChart === null || displayedChartIds.includes(expandedChart)
+
+  useEffect(() => {
+    // Reset when changing graph groups/layout, and retain the closest available
+    // page when hiding cards or refreshing a monitoring pack removes a page.
+    setGraphPage(previous => previous.scope === graphPageScope && previous.index === graphPageIndex
+      ? previous
+      : { scope: graphPageScope, index: graphPageIndex })
+  }, [graphPageIndex, graphPageScope])
+
+  useEffect(() => {
+    if (paginateGraphs && !expandedChartIsDisplayed) {
+      onExpandedChartChange(null)
+    }
+  }, [expandedChartIsDisplayed, onExpandedChartChange, paginateGraphs])
+
+  useEffect(() => {
+    if (!keyboardReorderedChartId) return
+    // Reordering across a page boundary mounts a different card set. Follow the
+    // moved card and restore its handle instead of leaving focus on the body.
+    chartCardRefs.current[keyboardReorderedChartId]?.querySelector<HTMLButtonElement>('.chart-drag-handle')?.focus()
+    setKeyboardReorderedChartId(null)
+  }, [displayedChartIdSignature, keyboardReorderedChartId])
 
   useEffect(() => {
     if (typeof ResizeObserver === 'undefined') return
@@ -1058,7 +1107,7 @@ export default function TestExecutionCharts({
     }
   }, [])
 
-  if (filteredData.length <= 1 && loadImpactCharts.length === 0 && prometheusGraphCharts.length === 0 && importedDashboardCharts.length === 0 && !loadImpactLoading && !loadImpactError && !prometheusLoading && !prometheusError && !importedDashboardsLoading && !importedDashboardsError) {
+  if (filteredData.length <= 1 && loadImpactCharts.length === 0 && !loadImpactLoading && !loadImpactError && !showPrometheusTab && !showImportedTab) {
     return (
       <section className="charts-section">
         <div className="chart-empty-state" role="status" aria-live="polite">Awaiting metrics</div>
@@ -1066,7 +1115,7 @@ export default function TestExecutionCharts({
     )
   }
 
-  const contextChart = chartMenu ? displayModeCharts.find(chart => chart.id === chartMenu.chartId) : undefined
+  const contextChart = chartMenu ? displayedCharts.find(chart => chart.id === chartMenu.chartId) : undefined
   const graphGroupCounts: Record<GraphGroupTabId, number> = { test_results: 0, under_load: 0, infrastructure: 0, prometheus: 0, imported: 0 }
   visibleCharts.forEach(chart => {
     graphGroupCounts[graphGroupForChart(chart)] += 1
@@ -1705,8 +1754,9 @@ export default function TestExecutionCharts({
         moveChartToBoundary(chartId, 'end')
         break
       default:
-        break
+        return
     }
+    setKeyboardReorderedChartId(chartId)
   }
 
   const resetCharts = () => {
@@ -1722,6 +1772,7 @@ export default function TestExecutionCharts({
       setHiddenChartIds(defaultHiddenChartIds(allChartConfigs, loadImpactIds))
     }
     setChartDensity(densityFallback)
+    setGraphPage({ scope: graphPageScope, index: 0 })
     setShowGradientUnderlays(true)
     setDownsampleDenseCharts(true)
     if (commandCenterSurface) {
@@ -2093,6 +2144,8 @@ export default function TestExecutionCharts({
     )
   }
 
+  // Connect runtime series and their fills across missing samples. Keep the
+  // underlying gaps intact for tooltips, measurements, and data exports.
   const renderGradientUnderlays = (
     chart: ChartConfig,
     rows: ChartMetricRow[],
@@ -2113,7 +2166,7 @@ export default function TestExecutionCharts({
         fillOpacity={1}
         dot={false}
         activeDot={false}
-        connectNulls={false}
+        connectNulls
         legendType="none"
         tooltipType="none"
         isAnimationActive={false}
@@ -2131,7 +2184,7 @@ export default function TestExecutionCharts({
       fillOpacity={1}
       dot={false}
       activeDot={false}
-      connectNulls={false}
+      connectNulls
       legendType="none"
       tooltipType="none"
       isAnimationActive={false}
@@ -2164,7 +2217,7 @@ export default function TestExecutionCharts({
         strokeOpacity={1}
         dot={false}
         activeDot={false}
-        connectNulls={false}
+        connectNulls
         legendType="none"
         tooltipType="none"
         isAnimationActive={false}
@@ -2261,7 +2314,7 @@ export default function TestExecutionCharts({
           dot={false}
           strokeWidth={1.75}
           strokeDasharray="5 3"
-          connectNulls={key === 'vusers'}
+          connectNulls
           isAnimationActive={false}
         />
       )
@@ -2609,7 +2662,7 @@ export default function TestExecutionCharts({
             <span className="archive-chip">{timeAxisMode === 'relative' ? 'Relative time' : 'Clock time'}</span>
             {loadImpactLoading && <span className="archive-chip">Loading load metrics</span>}
             {!loadImpactLoading && loadImpactCharts.length > 0 && <span className="archive-chip">{loadImpactCharts.length} load metrics</span>}
-            {prometheusLoading && <span className="archive-chip">Loading Prometheus</span>}
+            {showPrometheusTab && prometheusLoading && <span className="archive-chip">Loading Prometheus</span>}
             {!prometheusLoading && prometheusGraphCharts.length > 0 && <span className="archive-chip">{prometheusGraphCharts.length} Prometheus graphs</span>}
           </div>
         </div>
@@ -2646,6 +2699,30 @@ export default function TestExecutionCharts({
         <p className="scenario-script-status error" role="alert">
           {`Open-model load shed — ${(latestMetrics?.telemetry?.shedded_arrivals ?? 0).toLocaleString()} arrival${(latestMetrics?.telemetry?.shedded_arrivals ?? 0) === 1 ? '' : 's'} dropped because the system under test could not keep up with the offered rate. In-flight workers are capped to protect the generator, so effective throughput is below target — lower the TPS or raise run_logic.max_in_flight.`}
         </p>
+      )}
+
+      {paginateGraphs && displayModeCharts.length > 0 && (
+        <nav className="archive-pagination-bar graph-pagination-bar" aria-label="Graph pages">
+          <span className="archive-pagination-copy" aria-live="polite">
+            Graphs {graphPageStart + 1}–{Math.min(graphPageStart + graphPageSize, displayModeCharts.length)} of {displayModeCharts.length} · Page {graphPageIndex + 1} of {graphPageCount}
+          </span>
+          <div className="archive-pagination-actions">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              aria-label="Previous graph page"
+              disabled={graphPageIndex === 0}
+              onClick={() => setGraphPage({ scope: graphPageScope, index: graphPageIndex - 1 })}
+            >Previous</button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              aria-label="Next graph page"
+              disabled={graphPageIndex + 1 >= graphPageCount}
+              onClick={() => setGraphPage({ scope: graphPageScope, index: graphPageIndex + 1 })}
+            >Next</button>
+          </div>
+        </nav>
       )}
 
       {displayModeCharts.length === 0 ? (
@@ -2773,6 +2850,10 @@ export default function TestExecutionCharts({
               })
             }
             const displayMetricKey = (key: string) => smoothedMetricKeySet.has(key) ? smoothedGraphMetricKey(key) : key
+            const observedStackKeys = chart.type === 'area-stacked'
+              ? chart.keys!.filter(key => visibleMetricKeys.includes(key.k)).map(key => displayMetricKey(key.k))
+                .filter(key => displayChartData.some(point => typeof point[key] === 'number' && Number.isFinite(point[key])))
+              : []
             const metricDot = (key: string) => singletonTransactionMetricKeySet.has(key) ? { r: 3 } : false
             const primaryMetricKeysForDomain = visibleMetricKeys.filter(key => (
               !visibleOverlayKeysForTitle.includes(key as OverlayMetricKey)
@@ -2952,7 +3033,7 @@ export default function TestExecutionCharts({
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {chart.dataKey && showMetric(chart.dataKey) && (
-                  <Area yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(chart.dataKey)} name="Total" stroke={chart.color!} fill={chartGradientFill(chart, chart.dataKey)} fillOpacity={1} connectNulls={chart.dataKey === 'vusers'} isAnimationActive={false} />
+                  <Area yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(chart.dataKey)} name="Total" stroke={chart.color!} fill={chartGradientFill(chart, chart.dataKey)} fillOpacity={1} connectNulls isAnimationActive={false} />
                 )}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
@@ -3105,7 +3186,7 @@ export default function TestExecutionCharts({
                     )
                   })}
                 {surface === 'command-center' && chartData.some(point => typeof point.targetTps === 'number') && (
-                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="targetTps" name="Target" stroke="var(--text-secondary)" dot={false} strokeWidth={1.75} strokeDasharray="5 3" isAnimationActive={false} />
+                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="targetTps" name="Target" stroke="var(--text-secondary)" dot={false} strokeWidth={1.75} strokeDasharray="5 3" connectNulls isAnimationActive={false} />
                 )}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
@@ -3168,6 +3249,7 @@ export default function TestExecutionCharts({
                         strokeWidth={presentation.strokeWidth}
                         strokeDasharray={presentation.strokeDasharray}
                         strokeOpacity={presentation.strokeOpacity}
+                        connectNulls
                         isAnimationActive={false}
                       />
                     )
@@ -3196,7 +3278,7 @@ export default function TestExecutionCharts({
                 <Legend verticalAlign="bottom" itemSorter={preserveChartItemOrder} />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {chart.keys!.filter(key => showMetric(key.k)).map((key) => (
-                  <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(key.k)} name={key.n} stroke={key.c} fill={chartGradientFill(chart, key.k)} fillOpacity={1} isAnimationActive={false} connectNulls={false} stackId={chart.type === 'area-stacked' ? (chart.stackId ?? 'stack') : undefined} />
+                  <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(key.k)} name={key.n} stroke={key.c} fill={chartGradientFill(chart, key.k)} fillOpacity={1} isAnimationActive={false} connectNulls={chart.type !== 'area-stacked'} shape={chart.type === 'area-stacked' ? <ContinuousStackedArea stackKeys={observedStackKeys.slice(0, observedStackKeys.indexOf(displayMetricKey(key.k)) + 1)} /> : undefined} stackId={chart.type === 'area-stacked' ? (chart.stackId ?? 'stack') : undefined} />
                 ))}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
@@ -3231,6 +3313,7 @@ export default function TestExecutionCharts({
                     stroke={row.color}
                     dot={false}
                     strokeWidth={2}
+                    connectNulls
                     isAnimationActive={false}
                   />
                 ))}
@@ -3269,6 +3352,7 @@ export default function TestExecutionCharts({
                       stroke={row.color}
                       dot={false}
                       strokeWidth={2}
+                      connectNulls
                       isAnimationActive={false}
                     />
                   ))}
@@ -3296,10 +3380,10 @@ export default function TestExecutionCharts({
                 <Legend itemSorter={preserveChartItemOrder} />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
-                {showMetric('netSent') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netSent')} name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} isAnimationActive={false} />}
-                {showMetric('netRecv') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netRecv')} name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} isAnimationActive={false} />}
-                {showMetric('diskRead') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('diskRead')} name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
-                {showMetric('diskWrite') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('diskWrite')} name="Disk Write" stroke="var(--chart-6)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
+                {showMetric('netSent') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netSent')} name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} connectNulls isAnimationActive={false} />}
+                {showMetric('netRecv') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netRecv')} name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} connectNulls isAnimationActive={false} />}
+                {showMetric('diskRead') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('diskRead')} name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" connectNulls isAnimationActive={false} />}
+                {showMetric('diskWrite') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('diskWrite')} name="Disk Write" stroke="var(--chart-6)" dot={false} strokeWidth={1} strokeDasharray="3 3" connectNulls isAnimationActive={false} />}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (

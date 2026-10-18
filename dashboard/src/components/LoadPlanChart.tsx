@@ -109,7 +109,8 @@ export default function LoadPlanChart({ points, totalSeconds, groups, showVUsers
   const plannedPeak = rows.reduce((peak, row) => Math.max(peak, Number(row[TOTAL_KEY]) || 0), 0)
   const observedPeak = observed.reduce((peak, sample) => Math.max(peak, sample.vusers), 0)
   const lastObserved = observed.reduce((latest, sample) => Math.max(latest, sample.second), 0)
-  const xMax = Math.max(totalSeconds, lastObserved, nowSecond ?? 0, 1)
+  const currentSecond = nowSecond !== undefined && Number.isFinite(nowSecond) ? Math.max(0, nowSecond) : undefined
+  const xMax = Math.max(totalSeconds, lastObserved, currentSecond ?? 0, 1)
   const timeTicks = loadTimeTicks(xMax, compact ? 5 : 7)
   const valueTicks = loadValueTicks(Math.max(plannedPeak, observedPeak))
   // Without VUsers to draw, the groups' TPS targets stack (the top edge is the
@@ -202,6 +203,16 @@ export default function LoadPlanChart({ points, totalSeconds, groups, showVUsers
                 isAnimationActive={false}
               />
             ))}
+            {currentSecond !== undefined && currentSecond > 0 && (showVUsers || tps.length > 0) && <ReferenceArea
+              className="load-plan-elapsed-area"
+              yAxisId={primaryAxis}
+              x1={0}
+              x2={currentSecond}
+              fill="#000"
+              fillOpacity={0.22}
+              strokeOpacity={0}
+              pointerEvents="none"
+            />}
             {lineTps.map((series, index) => (
               <Line
                 key={series.key}
@@ -228,7 +239,7 @@ export default function LoadPlanChart({ points, totalSeconds, groups, showVUsers
               connectNulls
               isAnimationActive={false}
             />}
-            {nowSecond !== undefined && <ReferenceLine yAxisId={primaryAxis} x={nowSecond} stroke="var(--warning)" strokeDasharray="4 4" ifOverflow="extendDomain" />}
+            {currentSecond !== undefined && <ReferenceLine className="load-plan-now" yAxisId={primaryAxis} x={currentSecond} stroke="var(--warning)" strokeDasharray="4 4" ifOverflow="extendDomain" />}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -237,7 +248,7 @@ export default function LoadPlanChart({ points, totalSeconds, groups, showVUsers
         {showVUsers && observed.length > 0 && <span><i className="line" />Observed VUsers</span>}
         {stackedTps.map(series => <span key={series.key}><i style={{ background: series.color }} />{series.label}</span>)}
         {lineTps.map(series => <span key={series.key}><i className="line dashed" style={{ borderColor: series.color }} />{series.label}</span>)}
-        {nowSecond !== undefined && <span><i className="line dashed now" />Now</span>}
+        {currentSecond !== undefined && <span><i className="line dashed now" />Now</span>}
       </div>
     </div>
   )

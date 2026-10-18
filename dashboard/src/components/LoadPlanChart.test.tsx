@@ -6,14 +6,17 @@ import LoadPlanChart from './LoadPlanChart'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const chartProps = vi.hoisted(() => ({ data: [] as Array<Record<string, number | undefined>>, xTicks: [] as number[], yTicks: [] as number[], tpsTicks: [] as number[], areas: [] as string[], lines: [] as string[], refLines: [] as number[] }))
+const chartProps = vi.hoisted(() => ({ data: [] as Array<Record<string, number | undefined>>, xTicks: [] as number[], yTicks: [] as number[], tpsTicks: [] as number[], areas: [] as string[], lines: [] as string[], refLines: [] as number[], elapsedAreas: [] as Array<{ x1: number; x2: number; yAxisId: string }> }))
 
 vi.mock('recharts', () => ({
   ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   ComposedChart: ({ children, data }: { children?: ReactNode; data: Array<Record<string, number | undefined>> }) => { chartProps.data = data; return <div>{children}</div> },
   CartesianGrid: () => null,
   Tooltip: () => null,
-  ReferenceArea: () => null,
+  ReferenceArea: ({ className, x1, x2, yAxisId }: { className?: string; x1: number; x2: number; yAxisId: string }) => {
+    if (className === 'load-plan-elapsed-area') chartProps.elapsedAreas.push({ x1, x2, yAxisId })
+    return null
+  },
   ReferenceLine: ({ x }: { x: number }) => { chartProps.refLines.push(x); return null },
   XAxis: ({ ticks }: { ticks: number[] }) => { chartProps.xTicks = ticks; return null },
   YAxis: ({ ticks, yAxisId }: { ticks?: number[]; yAxisId: string }) => { if (yAxisId === 'vusers') chartProps.yTicks = ticks || []; else chartProps.tpsTicks = ticks || []; return null },
@@ -25,7 +28,7 @@ describe('LoadPlanChart', () => {
   let container: HTMLDivElement
   let root: Root
   beforeEach(() => {
-    Object.assign(chartProps, { data: [], xTicks: [], yTicks: [], tpsTicks: [], areas: [], lines: [], refLines: [] })
+    Object.assign(chartProps, { data: [], xTicks: [], yTicks: [], tpsTicks: [], areas: [], lines: [], refLines: [], elapsedAreas: [] })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -54,6 +57,27 @@ describe('LoadPlanChart', () => {
     expect(chartProps.data.map(row => [row.second, row.group0, row.observedVusers])).toEqual([[0, 1, undefined], [2, 1, 1], [24, 2, 3], [300, 0, undefined]])
     expect(container.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Load model: planned peak 4 VUsers over 5m; observed peak 3 VUsers')
     expect(Array.from(container.querySelectorAll('.load-plan-legend span')).map(item => item.textContent)).toEqual(['Browse', 'Cart', 'Observed VUsers', 'Now'])
+  })
+
+  it.each([
+    { now: 30, marker: 30, end: 30 },
+    { now: 360, marker: 360, end: 360 },
+    { now: 0, marker: 0, end: undefined },
+    { now: -5, marker: 0, end: undefined },
+    { now: undefined, marker: undefined, end: undefined },
+    { now: NaN, marker: undefined, end: undefined },
+    { now: Infinity, marker: undefined, end: undefined },
+  ])('shades elapsed time up to Now ($now), including overruns', async ({ now, marker, end }) => {
+    await act(async () => root.render(<LoadPlanChart label="Load model" points={points} totalSeconds={300} groups={groups} nowSecond={now} />))
+    expect(chartProps.elapsedAreas).toEqual(end === undefined ? [] : [{ x1: 0, x2: end, yAxisId: 'vusers' }])
+    expect(chartProps.refLines).toEqual(marker === undefined ? [] : [marker])
+    expect(chartProps.xTicks.every(Number.isFinite)).toBe(true)
+    expect(chartProps.xTicks[chartProps.xTicks.length - 1]).toBeGreaterThanOrEqual(Math.max(300, marker ?? 0))
+  })
+
+  it('shades the TPS axis when VUsers are hidden', async () => {
+    await act(async () => root.render(<LoadPlanChart label="Load model" points={[{ second: 0, totalTps: 50 }, { second: 60, totalTps: 0 }]} totalSeconds={60} groups={[]} showVUsers={false} tps={[{ key: 'totalTps', label: 'Target TPS', color: 'orange' }]} nowSecond={20} />))
+    expect(chartProps.elapsedAreas).toEqual([{ x1: 0, x2: 20, yAxisId: 'tps' }])
   })
 
   it('draws only TPS targets for a plan the goal controller sizes', async () => {
