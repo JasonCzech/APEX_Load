@@ -133,7 +133,7 @@ func newPauseProofGeneratorClient(t *testing.T, s *pauseProofGenerator) *generat
 	go func() { _ = server.Serve(listener) }()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	client, err := generatorrpc.Dial(ctx, "pause-fixture", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	client, err := generatorrpc.Dial(ctx, "pause-fixture", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		server.Stop()
 		_ = listener.Close()

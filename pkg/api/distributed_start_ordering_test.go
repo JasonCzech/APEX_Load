@@ -215,7 +215,6 @@ func newOwnedDistributedOrderingHarness(t *testing.T, timeout time.Duration, sto
 		client, err := generatorrpc.Dial(ctx, target,
 			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
 		)
 		if err != nil {
 			return nil, err

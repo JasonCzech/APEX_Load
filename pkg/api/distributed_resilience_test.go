@@ -1028,7 +1028,6 @@ func TestGeneratorLossEvacuationSurvivesDeadSourceAndKeepsTheRunOnItsReplacement
 			target,
 			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
 		)
 	})
 	// The source pod is gone. Every exact-generation stop fails forever, exactly
@@ -1376,7 +1375,6 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 			target,
 			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
 		)
 		if err != nil {
 			return nil, err
@@ -2021,7 +2019,6 @@ func TestDistributedEvacuationCommitFailureAfterSourceFenceFailsClosed(t *testin
 			target,
 			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
 		)
 		if err != nil {
 			return nil, err

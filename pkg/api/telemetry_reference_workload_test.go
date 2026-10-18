@@ -200,7 +200,7 @@ func TestTelemetryReferenceWorkload(t *testing.T) {
 	server.runner.setExecutionBackend(newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, time.Second, func(ctx context.Context, target string) (generatorClient, error) {
 		listener := listeners[target]
 		return generatorrpc.Dial(ctx, target, grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
-			grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+			grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}))
 	api := httptest.NewServer(server.mux)
 	t.Cleanup(api.Close)

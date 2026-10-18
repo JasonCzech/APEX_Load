@@ -13,6 +13,7 @@ import (
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/internal/grpcclient"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -756,7 +757,7 @@ func Dial(ctx context.Context, target string, opts ...grpc.DialOption) (*Client,
 	dialOptions = append(dialOptions, opts...)
 
 	create := func() (*Client, error) {
-		conn, err := grpc.DialContext(ctx, dialTarget, dialOptions...)
+		conn, err := grpcclient.New(dialTarget, dialOptions...)
 		if err != nil {
 			return nil, err
 		}

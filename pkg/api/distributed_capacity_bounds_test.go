@@ -129,7 +129,7 @@ func TestColdDiscoveryRejectsEntirePlacementBeforeAnyAssignment(t *testing.T) {
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 	runner := NewTestRunner(1, NewHub(), nil)
 	runner.setExecutionBackend(newDistributedExecutionBackend([]string{"small"}, time.Second, func(ctx context.Context, target string) (generatorClient, error) {
-		return generatorrpc.Dial(ctx, target, grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+		return generatorrpc.Dial(ctx, target, grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}))
 	storePreflightScript(runner, "capacity-probe", "")
 	run, err := runner.CreateTest(CreateTestRequest{Name: "Cold placement", Duration: "1m", Groups: []CreateGroupEntry{{Name: "first", ScriptID: "capacity-probe", VUsers: 6}, {Name: "second", ScriptID: "capacity-probe", VUsers: 6}}})

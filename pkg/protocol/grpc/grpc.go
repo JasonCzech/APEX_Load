@@ -14,6 +14,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/fileasset"
+	"github.com/jasonczech/apexload/pkg/internal/grpcclient"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
 	googlegrpc "google.golang.org/grpc"
@@ -21,7 +22,8 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
-	reflectionpb "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
+	reflectionv1 "google.golang.org/grpc/reflection/grpc_reflection_v1"
+	reflectionv1alpha "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -104,7 +106,7 @@ func (g *GRPC) Init(ctx context.Context, config map[string]any) error {
 		opts = append(opts, googlegrpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})))
 	}
 	opts = append(opts, googlegrpc.WithDefaultCallOptions(googlegrpc.MaxCallRecvMsgSize(g.maxRecvBytes)))
-	conn, err := googlegrpc.DialContext(ctx, g.target, opts...)
+	conn, err := grpcclient.New(g.target, opts...)
 	if err != nil {
 		return err
 	}
@@ -701,33 +703,20 @@ func (g *GRPC) resolveMethod(ctx context.Context, target string) (protoreflect.M
 }
 
 func (g *GRPC) loadReflectionFiles(ctx context.Context, serviceName string) (*protoregistry.Files, error) {
-	stream, err := reflectionpb.NewServerReflectionClient(g.conn).ServerReflectionInfo(ctx)
+	descriptors, found, err := reflectedDescriptors(ctx, g.conn, serviceName)
 	if err != nil {
 		return nil, err
 	}
-	defer stream.CloseSend()
-	if err := stream.Send(&reflectionpb.ServerReflectionRequest{
-		MessageRequest: &reflectionpb.ServerReflectionRequest_FileContainingSymbol{
-			FileContainingSymbol: serviceName,
-		},
-	}); err != nil {
-		return nil, err
-	}
-	response, err := stream.Recv()
-	if err != nil {
-		return nil, err
-	}
-	fileResponse := response.GetFileDescriptorResponse()
-	if fileResponse == nil {
+	if !found {
 		return nil, fmt.Errorf("grpc reflection did not return descriptors for %q", serviceName)
 	}
-	if len(fileResponse.FileDescriptorProto) > maxGRPCReflectionFiles {
+	if len(descriptors) > maxGRPCReflectionFiles {
 		return nil, fmt.Errorf("grpc reflection returned more than %d descriptor files", maxGRPCReflectionFiles)
 	}
 
 	set := &descriptorpb.FileDescriptorSet{}
 	totalDescriptorBytes := 0
-	for _, raw := range fileResponse.FileDescriptorProto {
+	for _, raw := range descriptors {
 		if len(raw) > maxGRPCReflectionDescriptorBytes-totalDescriptorBytes {
 			return nil, fmt.Errorf("grpc reflection descriptors exceed %d bytes", maxGRPCReflectionDescriptorBytes)
 		}
@@ -739,6 +728,59 @@ func (g *GRPC) loadReflectionFiles(ctx context.Context, serviceName string) (*pr
 		set.File = append(set.File, file)
 	}
 	return protodesc.NewFiles(set)
+}
+
+// reflectedDescriptors asks the server for the descriptor files that define
+// symbol over reflection v1, then over v1alpha when the server does not
+// implement v1. found is false when the response carries no file descriptors.
+func reflectedDescriptors(ctx context.Context, conn *googlegrpc.ClientConn, symbol string) (descriptors [][]byte, found bool, err error) {
+	descriptors, found, err = reflectedDescriptorsV1(ctx, conn, symbol)
+	if grpcstatus.Code(err) != codes.Unimplemented {
+		return descriptors, found, err
+	}
+	return reflectedDescriptorsV1Alpha(ctx, conn, symbol)
+}
+
+func reflectedDescriptorsV1(ctx context.Context, conn *googlegrpc.ClientConn, symbol string) ([][]byte, bool, error) {
+	stream, err := reflectionv1.NewServerReflectionClient(conn).ServerReflectionInfo(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	defer stream.CloseSend()
+	if err := stream.Send(&reflectionv1.ServerReflectionRequest{
+		MessageRequest: &reflectionv1.ServerReflectionRequest_FileContainingSymbol{FileContainingSymbol: symbol},
+	}); err != nil && !errors.Is(err, io.EOF) {
+		// io.EOF means the server ended the stream; Recv reports why.
+		return nil, false, err
+	}
+	response, err := stream.Recv()
+	if err != nil {
+		return nil, false, err
+	}
+	files := response.GetFileDescriptorResponse()
+	return files.GetFileDescriptorProto(), files != nil, nil
+}
+
+// reflectedDescriptorsV1Alpha serves servers that predate reflection v1.
+//
+//nolint:staticcheck // reflection v1alpha is deprecated; this is the fallback for servers without v1
+func reflectedDescriptorsV1Alpha(ctx context.Context, conn *googlegrpc.ClientConn, symbol string) ([][]byte, bool, error) {
+	stream, err := reflectionv1alpha.NewServerReflectionClient(conn).ServerReflectionInfo(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	defer stream.CloseSend()
+	if err := stream.Send(&reflectionv1alpha.ServerReflectionRequest{
+		MessageRequest: &reflectionv1alpha.ServerReflectionRequest_FileContainingSymbol{FileContainingSymbol: symbol},
+	}); err != nil && !errors.Is(err, io.EOF) {
+		return nil, false, err
+	}
+	response, err := stream.Recv()
+	if err != nil {
+		return nil, false, err
+	}
+	files := response.GetFileDescriptorResponse()
+	return files.GetFileDescriptorProto(), files != nil, nil
 }
 
 func (g *GRPC) loadConfiguredDescriptorFiles(config map[string]any) error {

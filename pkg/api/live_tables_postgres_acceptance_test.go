@@ -196,7 +196,7 @@ func TestPostgresLiveTableGeneratorLostReplyPartitionFailsClosed(t *testing.T) {
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	client, err := generatorrpc.Dial(ctx, "pg-generator", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	client, err := generatorrpc.Dial(ctx, "pg-generator", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}

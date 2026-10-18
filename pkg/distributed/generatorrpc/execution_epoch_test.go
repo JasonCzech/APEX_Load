@@ -761,7 +761,7 @@ func TestExecutionEpochClosesOldMetricsStreamOnHigherClaim(t *testing.T) {
 	t.Cleanup(server.Stop)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	conn, err := grpc.DialContext(ctx, "bufnet",
+	conn, err := grpc.NewClient("passthrough:///bufnet",
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)

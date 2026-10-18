@@ -29,7 +29,6 @@ func newTestGeneratorRPCClient(t *testing.T, generatorID string, maxVUsers int, 
 		generatorID,
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		server.Stop()

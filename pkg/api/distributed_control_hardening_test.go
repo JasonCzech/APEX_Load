@@ -289,7 +289,6 @@ func TestDistributedEvacuationRollsBackNewCandidateWhenStopWinsCommit(t *testing
 			target,
 			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
 		)
 		if err != nil {
 			return nil, err

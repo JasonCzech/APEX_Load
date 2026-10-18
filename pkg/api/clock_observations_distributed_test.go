@@ -47,7 +47,6 @@ func TestDistributedRunArchivesPerGeneratorClockObservations(t *testing.T) {
 		return generatorrpc.Dial(ctx, address,
 			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
 		)
 	})
 	// Probe and keep observations ten times a second so a short fixture run

@@ -17,7 +17,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 	googlegrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
-	reflectionpb "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
+	reflectionv1 "google.golang.org/grpc/reflection/grpc_reflection_v1"
+	reflectionv1alpha "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -178,7 +179,7 @@ func TestGRPCActionDeadlineIncludesBlockingReflection(t *testing.T) {
 		t.Fatalf("Listen: %v", err)
 	}
 	server := googlegrpc.NewServer()
-	reflectionpb.RegisterServerReflectionServer(server, blockingReflectionServer{})
+	reflectionv1.RegisterServerReflectionServer(server, blockingReflectionServer{})
 	go func() { _ = server.Serve(listener) }()
 	defer func() {
 		server.Stop()
@@ -208,12 +209,47 @@ func TestGRPCActionDeadlineIncludesBlockingReflection(t *testing.T) {
 }
 
 type blockingReflectionServer struct {
-	reflectionpb.UnimplementedServerReflectionServer
+	reflectionv1.UnimplementedServerReflectionServer
 }
 
-func (blockingReflectionServer) ServerReflectionInfo(stream googlegrpc.BidiStreamingServer[reflectionpb.ServerReflectionRequest, reflectionpb.ServerReflectionResponse]) error {
+func (blockingReflectionServer) ServerReflectionInfo(stream googlegrpc.BidiStreamingServer[reflectionv1.ServerReflectionRequest, reflectionv1.ServerReflectionResponse]) error {
 	<-stream.Context().Done()
 	return stream.Context().Err()
+}
+
+func TestGRPCReflectionServesV1OnlyAndV1AlphaOnlyServers(t *testing.T) {
+	for name, register := range map[string]func(*googlegrpc.Server){
+		"v1 only":      func(server *googlegrpc.Server) { reflection.RegisterV1(server) },
+		"v1alpha only": registerReflectionV1AlphaOnly,
+	} {
+		t.Run(name, func(t *testing.T) {
+			addr, stop := startReflectionGeneratorWith(t, register)
+			defer stop()
+			client := &GRPC{}
+			if err := client.Init(context.Background(), map[string]any{
+				"base_url": addr, "grpc_plain_text": true, "grpc_use_reflection": true,
+			}); err != nil {
+				t.Fatalf("Init: %v", err)
+			}
+			defer client.Teardown(context.Background())
+			result, err := client.Execute(context.Background(), &protocol.Action{
+				Name: "cache script", Type: "grpc_unary", Target: "apexload.v1.GeneratorControl/DistributeScript",
+				Body: []byte(`{"scriptId":"script-1","content":"e30=","contentHash":"hash-1"}`),
+			})
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if !result.Success {
+				t.Fatalf("reflection against a %s server failed: %s", name, result.ErrorMessage)
+			}
+		})
+	}
+}
+
+// registerReflectionV1AlphaOnly serves the deprecated v1alpha reflection API
+// alone, as servers that predate reflection v1 do.
+func registerReflectionV1AlphaOnly(server *googlegrpc.Server) {
+	reflectionv1alpha.RegisterServerReflectionServer(server, reflection.NewServer(reflection.ServerOptions{Services: server}))
 }
 
 func TestGRPCStreamBodiesEnforceInputCountAndBytesBeforeCopy(t *testing.T) {
@@ -429,13 +465,18 @@ func BenchmarkGRPCUnaryDescriptorSet(b *testing.B) {
 
 func startReflectionGenerator(t testing.TB) (string, func()) {
 	t.Helper()
+	return startReflectionGeneratorWith(t, func(server *googlegrpc.Server) { reflection.Register(server) })
+}
+
+func startReflectionGeneratorWith(t testing.TB, registerReflection func(*googlegrpc.Server)) (string, func()) {
+	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Listen: %v", err)
 	}
 	server := googlegrpc.NewServer()
 	pb.RegisterGeneratorControlServer(server, generatorrpc.NewService("grpc-test", 100))
-	reflection.Register(server)
+	registerReflection(server)
 	go func() {
 		_ = server.Serve(listener)
 	}()

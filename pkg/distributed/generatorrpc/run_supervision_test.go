@@ -61,7 +61,6 @@ func supervisionHeartbeatClient(t *testing.T, service *Service) *Client {
 		"restart-generator",
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		server.Stop()

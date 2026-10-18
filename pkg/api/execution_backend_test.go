@@ -238,7 +238,6 @@ func TestDistributedExecutionBackendAssignsWorkToGenerator(t *testing.T) {
 					return listener.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		},
 	))
@@ -308,7 +307,6 @@ func TestDistributedExecutionBackendAssignsWorkToGenerator(t *testing.T) {
 			return listener.Dial()
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		t.Fatalf("Dial generator client: %v", err)
@@ -554,7 +552,6 @@ func TestDistributedExecutionBackendStopTestClearsRemoteAssignment(t *testing.T)
 					return listener.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		},
 	))
@@ -658,7 +655,6 @@ func TestDistributedExecutionBackendStopTestClearsRemoteAssignment(t *testing.T)
 			return listener.Dial()
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		t.Fatalf("Dial generator client: %v", err)
@@ -712,7 +708,6 @@ func TestDistributedExecutionBackendCompletesAfterDurationExpiry(t *testing.T) {
 					return listener.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		},
 	))
@@ -794,7 +789,6 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 					return listener.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		},
 	))
@@ -1239,7 +1233,6 @@ func TestDistributedExecutionBackendRunsRemoteEngine(t *testing.T) {
 					return listener.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		},
 	))
@@ -1336,7 +1329,6 @@ func TestDistributedExecutionBackendRunsRemoteMultiGroupEngine(t *testing.T) {
 					return listener.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		},
 	))
@@ -1487,7 +1479,6 @@ func TestDistributedExecutionBackendDistributesGroupsAcrossMultipleGenerators(t 
 						return listenerA.Dial()
 					}),
 					grpc.WithTransportCredentials(insecure.NewCredentials()),
-					grpc.WithBlock(),
 				)
 			case "bufnet-b":
 				return generatorrpc.Dial(
@@ -1497,7 +1488,6 @@ func TestDistributedExecutionBackendDistributesGroupsAcrossMultipleGenerators(t 
 						return listenerB.Dial()
 					}),
 					grpc.WithTransportCredentials(insecure.NewCredentials()),
-					grpc.WithBlock(),
 				)
 			default:
 				return nil, context.DeadlineExceeded
@@ -1591,7 +1581,6 @@ func TestDistributedExecutionBackendDistributesGroupsAcrossMultipleGenerators(t 
 			return listenerA.Dial()
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		t.Fatalf("Dial generator A: %v", err)
@@ -1604,7 +1593,6 @@ func TestDistributedExecutionBackendDistributesGroupsAcrossMultipleGenerators(t 
 			return listenerB.Dial()
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		t.Fatalf("Dial generator B: %v", err)
@@ -1682,7 +1670,6 @@ func TestDistributedExecutionBackendPrefersHigherCapacityGenerator(t *testing.T)
 					return listenerA.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		case "bufnet-b":
 			return generatorrpc.Dial(
@@ -1692,7 +1679,6 @@ func TestDistributedExecutionBackendPrefersHigherCapacityGenerator(t *testing.T)
 					return listenerB.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		default:
 			return nil, context.DeadlineExceeded
@@ -1855,7 +1841,6 @@ func TestDistributedExecutionBackendHonorsExplicitHostSelection(t *testing.T) {
 					return listenerA.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		case "bufnet-b":
 			return generatorrpc.Dial(
@@ -1865,7 +1850,6 @@ func TestDistributedExecutionBackendHonorsExplicitHostSelection(t *testing.T) {
 					return listenerB.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		default:
 			return nil, context.DeadlineExceeded
@@ -1995,7 +1979,6 @@ func TestDistributedExecutionBackendShardsGroupAcrossSpecificHostsAndRescales(t 
 					return listenerA.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		case "bufnet-b":
 			return generatorrpc.Dial(
@@ -2005,7 +1988,6 @@ func TestDistributedExecutionBackendShardsGroupAcrossSpecificHostsAndRescales(t 
 					return listenerB.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		default:
 			return nil, context.DeadlineExceeded
@@ -2164,7 +2146,6 @@ func TestDistributedExecutionBackendFailsWhenAssignedGeneratorStreamDrops(t *tes
 					return listenerA.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		case "bufnet-b":
 			return generatorrpc.Dial(
@@ -2174,7 +2155,6 @@ func TestDistributedExecutionBackendFailsWhenAssignedGeneratorStreamDrops(t *tes
 					return listenerB.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		default:
 			return nil, context.DeadlineExceeded
@@ -2307,7 +2287,6 @@ func TestDistributedExecutionBackendScalesRunningRemoteEngine(t *testing.T) {
 					return listener.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		},
 	))
@@ -2424,7 +2403,6 @@ func TestDistributedExecutionBackendPausesRealRemoteEngine(t *testing.T) {
 					return listener.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		},
 	))
@@ -2553,7 +2531,6 @@ func TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion(t *testing.T
 					return listener.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		},
 	))
@@ -2727,7 +2704,6 @@ func TestDistributedExecutionBackendPropagatesRemoteFailure(t *testing.T) {
 					return listener.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		},
 	))
@@ -2853,7 +2829,6 @@ func TestDistributedExecutionBackendAdjustsDuration(t *testing.T) {
 					return listener.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		},
 	))
@@ -2949,7 +2924,6 @@ func TestDistributedExecutionBackendPausesAndResumesTest(t *testing.T) {
 					return listener.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		},
 	))
@@ -3099,7 +3073,6 @@ func TestDistributedExecutionBackendScalesSingleGroupTest(t *testing.T) {
 					return listener.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		},
 	))
@@ -3194,7 +3167,6 @@ func TestDistributedExecutionBackendScalesSingleGroupTest(t *testing.T) {
 			return listener.Dial()
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		t.Fatalf("Dial generator client: %v", err)
@@ -3238,7 +3210,6 @@ func TestDistributedExecutionBackendScalesMultiGroupTest(t *testing.T) {
 					return listener.Dial()
 				}),
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock(),
 			)
 		},
 	))
@@ -3350,7 +3321,6 @@ func TestDistributedExecutionBackendScalesMultiGroupTest(t *testing.T) {
 			return listener.Dial()
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		t.Fatalf("Dial generator client: %v", err)
@@ -3406,7 +3376,6 @@ func TestDistributedExecutionBackendScalesGroupOnOwningGenerator(t *testing.T) {
 						return listenerA.Dial()
 					}),
 					grpc.WithTransportCredentials(insecure.NewCredentials()),
-					grpc.WithBlock(),
 				)
 			case "bufnet-b":
 				return generatorrpc.Dial(
@@ -3416,7 +3385,6 @@ func TestDistributedExecutionBackendScalesGroupOnOwningGenerator(t *testing.T) {
 						return listenerB.Dial()
 					}),
 					grpc.WithTransportCredentials(insecure.NewCredentials()),
-					grpc.WithBlock(),
 				)
 			default:
 				return nil, context.DeadlineExceeded
@@ -3500,7 +3468,6 @@ func TestDistributedExecutionBackendScalesGroupOnOwningGenerator(t *testing.T) {
 			return listenerA.Dial()
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		t.Fatalf("Dial generator A: %v", err)
@@ -3513,7 +3480,6 @@ func TestDistributedExecutionBackendScalesGroupOnOwningGenerator(t *testing.T) {
 			return listenerB.Dial()
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		t.Fatalf("Dial generator B: %v", err)
