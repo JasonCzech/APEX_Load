@@ -123,7 +123,7 @@ func TestHTTPStartRequestPropagatesIntoTestLifecycleSpans(t *testing.T) {
 	}
 	for _, span := range spans {
 		for _, attr := range span.Attributes {
-			if attr.Value.Emit() == "must-not-be-exported" || attr.Value.Emit() == "must-not-export-test-name" {
+			if attr.Value.String() == "must-not-be-exported" || attr.Value.String() == "must-not-export-test-name" {
 				t.Fatalf("sensitive operator text leaked in %s attribute %s", span.Name, attr.Key)
 			}
 		}
@@ -219,7 +219,7 @@ func spanNames(spans []tracetest.SpanStub) []string {
 func spanStringAttributes(span tracetest.SpanStub) map[string]string {
 	attrs := make(map[string]string, len(span.Attributes))
 	for _, attr := range span.Attributes {
-		attrs[string(attr.Key)] = attr.Value.Emit()
+		attrs[string(attr.Key)] = attr.Value.String()
 	}
 	return attrs
 }

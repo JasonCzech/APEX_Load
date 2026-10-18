@@ -12,6 +12,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 type RuntimeSettingsReview struct {
@@ -187,11 +189,11 @@ func runtimeSettingSeverity(status enterprisearchive.RuntimeSettingStatus) strin
 }
 
 func runtimeSettingFindingSummary(entry enterprisearchive.RuntimeSettingParityEntry) string {
-	status := strings.ReplaceAll(string(entry.Status), "_", " ")
+	status := cases.Title(language.Und, cases.NoLower).String(strings.ReplaceAll(string(entry.Status), "_", " "))
 	if len(entry.RuntimeFiles) > 0 {
-		return fmt.Sprintf("%s runtime setting %s / %s from %s.", strings.Title(status), entry.Area, entry.Concept, strings.Join(entry.RuntimeFiles, ", "))
+		return fmt.Sprintf("%s runtime setting %s / %s from %s.", status, entry.Area, entry.Concept, strings.Join(entry.RuntimeFiles, ", "))
 	}
-	return fmt.Sprintf("%s runtime setting %s / %s.", strings.Title(status), entry.Area, entry.Concept)
+	return fmt.Sprintf("%s runtime setting %s / %s.", status, entry.Area, entry.Concept)
 }
 
 func runtimeSettingRecommendedAction(entry enterprisearchive.RuntimeSettingParityEntry) string {

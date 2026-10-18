@@ -194,7 +194,7 @@ func validateKafkaManagementTarget(t *ManagementTarget) error {
 		return err
 	}
 	a := t.kafkaApproval
-	if a == nil || a.roots == nil || a.certificateCount < 1 || a.certificateCount > kafkaManagementMaxTrustCertificates || len(a.roots.Subjects()) != a.certificateCount || len(a.trustDigest) != 64 || len(a.routes) != len(t.Endpoints) {
+	if a == nil || a.roots == nil || a.certificateCount < 1 || a.certificateCount > kafkaManagementMaxTrustCertificates || len(a.roots.Subjects()) != a.certificateCount || len(a.trustDigest) != 64 || len(a.routes) != len(t.Endpoints) { //nolint:staticcheck // the pool is built from the approved CA file, not SystemCertPool, so Subjects lists every certificate
 		return errors.New("Kafka immutable transport approval is unavailable")
 	}
 	digest, err := kafkaManagementSettingsDigest(t)

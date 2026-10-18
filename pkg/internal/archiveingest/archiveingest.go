@@ -227,7 +227,8 @@ func ReadTAR(reader io.Reader, options Options) ([]File, error) {
 		if !isDirectory && JunkReason(name) != "" {
 			continue
 		}
-		if isDirectory || (header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA) {
+		// tar.Reader reports legacy TypeRegA entries as TypeReg.
+		if isDirectory || header.Typeflag != tar.TypeReg {
 			return nil, fmt.Errorf("unsafe archive entry %q: only regular files are permitted", safeDisplayName(header.Name))
 		}
 		if err := recordName(seen, name); err != nil {

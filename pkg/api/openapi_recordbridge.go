@@ -5,9 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"path/filepath"
-	"strings"
 )
 
 // addSharedRecordingHandlerDefinitions follows only the explicit controller
@@ -25,18 +23,16 @@ func addSharedRecordingHandlerDefinitions(apiDir string, candidates map[string][
 	if len(forwarded) == 0 {
 		return nil
 	}
-	packages, err := parser.ParseDir(token.NewFileSet(), filepath.Join(apiDir, "..", "recordbridge"), func(info fs.FileInfo) bool {
-		return strings.HasSuffix(info.Name(), ".go") && !strings.HasSuffix(info.Name(), "_test.go")
-	}, parser.ParseComments)
+	packages, err := parseGoSourceDirectory(filepath.Join(apiDir, "..", "recordbridge"), parser.ParseComments)
 	if err != nil {
 		return fmt.Errorf("parse shared recording handlers: %w", err)
 	}
-	packageAST := packages["recordbridge"]
-	if packageAST == nil {
+	recordbridgeFiles := packages["recordbridge"]
+	if recordbridgeFiles == nil {
 		return fmt.Errorf("parse shared recording handlers: recordbridge package is missing")
 	}
 	shared := map[string][]*ast.FuncDecl{}
-	for _, file := range packageAST.Files {
+	for _, file := range recordbridgeFiles {
 		for _, decl := range file.Decls {
 			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Body != nil {
 				shared[fn.Name.Name] = append(shared[fn.Name.Name], fn)

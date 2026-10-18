@@ -241,7 +241,7 @@ func TestHTTPMiddlewareContinuesRemoteTraceAndRedactsRequestTarget(t *testing.T)
 	}
 	attrs := make(map[string]string, len(span.Attributes))
 	for _, attr := range span.Attributes {
-		attrs[string(attr.Key)] = attr.Value.Emit()
+		attrs[string(attr.Key)] = attr.Value.String()
 	}
 	if attrs["http.route"] != "/api/v1/tests/{id}" {
 		t.Fatalf("http.route = %q", attrs["http.route"])

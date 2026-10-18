@@ -11,8 +11,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -56,15 +56,42 @@ func newHandlerContractAnalysis() *handlerContractAnalysis {
 	}
 }
 
+// parseGoSourceDirectory parses the non-test .go files in dir and groups them
+// by package name, then by file path, as the deprecated parser.ParseDir did.
+// Like ParseDir it ignores build constraints, so the generators read every
+// handler file whatever the build tags, and the first file that does not parse
+// fails the whole directory.
+func parseGoSourceDirectory(dir string, mode parser.Mode) (map[string]map[string]*ast.File, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	fset := token.NewFileSet()
+	packages := map[string]map[string]*ast.File{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		file, err := parser.ParseFile(fset, path, nil, mode)
+		if err != nil {
+			return nil, err
+		}
+		if packages[file.Name.Name] == nil {
+			packages[file.Name.Name] = map[string]*ast.File{}
+		}
+		packages[file.Name.Name][path] = file
+	}
+	return packages, nil
+}
+
 func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[string]inferredRouteContract, error) {
 	dir, err := controllerRouteSourceDirectory(serverGoPath)
 	if err != nil {
 		return nil, err
 	}
-	packages, err := parser.ParseDir(token.NewFileSet(), dir, func(info fs.FileInfo) bool {
-		name := info.Name()
-		return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")
-	}, parser.ParseComments)
+	packages, err := parseGoSourceDirectory(dir, parser.ParseComments)
 	if err != nil {
 		return nil, fmt.Errorf("parse API handlers in %s: %w", dir, err)
 	}
@@ -72,8 +99,8 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 	functionCandidates := map[string][]*ast.FuncDecl{}
 	typeDefinitions := map[string]ast.Expr{}
 	explicitResponseStatuses := map[*ast.FuncDecl]map[int]bool{}
-	for _, pkg := range packages {
-		for _, file := range pkg.Files {
+	for _, files := range packages {
+		for _, file := range files {
 			for _, decl := range file.Decls {
 				fn, ok := decl.(*ast.FuncDecl)
 				if ok && fn.Body != nil {
@@ -221,10 +248,7 @@ func addOpenAPICrossPackageTypeDefinitions(apiDir string, typeDefinitions map[st
 	sort.Strings(packageNames)
 	for _, packageName := range packageNames {
 		dir := filepath.Clean(filepath.Join(apiDir, "..", openAPICrossPackageDirectories[packageName]))
-		packages, err := parser.ParseDir(token.NewFileSet(), dir, func(info fs.FileInfo) bool {
-			name := info.Name()
-			return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")
-		}, 0)
+		packages, err := parseGoSourceDirectory(dir, 0)
 		if err != nil {
 			return fmt.Errorf("parse OpenAPI model package %s in %s: %w", packageName, dir, err)
 		}
@@ -232,17 +256,17 @@ func addOpenAPICrossPackageTypeDefinitions(apiDir string, typeDefinitions map[st
 		if packageName == "analytics" {
 			declaredName = "duckdb"
 		}
-		parsedPackage, ok := packages[declaredName]
+		parsedFiles, ok := packages[declaredName]
 		if !ok {
 			return fmt.Errorf("parse OpenAPI model package %s in %s: package not found", packageName, dir)
 		}
-		fileNames := make([]string, 0, len(parsedPackage.Files))
-		for fileName := range parsedPackage.Files {
+		fileNames := make([]string, 0, len(parsedFiles))
+		for fileName := range parsedFiles {
 			fileNames = append(fileNames, fileName)
 		}
 		sort.Strings(fileNames)
 		for _, fileName := range fileNames {
-			for _, decl := range parsedPackage.Files[fileName].Decls {
+			for _, decl := range parsedFiles[fileName].Decls {
 				gen, ok := decl.(*ast.GenDecl)
 				if !ok || gen.Tok != token.TYPE {
 					continue

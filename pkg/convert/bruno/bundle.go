@@ -190,7 +190,7 @@ func loadTAR(data []byte, compressed bool, limits Limits) ([]sourceFile, error) 
 		switch header.Typeflag {
 		case tar.TypeDir:
 			continue
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg: // tar.Reader reports legacy TypeRegA entries as TypeReg
 		default:
 			return nil, fmt.Errorf("Bruno archive entry %q is not a regular file", header.Name)
 		}

@@ -320,14 +320,9 @@ func desktopBoundsFromScreens(screens []runtime.Screen) virtualDesktopBounds {
 	primaryW, primaryH := 0, 0
 	fallbackW, fallbackH := 0, 0
 	for _, s := range screens {
-		w := s.Size.Width
-		if w == 0 {
-			w = s.Width
-		}
-		h := s.Size.Height
-		if h == 0 {
-			h = s.Height
-		}
+		// Wails sets Size whenever it sets the deprecated Width and Height,
+		// and reports a screen it could not measure as entirely zero.
+		w, h := s.Size.Width, s.Size.Height
 		if w <= 0 || h <= 0 {
 			continue
 		}

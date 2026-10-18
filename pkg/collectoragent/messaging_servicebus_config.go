@@ -160,7 +160,7 @@ func validateServiceBusManagementTarget(t *ManagementTarget) error {
 		return serviceBusManagementConfigError()
 	}
 	a := t.serviceBusApproval
-	if a == nil || a.roots == nil || a.certificateCount < 1 || a.certificateCount > kafkaManagementMaxTrustCertificates || len(a.roots.Subjects()) != a.certificateCount || len(a.trustDigest) != 64 || len(a.routes) != len(t.Scope.Entities) {
+	if a == nil || a.roots == nil || a.certificateCount < 1 || a.certificateCount > kafkaManagementMaxTrustCertificates || len(a.roots.Subjects()) != a.certificateCount || len(a.trustDigest) != 64 || len(a.routes) != len(t.Scope.Entities) { //nolint:staticcheck // the pool is built from the approved CA file, not SystemCertPool, so Subjects lists every certificate
 		return serviceBusManagementConfigError()
 	}
 	digest, err := serviceBusManagementSettingsDigest(t)

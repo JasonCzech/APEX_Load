@@ -297,8 +297,14 @@ type tcpDiagnostics struct {
 	EphemeralPortUtilizationPct float64
 }
 
+// cpuTimesTotal is the sum gopsutil's deprecated TimesStat.Total computed.
+func cpuTimesTotal(t cpu.TimesStat) float64 {
+	return t.User + t.System + t.Idle + t.Nice + t.Iowait + t.Irq +
+		t.Softirq + t.Steal + t.Guest + t.GuestNice
+}
+
 func cpuShapePercent(previous cpu.TimesStat, current cpu.TimesStat) (float64, float64, float64, float64) {
-	totalDelta := current.Total() - previous.Total()
+	totalDelta := cpuTimesTotal(current) - cpuTimesTotal(previous)
 	if totalDelta <= 0 {
 		return 0, 0, 0, 0
 	}

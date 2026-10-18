@@ -280,8 +280,8 @@ func TestSanitizeWindowGeometryAllowsNegativeVirtualDesktopOrigins(t *testing.T)
 
 func TestDesktopBoundsFromScreensKeepsRestoresOnPrimaryDisplay(t *testing.T) {
 	screens := []runtime.Screen{
-		{IsPrimary: true, Width: 1920, Height: 1080},
-		{Width: 1920, Height: 1080},
+		wailsScreen(true, 1920, 1080),
+		wailsScreen(false, 1920, 1080),
 	}
 	desk := desktopBoundsFromScreens(screens)
 	if want := (virtualDesktopBounds{Width: 1920, Height: 1080}); desk != want {
@@ -320,7 +320,7 @@ func TestDesktopBoundsFromScreensKeepsRestoresOnPrimaryDisplay(t *testing.T) {
 
 func TestDesktopBoundsFromScreenResultUsesValidPartialWindowsResult(t *testing.T) {
 	screens := []runtime.Screen{
-		{IsPrimary: true, Width: 1920, Height: 1080},
+		wailsScreen(true, 1920, 1080),
 		{}, // Failed secondary enumeration remains as a partial zero-sized entry.
 	}
 	got := desktopBoundsFromScreenResult(screens, errors.New("secondary monitor DPI lookup failed"))
@@ -331,4 +331,11 @@ func TestDesktopBoundsFromScreenResultUsesValidPartialWindowsResult(t *testing.T
 	if unknown := desktopBoundsFromScreenResult(nil, errors.New("screen enumeration failed")); unknown != (virtualDesktopBounds{}) {
 		t.Fatalf("empty failed screen result = %+v, want unknown bounds", unknown)
 	}
+}
+
+// wailsScreen builds a screen the way Wails reports one, with its logical Size.
+func wailsScreen(primary bool, width, height int) runtime.Screen {
+	screen := runtime.Screen{IsPrimary: primary}
+	screen.Size.Width, screen.Size.Height = width, height
+	return screen
 }

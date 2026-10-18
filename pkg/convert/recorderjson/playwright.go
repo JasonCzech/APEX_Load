@@ -292,7 +292,7 @@ func convertPlaywright(content string, opts ConvertOptions) (*ConvertResult, err
 			applyPlaywrightClickOptions(&action, match[3])
 		case "check", "uncheck":
 			action.Type = "browser_check"
-			action.Name = strings.Title(match[2]) + " " + candidate.Value
+			action.Name = strings.ToUpper(match[2][:1]) + match[2][1:] + " " + candidate.Value
 			if match[2] == "uncheck" {
 				action.Value = "false"
 			} else {

@@ -3,12 +3,9 @@ package api
 import (
 	"encoding/json"
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"io/fs"
 	"net/url"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -101,14 +98,12 @@ func TestClientBrowserDocumentArchiveProjectionMatchesControllerWire(t *testing.
 
 func TestOpenAPIForwardedClientContractsPreserveModelDepth(t *testing.T) {
 	definitions := map[string]ast.Expr{}
-	files, err := parser.ParseDir(token.NewFileSet(), ".", func(info fs.FileInfo) bool {
-		return strings.HasSuffix(info.Name(), ".go") && !strings.HasSuffix(info.Name(), "_test.go")
-	}, 0)
+	files, err := parseGoSourceDirectory(".", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	aliases := map[string]string{}
-	for _, file := range files["api"].Files {
+	for _, file := range files["api"] {
 		for _, decl := range file.Decls {
 			gen, ok := decl.(*ast.GenDecl)
 			if !ok || gen.Tok != token.TYPE {

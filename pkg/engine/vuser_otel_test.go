@@ -86,9 +86,9 @@ func TestActionSpanWrapsProtocolWithoutExportingRequestSecrets(t *testing.T) {
 			}
 			attrs := make(map[string]string, len(actionSpan.Attributes))
 			for _, attr := range actionSpan.Attributes {
-				attrs[string(attr.Key)] = attr.Value.Emit()
-				if strings.Contains(attr.Value.Emit(), "must-not-export") || strings.Contains(attr.Value.Emit(), "secret.example") {
-					t.Fatalf("request secret leaked into %s=%q", attr.Key, attr.Value.Emit())
+				attrs[string(attr.Key)] = attr.Value.String()
+				if strings.Contains(attr.Value.String(), "must-not-export") || strings.Contains(attr.Value.String(), "secret.example") {
+					t.Fatalf("request secret leaked into %s=%q", attr.Key, attr.Value.String())
 				}
 			}
 			if attrs["apexload.action.type"] != "post" || attrs["apexload.protocol"] != "http" || attrs["apexload.action.attempts"] != "1" {

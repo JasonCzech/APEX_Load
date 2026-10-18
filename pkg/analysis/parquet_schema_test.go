@@ -107,7 +107,7 @@ func TestParquetMetadataLimitsBeforeAllocation(t *testing.T) {
 	}
 	ctx := context.Background()
 	transport := thrift.NewTMemoryBuffer()
-	p := thrift.NewTCompactProtocol(transport)
+	p := thrift.NewTCompactProtocolConf(transport, &thrift.TConfiguration{})
 	for i := 0; i < maxParquetMetadataDepth+1; i++ {
 		_ = p.WriteStructBegin(ctx, "nested")
 		_ = p.WriteFieldBegin(ctx, "unknown", thrift.STRUCT, 20)

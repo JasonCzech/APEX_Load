@@ -88,7 +88,7 @@ func writeReportDOCXPackage(writer io.Writer, profile RunArchiveReportProfile, t
 		header := &zip.FileHeader{Name: part.name, Method: zip.Deflate}
 		// A stable timestamp makes repeated renders easier to compare while the
 		// generated-at value remains inside the report content and core metadata.
-		header.SetModTime(time.Date(1980, time.January, 1, 0, 0, 0, 0, time.UTC))
+		header.Modified = time.Date(1980, time.January, 1, 0, 0, 0, 0, time.UTC)
 		entry, err := archive.CreateHeader(header)
 		if err != nil {
 			_ = archive.Close()
