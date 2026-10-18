@@ -48,7 +48,8 @@ func (tr *TestRunner) GetTestMetricsWindow(id string, since *time.Time, limit in
 
 	tr.mu.RLock()
 	canonical := tr.tests[test.ID]
-	if canonical != nil {
+	canonicalMatches := sameStoredTestHistoryIdentity(canonical, test)
+	if canonicalMatches {
 		selected := selectLiveMetricsHistory(canonical.History, since, limit)
 		test.History = cloneLiveMetricsHistory(selected)
 		test.LiveMetrics = cloneRunLiveMetrics(canonical)
@@ -58,9 +59,16 @@ func (tr *TestRunner) GetTestMetricsWindow(id string, since *time.Time, limit in
 	// Terminal canonical records retain only their compact tail. When a bounded
 	// history window is requested, ask persistence for at most that many points
 	// instead of hydrating the runner-wide maximum and trimming it afterward.
-	if isTerminalTestStatus(test.Status) && limit > 0 && tr.historyStore != nil {
+	if isTerminalTestStatus(test.Status) && tr.historyStore != nil && (limit > 0 || !canonicalMatches) {
 		loaded := &ManagedTest{ID: test.ID}
 		if err := tr.loadStoredTestHistoryLimit(loaded, limit); err == nil {
+			// A prior execution handle may remain attached for teardown. Its
+			// replacement's current point must come from durable history too,
+			// independently of the caller's since filter for historical points.
+			if test.LiveMetrics == nil {
+				test.LiveMetrics = loaded.LiveMetrics
+				test.LiveMetrics = cloneRunLiveMetrics(test)
+			}
 			merged := mergeStoredHistoryWithCanonicalTail(loaded.History, test.LiveMetrics)
 			test.History = cloneLiveMetricsHistory(selectLiveMetricsHistory(merged, since, limit))
 		}
@@ -157,7 +165,7 @@ func (tr *TestRunner) getTestSnapshot(id string, includeHistory bool) (*ManagedT
 		if current != nil {
 			tr.removeRefKeyLocked(current.RefKey)
 			tr.forgetRunSnapshotWriteStateLocked(managed.ID)
-			forgetRunArchiveCache(managed.ID)
+			tr.archiveReadCaches().forgetRunArchiveCache(managed.ID)
 			deleteGroupMetricsHistoryCache(managed.ID)
 		}
 		if tr.storedHistoryCache != nil {
@@ -1334,7 +1342,7 @@ func (tr *TestRunner) GetRunArchiveContext(ctx context.Context, id string) (*sto
 			test.Archive = nil
 		}
 		tr.mu.Unlock()
-		forgetRunArchiveCache(id)
+		tr.archiveReadCaches().forgetRunArchiveCache(id)
 		return nil, false
 	}
 	if !runArchiveRecordAvailableContext(ctx, record) {
@@ -1345,13 +1353,15 @@ func (tr *TestRunner) GetRunArchiveContext(ctx context.Context, id string) (*sto
 	// have been deleted/recreated by a peer while this replica still holds the old
 	// tenant's catalog pointer. Bind the manifest back to the current durable test
 	// identity before exposing any artifact through the general archive routes.
+	var durableArchiveTest *storage.TestRecord
 	if tr.leadership != nil && tr.testStore != nil {
 		durable, loadErr := tr.testStore.GetTest(id)
 		if loadErr != nil || durable == nil {
 			tr.forgetCachedRunArchive(id)
 			return nil, false
 		}
-		manifest, manifestErr := cachedRunArchiveManifest(record)
+		durableArchiveTest = durable
+		manifest, manifestErr := tr.archiveReadCaches().cachedRunArchiveManifest(record)
 		if manifestErr != nil || !runArchiveManifestMatchesStoredTest(manifest, durable, tr.testStore) {
 			tr.forgetCachedRunArchive(id)
 			return nil, false
@@ -1359,7 +1369,7 @@ func (tr *TestRunner) GetRunArchiveContext(ctx context.Context, id string) (*sto
 	}
 	tr.mu.Lock()
 	tr.archives[id] = record
-	if test, exists := tr.tests[id]; exists {
+	if test, exists := tr.tests[id]; exists && (durableArchiveTest == nil || (sameStoredTestIdentity(test, durableArchiveTest) && sameArchiveRunIncarnation(test, durableArchiveTest))) {
 		test.Archive = record
 	}
 	tr.mu.Unlock()
@@ -1373,7 +1383,7 @@ func (tr *TestRunner) forgetCachedRunArchive(id string) {
 		test.Archive = nil
 	}
 	tr.mu.Unlock()
-	forgetRunArchiveCache(id)
+	tr.archiveReadCaches().forgetRunArchiveCache(id)
 }
 
 func runArchiveManifestMatchesStoredTest(manifest *RunArchiveManifest, test *storage.TestRecord, metadataStore any) bool {
@@ -1381,6 +1391,14 @@ func runArchiveManifestMatchesStoredTest(manifest *RunArchiveManifest, test *sto
 		return false
 	}
 	if normalizeProjectID(manifest.Provenance.ProjectID) != normalizeProjectID(test.ProjectID) {
+		return false
+	}
+	incarnation, err := archiveManifestRunIncarnation(manifest)
+	if err != nil {
+		return false
+	}
+	durableIncarnation, err := storage.TestRunIncarnation(test.InitialProvenance)
+	if err != nil || incarnation != durableIncarnation || manifest.Provenance.ExecutionGeneration != test.ExecutionGeneration {
 		return false
 	}
 	// v2 archives persist the test's CreatedAt as RequestedAt. Keep legacy
@@ -1438,7 +1456,7 @@ func (tr *TestRunner) GetRunArchiveManifest(id string) (*RunArchiveManifest, err
 	if !ok {
 		return nil, fmt.Errorf("archive not found: %s", id)
 	}
-	return cachedRunArchiveManifest(record)
+	return tr.archiveReadCaches().cachedRunArchiveManifest(record)
 }
 
 func (tr *TestRunner) resolveTestID(id string) string {
@@ -1576,7 +1594,7 @@ func (tr *TestRunner) DeleteTestDurable(id string) (bool, error) {
 	delete(tr.tests, id)
 	tr.phaseLogs.Delete(id)
 	delete(tr.archives, id)
-	forgetRunArchiveCache(id)
+	tr.archiveReadCaches().forgetRunArchiveCache(id)
 	return true, nil
 }
 

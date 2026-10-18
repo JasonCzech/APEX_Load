@@ -642,6 +642,7 @@ jobs:
         run: |
           npm test
           npm run test:node-version
+          npm run test:e2e-preflight
 
       - name: Bundle checker tests
         if: matrix.profile == 'dev-admin'
@@ -691,7 +692,9 @@ jobs:
     name: Deployment artifact validation
     if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.id == github.event.repository.id && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'apexload-ci-unprivileged' }}
-    timeout-minutes: 35
+    # Full PostgreSQL storage and API suites run sequentially, each with a
+    # 20-minute deadline, in addition to deployment validation and compilation.
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1013,7 +1016,7 @@ jobs:
             --volume "${PWD}/deployments/docker/prometheus:/etc/prometheus:ro" \
             "${PROMETHEUS_IMAGE}" check rules /etc/prometheus/apexload-rules.yml
 
-      - name: Run PostgreSQL storage migration and startup integration tests
+      - name: Run full PostgreSQL storage and API integration suites
         env:
           POSTGRES_TEST_PASSWORD: ci-postgres-scheduler-test
         run: |
@@ -1047,8 +1050,7 @@ jobs:
           postgres_test_port=$(docker port "${postgres_test_container}" 5432/tcp | awk -F: 'NR == 1 { print $NF }')
           test -n "${postgres_test_port}"
           APEXLOAD_TEST_POSTGRES_URL="postgres://apexload:${POSTGRES_TEST_PASSWORD}@127.0.0.1:${postgres_test_port}/apexload?sslmode=disable" \
-            go test -tags postgres_integration ./pkg/storage ./pkg/api \
-              -run '^Test(Postgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle|AnalysisWorkflows|AuthoringMutationReceipts|AuthoringReceiptTombstoneRestore|AuthoringReceiptTombstoneRenewal|AuthoringReceiptRenewalOutlastsAWaitingRestore|ScriptDeleteRefusedWhileInUse|ExclusivePolicyDefaults|FeatureEvaluationJobs|EvaluationJobReviewFixes|RunDeletionDeletesEvaluations|EvaluationJobTakeoverAndCancelThenLatePublish|EvaluationJobCompletionFences|FeatureAcceptanceSequence|RunEvidenceReceipts|RunNotificationClaims|ScenarioAuthoringConditionedSaveAcrossReplicas|ScenarioConditionedSaveRaceAcrossReplicas|ScenarioStrictPolicyFlipIsFencedInTransaction|ScenarioRuntimeCommitFingerprintSurvivesStorage)|PostgresMonitorRetirementHistory|ElasticPostgresDurableEvidenceMetadataAndRetry|ElasticPostgresVerifiedSourcePreparationAuthorization)$' -count=1
+            go test -tags postgres_integration -p 1 -timeout=20m -count=1 ./pkg/storage ./pkg/api
 
   containers:
     name: Container (${{ matrix.binary }}, ${{ matrix.profile }})

@@ -1895,6 +1895,9 @@ func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest
 		// before publishing or dispatching the asynchronous execution backend.
 		test.initialArchiveProvenance = decodeStoredInitialProvenance(snapshot.record.InitialProvenance)
 	}
+	if tr.durableExecutionFence {
+		test.durableExecutionGeneration = snapshot.record.ExecutionGeneration
+	}
 	test.Status = durableStatus
 	return true, nil
 }

@@ -34,6 +34,7 @@ import { type CloneScriptDraftResponse, type DiscardImportSecretSessionRequest, 
 import { type BrunoInspectResponse, type ImportSourceRevision, type BrunoSupportMatrixResponse, type CommitBrunoImportRequest, type CommitBrunoImportResponse } from '../../types/scriptImports'
 import { downloadFilenameFromDisposition } from '../../utils/fileUtils'
 import { importFileLogicalPath } from '../../importLogicalPath'
+import { canonicalImportURL, restoreImportAliases } from './importResponse'
 
 export interface ScriptRecordingStatus {
   exists: boolean
@@ -755,11 +756,11 @@ export function useScriptApi() {
       if (options?.expire_draft) formData.append('expire_draft', 'true')
 
       // request keeps the deadline active through JSON body consumption.
-      return request<EnterpriseArchiveImportResult>('/scripts/import/enterprise-script-archive', {
+      return request<EnterpriseArchiveImportResult>(canonicalImportURL('/scripts/import/enterprise-script-archive'), {
         method: 'POST',
         body: formData,
         timeoutMs: enterpriseArchiveImportTimeoutMs,
-      }).catch(rethrowEnterpriseArchiveReviewError)
+      }).then(restoreImportAliases).catch(rethrowEnterpriseArchiveReviewError)
     },
     [],
   )
@@ -789,11 +790,11 @@ export function useScriptApi() {
       if (options?.salesforce_native) formData.append('salesforce_native', 'true')
       if (options?.expire_draft) formData.append('expire_draft', 'true')
 
-      return request<EnterpriseArchiveImportResult>('/scripts/import/enterprise-script-archive/validate', {
+      return request<EnterpriseArchiveImportResult>(canonicalImportURL('/scripts/import/enterprise-script-archive/validate'), {
         method: 'POST',
         body: formData,
         timeoutMs: enterpriseArchiveImportTimeoutMs,
-      }).catch(rethrowEnterpriseArchiveReviewError)
+      }).then(restoreImportAliases).catch(rethrowEnterpriseArchiveReviewError)
     },
     [],
   )
@@ -972,7 +973,7 @@ export function useScriptApi() {
         include_static_assets?: boolean
         http_version_mode?: 'upgrade' | 'exact' | 'inherit'
       }
-    }) => request<SampleImportResult>('/scripts/import/sample', { method: 'POST', body: JSON.stringify(data) }),
+    }) => request<SampleImportResult>(canonicalImportURL('/scripts/import/sample'), { method: 'POST', body: JSON.stringify(data) }).then(restoreImportAliases),
     [],
   )
 
@@ -1160,11 +1161,11 @@ export function useScriptApi() {
       if (options?.salesforce_native === false) query.set('salesforce_native', 'false')
       if (options?.agentforce_transform) query.set('agentforce_transform', 'true')
       const suffix = query.toString()
-      const res = await apiFetch(`/scripts/import/har${suffix ? `?${suffix}` : ''}`, { method: 'POST', body: formData })
+      const res = await apiFetch(canonicalImportURL(`/scripts/import/har${suffix ? `?${suffix}` : ''}`), { method: 'POST', body: formData })
       if (!res.ok) {
         throw new Error(await errorMessageFromResponse(res))
       }
-      return res.json() as Promise<HARImportResult>
+      return (res.json() as Promise<HARImportResult>).then(restoreImportAliases)
     },
     [],
   )
@@ -1181,11 +1182,11 @@ export function useScriptApi() {
       if (options?.project_id) query.set('project_id', options.project_id)
       if (options?.agentforce_transform) query.set('agentforce_transform', 'true')
       const suffix = query.toString()
-      const res = await apiFetch(`/scripts/import/salesforce${suffix ? `?${suffix}` : ''}`, { method: 'POST', body: formData })
+      const res = await apiFetch(canonicalImportURL(`/scripts/import/salesforce${suffix ? `?${suffix}` : ''}`), { method: 'POST', body: formData })
       if (!res.ok) {
         throw new Error(await errorMessageFromResponse(res))
       }
-      return res.json() as Promise<SalesforceImportResult>
+      return (res.json() as Promise<SalesforceImportResult>).then(restoreImportAliases)
     },
     [],
   )

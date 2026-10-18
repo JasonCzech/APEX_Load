@@ -974,9 +974,12 @@ func TestDistributedMetricsTerminalBatchRepublishesAfterPostApplyTopologyRace(t 
 	stream := &generatorrpc.MetricsStream{}
 	testRun.remoteMetricsStreamsByTarget = map[string]*generatorrpc.MetricsStream{target: stream}
 	testRun.remoteClientsByTarget = map[string]generatorClient{target: nil}
-	if !backend.storeRemoteMetricsBatchOnly(runner, testRun, target, distributedP99Batch(testRun.ID, 2_000, 900)) {
+	running := distributedP99Batch(testRun.ID, 2_000, 900)
+	running.Telemetry = &generatorrpc.MetricsTelemetry{CollectionSequence: 1, CollectedAtUnixMs: 1_000, PublishedAtUnixMs: 1_005, GeneratorProcessingLagMs: 5}
+	if !backend.storeRemoteMetricsBatchOnly(runner, testRun, target, running) {
 		t.Fatal("running snapshot was not accepted")
 	}
+	publishTelemetryCollection(t, runner, testRun, backend, target)
 	fence, current := captureDistributedMetricsConsumerFence(runner, testRun, target, stream, context.Background(), 7, true)
 	if !current {
 		t.Fatal("terminal stream fence was not initially current")
@@ -986,6 +989,7 @@ func TestDistributedMetricsTerminalBatchRepublishesAfterPostApplyTopologyRace(t 
 		LifecycleState:  "ABORTED",
 		LifecycleError:  "generator aborted work",
 		TimestampUnixMs: 3_000,
+		Telemetry:       running.Telemetry,
 	}
 	live, status, finalError, fresh, publication := backend.applyRemoteMetricsBatchWithFreshness(runner, testRun, target, terminal, false, fence)
 	if !fresh || status != "ABORTED" || finalError != terminal.LifecycleError {
@@ -1022,6 +1026,12 @@ func TestDistributedMetricsTerminalBatchRepublishesAfterPostApplyTopologyRace(t 
 	}
 	if testRun.LiveMetrics == nil || testRun.LiveMetrics.TotalTx != 1 {
 		t.Fatalf("terminal retry lost the populated running snapshot: %#v", testRun.LiveMetrics)
+	}
+	if !testRun.LiveMetrics.Telemetry.SampleAgeUnavailable || !testRun.remoteMetricsBatchesByTarget[target].Telemetry.CollectionRepeated {
+		t.Fatal("terminal republication lost collection replay ownership")
+	}
+	if got := telemetryReplayStage(t, testRun, telemetryStageGeneratorProcessing); got.Samples != 1 {
+		t.Fatalf("terminal republication re-counted processing: %+v", got)
 	}
 }
 

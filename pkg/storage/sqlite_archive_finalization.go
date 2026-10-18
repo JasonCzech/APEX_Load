@@ -212,23 +212,32 @@ func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 			return false, err
 		}
 	}
-	projectQuery := `SELECT COALESCE(project_id, ''), start_time, end_time, status FROM tests WHERE id = ?`
+	projectQuery := `SELECT COALESCE(project_id, ''), start_time, end_time, status, COALESCE(initial_provenance_json, ''), COALESCE(execution_generation, 0) FROM tests WHERE id = ?`
 	if s.db.dialect == storeDialectPostgres {
 		projectQuery += ` FOR UPDATE`
 	}
-	var projectID, durableStatus string
+	var projectID, durableStatus, initialProvenance string
 	var durableStart time.Time
 	var durableEnd sql.NullTime
-	if err := tx.QueryRow(projectQuery, job.TestID).Scan(&projectID, &durableStart, &durableEnd, &durableStatus); err != nil {
+	var durableExecutionGeneration uint64
+	if err := tx.QueryRow(projectQuery, job.TestID).Scan(&projectID, &durableStart, &durableEnd, &durableStatus, &initialProvenance, &durableExecutionGeneration); err != nil {
 		if status != "" && errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
 		return false, err
 	}
-	if status != "" && (!durableEnd.Valid || durableStatus != status ||
-		!archiveIdentityTimestampEqual(s.db.dialect, durableStart, requestedAt) ||
-		!archiveIdentityTimestampEqual(s.db.dialect, durableEnd.Time, job.ArchiveRecord.CompletedAt)) {
-		return false, nil
+	if status != "" {
+		incarnation, err := testRunIncarnationJSON(initialProvenance)
+		if err != nil {
+			return false, err
+		}
+		if !durableEnd.Valid || durableStatus != status ||
+			!archiveIdentityTimestampEqual(s.db.dialect, durableStart, requestedAt) ||
+			incarnation != job.ArchiveRecord.RunIncarnation ||
+			durableExecutionGeneration != job.ArchiveRecord.ExecutionGeneration ||
+			!archiveIdentityTimestampEqual(s.db.dialect, durableEnd.Time, job.ArchiveRecord.CompletedAt) {
+			return false, nil
+		}
 	}
 	if normalizeProjectID(projectID) != job.ProjectID {
 		return false, fmt.Errorf("archive finalization project %q does not match durable test project %q", job.ProjectID, projectID)
@@ -534,19 +543,29 @@ func (s *SQLiteStore) completeArchiveFinalization(testID string, intentToken str
 			return false, err
 		}
 	}
-	testQuery := `SELECT COALESCE(project_id, ''), start_time, end_time, status FROM tests WHERE id = ?`
+	testQuery := `SELECT COALESCE(project_id, ''), start_time, end_time, status, COALESCE(initial_provenance_json, ''), COALESCE(execution_generation, 0) FROM tests WHERE id = ?`
 	jobQuery := `SELECT COALESCE(intent_token, ''), COALESCE(project_id, ''), archive_record_json FROM archive_finalization_jobs WHERE test_id = ?`
 	if s.db.dialect == storeDialectPostgres {
 		testQuery += ` FOR UPDATE`
 		jobQuery += ` FOR UPDATE`
 	}
-	var durableProjectID, durableStatus string
+	var durableProjectID, durableStatus, initialProvenance string
 	var durableStart time.Time
 	var durableEnd sql.NullTime
-	if err := tx.QueryRow(testQuery, testID).Scan(&durableProjectID, &durableStart, &durableEnd, &durableStatus); errors.Is(err, sql.ErrNoRows) {
+	var durableExecutionGeneration uint64
+	if err := tx.QueryRow(testQuery, testID).Scan(&durableProjectID, &durableStart, &durableEnd, &durableStatus, &initialProvenance, &durableExecutionGeneration); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, err
+	}
+	if identity != nil {
+		incarnation, err := testRunIncarnationJSON(initialProvenance)
+		if err != nil {
+			return false, err
+		}
+		if incarnation != identity.RunIncarnation || durableExecutionGeneration != identity.ExecutionGeneration {
+			return false, nil
+		}
 	}
 	if identity != nil && (normalizeProjectID(durableProjectID) != identity.ProjectID ||
 		!durableEnd.Valid || durableStatus != identity.Status ||

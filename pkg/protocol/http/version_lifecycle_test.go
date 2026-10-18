@@ -190,6 +190,7 @@ func TestHTTPVersionPoolsPACConcurrentClonesSharePhysicalCeiling(t *testing.T) {
 	open, peak := new(atomic.Int64), new(atomic.Int64)
 	// Instrument the PAC first-hop dial before its derived transport is leased;
 	// the fixed version pools are never used by these clients.
+	initializeTestVersionPools(h)
 	baseDial := h.connections.snapshotOwners()[0].baseDial
 	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
 		conn, err := baseDial(ctx, network, address)
@@ -271,6 +272,7 @@ func TestHTTPVersionPoolsProxyNativeQueueCanEvictOwnIdleDestination(t *testing.T
 			proxy := versionConnectProxy(t)
 			h := versionHTTP(t, map[string]any{"proxy_mode": "custom", "proxy_url": proxy.URL, "max_conns_per_host": 1})
 			pool := h.policyPools[policy]
+			pool.roundTripper(false)
 			originalProxy := pool.transport.Proxy
 			entered, release := make(chan struct{}, 2), make(chan struct{})
 			var releaseOnce sync.Once

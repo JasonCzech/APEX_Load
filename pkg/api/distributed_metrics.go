@@ -38,13 +38,8 @@ const distributedAggregateGeneratorID = "distributed"
 // representative window, so these rates are computed here, before concatenation.
 func aggregateDistributedMetricsBatches(testID string, batches map[string]generatorrpc.MetricsBatch) (generatorrpc.MetricsBatch, float64, map[string]float64) {
 	combined := generatorrpc.MetricsBatch{TestID: testID, GeneratorID: distributedAggregateGeneratorID}
-	publishedAt := time.Now()
+	telemetry := distributedTelemetryAccumulator{publishedAt: time.Now()}
 	targets := make([]string, 0, len(batches))
-	hasCollectedAt := false
-	oldestCollectedMs := 0.0
-	hasPublishedAt := false
-	hasControllerReceivedAt := false
-	dropCounterUnavailable := false
 	groupsByName := make(map[string]int32)
 	groupMetricsByName := make(map[string][]generatorrpc.MetricAggregate)
 	// Each group's transactions, by generator, merged by name below.
@@ -100,9 +95,6 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		if batch.MessagingProgress != nil {
 			protocol.MergeMessagingProgress(&combined.MessagingProgress, batch.MessagingProgress, target)
 			combined.MessagingProgressVersion = protocol.MessagingProgressVersion
-		}
-		if batch.Telemetry == nil || batch.Telemetry.DroppedResultsUnavailable || batch.Telemetry.DroppedResults < 0 {
-			dropCounterUnavailable = true
 		}
 		if batch.TimestampUnixMs > combined.TimestampUnixMs {
 			combined.TimestampUnixMs = batch.TimestampUnixMs
@@ -286,72 +278,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			}
 			groupMetricsByName[name] = append(groupMetricsByName[name], rawGroups...)
 		}
-		if batch.Telemetry != nil {
-			if combined.Telemetry == nil {
-				// The aggregate's qualification is judged now: publication
-				// re-checks for a step since this instant.
-				combined.Telemetry = &generatorrpc.MetricsTelemetry{ReceivedAt: publishedAt.Round(0), ReceivedMonotonic: publishedAt.Sub(clockProcessStart)}
-			}
-			var validDrops bool
-			combined.Telemetry.DroppedResults, validDrops = mergeRetainedDropCounters(combined.Telemetry.DroppedResults, batch.Telemetry.DroppedResults)
-			if !validDrops {
-				dropCounterUnavailable = true
-			}
-			combined.Telemetry.SheddedArrivals += batch.Telemetry.SheddedArrivals
-			if batch.Telemetry.CollectedAtUnixMs > 0 {
-				// The oldest sample is the earliest on the controller's
-				// clock: a qualified collection time maps to it by its own
-				// generator's offset. Its quality is the worst of every
-				// contributing generator's, and the qualified ones bound the
-				// fleet's age from below.
-				collected := float64(batch.Telemetry.CollectedAtUnixMs)
-				quality, offset := batch.Telemetry.CollectedAtQuality, batch.Telemetry.CollectedAtOffsetMs
-				if wallClockSteppedSince(batch.Telemetry.ReceivedAt, batch.Telemetry.ReceivedMonotonic, publishedAt) {
-					// Qualified on receipt, but the controller's clock has
-					// stepped since: its age now would include the step.
-					quality, offset = &generatorrpc.ClockQuality{Reason: clockReasonStep}, 0
-				}
-				if quality != nil && quality.Qualified {
-					collected -= offset
-					if bound := collected + quality.UncertaintyMs; combined.Telemetry.CollectedAtBoundUnixMs == 0 || bound < combined.Telemetry.CollectedAtBoundUnixMs {
-						combined.Telemetry.CollectedAtBoundUnixMs = bound
-					}
-				}
-				if !hasCollectedAt || collected < oldestCollectedMs {
-					oldestCollectedMs = collected
-					combined.Telemetry.CollectedAtUnixMs, combined.Telemetry.CollectedAtOffsetMs = batch.Telemetry.CollectedAtUnixMs, offset
-				}
-				combined.Telemetry.CollectedAtQuality = combineClockQuality(combined.Telemetry.CollectedAtQuality, quality, 0)
-				hasCollectedAt = true
-			}
-			if batch.Telemetry.PublishedAtUnixMs > 0 && (!hasPublishedAt || batch.Telemetry.PublishedAtUnixMs > combined.Telemetry.PublishedAtUnixMs) {
-				combined.Telemetry.PublishedAtUnixMs = batch.Telemetry.PublishedAtUnixMs
-				hasPublishedAt = true
-			}
-			if batch.Telemetry.ControllerReceivedAtUnixMs > 0 && (!hasControllerReceivedAt || batch.Telemetry.ControllerReceivedAtUnixMs > combined.Telemetry.ControllerReceivedAtUnixMs) {
-				combined.Telemetry.ControllerReceivedAtUnixMs = batch.Telemetry.ControllerReceivedAtUnixMs
-				hasControllerReceivedAt = true
-			}
-			if batch.Telemetry.SampleAgeMs > combined.Telemetry.SampleAgeMs {
-				combined.Telemetry.SampleAgeMs = batch.Telemetry.SampleAgeMs
-			}
-			// Processing lag is measured on one generator's own clock; an
-			// older generator that does not report it is derived from its
-			// own two timestamps, never across generators.
-			processingLag := batch.Telemetry.GeneratorProcessingLagMs
-			if processingLag <= 0 && batch.Telemetry.CollectedAtUnixMs > 0 && batch.Telemetry.PublishedAtUnixMs > 0 {
-				processingLag = float64(batch.Telemetry.PublishedAtUnixMs - batch.Telemetry.CollectedAtUnixMs)
-			}
-			if processingLag > combined.Telemetry.GeneratorProcessingLagMs {
-				combined.Telemetry.GeneratorProcessingLagMs = processingLag
-			}
-			combined.Telemetry.TransportLagQuality = combineClockQuality(combined.Telemetry.TransportLagQuality, batch.Telemetry.TransportLagQuality, batch.Telemetry.TransportLagMs)
-			if batch.Telemetry.TransportLagMs > combined.Telemetry.TransportLagMs {
-				combined.Telemetry.TransportLagMs = batch.Telemetry.TransportLagMs
-			}
-			combined.Telemetry.DroppedSubscriberBatches += batch.Telemetry.DroppedSubscriberBatches
-			combined.Telemetry.MissingMetricWindows += batch.Telemetry.MissingMetricWindows
-		}
+		telemetry.add(batch.LifecycleState, batch.Telemetry)
 	}
 	// Joint evidence v4 merges by exact tuple across generators; a generator
 	// without it leaves the fleet window incomplete, never zero.
@@ -362,9 +289,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			combined.JointMetrics, combined.JointInfo = merged, info
 		}
 	}
-	if combined.Telemetry != nil {
-		combined.Telemetry.DroppedResultsUnavailable = dropCounterUnavailable
-	}
+	combined.Telemetry = telemetry.result()
 	combined.FleetMetrics = mergeGeneratorMetricAggregates(fleetMetrics)
 	if actionsVersion > 0 {
 		combined.ActionMetricsVersion = actionsVersion
@@ -808,46 +733,8 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		live.Telemetry.SheddedArrivals = batch.Telemetry.SheddedArrivals
 		live.Telemetry.DroppedSubscriberBatches = batch.Telemetry.DroppedSubscriberBatches
 		live.Telemetry.MissingMetricWindows = batch.Telemetry.MissingMetricWindows
-		if batch.Telemetry.CollectedAtUnixMs > 0 {
-			live.Telemetry.CollectedAt = time.UnixMilli(batch.Telemetry.CollectedAtUnixMs)
-		}
-		if batch.Telemetry.PublishedAtUnixMs > 0 {
-			live.Telemetry.GeneratorPublishedAt = time.UnixMilli(batch.Telemetry.PublishedAtUnixMs)
-		}
-		if batch.Telemetry.ControllerReceivedAtUnixMs > 0 {
-			live.Telemetry.ControllerReceivedAt = time.UnixMilli(batch.Telemetry.ControllerReceivedAtUnixMs)
-		}
-		if batch.Telemetry.GeneratorProcessingLagMs > 0 {
-			live.Telemetry.GeneratorProcessingLagMs = batch.Telemetry.GeneratorProcessingLagMs
-		} else if batch.GeneratorID != distributedAggregateGeneratorID && !live.Telemetry.CollectedAt.IsZero() && !live.Telemetry.GeneratorPublishedAt.IsZero() {
-			// A fleet aggregate's timestamps come from different generators'
-			// clocks; it carries each generator's own lag instead.
-			live.Telemetry.GeneratorProcessingLagMs = float64(live.Telemetry.GeneratorPublishedAt.Sub(live.Telemetry.CollectedAt).Microseconds()) / 1000.0
-		}
-		live.Telemetry.TransportLagQuality = batch.Telemetry.TransportLagQuality
-		live.Telemetry.collectedAtQuality, live.Telemetry.collectedAtOffsetMs = batch.Telemetry.CollectedAtQuality, batch.Telemetry.CollectedAtOffsetMs
-		live.Telemetry.collectedAtBoundUnixMs = batch.Telemetry.CollectedAtBoundUnixMs
-		live.Telemetry.qualifiedAt, live.Telemetry.qualifiedMonotonic = batch.Telemetry.ReceivedAt, batch.Telemetry.ReceivedMonotonic
-		if batch.Telemetry.TransportLagMs > 0 || batch.Telemetry.TransportLagQuality != nil {
-			// A qualified lag is already corrected; an implausible one stays
-			// unavailable rather than recomputed from the raw clocks.
-			live.Telemetry.TransportLagMs = batch.Telemetry.TransportLagMs
-		} else if !live.Telemetry.GeneratorPublishedAt.IsZero() && !live.Telemetry.ControllerReceivedAt.IsZero() {
-			live.Telemetry.TransportLagMs = float64(live.Telemetry.ControllerReceivedAt.Sub(live.Telemetry.GeneratorPublishedAt).Microseconds()) / 1000.0
-		}
-		live.Telemetry.SampleAgeMs = batch.Telemetry.SampleAgeMs
 	}
-	if live.Telemetry.CollectedAt.IsZero() {
-		live.Telemetry.CollectedAt = timestamp
-		if batch.TimestampUnixMs != 0 {
-			// No generator reported a sample (every generator stamps the
-			// samples it publishes): the batch time is a generator's clock,
-			// and there is no sample whose age a budget could judge.
-			live.Telemetry.collectedAtQuality = &generatorrpc.ClockQuality{Reason: clockReasonUncalibrated}
-			live.Telemetry.collectedAtOffsetMs, live.Telemetry.collectedAtBoundUnixMs = 0, 0
-			live.Telemetry.SampleAgeUnavailable = true
-		}
-	}
+	applyDistributedTelemetryTiming(live, batch)
 	defer func() {
 		applyDistributedRequestMetrics(live, batch)
 		applyDistributedGroupIterations(live, batch)

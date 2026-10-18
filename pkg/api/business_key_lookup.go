@@ -278,7 +278,7 @@ func (s *Server) lookupBusinessKeyLogs(ctx context.Context, project, testID stri
 		set(businessKeyLogsUnavailable, "only Elasticsearch and OpenSearch query sources can be searched for business keys")
 		return
 	}
-	from, to := job.StartedAt, manifest.CompletedAt
+	from, to := job.StartedAt, archiveExecutionCompletedAt(manifest)
 	if started := manifest.Provenance.StartedAt; started != nil && !started.IsZero() {
 		from = *started
 	}

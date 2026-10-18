@@ -148,7 +148,7 @@ func (vu *VUser) setProtocolCookie(ctx context.Context, action dsl.Action) error
 // browserEmulationNewUserEachIteration reports whether browser emulation's
 // "simulate a new user on each iteration" is enabled — the flag that clears
 // cookies at iteration start, with cache clearing controlled separately.
-func browserEmulationNewUserEachIteration(cfg dsl.ScriptConfig) bool {
+func browserEmulationNewUserEachIteration(cfg *dsl.ScriptConfig) bool {
 	emu := cfg.BrowserEmulation
 	return emu != nil && emu.Cache != nil && emu.Cache.NewUserEachIteration != nil && *emu.Cache.NewUserEachIteration
 }

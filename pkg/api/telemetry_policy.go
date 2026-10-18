@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/telemetrypolicy"
 )
 
@@ -153,6 +154,7 @@ func (tr *TestRunner) telemetryAdmissionProvenanceLocked(test *ManagedTest) (*Ru
 	prospective.QueuePosition = 0
 	prospective.Error = ""
 	initial := buildRunArchiveProvenanceFromSnapshot(&prospective)
+	initial.RunIncarnation = uuid.NewString()
 	initial.RequestedAt = archiveRunTimestamp(test.CreatedAt, tr.testStore)
 	settings := cloneSystemSettings(tr.settings)
 	initial.ExecutionSettings = RunArchiveExecutionSettingsSnapshot{General: settings.General, Thresholds: settings.Thresholds, CapacityPlanning: settings.CapacityPlanning}

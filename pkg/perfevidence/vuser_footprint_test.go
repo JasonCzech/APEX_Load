@@ -101,15 +101,22 @@ type footprintSample struct {
 	Goroutines     int    `json:"goroutines"`
 }
 
+type footprintInvalidSample struct {
+	Sample footprintSample `json:"sample"`
+	Reason string          `json:"reason"`
+}
+
 type footprintResult struct {
-	Protocol            string            `json:"protocol"`
-	Samples             []footprintSample `json:"samples"`
-	HeapLiveKBPerVUser  float64           `json:"heap_live_kb_per_vuser"`
-	StackKBPerVUser     float64           `json:"stack_kb_per_vuser"`
-	GoMemoryKBPerVUser  float64           `json:"go_memory_kb_per_vuser"`
-	RSSKBPerVUser       float64           `json:"rss_kb_per_vuser"`
-	GoroutinesPerVUser  float64           `json:"goroutines_per_vuser"`
-	GoMemoryFitRSquared float64           `json:"go_memory_fit_r_squared"`
+	InvalidSamples      []footprintInvalidSample `json:"invalid_samples,omitempty"`
+	FitAvailable        bool                     `json:"fit_available"`
+	Protocol            string                   `json:"protocol"`
+	Samples             []footprintSample        `json:"samples"`
+	HeapLiveKBPerVUser  float64                  `json:"heap_live_kb_per_vuser"`
+	StackKBPerVUser     float64                  `json:"stack_kb_per_vuser"`
+	GoMemoryKBPerVUser  float64                  `json:"go_memory_kb_per_vuser"`
+	RSSKBPerVUser       float64                  `json:"rss_kb_per_vuser"`
+	GoroutinesPerVUser  float64                  `json:"goroutines_per_vuser"`
+	GoMemoryFitRSquared float64                  `json:"go_memory_fit_r_squared"`
 }
 
 // TestVUserFootprint is the driver. It starts the loopback targets, runs one
@@ -138,25 +145,17 @@ func TestVUserFootprint(t *testing.T) {
 			sample, err := runFootprintSample(name, vusers, string(targetsJSON))
 			if err != nil {
 				t.Errorf("%s @ %d VUsers: %v", name, vusers, err)
+				result.InvalidSamples = append(result.InvalidSamples, footprintInvalidSample{Sample: footprintSample{Protocol: name, VUsers: vusers}, Reason: err.Error()})
 				continue
 			}
-			if sample.ActionErrors > 0 {
-				t.Errorf("%s @ %d VUsers: %d action errors; footprint would not reflect connected VUsers", name, vusers, sample.ActionErrors)
+			if err := result.addSample(sample); err != nil {
+				t.Errorf("%s @ %d VUsers: invalid sample: %v", name, vusers, err)
+				continue
 			}
 			t.Logf("%s @ %d VUsers: heap=%s stack=%s rss=%s goroutines=%d", name, vusers,
 				footprintBytes(sample.HeapAlloc), footprintBytes(sample.StackInuse), footprintBytes(sample.RSS), sample.Goroutines)
-			result.Samples = append(result.Samples, sample)
 		}
-		if len(result.Samples) < 2 {
-			continue
-		}
-		result.HeapLiveKBPerVUser, _ = footprintSlope(result.Samples, func(s footprintSample) float64 { return float64(s.HeapAlloc) / 1024 })
-		result.StackKBPerVUser, _ = footprintSlope(result.Samples, func(s footprintSample) float64 { return float64(s.StackInuse) / 1024 })
-		result.GoMemoryKBPerVUser, result.GoMemoryFitRSquared = footprintSlope(result.Samples, func(s footprintSample) float64 {
-			return float64(s.HeapAlloc+s.StackInuse) / 1024
-		})
-		result.RSSKBPerVUser, _ = footprintSlope(result.Samples, func(s footprintSample) float64 { return float64(s.RSS) / 1024 })
-		result.GoroutinesPerVUser, _ = footprintSlope(result.Samples, func(s footprintSample) float64 { return float64(s.Goroutines) })
+		result.fit()
 		results = append(results, result)
 	}
 
@@ -164,6 +163,10 @@ func TestVUserFootprint(t *testing.T) {
 	table.WriteString("\n| Protocol | Live heap KB/VUser | Stack KB/VUser | Go memory KB/VUser | RSS KB/VUser | Goroutines/VUser | R² |\n")
 	table.WriteString("|---|---:|---:|---:|---:|---:|---:|\n")
 	for _, r := range results {
+		if !r.FitAvailable {
+			fmt.Fprintf(&table, "| %s | invalid: fewer than two distinct valid counts | — | — | — | — | — |\n", r.Protocol)
+			continue
+		}
 		fmt.Fprintf(&table, "| %s | %.1f | %.1f | %.1f | %.1f | %.2f | %.4f |\n",
 			r.Protocol, r.HeapLiveKBPerVUser, r.StackKBPerVUser, r.GoMemoryKBPerVUser, r.RSSKBPerVUser, r.GoroutinesPerVUser, r.GoMemoryFitRSquared)
 	}
@@ -185,6 +188,62 @@ func TestVUserFootprint(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+// Failed connections cannot represent the promised connected VUsers. Retain the
+// evidence in the report, fail the probe, and never feed such samples to a fit.
+func (result *footprintResult) addSample(sample footprintSample) error {
+	var err error
+	switch {
+	case sample.Protocol != result.Protocol:
+		err = fmt.Errorf("protocol %q does not match %q", sample.Protocol, result.Protocol)
+	case sample.VUsers <= 0:
+		err = fmt.Errorf("VUsers must be positive")
+	case sample.ActionErrors != 0:
+		err = fmt.Errorf("%d action errors; footprint does not reflect connected VUsers", sample.ActionErrors)
+	case sample.ActionSamples != int64(sample.VUsers):
+		err = fmt.Errorf("%d actions for %d VUsers; every VUser must complete exactly one action", sample.ActionSamples, sample.VUsers)
+	}
+	if err != nil {
+		result.InvalidSamples = append(result.InvalidSamples, footprintInvalidSample{Sample: sample, Reason: err.Error()})
+		return err
+	}
+	result.Samples = append(result.Samples, sample)
+	return nil
+}
+
+func (result *footprintResult) fit() {
+	if len(result.Samples) < 2 {
+		return
+	}
+	distinct := false
+	for _, sample := range result.Samples[1:] {
+		if sample.VUsers != result.Samples[0].VUsers {
+			distinct = true
+			break
+		}
+	}
+	if !distinct {
+		return
+	}
+	result.FitAvailable = true
+	result.HeapLiveKBPerVUser, _ = footprintSlope(result.Samples, func(s footprintSample) float64 { return float64(s.HeapAlloc) / 1024 })
+	result.StackKBPerVUser, _ = footprintSlope(result.Samples, func(s footprintSample) float64 { return float64(s.StackInuse) / 1024 })
+	result.GoMemoryKBPerVUser, result.GoMemoryFitRSquared = footprintSlope(result.Samples, func(s footprintSample) float64 {
+		return float64(s.HeapAlloc+s.StackInuse) / 1024
+	})
+	result.RSSKBPerVUser, _ = footprintSlope(result.Samples, func(s footprintSample) float64 { return float64(s.RSS) / 1024 })
+	result.GoroutinesPerVUser, _ = footprintSlope(result.Samples, func(s footprintSample) float64 { return float64(s.Goroutines) })
+}
+
+// This is a retained-memory probe, not a connection-admission load test. A
+// 500/s raw TCP ramp lets loopback accept drain on hosts with a small backlog
+// (notably macOS). All VUsers still finish before the unchanged settle/GC sample.
+func footprintRampUp(name string, vusers int) time.Duration {
+	if name != "network" || vusers <= 1 {
+		return 0
+	}
+	return time.Duration(vusers) * time.Second / 500
 }
 
 // TestVUserFootprintHelper is the child-process entry point for both the
@@ -503,7 +562,7 @@ func measureFootprintSample(t *testing.T) {
 		BaseGoroutines: runtime.NumGoroutine(),
 	}
 
-	eng, err := engine.New(engine.Config{Script: script, VUsers: vusers, Duration: 30 * time.Minute})
+	eng, err := engine.New(engine.Config{Script: script, VUsers: vusers, Duration: 30 * time.Minute, RampUp: footprintRampUp(name, vusers)})
 	if err != nil {
 		t.Fatalf("engine.New: %v", err)
 	}

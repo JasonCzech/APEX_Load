@@ -10,6 +10,7 @@ from pathlib import Path
 import sys
 
 from qa_metrics import render_table as render_metric_table
+from qa_lane_status import render_lane_status
 
 
 def markdown_table(document: str, heading: str) -> list[str]:
@@ -38,7 +39,7 @@ def assertion_counts(matrix: str) -> Counter[str]:
     return counts
 
 
-def render(status: str, matrix: str, metrics: list[str], api_contract: dict[str, object]) -> str:
+def render(status: str, matrix: str, metrics: list[str], api_contract: dict[str, object], executions: dict | None = None) -> str:
     milestones = markdown_table(status, "## Milestones")
     counts = assertion_counts(matrix)
     contract_totals = api_contract.get("totals")
@@ -81,6 +82,7 @@ def render(status: str, matrix: str, metrics: list[str], api_contract: dict[str,
             "|---:|---:|---:|---:|",
             f"| {contract_green} | {contract_partial} | {contract_missing} | {contract_routes} |",
             "",
+            *(render_lane_status(executions) if executions is not None else []),
             "## Gate tiers",
             "",
             "| Tier | Runs | Purpose |",
@@ -100,6 +102,7 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=Path("."))
     parser.add_argument("--metrics", type=Path, help="optional metrics table input for isolated generator tests")
     parser.add_argument("--api-contract", type=Path, default=Path("docs/qa/evidence/M1/api-contract-matrix.json"))
+    parser.add_argument("--executions", type=Path, default=Path("docs/qa/execution-status.json"))
     parser.add_argument("--output", type=Path, default=Path("docs/qa/DASHBOARD.md"))
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
@@ -111,6 +114,7 @@ def main() -> int:
         if args.metrics
         else render_metric_table(args.root.resolve()),
         json.loads(args.api_contract.read_text()),
+        json.loads(args.executions.read_text()),
     )
     if args.check:
         if not args.output.exists() or args.output.read_text() != generated:

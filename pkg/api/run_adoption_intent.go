@@ -118,6 +118,11 @@ func (tr *TestRunner) advanceAdoptedRunExecutionGeneration(test *ManagedTest, ge
 	if !advanced {
 		return fmt.Errorf("adoption execution term write not applied")
 	}
+	tr.mu.Lock()
+	if tr.tests[test.ID] == test && test.durableExecutionGeneration <= generation {
+		test.durableExecutionGeneration = generation
+	}
+	tr.mu.Unlock()
 	return nil
 }
 

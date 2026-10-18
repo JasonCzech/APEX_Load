@@ -97,8 +97,7 @@ func ServerUUIDs(har []byte) (map[string]bool, bool, error) {
 	if err := json.Unmarshal(bytes.TrimPrefix(har, []byte("\uFEFF")), &parsed); err != nil {
 		return nil, false, err
 	}
-	found := map[string]bool{}
-	textual, captured := 0, 0
+	evidence := ServerEvidence{}
 	for _, entry := range parsed.Log.Entries {
 		response := entry.Response
 		body := ""
@@ -110,22 +109,48 @@ func ServerUUIDs(har []byte) (map[string]bool, bool, error) {
 				}
 			}
 		}
-		if response.Status >= 200 && response.Status < 300 && response.Status != 204 && textualMIME(response.Content.MimeType) {
-			textual++
-			if body != "" {
-				captured++
-			}
-		}
-		collectUUIDs(found, body)
-		collectUUIDs(found, response.RedirectURL)
+		evidence.ObserveResponse(response.Status, response.Content.MimeType, body)
+		evidence.AddText(response.RedirectURL)
 		for _, header := range response.Headers {
-			collectUUIDs(found, header.Value)
+			evidence.AddText(header.Value)
 		}
 		for _, cookie := range response.Cookies {
-			collectUUIDs(found, cookie.Value)
+			evidence.AddText(cookie.Value)
 		}
 	}
-	return found, textual > 0 && captured*2 >= textual, nil
+	found, judged := evidence.Result()
+	return found, judged, nil
+}
+
+// ServerEvidence accumulates response evidence from an already parsed capture.
+// Each collector owns its map, so projections never share mutable input state.
+type ServerEvidence struct {
+	found             map[string]bool
+	textual, captured int
+}
+
+func (e *ServerEvidence) ObserveResponse(status int, mime, body string) {
+	if status >= 200 && status < 300 && status != 204 && textualMIME(mime) {
+		e.textual++
+		if body != "" {
+			e.captured++
+		}
+	}
+	e.AddText(body)
+}
+
+func (e *ServerEvidence) AddText(text string) {
+	if e.found == nil {
+		e.found = map[string]bool{}
+	}
+	collectUUIDs(e.found, text)
+}
+
+func (e *ServerEvidence) Result() (map[string]bool, bool) {
+	if e.found == nil {
+		e.found = map[string]bool{}
+	}
+	return e.found, e.textual > 0 && e.captured*2 >= e.textual
 }
 
 func textualMIME(mime string) bool {

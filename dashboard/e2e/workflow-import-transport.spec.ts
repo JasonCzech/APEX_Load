@@ -1,3 +1,4 @@
+import { canonicalImportDraft } from './support/importResponse'
 import type { ScriptDefinition } from '../src/types/scripts'
 import { test, expect, json, login, mutation } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
@@ -40,7 +41,10 @@ test('a Transport panel origin edit reaches nested requests and survives save an
   await controls.getByRole('button', { name: 'Inspect & review', exact: true }).click()
   const importResponse = await imported
   expect(importResponse.ok(), await importResponse.text()).toBeTruthy()
-  const draft = (await json(importResponse)).script as ScriptDefinition
+  expect(new URL(importResponse.url()).searchParams.get('response_format')).toBe('canonical-v1')
+  const wire = await json(importResponse)
+  expect(wire.scripts).toHaveLength(1)
+  const draft = canonicalImportDraft(wire)
   expect(draft.actions.some(action => action.type === 'http_async_start')).toBe(true)
 
   await controls.getByRole('tab', { name: /^Runtime settings/ }).click()
@@ -88,6 +92,8 @@ test('a Transport panel origin edit reaches nested requests and survives save an
   const listed = await json(await request.get(`/api/v1/scripts?project_id=${workspace.projectId}`)) as { scripts: Array<{ id: string }> }
   const stored = await json(await request.get(`/api/v1/scripts/${listed.scripts[0].id}`))
   const script = (stored.script ?? stored) as ScriptDefinition
+  expect(stored.project_id).toBe(workspace.projectId)
+  expect(script.name).toBe(draft.name)
   const home = script.actions.find(action => action.target === '/')!
   const poll = script.actions.find(action => action.type === 'http_async_start')!
   const nested = poll.params!.request as { http_version?: string; metadata?: Record<string, unknown> }

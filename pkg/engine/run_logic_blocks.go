@@ -25,10 +25,14 @@ func (vu *VUser) iterationOrder() []int {
 // (nil order: script.actions in order). Steps are not copied up front, so a
 // long run-logic order costs one index per step.
 func (vu *VUser) iterationAction(order []int, position int) dsl.Action {
+	return *vu.iterationActionRef(order, position)
+}
+
+func (vu *VUser) iterationActionRef(order []int, position int) *dsl.Action {
 	if order == nil {
-		return vu.Script.Actions[position]
+		return &vu.Script.Actions[position]
 	}
-	return vu.Script.Actions[order[position]]
+	return &vu.Script.Actions[order[position]]
 }
 
 // iterationLength is the number of steps this iteration runs.

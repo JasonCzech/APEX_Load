@@ -49,21 +49,25 @@ func convertTokenHAR(t *testing.T, data string) *har.ConvertResult {
 }
 
 type analysisCall struct {
-	BuildNative     bool
-	RequireDetected bool
+	BuildNative           bool
+	BuildNativeIfDetected bool
+	RequireDetected       bool
+	SkipUndetectedReview  bool
 }
 
-// recordAnalyses runs the real analyzer and records the options of each call.
-func recordAnalyses(t *testing.T) *[]analysisCall {
+// recordAnalyses wraps the real analyzer for one call without changing shared
+// package state. The shared parsed document must reach that same analysis.
+func recordAnalyses(t *testing.T, result *har.ConvertResult) (func(*dsl.Script, salesforce.AnalyzeOptions) (*salesforce.Review, error), *[]analysisCall) {
 	t.Helper()
 	calls := &[]analysisCall{}
-	original := analyzeSalesforce
-	analyzeSalesforce = func(script *dsl.Script, opts salesforce.AnalyzeOptions) (*salesforce.Review, error) {
-		*calls = append(*calls, analysisCall{BuildNative: opts.BuildNative, RequireDetected: opts.RequireDetected})
-		return original(script, opts)
+	analyze := func(script *dsl.Script, opts salesforce.AnalyzeOptions) (*salesforce.Review, error) {
+		*calls = append(*calls, analysisCall{BuildNative: opts.BuildNative, BuildNativeIfDetected: opts.BuildNativeIfDetected, RequireDetected: opts.RequireDetected, SkipUndetectedReview: opts.SkipUndetectedReview})
+		if opts.Document == nil || opts.Document != result.Document || opts.Source != "har" {
+			t.Fatal("analysis lost the shared document or source provenance")
+		}
+		return salesforce.Analyze(script, opts)
 	}
-	t.Cleanup(func() { analyzeSalesforce = original })
-	return calls
+	return analyze, calls
 }
 
 func countWarnings(warnings []string, want string) int {
@@ -76,10 +80,8 @@ func countWarnings(warnings []string, want string) int {
 	return count
 }
 
-// Each analysis repeats the correlation pass over every HAR entry, so a caller
-// that requires detection gets one analysis whether or not the capture is
-// Salesforce; the explicit Salesforce import keeps detection and native build
-// as separate calls.
+// Detection and optional native preparation share one analysis for all import
+// paths, including explicit Salesforce imports and native preparation failures.
 func TestAugmentHARImportWithSalesforceAnalyzesOnceWhenDetectionIsRequired(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
@@ -89,16 +91,18 @@ func TestAugmentHARImportWithSalesforceAnalyzesOnceWhenDetectionIsRequired(t *te
 		want            []analysisCall
 		detected        bool
 	}{
-		{"generic native", genericTokenHAR, true, true, []analysisCall{{BuildNative: true, RequireDetected: true}}, false},
-		{"generic", genericTokenHAR, false, true, []analysisCall{{RequireDetected: true}}, false},
-		{"salesforce native", salesforceTokenHAR, true, true, []analysisCall{{BuildNative: true, RequireDetected: true}}, true},
-		{"salesforce", salesforceTokenHAR, false, true, []analysisCall{{RequireDetected: true}}, true},
-		{"explicit salesforce import", salesforceTokenHAR, true, false, []analysisCall{{}, {BuildNative: true}}, true},
+		{"generic native", genericTokenHAR, true, true, []analysisCall{{BuildNativeIfDetected: true, RequireDetected: true, SkipUndetectedReview: true}}, false},
+		{"generic", genericTokenHAR, false, true, []analysisCall{{RequireDetected: true, SkipUndetectedReview: true}}, false},
+		{"salesforce native", salesforceTokenHAR, true, true, []analysisCall{{BuildNativeIfDetected: true, RequireDetected: true, SkipUndetectedReview: true}}, true},
+		{"salesforce", salesforceTokenHAR, false, true, []analysisCall{{RequireDetected: true, SkipUndetectedReview: true}}, true},
+		{"explicit salesforce import", salesforceTokenHAR, true, false, []analysisCall{{BuildNativeIfDetected: true}}, true},
+		{"explicit generic native", genericTokenHAR, true, false, []analysisCall{{BuildNativeIfDetected: true}}, false},
+		{"explicit salesforce review", salesforceTokenHAR, false, false, []analysisCall{{}}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			calls := recordAnalyses(t)
 			result := convertTokenHAR(t, tc.data)
-			augmentation := AugmentHARImportWithSalesforce(result, []byte(tc.data), "", "Synthetic capture", "har", tc.buildNative, false, tc.requireDetected)
+			analyze, calls := recordAnalyses(t, result)
+			augmentation := augmentHARImportWithSalesforce(result, []byte(tc.data), "", "Synthetic capture", "har", tc.buildNative, false, tc.requireDetected, analyze)
 			if !reflect.DeepEqual(*calls, tc.want) {
 				t.Fatalf("analyses = %+v, want %+v", *calls, tc.want)
 			}
@@ -109,13 +113,12 @@ func TestAugmentHARImportWithSalesforceAnalyzesOnceWhenDetectionIsRequired(t *te
 	}
 }
 
-// Only a native-build failure is retried: an error before detection fails the
-// same way again, so it is not analyzed twice.
+// A malformed capture fails once and does not replace the existing HAR draft.
 func TestAugmentHARImportWithSalesforceDoesNotRetryReviewFailures(t *testing.T) {
-	calls := recordAnalyses(t)
 	result := convertTokenHAR(t, salesforceTokenHAR)
-	augmentation := AugmentHARImportWithSalesforce(result, []byte("{"), "", "Synthetic capture", "har", true, false, true)
-	if want := []analysisCall{{BuildNative: true, RequireDetected: true}}; !reflect.DeepEqual(*calls, want) {
+	analyze, calls := recordAnalyses(t, result)
+	augmentation := augmentHARImportWithSalesforce(result, []byte("{"), "", "Synthetic capture", "har", true, false, true, analyze)
+	if want := []analysisCall{{BuildNativeIfDetected: true, RequireDetected: true, SkipUndetectedReview: true}}; !reflect.DeepEqual(*calls, want) {
 		t.Fatalf("analyses = %+v, want %+v", *calls, want)
 	}
 	if augmentation.Detected || augmentation.Script != result.Script {
@@ -139,7 +142,7 @@ func TestAugmentHARImportWithSalesforceBuildsNativeDraft(t *testing.T) {
 }
 
 // A detected capture whose native build fails must keep the HAR draft, the full
-// detection review, and a native-failure warning.
+// review including attempted-native diagnostics, and one native-failure warning.
 func TestAugmentHARImportWithSalesforceKeepsReviewWhenNativeBuildFails(t *testing.T) {
 	result := convertTokenHAR(t, salesforceTokenHAR)
 	// The native builder clones the script through JSON, which rejects NaN;
@@ -152,14 +155,23 @@ func TestAugmentHARImportWithSalesforceKeepsReviewWhenNativeBuildFails(t *testin
 	if err != nil {
 		t.Fatalf("detection review: %v", err)
 	}
+	// This synthetic token request is deliberately not a valid Aura envelope.
+	// Attempting native preparation adds its blocker before cloning fails; a
+	// second nonnative analysis would lose that diagnostic. Preserve every other
+	// review field from the independent nonnative baseline below.
+	const nativeRequestBlocker = "Imported Aura requests could not be validated; native replay is gated until those request envelopes are repaired."
+	if want.AuraOutcomes == nil || want.AuraOutcomes.InvalidRequests != 1 || slices.Contains(want.Blockers, nativeRequestBlocker) {
+		t.Fatalf("fixture does not isolate attempted-native diagnostics: %+v", want)
+	}
+	want.Blockers = append(want.Blockers, nativeRequestBlocker)
 	_, nativeErr := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{BuildNative: true, HARData: []byte(salesforceTokenHAR)})
 	if nativeErr == nil {
 		t.Fatal("native build accepted an unencodable script")
 	}
 
-	calls := recordAnalyses(t)
-	augmentation := AugmentHARImportWithSalesforce(result, []byte(salesforceTokenHAR), "", "Synthetic capture", "har", true, false, true)
-	if wantCalls := []analysisCall{{BuildNative: true, RequireDetected: true}, {RequireDetected: true}}; !reflect.DeepEqual(*calls, wantCalls) {
+	analyze, calls := recordAnalyses(t, result)
+	augmentation := augmentHARImportWithSalesforce(result, []byte(salesforceTokenHAR), "", "Synthetic capture", "har", true, false, true, analyze)
+	if wantCalls := []analysisCall{{BuildNativeIfDetected: true, RequireDetected: true, SkipUndetectedReview: true}}; !reflect.DeepEqual(*calls, wantCalls) {
 		t.Fatalf("analyses = %+v, want %+v", *calls, wantCalls)
 	}
 	if !augmentation.Detected || augmentation.Source != "har" || augmentation.Script != result.Script {
@@ -181,6 +193,6 @@ func TestAugmentHARImportWithSalesforceKeepsReviewWhenNativeBuildFails(t *testin
 		t.Fatal(err)
 	}
 	if string(got) != string(expected) {
-		t.Fatalf("review = %s, want the detection review %s", got, expected)
+		t.Fatalf("review = %s, want the full attempted-native review %s", got, expected)
 	}
 }

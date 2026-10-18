@@ -238,6 +238,17 @@ type TransactionResponseTimeSLACompliance struct {
 	MissedCount          int64
 }
 
+// MetricsLifecycleFinalizing means every execution has drained and no new
+// collections can be produced, but durable archive finalization is pending.
+// It is nonterminal: only COMPLETE, FAILED or ABORTED releases run ownership.
+const MetricsLifecycleFinalizing = "FINALIZING"
+
+// IsMetricsCollectionFinal identifies explicit execution-completion evidence;
+// zero active VUsers alone does not prove that a generator has finished.
+func IsMetricsCollectionFinal(state string) bool {
+	return strings.EqualFold(strings.TrimSpace(state), MetricsLifecycleFinalizing) || isGeneratorTerminalLifecycle(state)
+}
+
 type MetricsTelemetry struct {
 	// DroppedResultsUnavailable preserves source absence when controller metadata
 	// creates telemetry or merges a cohort containing a legacy peer. It is not
@@ -261,6 +272,15 @@ type MetricsTelemetry struct {
 	// window within its source epoch; a batch that re-sends the last window
 	// repeats it. Zero from older generators.
 	CollectionSequence uint64
+	// CollectionRepeated is controller-local: this collection's identity was
+	// already accepted for the same target and source epoch. A later lifecycle
+	// envelope is not another processing/transport sample.
+	CollectionRepeated bool `json:"-"`
+	// CollectionPublished is controller-local and set on aggregation snapshots
+	// only after this exact collection reached an installed live publication.
+	// A repeated terminal envelope may omit sample age only with this proof;
+	// receipt alone does not prove end-to-end delivery.
+	CollectionPublished bool `json:"-"`
 	// The controller qualifies the cross-host stages on receipt:
 	// TransportLagMs is corrected by the generator's clock offset when
 	// TransportLagQuality is qualified, and CollectedAtOffsetMs is the offset

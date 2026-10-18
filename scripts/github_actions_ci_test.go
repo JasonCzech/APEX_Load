@@ -970,34 +970,29 @@ func TestContainerBuildIsSelfContainedAndProfiled(t *testing.T) {
 	}
 }
 
-// Live PostgreSQL regressions are build-tagged; the ordinary Go suite cannot
-// protect startup if either supported runner silently omits their test names.
-func TestPostgresStartupRegressionSelection(t *testing.T) {
-	selectorPattern := regexp.MustCompile(`-run '([^']*Postgres[^']*)'`)
+// Every tagged test in the two active packages must run, including new
+// regression tests whose names have not been added to an explicit selector.
+func TestPostgresSuitesAreNotSilentlyFiltered(t *testing.T) {
 	for _, path := range []string{"../.github/workflows/ci.yml", "run-optin-suites.sh"} {
 		t.Run(path, func(t *testing.T) {
 			data, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
 			}
-			matches := selectorPattern.FindAllStringSubmatch(string(data), -1)
-			if len(matches) != 1 {
-				t.Fatalf("want one explicit PostgreSQL selection, got %d", len(matches))
+			command := regexp.MustCompile(`go test -tags postgres_integration[^\n]+`).FindString(string(data))
+			if !strings.Contains(command, "./pkg/storage ./pkg/api") || !strings.Contains(command, "-timeout=20m") || strings.Contains(command, "-run") || strings.Contains(command, "-skip") {
+				t.Fatalf("PostgreSQL lane must run both full active suites with a deadline: %q", command)
 			}
-			selector, err := regexp.Compile(matches[0][1])
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, name := range []string{"TestPostgresSchedulerLeaseGenerationMigration", "TestPostgresConcurrentInitialization", "TestPostgresInitializationLockLifecycle", "TestPostgresAnalysisWorkflows", "TestPostgresMonitorRetirementHistory", "TestElasticPostgresDurableEvidenceMetadataAndRetry", "TestElasticPostgresVerifiedSourcePreparationAuthorization"} {
-				if !selector.MatchString(name) {
-					t.Errorf("live runner omits %s", name)
+			if strings.HasSuffix(path, ".yml") {
+				job := regexp.MustCompile(`(?s)\n  deployment-artifacts:.*?\n  containers:`).FindString(string(data))
+				limit := regexp.MustCompile(`timeout-minutes: (\d+)`).FindStringSubmatch(job)
+				if len(limit) != 2 {
+					t.Fatal("PostgreSQL job is missing its wall-clock budget")
 				}
-			}
-			if selector.MatchString("TestPostgresUnrelatedDestructiveProbe") {
-				t.Error("runner selection is unexpectedly broad")
-			}
-			if selector.MatchString("TestAppDynamicsDurablePostgresHeadsCursorAndOwnerFence") {
-				t.Error("retired AppDynamics suite must not run in active CI")
+				minutes, _ := strconv.Atoi(limit[1])
+				if minutes < 50 {
+					t.Fatal("job deadline cannot fit two sequential 20-minute suites plus build/setup")
+				}
 			}
 		})
 	}

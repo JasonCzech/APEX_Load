@@ -113,14 +113,15 @@ func (tr *TestRunner) finalizeRunArchiveDurablyUnderFence(ctx context.Context, t
 			return fmt.Errorf("save archive finalization intent: %w", err)
 		}
 		if completed {
-			*record = job.ArchiveRecord
-			tr.mu.RLock()
-			identity := storage.ArchiveFinalizationRunIdentity{ProjectID: test.ProjectID, StartTime: test.CreatedAt, Status: test.Status}
-			if test.EndedAt != nil {
-				identity.EndTime = *test.EndedAt
+			// The producer's timestamps are not proof of the published term. An
+			// adoption may retain the same UUID and timestamps, so verify the
+			// actual catalog manifest before treating a retry as completed.
+			identity, err := tr.inspectCompletedProducerArchive(ctx, job, test)
+			if err != nil {
+				return err
 			}
-			tr.mu.RUnlock()
-			tr.attachFinalizedRunArchive(job.TestID, record, &identity)
+			*record = job.ArchiveRecord
+			tr.attachFinalizedRunArchive(job.TestID, record, identity)
 			return nil
 		}
 	}
@@ -132,6 +133,44 @@ func (tr *TestRunner) finalizeRunArchiveDurablyUnderFence(ctx context.Context, t
 		return err
 	}
 	return nil
+}
+
+// Read the catalog before the durable row so a term change during materialization
+// cannot be hidden by an older caller-owned snapshot.
+func (tr *TestRunner) inspectCompletedProducerArchive(ctx context.Context, job *storage.ArchiveFinalizationJob, test *ManagedTest) (*storage.ArchiveFinalizationRunIdentity, error) {
+	lease, err := acquireArchiveMaterialized(ctx, &job.ArchiveRecord)
+	if err != nil {
+		return nil, fmt.Errorf("materialize completed archive: %w", err)
+	}
+	defer lease.Release()
+	var data []byte
+	if archiveRecordBackend(&job.ArchiveRecord) == archiveBackendFilesystem {
+		data, err = readFinalizationLocalManifest(ctx, &job.ArchiveRecord)
+	} else {
+		// Object readers may live in a private root deliberately disjoint from
+		// publication staging. The held materialization lease owns these paths.
+		var root *os.Root
+		root, err = openArchiveDirectoryNoSymlink(job.ArchiveRecord.ArchivePath)
+		if err == nil {
+			defer root.Close()
+			data, _, err = readArchiveFileAtRootLimitedContext(ctx, root, runArchiveManifestFileName, maxArchiveManifestDownloadBytes)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	var durable *storage.TestRecord
+	if tr.testStore != nil {
+		durable, err = tr.testStore.GetTest(job.TestID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		tr.mu.RLock()
+		durable = buildManagedTestRecord(test)
+		tr.mu.RUnlock()
+	}
+	return tr.validateArchiveFinalizationIdentity(job, &job.ArchiveRecord, durable, data)
 }
 
 // processArchiveFinalizationJob is used by the startup/leader retry worker.
@@ -252,19 +291,21 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 	}
 
 	var finalizationIdentity *storage.ArchiveFinalizationRunIdentity
+	snapshotCompletedAt := job.ArchiveRecord.CompletedAt
 	if _, fenced := tr.archiveStore.(incarnationArchiveFinalizationStore); fenced && outbox != nil && durableTest != nil {
-		var err error
-		finalizationIdentity, err = tr.inspectArchiveFinalizationIdentity(ctx, job, durableTest, true)
+		inspection, err := tr.inspectArchiveFinalizationSource(ctx, job, durableTest, true)
 		if err != nil {
 			return err
 		}
+		finalizationIdentity = inspection.identity
+		snapshotCompletedAt = inspection.executionCompletedAt
 		if err := tr.bindArchiveFinalizationLease(finalizationIdentity); err != nil {
 			return err
 		}
 	}
 	snapshotRetryNeeded := false
 	snapshotCtx, cancelSnapshot := context.WithTimeout(ctx, importedDashboardSnapshotTimeout)
-	snapshotErr := tr.captureImportedDashboardSnapshotAttempt(snapshotCtx, test, job.ArchiveRecord.CompletedAt, strings.TrimSpace(job.RefreshToken) != "" && job.Attempts >= 2)
+	snapshotErr := tr.captureImportedDashboardSnapshotAttempt(snapshotCtx, test, snapshotCompletedAt, strings.TrimSpace(job.RefreshToken) != "" && job.Attempts >= 2)
 	cancelSnapshot()
 	if snapshotErr != nil {
 		if strings.TrimSpace(job.RefreshToken) != "" {
@@ -409,7 +450,7 @@ func (tr *TestRunner) preferredArchiveFinalizationTestSnapshot(testID string, du
 	// follower may still retain an object for a deleted/recreated ID; never let
 	// that stale object's groups, actors, or runtime provenance cross into the
 	// current tenant's archive.
-	if durable != nil && !sameStoredTestIdentity(current, durable) {
+	if durable != nil && (!sameStoredTestIdentity(current, durable) || !sameArchiveRunIncarnation(current, durable)) {
 		return fallback
 	}
 	return cloneManagedTestForReadLocked(current)
@@ -560,7 +601,7 @@ func (tr *TestRunner) attachFinalizedRunArchive(testID string, record *storage.R
 	}
 	// A shared-store refresh may have loaded a replacement while I/O or the
 	// catalog transaction completed. Never attach the old proof to that run.
-	if identity != nil && (normalizeProjectID(current.ProjectID) != normalizeProjectID(identity.ProjectID) ||
+	if identity != nil && (managedTestRunIncarnation(current) != identity.RunIncarnation || current.durableExecutionGeneration != identity.ExecutionGeneration || normalizeProjectID(current.ProjectID) != normalizeProjectID(identity.ProjectID) ||
 		!isTerminalTestStatus(current.Status) || current.Status != identity.Status || current.EndedAt == nil ||
 		!archiveRunTimestampMatches(current.CreatedAt, identity.StartTime, tr.testStore) ||
 		!archiveRunTimestampMatches(*current.EndedAt, identity.EndTime, tr.testStore)) {
@@ -1025,4 +1066,20 @@ func (s *Server) wakeArchiveFinalizationRetry() {
 		default:
 		}
 	}
+}
+
+// Caller holds the runner lock when reading a live ManagedTest.
+func managedTestRunIncarnation(test *ManagedTest) string {
+	if test == nil || test.initialArchiveProvenance == nil {
+		return ""
+	}
+	return test.initialArchiveProvenance.RunIncarnation
+}
+
+func sameArchiveRunIncarnation(test *ManagedTest, durable *storage.TestRecord) bool {
+	if test == nil || durable == nil {
+		return false
+	}
+	incarnation, err := storage.TestRunIncarnation(durable.InitialProvenance)
+	return err == nil && managedTestRunIncarnation(test) == incarnation && test.durableExecutionGeneration == durable.ExecutionGeneration
 }

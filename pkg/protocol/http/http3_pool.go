@@ -243,7 +243,7 @@ func (h *HTTP) newHTTP3Pool(settings transportConfig, tlsConfig *tls.Config, con
 	}
 	// The TCP transport stays referenced for its TLS settings (WebSocket
 	// steps) and idle closing; requests on this pool never use it.
-	return &httpPolicyPool{client: client, transport: auto.transport, oauthClient: auto.oauthClient, oauthTransport: auto.oauthTransport}, nil
+	return &httpPolicyPool{client: client, transport: baseline, oauthClient: auto.oauthClient}, nil
 }
 
 // newCachedResolver mirrors the TCP DNS cache for QUIC dials: per VUser,
@@ -353,5 +353,5 @@ func (h *HTTP) newUpgradePool(quic stdhttp.RoundTripper, tlsBelow bool, baseline
 	if h.runCorrelation.enabled() {
 		client.Transport = runCorrelationRoundTripper{base: client.Transport, policy: h.runCorrelation}
 	}
-	return &httpPolicyPool{client: client, transport: auto.transport, oauthClient: auto.oauthClient, oauthTransport: auto.oauthTransport}
+	return &httpPolicyPool{client: client, transport: baseline, oauthClient: auto.oauthClient}
 }

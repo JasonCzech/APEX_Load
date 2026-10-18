@@ -178,6 +178,7 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		applyDataPoolImportExportContract(route, &contract)
 		applyGenericImportBatchContract(route, &contract)
 		applyEnterpriseArchiveCollectionContract(route, &contract)
+		applyCanonicalImportContract(route, &contract)
 		applyMonitorManagementContract(route, &contract, typeDefinitions)
 		applyBrowserResourcePageContract(route, &contract, typeDefinitions)
 		applyObjectActivityContract(route, &contract)

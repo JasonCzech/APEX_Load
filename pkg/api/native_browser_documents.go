@@ -128,7 +128,7 @@ func buildNativeBrowserDocumentSeries(ctx context.Context, record *storage.RunAr
 	if err != nil {
 		return result, err
 	}
-	if to.After(manifest.CompletedAt) {
+	if to.After(archiveExecutionCompletedAt(manifest)) {
 		result.Warnings = append(result.Warnings, "The requested window extends past run completion.")
 	}
 	if accumulator == nil {
@@ -159,7 +159,7 @@ func buildNativeBrowserDocumentSeries(ctx context.Context, record *storage.RunAr
 	for i := range result.Buckets {
 		b := &result.Buckets[i]
 		b.Count = int(distributions[i].Count)
-		b.complete = !accumulator.incomplete && !b.To.After(manifest.CompletedAt)
+		b.complete = !accumulator.incomplete && !b.To.After(archiveExecutionCompletedAt(manifest))
 		if value, ok := browserDocumentAggregate(distributions[i], q.Aggregation); ok {
 			b.Value = &value
 		}

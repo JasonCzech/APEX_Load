@@ -236,7 +236,11 @@ func (tr *TestRunner) persistPhaseEventArchive(ctx context.Context, test *Manage
 	}
 	// The run's end time may not be set on the run yet when finalize runs;
 	// the archive's completion time is.
-	if ended := test.EndedAt; ended != nil {
+	if manifest.ExecutorCompletedAt != nil && !manifest.ExecutorCompletedAt.IsZero() {
+		// A recovered archive may have a later durable row end. Its retained
+		// executor time is the boundary of measured workload phases.
+		log.record(PhaseEvent{Schema: phaseEventSchema, Kind: PhaseStop, At: archiveExecutionCompletedAt(manifest).UTC()})
+	} else if ended := test.EndedAt; ended != nil {
 		log.record(PhaseEvent{Schema: phaseEventSchema, Kind: PhaseStop, At: ended.UTC()})
 	} else if !manifest.CompletedAt.IsZero() {
 		log.record(PhaseEvent{Schema: phaseEventSchema, Kind: PhaseStop, At: manifest.CompletedAt.UTC()})

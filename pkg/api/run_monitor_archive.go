@@ -207,7 +207,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			}
 		}
 		pointCount++
-		if monitorPointSatisfiesCapture(p, manifestLoadStart(manifest), manifest.CompletedAt) {
+		if monitorPointSatisfiesCapture(p, manifestLoadStart(manifest), archiveExecutionCompletedAt(manifest)) {
 			if eligibleMetrics[p.Source] == nil {
 				eligibleMetrics[p.Source] = map[string]bool{}
 			}
@@ -336,7 +336,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			}
 			selection := coverage.PrometheusSelection.Defaults()
 			anchor := prometheusGridAnchor(manifestLoadStart(manifest))
-			until := manifest.CompletedAt
+			until := archiveExecutionCompletedAt(manifest)
 			expected := 0
 			if !anchor.After(until) {
 				expected = int(until.Sub(anchor)/(time.Duration(selection.StepSeconds)*time.Second)) + 1
@@ -443,7 +443,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 		}
 	}
 	start := manifestLoadStart(manifest)
-	end := manifest.CompletedAt
+	end := archiveExecutionCompletedAt(manifest)
 	for index := range manifest.MonitorCoverage {
 		coverage := &manifest.MonitorCoverage[index]
 		if !truncatedSources[coverage.SourceID] {

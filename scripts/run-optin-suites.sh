@@ -247,11 +247,10 @@ run_suite "root-cause v2 end to end (real local runs, about eight minutes)" \
   "--all" "[[ ${run_all} == 1 ]]" \
   env APEXLOAD_RCA_E2E=1 go test -count=1 -timeout 30m -run TestRCAEndToEnd ./pkg/api
 
-run_suite "live PostgreSQL migration and concurrent startup" \
+run_suite "full PostgreSQL storage and API suites" \
   "--all and APEXLOAD_TEST_POSTGRES_URL (dedicated test database)" \
   "[[ ${run_all} == 1 && -n \"\${APEXLOAD_TEST_POSTGRES_URL:-}\" ]]" \
-  go test -tags postgres_integration -count=1 \
-    -run '^Test(Postgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle|AnalysisWorkflows|AuthoringMutationReceipts|AuthoringReceiptTombstoneRestore|AuthoringReceiptTombstoneRenewal|AuthoringReceiptRenewalOutlastsAWaitingRestore|ScriptDeleteRefusedWhileInUse|ExclusivePolicyDefaults|FeatureEvaluationJobs|EvaluationJobReviewFixes|RunDeletionDeletesEvaluations|EvaluationJobTakeoverAndCancelThenLatePublish|EvaluationJobCompletionFences|FeatureAcceptanceSequence|RunEvidenceReceipts|ScenarioAuthoringConditionedSaveAcrossReplicas|ScenarioConditionedSaveRaceAcrossReplicas|ScenarioStrictPolicyFlipIsFencedInTransaction|ScenarioRuntimeCommitFingerprintSurvivesStorage)|PostgresMonitorRetirementHistory|ElasticPostgresDurableEvidenceMetadataAndRetry|ElasticPostgresVerifiedSourcePreparationAuthorization)$' ./pkg/storage ./pkg/api
+  go test -tags postgres_integration -p 1 -timeout=20m -count=1 ./pkg/storage ./pkg/api
 
 # These separate profiles provision their own pinned disposable broker.
 # --all is the sole opt-in; do not silently skip missing tools/required fixtures.

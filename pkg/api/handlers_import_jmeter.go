@@ -687,10 +687,14 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 			}
 		}
 		response["scripts"] = projected
-		response["script"] = projected[0]
-		if nested, ok := response["result"].(map[string]any); ok {
-			nested["scripts"] = projected
-			nested["script"] = projected[0]
+		if response["response_format"] == "canonical-v1" {
+			response["primary_script_index"] = 0
+		} else {
+			response["script"] = projected[0]
+			if nested, ok := response["result"].(map[string]any); ok {
+				nested["scripts"] = projected
+				nested["script"] = projected[0]
+			}
 		}
 	}
 	writeScriptImportResponse(w, status, response)

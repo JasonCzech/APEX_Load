@@ -141,6 +141,18 @@ archives without a generation (non-HA runs, and runs from before release 63)
 keep the exact end-time rule. An archive from a term that lost the run to
 adoption no longer matches the advanced generation, so it stays unpublished.
 
+Each newly admitted run also has an immutable `run_incarnation` in its initial
+and archive provenance. Recovery and publication compare that value as well as
+the durable execution generation; a generation match cannot identify a deleted
+and recreated run, and an incarnation match cannot identify the execution term
+that survived adoption. Archive reads, follower history and CI evidence apply
+the same identity checks. Both-absent legacy identities retain the existing
+exact timestamp rules. Execution-duration, rate, phase and analytical-window
+calculations use `executor_completed_at` when retained, so reconciliation delay
+does not extend the measured run or lower its rates. Older archives fall back
+to `completed_at`; identity, catalog and completion timestamps keep the durable
+end.
+
 A genuine orphan must have complete artifact size/hash descriptors; existing files
 are verified through the inspected directory handle before publication can rewrite
 adjunct metadata. Verification uses the configured per-archive materialization byte

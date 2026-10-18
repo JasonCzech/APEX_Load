@@ -394,8 +394,12 @@ func TestHAControllerFailoverSoak(t *testing.T) {
 		if manifest.TestID != run.ID || manifest.Status != "FAILED" || manifest.CompletedAt.IsZero() {
 			t.Fatalf("iteration %d: recovered terminal manifest = test:%q status:%q completed:%v", iteration, manifest.TestID, manifest.Status, manifest.CompletedAt)
 		}
-		// The published archive carries the durable end; the old leader's own
-		// finalization time is kept beside it.
+		incarnation, err := storage.TestRunIncarnation(durable.InitialProvenance)
+		if err != nil || incarnation == "" || manifest.Provenance.RunIncarnation != incarnation || manifest.InitialProvenance == nil || manifest.InitialProvenance.RunIncarnation != incarnation {
+			t.Fatalf("iteration %d: recovered archive lost durable run incarnation: %q %v", iteration, incarnation, err)
+		}
+		// Recovery preserves the durable end; the executor's own finalization
+		// time remains separately visible in the recovered manifest.
 		if !archiveRunTimestampMatches(manifest.CompletedAt, *durable.EndTime, archiveStore) || !archiveRunTimestampMatches(archive.CompletedAt, *durable.EndTime, archiveStore) ||
 			manifest.ExecutorCompletedAt == nil || !manifest.ExecutorCompletedAt.Equal(staged.record.CompletedAt) || manifest.Provenance.ExecutionGeneration != oldGeneration {
 			t.Fatalf("iteration %d: recovered completion = manifest:%v catalog:%v executor:%v generation:%d, durable end:%v executor finalized:%v term:%d",

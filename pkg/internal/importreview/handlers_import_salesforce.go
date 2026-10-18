@@ -1,8 +1,6 @@
 package importreview
 
 import (
-	"errors"
-
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -18,10 +16,13 @@ type SalesforceHARAugmentation struct {
 	ReviewForResponse *salesforce.Review
 }
 
-// analyzeSalesforce is salesforce.Analyze; tests replace it to count analyses.
-var analyzeSalesforce = salesforce.Analyze
-
 func AugmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, projectID, sourceName, source string, buildNative, agentforce, requireDetected bool) SalesforceHARAugmentation {
+	return augmentHARImportWithSalesforce(result, data, projectID, sourceName, source, buildNative, agentforce, requireDetected, salesforce.Analyze)
+}
+
+// Keep the analyzer callback local to one augmentation; concurrent imports do
+// not depend on mutable package-level analysis state.
+func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, projectID, sourceName, source string, buildNative, agentforce, requireDetected bool, analyze func(*dsl.Script, salesforce.AnalyzeOptions) (*salesforce.Review, error)) SalesforceHARAugmentation {
 	augmentation := SalesforceHARAugmentation{
 		Script:         result.Script,
 		Correlations:   any(result.Correlations),
@@ -29,55 +30,29 @@ func AugmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 		Summary:        HarImportSummary(result),
 		Source:         source,
 	}
-	// The native preview (a full script clone + per-action rewrite in
-	// buildNativePreview) must never be built for non-Salesforce HARs, and
-	// handleImportHAR runs this for every HAR import. With requireDetected,
-	// Analyze returns an undetected review before its correlation pass and native
-	// build, so one call detects and builds; a second call would repeat the
-	// correlation pass, which dominates a large Salesforce import. Without it,
-	// detect first with BuildNative:false.
-	nativeWithDetection := buildNative && requireDetected
-	review, err := analyzeSalesforce(result.Script, salesforce.AnalyzeOptions{
-		BuildNative:     nativeWithDetection,
-		HARData:         data,
-		RequireDetected: requireDetected,
+	// Optional review callers stop before matching or correlation when detection
+	// is negative. A detected capture is analyzed only once, including its native
+	// preview; native preparation failures retain the completed review.
+	review, err := analyze(result.Script, salesforce.AnalyzeOptions{
+		HARData:               data,
+		Document:              result.Document,
+		RequireDetected:       requireDetected,
+		SkipUndetectedReview:  requireDetected,
+		BuildNativeIfDetected: buildNative,
+		Source:                source,
 	})
-	var nativeErr error
-	var previewErr *salesforce.NativePreviewError
-	if errors.As(err, &previewErr) {
-		// The review succeeded but its native preview did not: keep the review
-		// without the native build and report the failure, as the two-call path
-		// does.
-		nativeErr = err
-		review, err = analyzeSalesforce(result.Script, salesforce.AnalyzeOptions{
-			HARData:         data,
-			RequireDetected: requireDetected,
-		})
-	}
 	if err != nil {
-		if !requireDetected {
-			result.Warnings = append(result.Warnings, "Salesforce review failed: "+err.Error())
+		if review != nil {
+			result.Warnings = append(result.Warnings, "Salesforce native preview failed: "+err.Error())
+		} else {
+			if !requireDetected {
+				result.Warnings = append(result.Warnings, "Salesforce review failed: "+err.Error())
+			}
+			return augmentation
 		}
-		return augmentation
 	}
 	if requireDetected && (review == nil || !review.Detected) {
 		return augmentation
-	}
-
-	// Only build the native Salesforce preview once Salesforce traffic is confirmed.
-	if buildNative && !nativeWithDetection && review != nil && review.Detected {
-		nativeReview, err := analyzeSalesforce(result.Script, salesforce.AnalyzeOptions{
-			BuildNative: true,
-			HARData:     data,
-		})
-		if err != nil {
-			nativeErr = err
-		} else if nativeReview != nil {
-			review = nativeReview
-		}
-	}
-	if nativeErr != nil {
-		result.Warnings = append(result.Warnings, "Salesforce native preview failed: "+nativeErr.Error())
 	}
 
 	augmentation.Detected = review != nil && review.Detected

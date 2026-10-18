@@ -1218,6 +1218,11 @@ type Folder struct {
 }
 
 type RunArchiveRecord struct {
+	// RunIncarnation and ExecutionGeneration carry verified orphan identity in
+	// the finalization outbox.
+	// Catalog reads recover identity from their integrity-anchored manifest.
+	RunIncarnation       string    `json:"run_incarnation,omitempty"`
+	ExecutionGeneration  uint64    `json:"execution_generation,omitempty"`
 	TestID               string    `json:"test_id"`
 	RefKey               string    `json:"ref_key,omitempty"`
 	SchemaVersion        string    `json:"schema_version"`

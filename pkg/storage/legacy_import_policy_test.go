@@ -218,3 +218,16 @@ func assertCredentialPreservingPolicy(t *testing.T, script *dsl.Script) {
 		t.Fatalf("import policy = %q, want %q", policy, dsl.ImportPreservedCredentialPolicyPreserve)
 	}
 }
+
+func TestSalesforceNativeProvenancePairs(t *testing.T) {
+	for _, source := range []string{"har", "browser_recording_har", "enterprise_script_archive+har", "unknown", "har+unknown"} {
+		t.Run(source, func(t *testing.T) {
+			script := &dsl.Script{GeneratedBy: "apexload-salesforce-builder", GeneratedFrom: source, Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "salesforce"}}}
+			got, ok := LegacyCredentialPreservingImportSource(script)
+			want := source == "har" || source == "browser_recording_har" || source == "enterprise_script_archive+har"
+			if ok != want || (ok && got != "salesforce") {
+				t.Fatalf("source=%q, recognized=%v, want %v", got, ok, want)
+			}
+		})
+	}
+}

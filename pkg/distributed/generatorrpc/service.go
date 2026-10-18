@@ -1245,6 +1245,11 @@ func (s *Service) finishStoppedTestWithState(testID string, assignment assignedT
 	batch := s.metricsBatchForAssignment(testID, assignment, finalState, finalError)
 	if writer != nil {
 		_ = writer.setTerminalMetrics(batch)
+		// Every execution has drained, but the outcome is not durable yet.
+		// Retain this explicit phase for subscribers/reconnects so the final
+		// collection is not mistaken for a stalled running generator while
+		// archive finalization is pending. Its collection identity is unchanged.
+		s.metricsBroker.publishFinalizing(s.metricsBatchForAssignment(testID, assignment, MetricsLifecycleFinalizing, ""), s.metricsBatchIsCurrent)
 		err := s.finalizeArchiveWriter(writer, finalState, time.Now(), finalError)
 		if err != nil {
 			archiveFinalized = false
@@ -2283,6 +2288,10 @@ func (s *Service) metricsBatchIsCurrentLocked(batch *pb.MetricsBatch) bool {
 	}
 
 	state := strings.ToUpper(strings.TrimSpace(batch.GetLifecycleState()))
+	if state == MetricsLifecycleFinalizing {
+		generation, stopping := s.lifecycleCoordinator.stoppingGenerations[batch.GetTestId()]
+		return stopping && generation == batch.GetExecutionGeneration()
+	}
 	switch state {
 	case "STAGED", "RUNNING", "PAUSED":
 	default:
@@ -2335,7 +2344,7 @@ func (s *Service) metricsBatchLocked(testID string) *pb.MetricsBatch {
 
 func (s *Service) metricsBatchForAssignment(testID string, assignment assignedTest, lifecycleState string, lifecycleError string) *pb.MetricsBatch {
 	groupAssignments := assignment.activeGroups
-	if len(groupAssignments) == 0 || isGeneratorTerminalLifecycle(lifecycleState) {
+	if len(groupAssignments) == 0 || IsMetricsCollectionFinal(lifecycleState) {
 		groupAssignments = assignment.groups
 	}
 	stats := GeneratorStats{}
@@ -2430,8 +2439,8 @@ func isGeneratorTerminalLifecycle(state string) bool {
 
 func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint64, stats GeneratorStats, transactions []TransactionMetric, aggregates metricsAggregateSet, paused bool, groupAssignments map[string]int32, lifecycleState string, lifecycleError string, telemetry *MetricsTelemetry) *pb.MetricsBatch {
 	activeVUsers := stats.ActiveVUsers
-	terminal := isGeneratorTerminalLifecycle(lifecycleState)
-	if paused || terminal {
+	collectionFinal := IsMetricsCollectionFinal(lifecycleState)
+	if paused || collectionFinal {
 		activeVUsers = 0
 	}
 	stats.ActiveVUsers = activeVUsers
@@ -2440,7 +2449,7 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		groups = make([]*pb.GroupMetric, 0, len(groupAssignments))
 		for name, groupVUsers := range groupAssignments {
 			activeGroupVUsers := groupVUsers
-			if paused || terminal {
+			if paused || collectionFinal {
 				activeGroupVUsers = 0
 			}
 			requests := aggregates.GroupRequests[name]

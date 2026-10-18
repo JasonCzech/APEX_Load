@@ -219,6 +219,9 @@ type RunArchiveExecutionSettingsSnapshot struct {
 }
 
 type RunArchiveProvenance struct {
+	// RunIncarnation is minted by controller admission and frozen in the durable
+	// initial provenance. It survives leadership changes, unlike completion time.
+	RunIncarnation    string                                 `json:"run_incarnation,omitempty"`
 	ProjectLiveTables []RunArchiveProjectLiveTableAttachment `json:"project_live_tables,omitempty"`
 	LiveTables        []RunArchiveLiveTableSummary           `json:"live_tables,omitempty"`
 	TelemetryPolicy   *TelemetryBudgetPolicy                 `json:"telemetry_policy,omitempty"`

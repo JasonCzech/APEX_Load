@@ -176,29 +176,25 @@ func TestEnterpriseArchiveSummaryUsesFinalNativeReferencesAfterAgentforceTransfo
 	}
 }
 
-// An archive import without a native request drops an undetected review, so
-// the analyzer must return it before the correlation pass.
+// Optional enterprise reviews discard undetected captures, whereas an explicit
+// native request retains the full review even without Salesforce detection.
 func TestEnterpriseArchiveSalesforceReviewRequiresDetectionWithoutNativeRequest(t *testing.T) {
 	const base = "https://shop.example.test"
 	data := []byte(`{"log":{"entries":[{"request":{"method":"GET","url":"` + base + `/session"},"response":{"content":{"text":"{\"token\":\"tok-abcdef123456\"}"}}}]}}`)
 	for _, native := range []bool{false, true} {
 		t.Run(map[bool]string{false: "review only", true: "native"}[native], func(t *testing.T) {
-			var requireDetected []bool
-			original := analyzeEnterpriseSalesforceReview
-			analyzeEnterpriseSalesforceReview = func(script *dsl.Script, opts salesforce.AnalyzeOptions) (*salesforce.Review, error) {
-				requireDetected = append(requireDetected, opts.RequireDetected)
-				return original(script, opts)
-			}
-			t.Cleanup(func() { analyzeEnterpriseSalesforceReview = original })
 			script := &dsl.Script{Name: "generic", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: base}, Actions: []dsl.Action{{Type: "GET", Target: base + "/session"}}}
 			result := &enterprisearchive.ConvertResult{Script: script}
 			attachSalesforceReviewToEnterpriseArchiveResult(result, &enterpriseArchiveImportRequest{SalesforceNative: native, HARData: data})
-			if want := []bool{!native}; !reflect.DeepEqual(requireDetected, want) {
-				t.Fatalf("RequireDetected per analysis = %v, want %v", requireDetected, want)
-			}
-			_, attached := ensureScriptImportPreserved(script, "enterprise_script_archive")["salesforce_review"]
+			review, attached := ensureScriptImportPreserved(script, "enterprise_script_archive")["salesforce_review"]
 			if attached != native {
 				t.Fatalf("salesforce_review attached = %v, want %v for an undetected capture", attached, native)
+			}
+			if native {
+				details, ok := review.(*salesforce.Review)
+				if !ok || details.Detected || details.HARMatchCoverage.MatchedRequests != 1 || details.CorrelationConfidence == "" {
+					t.Fatalf("explicit native import lost its full undetected review: %#v", review)
+				}
 			}
 		})
 	}

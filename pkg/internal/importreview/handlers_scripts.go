@@ -13,7 +13,17 @@ func ApplyClientGeneratedUUIDs(script *dsl.Script, harData []byte, result *har.C
 	if script == nil || result == nil {
 		return
 	}
-	server, judged, err := clientids.ServerUUIDs(harData)
+	var server map[string]bool
+	var judged bool
+	var err error
+	if result.Document.Matches(harData) {
+		server, judged, err = result.Document.ServerUUIDs()
+		if err != nil {
+			server, judged, err = clientids.ServerUUIDs(harData)
+		}
+	} else {
+		server, judged, err = clientids.ServerUUIDs(harData)
+	}
 	if err != nil {
 		return
 	}
@@ -34,7 +44,16 @@ func ApplyClientTimestamps(script *dsl.Script, harData []byte, result *har.Conve
 	if script == nil || result == nil {
 		return
 	}
-	evidence, err := clienttimestamps.FromHAR(harData)
+	var evidence clienttimestamps.Evidence
+	var err error
+	if result.Document.Matches(harData) {
+		evidence, err = result.Document.ClientTimestamps()
+		if err != nil {
+			evidence, err = clienttimestamps.FromHAR(harData)
+		}
+	} else {
+		evidence, err = clienttimestamps.FromHAR(harData)
+	}
 	if err != nil {
 		return
 	}

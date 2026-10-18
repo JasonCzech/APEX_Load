@@ -353,17 +353,25 @@ export interface components {
       "warnings": Array<string>;
     };
     "EnterpriseArchiveReviewResponse": (components["schemas"]["EnterpriseArchiveScriptReviewResponse"] | components["schemas"]["EnterpriseArchiveCollectionResponse"]);
-    "EnterpriseArchiveScriptReviewResponse": {
+    "EnterpriseArchiveScriptReviewResponse": (({
+      "script": (Record<string, unknown>) | null;
+    } | {
+      "response_format": "canonical-v1";
+    })) & ({
       "detected_protocol"?: (Record<string, unknown>) | null;
       "fidelity_report"?: (Record<string, unknown>) | null;
       "import_draft_expires_at"?: string;
       "parameterization"?: (Record<string, unknown>) | null;
       "preflight"?: (Record<string, unknown>) | null;
+      "primary_script_index"?: number;
       "protocol_compat_report"?: (Record<string, unknown>) | null;
       "repair_suggestions"?: Array<Record<string, unknown>>;
+      "response_format"?: "canonical-v1";
+      "result_aliases"?: Record<string, string>;
       "review_artifact"?: (Record<string, unknown>) | null;
       "review_sections"?: Array<Record<string, unknown>>;
-      "script": (Record<string, unknown>) | null;
+      "salesforce_preview_script_index"?: number;
+      "script"?: (Record<string, unknown>) | null;
       "scripts": Array<Record<string, unknown>>;
       "secret_binding_requirements"?: (Array<Record<string, unknown>>) | null;
       "secret_store"?: (Record<string, unknown>) | null;
@@ -374,9 +382,10 @@ export interface components {
       "stats"?: Record<string, unknown>;
       "summary": Record<string, unknown>;
       "unsupported_elements"?: Array<string>;
+      "unsupported_from_diagnostics"?: boolean;
       "warnings": Array<string>;
       [key: string]: unknown;
-    };
+    });
     "ErrorResponse": {
       "code"?: string;
       "error": string;
@@ -443,6 +452,42 @@ export interface components {
       "application_id"?: string;
       "name": string;
     };
+    "RecorderImportReplayInvalidResponse": (({
+      "script": (Record<string, unknown>) | null;
+    } | {
+      "response_format": "canonical-v1";
+    })) & ({
+      "batch"?: Record<string, unknown>;
+      "data_pool_drafts"?: (Array<Record<string, unknown>>) | null;
+      "diagnostics"?: (Array<Record<string, unknown>>) | null;
+      "dispositions"?: (Array<Record<string, unknown>>) | null;
+      "environment_drafts"?: (Array<Record<string, unknown>>) | null;
+      "expires_at"?: string;
+      "http_script"?: (Record<string, unknown>) | null;
+      "import_session_id"?: string;
+      "import_session_ids"?: Array<string>;
+      "issues": Array<string>;
+      "monitor_drafts"?: (Array<Record<string, unknown>>) | null;
+      "preserved_artifacts"?: (Array<Record<string, unknown>>) | null;
+      "primary_script_index"?: number;
+      "replay_session"?: Record<string, unknown>;
+      "replay_session_id"?: string;
+      "response_format"?: "canonical-v1";
+      "result"?: (Record<string, unknown>) | null;
+      "result_aliases"?: Record<string, string>;
+      "salesforce_preview_script_index"?: number;
+      "scenario_drafts"?: (Array<Record<string, unknown>>) | null;
+      "script"?: (Record<string, unknown>) | null;
+      "scripts": Array<Record<string, unknown>>;
+      "source_retention"?: Record<string, unknown>;
+      "stats"?: Record<string, unknown>;
+      "summary": Record<string, unknown>;
+      "unsupported_elements"?: Array<string>;
+      "unsupported_from_diagnostics"?: boolean;
+      "valid": boolean;
+      "warnings": Array<string>;
+      [key: string]: unknown;
+    });
     "ReleaseFamily": {
       "application_id"?: string;
       "application_release_id"?: string;
@@ -458,6 +503,36 @@ export interface components {
     "ReleaseFamilyListResponse": {
       "count": number;
       "releases": Array<components["schemas"]["ReleaseFamily"]>;
+    };
+    "SavedRecordingConversionResponse": {
+      "batch"?: Record<string, unknown>;
+      "data_pool_drafts"?: (Array<Record<string, unknown>>) | null;
+      "diagnostics"?: (Array<Record<string, unknown>>) | null;
+      "dispositions"?: (Array<Record<string, unknown>>) | null;
+      "environment_drafts"?: (Array<Record<string, unknown>>) | null;
+      "expires_at"?: string;
+      "http_script"?: (Record<string, unknown>) | null;
+      "import_session_id"?: string;
+      "import_session_ids"?: Array<string>;
+      "monitor_drafts"?: (Array<Record<string, unknown>>) | null;
+      "preserved_artifacts"?: (Array<Record<string, unknown>>) | null;
+      "primary_script_index"?: number;
+      "replay_session"?: Record<string, unknown>;
+      "replay_session_id"?: string;
+      "response_format"?: "canonical-v1";
+      "result"?: (Record<string, unknown>) | null;
+      "result_aliases"?: Record<string, string>;
+      "salesforce_preview_script_index"?: number;
+      "scenario_drafts"?: (Array<Record<string, unknown>>) | null;
+      "script": Record<string, unknown>;
+      "scripts": Array<Record<string, unknown>>;
+      "source_retention"?: Record<string, unknown>;
+      "stats"?: Record<string, unknown>;
+      "summary": Record<string, unknown>;
+      "unsupported_elements"?: Array<string>;
+      "unsupported_from_diagnostics"?: boolean;
+      "warnings": Array<string>;
+      [key: string]: unknown;
     };
     "ScriptDebugBreakpoint": {
       "action_index": number;
@@ -478,6 +553,40 @@ export interface components {
     "ScriptDebugStepRequest": {
       "mode"?: "into" | "over" | "loop_end";
     };
+    "ScriptImportReviewResponse": (({
+      "script": (Record<string, unknown>) | null;
+    } | {
+      "response_format": "canonical-v1";
+    })) & ({
+      "batch"?: Record<string, unknown>;
+      "data_pool_drafts"?: (Array<Record<string, unknown>>) | null;
+      "diagnostics"?: (Array<Record<string, unknown>>) | null;
+      "dispositions"?: (Array<Record<string, unknown>>) | null;
+      "environment_drafts"?: (Array<Record<string, unknown>>) | null;
+      "expires_at"?: string;
+      "http_script"?: (Record<string, unknown>) | null;
+      "import_session_id"?: string;
+      "import_session_ids"?: Array<string>;
+      "monitor_drafts"?: (Array<Record<string, unknown>>) | null;
+      "preserved_artifacts"?: (Array<Record<string, unknown>>) | null;
+      "primary_script_index"?: number;
+      "replay_session"?: Record<string, unknown>;
+      "replay_session_id"?: string;
+      "response_format"?: "canonical-v1";
+      "result"?: (Record<string, unknown>) | null;
+      "result_aliases"?: Record<string, string>;
+      "salesforce_preview_script_index"?: number;
+      "scenario_drafts"?: (Array<Record<string, unknown>>) | null;
+      "script"?: (Record<string, unknown>) | null;
+      "scripts": Array<Record<string, unknown>>;
+      "source_retention"?: Record<string, unknown>;
+      "stats"?: Record<string, unknown>;
+      "summary": Record<string, unknown>;
+      "unsupported_elements"?: Array<string>;
+      "unsupported_from_diagnostics"?: boolean;
+      "warnings": Array<string>;
+      [key: string]: unknown;
+    });
     "SystemReadinessCheck": {
       "details"?: components["schemas"]["SystemReadinessDetails"];
       "message": string;
@@ -3559,6 +3668,7 @@ export interface operations {
                 "release_id"?: string;
                 "requested_at"?: string;
                 "resource_baseline"?: boolean;
+                "run_incarnation"?: string;
                 "runtime_settings"?: (Record<string, unknown>) | null;
                 "runtime_settings_review"?: (Record<string, unknown>) | null;
                 "scenario_id"?: string;
@@ -3746,6 +3856,7 @@ export interface operations {
                 "release_id"?: string;
                 "requested_at"?: string;
                 "resource_baseline"?: boolean;
+                "run_incarnation"?: string;
                 "runtime_settings"?: (Record<string, unknown>) | null;
                 "runtime_settings_review"?: (Record<string, unknown>) | null;
                 "scenario_id"?: string;
@@ -25005,7 +25116,11 @@ export interface operations {
     };
   };
   "handleAttestBridgedBrowserRecordingImport": {
-    parameters?: never;
+    parameters: {
+      "query"?: {
+        "response_format"?: string;
+      };
+    };
     requestBody: {
       content: {
         "application/json": {
@@ -25738,7 +25853,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -29474,6 +29589,9 @@ export interface operations {
       "path": {
         "id": string;
       };
+      "query"?: {
+        "response_format"?: string;
+      };
     };
     requestBody?: {
       content: {
@@ -29506,7 +29624,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["SavedRecordingConversionResponse"];
         };
       };
       "400": {
@@ -29559,6 +29677,9 @@ export interface operations {
       "path": {
         "id": string;
       };
+      "query"?: {
+        "response_format"?: string;
+      };
     };
     requestBody?: {
       content: {
@@ -29576,7 +29697,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["SavedRecordingConversionResponse"];
         };
       };
       "400": {
@@ -36689,12 +36810,14 @@ export interface operations {
                 "archive_uri"?: string;
                 "completed_at": string;
                 "created_at": string;
+                "execution_generation"?: number;
                 "interval_summary_count": number;
                 "manifest_path": string;
                 "manifest_sha256"?: string;
                 "manifest_uri"?: string;
                 "ref_key"?: string;
                 "resource_sample_count": number;
+                "run_incarnation"?: string;
                 "schema_version": string;
                 "test_id": string;
                 "transaction_count": number;
@@ -44357,12 +44480,14 @@ export interface operations {
               "archive_uri"?: string;
               "completed_at": string;
               "created_at": string;
+              "execution_generation"?: number;
               "interval_summary_count": number;
               "manifest_path": string;
               "manifest_sha256"?: string;
               "manifest_uri"?: string;
               "ref_key"?: string;
               "resource_sample_count": number;
+              "run_incarnation"?: string;
               "schema_version": string;
               "test_id": string;
               "transaction_count": number;
@@ -67841,12 +67966,14 @@ export interface operations {
                 "archive_uri"?: string;
                 "completed_at": string;
                 "created_at": string;
+                "execution_generation"?: number;
                 "interval_summary_count": number;
                 "manifest_path": string;
                 "manifest_sha256"?: string;
                 "manifest_uri"?: string;
                 "ref_key"?: string;
                 "resource_sample_count": number;
+                "run_incarnation"?: string;
                 "schema_version": string;
                 "test_id": string;
                 "transaction_count": number;
@@ -71517,6 +71644,7 @@ export interface operations {
               "release_id"?: string;
               "requested_at"?: string;
               "resource_baseline"?: boolean;
+              "run_incarnation"?: string;
               "runtime_settings"?: ({
                 "auto_transactions"?: string;
                 "base_url"?: string;
@@ -72529,6 +72657,7 @@ export interface operations {
               "release_id"?: string;
               "requested_at"?: string;
               "resource_baseline"?: boolean;
+              "run_incarnation"?: string;
               "runtime_settings"?: ({
                 "auto_transactions"?: string;
                 "base_url"?: string;
@@ -75973,6 +76102,7 @@ export interface operations {
                 "release_id"?: string;
                 "requested_at"?: string;
                 "resource_baseline"?: boolean;
+                "run_incarnation"?: string;
                 "runtime_settings"?: ({
                   "auto_transactions"?: string;
                   "base_url"?: string;
@@ -76485,6 +76615,7 @@ export interface operations {
                 "release_id"?: string;
                 "requested_at"?: string;
                 "resource_baseline"?: boolean;
+                "run_incarnation"?: string;
                 "runtime_settings"?: ({
                   "auto_transactions"?: string;
                   "base_url"?: string;
@@ -83597,12 +83728,14 @@ export interface operations {
               "archive_uri"?: string;
               "completed_at": string;
               "created_at": string;
+              "execution_generation"?: number;
               "interval_summary_count": number;
               "manifest_path": string;
               "manifest_sha256"?: string;
               "manifest_uri"?: string;
               "ref_key"?: string;
               "resource_sample_count": number;
+              "run_incarnation"?: string;
               "schema_version": string;
               "test_id": string;
               "transaction_count": number;
@@ -91724,6 +91857,7 @@ export interface operations {
         "filename"?: string;
         "name"?: string;
         "project_id"?: string;
+        "response_format"?: string;
       };
     };
     requestBody: {
@@ -91737,7 +91871,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -91772,6 +91906,7 @@ export interface operations {
         "format"?: string;
         "max_destinations"?: number;
         "project_id"?: string;
+        "response_format"?: string;
       };
     };
     requestBody: {
@@ -91787,7 +91922,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -91820,6 +91955,7 @@ export interface operations {
       "query"?: {
         "filename"?: string;
         "project_id"?: string;
+        "response_format"?: string;
       };
     };
     requestBody: {
@@ -91833,7 +91969,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -91937,6 +92073,7 @@ export interface operations {
         "base_url"?: string;
         "filename"?: string;
         "project_id"?: string;
+        "response_format"?: string;
       };
     };
     requestBody: {
@@ -91951,7 +92088,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -91986,6 +92123,7 @@ export interface operations {
         "archive_member"?: string;
         "background_requests"?: string;
         "expire_draft"?: string;
+        "response_format"?: string;
         "salesforce_native"?: boolean;
       };
     };
@@ -92046,6 +92184,7 @@ export interface operations {
         "filename"?: string;
         "max_events"?: number;
         "project_id"?: string;
+        "response_format"?: string;
       };
     };
     requestBody: {
@@ -92061,7 +92200,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -92144,7 +92283,11 @@ export interface operations {
     };
   };
   "handleImportGitHub": {
-    parameters?: never;
+    parameters: {
+      "query"?: {
+        "response_format"?: string;
+      };
+    };
     requestBody: {
       content: {
         "application/json": {
@@ -92160,7 +92303,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -92342,6 +92485,7 @@ export interface operations {
         "project_id"?: string;
         "recording_profile_id"?: string;
         "redact_sensitive"?: boolean;
+        "response_format"?: string;
         "retention_days"?: number;
         "salvage_truncated"?: boolean;
       };
@@ -92367,7 +92511,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -92399,6 +92543,7 @@ export interface operations {
     parameters: {
       "query"?: {
         "filename"?: string;
+        "response_format"?: string;
       };
     };
     requestBody: {
@@ -92419,7 +92564,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -92463,6 +92608,7 @@ export interface operations {
         "base_url"?: string;
         "filename"?: string;
         "project_id"?: string;
+        "response_format"?: string;
         "script_name"?: string;
       };
     };
@@ -92479,7 +92625,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -92514,6 +92660,7 @@ export interface operations {
         "filename"?: string;
         "name"?: string;
         "project_id"?: string;
+        "response_format"?: string;
         "script_name"?: string;
       };
     };
@@ -92530,7 +92677,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -92564,6 +92711,7 @@ export interface operations {
         "filename"?: string;
         "name"?: string;
         "project_id"?: string;
+        "response_format"?: string;
       };
     };
     requestBody: {
@@ -92577,7 +92725,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -92611,6 +92759,7 @@ export interface operations {
         "base_url"?: string;
         "filename"?: string;
         "project_id"?: string;
+        "response_format"?: string;
         "script_name"?: string;
       };
     };
@@ -92627,7 +92776,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -92662,6 +92811,7 @@ export interface operations {
         "filename"?: string;
         "name"?: string;
         "project_id"?: string;
+        "response_format"?: string;
       };
     };
     requestBody: {
@@ -92677,7 +92827,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -92718,6 +92868,7 @@ export interface operations {
         "project_id"?: string;
         "recording_profile_id"?: string;
         "redact_sensitive"?: boolean;
+        "response_format"?: string;
         "retention_days"?: number;
         "salvage_truncated"?: boolean;
       };
@@ -92743,7 +92894,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -92772,7 +92923,11 @@ export interface operations {
     };
   };
   "handleImportSample": {
-    parameters?: never;
+    parameters: {
+      "query"?: {
+        "response_format"?: string;
+      };
+    };
     requestBody: {
       content: {
         "application/json": {
@@ -92798,7 +92953,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -94355,6 +94510,7 @@ export interface operations {
       "query"?: {
         "filename"?: string;
         "project_id"?: string;
+        "response_format"?: string;
       };
     };
     requestBody: {
@@ -94368,7 +94524,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -94937,12 +95093,14 @@ export interface operations {
                   "archive_uri"?: string;
                   "completed_at": string;
                   "created_at": string;
+                  "execution_generation"?: number;
                   "interval_summary_count": number;
                   "manifest_path": string;
                   "manifest_sha256"?: string;
                   "manifest_uri"?: string;
                   "ref_key"?: string;
                   "resource_sample_count": number;
+                  "run_incarnation"?: string;
                   "schema_version": string;
                   "test_id": string;
                   "transaction_count": number;
@@ -105522,12 +105680,14 @@ export interface operations {
               "archive_uri"?: string;
               "completed_at": string;
               "created_at": string;
+              "execution_generation"?: number;
               "interval_summary_count": number;
               "manifest_path": string;
               "manifest_sha256"?: string;
               "manifest_uri"?: string;
               "ref_key"?: string;
               "resource_sample_count": number;
+              "run_incarnation"?: string;
               "schema_version": string;
               "test_id": string;
               "transaction_count": number;
@@ -112969,6 +113129,9 @@ export interface operations {
       "path": {
         "id": string;
       };
+      "query"?: {
+        "response_format"?: string;
+      };
     };
     requestBody?: {
       content: {
@@ -112990,7 +113153,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -118539,6 +118702,9 @@ export interface operations {
       "path": {
         "id": string;
       };
+      "query"?: {
+        "response_format"?: string;
+      };
     };
     requestBody?: {
       content: {
@@ -118556,7 +118722,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -122600,12 +122766,14 @@ export interface operations {
                 "archive_uri"?: string;
                 "completed_at": string;
                 "created_at": string;
+                "execution_generation"?: number;
                 "interval_summary_count": number;
                 "manifest_path": string;
                 "manifest_sha256"?: string;
                 "manifest_uri"?: string;
                 "ref_key"?: string;
                 "resource_sample_count": number;
+                "run_incarnation"?: string;
                 "schema_version": string;
                 "test_id": string;
                 "transaction_count": number;
@@ -124736,12 +124904,14 @@ export interface operations {
                 "archive_uri"?: string;
                 "completed_at": string;
                 "created_at": string;
+                "execution_generation"?: number;
                 "interval_summary_count": number;
                 "manifest_path": string;
                 "manifest_sha256"?: string;
                 "manifest_uri"?: string;
                 "ref_key"?: string;
                 "resource_sample_count": number;
+                "run_incarnation"?: string;
                 "schema_version": string;
                 "test_id": string;
                 "transaction_count": number;
@@ -126872,12 +127042,14 @@ export interface operations {
                 "archive_uri"?: string;
                 "completed_at": string;
                 "created_at": string;
+                "execution_generation"?: number;
                 "interval_summary_count": number;
                 "manifest_path": string;
                 "manifest_sha256"?: string;
                 "manifest_uri"?: string;
                 "ref_key"?: string;
                 "resource_sample_count": number;
+                "run_incarnation"?: string;
                 "schema_version": string;
                 "test_id": string;
                 "transaction_count": number;
@@ -129008,12 +129180,14 @@ export interface operations {
                 "archive_uri"?: string;
                 "completed_at": string;
                 "created_at": string;
+                "execution_generation"?: number;
                 "interval_summary_count": number;
                 "manifest_path": string;
                 "manifest_sha256"?: string;
                 "manifest_uri"?: string;
                 "ref_key"?: string;
                 "resource_sample_count": number;
+                "run_incarnation"?: string;
                 "schema_version": string;
                 "test_id": string;
                 "transaction_count": number;
@@ -131144,12 +131318,14 @@ export interface operations {
                 "archive_uri"?: string;
                 "completed_at": string;
                 "created_at": string;
+                "execution_generation"?: number;
                 "interval_summary_count": number;
                 "manifest_path": string;
                 "manifest_sha256"?: string;
                 "manifest_uri"?: string;
                 "ref_key"?: string;
                 "resource_sample_count": number;
+                "run_incarnation"?: string;
                 "schema_version": string;
                 "test_id": string;
                 "transaction_count": number;
@@ -134021,6 +134197,7 @@ export interface operations {
         "filename"?: string;
         "name"?: string;
         "project_id"?: string;
+        "response_format"?: string;
       };
     };
     requestBody: {
@@ -134036,12 +134213,12 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": (components["schemas"]["ErrorResponse"] | components["schemas"]["RecorderImportReplayInvalidResponse"]);
         };
       };
       "401": {
@@ -135120,12 +135297,14 @@ export interface operations {
               "archive_uri"?: string;
               "completed_at": string;
               "created_at": string;
+              "execution_generation"?: number;
               "interval_summary_count": number;
               "manifest_path": string;
               "manifest_sha256"?: string;
               "manifest_uri"?: string;
               "ref_key"?: string;
               "resource_sample_count": number;
+              "run_incarnation"?: string;
               "schema_version": string;
               "test_id": string;
               "transaction_count": number;
@@ -161251,12 +161430,14 @@ export interface operations {
               "archive_uri"?: string;
               "completed_at": string;
               "created_at": string;
+              "execution_generation"?: number;
               "interval_summary_count": number;
               "manifest_path": string;
               "manifest_sha256"?: string;
               "manifest_uri"?: string;
               "ref_key"?: string;
               "resource_sample_count": number;
+              "run_incarnation"?: string;
               "schema_version": string;
               "test_id": string;
               "transaction_count": number;
@@ -180204,6 +180385,7 @@ export interface operations {
         "archive_member"?: string;
         "background_requests"?: string;
         "expire_draft"?: string;
+        "response_format"?: string;
         "salesforce_native"?: boolean;
       };
     };
@@ -180261,6 +180443,7 @@ export interface operations {
     parameters: {
       "query"?: {
         "filename"?: string;
+        "response_format"?: string;
       };
     };
     requestBody: {
@@ -180281,7 +180464,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -180325,6 +180508,7 @@ export interface operations {
         "filename"?: string;
         "name"?: string;
         "project_id"?: string;
+        "response_format"?: string;
       };
     };
     requestBody: {
@@ -180338,7 +180522,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {
@@ -180373,6 +180557,7 @@ export interface operations {
         "filename"?: string;
         "name"?: string;
         "project_id"?: string;
+        "response_format"?: string;
       };
     };
     requestBody: {
@@ -180388,7 +180573,7 @@ export interface operations {
     responses: {
       "2XX": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ScriptImportReviewResponse"];
         };
       };
       "400": {

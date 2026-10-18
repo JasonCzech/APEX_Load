@@ -23,7 +23,8 @@
     "test:node-version": "node --test ./scripts/check-node-version.node-test.mjs",
     "preinstall": "npm run check:node",
     "test:workflows": "../scripts/run-dashboard-workflows.sh",
-    "test:cycle": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:workflows"
+    "test:cycle": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:workflows",
+    "test:e2e-preflight": "node --test ./scripts/check-e2e-browser.node-test.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

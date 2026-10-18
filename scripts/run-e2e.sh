@@ -36,10 +36,6 @@ cd "$repo_root"
 port="${APEXLOAD_E2E_PORT:-18081}"
 base_url="http://127.0.0.1:${port}"
 profile="${APEXLOAD_E2E_PROFILE:-dev-admin}"
-workdir="$(mktemp -d -t apexload-e2e.XXXXXX)"
-controller_bin="$workdir/controller"
-controller_log="$workdir/controller.log"
-pid=""
 
 if [[ "$profile" != "dev-admin" && "$profile" != "local-auth" ]]; then
   echo "ERROR: APEXLOAD_E2E_PROFILE must be dev-admin or local-auth, got $profile" >&2
@@ -95,6 +91,13 @@ require_own_listener() {
 
 # Refuse an occupied port before spending time on the build.
 require_free_port
+
+node dashboard/scripts/check-e2e-browser.mjs
+
+workdir="$(mktemp -d -t apexload-e2e.XXXXXX)"
+controller_bin="$workdir/controller"
+controller_log="$workdir/controller.log"
+pid=""
 
 cleanup() {
   local code=$?

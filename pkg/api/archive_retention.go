@@ -323,7 +323,7 @@ func (s *Server) pruneRunArchiveUnderFence(ctx context.Context, record *storage.
 			}
 		}
 	}
-	forgetRunArchiveCache(record.TestID)
+	s.archiveReadCaches().forgetRunArchiveCache(record.TestID)
 	if s.runner != nil {
 		s.runner.mu.Lock()
 		delete(s.runner.archives, record.TestID)

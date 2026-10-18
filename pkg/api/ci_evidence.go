@@ -78,6 +78,10 @@ func (s *Server) validatedCIRunArchiveEvidence(ctx context.Context, test *Manage
 	if manifest.Provenance.RequestedAt.IsZero() || test.CreatedAt.IsZero() || !archiveRunTimestampMatches(manifest.Provenance.RequestedAt, test.CreatedAt, s.runner.testStore) {
 		return nil, errors.New("durable archive manifest belongs to a stale run identity")
 	}
+	incarnation, err := archiveManifestRunIncarnation(manifest)
+	if err != nil || incarnation != managedTestRunIncarnation(test) || manifest.Provenance.ExecutionGeneration != test.durableExecutionGeneration {
+		return nil, errors.New("durable archive manifest belongs to a different run incarnation")
+	}
 	if status := strings.ToUpper(strings.TrimSpace(manifest.Status)); status != strings.ToUpper(strings.TrimSpace(test.Status)) {
 		return nil, errors.New("durable archive status does not match the terminal run")
 	}
@@ -116,7 +120,7 @@ func (s *Server) validatedCIRunArchiveEvidence(ctx context.Context, test *Manage
 	if err != nil {
 		return nil, fmt.Errorf("load durable archive terminal metrics: %w", err)
 	}
-	validity, validityErr := cachedRunArchiveValidity(record)
+	validity, validityErr := s.archiveReadCaches().cachedRunArchiveValidity(record)
 	return &ciValidatedArchiveEvidence{Manifest: manifest, FinalSummary: finalSummary, Validity: validity, ValidityUnavailable: validityErr != nil,
 		TelemetryVerdict: telemetryAcceptanceForManifest(manifest)}, nil
 }
@@ -124,8 +128,8 @@ func (s *Server) validatedCIRunArchiveEvidence(ctx context.Context, test *Manage
 // cachedRunArchiveValidity is the validity verdict of the report built over
 // an archive, whose cache key includes the manifest digest. It reads the
 // shared cached report without cloning all of it.
-func cachedRunArchiveValidity(record *storage.RunArchiveRecord) (*ciRunValidity, error) {
-	report, err := runArchiveReportCache.getOrLoad(runArchiveReportCacheKey(record), func() (*RunArchiveReport, error) {
+func (c *archiveReadCaches) cachedRunArchiveValidity(record *storage.RunArchiveRecord) (*ciRunValidity, error) {
+	report, err := c.reports.getOrLoad(runArchiveReportCacheKey(record), func() (*RunArchiveReport, error) {
 		return buildRunArchiveReport(record)
 	})
 	if err != nil {

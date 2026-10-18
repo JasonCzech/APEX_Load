@@ -657,7 +657,7 @@ func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 		// request path value which may be a RefKey alias. DeleteTest cleans up the
 		// cache by canonical id, so an alias-keyed entry would otherwise never be
 		// evicted and leak for the process lifetime.
-		"history": filterLiveMetricsHistoryForGroupsCached(test.ID, test.History, groupFilter),
+		"history": filterLiveMetricsHistoryForGroupsCached(test, test.History, groupFilter),
 	})
 }
 

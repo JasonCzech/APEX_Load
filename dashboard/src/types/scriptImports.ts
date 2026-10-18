@@ -335,7 +335,7 @@ export interface ScriptImportResult<
   warnings: string[]
   unsupported_elements: string[]
   review_summary?: JMeterReviewSummary
-  diagnostics?: { code?: string; source_ref?: string; element: string; detail: string; severity: 'blocker' | 'warning' | 'info'; location?: string }[]
+  diagnostics?: { code?: string; source_ref?: string; element: string; detail: string; severity: 'blocker' | 'warning' | 'info'; location?: string; count?: number; locations?: string[]; locations_truncated?: boolean }[]
   assumptions: string[]
   review_sections: ImportReviewSection[]
   repair_suggestions: ImportRepairSuggestion[]

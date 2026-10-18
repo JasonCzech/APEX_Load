@@ -21,7 +21,13 @@ func TestLocalRunArchiveFinalizeRecordsExecutingTerm(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	runner := NewTestRunner(1, NewHub(), store)
+	leadership := newExecutionLeadership(store, "local-archive-owner")
+	leadership.tick()
+	if !leadership.IsAdmitted() {
+		t.Fatal("local archive owner did not acquire leadership")
+	}
+	defer leadership.relinquish()
+	runner := NewTestRunner(1, NewHub(), store, WithExecutionLeadership(leadership))
 	runner.StoreScript(&dsl.Script{
 		ID: "local-term-script", Name: "Local Term", Protocol: "http", Version: "1.0.0",
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
@@ -34,16 +40,29 @@ func TestLocalRunArchiveFinalizeRecordsExecutingTerm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const executingTerm = 7
+	executingTerm, executionFence, _, err := runner.generatorExecutionClaim()
+	if err != nil || executingTerm == 0 {
+		t.Fatalf("execution claim: generation=%d, error=%v", executingTerm, err)
+	}
 	runner.mu.Lock()
 	test := runner.tests[created.ID]
-	test.Status = "RUNNING"
+	test.Status = "INITIALIZING"
 	test.executionGeneration = executingTerm
-	if err := runner.saveManagedTestRecord(test); err != nil {
+	test.executionFence = executionFence
+	// Ordinary metadata saves cannot stamp a durable execution generation. Use
+	// the real lease-fenced Start commit before producing local archive evidence.
+	if err := runner.saveManagedTestStartRecord(test); err != nil {
 		runner.mu.Unlock()
 		t.Fatal(err)
 	}
 	runner.mu.Unlock()
+	started, err := store.GetTest(test.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.ExecutionGeneration != executingTerm || test.durableExecutionGeneration != executingTerm {
+		t.Fatalf("Start generation: stored=%d, managed=%d, want=%d", started.ExecutionGeneration, test.durableExecutionGeneration, executingTerm)
+	}
 	artifacts, err := newRunArtifacts(runner, test, runner.saveRunArchiveRecord)
 	if err != nil {
 		t.Fatalf("newRunArtifacts: %v", err)
@@ -71,5 +90,27 @@ func TestLocalRunArchiveFinalizeRecordsExecutingTerm(t *testing.T) {
 	}
 	if initial := decodeStoredInitialProvenance(stored.InitialProvenance); initial == nil || initial.ExecutionGeneration != 0 {
 		t.Fatalf("stored initial provenance = %#v, want one without an execution term", initial)
+	}
+}
+
+func TestArchiveProvenanceUsesEvidenceTermOnlyForPassiveSnapshots(t *testing.T) {
+	for _, tc := range []struct {
+		name                     string
+		executing, durable, want uint64
+	}{
+		{"legacy", 0, 0, 0},
+		{"passive recovery", 0, 7, 7},
+		{"executing owner", 7, 7, 7},
+		{"late old worker", 6, 7, 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			run := &ManagedTest{ID: "run", executionGeneration: tc.executing, durableExecutionGeneration: tc.durable}
+			if got := buildRunArchiveProvenance(nil, run).ExecutionGeneration; got != tc.want {
+				t.Fatalf("archive generation=%d want=%d", got, tc.want)
+			}
+			if run.executionGeneration != tc.executing {
+				t.Fatal("evidence projection granted runtime ownership")
+			}
+		})
 	}
 }

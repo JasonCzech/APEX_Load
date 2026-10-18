@@ -541,10 +541,10 @@ func reportExecutionLabel(reason string) string {
 	}
 }
 func reportElapsedDuration(manifest *RunArchiveManifest) string {
-	if manifest == nil || manifest.Provenance.StartedAt == nil || manifest.CompletedAt.IsZero() {
+	if manifest == nil || manifest.Provenance.StartedAt == nil || archiveExecutionCompletedAt(manifest).IsZero() {
 		return "Unknown"
 	}
-	elapsed := manifest.CompletedAt.Sub(*manifest.Provenance.StartedAt)
+	elapsed := archiveExecutionCompletedAt(manifest).Sub(*manifest.Provenance.StartedAt)
 	if elapsed < 0 {
 		return "Unknown"
 	}

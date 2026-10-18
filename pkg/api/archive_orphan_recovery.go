@@ -187,7 +187,17 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchiveUnderSourceFence(ctx context
 	if declared := strings.TrimSpace(manifest.Provenance.ProjectID); declared != "" && normalizeProjectID(declared) != project {
 		return fmt.Errorf("orphan archive %s belongs to another project", record.TestID)
 	}
-	if row.EndTime == nil || manifest.Status != row.Status || !archiveRunTimestampMatches(archiveManifestRequestedAt(manifest), row.StartTime, tr.testStore) {
+	incarnation, err := archiveManifestRunIncarnation(manifest)
+	if err != nil {
+		return err
+	}
+	durableIncarnation, err := storage.TestRunIncarnation(row.InitialProvenance)
+	if err != nil {
+		return err
+	}
+	if row.EndTime == nil || manifest.CompletedAt.IsZero() || manifest.Status != row.Status ||
+		!archiveRunTimestampMatches(archiveManifestRequestedAt(manifest), row.StartTime, tr.testStore) ||
+		incarnation != durableIncarnation || manifest.Provenance.ExecutionGeneration != row.ExecutionGeneration {
 		return fmt.Errorf("orphan archive %s does not match the durable terminal incarnation", record.TestID)
 	}
 	job := &storage.ArchiveFinalizationJob{TestID: record.TestID, ProjectID: project, PersistArtifacts: true}
@@ -198,7 +208,7 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchiveUnderSourceFence(ctx context
 		// outcome; the durable end time then becomes its completion time. The
 		// source stays untouched: the restamped manifest is committed with the
 		// fenced job and restored by finalization.
-		if row.ExecutionGeneration == 0 || manifest.Provenance.ExecutionGeneration != row.ExecutionGeneration {
+		if row.ExecutionGeneration == 0 {
 			return fmt.Errorf("orphan archive %s does not match the durable terminal incarnation", record.TestID)
 		}
 		prepared, completedAt, err := restampedOrphanArchiveManifest(manifest, *row.EndTime)
@@ -220,6 +230,8 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchiveUnderSourceFence(ctx context
 		return err
 	}
 	record.RefKey = strings.TrimSpace(row.RefKey)
+	record.RunIncarnation = incarnation
+	record.ExecutionGeneration = manifest.Provenance.ExecutionGeneration
 	return tr.trackDurableWrite(func() error {
 		job.ArchiveRecord = *record
 		saved, err := store.SaveArchiveFinalizationJobIfOrphanForRun(job, archiveManifestRequestedAt(manifest), manifest.Status, lease, owner)
@@ -524,4 +536,14 @@ func archiveManifestRequestedAt(manifest *RunArchiveManifest) time.Time {
 		return manifest.Provenance.RequestedAt
 	}
 	return manifest.CreatedAt
+}
+
+// The frozen and current projections must agree whenever initial provenance is
+// present. Legacy archives with neither token retain exact timestamp fencing.
+func archiveManifestRunIncarnation(manifest *RunArchiveManifest) (string, error) {
+	incarnation := manifest.Provenance.RunIncarnation
+	if manifest.InitialProvenance != nil && manifest.InitialProvenance.RunIncarnation != incarnation {
+		return "", errors.New("archive initial and current run incarnation differ")
+	}
+	return incarnation, nil
 }

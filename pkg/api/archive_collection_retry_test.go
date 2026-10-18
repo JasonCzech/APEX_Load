@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/jasonczech/apexload/pkg/storage"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // All non-archive RPCs deliberately remain nil: any accidental execution or
@@ -66,11 +66,26 @@ func (c *collectionRetryArchiveClient) StreamArchiveArtifact(ctx context.Context
 func (c *collectionRetryArchiveClient) Close() error { c.closes.Add(1); return nil }
 
 func TestArchiveCollectionRetrySurvivesControllerRestart(t *testing.T) {
+	for _, stamped := range []bool{false, true} {
+		t.Run(map[bool]string{false: "legacy", true: "execution term"}[stamped], func(t *testing.T) {
+			checkArchiveCollectionRetrySurvivesControllerRestart(t, stamped)
+		})
+	}
+}
+
+func checkArchiveCollectionRetrySurvivesControllerRestart(t *testing.T, stamped bool) {
 	tr, store, run, _ := collectionCacheFixture(t, "a", "b")
 	sources := run.remoteClientsByTarget
 	now := time.Now().UTC()
 	if _, err := store.UpdateTestStatusIfActive(run.ID, "FAILED", &now, "generator unavailable"); err != nil {
 		t.Fatal(err)
+	}
+	var generation uint64
+	if stamped {
+		if saved, err := store.SaveTestInitialProvenance(run.ID, run.ProjectID, map[string]any{"run_incarnation": "retained-source-run"}); err != nil || !saved {
+			t.Fatalf("persist source run identity: %t %v", saved, err)
+		}
+		generation = stampOrphanRunExecutionGeneration(t, store, run.ID)
 	}
 	var available atomic.Bool
 	var reads, closes, dials atomic.Int32
@@ -115,6 +130,12 @@ func TestArchiveCollectionRetrySurvivesControllerRestart(t *testing.T) {
 	if manifest.Status != "FAILED" || !manifest.CompletedAt.Equal(now) || manifest.SourceCoverage.Mode != "best_effort" || manifest.CSVExportIncomplete == "" {
 		t.Fatalf("recovery upgraded/lost terminal evidence: %+v", manifest)
 	}
+	if manifest.Provenance.ExecutionGeneration != generation || (stamped && manifest.Provenance.RunIncarnation != "retained-source-run") {
+		t.Fatalf("passive recovery lost durable evidence identity: %+v", manifest.Provenance)
+	}
+	if job.ArchiveRecord.ExecutionGeneration != generation || job.ArchiveRecord.RunIncarnation != manifest.Provenance.RunIncarnation {
+		t.Fatalf("collection outbox lost manifest identity: %+v", job.ArchiveRecord)
+	}
 	for _, source := range manifest.SourceCoverage.Sources {
 		if !source.Collected {
 			t.Fatal("available source omitted")
@@ -136,6 +157,15 @@ func TestArchiveCollectionRetrySurvivesControllerRestart(t *testing.T) {
 	}
 	if dials.Load() != 4 {
 		t.Fatal("resolved collection was dialed")
+	}
+	if err := (&Server{runner: restarted, store: store}).retryArchiveFinalizationJobs(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetRunArchive(run.ID); err != nil {
+		t.Fatalf("recovered archive could not pass finalization identity fence: %v", err)
+	}
+	if dials.Load() != 4 {
+		t.Fatalf("historical finalization probed live inventory: dials=%d", dials.Load())
 	}
 }
 

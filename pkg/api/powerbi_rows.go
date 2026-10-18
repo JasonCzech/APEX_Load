@@ -12,11 +12,16 @@ import (
 // rollup (attachReportVerdictAndSLA) before mapping.
 func buildPowerBIRunRow(report *RunArchiveReport, publishID string, publishedAt time.Time, apexloadURL string) map[string]any {
 	started, completed := powerBIRunWindow(report, publishedAt)
+	executionEnd := archiveExecutionCompletedAt(report.Manifest)
+	if executionEnd.IsZero() {
+		// Retain the legacy publish-time fallback when the archive has no end.
+		executionEnd = completed
+	}
 	durationSeconds := 0.0
 	// A zero started time (legacy archive with no provenance and no CreatedAt)
 	// would otherwise yield a multi-decade duration and garbage avg_tps.
-	if !started.IsZero() && completed.After(started) {
-		durationSeconds = completed.Sub(started).Seconds()
+	if !started.IsZero() && executionEnd.After(started) {
+		durationSeconds = executionEnd.Sub(started).Seconds()
 	}
 	avgTPS := 0.0
 	if durationSeconds > 0 {

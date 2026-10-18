@@ -223,6 +223,7 @@ func sanitizeImportCorrelationFields(value any, insideCorrelation bool) any {
 // session. Migration descriptors remain value-free even though imported
 // scripts and source-review material retain their authored values.
 func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts scriptImportResponseOptions) map[string]any {
+	opts.CanonicalResponse = r != nil && r.URL.Query().Get("response_format") == "canonical-v1"
 	if opts.TextMemo == nil {
 		opts.TextMemo = &importProjectionTextMemo{}
 	}

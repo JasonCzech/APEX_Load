@@ -913,6 +913,10 @@ func remoteMetricsBatchSupersedes(prior, next generatorrpc.MetricsBatch) bool {
 	if isTerminalRemoteLifecycle(prior.LifecycleState) {
 		return false
 	}
+	if strings.EqualFold(strings.TrimSpace(prior.LifecycleState), generatorrpc.MetricsLifecycleFinalizing) &&
+		!strings.EqualFold(strings.TrimSpace(next.LifecycleState), generatorrpc.MetricsLifecycleFinalizing) {
+		return false
+	}
 	if next.BatchSequence > 0 && prior.BatchSequence > 0 {
 		return true
 	}
@@ -938,15 +942,20 @@ type distributedGoalErrorAccumulator struct {
 // and topology snapshots from which it was built. errorWindows carries the
 // latest non-terminal window for every target in that aggregate; the goal
 // controller's existing source/timestamp dedupe makes replay bounded and safe.
+// collections identifies the exact collections in the snapshot, so only their
+// successful guarded installation proves prior end-to-end publication.
 type distributedMetricsPublication struct {
 	revision            uint64
 	executionGeneration uint64
 	topologyGeneration  uint64
 	terminal            bool
+	finalizing          bool
 	target              string
 	stream              *generatorrpc.MetricsStream
 	streamBound         bool
 	errorWindows        map[string]distributedGoalErrorAccumulator
+	collections         map[string]distributedWindowMark
+	timings             map[string]distributedPublicationTiming
 }
 
 type distributedMetricsPublicationResult struct {
@@ -1247,6 +1256,7 @@ func (b *distributedExecutionBackend) publishDistributedMetricsRevision(ctx cont
 	if ctx.Err() != nil {
 		return result
 	}
+	tr.refreshDistributedPublicationTiming(test, live, publication)
 
 	var (
 		runGoalUpdate   bool
@@ -1269,14 +1279,14 @@ func (b *distributedExecutionBackend) publishDistributedMetricsRevision(ctx cont
 		}
 
 		applyRuntimeGoalTargetsToLiveMetrics(test, live)
-		if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil && test.Status == "RUNNING" {
+		if !publication.finalizing && test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil && test.Status == "RUNNING" {
 			// As locally: every published running sample enters the goal window.
 			if test.goalControl == nil {
 				test.goalControl = &goalControllerState{}
 			}
 			recordPublishedGoalThroughput(test, live)
 		}
-		if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil && tr.testLoadReadyLocked(test, time.Now().UTC()) {
+		if !publication.finalizing && test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil && tr.testLoadReadyLocked(test, time.Now().UTC()) {
 			if test.goalControl == nil {
 				test.goalControl = &goalControllerState{}
 			}
@@ -1308,6 +1318,12 @@ func (b *distributedExecutionBackend) publishDistributedMetricsRevision(ctx cont
 			}
 		}
 		test.remoteMetricsPublishedRevision = publication.revision
+		if test.runTotals.publishedWindows == nil {
+			test.runTotals.publishedWindows = make(map[string]distributedWindowMark)
+		}
+		for target, collection := range publication.collections {
+			test.runTotals.publishedWindows[target] = collection
+		}
 		// The installed point carries the joint evidence of the batches
 		// accepted since the last one (B5).
 		if live.NativeEvidence != nil {
@@ -1322,7 +1338,7 @@ func (b *distributedExecutionBackend) publishDistributedMetricsRevision(ctx cont
 
 	// Keep thresholds inside the per-test publication gate so an older
 	// aggregate cannot evaluate after a newer revision.
-	tr.evaluateThresholdAlertsAndStops(test, live, !publication.terminal)
+	tr.evaluateThresholdAlertsAndStops(test, live, !publication.terminal && !publication.finalizing)
 	if runGoalUpdate {
 		goalLive := *live
 		if live.GoalStatus != nil {
@@ -1387,7 +1403,7 @@ func stageDistributedGoalErrorWindowLocked(tr *TestRunner, test *ManagedTest, ta
 	if tr == nil || test == nil ||
 		test.ScenarioMode != "goal_oriented" ||
 		test.GoalConfig == nil ||
-		isTerminalRemoteLifecycle(batch.LifecycleState) ||
+		generatorrpc.IsMetricsCollectionFinal(batch.LifecycleState) ||
 		batch.TimestampUnixMs <= 0 ||
 		!tr.testLoadReadyLocked(test, time.Now().UTC()) {
 		return
@@ -1490,16 +1506,18 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 		}
 	}
 	carryRemoteHTTPVersionMixLocked(test, target, &batch)
+	countDistributedWindowLocked(test, target, own, &batch)
 	test.remoteMetricsBatchesByTarget[target] = batch
 	// Each generator's stages and run totals are counted where its batch is
 	// accepted: publications are throttled fleet-wide, so most batches are
 	// only stored.
-	countDistributedWindowLocked(test, target, own)
 	stageRecorderLocked(test).observeGeneratorBatch(target, batch)
-	rememberJointPublicationLocked(test, target, batch)
+	if !repeatedFinalCollection(batch) {
+		rememberJointPublicationLocked(test, target, batch)
+	}
 	if len(batch.TransactionResponseTimeSLA) > 0 {
 		delete(test.remoteTransactionResponseTimeSLALegacyByTarget, target)
-	} else {
+	} else if !repeatedFinalCollection(batch) {
 		accumulateRemoteTransactionResponseTimeSLALegacy(test, target, freshTransactions)
 	}
 	rebuildRemoteTransactionResponseTimeSLA(test)
@@ -1511,14 +1529,49 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 // countDistributedWindowLocked counts one generator's accepted window (its
 // own, before a terminal batch takes on its last window) toward the run's
 // totals, once (runTotalsAccumulator.newDistributedWindow), as a live sample
-// counts it (distributedWindowCounts). The caller holds tr.mu.
-func countDistributedWindowLocked(test *ManagedTest, target string, own generatorrpc.MetricsBatch) {
+// counts it (distributedWindowCounts). It marks the accepted envelope's timing
+// as repeated only when an available collection identity proves it: an older
+// generator with no identity must still have its terminal timing sampled.
+// Telemetry is copied because the caller's batch may be retained elsewhere.
+// The caller holds tr.mu.
+func countDistributedWindowLocked(test *ManagedTest, target string, own generatorrpc.MetricsBatch, accepted *generatorrpc.MetricsBatch) {
 	var window *runTotalsWindow
-	if test.runTotals.newDistributedWindow(target, own) {
+	fresh := test.runTotals.newDistributedWindow(target, own)
+	if fresh {
 		counts := distributedWindowCounts(own, test.Groups)
 		window = &counts
 	}
 	test.runTotals.countWindow(window, test.History, test.Groups)
+	if accepted.Telemetry != nil {
+		telemetry := *accepted.Telemetry
+		telemetry.CollectionPublished = false
+		telemetry.CollectionRepeated = !fresh && own.Telemetry != nil &&
+			(own.Telemetry.CollectionSequence > 0 || own.Telemetry.PublishedAtUnixMs > 0)
+		accepted.Telemetry = &telemetry
+	}
+}
+
+// A lifecycle-only replay retains metrics for the live summary, but does not
+// introduce another interval of joint evidence or legacy raw SLA samples.
+func repeatedFinalCollection(batch generatorrpc.MetricsBatch) bool {
+	return generatorrpc.IsMetricsCollectionFinal(batch.LifecycleState) && batch.Telemetry != nil && batch.Telemetry.CollectionRepeated
+}
+
+// collectionEvidenceBatchLocked preserves the first accepted envelope identity
+// for an explicitly final collection. Native evidence readers deduplicate this
+// identity; assigning the later lifecycle sequence would invent another window.
+// An unseen final collection keeps its own identity and remains real evidence.
+// The caller holds tr.mu.
+func collectionEvidenceBatchLocked(test *ManagedTest, target string, batch generatorrpc.MetricsBatch) generatorrpc.MetricsBatch {
+	if !repeatedFinalCollection(batch) {
+		return batch
+	}
+	first := test.runTotals.windows[target]
+	mark, identified := distributedCollectionMark(batch)
+	if identified && first.sameCollection(mark) && first.batchSequence > 0 {
+		batch.BatchSequence, batch.TimestampUnixMs = first.batchSequence, first.batchTimestamp
+	}
+	return batch
 }
 
 func rebuildRemoteTransactionResponseTimeSLA(test *ManagedTest) {
@@ -1868,6 +1921,9 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 				fences[0].enforced &&
 				strings.EqualFold(strings.TrimSpace(test.remoteTargetStates[target]), strings.TrimSpace(batch.LifecycleState))
 			if terminalRepublication {
+				// Keep the accepted collection's timing ownership, including a
+				// replay marker, when retrying a guarded publication.
+				batch = prior
 				accepted = true
 				test.remoteMetricsAcceptedRevision++
 				revision = test.remoteMetricsAcceptedRevision
@@ -1877,17 +1933,28 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 			}
 		} else {
 			carryRemoteHTTPVersionMixLocked(test, target, &batch)
+			countDistributedWindowLocked(test, target, own, &batch)
 			test.remoteMetricsBatchesByTarget[target] = batch
 			accepted = true
 			test.remoteMetricsAcceptedRevision++
 			revision = test.remoteMetricsAcceptedRevision
-			countDistributedWindowLocked(test, target, own)
 			stageRecorderLocked(test).observeGeneratorBatch(target, batch)
 			stageDistributedGoalErrorWindowLocked(tr, test, target, batch)
 		}
 	}
 	batches := make(map[string]generatorrpc.MetricsBatch, len(test.remoteMetricsBatchesByTarget))
+	collections := make(map[string]distributedWindowMark, len(test.remoteMetricsBatchesByTarget))
+	timings := make(map[string]distributedPublicationTiming, len(test.remoteMetricsBatchesByTarget))
 	for key, value := range test.remoteMetricsBatchesByTarget {
+		if collection, identified := distributedCollectionMark(value); identified {
+			collections[key] = collection
+			telemetry := *value.Telemetry
+			telemetry.CollectionPublished = test.runTotals.publishedWindows[key].sameCollection(collection)
+			value.Telemetry = &telemetry
+		}
+		if value.Telemetry != nil {
+			timings[key] = distributedPublicationTiming{lifecycleState: value.LifecycleState, telemetry: *value.Telemetry}
+		}
 		batches[key] = value
 	}
 	publication := distributedMetricsPublication{}
@@ -1897,8 +1964,11 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 			executionGeneration: test.executionGeneration,
 			topologyGeneration:  test.remoteControlGeneration,
 			terminal:            isTerminalRemoteLifecycle(batch.LifecycleState),
+			finalizing:          strings.EqualFold(strings.TrimSpace(batch.LifecycleState), generatorrpc.MetricsLifecycleFinalizing),
 			target:              target,
 			errorWindows:        make(map[string]distributedGoalErrorAccumulator, len(test.remoteGoalAcceptedErrorWindows)),
+			collections:         collections,
+			timings:             timings,
 		}
 		if len(fences) > 0 && fences[0].enforced {
 			publication.stream = fences[0].stream
@@ -1977,7 +2047,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 		}
 	}
 	if live.NativeEvidence != nil {
-		live.NativeEvidence.Publication = nativePublicationEvidence(target, batch, batches, runJointProjection(test))
+		live.NativeEvidence.Publication = nativePublicationEvidence(target, collectionEvidenceBatchLocked(test, target, batch), batches, runJointProjection(test))
 		// Include assigned peers before their first metric batch, so cold or lost
 		// sources cannot make a partial fleet appear completely covered.
 		expected := make([]string, 0, len(test.remoteClientsByTarget))
