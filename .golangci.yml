@@ -10,7 +10,9 @@ run:
 # pre-existing violations.
 #
 # nilerr, ineffassign, staticcheck (SA checks) and govet's nilness were enabled
-# on 2026-10-17 after their findings were fixed or annotated with a reason.
+# on 2026-10-17 after their findings were fixed or annotated with a reason;
+# SA1019 deprecations followed the same day: each use was migrated, or annotated
+# where the deprecated API is still the right one.
 #
 # Evaluated and rejected (violation counts on the tree at the time of writing,
 # capped at 50 per linter): mnd 50+, canonicalheader 50+, copyloopvar 50+,
@@ -65,11 +67,9 @@ linters:
       enable:
         - nilness # conditions that are always true or false, and nil dereferences
     staticcheck:
-      # Deprecations (SA1019) are tracked separately: each needs a migration,
-      # not a cleanup.
+      # Every SA check, deprecations (SA1019) included.
       checks:
         - SA*
-        - -SA1019
     nolintlint:
       # Every exception names the linter it silences and says why.
       require-explanation: true
