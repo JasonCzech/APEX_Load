@@ -206,7 +206,7 @@ func TestHTTPVersionPoolsPACConcurrentClonesSharePhysicalCeiling(t *testing.T) {
 	}
 	clients := make(map[string]*stdhttp.Client)
 	for policy, pool := range h.policyPools {
-		clients[policy] = &stdhttp.Client{Transport: &pacRoundTripper{source: `function FindProxyForURL(url, host) { return "DIRECT"; }`, allowed: []string{"127.0.0.1"}, base: pool.transport, budget: h.connections, baseDial: dial}, Timeout: 3 * time.Second}
+		clients[policy] = &stdhttp.Client{Transport: &pacRoundTripper{source: `function FindProxyForURL(url, host) { return "DIRECT"; }`, allowed: []string{"127.0.0.1"}, base: pool.httpTransport(), budget: h.connections, baseDial: dial}, Timeout: 3 * time.Second}
 	}
 	first := make(chan error, 1)
 	go func() {
@@ -271,14 +271,14 @@ func TestHTTPVersionPoolsProxyNativeQueueCanEvictOwnIdleDestination(t *testing.T
 			proxy := versionConnectProxy(t)
 			h := versionHTTP(t, map[string]any{"proxy_mode": "custom", "proxy_url": proxy.URL, "max_conns_per_host": 1})
 			pool := h.policyPools[policy]
-			originalProxy := pool.transport.Proxy
+			originalProxy := pool.httpTransport().Proxy
 			entered, release := make(chan struct{}, 2), make(chan struct{})
 			var releaseOnce sync.Once
 			finish := func() { releaseOnce.Do(func() { close(release) }) }
 			defer finish()
 			// Hold both callers before Go's per-destination queue starts. Both
 			// operations are live, but only one gets a DialContext callback.
-			pool.transport.Proxy = func(request *stdhttp.Request) (*url.URL, error) {
+			pool.httpTransport().Proxy = func(request *stdhttp.Request) (*url.URL, error) {
 				if request.URL.String() == two.URL+"/" {
 					select {
 					case entered <- struct{}{}:
@@ -479,7 +479,7 @@ func TestHTTPVersionConnectionOwnerComposesCallerTrace(t *testing.T) {
 			TLSHandshakeStart: func() { handshake.Add(1) },
 		})
 		request, _ := stdhttp.NewRequestWithContext(ctx, "GET", server.URL, nil)
-		response, err := h.policyPools[policy].client.Do(request)
+		response, err := h.policyPools[policy].httpClient().Do(request)
 		if err == nil {
 			_, err = io.Copy(io.Discard, response.Body)
 			_ = response.Body.Close()
@@ -540,7 +540,7 @@ func TestHTTPVersionPoolsDetachedH2HandoffRetriesPOSTBeforeBodyConsumption(t *te
 	pool := h.policyPools["auto"]
 	var owner *httpConnectionOwner
 	for _, candidate := range h.connections.snapshotOwners() {
-		if candidate.transport == pool.transport {
+		if candidate.transport == pool.httpTransport() {
 			owner = candidate
 			break
 		}
@@ -562,9 +562,9 @@ func TestHTTPVersionPoolsDetachedH2HandoffRetriesPOSTBeforeBodyConsumption(t *te
 		}
 		return originalDial(ctx, network, address)
 	}
-	originalUpgrade := pool.transport.TLSNextProto["h2"]
+	originalUpgrade := pool.httpTransport().TLSNextProto["h2"]
 	var upgrades, handoffs atomic.Int64
-	pool.transport.TLSNextProto["h2"] = func(authority string, conn *tls.Conn) stdhttp.RoundTripper {
+	pool.httpTransport().TLSNextProto["h2"] = func(authority string, conn *tls.Conn) stdhttp.RoundTripper {
 		roundTripper := originalUpgrade(authority, conn)
 		if upgrades.Add(1) == 1 {
 			// This TCP dial's initiating POST already reused the H1 socket and
@@ -593,7 +593,7 @@ func TestHTTPVersionPoolsDetachedH2HandoffRetriesPOSTBeforeBodyConsumption(t *te
 			ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{GetConn: func(string) { receiverTraceOnce.Do(func() { close(receiverGetConn) }) }})
 		}
 		request, _ := stdhttp.NewRequestWithContext(ctx, method, server.URL+path, body)
-		response, err := pool.client.Do(request)
+		response, err := pool.httpClient().Do(request)
 		if err != nil {
 			return "", err
 		}

@@ -236,8 +236,8 @@ func TestManagedRunHeaderOAuthPoolsExcludeApplicationMarker(t *testing.T) {
 	roots := x509.NewCertPool()
 	roots.AddCert(server.Certificate())
 	for _, pool := range h.policyPools {
-		pool.oauthTransport.TLSClientConfig.RootCAs = roots
-		if pool.oauthTransport.TLSClientConfig.InsecureSkipVerify {
+		pool.oauthClient().transport.TLSClientConfig.RootCAs = roots
+		if pool.oauthClient().transport.TLSClientConfig.InsecureSkipVerify {
 			t.Fatal("OAuth inherited insecure application TLS policy")
 		}
 	}

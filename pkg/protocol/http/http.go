@@ -48,9 +48,8 @@ type HTTP struct {
 	policyPools                map[string]*httpPolicyPool
 	connections                *httpConnectionBudget
 	client                     *http.Client
-	oauthClient                *http.Client
 	transport                  *http.Transport
-	oauthTransport             *http.Transport
+	oauthPool                  *httpPolicyPool // the pool whose OAuth client token calls use
 	allowedTargetHosts         []string
 	baseURL                    string
 	bufPool                    *httpBufferPool
@@ -1380,10 +1379,10 @@ func injectActiveTraceContext(ctx context.Context, headers http.Header) string {
 }
 
 func (h *HTTP) OAuthHTTPClient() *http.Client {
-	if h == nil || h.oauthClient == nil {
+	if h == nil || h.oauthPool == nil {
 		return nil
 	}
-	client := *h.oauthClient
+	client := *h.oauthPool.oauthClient().client
 	return &client
 }
 
@@ -1491,8 +1490,8 @@ func (h *HTTP) Teardown(ctx context.Context) error {
 	} else if h.transport != nil {
 		h.transport.CloseIdleConnections()
 	}
-	if h.oauthTransport != nil && h.oauthTransport != h.transport {
-		h.oauthTransport.CloseIdleConnections()
+	if oauth := h.oauthPool.builtOAuthTransport(); oauth != nil && oauth != h.transport {
+		oauth.CloseIdleConnections()
 	}
 	if h.http3 != nil {
 		// VUser stop: H3_NO_ERROR on every connection, then release the
@@ -1510,8 +1509,8 @@ func (h *HTTP) CloseIdleConnections(_ context.Context) error {
 	} else if h.transport != nil {
 		h.transport.CloseIdleConnections()
 	}
-	if h.oauthTransport != nil && h.oauthTransport != h.transport {
-		h.oauthTransport.CloseIdleConnections()
+	if oauth := h.oauthPool.builtOAuthTransport(); oauth != nil && oauth != h.transport {
+		oauth.CloseIdleConnections()
 	}
 	if h.http3 != nil {
 		h.http3.CloseIdleConnections()

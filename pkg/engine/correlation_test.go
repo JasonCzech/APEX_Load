@@ -184,7 +184,7 @@ func TestParallelBranchesKeepTheOpenTransactionsTrace(t *testing.T) {
 		{Name: "catalog", Steps: []dsl.Action{{Name: "catalog-call", Type: "GET", Target: "/catalog"}}},
 		{Name: "cart", Steps: []dsl.Action{{Name: "cart-call", Type: "GET", Target: "/cart"}}},
 	}}}
-	if !vu.executeParallelBlock(context.Background(), block, "action") {
+	if !vu.executeParallelBlock(context.Background(), &block, "action") {
 		t.Fatal("parallel block failed")
 	}
 	want := state.trace.root.TraceID().String()

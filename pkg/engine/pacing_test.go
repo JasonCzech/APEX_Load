@@ -548,7 +548,7 @@ func TestRandomPercentageLoadAndReplayRespectRecordedAction(t *testing.T) {
 	vu := &VUser{Script: &dsl.Script{Config: dsl.ScriptConfig{ThinkTime: dsl.ThinkTimeConfig{Type: "random_percentage"}}}}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if !vu.applyActionThinkTime(ctx, action) {
+	if !vu.applyActionThinkTime(ctx, &action) {
 		t.Fatal("load ignored zero percentage")
 	}
 	if !applyReplayActionThinkTime(ctx, vu, action, false, protocol.ThinkTimeConfig{Type: "random_percentage"}) {
@@ -556,7 +556,7 @@ func TestRandomPercentageLoadAndReplayRespectRecordedAction(t *testing.T) {
 	}
 	// Nonzero percentages really wait and remain interruptible.
 	vu.Script.Config.ThinkTime.MinPercent, vu.Script.Config.ThinkTime.MaxPercent = 50, 150
-	if vu.applyActionThinkTime(ctx, action) {
+	if vu.applyActionThinkTime(ctx, &action) {
 		t.Fatal("load lost nonzero percentage wait")
 	}
 	if applyReplayActionThinkTime(ctx, vu, action, false, protocol.ThinkTimeConfig{Type: "random_percentage", MinPercent: 50, MaxPercent: 150}) {

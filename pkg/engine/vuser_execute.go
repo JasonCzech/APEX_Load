@@ -1161,7 +1161,7 @@ func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Actio
 			if !errCfg.ContinueOnErrorEnabled() {
 				return aggregate, nil
 			}
-			if !vu.applyActionThinkTime(ctx, child) {
+			if !vu.applyActionThinkTime(ctx, &child) {
 				interruptErr := actionThinkTimeInterruptedError(ctx)
 				aggregate.Success = false
 				aggregate.ErrorMessage = interruptErr.Error()
@@ -1194,7 +1194,7 @@ func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Actio
 				break
 			}
 		}
-		if !vu.applyActionThinkTime(ctx, child) {
+		if !vu.applyActionThinkTime(ctx, &child) {
 			interruptErr := actionThinkTimeInterruptedError(ctx)
 			aggregate.Success = false
 			aggregate.ErrorMessage = interruptErr.Error()

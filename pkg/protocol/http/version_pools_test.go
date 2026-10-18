@@ -44,7 +44,17 @@ func versionHTTP(t *testing.T, config map[string]any) *HTTP {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = h.Teardown(context.Background()) })
+	buildPolicyPools(h)
 	return h
+}
+
+// buildPolicyPools builds every pool and OAuth client Init leaves for first
+// use, so a test can instrument or count all of them.
+func buildPolicyPools(h *HTTP) {
+	for _, pool := range h.policyPools {
+		pool.httpTransport()
+		pool.oauthClient()
+	}
 }
 func executeVersion(t *testing.T, h *HTTP, target, policy string) *protocol.Result {
 	t.Helper()

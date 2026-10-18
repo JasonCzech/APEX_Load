@@ -52,7 +52,7 @@ func (s *parallelResultSink) RecordTransaction(result *protocol.Result) error {
 	return s.RecordResult(result)
 }
 
-func (vu *VUser) executeParallelBlock(ctx context.Context, action dsl.Action, phase string) bool {
+func (vu *VUser) executeParallelBlock(ctx context.Context, action *dsl.Action, phase string) bool {
 	started := time.Now()
 	// Branch VUsers carry no transaction state, so the block resolves its
 	// correlation context once: inside an open transaction every branch keeps

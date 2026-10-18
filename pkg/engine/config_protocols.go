@@ -484,7 +484,7 @@ func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 		cfg["browser_capture_interactions"] = *browserCfg.CaptureInteractions
 	}
 	policy := "persistent_context"
-	if browserEmulationNewUserEachIteration(script.Config) {
+	if browserEmulationNewUserEachIteration(&script.Config) {
 		policy = "cookies_each_iteration"
 		if script.Config.BrowserEmulation.Cache.ClearCacheForNewUser == nil || *script.Config.BrowserEmulation.Cache.ClearCacheForNewUser {
 			policy = "cookies_and_cache_each_iteration"

@@ -5,17 +5,166 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+// httpPolicyPool is the client of one HTTP version policy. A TCP pool
+// builds its transport, and its hardened OAuth client, on first use: each is
+// a net/http Transport with its own HTTP/2 state, and most VUsers never leave
+// their session's policy or fetch a token. HTTP/3 pools have a client of
+// their own and take their TCP transport and OAuth client from base, the
+// automatic pool.
 type httpPolicyPool struct {
-	client         *stdhttp.Client
-	transport      *stdhttp.Transport
-	oauthClient    *stdhttp.Client
-	oauthTransport *stdhttp.Transport
+	policy  string
+	builder *httpPoolBuilder
+	base    *httpPolicyPool
+
+	once      sync.Once
+	client    *stdhttp.Client
+	transport *stdhttp.Transport
+	// tcpBase is the TCP transport below the shared wrappers, which the
+	// auto+h3 router uses with its own copy of those wrappers.
+	tcpBase stdhttp.RoundTripper
+
+	oauthOnce sync.Once
+	oauth     atomic.Pointer[httpOAuthClient]
+}
+
+type httpOAuthClient struct {
+	client    *stdhttp.Client
+	transport *stdhttp.Transport
+}
+
+// built returns the pool, building a TCP pool on first use.
+func (p *httpPolicyPool) built() *httpPolicyPool {
+	if p.builder != nil {
+		p.once.Do(func() { p.client, p.transport, p.tcpBase = p.builder.buildTCP(p.policy) })
+	}
+	return p
+}
+
+func (p *httpPolicyPool) httpClient() *stdhttp.Client {
+	return p.built().client
+}
+
+func (p *httpPolicyPool) httpTransport() *stdhttp.Transport {
+	if p.base != nil {
+		return p.base.httpTransport()
+	}
+	return p.built().transport
+}
+
+// oauthClient returns the pool's hardened OAuth client, building it on first
+// use.
+func (p *httpPolicyPool) oauthClient() *httpOAuthClient {
+	if p.base != nil {
+		return p.base.oauthClient()
+	}
+	p.oauthOnce.Do(func() { p.oauth.Store(p.builder.buildOAuth(p.policy)) })
+	return p.oauth.Load()
+}
+
+// builtOAuthTransport is the pool's OAuth transport if it has been built.
+func (p *httpPolicyPool) builtOAuthTransport() *stdhttp.Transport {
+	switch {
+	case p == nil:
+		return nil
+	case p.base != nil:
+		return p.base.builtOAuthTransport()
+	}
+	if oauth := p.oauth.Load(); oauth != nil {
+		return oauth.transport
+	}
+	return nil
+}
+
+// tcpPoolRoundTripper sends through a TCP pool's tcpBase, building the pool
+// on first use.
+type tcpPoolRoundTripper struct{ pool *httpPolicyPool }
+
+func (rt tcpPoolRoundTripper) RoundTrip(request *stdhttp.Request) (*stdhttp.Response, error) {
+	return rt.pool.built().tcpBase.RoundTrip(request)
+}
+
+// httpPoolBuilder holds what a VUser's TCP pools are built from. Every value
+// is fixed when Init returns; the session TLS configuration is cloned for
+// each transport and never modified.
+type httpPoolBuilder struct {
+	settings       transportConfig
+	tlsConfig      *tls.Config
+	proxy          func(*stdhttp.Request) (*url.URL, error)
+	dial           func(context.Context, string, string) (net.Conn, error)
+	jar            stdhttp.CookieJar
+	requestTimeout time.Duration
+	maxRedirects   int
+	pacSource      string
+	allowed        []string
+	connections    *httpConnectionBudget
+	runCorrelation runCorrelationPolicy
+}
+
+// newClient returns policy's private transport, not yet tracked by the
+// connection budget, in a client with the session's jar, timeout and
+// redirect policy.
+func (b *httpPoolBuilder) newClient(policy string) (*stdhttp.Client, *stdhttp.Transport) {
+	transport := newTransport(b.settings, b.tlsConfig.Clone())
+	transport.Proxy = b.proxy
+	transport.DialContext = b.dial
+	selected := policy
+	if selected == "auto" {
+		selected = ""
+	}
+	// The three TCP policies are valid versions, so this cannot fail.
+	_, _ = applyHTTPVersion(transport, map[string]any{"http_version": selected})
+	client := &stdhttp.Client{Transport: transport, Jar: b.jar, Timeout: b.requestTimeout}
+	applyRedirectPolicy(client, b.maxRedirects)
+	return client, transport
+}
+
+func (b *httpPoolBuilder) buildTCP(policy string) (*stdhttp.Client, *stdhttp.Transport, stdhttp.RoundTripper) {
+	client, transport := b.newClient(policy)
+	freezePolicyALPN(transport, policy)
+	client.Transport = b.connections.track(transport, b.dial)
+	if b.pacSource != "" {
+		client.Transport = &pacRoundTripper{source: b.pacSource, allowed: b.allowed, base: transport, budget: b.connections, baseDial: b.dial}
+	}
+	tcpBase := client.Transport
+	if len(b.allowed) > 0 {
+		client.Transport = protocol.NewTargetPolicyRoundTripper(client.Transport, b.allowed)
+	}
+	client.Transport = withoutImplicitUserAgent(client.Transport)
+	client.Transport = integratedAuthRoundTripper{base: client.Transport}
+	if b.runCorrelation.enabled() {
+		client.Transport = runCorrelationRoundTripper{base: client.Transport, policy: b.runCorrelation}
+	}
+	return client, transport, tcpBase
+}
+
+// buildOAuth builds policy's hardened OAuth client on a transport of its own:
+// a copy of the pool's live transport would carry its connection-budget
+// dialer.
+func (b *httpPoolBuilder) buildOAuth(policy string) *httpOAuthClient {
+	base, transport := b.newClient(policy)
+	client := oauthRequestClient(base)
+	hardenOAuthTransport(transport)
+	freezePolicyALPN(transport, policy)
+	client.Transport = b.connections.track(transport, b.dial)
+	if b.pacSource != "" {
+		client.Transport = &pacRoundTripper{source: b.pacSource, allowed: b.allowed, base: transport, budget: b.connections, baseDial: b.dial}
+	}
+	if len(b.allowed) > 0 {
+		client.Transport = protocol.NewTargetPolicyRoundTripper(client.Transport, b.allowed)
+	}
+	client.Transport = withoutImplicitUserAgent(client.Transport)
+	return &httpOAuthClient{client: client, transport: transport}
 }
 
 type httpVersionCacheKey struct{}
@@ -37,7 +186,6 @@ func (h *HTTP) initializeHTTPPolicyPools(ctx context.Context, config map[string]
 	if len(h.allowedTargetHosts) > 0 {
 		baseline.Proxy = protocol.NewTargetPolicyProxy(baseline.Proxy, h.allowedTargetHosts)
 	}
-	baseDial := baseline.DialContext
 	jar := buildCookieJar(config)
 	h.maxRedirects = parseMaxRedirects(config)
 	h.connections = newHTTPConnectionBudget(settings.maxConnsPerHost, settings.maxIdleConns)
@@ -49,46 +197,21 @@ func (h *HTTP) initializeHTTPPolicyPools(ctx context.Context, config map[string]
 			return err
 		}
 	}
-	// tcpBase keeps each TCP pool's transport below the shared wrappers, so
-	// the auto+h3 router can use it with its own copy of those wrappers.
-	tcpBase := make(map[string]stdhttp.RoundTripper, 3)
+	builder := &httpPoolBuilder{
+		settings:       settings,
+		tlsConfig:      tlsConfig,
+		proxy:          baseline.Proxy,
+		dial:           baseline.DialContext,
+		jar:            jar,
+		requestTimeout: h.requestTimeout,
+		maxRedirects:   h.maxRedirects,
+		pacSource:      pacSource,
+		allowed:        h.allowedTargetHosts,
+		connections:    h.connections,
+		runCorrelation: h.runCorrelation,
+	}
 	for _, policy := range []string{"auto", VersionHTTP11, VersionHTTP2} {
-		transport := newTransport(settings, tlsConfig.Clone())
-		transport.Proxy = baseline.Proxy
-		transport.DialContext = baseDial
-		selected := policy
-		if selected == "auto" {
-			selected = ""
-		}
-		if _, err := applyHTTPVersion(transport, map[string]any{"http_version": selected}); err != nil {
-			return err
-		}
-		client := &stdhttp.Client{Transport: transport, Jar: jar, Timeout: h.requestTimeout}
-		applyRedirectPolicy(client, h.maxRedirects)
-		oauthClient := hardenedOAuthHTTPClient(client)
-		oauthTransport, _ := oauthClient.Transport.(*stdhttp.Transport)
-		freezePolicyALPN(transport, policy)
-		freezePolicyALPN(oauthTransport, policy)
-		owner := h.connections.track(transport, baseDial)
-		oauthOwner := h.connections.track(oauthTransport, baseDial)
-		client.Transport = owner
-		oauthClient.Transport = oauthOwner
-		if pacSource != "" {
-			client.Transport = &pacRoundTripper{source: pacSource, allowed: h.allowedTargetHosts, base: transport, budget: h.connections, baseDial: baseDial}
-			oauthClient.Transport = &pacRoundTripper{source: pacSource, allowed: h.allowedTargetHosts, base: oauthTransport, budget: h.connections, baseDial: baseDial}
-		}
-		tcpBase[policy] = client.Transport
-		if len(h.allowedTargetHosts) > 0 {
-			client.Transport = protocol.NewTargetPolicyRoundTripper(client.Transport, h.allowedTargetHosts)
-			oauthClient.Transport = protocol.NewTargetPolicyRoundTripper(oauthClient.Transport, h.allowedTargetHosts)
-		}
-		client.Transport = withoutImplicitUserAgent(client.Transport)
-		client.Transport = integratedAuthRoundTripper{base: client.Transport}
-		if h.runCorrelation.enabled() {
-			client.Transport = runCorrelationRoundTripper{base: client.Transport, policy: h.runCorrelation}
-		}
-		oauthClient.Transport = withoutImplicitUserAgent(oauthClient.Transport)
-		h.policyPools[policy] = &httpPolicyPool{client: client, transport: transport, oauthClient: oauthClient, oauthTransport: oauthTransport}
+		h.policyPools[policy] = &httpPolicyPool{policy: policy, builder: builder}
 	}
 	h.http3, h.http3Err = nil, nil
 	switch {
@@ -112,7 +235,7 @@ func (h *HTTP) initializeHTTPPolicyPools(ctx context.Context, config map[string]
 			if pool != nil {
 				quic = h.http3
 			}
-			h.policyPools[VersionAutoH3] = h.newUpgradePool(quic, tlsBelow, baseline, pacSource, h.policyPools["auto"], tcpBase, jar)
+			h.policyPools[VersionAutoH3] = h.newUpgradePool(quic, tlsBelow, baseline, pacSource, h.policyPools["auto"], h.policyPools[VersionHTTP11], jar)
 		}
 	}
 	defaultPolicy := h.httpVersion
@@ -123,7 +246,7 @@ func (h *HTTP) initializeHTTPPolicyPools(ctx context.Context, config map[string]
 		defaultPolicy = "auto"
 	}
 	pool := h.policyPools[defaultPolicy]
-	h.client, h.transport, h.oauthClient, h.oauthTransport = pool.client, pool.transport, pool.oauthClient, pool.oauthTransport
+	h.client, h.transport, h.oauthPool = pool.httpClient(), pool.httpTransport(), pool
 	return nil
 }
 
@@ -165,7 +288,7 @@ func (h *HTTP) forHTTPVersion(policy string) *HTTP {
 		return h
 	}
 	child := h.metaRefreshClient()
-	child.client, child.transport, child.oauthClient, child.oauthTransport = pool.client, pool.transport, pool.oauthClient, pool.oauthTransport
+	child.client, child.transport, child.oauthPool = pool.httpClient(), pool.httpTransport(), pool
 	child.httpVersion = policy
 	if policy == "auto" {
 		child.httpVersion = ""
@@ -182,9 +305,11 @@ func (h *HTTP) validateHTTPVersionTLS(policy, target string) error {
 	if policy != VersionHTTP2 || !strings.HasPrefix(strings.ToLower(target), "https://") {
 		return nil
 	}
+	// The pool's transport clones the session TLS configuration, so its
+	// maximum is read there without building the pool.
 	pool := h.policyPools[policy]
-	if pool != nil && pool.transport.TLSClientConfig != nil {
-		maximum := pool.transport.TLSClientConfig.MaxVersion
+	if pool != nil && pool.builder != nil && pool.builder.tlsConfig != nil {
+		maximum := pool.builder.tlsConfig.MaxVersion
 		if maximum != 0 && maximum < tls.VersionTLS12 {
 			return fmt.Errorf("HTTP version 2 requires TLS 1.2 or later for HTTPS requests")
 		}
