@@ -1,6 +1,8 @@
 package importreview
 
 import (
+	"errors"
+
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -15,6 +17,9 @@ type SalesforceHARAugmentation struct {
 	Detected          bool
 	ReviewForResponse *salesforce.Review
 }
+
+// analyzeSalesforce is salesforce.Analyze; tests replace it to count analyses.
+var analyzeSalesforce = salesforce.Analyze
 
 func AugmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, projectID, sourceName, source string, buildNative, agentforce, requireDetected bool) SalesforceHARAugmentation {
 	augmentation := SalesforceHARAugmentation{
@@ -32,19 +37,21 @@ func AugmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 	// correlation pass, which dominates a large Salesforce import. Without it,
 	// detect first with BuildNative:false.
 	nativeWithDetection := buildNative && requireDetected
-	review, err := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{
+	review, err := analyzeSalesforce(result.Script, salesforce.AnalyzeOptions{
 		BuildNative:     nativeWithDetection,
 		HARData:         data,
 		RequireDetected: requireDetected,
 	})
 	var nativeErr error
-	if err != nil && nativeWithDetection {
-		// Only a native-build failure clears on a retry without the native build;
-		// keep that review and report the failure, as the two-call path does.
+	var previewErr *salesforce.NativePreviewError
+	if errors.As(err, &previewErr) {
+		// The review succeeded but its native preview did not: keep the review
+		// without the native build and report the failure, as the two-call path
+		// does.
 		nativeErr = err
-		review, err = salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{
+		review, err = analyzeSalesforce(result.Script, salesforce.AnalyzeOptions{
 			HARData:         data,
-			RequireDetected: true,
+			RequireDetected: requireDetected,
 		})
 	}
 	if err != nil {
@@ -59,7 +66,7 @@ func AugmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 
 	// Only build the native Salesforce preview once Salesforce traffic is confirmed.
 	if buildNative && !nativeWithDetection && review != nil && review.Detected {
-		nativeReview, err := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{
+		nativeReview, err := analyzeSalesforce(result.Script, salesforce.AnalyzeOptions{
 			BuildNative: true,
 			HARData:     data,
 		})

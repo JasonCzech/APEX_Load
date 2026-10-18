@@ -131,6 +131,10 @@ func (s *Server) handleValidateEnterpriseArchiveImport(w http.ResponseWriter, r 
 	s.writeEnterpriseArchiveImportResponse(w, r, http.StatusOK, result, importReq.ReadinessPolicy, importReq.ExpireDraft)
 }
 
+// analyzeEnterpriseSalesforceReview is salesforce.Analyze; tests replace it to
+// inspect the options an archive import passes.
+var analyzeEnterpriseSalesforceReview = salesforce.Analyze
+
 func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.ConvertResult, importReq *enterpriseArchiveImportRequest) {
 	if result == nil || importReq == nil {
 		return
@@ -149,9 +153,12 @@ func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.C
 	if reviewScript == nil {
 		return
 	}
-	review, err := salesforce.Analyze(reviewScript, salesforce.AnalyzeOptions{
-		BuildNative: importReq.SalesforceNative,
-		HARData:     importReq.HARData,
+	// Without a native request an undetected review is dropped below, so its
+	// correlation pass is skipped.
+	review, err := analyzeEnterpriseSalesforceReview(reviewScript, salesforce.AnalyzeOptions{
+		BuildNative:     importReq.SalesforceNative,
+		HARData:         importReq.HARData,
+		RequireDetected: !importReq.SalesforceNative,
 	})
 	if err != nil {
 		result.Warnings = append(result.Warnings, "Salesforce review failed: "+err.Error())

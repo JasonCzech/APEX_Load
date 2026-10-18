@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
 	"testing"
@@ -220,18 +221,49 @@ func TestAnalyzeRequireDetectedSkipsCorrelationPassWithoutSalesforce(t *testing.
 		t.Fatalf("correlation confidence without RequireDetected = %q, want the token reuse found", full.CorrelationConfidence)
 	}
 
-	review, err := Analyze(script, AnalyzeOptions{HARData: har, RequireDetected: true})
-	if err != nil {
-		t.Fatalf("Analyze with RequireDetected returned error: %v", err)
+	for _, buildNative := range []bool{false, true} {
+		review, err := Analyze(script, AnalyzeOptions{BuildNative: buildNative, HARData: har, RequireDetected: true})
+		if err != nil {
+			t.Fatalf("Analyze with RequireDetected (BuildNative %v) returned error: %v", buildNative, err)
+		}
+		if review.Detected {
+			t.Fatal("generic traffic was detected as Salesforce")
+		}
+		if review.CorrelationConfidence != "" {
+			t.Fatalf("correlation pass ran for an undetected review (BuildNative %v): confidence %q", buildNative, review.CorrelationConfidence)
+		}
+		if review.NativePreview != nil {
+			t.Fatal("native preview built for an undetected review")
+		}
+		if review.HARMatchCoverage != full.HARMatchCoverage {
+			t.Fatalf("coverage = %#v, want the detection pass result %#v", review.HARMatchCoverage, full.HARMatchCoverage)
+		}
 	}
-	if review.Detected {
-		t.Fatal("generic traffic was detected as Salesforce")
+}
+
+func TestAnalyzeReportsNativeBuildFailureAsNativePreviewError(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "SF Import",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{
+			// The native builder clones the script through JSON, which rejects NaN.
+			{Name: "Login", Type: "GET", Method: "GET", Target: "/login", Metadata: map[string]any{"unencodable": math.NaN()}},
+			{Name: "Aura", Type: "POST", Method: "POST", Target: "https://acme.lightning.force.com/aura", Body: `{"token":"tok-abcdef123456"}`},
+		},
 	}
-	if review.CorrelationConfidence != "" || len(review.Parameterizations) != 0 {
-		t.Fatalf("correlation pass ran for an undetected review: confidence %q, parameterizations %#v", review.CorrelationConfidence, review.Parameterizations)
+	har := tokenReuseHAR("https://acme.my.salesforce.com/login", "https://acme.lightning.force.com/aura")
+
+	if _, err := Analyze(script, AnalyzeOptions{HARData: har}); err != nil {
+		t.Fatalf("review without the native build failed: %v", err)
 	}
-	if review.HARMatchCoverage != full.HARMatchCoverage {
-		t.Fatalf("coverage = %#v, want the detection pass result %#v", review.HARMatchCoverage, full.HARMatchCoverage)
+	_, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	var nativeErr *NativePreviewError
+	if !errors.As(err, &nativeErr) {
+		t.Fatalf("native build error = %v, want a NativePreviewError", err)
+	}
+	if _, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: []byte("{")}); err == nil || errors.As(err, &nativeErr) {
+		t.Fatalf("HAR parse error = %v, want an error that is not a NativePreviewError", err)
 	}
 }
 

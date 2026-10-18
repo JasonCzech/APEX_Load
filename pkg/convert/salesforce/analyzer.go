@@ -30,9 +30,25 @@ type AnalyzeOptions struct {
 	HARData     []byte
 	// RequireDetected is for callers that discard reviews without Salesforce
 	// traffic. An undetected review then returns before the correlation pass,
-	// which re-scans every HAR entry and dominates a large import's CPU.
+	// which re-scans every HAR entry and dominates a large import's CPU, and
+	// before the native build. It keeps everything computed before the
+	// correlation pass (detection, domains, endpoints, transactions, HAR
+	// coverage, Aura outcomes, next actions, and the warnings and blockers those
+	// produce, including BuildNative's coverage blockers), but has no correlation
+	// confidence, parameterizations, correlation or parameterization warnings
+	// and blockers, or native preview.
 	RequireDetected bool
 }
+
+// NativePreviewError reports that the review succeeded but its native preview
+// could not be built. Its message is the underlying error's.
+type NativePreviewError struct {
+	Err error
+}
+
+func (e *NativePreviewError) Error() string { return e.Err.Error() }
+
+func (e *NativePreviewError) Unwrap() error { return e.Err }
 
 type Review struct {
 	Detected              bool                        `json:"detected"`
@@ -267,7 +283,7 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 	if opts.BuildNative {
 		preview, err := buildNativePreview(script, refs, entries, matches, correlations, review.AuraOutcomes.RecordedFailures())
 		if err != nil {
-			return nil, err
+			return nil, &NativePreviewError{Err: err}
 		}
 		review.NativePreview = preview
 		if warning := auraTokenProvenanceWarning(preview.Script, correlations); warning != "" {
