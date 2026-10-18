@@ -191,7 +191,7 @@ func (tr *TestRunner) latestMessagingProgress(id string) (*protocol.MessagingPro
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	test := tr.tests[identity.ID]
-	if !sameStoredTestIdentity(test, &storage.TestRecord{ID: identity.ID, ProjectID: identity.ProjectID, StartTime: identity.CreatedAt, InitialProvenance: identity.initialArchiveProvenance}) {
+	if !sameStoredTestIdentity(test, &storage.TestRecord{ID: identity.ID, ProjectID: identity.ProjectID, StartTime: identity.CreatedAt, InitialProvenance: identity.initialArchiveProvenance, ExecutionGeneration: identity.durableExecutionGeneration}) {
 		// A stale local execution handle may remain for teardown after an HA
 		// delete/recreate. It cannot disclose evidence for the replacement row.
 		if identity.LiveMetrics != nil {

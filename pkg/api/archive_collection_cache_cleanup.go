@@ -368,7 +368,7 @@ func (tr *TestRunner) confirmCollectionCachePublication(ctx context.Context, int
 	if err != nil {
 		return nil, err
 	}
-	if manifest.Status != row.Status || !archiveRunTimestampMatches(archiveManifestRequestedAt(manifest), row.StartTime, tr.testStore) || !archiveRunTimestampMatches(manifest.CompletedAt, *row.EndTime, tr.testStore) {
+	if !runArchiveManifestMatchesStoredTest(manifest, row, tr.testStore) || manifest.Status != row.Status || !archiveRunTimestampMatches(archiveManifestRequestedAt(manifest), row.StartTime, tr.testStore) || !archiveRunTimestampMatches(manifest.CompletedAt, *row.EndTime, tr.testStore) {
 		return nil, errors.New("published manifest belongs to another terminal outcome")
 	}
 	if project := strings.TrimSpace(manifest.Provenance.ProjectID); project != "" && normalizeProjectID(project) != normalizeProjectID(intent.ProjectID) {

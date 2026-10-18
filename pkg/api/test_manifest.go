@@ -302,9 +302,11 @@ func (tr *TestRunner) buildTestManifestForManagedTest(test *ManagedTest, request
 		current.EndedAt = &completedAt
 	}
 
-	provenance := buildRunArchiveProvenance(tr, test)
+	var provenance RunArchiveProvenance
 	if archiveManifest != nil {
 		provenance = archiveManifest.Provenance
+	} else {
+		provenance = buildRunArchiveProvenance(tr, test)
 	}
 
 	runtimeChanges, auditWarnings := tr.testManifestRuntimeChanges(test.ID, test.RefKey, requestedID)

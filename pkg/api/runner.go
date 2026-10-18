@@ -633,6 +633,9 @@ type ManagedTest struct {
 	multiEngine         *engine.MultiGroupEngine
 	executionCtx        context.Context
 	executionGeneration uint64
+	// durableExecutionGeneration identifies archived/read evidence, including on
+	// passive replicas. It never grants process-local execution ownership.
+	durableExecutionGeneration uint64
 	// continuityCheckpoint is the stored HA adoption checkpoint (opaque JSON,
 	// never serialized); continuityArmedGeneration is its decoded term (0 when
 	// absent). Set both through setContinuityCheckpointLocked. adoptedResume is

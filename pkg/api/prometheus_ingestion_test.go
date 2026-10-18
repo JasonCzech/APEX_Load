@@ -397,6 +397,16 @@ func TestPrometheusPartialDiagnosticSnapshotDoesNotProveAbsence(t *testing.T) {
 }
 
 func TestPrometheusArchiveUsesCanonicalGridAndFrozenRules(t *testing.T) {
+	for _, recovered := range []bool{false, true} {
+		name := "original"
+		if recovered {
+			name = "restamped"
+		}
+		t.Run(name, func(t *testing.T) { testPrometheusArchiveUsesExecutionGrid(t, recovered) })
+	}
+}
+
+func testPrometheusArchiveUsesExecutionGrid(t *testing.T, recovered bool) {
 	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", "filesystem")
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	s, store, job, p := apiPrometheusFixture(t)
@@ -425,6 +435,9 @@ func TestPrometheusArchiveUsesCanonicalGridAndFrozenRules(t *testing.T) {
 	}
 	archive := &storage.RunArchiveRecord{TestID: job.RunID, ArchivePath: root, ManifestPath: filepath.Join(root, "manifest.json")}
 	manifest := &RunArchiveManifest{TestID: job.RunID, CreatedAt: job.StartedAt, CompletedAt: end, Provenance: RunArchiveProvenance{StartedAt: &job.StartedAt, GoalConfig: &GoalConfig{MonitorRules: []analysis.MonitorRule{{SourceID: "changed", Metric: "changed"}}}}}
+	if recovered {
+		manifest = restampExecutionFixture(t, manifest, end.Add(time.Minute))
+	}
 	budget, err := newArchiveAdjunctBudgetForRecord(context.Background(), archive)
 	if err != nil {
 		t.Fatal(err)
@@ -438,6 +451,9 @@ func TestPrometheusArchiveUsesCanonicalGridAndFrozenRules(t *testing.T) {
 	}
 	if manifest.MonitorCoverage[0].PrometheusSelection == nil || manifest.MonitorCoverage[0].ProviderCoverage["numeric:cpu"].ExpectedPoints != 3 {
 		t.Fatal(manifest.MonitorCoverage)
+	}
+	if !manifest.MonitorCoverage[0].ProviderCoverage["numeric:cpu"].To.Equal(end) {
+		t.Fatal("monitor coverage extended beyond execution", manifest.MonitorCoverage)
 	}
 	rows, err := store.ListProviderObservationHeads(job.ProjectID, job.RunID, job.Source.ID, "point", "", 100)
 	if err != nil || len(rows) != 3 {

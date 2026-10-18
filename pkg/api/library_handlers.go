@@ -149,12 +149,13 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 	defer cancelPrep()
 	id := strings.TrimSpace(r.PathValue("id"))
 	var (
-		testName               string
-		projectID              string
-		expectedManifestTestID string
-		expectedRunIncarnation string
-		importedEvidence       bool
-		record                 *storage.RunArchiveRecord
+		testName                    string
+		projectID                   string
+		expectedManifestTestID      string
+		expectedRunIncarnation      string
+		expectedExecutionGeneration uint64
+		importedEvidence            bool
+		record                      *storage.RunArchiveRecord
 	)
 	if s.store != nil {
 		// The route resolver authorizes against the durable test row. Read the
@@ -167,6 +168,7 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 			projectID = normalizeProjectID(durableTest.ProjectID)
 			testName = durableTest.Name
 			expectedManifestTestID = id
+			expectedExecutionGeneration = durableTest.ExecutionGeneration
 			var identityErr error
 			expectedRunIncarnation, identityErr = storage.TestRunIncarnation(durableTest.InitialProvenance)
 			if identityErr != nil {
@@ -204,6 +206,7 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 			testName = test.Name
 			expectedManifestTestID = id
 			expectedRunIncarnation = managedTestRunIncarnation(test)
+			expectedExecutionGeneration = test.durableExecutionGeneration
 			if !requireAuthorizedProjectMatch(w, r, projectID) {
 				return
 			}
@@ -246,7 +249,7 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 	}
 	if !importedEvidence {
 		incarnation, err := archiveManifestRunIncarnation(manifest)
-		if err != nil || incarnation != expectedRunIncarnation {
+		if err != nil || incarnation != expectedRunIncarnation || manifest.Provenance.ExecutionGeneration != expectedExecutionGeneration {
 			writeError(w, http.StatusNotFound, "archive does not belong to run incarnation")
 			return
 		}

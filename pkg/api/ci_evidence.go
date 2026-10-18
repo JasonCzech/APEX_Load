@@ -79,7 +79,7 @@ func (s *Server) validatedCIRunArchiveEvidence(ctx context.Context, test *Manage
 		return nil, errors.New("durable archive manifest belongs to a stale run identity")
 	}
 	incarnation, err := archiveManifestRunIncarnation(manifest)
-	if err != nil || incarnation != managedTestRunIncarnation(test) {
+	if err != nil || incarnation != managedTestRunIncarnation(test) || manifest.Provenance.ExecutionGeneration != test.durableExecutionGeneration {
 		return nil, errors.New("durable archive manifest belongs to a different run incarnation")
 	}
 	if status := strings.ToUpper(strings.TrimSpace(manifest.Status)); status != strings.ToUpper(strings.TrimSpace(test.Status)) {

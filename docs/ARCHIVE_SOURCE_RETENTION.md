@@ -122,6 +122,37 @@ resurrected after catalog retention, including by producer retries. Recovery hol
 the source file fence and skips already-published, pending, deleted and resolved
 runs before reading their payloads.
 
+A failed-over run is the one case where the end times legitimately differ: the
+executing controller finalizes its archive at its own time, and the successor
+reconciles the run row as `FAILED` at a later time. The run row records the HA
+execution lease generation of the term that executes the run (`tests.execution_generation`,
+schema release 63). The fenced Start commit stamps it, run adoption advances it,
+and ordinary row saves and reconciliation never change it. Archive provenance
+records the same generation as `execution_generation`. When the start time, project
+and terminal status match but the end time does not, recovery accepts the archive
+only if both generations are present and equal. It prepares a restamped manifest
+in memory: `completed_at` becomes the durable run end, and the executor's time is
+kept as `executor_completed_at`. The prepared bytes and their digest are committed
+with the publication job, through the same exact end-time and lease fence. The
+source is not modified before that fence. Finalization restores the prepared
+manifest only after verifying every artifact digest, so a refused or interrupted
+recovery leaves the source byte-for-byte unchanged. Rows and
+archives without a generation (non-HA runs, and runs from before release 63)
+keep the exact end-time rule. An archive from a term that lost the run to
+adoption no longer matches the advanced generation, so it stays unpublished.
+
+Each newly admitted run also has an immutable `run_incarnation` in its initial
+and archive provenance. Recovery and publication compare that value as well as
+the durable execution generation; a generation match cannot identify a deleted
+and recreated run, and an incarnation match cannot identify the execution term
+that survived adoption. Archive reads, follower history and CI evidence apply
+the same identity checks. Both-absent legacy identities retain the existing
+exact timestamp rules. Execution-duration, rate, phase and analytical-window
+calculations use `executor_completed_at` when retained, so reconciliation delay
+does not extend the measured run or lower its rates. Older archives fall back
+to `completed_at`; identity, catalog and completion timestamps keep the durable
+end.
+
 A genuine orphan must have complete artifact size/hash descriptors; existing files
 are verified through the inspected directory handle before publication can rewrite
 adjunct metadata. Verification uses the configured per-archive materialization byte

@@ -807,6 +807,9 @@ func openAPIComponentSchemas() map[string]oasSchema {
 	for name, schema := range enterpriseArchiveCollectionOpenAPISchemas() {
 		schemas[name] = schema
 	}
+	for name, schema := range scriptImportReviewOpenAPISchemas() {
+		schemas[name] = schema
+	}
 	return schemas
 }
 

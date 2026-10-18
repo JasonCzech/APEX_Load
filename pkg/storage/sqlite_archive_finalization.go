@@ -180,6 +180,14 @@ func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 	}
 	job.ProjectID = normalizeProjectID(job.ProjectID)
 	job.IntentToken = uuid.NewString()
+	// Recovery may prepare a replacement manifest (a failed-over archive at the
+	// durable end time). It is committed with the job, never written to the
+	// source before this fence, and restored by finalization.
+	if job.PreparedManifestJSON != "" {
+		if err := validatePreparedArchiveManifest(job.TestID, &job.ArchiveRecord, job.PreparedManifestJSON); err != nil {
+			return false, err
+		}
+	}
 	recordJSON, err := json.Marshal(job.ArchiveRecord)
 	if err != nil {
 		return false, fmt.Errorf("encode archive finalization record: %w", err)
@@ -204,14 +212,15 @@ func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 			return false, err
 		}
 	}
-	projectQuery := `SELECT COALESCE(project_id, ''), start_time, end_time, status, COALESCE(initial_provenance_json, '') FROM tests WHERE id = ?`
+	projectQuery := `SELECT COALESCE(project_id, ''), start_time, end_time, status, COALESCE(initial_provenance_json, ''), COALESCE(execution_generation, 0) FROM tests WHERE id = ?`
 	if s.db.dialect == storeDialectPostgres {
 		projectQuery += ` FOR UPDATE`
 	}
 	var projectID, durableStatus, initialProvenance string
 	var durableStart time.Time
 	var durableEnd sql.NullTime
-	if err := tx.QueryRow(projectQuery, job.TestID).Scan(&projectID, &durableStart, &durableEnd, &durableStatus, &initialProvenance); err != nil {
+	var durableExecutionGeneration uint64
+	if err := tx.QueryRow(projectQuery, job.TestID).Scan(&projectID, &durableStart, &durableEnd, &durableStatus, &initialProvenance, &durableExecutionGeneration); err != nil {
 		if status != "" && errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -225,7 +234,8 @@ func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 		if !durableEnd.Valid || durableStatus != status ||
 			!archiveIdentityTimestampEqual(s.db.dialect, durableStart, requestedAt) ||
 			incarnation != job.ArchiveRecord.RunIncarnation ||
-			(incarnation == "" && !archiveIdentityTimestampEqual(s.db.dialect, durableEnd.Time, job.ArchiveRecord.CompletedAt)) {
+			durableExecutionGeneration != job.ArchiveRecord.ExecutionGeneration ||
+			!archiveIdentityTimestampEqual(s.db.dialect, durableEnd.Time, job.ArchiveRecord.CompletedAt) {
 			return false, nil
 		}
 	}
@@ -263,9 +273,9 @@ func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 		}
 	}
 	result, err := tx.Exec(`INSERT INTO archive_finalization_jobs (
-		test_id, project_id, archive_record_json, persist_artifacts, generation, intent_token, refresh_token, attempts, last_error, created_at, updated_at
-	) VALUES (?, ?, ?, ?, 1, ?, ?, 0, NULL, ?, ?)
-	ON CONFLICT(test_id) DO NOTHING`, job.TestID, job.ProjectID, string(recordJSON), persistArtifacts, job.IntentToken, strings.TrimSpace(job.RefreshToken), job.CreatedAt, job.UpdatedAt)
+		test_id, project_id, archive_record_json, persist_artifacts, generation, intent_token, refresh_token, attempts, last_error, prepared_manifest_json, created_at, updated_at
+	) VALUES (?, ?, ?, ?, 1, ?, ?, 0, NULL, ?, ?, ?)
+	ON CONFLICT(test_id) DO NOTHING`, job.TestID, job.ProjectID, string(recordJSON), persistArtifacts, job.IntentToken, strings.TrimSpace(job.RefreshToken), job.PreparedManifestJSON, job.CreatedAt, job.UpdatedAt)
 	if err != nil {
 		return false, err
 	}
@@ -274,14 +284,6 @@ func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 		return false, err
 	}
 	if affected > 0 {
-		// The caller verified every archive artifact before entering this CAS.
-		// Only the winning, same-incarnation orphan may adopt its end time;
-		// refused, superseded and legacy jobs never change the durable run.
-		if status != "" && job.ArchiveRecord.RunIncarnation != "" {
-			if _, err := tx.Exec(`UPDATE tests SET end_time = ? WHERE id = ?`, job.ArchiveRecord.CompletedAt, job.TestID); err != nil {
-				return false, err
-			}
-		}
 		if _, err := tx.Exec(`UPDATE run_archive_collection_intents SET resolved = 1 WHERE test_id = ?`, job.TestID); err != nil {
 			return false, err
 		}
@@ -294,7 +296,6 @@ func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 	}
 	if affected > 0 {
 		job.Generation = 1
-		job.PreparedManifestJSON = ""
 	}
 	return affected > 0, nil
 }
@@ -542,7 +543,7 @@ func (s *SQLiteStore) completeArchiveFinalization(testID string, intentToken str
 			return false, err
 		}
 	}
-	testQuery := `SELECT COALESCE(project_id, ''), start_time, end_time, status, COALESCE(initial_provenance_json, '') FROM tests WHERE id = ?`
+	testQuery := `SELECT COALESCE(project_id, ''), start_time, end_time, status, COALESCE(initial_provenance_json, ''), COALESCE(execution_generation, 0) FROM tests WHERE id = ?`
 	jobQuery := `SELECT COALESCE(intent_token, ''), COALESCE(project_id, ''), archive_record_json FROM archive_finalization_jobs WHERE test_id = ?`
 	if s.db.dialect == storeDialectPostgres {
 		testQuery += ` FOR UPDATE`
@@ -551,7 +552,8 @@ func (s *SQLiteStore) completeArchiveFinalization(testID string, intentToken str
 	var durableProjectID, durableStatus, initialProvenance string
 	var durableStart time.Time
 	var durableEnd sql.NullTime
-	if err := tx.QueryRow(testQuery, testID).Scan(&durableProjectID, &durableStart, &durableEnd, &durableStatus, &initialProvenance); errors.Is(err, sql.ErrNoRows) {
+	var durableExecutionGeneration uint64
+	if err := tx.QueryRow(testQuery, testID).Scan(&durableProjectID, &durableStart, &durableEnd, &durableStatus, &initialProvenance, &durableExecutionGeneration); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, err
@@ -561,7 +563,7 @@ func (s *SQLiteStore) completeArchiveFinalization(testID string, intentToken str
 		if err != nil {
 			return false, err
 		}
-		if incarnation != identity.RunIncarnation {
+		if incarnation != identity.RunIncarnation || durableExecutionGeneration != identity.ExecutionGeneration {
 			return false, nil
 		}
 	}

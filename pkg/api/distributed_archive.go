@@ -263,6 +263,8 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 	archiveBackend := currentArchiveBackend()
 	record := &storage.RunArchiveRecord{
 		TestID:               manifest.TestID,
+		RunIncarnation:       manifest.Provenance.RunIncarnation,
+		ExecutionGeneration:  manifest.Provenance.ExecutionGeneration,
 		RefKey:               test.RefKey,
 		SchemaVersion:        manifest.SchemaVersion,
 		ArchiveBackend:       archiveBackend.Backend,

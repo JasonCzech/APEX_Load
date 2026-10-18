@@ -305,7 +305,7 @@ func buildNativeGroupedArchive(ctx context.Context, record *storage.RunArchiveRe
 	if err != nil {
 		return out, err
 	}
-	if manifest.CompletedAt.IsZero() || manifest.Provenance.StartedAt == nil || manifest.Provenance.StartedAt.IsZero() {
+	if archiveExecutionCompletedAt(manifest).IsZero() || manifest.Provenance.StartedAt == nil || manifest.Provenance.StartedAt.IsZero() {
 		return out, errors.New("completed archive with execution start required")
 	}
 	out = nativeEvidenceEnvelope(*manifest.Provenance.StartedAt, q)
@@ -407,7 +407,7 @@ func buildNativeGroupedArchive(ctx context.Context, record *storage.RunArchiveRe
 				to = out.To
 			}
 			p := NativeEvidencePoint{From: from, To: to, OffsetSeconds: from.Sub(out.Start).Seconds(), Count: int64(len(b.values)), failures: int64(b.errors),
-				complete: !missing && !archiveCollectionIncomplete(manifest) && !to.After(manifest.CompletedAt)}
+				complete: !missing && !archiveCollectionIncomplete(manifest) && !to.After(archiveExecutionCompletedAt(manifest))}
 			if len(b.values) > 0 {
 				sort.Float64s(b.values)
 				value := 0.0
@@ -445,7 +445,7 @@ func buildNativeGroupedArchive(ctx context.Context, record *storage.RunArchiveRe
 	if manifest.SourceCoverage != nil {
 		out.Warnings = append(out.Warnings, "Review archive source coverage before interpreting groups.")
 	}
-	if out.To.After(manifest.CompletedAt) {
+	if out.To.After(archiveExecutionCompletedAt(manifest)) {
 		out.Warnings = append(out.Warnings, "The selection extends past run completion.")
 	}
 	if selected == 0 {

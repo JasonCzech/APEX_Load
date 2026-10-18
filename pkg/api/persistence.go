@@ -844,6 +844,9 @@ func sameStoredTestIdentity(test *ManagedTest, record *storage.TestRecord) bool 
 	if test == nil || record == nil || test.ID != record.ID {
 		return false
 	}
+	if test.durableExecutionGeneration != record.ExecutionGeneration {
+		return false
+	}
 	// The immutable admission receipt distinguishes replacements even when
 	// their public ID and creation timestamp are identical. A missing token is
 	// still compatible with a legacy row or the normal pre-admission -> admitted
@@ -907,6 +910,7 @@ func applyStoredManagedTestSnapshot(current, stored *ManagedTest) {
 	current.StartAuthorization = cloneQueuedStartAuthorization(stored.StartAuthorization)
 	current.ExecutionPlanApproval = cloneRunArchiveExecutionPlanApprovalSnapshot(stored.ExecutionPlanApproval)
 	current.ExecutionPlan = cloneTestExecutionPlanLink(stored.ExecutionPlan)
+	current.durableExecutionGeneration = stored.durableExecutionGeneration
 	current.initialArchiveProvenance = decodeStoredInitialProvenance(stored.initialArchiveProvenance)
 	current.Error = stored.Error
 }
@@ -1078,6 +1082,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		Error:                    record.Error,
 		pinnedSecrets:            &runPinnedSecretState{},
 	}
+	managedTest.durableExecutionGeneration = record.ExecutionGeneration
 	if record.EndTime != nil {
 		managedTest.EndedAt = record.EndTime
 	}
@@ -1956,6 +1961,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		ExecutionPlanApproval:          test.ExecutionPlanApproval,
 		ExecutionPlan:                  executionPlanLinkForStorage(test.ExecutionPlan),
 		InitialProvenance:              initialProvenanceForStorage(test.initialArchiveProvenance),
+		ExecutionGeneration:            test.durableExecutionGeneration,
 		ExpectedProjectUpdatedAt:       test.expectedProjectUpdatedAt,
 		ExpectedApplicationUpdatedAt:   test.expectedApplicationUpdatedAt,
 		ExpectedReleaseUpdatedAt:       test.expectedReleaseUpdatedAt,
@@ -2323,6 +2329,9 @@ func (tr *TestRunner) persistInitialArchiveProvenance(test *ManagedTest, provena
 		return RunArchiveProvenance{}, fmt.Errorf("test and initial archive provenance are required")
 	}
 	masked := maskRunArchiveProvenance(*provenance)
+	// The executing term belongs to the final provenance refreshed when the
+	// archive is finalized; admission-time captures do not know it yet.
+	masked.ExecutionGeneration = 0
 	tr.mu.Lock()
 	if test.initialArchiveProvenance == nil {
 		test.initialArchiveProvenance = &masked

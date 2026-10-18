@@ -182,7 +182,7 @@ func (s *recoveryReadStore) GetRunArchiveCollection(id string) (*storage.RunArch
 }
 
 func TestRunArchiveRecoverySingleRunReadsAndIncarnationRecheck(t *testing.T) {
-	for _, mode := range []string{"read", "store failure", "replaced during read", "replaced incarnation during read"} {
+	for _, mode := range []string{"read", "store failure", "replaced during read", "replaced incarnation during read", "changed generation during read"} {
 		t.Run(mode, func(t *testing.T) {
 			_, sqlite, run, _ := collectionCacheFixture(t, "private-target")
 			end := time.Now().UTC()
@@ -203,8 +203,12 @@ func TestRunArchiveRecoverySingleRunReadsAndIncarnationRecheck(t *testing.T) {
 			}
 			store := &recoveryReadStore{SQLiteStore: sqlite, failure: mode == "store failure"}
 			tr := NewTestRunner(1, NewHub(), sqliteOverlay(store))
-			if mode == "replaced during read" || mode == "replaced incarnation during read" {
+			if mode == "replaced during read" || mode == "replaced incarnation during read" || mode == "changed generation during read" {
 				store.afterRead = func() {
+					if mode == "changed generation during read" {
+						advanceOrphanFixtureGeneration(t, sqlite, run.ID)
+						return
+					}
 					row, err := sqlite.GetTest(run.ID)
 					if err != nil {
 						t.Fatal(err)

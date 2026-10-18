@@ -1398,7 +1398,7 @@ func runArchiveManifestMatchesStoredTest(manifest *RunArchiveManifest, test *sto
 		return false
 	}
 	durableIncarnation, err := storage.TestRunIncarnation(test.InitialProvenance)
-	if err != nil || incarnation != durableIncarnation {
+	if err != nil || incarnation != durableIncarnation || manifest.Provenance.ExecutionGeneration != test.ExecutionGeneration {
 		return false
 	}
 	// v2 archives persist the test's CreatedAt as RequestedAt. Keep legacy

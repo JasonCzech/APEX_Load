@@ -166,7 +166,7 @@ func TestArchiveCollectionReusesExistingPublicationSource(t *testing.T) {
 }
 
 func TestArchiveCollectionSourceGuardRejectsDeletedReplacedAndRetainedRuns(t *testing.T) {
-	for _, mode := range []string{"deleted", "replaced", "replaced incarnation", "cleanup", "resolved"} {
+	for _, mode := range []string{"deleted", "replaced", "replaced incarnation", "changed generation", "cleanup", "resolved"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
@@ -193,6 +193,8 @@ func TestArchiveCollectionSourceGuardRejectsDeletedReplacedAndRetainedRuns(t *te
 					t.Fatal(err)
 				}
 				run.initialArchiveProvenance = &RunArchiveProvenance{RunIncarnation: "prior"}
+			case "changed generation":
+				stampOrphanRunExecutionGeneration(t, store, run.ID)
 			case "cleanup":
 				if err := store.SaveArchiveCleanupJob(&storage.ArchiveCleanupJob{TestID: run.ID, ProjectID: run.ProjectID, ArchiveRecord: record}); err != nil {
 					t.Fatal(err)
@@ -229,7 +231,7 @@ func (c *collectionInterleavingClient) StreamArchiveArtifact(ctx context.Context
 }
 
 func TestArchiveCollectionRechecksPublicationAndDeletionAfterDownload(t *testing.T) {
-	for _, mode := range []string{"catalog", "outbox", "deleted", "replaced", "replaced incarnation"} {
+	for _, mode := range []string{"catalog", "outbox", "deleted", "replaced", "replaced incarnation", "changed generation"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
@@ -259,6 +261,8 @@ func TestArchiveCollectionRechecksPublicationAndDeletionAfterDownload(t *testing
 			var mutationErr error
 			client := &collectionInterleavingClient{archiveStreamingFakeClient: coverageArchiveClient(t, run.ID), during: func() {
 				switch mode {
+				case "changed generation":
+					stampOrphanRunExecutionGeneration(t, store, run.ID)
 				case "catalog":
 					mutationErr = store.SaveRunArchive(record)
 				case "outbox":
@@ -278,7 +282,7 @@ func TestArchiveCollectionRechecksPublicationAndDeletionAfterDownload(t *testing
 			if mutationErr != nil {
 				t.Fatal(mutationErr)
 			}
-			if mode == "deleted" || mode == "replaced" || mode == "replaced incarnation" {
+			if mode == "deleted" || mode == "replaced" || mode == "replaced incarnation" || mode == "changed generation" {
 				if err == nil || got != nil {
 					t.Fatalf("stale collection committed: %+v %v", got, err)
 				}

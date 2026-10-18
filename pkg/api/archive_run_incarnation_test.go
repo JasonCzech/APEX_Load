@@ -77,7 +77,7 @@ func (s *replaceOrphanIncarnationStore) SaveArchiveFinalizationJobIfOrphanForRun
 }
 
 func TestOrphanRecoveryExplicitRunIncarnation(t *testing.T) {
-	for _, mode := range []string{"same incarnation", "different incarnation", "legacy exact", "legacy different end", "archive token only", "durable token only", "conflicting projections", "corrupt artifact", "replacement before CAS"} {
+	for _, mode := range []string{"same incarnation", "different incarnation", "legacy exact", "legacy different end", "archive token only", "durable token only", "conflicting projections", "corrupt artifact", "replacement before CAS", "same incarnation without execution term", "same incarnation exact end", "different generation exact end", "archive generation only", "durable generation only", "generation changed before CAS", "end changed before CAS", "pending job without generation"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
@@ -104,6 +104,8 @@ func TestOrphanRecoveryExplicitRunIncarnation(t *testing.T) {
 			case "different incarnation":
 				token = "prior-incarnation"
 				end = *row.EndTime
+			case "same incarnation exact end", "different generation exact end", "pending job without generation":
+				end = *row.EndTime
 			case "legacy exact":
 				token, durableToken = "", ""
 				end = *row.EndTime
@@ -119,8 +121,20 @@ func TestOrphanRecoveryExplicitRunIncarnation(t *testing.T) {
 			if err := store.SaveTest(row); err != nil {
 				t.Fatal(err)
 			}
+			var generation uint64
+			if mode != "legacy exact" && mode != "legacy different end" && mode != "same incarnation without execution term" && mode != "archive generation only" {
+				generation = stampOrphanRunExecutionGeneration(t, store, id)
+			}
+			manifest.Provenance.ExecutionGeneration = generation
+			switch mode {
+			case "different generation exact end", "archive generation only":
+				manifest.Provenance.ExecutionGeneration = generation + 1
+			case "durable generation only":
+				manifest.Provenance.ExecutionGeneration = 0
+			}
 			manifest.Provenance.RunIncarnation = token
 			initial := manifest.Provenance
+			initial.ExecutionGeneration = 0 // Admission predates execution ownership.
 			manifest.InitialProvenance = &initial
 			if mode == "conflicting projections" {
 				initial.RunIncarnation = "different"
@@ -150,23 +164,44 @@ func TestOrphanRecoveryExplicitRunIncarnation(t *testing.T) {
 					if err := store.SaveTest(row); err != nil {
 						t.Fatal(err)
 					}
+					stampOrphanRunExecutionGeneration(t, store, id)
 				}}
 			}
+			if mode == "generation changed before CAS" || mode == "end changed before CAS" {
+				orphanStore = &replaceOrphanIncarnationStore{base: store, replace: func() {
+					if mode == "generation changed before CAS" {
+						advanceOrphanFixtureGeneration(t, store, id)
+					} else {
+						end = end.Add(time.Second)
+						row.EndTime = &end
+						if err := store.SaveTest(row); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}}
+			}
+			original, err := os.ReadFile(record.ManifestPath)
+			if err != nil {
+				t.Fatal(err)
+			}
 			err = runner.recoverOrphanedLocalRunArchive(context.Background(), orphanStore, orphanArchiveCandidate{path: record.ArchivePath, identity: identity})
-			accepted := mode == "same incarnation" || mode == "legacy exact"
+			accepted := mode == "same incarnation" || mode == "same incarnation exact end" || mode == "legacy exact" || mode == "pending job without generation"
 			if accepted && err != nil {
 				t.Fatal(err)
 			}
-			if !accepted && mode != "replacement before CAS" && err == nil {
+			if !accepted && mode != "replacement before CAS" && mode != "generation changed before CAS" && mode != "end changed before CAS" && err == nil {
 				t.Fatal("invalid archive accepted")
 			}
 			current, err := store.GetTest(id)
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Even successful recovery must preserve the durable end, and no
+			// source bytes change before the fenced job is processed.
 			wantEnd := end
-			if accepted {
-				wantEnd = manifest.CompletedAt
+			unchanged, readErr := os.ReadFile(record.ManifestPath)
+			if readErr != nil || string(unchanged) != string(original) {
+				t.Fatalf("recovery rewrote source before finalization: %v", readErr)
 			}
 			if current.EndTime == nil || !current.EndTime.Equal(wantEnd) {
 				t.Fatalf("durable end=%v want=%v", current.EndTime, wantEnd)
@@ -175,7 +210,7 @@ func TestOrphanRecoveryExplicitRunIncarnation(t *testing.T) {
 			live := runner.tests[id]
 			liveEnd := cloneTimePtr(live.EndedAt)
 			runner.mu.RUnlock()
-			if liveEnd == nil || !liveEnd.Equal(wantEnd) {
+			if mode != "end changed before CAS" && (liveEnd == nil || !liveEnd.Equal(wantEnd)) {
 				t.Fatalf("live end=%v want=%v", liveEnd, wantEnd)
 			}
 			job, err := store.GetArchiveFinalizationJob(id)
@@ -183,15 +218,35 @@ func TestOrphanRecoveryExplicitRunIncarnation(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				if mode == "pending job without generation" {
+					// Upgrade compatibility: the old outbox record omits the new
+					// field; verified manifest provenance supplies the CAS proof.
+					job.ArchiveRecord.ExecutionGeneration = 0
+					if err := store.SaveArchiveFinalizationJob(job); err != nil {
+						t.Fatal(err)
+					}
+					job, err = store.GetArchiveFinalizationJob(id)
+					if err != nil || job.ArchiveRecord.ExecutionGeneration != 0 {
+						t.Fatalf("pending legacy record: %+v %v", job, err)
+					}
+				}
 				proof, err := runner.inspectArchiveFinalizationIdentity(context.Background(), job, current, false)
-				if err != nil || proof.RunIncarnation != token {
+				if err != nil || proof.RunIncarnation != token || proof.ExecutionGeneration != generation {
 					t.Fatalf("finalization lost identity: %+v %v", proof, err)
 				}
 				if err := (&Server{runner: runner, store: store}).retryArchiveFinalizationJobs(context.Background()); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := store.GetRunArchive(id); err != nil {
+				published, err := store.GetRunArchive(id)
+				if err != nil {
 					t.Fatalf("valid archive not published: %v", err)
+				}
+				final, err := loadRunArchiveManifestFromRecord(published)
+				if err != nil || !final.CompletedAt.Equal(end) || !published.CompletedAt.Equal(end) {
+					t.Fatalf("publication did not preserve durable end: %+v %v", final, err)
+				}
+				if mode == "same incarnation" && (final.ExecutorCompletedAt == nil || !final.ExecutorCompletedAt.Equal(manifest.CompletedAt)) {
+					t.Fatal("restamping lost executor completion time")
 				}
 			} else if !errors.Is(err, sql.ErrNoRows) {
 				t.Fatalf("rejected archive created work: %v", err)
@@ -200,8 +255,40 @@ func TestOrphanRecoveryExplicitRunIncarnation(t *testing.T) {
 	}
 }
 
+// Move execution ownership while preserving the public run identity and times.
+// This is the interleaving between verified manifest I/O and its storage CAS.
+func advanceOrphanFixtureGeneration(t *testing.T, store *storage.SQLiteStore, id string) {
+	t.Helper()
+	row, err := store.GetTest(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, ended := row.Status, row.EndTime
+	row.Status, row.EndTime = "RUNNING", nil
+	if err := store.SaveTest(row); err != nil {
+		t.Fatal(err)
+	}
+	const lease = "orphan-generation-fixture"
+	// Lease admission uses the database clock. Release the fixture owner while
+	// preserving its durable generation instead of supplying a future clock.
+	if err := store.ReleaseSchedulerLease(lease, "fixture-term"); err != nil {
+		t.Fatal(err)
+	}
+	held, next, err := store.TryAcquireSchedulerLeaseWithGeneration(lease, "successor-term", time.Now(), time.Minute)
+	if err != nil || !held || next <= row.ExecutionGeneration {
+		t.Fatal("acquire successor term", held, next, err)
+	}
+	if ok, err := store.AdvanceTestExecutionGenerationIfLeaseTermHeld(id, lease, "successor-term", next); err != nil || !ok {
+		t.Fatal("advance execution term", ok, err)
+	}
+	row.Status, row.EndTime = status, ended
+	if err := store.SaveTest(row); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestArchiveReadRejectsDifferentRunIncarnation(t *testing.T) {
-	for _, mode := range []string{"matching", "different", "durable token only", "archive token only", "legacy"} {
+	for _, mode := range []string{"matching", "different", "durable token only", "archive token only", "legacy", "matching generation", "different generation", "archive generation only", "durable generation only"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
@@ -255,6 +342,18 @@ func TestArchiveReadRejectsDifferentRunIncarnation(t *testing.T) {
 			if err := store.SaveTest(row); err != nil {
 				t.Fatal(err)
 			}
+			if mode == "matching generation" || mode == "different generation" || mode == "durable generation only" {
+				manifest.Provenance.ExecutionGeneration = stampOrphanRunExecutionGeneration(t, store, id)
+			}
+			switch mode {
+			case "different generation", "archive generation only":
+				manifest.Provenance.ExecutionGeneration++
+			case "durable generation only":
+				manifest.Provenance.ExecutionGeneration = 0
+			}
+			if err := writeIndentedJSONFile(record.ManifestPath, manifest); err != nil {
+				t.Fatal(err)
+			}
 			inspected, _, err := orphanArchiveRecordFromDirectoryWithIdentity(context.Background(), record.ArchivePath, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -264,7 +363,7 @@ func TestArchiveReadRejectsDifferentRunIncarnation(t *testing.T) {
 			}
 			runner := NewTestRunner(1, nil, store, WithExecutionLeadership(newExecutionLeadership(store, "reader")))
 			got, ok := runner.GetRunArchiveContext(context.Background(), id)
-			accepted := mode == "matching" || mode == "legacy"
+			accepted := mode == "matching" || mode == "legacy" || mode == "matching generation"
 			if ok != accepted || (got != nil) != accepted {
 				t.Fatalf("archive read accepted=%t want=%t record=%+v", ok, accepted, got)
 			}
@@ -273,6 +372,10 @@ func TestArchiveReadRejectsDifferentRunIncarnation(t *testing.T) {
 			runner.mu.RUnlock()
 			if !accepted && attached != nil {
 				t.Fatal("rejected incarnation retained live archive")
+			}
+			summary, exists := runner.GetTestSummary(id)
+			if !exists || (summary.Archive != nil) != accepted {
+				t.Fatalf("catalog summary attached wrong run identity: %+v", summary)
 			}
 			request := httptest.NewRequest(http.MethodGet, "/api/v1/library/results/"+id+"/archive", nil)
 			request.SetPathValue("id", id)

@@ -133,7 +133,7 @@ func TestStoredHistoryIdentityIncludesRunIncarnation(t *testing.T) {
 }
 
 func TestCIEvidenceRequiresMatchingRunIncarnation(t *testing.T) {
-	for _, mode := range []string{"matching", "different", "legacy", "archive only", "run only", "conflicting projections"} {
+	for _, mode := range []string{"matching", "different", "legacy", "archive only", "run only", "conflicting projections", "matching generation", "different generation", "archive generation only", "run generation only"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
 			t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
@@ -160,22 +160,36 @@ func TestCIEvidenceRequiresMatchingRunIncarnation(t *testing.T) {
 			if err := store.SaveTest(row); err != nil {
 				t.Fatal(err)
 			}
+			var archiveGeneration uint64
+			if mode == "matching generation" || mode == "different generation" || mode == "run generation only" {
+				run.durableExecutionGeneration = stampOrphanRunExecutionGeneration(t, store, run.ID)
+				archiveGeneration = run.durableExecutionGeneration
+			}
+			switch mode {
+			case "different generation", "archive generation only":
+				archiveGeneration++
+			case "run generation only":
+				archiveGeneration = 0
+			}
 			run.initialArchiveProvenance = initial
 			server.runner.mu.Lock()
 			server.runner.tests[run.ID].initialArchiveProvenance = initial
+			server.runner.tests[run.ID].durableExecutionGeneration = run.durableExecutionGeneration
 			server.runner.mu.Unlock()
 			// Preserve ID/project/timestamps/status and all artifact integrity;
 			// only the explicit incarnation can distinguish this stale archive.
 			rewriteCIRunArchiveManifest(t, store, record, func(manifest *RunArchiveManifest) {
 				manifest.Provenance.RunIncarnation = archiveToken
+				manifest.Provenance.ExecutionGeneration = archiveGeneration
 				original := manifest.Provenance
+				original.ExecutionGeneration = 0
 				manifest.InitialProvenance = &original
 				if mode == "conflicting projections" {
 					original.RunIncarnation = "another"
 				}
 			})
 			evidence, err := server.validatedCIRunArchiveEvidence(context.Background(), run)
-			accepted := mode == "matching" || mode == "legacy"
+			accepted := mode == "matching" || mode == "legacy" || mode == "matching generation"
 			if (err == nil) != accepted || (evidence != nil) != accepted {
 				t.Fatalf("CI archive accepted=%t want=%t evidence=%+v err=%v", err == nil, accepted, evidence, err)
 			}

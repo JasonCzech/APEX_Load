@@ -2,6 +2,7 @@ package salesforce
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -23,7 +24,7 @@ func TestAnalyzeDetectionGateSkipsUnrelatedReviewWork(t *testing.T) {
 	script.Actions[0].Target = "/orders"
 	data = []byte(strings.ReplaceAll(string(data), "/services/data/v60.0/query", "/orders"))
 	before, _ := json.Marshal(script)
-	gated, err := Analyze(script, AnalyzeOptions{HARData: data, RequireDetected: true, BuildNative: true})
+	gated, err := Analyze(script, AnalyzeOptions{HARData: data, SkipUndetectedReview: true, BuildNative: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +56,7 @@ func TestAnalyzeDetectionGatePreservesSalesforceReview(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			gated, err := Analyze(script, AnalyzeOptions{HARData: data, RequireDetected: true, BuildNativeIfDetected: true})
+			gated, err := Analyze(script, AnalyzeOptions{HARData: data, SkipUndetectedReview: true, BuildNativeIfDetected: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -97,7 +98,7 @@ func BenchmarkAnalyzeUnrelatedCapture(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(len(data)))
 			for b.Loop() {
-				if _, err := Analyze(script, AnalyzeOptions{HARData: data, RequireDetected: gate}); err != nil {
+				if _, err := Analyze(script, AnalyzeOptions{HARData: data, SkipUndetectedReview: gate}); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -109,7 +110,8 @@ func TestOptionalNativeFailureRetainsCompletedReview(t *testing.T) {
 	script, data := detectionFixture("acme.my.salesforce.com", `{"records":[],"done":true}`)
 	script.Metadata = &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Preserved: map[string]any{"unencodable": make(chan int)}}}
 	review, err := Analyze(script, AnalyzeOptions{HARData: data, BuildNativeIfDetected: true})
-	if err == nil || review == nil || !review.Detected || review.NativePreview != nil || review.HARMatchCoverage.MatchedRequests != 1 {
+	var nativeErr *NativePreviewError
+	if !errors.As(err, &nativeErr) || review == nil || !review.Detected || review.NativePreview != nil || review.HARMatchCoverage.MatchedRequests != 1 {
 		t.Fatalf("optional preparation lost review: %#v, %v", review, err)
 	}
 	if review, err = Analyze(script, AnalyzeOptions{HARData: data, BuildNative: true}); err == nil || review != nil {
@@ -126,11 +128,11 @@ func TestDetectionGateStillValidatesHARAndIgnoresMismatchedDocument(t *testing.T
 		t.Fatal(err)
 	}
 	_, salesforceData := detectionFixture("acme.my.salesforce.com", `{}`)
-	review, err := Analyze(script, AnalyzeOptions{HARData: salesforceData, Document: doc, RequireDetected: true})
+	review, err := Analyze(script, AnalyzeOptions{HARData: salesforceData, Document: doc, SkipUndetectedReview: true})
 	if err != nil || !review.Detected {
 		t.Fatalf("foreign document suppressed source detection: %#v, %v", review, err)
 	}
-	if _, err = Analyze(script, AnalyzeOptions{HARData: []byte(`{"log":`), Document: doc, RequireDetected: true}); err == nil {
+	if _, err = Analyze(script, AnalyzeOptions{HARData: []byte(`{"log":`), Document: doc, SkipUndetectedReview: true}); err == nil {
 		t.Fatal("negative detection accepted malformed HAR")
 	}
 }

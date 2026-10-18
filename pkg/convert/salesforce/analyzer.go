@@ -28,10 +28,15 @@ import (
 type AnalyzeOptions struct {
 	BuildNative bool
 	HARData     []byte
-	// RequireDetected skips matching, correlation and native preparation when
-	// the capture contains no Salesforce traffic. Explicit analyzer callers
-	// retain the full review by leaving this false.
+	// RequireDetected returns an undetected review before correlation and native
+	// preparation. It preserves detection, endpoints, transactions, HAR coverage,
+	// Aura outcomes, next actions, and their warnings and blockers, including
+	// BuildNative's coverage blockers.
 	RequireDetected bool
+	// SkipUndetectedReview is for importers that discard undetected reviews. It
+	// returns only Detected:false before matching, response normalization or
+	// correlation. Unlike RequireDetected, it does not retain review details.
+	SkipUndetectedReview bool
 	// BuildNativeIfDetected combines the optional import review and native
 	// preparation in one analysis. On a native preparation error it returns the
 	// completed review with the error, so importers can retain the review.
@@ -42,6 +47,16 @@ type AnalyzeOptions struct {
 	// Document reuses parsed evidence only when it matches HARData.
 	Document *sample.HARDocument
 }
+
+// NativePreviewError reports that the review succeeded but its native preview
+// could not be built. Its message is the underlying error's.
+type NativePreviewError struct {
+	Err error
+}
+
+func (e *NativePreviewError) Error() string { return e.Err.Error() }
+
+func (e *NativePreviewError) Unwrap() error { return e.Err }
 
 type Review struct {
 	Detected              bool                        `json:"detected"`
@@ -190,7 +205,7 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 	if err != nil {
 		return nil, err
 	}
-	if opts.RequireDetected && !detectsSalesforce(refs, nil) && !document.AnyRequestURL(func(rawURL string) bool {
+	if opts.SkipUndetectedReview && !detectsSalesforce(refs, nil) && !document.AnyRequestURL(func(rawURL string) bool {
 		return salesforceHost(hostOf(rawURL)) != ""
 	}) {
 		return &Review{Detected: false}, nil
@@ -200,7 +215,7 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 		return nil, err
 	}
 	detected := detectsSalesforce(refs, entries)
-	if opts.RequireDetected && !detected {
+	if opts.SkipUndetectedReview && !detected {
 		return &Review{Detected: false}, nil
 	}
 	buildNative := opts.BuildNative || (opts.BuildNativeIfDetected && detected)
@@ -267,6 +282,10 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 		review.Blockers = append(review.Blockers, "No Salesforce Aura or API endpoints were detected; validate that the capture includes the Salesforce transaction traffic.")
 	}
 
+	if opts.RequireDetected && !review.Detected {
+		return review, nil
+	}
+
 	correlations, correlationWarnings, err := detectCorrelationsChecked(entries)
 	if err != nil {
 		if !errors.Is(err, correlate.ErrCorrelationWorkLimit) {
@@ -287,10 +306,11 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 	if buildNative {
 		preview, err := buildNativePreview(script, refs, entries, matches, correlations, review.AuraOutcomes.RecordedFailures())
 		if err != nil {
+			nativeErr := &NativePreviewError{Err: err}
 			if opts.BuildNativeIfDetected {
-				return review, err
+				return review, nativeErr
 			}
-			return nil, err
+			return nil, nativeErr
 		}
 		if opts.Source != "" {
 			preview.Script.GeneratedFrom = nativeGeneratedFrom(opts.Source)

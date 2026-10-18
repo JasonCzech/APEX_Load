@@ -25,9 +25,10 @@ func storedArchiveCatalogAvailable(record *storage.RunArchiveRecord) bool {
 }
 
 type archiveCatalogIdentity struct {
-	runIncarnation string
-	projectHash    [32]byte
-	requestedAt    time.Time
+	executionGeneration uint64
+	runIncarnation      string
+	projectHash         [32]byte
+	requestedAt         time.Time
 }
 
 // Only single-run terminal reads consult the shared catalog. List polling retains
@@ -45,7 +46,7 @@ func (tr *TestRunner) attachTerminalArchiveCatalog(test *ManagedTest) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	identity, err := tr.archiveReadCaches().readArchiveCatalogIdentity(ctx, record)
-	if err != nil || identity.runIncarnation != managedTestRunIncarnation(test) || identity.projectHash != sha256.Sum256([]byte(normalizeProjectID(test.ProjectID))) ||
+	if err != nil || identity.runIncarnation != managedTestRunIncarnation(test) || identity.executionGeneration != test.durableExecutionGeneration || identity.projectHash != sha256.Sum256([]byte(normalizeProjectID(test.ProjectID))) ||
 		(!identity.requestedAt.IsZero() && !test.CreatedAt.IsZero() && !archiveRunTimestampMatches(identity.requestedAt, test.CreatedAt, tr.testStore)) {
 		return
 	}
@@ -136,7 +137,7 @@ func (c *archiveReadCaches) readArchiveCatalogIdentity(ctx context.Context, reco
 		if err != nil {
 			return nil, err
 		}
-		return &archiveCatalogIdentity{runIncarnation: incarnation, projectHash: sha256.Sum256([]byte(normalizeProjectID(manifest.Provenance.ProjectID))), requestedAt: manifest.Provenance.RequestedAt}, nil
+		return &archiveCatalogIdentity{executionGeneration: manifest.Provenance.ExecutionGeneration, runIncarnation: incarnation, projectHash: sha256.Sum256([]byte(normalizeProjectID(manifest.Provenance.ProjectID))), requestedAt: manifest.Provenance.RequestedAt}, nil
 	}
 	// Only digest-anchored identities are immutable. Legacy manifests are read
 	// afresh and must not become permanent identity proofs after replacement.

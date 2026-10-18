@@ -15,11 +15,12 @@ func TestArchiveOrphanExplicitIncarnation(t *testing.T) {
 
 func checkArchiveOrphanExplicitIncarnation(t *testing.T, s *SQLiteStore) {
 	t.Helper()
-	for _, mode := range []string{"same", "different", "missing archive token", "missing durable token", "legacy exact", "legacy different end", "pending job", "changed start", "changed status", "expired owner"} {
+	for _, mode := range []string{"same", "different", "missing archive token", "missing durable token", "legacy exact", "legacy different end", "pending job", "changed start", "changed status", "expired owner", "same different end", "different generation", "missing archive generation", "missing durable generation"} {
 		t.Run(mode, func(t *testing.T) {
 			id := fmt.Sprintf("explicit-orphan-%d", time.Now().UnixNano())
 			start := time.Now().UTC().Add(-time.Minute)
-			durableEnd, archiveEnd := start.Add(30*time.Second), start.Add(29*time.Second)
+			durableEnd, archiveEnd := start.Add(30*time.Second), start.Add(30*time.Second)
+			durableGeneration, archiveGeneration := uint64(7), uint64(7)
 			durableToken, archiveToken := "current-run", "current-run"
 			switch mode {
 			case "different":
@@ -29,17 +30,27 @@ func checkArchiveOrphanExplicitIncarnation(t *testing.T, s *SQLiteStore) {
 				archiveToken = ""
 			case "missing durable token":
 				durableToken = ""
-			case "legacy exact":
+			case "legacy exact", "legacy different end":
 				durableToken, archiveToken = "", ""
-				archiveEnd = durableEnd
-			case "legacy different end":
-				durableToken, archiveToken = "", ""
+				durableGeneration, archiveGeneration = 0, 0
+			case "different generation":
+				archiveGeneration++
+			case "missing archive generation":
+				archiveGeneration = 0
+			case "missing durable generation":
+				durableGeneration = 0
+			}
+			if mode == "legacy different end" || mode == "same different end" {
+				archiveEnd = durableEnd.Add(-time.Second)
 			}
 			row := &TestRecord{ID: id, Name: id, ProjectID: DefaultProjectID, Status: "FAILED", StartTime: start, EndTime: &durableEnd, InitialProvenance: map[string]any{"run_incarnation": durableToken}}
 			if err := s.SaveTest(row); err != nil {
 				t.Fatal(err)
 			}
-			record := RunArchiveRecord{TestID: row.ID, RunIncarnation: archiveToken, CreatedAt: start.Add(time.Second), CompletedAt: archiveEnd, ArchivePath: "/archive/run", ManifestPath: "/archive/run/manifest.json"}
+			if _, err := s.db.Exec(`UPDATE tests SET execution_generation = ? WHERE id = ?`, int64(durableGeneration), row.ID); err != nil {
+				t.Fatal(err)
+			}
+			record := RunArchiveRecord{TestID: row.ID, RunIncarnation: archiveToken, ExecutionGeneration: archiveGeneration, CreatedAt: start.Add(time.Second), CompletedAt: archiveEnd, ArchivePath: "/archive/run", ManifestPath: "/archive/run/manifest.json"}
 			job := &ArchiveFinalizationJob{TestID: row.ID, ProjectID: row.ProjectID, ArchiveRecord: record}
 			requestedAt, status, lease, owner := start, row.Status, "", ""
 			switch mode {
@@ -80,18 +91,15 @@ func checkArchiveOrphanExplicitIncarnation(t *testing.T, s *SQLiteStore) {
 				t.Fatal(err)
 			}
 			wantEnd := durableEnd
-			if accepted {
-				wantEnd = archiveEnd
-			}
 			if current.EndTime == nil || !archiveIdentityTimestampEqual(s.db.dialect, *current.EndTime, wantEnd) {
 				t.Fatalf("durable end=%v want=%v", current.EndTime, wantEnd)
 			}
-			if !accepted && !reflect.DeepEqual(beforeRow, current) {
-				t.Fatalf("rejected recovery mutated run: before=%+v after=%+v", beforeRow, current)
+			if !reflect.DeepEqual(beforeRow, current) {
+				t.Fatalf("recovery mutated durable run: before=%+v after=%+v", beforeRow, current)
 			}
 			stored, err := s.GetArchiveFinalizationJob(row.ID)
 			if accepted {
-				if err != nil || stored.ArchiveRecord.RunIncarnation != archiveToken {
+				if err != nil || stored.ArchiveRecord.RunIncarnation != archiveToken || stored.ArchiveRecord.ExecutionGeneration != archiveGeneration {
 					t.Fatalf("outbox lost incarnation: %+v %v", stored, err)
 				}
 			} else if mode == "pending job" {
@@ -111,43 +119,56 @@ func TestArchiveFinalizationCASRejectsReplacedIncarnation(t *testing.T) {
 
 func checkArchiveFinalizationCASRejectsReplacedIncarnation(t *testing.T, s *SQLiteStore) {
 	t.Helper()
-	now := time.Now().UTC()
-	row := &TestRecord{ID: fmt.Sprintf("explicit-replaced-%d", now.UnixNano()), Name: "same-id", ProjectID: DefaultProjectID, Status: "COMPLETE", StartTime: now.Add(-time.Minute), EndTime: &now, InitialProvenance: map[string]any{"run_incarnation": "first"}}
-	if err := s.SaveTest(row); err != nil {
-		t.Fatal(err)
-	}
-	record := RunArchiveRecord{TestID: row.ID, CreatedAt: row.StartTime, CompletedAt: now, ArchivePath: "/archive/run", ManifestPath: "/archive/run/manifest.json"}
-	job := &ArchiveFinalizationJob{TestID: row.ID, ProjectID: row.ProjectID, ArchiveRecord: record}
-	if err := s.SaveArchiveFinalizationJob(job); err != nil {
-		t.Fatal(err)
-	}
-	identity := ArchiveFinalizationRunIdentity{RunIncarnation: "first", ProjectID: row.ProjectID, StartTime: row.StartTime, EndTime: now, Status: row.Status}
-	// Simulate replacement between inspected manifest and commit, with every
-	// timestamp preserved so only the immutable token distinguishes the run.
-	if _, err := s.db.Exec(`UPDATE tests SET initial_provenance_json = ? WHERE id = ?`, `{"run_incarnation":"replacement"}`, row.ID); err != nil {
-		t.Fatal(err)
-	}
-	beforeRow, err := s.GetTest(row.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	beforeJob, err := s.GetArchiveFinalizationJob(row.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ok, err := s.CompleteArchiveFinalizationForRun(row.ID, job.IntentToken, "", &record, identity); err != nil || ok {
-		t.Fatalf("stale publication committed: %t %v", ok, err)
-	}
-	if _, err := s.GetRunArchive(row.ID); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("stale catalog: %v", err)
-	}
-	afterJob, err := s.GetArchiveFinalizationJob(row.ID)
-	if err != nil || !reflect.DeepEqual(beforeJob, afterJob) {
-		t.Fatalf("rejected publication mutated pending intent: before=%+v after=%+v err=%v", beforeJob, afterJob, err)
-	}
-	afterRow, err := s.GetTest(row.ID)
-	if err != nil || !reflect.DeepEqual(beforeRow, afterRow) {
-		t.Fatalf("rejected publication mutated run: before=%+v after=%+v err=%v", beforeRow, afterRow, err)
+	for _, changed := range []string{"incarnation", "generation"} {
+		t.Run(changed, func(t *testing.T) {
+			now := time.Now().UTC()
+			row := &TestRecord{ID: fmt.Sprintf("explicit-replaced-%s-%d", changed, now.UnixNano()), Name: "same-id", ProjectID: DefaultProjectID, Status: "COMPLETE", StartTime: now.Add(-time.Minute), EndTime: &now, InitialProvenance: map[string]any{"run_incarnation": "first"}}
+			if err := s.SaveTest(row); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.db.Exec(`UPDATE tests SET execution_generation = 7 WHERE id = ?`, row.ID); err != nil {
+				t.Fatal(err)
+			}
+			record := RunArchiveRecord{TestID: row.ID, CreatedAt: row.StartTime, CompletedAt: now, ArchivePath: "/archive/run", ManifestPath: "/archive/run/manifest.json"}
+			job := &ArchiveFinalizationJob{TestID: row.ID, ProjectID: row.ProjectID, ArchiveRecord: record}
+			if err := s.SaveArchiveFinalizationJob(job); err != nil {
+				t.Fatal(err)
+			}
+			identity := ArchiveFinalizationRunIdentity{RunIncarnation: "first", ExecutionGeneration: 7, ProjectID: row.ProjectID, StartTime: row.StartTime, EndTime: now, Status: row.Status}
+			// Simulate replacement between inspected manifest and commit, with every
+			// timestamp preserved so only the changed token or execution term fences it.
+			if changed == "incarnation" {
+				if _, err := s.db.Exec(`UPDATE tests SET initial_provenance_json = ? WHERE id = ?`, `{"run_incarnation":"replacement"}`, row.ID); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if _, err := s.db.Exec(`UPDATE tests SET execution_generation = 8 WHERE id = ?`, row.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			beforeRow, err := s.GetTest(row.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeJob, err := s.GetArchiveFinalizationJob(row.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ok, err := s.CompleteArchiveFinalizationForRun(row.ID, job.IntentToken, "", &record, identity); err != nil || ok {
+				t.Fatalf("stale publication committed: %t %v", ok, err)
+			}
+			if _, err := s.GetRunArchive(row.ID); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("stale catalog: %v", err)
+			}
+			afterJob, err := s.GetArchiveFinalizationJob(row.ID)
+			if err != nil || !reflect.DeepEqual(beforeJob, afterJob) {
+				t.Fatalf("rejected publication mutated pending intent: before=%+v after=%+v err=%v", beforeJob, afterJob, err)
+			}
+			afterRow, err := s.GetTest(row.ID)
+			if err != nil || !reflect.DeepEqual(beforeRow, afterRow) {
+				t.Fatalf("rejected publication mutated run: before=%+v after=%+v err=%v", beforeRow, afterRow, err)
+			}
+		})
 	}
 }
 

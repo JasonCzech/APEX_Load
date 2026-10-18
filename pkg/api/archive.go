@@ -61,6 +61,9 @@ type RunArchiveManifest struct {
 	Status              string                      `json:"status,omitempty"`
 	Error               string                      `json:"error,omitempty"`
 	Provenance          RunArchiveProvenance        `json:"provenance,omitempty"`
+	// ExecutorCompletedAt keeps the executing controller's own completion time
+	// when failover recovery restamps CompletedAt with the durable run end.
+	ExecutorCompletedAt *time.Time `json:"executor_completed_at,omitempty"`
 	// InitialProvenance is captured once when archive recording begins and is
 	// never refreshed by runtime controls. Provenance remains the final enriched
 	// execution snapshot for generator inventory, actors, and governance.
@@ -282,6 +285,11 @@ type RunArchiveProvenance struct {
 	// AuraHTTPRequests are the HTTP groups' Aura requests, frozen at Start
 	// for the Aura parity report when the run also has browser observers.
 	AuraHTTPRequests []RunArchiveAuraHTTPRequest `json:"aura_http_requests,omitempty"`
+
+	// ExecutionGeneration is the HA execution lease generation of the term that
+	// ran the run when this provenance was captured (0 without a durable
+	// execution fence). Orphan recovery matches it to the durable run row.
+	ExecutionGeneration uint64 `json:"execution_generation,omitempty"`
 }
 
 type RunArchiveGovernanceSnapshot struct {

@@ -17,6 +17,12 @@ type SalesforceHARAugmentation struct {
 }
 
 func AugmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, projectID, sourceName, source string, buildNative, agentforce, requireDetected bool) SalesforceHARAugmentation {
+	return augmentHARImportWithSalesforce(result, data, projectID, sourceName, source, buildNative, agentforce, requireDetected, salesforce.Analyze)
+}
+
+// Keep the analyzer callback local to one augmentation; concurrent imports do
+// not depend on mutable package-level analysis state.
+func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, projectID, sourceName, source string, buildNative, agentforce, requireDetected bool, analyze func(*dsl.Script, salesforce.AnalyzeOptions) (*salesforce.Review, error)) SalesforceHARAugmentation {
 	augmentation := SalesforceHARAugmentation{
 		Script:         result.Script,
 		Correlations:   any(result.Correlations),
@@ -27,10 +33,11 @@ func AugmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 	// Optional review callers stop before matching or correlation when detection
 	// is negative. A detected capture is analyzed only once, including its native
 	// preview; native preparation failures retain the completed review.
-	review, err := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{
+	review, err := analyze(result.Script, salesforce.AnalyzeOptions{
 		HARData:               data,
 		Document:              result.Document,
 		RequireDetected:       requireDetected,
+		SkipUndetectedReview:  requireDetected,
 		BuildNativeIfDetected: buildNative,
 		Source:                source,
 	})

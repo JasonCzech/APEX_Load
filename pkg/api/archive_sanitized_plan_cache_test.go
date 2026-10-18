@@ -14,14 +14,15 @@ func TestSanitizedArchivePlanCacheUsesManifestIdentityAndInvalidatesByTest(t *te
 	}
 	caches := newArchiveReadCaches()
 	t.Cleanup(func() { caches.forgetRunArchiveCache(record.TestID) })
+	plan := &sanitizedRunArchivePlan{replacements: map[string][]byte{"manifest.json": []byte("safe")}}
 	loads := 0
 	load := func() (*sanitizedRunArchivePlan, error) {
 		loads++
-		return &sanitizedRunArchivePlan{replacements: map[string][]byte{"manifest.json": []byte("safe")}}, nil
+		return plan, nil
 	}
 	for range 2 {
-		if _, err := caches.sanitizedPlans.getOrLoad(key, load); err != nil {
-			t.Fatal(err)
+		if got, err := caches.sanitizedPlans.getOrLoad(key, load); err != nil || got != plan {
+			t.Fatalf("cached plan = %p, %v; want %p", got, err, plan)
 		}
 	}
 	if loads != 1 {

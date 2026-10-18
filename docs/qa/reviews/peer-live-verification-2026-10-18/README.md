@@ -1,6 +1,8 @@
 # Peer live-verification fixes
 
-Base: `ec42f607f4942c268c1527951b84af70636a5556`. Local verification uses
+Initial base: `ec42f607f4942c268c1527951b84af70636a5556`. The final integration
+also includes main through `a03edd45b`: durable execution-generation fencing,
+separate durable/executor completion times, and Salesforce single-pass review contracts. Local verification uses
 Go 1.26.9 and Node 22.23.3 on macOS arm64. Dashboard workflows use the pinned
 Playwright 1.64 Chromium build; the telemetry fixture uses the repository's Go
 browser runtime. The evidence below applies to the changes accompanying this
@@ -18,7 +20,7 @@ report.
 | LV8 | Preserve actual archive, HAR and recording provenance in Salesforce native previews. |
 | LV9 | Check the pinned browser by launching it before building the E2E controller. |
 | LV11 | [Manual pinned local broker runner](../../LOCAL_BROKER_CHECKS.md), dated execution status separate from static coverage, and full tagged PostgreSQL CI suites instead of a test-name allowlist. |
-| LV12 | Explicit immutable run incarnation in admission/archive provenance; recover verified HA archives without equating independently assigned completion timestamps. Fence follower history, archive and CI evidence against prior incarnations. |
+| LV12 | Explicit immutable run incarnation in admission/archive provenance, combined with main's durable execution generation. Recover verified HA archives at the durable end time, retaining executor time; fence follower history, archive and CI evidence against prior incarnations and superseded executions. |
 | Telemetry reference | Distinguish metric collection delivery from later lifecycle envelopes; preserve first-publication latency and actual counters. The 2,000 ms acceptance threshold is unchanged. |
 
 ## Validation scope
@@ -43,8 +45,9 @@ evidence; basic interoperability does not qualify the separate transaction/seek
 or cloud-provider lanes. No recurring task was created.
 
 Targeted PostgreSQL archive-collection durability and SQLite run-incarnation
-regressions passed, including atomic completion-time adoption and stale-token
-rejection. The PostgreSQL fixture was stopped after validation; its data was
+regressions passed before the final main integration, including stale-token
+rejection. Integration checks are recorded below after verification of the
+combined execution-generation and run-incarnation fences. The PostgreSQL fixture was stopped after validation; its data was
 preserved. The three selected CI contract tests, seven Python runner/QA tests
 and three browser-preflight tests passed.
 
@@ -56,24 +59,28 @@ The archive/cache pair passed all five reported shuffle seeds. The HA soak
 passed 25 deterministic controller handoffs using the SQLite transactional
 simulation; this is not production AKS or PostgreSQL HA qualification.
 
-The affected browser workflows passed 43 tests in ten files under dev-admin
+Before final main integration, the affected browser workflows passed 43 tests in ten files under dev-admin
 on pinned Chromium. The private LoadRunner acceptance archive test skipped
 because its fixture is unavailable. Under local-auth, 42 tests passed across
 the nine applicable files, with the same private-archive fixture skipped. The
 profile excludes the dev-admin-only import-labels file. Both runs used the
 pinned Chromium and verified edit/save/reopen behavior against a fresh controller.
 
-The final targeted API run passed 95 tests covering archive ownership, recovery,
-cache isolation, import responses, distributed publication and lifecycle replay.
-A separate 18-test pass covered clock qualification, drop-counter availability
-and silent-shard observation. Both use the final compiled API test binary.
+The final integrated API binary passed 190 targeted tests covering archive
+ownership and recovery, generation/incarnation fences, cache isolation,
+import response contracts, distributed publication, lifecycle replay, clock
+qualification and drop-counter evidence. All five cache-order shuffle seeds
+and the 25-handoff SQLite HA soak passed again on this binary.
 
-The final telemetry reference passed the unchanged 60-second, 2,000/s workload
-and 2,000 ms sample-age gate: P99 was 1,532.8 ms and maximum 1,535.0 ms.
-Served, archived and live transactions all equal 123,134, with zero unreported
-loss and zero failures across 100 concurrent archive-analysis reads. Browser
-render P99 was 194.4 ms. See the [raw telemetry receipt](telemetry-reference.json);
-its explicit measurement limitations still apply.
+The final integrated telemetry reference passed the unchanged 60-second,
+2,000/s workload and 2,000 ms sample-age gate: P99 was 1,468.3 ms and maximum
+1,522.9 ms. It recorded 123,117 served requests, 123,115 archived records and
+123,107 live successes plus eight live errors. The two-request difference is
+within the existing 20-request in-flight allowance at stop; this run does not
+prove zero loss. All 93 concurrent archive-analysis reads passed. Browser render
+P99 was 164.1 ms. See the [raw telemetry receipt](telemetry-reference.json); its
+explicit measurement limitations still apply. All browser processes opened by
+this run exited.
 
 ## Performance evidence
 
@@ -114,3 +121,38 @@ archive identity/cache interactions, telemetry publication fencing and
 runtime/importer/UI/CI integration. The saved receipts and validation claims
 were independently checked for consistency. Security was excluded from the
 review criteria as requested.
+
+## Final main integration
+
+The integrated archive design checks both the immutable run incarnation and the
+durable execution generation, including recovery retries, follower evidence,
+source cleanup and catalog reads. Recovery preserves the durable completion
+time; rates, SLA windows, phase stops and monitoring snapshots use the verified
+executor completion time when available. Legacy archives retain their fallback.
+
+Nine targeted storage regressions passed after this integration, including real
+PostgreSQL collection durability, stale execution/incarnation rejection, schema
+migration and prepared-manifest fencing. The owned PostgreSQL fixture was
+stopped with its data preserved.
+
+The final importer checks passed 24 tests across Salesforce analysis, import
+review and shared HAR documents. Five generated-TypeScript contract checks
+passed, including a 12-case URL-scanner regression. TypeScript checking and
+OpenAPI generation/freshness passed. Actual legacy/canonical response bodies,
+archive members, saved recording conversions and replay-validation refusals
+validate against the generated schemas. The negotiation contract covers all
+27 endpoints that publish these responses.
+
+The integrated checks also exposed and fixed two production interactions:
+distributed publication records now carry the manifest's incarnation and
+execution generation; historical manifest generation uses archive provenance
+without a discarded live-inventory probe. Regressions assert exact source
+dial counts through final publication. Fixture corrections use a real fenced
+Start, database-clock lease release, a valid dashboard layout and local
+object-store path addressing, while retaining their evidence assertions.
+
+The final reference workload passed on the same integrated binary, with the
+counts and stop allowance reported above. Final independent area and
+cross-cutting source reviews found no remaining actionable findings. The
+report, execution ledger and raw receipts were checked for consistency.
+Security remained excluded from the review criteria.

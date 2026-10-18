@@ -9,13 +9,14 @@ import (
 // ArchiveFinalizationRunIdentity is the terminal run inspected before archive
 // I/O. Generator archive creation time can differ from this controller start time.
 type ArchiveFinalizationRunIdentity struct {
-	RunIncarnation string
-	ProjectID      string
-	StartTime      time.Time
-	EndTime        time.Time
-	Status         string
-	LeaseName      string
-	LeaseOwner     string
+	RunIncarnation      string
+	ExecutionGeneration uint64
+	ProjectID           string
+	StartTime           time.Time
+	EndTime             time.Time
+	Status              string
+	LeaseName           string
+	LeaseOwner          string
 	// RequireAdjunctRefresh conservatively reconciles skipped enrichment after
 	// recovering an already uploaded immutable version with no local source.
 	RequireAdjunctRefresh bool

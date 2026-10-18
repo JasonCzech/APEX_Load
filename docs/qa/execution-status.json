@@ -30,7 +30,7 @@
     {
       "name": "Targeted dashboard browser: dev-admin",
       "status": "passed",
-      "detail": "43 passed across ten affected workflow files on pinned Chromium; one private LoadRunner acceptance fixture skipped. Full suite not run.",
+      "detail": "43 passed across ten affected workflow files on pinned Chromium; one private LoadRunner acceptance fixture skipped. These workflows ran before final main integration; the frontend runtime is unchanged. Full suite not run.",
       "last_success": {
         "at": "2026-10-18",
         "evidence": "reviews/peer-live-verification-2026-10-18/README.md#validation-scope"
@@ -39,7 +39,7 @@
     {
       "name": "Targeted dashboard browser: local-auth",
       "status": "passed",
-      "detail": "42 passed across nine applicable workflow files on pinned Chromium; one private LoadRunner acceptance fixture skipped. Full suite not run.",
+      "detail": "42 passed across nine applicable workflow files on pinned Chromium; one private LoadRunner acceptance fixture skipped. These workflows ran before final main integration; the frontend runtime is unchanged. Full suite not run.",
       "last_success": {
         "at": "2026-10-18",
         "evidence": "reviews/peer-live-verification-2026-10-18/README.md#validation-scope"
@@ -71,18 +71,18 @@
     {
       "name": "HA failover soak",
       "status": "passed",
-      "detail": "25 deterministic controller handoffs passed using local SQLite transactional simulation. This does not qualify production AKS or PostgreSQL HA.",
+      "detail": "25 deterministic controller handoffs passed again on the final integrated API binary using local SQLite transactional simulation. This does not qualify production AKS or PostgreSQL HA.",
       "last_success": {
         "at": "2026-10-18",
-        "evidence": "reviews/peer-live-verification-2026-10-18/README.md#validation-scope"
+        "evidence": "reviews/peer-live-verification-2026-10-18/README.md#final-main-integration"
       }
     },
     {
       "name": "Telemetry reference workload",
       "status": "passed",
-      "detail": "Final code passed the unchanged 60-second, 2,000/s reference and 2,000 ms sample-age gate: P99 1,532.8 ms, max 1,535.0 ms, 123,134 matching served/archived/live transactions, zero unreported loss and 0/100 archive-analysis failures.",
+      "detail": "Final integrated code passed the unchanged 60-second, 2,000/s reference and 2,000 ms sample-age gate: P99 1,468.3 ms, max 1,522.9 ms; 123,117 served, 123,115 archived, 123,107 live successes plus 8 errors. The difference of 2 is within the existing 20-request in-flight stop allowance, not proof of zero loss. All 93 archive-analysis reads passed.",
       "last_success": {
-        "at": "2026-10-18T04:37:03.55572Z",
+        "at": "2026-10-18T05:27:05.876556Z",
         "evidence": "reviews/peer-live-verification-2026-10-18/telemetry-reference.json"
       }
     },
