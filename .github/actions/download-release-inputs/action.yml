@@ -25,12 +25,6 @@ runs:
       with:
         name: release-client-linux-arm64
         path: ${{ inputs.path }}/release-client-linux-arm64
-    - name: Download macos-amd64 client on GitHub.com
-      if: github.server_url == 'https://github.com'
-      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-      with:
-        name: release-client-macos-amd64
-        path: ${{ inputs.path }}/release-client-macos-amd64
     - name: Download macos-arm64 client on GitHub.com
       if: github.server_url == 'https://github.com'
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -97,12 +91,6 @@ runs:
       with:
         name: release-client-linux-arm64
         path: ${{ inputs.path }}/release-client-linux-arm64
-    - name: Download macos-amd64 client on GHES
-      if: github.server_url != 'https://github.com'
-      uses: actions/download-artifact@246d7188e736d3686f6d19628d253ede9697bd55 # v3-node20
-      with:
-        name: release-client-macos-amd64
-        path: ${{ inputs.path }}/release-client-macos-amd64
     - name: Download macos-arm64 client on GHES
       if: github.server_url != 'https://github.com'
       uses: actions/download-artifact@246d7188e736d3686f6d19628d253ede9697bd55 # v3-node20

@@ -25,9 +25,9 @@ else
   GOARCH="${APEXLOAD_DESKTOP_PACKAGE_GOARCH:-${GOARCH:-$(go env GOARCH)}}"
 fi
 case "$GOOS/$GOARCH" in
-  linux/amd64|linux/arm64|darwin/amd64|darwin/arm64|windows/amd64) ;;
+  linux/amd64|linux/arm64|darwin/arm64|windows/amd64) ;;
   *)
-    echo "Unsupported desktop package platform '$GOOS/$GOARCH'; expected linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, or windows/amd64." >&2
+    echo "Unsupported desktop package platform '$GOOS/$GOARCH'; expected linux/amd64, linux/arm64, darwin/arm64, or windows/amd64." >&2
     exit 1
     ;;
 esac
@@ -114,7 +114,6 @@ validate_desktop_package_filename() {
     "apexload-desktop-${VERSION}-linux-amd64.deb"|\
     "apexload-desktop-${VERSION}-linux-arm64.tar.gz"|\
     "apexload-desktop-${VERSION}-linux-arm64.deb"|\
-    "apexload-desktop-${VERSION}-darwin-amd64.tar.gz"|\
     "apexload-desktop-${VERSION}-darwin-arm64.tar.gz"|\
     "apexload-desktop-${VERSION}-windows-amd64.tar.gz") return 0 ;;
     *)

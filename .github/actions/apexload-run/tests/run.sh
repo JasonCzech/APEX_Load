@@ -144,6 +144,63 @@ if PATH="$download_bin:$PATH" \
 fi
 assert_output failure-outcome execution_error "$download_output"
 
+# A platform the signed release does not list (Intel macOS after that build
+# was dropped) is a typed configuration failure before the binary is
+# downloaded. An older release that lists it is still downloaded.
+intel_mac_bin="$tmp/intel-mac-bin"
+mkdir -p "$intel_mac_bin"
+cat > "$intel_mac_bin/curl" <<'CURL'
+#!/usr/bin/env bash
+set -euo pipefail
+url=""
+output=""
+while (($#)); do
+  case "$1" in
+    --output) output="$2"; shift 2 ;;
+    https://*) url="$1"; shift ;;
+    *) shift ;;
+  esac
+done
+case "$url" in
+  */SHA256SUMS)
+    printf '%064d  apexctl_1.2.3_linux_amd64\n' 0 > "$output"
+    if [[ -n "${INTEL_RELEASE_LISTED:-}" ]]; then
+      printf '%064d  apexctl_1.2.3_darwin_amd64\n' 0 >> "$output"
+    fi
+    ;;
+  */SHA256SUMS.sig) printf 'signature\n' > "$output" ;;
+  *) exit 22 ;;
+esac
+CURL
+cat > "$intel_mac_bin/openssl" <<'OPENSSL'
+#!/usr/bin/env bash
+exit 0
+OPENSSL
+chmod 0755 "$intel_mac_bin/curl" "$intel_mac_bin/openssl"
+printf '%s\n' 'test-public-key' > "$tmp/intel-mac-key.pem"
+for listed in "" 1; do
+  intel_mac_output="$tmp/intel-mac-output-${listed:-unlisted}"
+  if PATH="$intel_mac_bin:$PATH" \
+    INTEL_RELEASE_LISTED="$listed" \
+    GITHUB_ACTION_PATH="$action_dir" \
+    GITHUB_OUTPUT="$intel_mac_output" \
+    RUNNER_OS=macOS RUNNER_ARCH=X64 RUNNER_TEMP="$tmp" \
+    APEXLOAD_INPUT_APEXCTL_PATH="" \
+    APEXLOAD_INPUT_APEXCTL_VERSION=v1.2.3 \
+    APEXLOAD_INPUT_RELEASE_BASE_URL=https://releases.example.invalid \
+    APEXLOAD_INPUT_RELEASE_PUBLIC_KEY="$tmp/intel-mac-key.pem" \
+    "$action_dir/install.sh"; then
+    echo "Intel macOS runner unexpectedly passed" >&2
+    exit 1
+  fi
+  if [[ -n "$listed" ]]; then
+    # The stub fails the binary download: the listed release was not refused.
+    assert_output failure-outcome execution_error "$intel_mac_output"
+  else
+    assert_output failure-outcome configuration_error "$intel_mac_output"
+  fi
+done
+
 # A failed detached signature always fails closed before checksum or execution.
 signature_bin="$tmp/signature-bin"
 mkdir -p "$signature_bin"

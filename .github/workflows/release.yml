@@ -454,11 +454,6 @@ jobs:
             platform: linux/arm64
             runner_var: RELEASE_LINUX_ARM64_RUNNER_LABELS
             default_runner: '["ubuntu-24.04-arm"]'
-          - name: macos-amd64
-            os: macos-15-intel
-            platform: darwin/amd64
-            runner_var: RELEASE_MACOS_AMD64_RUNNER_LABELS
-            default_runner: '["macos-15-intel"]'
           - name: macos-arm64
             os: macos-15
             platform: darwin/arm64

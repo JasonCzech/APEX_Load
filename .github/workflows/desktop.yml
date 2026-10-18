@@ -51,8 +51,8 @@ jobs:
   desktop:
     name: Desktop package (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
-    # The slowest leg (macOS Intel) needs the time for the native analytics suite under -race.
-    timeout-minutes: 120
+    # The slowest leg (Windows, about an hour) needs the time for the native analytics suite under -race.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -69,10 +69,6 @@ jobs:
             os: macos-latest
             platform: darwin/arm64
             artifact: apexload-desktop-macos-arm64
-          - name: macOS Intel
-            os: macos-15-intel
-            platform: darwin/amd64
-            artifact: apexload-desktop-macos-amd64
           - name: Windows
             os: windows-latest
             platform: windows/amd64

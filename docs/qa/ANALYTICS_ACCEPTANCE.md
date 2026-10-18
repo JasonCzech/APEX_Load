@@ -56,14 +56,13 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 
 ## Platforms
 
-NA-5 names five prebuilt targets. Each is a lane of `.github/workflows/desktop.yml`, which builds the controller with the embedded engine and the packaged desktop app on that platform and runs the native checks below; a lane that ran is that platform's evidence. Its results are CI artifacts (`native-startup-*.json`); no F4 acceptance record is written, so an operator posts each platform's record from them. A local run proves only the host it ran on.
+NA-5 names four prebuilt targets. Each is a lane of `.github/workflows/desktop.yml`, which builds the controller with the embedded engine and the packaged desktop app on that platform and runs the native checks below; a lane that ran is that platform's evidence. Its results are CI artifacts (`native-startup-*.json`); no F4 acceptance record is written, so an operator posts each platform's record from them. A local run proves only the host it ran on.
 
 | Platform | Desktop lane |
 | --- | --- |
 | linux/amd64 | Linux (ubuntu-24.04) |
 | linux/arm64 | Linux ARM64 (ubuntu-24.04-arm) |
 | darwin/arm64 | macOS Apple Silicon (macos-latest) |
-| darwin/amd64 | macOS Intel (macos-15-intel) |
 | windows/amd64 | Windows (windows-latest) |
 
 Every lane runs, in order:
@@ -77,7 +76,7 @@ Every lane runs, in order:
 - Generator and collector exclude DuckDB: `go list -tags analytics_duckdb -deps ./cmd/generator ./cmd/apexload-collector-agent`
 - Packaged desktop native startup: `python3 scripts/test_native_worker_startup.py --desktop-build-dir desktop/build/bin`
 
-The API check runs only where `scripts/ci/pkg-api-test-build-fits.sh` succeeds. Compiling pkg/api's test binary peaks near 6 GB of memory, too much for the macOS Apple Silicon lane's 7 GB hosted runner, so that lane leaves the API check to the others; its native checks above still run.
+The API check runs only where `scripts/ci/pkg-api-test-build-fits.sh` succeeds. Compiling pkg/api's test binary peaks near 6 GB of memory, too much for the macOS Apple Silicon lane's 7 GB hosted runner, so no macOS lane runs the API check: the Linux and Windows lanes do. The macOS lane's native checks above still run.
 
 ## Reference workload
 

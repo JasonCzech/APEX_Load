@@ -43,7 +43,6 @@ if [[ "${APEXLOAD_BUILD_APEXCTL:-1}" == 1 ]]; then
   done <<'EOF'
 linux amd64
 linux arm64
-darwin amd64
 darwin arm64
 windows amd64
 EOF

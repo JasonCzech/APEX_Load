@@ -11,7 +11,6 @@ CORE_ARTIFACT = "release-core-assets"
 CLIENT_ARTIFACTS = {
     "release-client-linux-amd64",
     "release-client-linux-arm64",
-    "release-client-macos-amd64",
     "release-client-macos-arm64",
     "release-client-windows-amd64",
 }
