@@ -260,6 +260,9 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			tr.failRunAdoption(b, test, nil, generation, ownerID, candidate.newToken, fmt.Sprintf("controller failover: the run's adoption checkpoint is unusable (%v)", decodeErr))
 			continue
 		}
+		if err := tr.advanceAdoptedRunExecutionGeneration(test, generation, ownerID); err != nil {
+			return fmt.Errorf("record adoption execution term for %s: %w", test.ID, err)
+		}
 		// No generator may see the rotation until its encrypted token and prior
 		// proof chain survive a controller crash. A stale snapshot cannot replace
 		// a newer intent from this or another lease owner.

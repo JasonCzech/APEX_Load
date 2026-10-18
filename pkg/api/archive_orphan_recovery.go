@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -186,8 +187,26 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchiveUnderSourceFence(ctx context
 	if declared := strings.TrimSpace(manifest.Provenance.ProjectID); declared != "" && normalizeProjectID(declared) != project {
 		return fmt.Errorf("orphan archive %s belongs to another project", record.TestID)
 	}
-	if row.EndTime == nil || manifest.Status != row.Status || !archiveRunTimestampMatches(archiveManifestRequestedAt(manifest), row.StartTime, tr.testStore) || !archiveRunTimestampMatches(manifest.CompletedAt, *row.EndTime, tr.testStore) {
+	if row.EndTime == nil || manifest.Status != row.Status || !archiveRunTimestampMatches(archiveManifestRequestedAt(manifest), row.StartTime, tr.testStore) {
 		return fmt.Errorf("orphan archive %s does not match the durable terminal incarnation", record.TestID)
+	}
+	job := &storage.ArchiveFinalizationJob{TestID: record.TestID, ProjectID: project, PersistArtifacts: true}
+	if !archiveRunTimestampMatches(manifest.CompletedAt, *row.EndTime, tr.testStore) {
+		// After a failover the executing term finalizes the archive at its own
+		// time and the successor reconciles the row at another. Only the archive
+		// of the term the durable row says executed the run is that run's
+		// outcome; the durable end time then becomes its completion time. The
+		// source stays untouched: the restamped manifest is committed with the
+		// fenced job and restored by finalization.
+		if row.ExecutionGeneration == 0 || manifest.Provenance.ExecutionGeneration != row.ExecutionGeneration {
+			return fmt.Errorf("orphan archive %s does not match the durable terminal incarnation", record.TestID)
+		}
+		prepared, completedAt, err := restampedOrphanArchiveManifest(manifest, *row.EndTime)
+		if err != nil {
+			return fmt.Errorf("restamp failed-over orphan archive %s: %w", record.TestID, err)
+		}
+		record.CompletedAt, record.ManifestSHA256 = completedAt, sha256BytesHex(prepared)
+		job.PreparedManifestJSON = string(prepared)
 	}
 	lease, owner := "", ""
 	if tr.durableExecutionFence {
@@ -202,9 +221,28 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchiveUnderSourceFence(ctx context
 	}
 	record.RefKey = strings.TrimSpace(row.RefKey)
 	return tr.trackDurableWrite(func() error {
-		_, err := store.SaveArchiveFinalizationJobIfOrphanForRun(&storage.ArchiveFinalizationJob{TestID: record.TestID, ProjectID: project, ArchiveRecord: *record, PersistArtifacts: true}, archiveManifestRequestedAt(manifest), manifest.Status, lease, owner)
+		job.ArchiveRecord = *record
+		saved, err := store.SaveArchiveFinalizationJobIfOrphanForRun(job, archiveManifestRequestedAt(manifest), manifest.Status, lease, owner)
+		if saved && job.PreparedManifestJSON != "" {
+			slog.Info("queued failed-over run archive at the durable run end time", "test_id", record.TestID, "execution_generation", row.ExecutionGeneration, "executor_completed_at", manifest.CompletedAt, "completed_at", record.CompletedAt)
+		}
 		return err
 	})
+}
+
+// restampedOrphanArchiveManifest returns the manifest bytes of a verified
+// failed-over orphan with the durable run end as its completion time, keeping
+// the first executor time. Every later exact end-time check then sees one
+// terminal identity.
+func restampedOrphanArchiveManifest(manifest *RunArchiveManifest, durableEnd time.Time) ([]byte, time.Time, error) {
+	restamped := *manifest
+	if restamped.ExecutorCompletedAt == nil {
+		executor := manifest.CompletedAt
+		restamped.ExecutorCompletedAt = &executor
+	}
+	restamped.CompletedAt = durableEnd.UTC()
+	data, err := json.MarshalIndent(restamped, "", "  ")
+	return data, restamped.CompletedAt, err
 }
 
 func discoverOrphanArchiveDirectories(ctx context.Context, root string) ([]orphanArchiveCandidate, error) {

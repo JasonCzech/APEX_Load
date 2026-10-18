@@ -215,6 +215,15 @@ func (o *sqliteStoreOverlay) AdoptPodCapacity(a0 []storage.PodCapacityReservatio
 	return o.base().AdoptPodCapacity(a0, a1, a2, a3)
 }
 
+func (o *sqliteStoreOverlay) AdvanceTestExecutionGenerationIfLeaseTermHeld(a0 string, a1 string, a2 string, a3 uint64) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		AdvanceTestExecutionGenerationIfLeaseTermHeld(string, string, string, uint64) (bool, error)
+	}); ok {
+		return fake.AdvanceTestExecutionGenerationIfLeaseTermHeld(a0, a1, a2, a3)
+	}
+	return o.base().AdvanceTestExecutionGenerationIfLeaseTermHeld(a0, a1, a2, a3)
+}
+
 func (o *sqliteStoreOverlay) AllocateDynatraceQuota(a0 string, a1 string, a2 time.Time) (bool, error) {
 	if fake, ok := o.fake.(interface {
 		AllocateDynatraceQuota(string, string, time.Time) (bool, error)

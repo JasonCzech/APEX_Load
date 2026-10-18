@@ -16,7 +16,15 @@ import (
 )
 
 func TestOrphanRecoveryRejectsDifferentTerminalIncarnation(t *testing.T) {
-	for _, mode := range []string{"start", "end", "status", "missing-end"} {
+	// The -same-term modes give the row and the archive one execution term:
+	// a matching generation never excuses a different start, outcome or a run
+	// that has not ended. The other generation modes keep the exact end rule
+	// for unstamped rows and archives, and reject another term's archive.
+	for _, mode := range []string{
+		"start", "end", "status", "missing-end",
+		"end-unstamped-row", "end-unstamped-archive", "end-other-term",
+		"start-same-term", "status-same-term", "missing-end-same-term",
+	} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
@@ -28,20 +36,34 @@ func TestOrphanRecoveryRejectsDifferentTerminalIncarnation(t *testing.T) {
 			defer store.Close()
 			saveTerminalOrphanTest(t, store, "orphan", storage.DefaultProjectID)
 			record := writeOrphanArchiveFixture(t, root, "orphan", "orphan", storage.DefaultProjectID)
+			switch mode {
+			case "end-unstamped-row":
+				setOrphanManifestExecutionGeneration(t, record, 1)
+			case "end-unstamped-archive":
+				stampOrphanRunExecutionGeneration(t, store, "orphan")
+			case "end-other-term":
+				setOrphanManifestExecutionGeneration(t, record, stampOrphanRunExecutionGeneration(t, store, "orphan")+1)
+			case "start-same-term", "status-same-term", "missing-end-same-term":
+				setOrphanManifestExecutionGeneration(t, record, stampOrphanRunExecutionGeneration(t, store, "orphan"))
+			}
 			row, err := store.GetTest("orphan")
 			if err != nil {
 				t.Fatal(err)
 			}
+			ended := row.EndTime.Add(time.Second)
 			switch mode {
 			case "start":
 				row.StartTime = row.StartTime.Add(time.Second)
-			case "end":
-				ended := row.EndTime.Add(time.Second)
+			case "end", "end-unstamped-row", "end-unstamped-archive", "end-other-term":
 				row.EndTime = &ended
 			case "status":
 				row.Status = "FAILED"
-			case "missing-end":
+			case "missing-end", "missing-end-same-term":
 				row.EndTime = nil
+			case "start-same-term":
+				row.StartTime, row.EndTime = row.StartTime.Add(time.Second), &ended
+			case "status-same-term":
+				row.Status, row.EndTime = "FAILED", &ended
 			}
 			if err := store.SaveTest(row); err != nil {
 				t.Fatal(err)
@@ -120,14 +142,23 @@ func TestOrphanRecoveryVerifiesExistingPayloads(t *testing.T) {
 	}
 }
 
-type changedOrphanRunStore struct{ SQLiteStore *storage.SQLiteStore }
+type changedOrphanRunStore struct {
+	SQLiteStore *storage.SQLiteStore
+	// change mutates the durable run between inspection and the fenced insert;
+	// nil moves its start.
+	change func(*storage.TestRecord)
+}
 
 func (s *changedOrphanRunStore) SaveArchiveFinalizationJobIfOrphanForRun(job *storage.ArchiveFinalizationJob, requestedAt time.Time, status, lease, owner string) (bool, error) {
 	row, err := s.SQLiteStore.GetTest(job.TestID)
 	if err != nil {
 		return false, err
 	}
-	row.StartTime = row.StartTime.Add(time.Second)
+	if s.change != nil {
+		s.change(row)
+	} else {
+		row.StartTime = row.StartTime.Add(time.Second)
+	}
 	if err := s.SQLiteStore.SaveTest(row); err != nil {
 		return false, err
 	}
@@ -145,12 +176,190 @@ func TestOrphanRecoveryFencesRunChangedAfterInspection(t *testing.T) {
 	saveTerminalOrphanTest(t, store, "orphan", storage.DefaultProjectID)
 	writeOrphanArchiveFixture(t, root, "orphan", "orphan", storage.DefaultProjectID)
 	tr := NewTestRunner(1, nil, nil)
-	tr.testStore, tr.archiveStore = store, sqliteOverlay(&changedOrphanRunStore{store})
+	tr.testStore, tr.archiveStore = store, sqliteOverlay(&changedOrphanRunStore{SQLiteStore: store})
 	if err := tr.recoverOrphanedLocalRunArchives(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.GetArchiveFinalizationJob("orphan"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal("changed incarnation queued", err)
+	}
+}
+
+// A failed-over archive is restamped to the durable end it inspected. The
+// fenced insert must still refuse it when that end changes before the insert,
+// and the refused source must stay byte-for-byte untouched.
+func TestOrphanRecoveryFencesFailedOverRunChangedAfterRestamp(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "store.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	record, _ := saveFailedOverOrphanFixture(t, store, root, "orphan")
+	before, err := os.ReadFile(record.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := NewTestRunner(1, nil, nil)
+	tr.testStore, tr.archiveStore = store, sqliteOverlay(&changedOrphanRunStore{SQLiteStore: store, change: func(row *storage.TestRecord) {
+		ended := row.EndTime.Add(time.Second)
+		row.EndTime = &ended
+	}})
+	if err := tr.recoverOrphanedLocalRunArchives(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetArchiveFinalizationJob("orphan"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatal("changed failed-over run queued", err)
+	}
+	if after, err := os.ReadFile(record.ManifestPath); err != nil || string(after) != string(before) {
+		t.Fatal("fenced failed-over source was rewritten", err)
+	}
+}
+
+// The executing term finalized the archive at its own time and the successor
+// reconciled the run row later. Recovery publishes that archive at the durable
+// end time and keeps the executor's time beside it.
+func TestOrphanRecoveryPublishesFailedOverArchiveAtDurableEnd(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "store.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	record, executorCompletedAt := saveFailedOverOrphanFixture(t, store, root, "orphan")
+	before, err := os.ReadFile(record.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := store.GetTest("orphan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := NewTestRunner(1, NewHub(), store)
+	if err := runner.recoverOrphanedLocalRunArchives(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.GetArchiveFinalizationJob("orphan")
+	if err != nil {
+		t.Fatal("failed-over orphan was not queued", err)
+	}
+	// The restamp travels with the fenced job; the source is untouched until
+	// finalization restores the prepared bytes.
+	if after, err := os.ReadFile(record.ManifestPath); err != nil || string(after) != string(before) {
+		t.Fatal("recovery rewrote the source before finalization", err)
+	}
+	var prepared RunArchiveManifest
+	if err := json.Unmarshal([]byte(job.PreparedManifestJSON), &prepared); err != nil {
+		t.Fatal("queued job lacks the restamped manifest", err)
+	}
+	if !prepared.CompletedAt.Equal(*row.EndTime) || prepared.ExecutorCompletedAt == nil || !prepared.ExecutorCompletedAt.Equal(executorCompletedAt) || prepared.Status != "FAILED" {
+		t.Fatalf("restamped manifest completed=%v executor=%v status=%s", prepared.CompletedAt, prepared.ExecutorCompletedAt, prepared.Status)
+	}
+	if !job.ArchiveRecord.CompletedAt.Equal(*row.EndTime) || job.ArchiveRecord.ManifestSHA256 != sha256BytesHex([]byte(job.PreparedManifestJSON)) {
+		t.Fatalf("queued record does not anchor the restamped manifest: %+v", job.ArchiveRecord)
+	}
+
+	server := &Server{runner: runner, store: store}
+	if err := server.retryArchiveFinalizationJobs(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	published, err := store.GetRunArchive("orphan")
+	if err != nil || !published.CompletedAt.Equal(*row.EndTime) {
+		t.Fatalf("failed-over archive was not published at the durable end: %+v %v", published, err)
+	}
+	manifest, err := loadRunArchiveManifestFromRecord(published)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !manifest.CompletedAt.Equal(*row.EndTime) || manifest.ExecutorCompletedAt == nil || !manifest.ExecutorCompletedAt.Equal(executorCompletedAt) {
+		t.Fatalf("published manifest completed=%v executor=%v", manifest.CompletedAt, manifest.ExecutorCompletedAt)
+	}
+	if err := runner.recoverOrphanedLocalRunArchives(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	again, err := store.GetRunArchive("orphan")
+	if err != nil || again.ManifestSHA256 != published.ManifestSHA256 {
+		t.Fatalf("repeated recovery replaced the published archive: %+v %v", again, err)
+	}
+}
+
+// saveFailedOverOrphanFixture models a failover: the run row and the archive
+// carry one execution term, the archive is FAILED at the executor's time, and
+// the row is FAILED at the successor's later reconcile time.
+func saveFailedOverOrphanFixture(t *testing.T, store *storage.SQLiteStore, root, testID string) (*storage.RunArchiveRecord, time.Time) {
+	t.Helper()
+	saveTerminalOrphanTest(t, store, testID, storage.DefaultProjectID)
+	record := writeOrphanArchiveFixture(t, root, testID, testID, storage.DefaultProjectID)
+	generation := stampOrphanRunExecutionGeneration(t, store, testID)
+	manifest := readOrphanManifestFixture(t, record)
+	manifest.Status = "FAILED"
+	manifest.Provenance.ExecutionGeneration = generation
+	if err := writeIndentedJSONFile(record.ManifestPath, manifest); err != nil {
+		t.Fatal(err)
+	}
+	row, err := store.GetTest(testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconciled := manifest.CompletedAt.Add(3 * time.Second)
+	row.Status, row.EndTime = "FAILED", &reconciled
+	if err := store.SaveTest(row); err != nil {
+		t.Fatal(err)
+	}
+	return record, manifest.CompletedAt
+}
+
+// stampOrphanRunExecutionGeneration records an execution term on a terminal
+// fixture row the way adoption does, which is only possible while it runs.
+func stampOrphanRunExecutionGeneration(t *testing.T, store *storage.SQLiteStore, testID string) uint64 {
+	t.Helper()
+	row, err := store.GetTest(testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, ended := row.Status, row.EndTime
+	row.Status, row.EndTime = "RUNNING", nil
+	if err := store.SaveTest(row); err != nil {
+		t.Fatal(err)
+	}
+	const lease, owner = "orphan-generation-fixture", "fixture-term"
+	held, generation, err := store.TryAcquireSchedulerLeaseWithGeneration(lease, owner, time.Now(), time.Minute)
+	if err != nil || !held {
+		t.Fatal("acquire fixture execution term", held, err)
+	}
+	if ok, err := store.AdvanceTestExecutionGenerationIfLeaseTermHeld(testID, lease, owner, generation); err != nil || !ok {
+		t.Fatal("stamp fixture execution term", ok, err)
+	}
+	row.Status, row.EndTime = status, ended
+	if err := store.SaveTest(row); err != nil {
+		t.Fatal(err)
+	}
+	return generation
+}
+
+func readOrphanManifestFixture(t *testing.T, record *storage.RunArchiveRecord) RunArchiveManifest {
+	t.Helper()
+	data, err := os.ReadFile(record.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest RunArchiveManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	return manifest
+}
+
+func setOrphanManifestExecutionGeneration(t *testing.T, record *storage.RunArchiveRecord, generation uint64) {
+	t.Helper()
+	manifest := readOrphanManifestFixture(t, record)
+	manifest.Provenance.ExecutionGeneration = generation
+	if err := writeIndentedJSONFile(record.ManifestPath, manifest); err != nil {
+		t.Fatal(err)
 	}
 }
 

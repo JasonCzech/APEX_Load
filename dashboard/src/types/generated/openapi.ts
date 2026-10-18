@@ -3439,6 +3439,7 @@ export interface operations {
               "elk_evidence_file"?: string;
               "elk_observation"?: string;
               "error"?: string;
+              "executor_completed_at"?: (string) | null;
               "exemplar_count"?: number;
               "exemplars_file"?: string;
               "exemplars_truncated"?: boolean;
@@ -3510,6 +3511,7 @@ export interface operations {
                 "duration"?: string;
                 "dynatrace_capture"?: (Record<string, unknown>) | null;
                 "elk_capture"?: (Record<string, unknown>) | null;
+                "execution_generation"?: number;
                 "execution_settings"?: Record<string, unknown>;
                 "generator_inventory"?: Array<Record<string, unknown>>;
                 "generator_shards"?: Array<Record<string, unknown>>;
@@ -3696,6 +3698,7 @@ export interface operations {
                 "duration"?: string;
                 "dynatrace_capture"?: (Record<string, unknown>) | null;
                 "elk_capture"?: (Record<string, unknown>) | null;
+                "execution_generation"?: number;
                 "execution_settings"?: Record<string, unknown>;
                 "generator_inventory"?: Array<Record<string, unknown>>;
                 "generator_shards"?: Array<Record<string, unknown>>;
@@ -70951,6 +70954,7 @@ export interface operations {
             "elk_evidence_file"?: string;
             "elk_observation"?: string;
             "error"?: string;
+            "executor_completed_at"?: (string) | null;
             "exemplar_count"?: number;
             "exemplars_file"?: string;
             "exemplars_truncated"?: boolean;
@@ -71067,6 +71071,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
               }) | null;
+              "execution_generation"?: number;
               "execution_settings": {
                 "capacity_planning": {
                   "availability": Record<string, unknown>;
@@ -72078,6 +72083,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
               }) | null;
+              "execution_generation"?: number;
               "execution_settings": {
                 "capacity_planning": {
                   "availability": Record<string, unknown>;
@@ -75637,6 +75643,7 @@ export interface operations {
               "elk_evidence_file"?: string;
               "elk_observation"?: string;
               "error"?: string;
+              "executor_completed_at"?: (string) | null;
               "exemplar_count"?: number;
               "exemplars_file"?: string;
               "exemplars_truncated"?: boolean;
@@ -75744,6 +75751,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                 }) | null;
+                "execution_generation"?: number;
                 "execution_settings": {
                   "capacity_planning": Record<string, unknown>;
                   "general": Record<string, unknown>;
@@ -76255,6 +76263,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                 }) | null;
+                "execution_generation"?: number;
                 "execution_settings": {
                   "capacity_planning": Record<string, unknown>;
                   "general": Record<string, unknown>;

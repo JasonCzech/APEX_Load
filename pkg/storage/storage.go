@@ -1454,6 +1454,12 @@ type TestRecord struct {
 	// binding survives a controller restart / HA failover and can be re-validated
 	// at launch time.
 	TimeslotID *string `json:"timeslot_id,omitempty"`
+	// ExecutionGeneration is the HA execution lease generation of the term that
+	// executes the run. The lease-fenced Start transition stamps it and run
+	// adoption advances it; SaveTest never writes it. Zero means the run was
+	// never started under a durable execution fence. Archive recovery compares
+	// it with the archive provenance to identify a failed-over run's archive.
+	ExecutionGeneration uint64 `json:"-"`
 
 	// Expected parent revisions are optional create-only compare-and-swap
 	// evidence. They are checked while the parent rows are locked in the same

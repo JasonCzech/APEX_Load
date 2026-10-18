@@ -259,7 +259,13 @@ func (s *SQLiteStore) saveTestStartIfNoDeploymentLease(test *TestRecord, executi
 		return ErrDeploymentLeaseActive
 	}
 	if requireExecutionLease {
-		held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, strings.TrimSpace(executionLeaseName), strings.TrimSpace(executionLeaseOwnerID))
+		var held bool
+		if test.ExecutionGeneration > 0 {
+			// The generation stamped below must be the lease's real term.
+			held, err = schedulerLeaseTermHeldInTransaction(tx, s.db.dialect, strings.TrimSpace(executionLeaseName), strings.TrimSpace(executionLeaseOwnerID), test.ExecutionGeneration)
+		} else {
+			held, err = schedulerLeaseHeldInTransaction(tx, s.db.dialect, strings.TrimSpace(executionLeaseName), strings.TrimSpace(executionLeaseOwnerID))
+		}
 		if err != nil {
 			return err
 		}
@@ -338,6 +344,14 @@ func (s *SQLiteStore) saveTestStartIfNoDeploymentLease(test *TestRecord, executi
 	}
 	if err := s.writePreparedTestWithExecutor(tx, test, preparedArgs); err != nil {
 		return err
+	}
+	if requireExecutionLease && test.ExecutionGeneration > 0 {
+		// The full-row write never touches this column; only Start and adoption
+		// record which execution term runs the row, and only forward.
+		if _, err := tx.Exec(`UPDATE tests SET execution_generation = ? WHERE id = ? AND COALESCE(execution_generation, 0) <= ?`,
+			int64(test.ExecutionGeneration), test.ID, int64(test.ExecutionGeneration)); err != nil {
+			return fmt.Errorf("record start execution generation: %w", err)
+		}
 	}
 	// Read the exact CASE winner while the same transaction owns the test row.
 	// A second read after commit could fail after execution-capable state is

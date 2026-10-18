@@ -180,6 +180,14 @@ func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 	}
 	job.ProjectID = normalizeProjectID(job.ProjectID)
 	job.IntentToken = uuid.NewString()
+	// Recovery may prepare a replacement manifest (a failed-over archive at the
+	// durable end time). It is committed with the job, never written to the
+	// source before this fence, and restored by finalization.
+	if job.PreparedManifestJSON != "" {
+		if err := validatePreparedArchiveManifest(job.TestID, &job.ArchiveRecord, job.PreparedManifestJSON); err != nil {
+			return false, err
+		}
+	}
 	recordJSON, err := json.Marshal(job.ArchiveRecord)
 	if err != nil {
 		return false, fmt.Errorf("encode archive finalization record: %w", err)
@@ -256,9 +264,9 @@ func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 		}
 	}
 	result, err := tx.Exec(`INSERT INTO archive_finalization_jobs (
-		test_id, project_id, archive_record_json, persist_artifacts, generation, intent_token, refresh_token, attempts, last_error, created_at, updated_at
-	) VALUES (?, ?, ?, ?, 1, ?, ?, 0, NULL, ?, ?)
-	ON CONFLICT(test_id) DO NOTHING`, job.TestID, job.ProjectID, string(recordJSON), persistArtifacts, job.IntentToken, strings.TrimSpace(job.RefreshToken), job.CreatedAt, job.UpdatedAt)
+		test_id, project_id, archive_record_json, persist_artifacts, generation, intent_token, refresh_token, attempts, last_error, prepared_manifest_json, created_at, updated_at
+	) VALUES (?, ?, ?, ?, 1, ?, ?, 0, NULL, ?, ?, ?)
+	ON CONFLICT(test_id) DO NOTHING`, job.TestID, job.ProjectID, string(recordJSON), persistArtifacts, job.IntentToken, strings.TrimSpace(job.RefreshToken), job.PreparedManifestJSON, job.CreatedAt, job.UpdatedAt)
 	if err != nil {
 		return false, err
 	}
@@ -279,7 +287,6 @@ func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 	}
 	if affected > 0 {
 		job.Generation = 1
-		job.PreparedManifestJSON = ""
 	}
 	return affected > 0, nil
 }
