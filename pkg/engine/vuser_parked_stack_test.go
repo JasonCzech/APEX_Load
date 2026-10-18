@@ -48,16 +48,30 @@ func growStack(depth int) byte {
 	return growStack(depth-1) + pad[(depth*7)%len(pad)]
 }
 
-func parkedStackScript() *dsl.Script {
-	return &dsl.Script{
+// parkedStackScript runs one stack-growing action in phase ("action",
+// "init" or "teardown") and then parks in its think time. Teardown runs on
+// its own bounded context, so its think time is short enough for the test to
+// wait out.
+func parkedStackScript(phase string) *dsl.Script {
+	park := dsl.Action{
+		Name: "grow", Type: "request", Target: "/",
+		ThinkTimeAfter: true, ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 10 * 60 * 1000},
+	}
+	script := &dsl.Script{
 		Name:     "parked stack",
 		Protocol: parkedStackProtocolName,
 		Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
-		Actions: []dsl.Action{{
-			Name: "grow", Type: "request", Target: "/",
-			ThinkTimeAfter: true, ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 10 * 60 * 1000},
-		}},
 	}
+	switch phase {
+	case "init":
+		script.Init = []dsl.Action{park}
+	case "teardown":
+		park.ThinkTime.MeanMs = 4000
+		script.Teardown = []dsl.Action{park}
+	default:
+		script.Actions = []dsl.Action{park}
+	}
+	return script
 }
 
 func stackInuse() uint64 {
@@ -85,6 +99,12 @@ func assertParkedStacksShrink(t *testing.T, vusers int, executed chan struct{}, 
 			t.Fatal("VUsers did not execute their action")
 		}
 	}
+	// Parked stacks shrink to 8 KB. The race detector's larger frames can
+	// leave some at 16 KB, so it only requires them to leave 32 KB.
+	limit := uint64(12 << 10)
+	if raceDetectorEnabled {
+		limit = 20 << 10
+	}
 	// Each GC halves a parked stack at most once, and a VUser that has not
 	// parked yet keeps its stack; retry until every VUser has parked.
 	var perVUser uint64
@@ -92,58 +112,66 @@ func assertParkedStacksShrink(t *testing.T, vusers int, executed chan struct{}, 
 		runtime.GC()
 		runtime.GC()
 		perVUser = (stackInuse() - min(before, stackInuse())) / uint64(vusers)
-		if perVUser < 12<<10 {
+		if perVUser < limit {
 			t.Logf("parked VUser stack = %d KB", perVUser>>10)
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("parked VUser stack = %d KB, want under 12 KB: a frame on the think-time path is too large for the GC to shrink the stack", perVUser>>10)
+	t.Fatalf("parked VUser stack = %d KB, want under %d KB: a frame on the think-time path is too large for the GC to shrink the stack", perVUser>>10, limit>>10)
 }
 
 func TestParkedVUserStackShrinks(t *testing.T) {
-	const vusers = 200
-	proto := &stackGrowingProtocol{executed: make(chan struct{}, vusers)}
-	script := parkedStackScript()
-	metrics := NewMetricsCollector(16)
-	ctx, cancel := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
-	defer func() {
-		cancel()
-		wg.Wait()
-	}()
-	assertParkedStacksShrink(t, vusers, proto.executed, func() {
-		for id := range vusers {
-			wg.Go(func() {
-				vu := &VUser{ID: id + 1, TotalVUsers: vusers, Proto: proto, Script: script, Metrics: metrics}
-				vu.Run(ctx)
+	for _, phase := range []string{"action", "init", "teardown"} {
+		t.Run(phase, func(t *testing.T) {
+			const vusers = 200
+			proto := &stackGrowingProtocol{executed: make(chan struct{}, vusers)}
+			script := parkedStackScript(phase)
+			metrics := NewMetricsCollector(16)
+			ctx, cancel := context.WithCancel(context.Background())
+			var wg sync.WaitGroup
+			defer func() {
+				cancel()
+				wg.Wait()
+			}()
+			assertParkedStacksShrink(t, vusers, proto.executed, func() {
+				for id := range vusers {
+					wg.Go(func() {
+						vu := &VUser{ID: id + 1, TotalVUsers: vusers, Proto: proto, Script: script, Metrics: metrics}
+						vu.Run(ctx)
+					})
+				}
 			})
-		}
-	})
+		})
+	}
 }
 
 // Group VUsers start from a larger goroutine frame and sleep through the
 // group engine's pause-aware clock.
 func TestParkedGroupVUserStackShrinks(t *testing.T) {
-	const vusers = 300
-	mge, err := NewMultiGroup(MultiGroupConfig{
-		Groups:       []GroupConfig{{Name: "parked", Script: parkedStackScript(), VUsers: vusers}},
-		Duration:     time.Minute,
-		PostBaseline: time.Millisecond,
-	})
-	if err != nil {
-		t.Fatalf("NewMultiGroup: %v", err)
+	for _, phase := range []string{"action", "init"} {
+		t.Run(phase, func(t *testing.T) {
+			const vusers = 300
+			mge, err := NewMultiGroup(MultiGroupConfig{
+				Groups:       []GroupConfig{{Name: "parked", Script: parkedStackScript(phase), VUsers: vusers}},
+				Duration:     time.Minute,
+				PostBaseline: time.Millisecond,
+			})
+			if err != nil {
+				t.Fatalf("NewMultiGroup: %v", err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			defer func() {
+				cancel()
+				<-done
+			}()
+			assertParkedStacksShrink(t, vusers, parkedStackExecuted, func() {
+				go func() {
+					defer close(done)
+					_, _ = mge.Run(ctx)
+				}()
+			})
+		})
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	defer func() {
-		cancel()
-		<-done
-	}()
-	assertParkedStacksShrink(t, vusers, parkedStackExecuted, func() {
-		go func() {
-			defer close(done)
-			_, _ = mge.Run(ctx)
-		}()
-	})
 }

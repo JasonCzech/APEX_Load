@@ -249,7 +249,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		branchVU.Parameters.inheritSourceParameterState(vu.Parameters)
 	}
 	_ = branchVU.refreshImportedCredentialRuntimeValues()
-	cfg := vu.Script.Config
+	cfg := &vu.Script.Config
 	ignoreErrors := strings.EqualFold(strings.TrimSpace(phase), "teardown")
 	if !branchVU.runLifecycleActionsWithContexts(ctx, ctx, branch.Steps, phase, ignoreErrors, branchVU.makeLogger(cfg.Log), cfg.Log, cfg.ErrorHandling) {
 		result.failed = true
