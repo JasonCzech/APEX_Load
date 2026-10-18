@@ -646,7 +646,7 @@ function responseTimeMetricSuffix(key: string) {
 // not measured zero-duration responses. Keep each response-time line at its last
 // positive observation until a new positive sample arrives. This runs before
 // markDataGaps, so an actual missing sampling window still receives a value-less
-// gap-boundary row and remains visibly disconnected.
+// gap-boundary row. Runtime graphs may connect across it without adding samples.
 export function carryForwardPositiveResponseTimes(points: MetricsHistoryPoint[]): MetricsHistoryPoint[] {
   if (points.length === 0) return points
 
@@ -702,8 +702,8 @@ export function estimateSampleIntervalMs(points: MetricsHistoryPoint[]): number 
 }
 
 // markDataGaps inserts a synthetic value-less spacer row wherever a sampling gap
-// is detected, so every series breaks (rather than interpolating a misleading
-// straight line) across missing intervals. The spacer carries the real midpoint
+// is detected, preserving the unobserved interval in the data even when a runtime
+// graph connects its surrounding samples. The spacer carries the real midpoint
 // timestamp, so its axis tick reads as a normal — but empty — time slot.
 export function markDataGaps(points: MetricsHistoryPoint[], factor = GAP_DETECTION_FACTOR): MetricsHistoryPoint[] {
   if (points.length < GAP_DETECTION_MIN_POINTS) return points

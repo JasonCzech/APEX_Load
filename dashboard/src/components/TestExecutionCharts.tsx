@@ -30,6 +30,7 @@ import { buildGeneratorImpactView, type GeneratorImpactVerdict } from './generat
 import LoadImpactHeatmap from './LoadImpactHeatmap'
 import StatTile from './StatTile'
 import PrometheusPanelCard from './PrometheusPanelCard'
+import ContinuousStackedArea from './ContinuousStackedArea'
 import {
   buildLoadImpactModel,
   formatLoadImpactValue,
@@ -2143,6 +2144,8 @@ export default function TestExecutionCharts({
     )
   }
 
+  // Connect runtime series and their fills across missing samples. Keep the
+  // underlying gaps intact for tooltips, measurements, and data exports.
   const renderGradientUnderlays = (
     chart: ChartConfig,
     rows: ChartMetricRow[],
@@ -2163,7 +2166,7 @@ export default function TestExecutionCharts({
         fillOpacity={1}
         dot={false}
         activeDot={false}
-        connectNulls={false}
+        connectNulls
         legendType="none"
         tooltipType="none"
         isAnimationActive={false}
@@ -2181,7 +2184,7 @@ export default function TestExecutionCharts({
       fillOpacity={1}
       dot={false}
       activeDot={false}
-      connectNulls={false}
+      connectNulls
       legendType="none"
       tooltipType="none"
       isAnimationActive={false}
@@ -2214,7 +2217,7 @@ export default function TestExecutionCharts({
         strokeOpacity={1}
         dot={false}
         activeDot={false}
-        connectNulls={false}
+        connectNulls
         legendType="none"
         tooltipType="none"
         isAnimationActive={false}
@@ -2311,7 +2314,7 @@ export default function TestExecutionCharts({
           dot={false}
           strokeWidth={1.75}
           strokeDasharray="5 3"
-          connectNulls={key === 'vusers'}
+          connectNulls
           isAnimationActive={false}
         />
       )
@@ -2847,6 +2850,10 @@ export default function TestExecutionCharts({
               })
             }
             const displayMetricKey = (key: string) => smoothedMetricKeySet.has(key) ? smoothedGraphMetricKey(key) : key
+            const observedStackKeys = chart.type === 'area-stacked'
+              ? chart.keys!.filter(key => visibleMetricKeys.includes(key.k)).map(key => displayMetricKey(key.k))
+                .filter(key => displayChartData.some(point => typeof point[key] === 'number' && Number.isFinite(point[key])))
+              : []
             const metricDot = (key: string) => singletonTransactionMetricKeySet.has(key) ? { r: 3 } : false
             const primaryMetricKeysForDomain = visibleMetricKeys.filter(key => (
               !visibleOverlayKeysForTitle.includes(key as OverlayMetricKey)
@@ -3026,7 +3033,7 @@ export default function TestExecutionCharts({
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {chart.dataKey && showMetric(chart.dataKey) && (
-                  <Area yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(chart.dataKey)} name="Total" stroke={chart.color!} fill={chartGradientFill(chart, chart.dataKey)} fillOpacity={1} connectNulls={chart.dataKey === 'vusers'} isAnimationActive={false} />
+                  <Area yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(chart.dataKey)} name="Total" stroke={chart.color!} fill={chartGradientFill(chart, chart.dataKey)} fillOpacity={1} connectNulls isAnimationActive={false} />
                 )}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
@@ -3179,7 +3186,7 @@ export default function TestExecutionCharts({
                     )
                   })}
                 {surface === 'command-center' && chartData.some(point => typeof point.targetTps === 'number') && (
-                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="targetTps" name="Target" stroke="var(--text-secondary)" dot={false} strokeWidth={1.75} strokeDasharray="5 3" isAnimationActive={false} />
+                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="targetTps" name="Target" stroke="var(--text-secondary)" dot={false} strokeWidth={1.75} strokeDasharray="5 3" connectNulls isAnimationActive={false} />
                 )}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
@@ -3242,6 +3249,7 @@ export default function TestExecutionCharts({
                         strokeWidth={presentation.strokeWidth}
                         strokeDasharray={presentation.strokeDasharray}
                         strokeOpacity={presentation.strokeOpacity}
+                        connectNulls
                         isAnimationActive={false}
                       />
                     )
@@ -3270,7 +3278,7 @@ export default function TestExecutionCharts({
                 <Legend verticalAlign="bottom" itemSorter={preserveChartItemOrder} />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {chart.keys!.filter(key => showMetric(key.k)).map((key) => (
-                  <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(key.k)} name={key.n} stroke={key.c} fill={chartGradientFill(chart, key.k)} fillOpacity={1} isAnimationActive={false} connectNulls={false} stackId={chart.type === 'area-stacked' ? (chart.stackId ?? 'stack') : undefined} />
+                  <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(key.k)} name={key.n} stroke={key.c} fill={chartGradientFill(chart, key.k)} fillOpacity={1} isAnimationActive={false} connectNulls={chart.type !== 'area-stacked'} shape={chart.type === 'area-stacked' ? <ContinuousStackedArea stackKeys={observedStackKeys.slice(0, observedStackKeys.indexOf(displayMetricKey(key.k)) + 1)} /> : undefined} stackId={chart.type === 'area-stacked' ? (chart.stackId ?? 'stack') : undefined} />
                 ))}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
@@ -3305,6 +3313,7 @@ export default function TestExecutionCharts({
                     stroke={row.color}
                     dot={false}
                     strokeWidth={2}
+                    connectNulls
                     isAnimationActive={false}
                   />
                 ))}
@@ -3343,6 +3352,7 @@ export default function TestExecutionCharts({
                       stroke={row.color}
                       dot={false}
                       strokeWidth={2}
+                      connectNulls
                       isAnimationActive={false}
                     />
                   ))}
@@ -3370,10 +3380,10 @@ export default function TestExecutionCharts({
                 <Legend itemSorter={preserveChartItemOrder} />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
-                {showMetric('netSent') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netSent')} name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} isAnimationActive={false} />}
-                {showMetric('netRecv') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netRecv')} name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} isAnimationActive={false} />}
-                {showMetric('diskRead') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('diskRead')} name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
-                {showMetric('diskWrite') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('diskWrite')} name="Disk Write" stroke="var(--chart-6)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
+                {showMetric('netSent') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netSent')} name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} connectNulls isAnimationActive={false} />}
+                {showMetric('netRecv') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netRecv')} name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} connectNulls isAnimationActive={false} />}
+                {showMetric('diskRead') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('diskRead')} name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" connectNulls isAnimationActive={false} />}
+                {showMetric('diskWrite') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('diskWrite')} name="Disk Write" stroke="var(--chart-6)" dot={false} strokeWidth={1} strokeDasharray="3 3" connectNulls isAnimationActive={false} />}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (

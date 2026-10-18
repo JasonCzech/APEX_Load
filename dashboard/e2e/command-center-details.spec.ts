@@ -452,3 +452,88 @@ test('monitoring graph tabs reflect confirmed configuration and stay stable duri
     await page.unrouteAll({ behavior: 'wait' })
   }
 })
+
+test('live network phase graphs connect sparse samples without extending into empty edges', async ({ page, seedLiveRun }, testInfo) => {
+  test.setTimeout(150_000)
+  const run = await seedLiveRun({ label: 'command-continuous-network-phases' })
+  const sampleStart = Date.now() - 6000
+  const history = Array.from({ length: 7 }, (_, index) => ({
+    timestamp: new Date(sampleStart + index * 1000).toISOString(),
+    active_vusers: 2,
+    tps: 2,
+    request_rate: 2,
+    total_transactions: (index + 1) * 2,
+    total_errors: 0,
+    avg_response_ms: 50,
+    error_pct: 0,
+    p50_ms: 40,
+    p90_ms: 55,
+    p95_ms: 60,
+    p99_ms: 65,
+    // Include both whole-stack gaps and a missing DNS observation while the
+    // other phases are present. Neither kind of absence is a measured zero.
+    ...(index === 1 || index === 3 || index === 5 ? {
+      ...(index === 3 ? {} : { avg_dns_ms: 20 }),
+      avg_connect_ms: 30,
+      avg_tls_ms: 40,
+      avg_ttfb_ms: 50,
+      avg_wait_ms: 60,
+    } : {}),
+  }))
+  await page.route(url => url.pathname === `/api/v1/tests/${run.testId}`, async route => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const response = await route.fetch()
+    const payload = await response.json()
+    await route.fulfill({ response, json: { ...payload, history, live_metrics: history[history.length - 1] } })
+  })
+  // Keep the real run alive, while holding this page's metric stream open so
+  // later engine samples cannot replace the deliberately sparse API history.
+  await page.routeWebSocket(url => url.pathname === `/api/v1/tests/${run.testId}/stream`, socket => {
+    socket.onMessage(() => undefined)
+  })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto(`/#/command-center/${run.testId}`)
+  const cockpit = page.locator('.command-center-page')
+  await cockpit.getByRole('button', { name: 'Graph Wall', exact: true }).click()
+  await cockpit.getByRole('tab', { name: /^Infrastructure/ }).click()
+  const graphOptions = cockpit.getByRole('region', { name: 'Graph display options', exact: true })
+  await graphOptions.getByRole('button', { name: '3x3', exact: true }).click()
+  await graphOptions.getByRole('button', { name: 'Milliseconds', exact: true }).click()
+  await graphOptions.getByRole('checkbox', { name: 'Show table rows beneath graphs', exact: true }).check()
+  const chart = cockpit.locator('[data-chart-id="tx_network_phases"]')
+  const phaseCurves = chart.locator('.recharts-area-curve')
+  await expect(phaseCurves).toHaveCount(5)
+  const expectConnectedPaths = async (selector: string, count: number) => {
+    await expect.poll(() => chart.evaluate((element, { selector, count }) => {
+      const grid = element.querySelector<SVGGraphicsElement>('.recharts-cartesian-grid')
+      const paths = Array.from(element.querySelectorAll<SVGPathElement>(selector))
+      if (!grid || paths.length !== count) return false
+      const plot = grid.getBBox()
+      return plot.width > 0 && paths.every(path => {
+        const bounds = path.getBBox()
+        const commands = path.getAttribute('d') || ''
+        return (commands.match(/M/gi) || []).length === 1
+          && path.getTotalLength() > 0
+          && bounds.width > plot.width * 0.2
+          && bounds.x > plot.x + plot.width * 0.05
+          && bounds.x + bounds.width < plot.x + plot.width * 0.95
+      })
+    }, { selector, count }), { message: 'Measured samples form one continuous path with unmeasured edges left empty' }).toBe(true)
+  }
+  await expectConnectedPaths('.recharts-area-curve', 5)
+  await expectConnectedPaths('.recharts-area-area', 5)
+  // Each phase is constant where observed. Missing DNS must neither dip its
+  // own stroke to zero nor lower the cumulative baseline of the other phases.
+  await expect.poll(() => phaseCurves.evaluateAll(paths => paths.length === 5
+    && paths.every(path => (path as SVGPathElement).getBBox().height <= 1)),
+  { message: 'All phase strokes stay level across the missing DNS observation' }).toBe(true)
+  // Drawing across a missing interval must not add zero-valued measurements.
+  const dnsRow = chart.locator('.chart-metrics-table tbody tr').filter({ hasText: 'DNS' })
+  await expect(dnsRow.locator('td').nth(3)).toHaveText('20ms')
+  await expect(dnsRow.locator('td').nth(4)).toHaveText('20ms')
+  const highlight = chart.getByRole('button', { name: 'DNS', exact: true })
+  await highlight.click()
+  await expect(highlight).toHaveAttribute('aria-pressed', 'true')
+  await expectConnectedPaths('.recharts-line-curve[stroke-width="4"]', 1)
+  await chart.screenshot({ path: testInfo.outputPath('continuous-network-phases.png') })
+})

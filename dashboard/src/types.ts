@@ -3037,8 +3037,8 @@ export interface MetricsHistoryPoint {
   errResourceLimit?: number
   errSessionLost?: number
   errOther?: number
-  // Set on synthetic spacer rows inserted at a detected data gap so series
-  // break (rather than interpolate) across missing intervals.
+  // Marks an unobserved interval with a value-less spacer row. Runtime graphs
+  // may connect its surrounding samples without filling the missing values.
   isGapBoundary?: number
   [key: string]: string | number | number[] | undefined
 }
