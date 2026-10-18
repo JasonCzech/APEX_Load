@@ -204,6 +204,89 @@ test('live run keeps view, group, and graph controls in the right sidebar at des
   }
 })
 
+test('ops load cards sit side by side on desktop and stack on narrow screens', async ({ page, seedLiveRun }, testInfo) => {
+  const run = await seedLiveRun({ label: 'command-paired-load-cards' })
+  await page.goto(`/#/command-center/${run.testId}`)
+  const cockpit = page.locator('.command-center-page')
+  const groupLoad = cockpit.getByRole('region', { name: 'Group load and health', exact: true })
+  const loadModel = cockpit.getByRole('region', { name: 'Load model profile', exact: true })
+  const target = groupLoad.getByRole('spinbutton', { name: 'smoke target VUsers', exact: true })
+  await target.fill('5')
+
+  for (const width of [1440, 1280, 1100, 1024, 900, 760, 560]) {
+    await test.step(`load cards at ${width}px`, async () => {
+      await page.setViewportSize({ width, height: 1000 })
+      await expect(groupLoad).toBeVisible()
+      await expect(loadModel).toBeVisible()
+      await expect(target).toHaveValue('5')
+      await expect.poll(() => cockpit.evaluate((element, narrowViewport) => {
+        const row = element.querySelector<HTMLElement>('.command-load-model-row')
+        const groups = row?.querySelector<HTMLElement>('.command-group-panel')
+        const model = row?.querySelector<HTMLElement>('.command-load-model-panel')
+        const input = groups?.querySelector<HTMLInputElement>('input[type="number"]')
+        if (!row || !groups || !model || !input) return null
+        const stacked = narrowViewport || row.clientWidth <= 600
+        const left = groups.getBoundingClientRect()
+        const right = model.getBoundingClientRect()
+        const inputBox = input.getBoundingClientRect()
+        const rowBox = row.getBoundingClientRect()
+        return {
+          positioned: stacked ? right.top >= left.bottom : right.left >= left.right,
+          aligned: Math.abs(stacked ? right.left - left.left : right.top - left.top) <= 1,
+          contained: left.width > 0 && right.width > 0 && right.right <= rowBox.right + 1,
+          groupFits: groups.scrollWidth <= groups.clientWidth + 1,
+          modelFits: model.scrollWidth <= model.clientWidth + 1,
+          targetFits: inputBox.width > 0 && inputBox.left >= left.left && inputBox.right <= left.right,
+        }
+      }, width <= 1024)).toEqual({ positioned: true, aligned: true, contained: true, groupFits: true, modelFits: true, targetFits: true })
+      if (width === 1440 || width === 1280 || width === 760) {
+        await cockpit.locator('.command-load-model-row').screenshot({ path: testInfo.outputPath(`ops-load-cards-${width}.png`) })
+      }
+    })
+  }
+})
+
+test('load model shades elapsed time up to the moving Now marker', async ({ page, seedLiveRun }, testInfo) => {
+  const run = await seedLiveRun({ label: 'command-elapsed-load-model', duration: '5m' })
+  const now = Date.now()
+  await page.clock.install({ time: new Date(now) })
+  await page.route(url => url.pathname === `/api/v1/tests/${run.testId}`, async route => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const response = await route.fetch()
+    const payload = await response.json()
+    const started = new Date(now - 120_000).toISOString()
+    await route.fulfill({ response, json: { ...payload, started_at: started, start_time: started } })
+  })
+  await page.routeWebSocket(url => url.pathname === `/api/v1/tests/${run.testId}/stream`, socket => {
+    socket.onMessage(() => undefined)
+  })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto(`/#/command-center/${run.testId}`)
+  const model = page.getByRole('region', { name: 'Load model profile', exact: true })
+  const elapsed = model.locator('.load-plan-elapsed-area')
+  await expect(elapsed).toBeVisible()
+  const expectBoundary = async () => {
+    await expect.poll(() => model.evaluate(element => {
+      const shade = element.querySelector('.load-plan-elapsed-area')?.getBoundingClientRect()
+      const now = element.querySelector('.load-plan-now line')?.getBoundingClientRect()
+      const grid = element.querySelector('.recharts-cartesian-grid')?.getBoundingClientRect()
+      if (!shade || !now || !grid) return false
+      return shade.width > 0 && Math.abs(shade.left - grid.left) <= 1 && Math.abs(shade.right - now.left) <= 1
+        && Math.abs(shade.top - grid.top) <= 1 && Math.abs(shade.bottom - grid.bottom) <= 1
+        && shade.width < grid.width
+    }), { message: 'Elapsed shading covers the full plot height, from the start to Now' }).toBe(true)
+  }
+  await expectBoundary()
+  const initialWidth = (await elapsed.boundingBox())!.width
+  await page.clock.fastForward(30_000)
+  await expect.poll(async () => (await elapsed.boundingBox())!.width).toBeGreaterThan(initialWidth + 5)
+  await expectBoundary()
+  for (const theme of ['light', 'dark']) {
+    await page.locator('html').evaluate((element, value) => { element.dataset.theme = value }, theme)
+    await model.screenshot({ path: testInfo.outputPath(`load-model-elapsed-${theme}.png`) })
+  }
+})
+
 test('graph layout paginates selected graphs and preserves its choice through responsive reflow', async ({ page, seedLiveRun }, testInfo) => {
   test.setTimeout(150_000)
   const run = await seedLiveRun({ label: 'command-graph-layout' })
