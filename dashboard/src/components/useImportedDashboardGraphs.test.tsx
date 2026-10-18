@@ -17,19 +17,30 @@ vi.mock('../hooks/api/useSystemApi', () => ({
 }))
 
 import { useImportedDashboardGraphs } from './useImportedDashboardGraphs'
+import { ApiError } from '../hooks/apiClient'
 
 function okResponse(): ImportedDashboardGraphsResponse {
   return {
     enabled: true,
     configured: true,
     generated_at: '2026-06-12T12:00:00Z',
-    dashboards: [{ dashboard_id: 'd1', dashboard_title: 'Infra', panels: [] }],
+    dashboards: [{ dashboard_id: 'd1', dashboard_title: 'Infra', panels: [{ panel_id: 1, title: 'CPU', kind: 'line', series: [] }] }],
   }
 }
 
+let lastResult: ReturnType<typeof useImportedDashboardGraphs> | null = null
+const observedResults: ReturnType<typeof useImportedDashboardGraphs>[] = []
 function Harness({ test, filteredData, projectId = 'proj-a' }: { test: TestSummary | null; filteredData: MetricsHistoryPoint[]; projectId?: string }) {
-  useImportedDashboardGraphs(test, filteredData, projectId)
+  lastResult = useImportedDashboardGraphs(test, filteredData, projectId)
+  observedResults.push(lastResult)
   return null
+}
+
+function deferredResponse() {
+  let resolve!: (response: ImportedDashboardGraphsResponse) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<ImportedDashboardGraphsResponse>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
 }
 
 function point(timestampMs: number): MetricsHistoryPoint {
@@ -52,6 +63,8 @@ describe('useImportedDashboardGraphs', () => {
     vi.useFakeTimers()
     getImportedDashboardGraphs.mockReset()
     getImportedDashboardGraphs.mockResolvedValue(okResponse())
+    lastResult = null
+    observedResults.length = 0
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -114,5 +127,102 @@ describe('useImportedDashboardGraphs', () => {
     })
     expect(getImportedDashboardGraphs).toHaveBeenCalledTimes(1)
     await act(async () => { resolveRequest(okResponse()); await Promise.resolve() })
+  })
+
+  it('confirms availability from panels and retains it during refreshes and transient errors', async () => {
+    const initial = deferredResponse()
+    getImportedDashboardGraphs.mockReturnValueOnce(initial.promise)
+    const base = Date.parse('2026-06-12T12:00:00Z')
+    await render(runningTest(), [point(base), point(base + 2000)])
+    expect(lastResult?.importedDashboardsLoading).toBe(true)
+    expect(lastResult?.importedDashboardsAvailable).toBe(false)
+
+    // The panel definition establishes availability even without metric samples.
+    await act(async () => initial.resolve(okResponse()))
+    expect(lastResult?.importedDashboardsAvailable).toBe(true)
+
+    const refresh = deferredResponse()
+    getImportedDashboardGraphs.mockReturnValueOnce(refresh.promise)
+    await render(runningTest(), [point(base), point(base + 30_000)])
+    expect(lastResult?.importedDashboardsLoading).toBe(true)
+    expect(lastResult?.importedDashboardsAvailable).toBe(true)
+
+    await act(async () => refresh.reject(new ApiError('upstream unavailable', 502)))
+    expect(lastResult?.importedDashboardsAvailable).toBe(true)
+    expect(lastResult?.importedDashboardsError).toBe('upstream unavailable')
+    expect(lastResult?.importedDashboards).toEqual([])
+  })
+
+  it.each([
+    { ...okResponse(), enabled: false },
+    { ...okResponse(), configured: false },
+    { ...okResponse(), dashboards: [] },
+    { ...okResponse(), dashboards: [{ dashboard_id: 'empty', panels: [] }] },
+  ])('keeps unavailable dashboard configuration hidden during repeated polls', async response => {
+    getImportedDashboardGraphs.mockResolvedValue(response)
+    const base = Date.parse('2026-06-12T12:00:00Z')
+    await render(runningTest(), [point(base), point(base + 2000)])
+    await render(runningTest(), [point(base), point(base + 30_000)])
+    await act(async () => { vi.advanceTimersByTime(10_000); await Promise.resolve() })
+    expect(getImportedDashboardGraphs).toHaveBeenCalledTimes(3)
+    expect(observedResults.every(result => !result.importedDashboardsAvailable)).toBe(true)
+  })
+
+  it.each(['run', 'project'])('hides the prior %s scope immediately and ignores its pending response', async changedScope => {
+    const base = Date.parse('2026-06-12T12:00:00Z')
+    const initialData = [point(base), point(base + 2000)]
+    const refreshedData = [point(base), point(base + 30_000)]
+    await render(runningTest(), initialData)
+    expect(lastResult?.importedDashboardsAvailable).toBe(true)
+
+    const stale = deferredResponse()
+    const next = deferredResponse()
+    getImportedDashboardGraphs.mockReturnValueOnce(stale.promise).mockReturnValueOnce(next.promise)
+    await render(runningTest(), refreshedData)
+    observedResults.length = 0
+    await render(changedScope === 'run' ? { ...runningTest(), id: 'test-2' } : runningTest(), refreshedData, changedScope === 'project' ? 'proj-b' : 'proj-a')
+    expect(observedResults[0].importedDashboardsAvailable).toBe(false)
+    expect(observedResults[0].importedDashboards).toEqual([])
+
+    await act(async () => stale.resolve(okResponse()))
+    expect(lastResult?.importedDashboardsAvailable).toBe(false)
+    expect(lastResult?.importedDashboards).toEqual([])
+
+    await act(async () => next.resolve({ ...okResponse(), dashboards: [{ ...okResponse().dashboards[0], dashboard_id: 'new' }] }))
+    expect(lastResult?.importedDashboardsAvailable).toBe(true)
+    expect(lastResult?.importedDashboards[0].dashboard_id).toBe('new')
+  })
+
+  it.each(['disabled', 'empty', 'forbidden'])('clears confirmed availability when dashboards become %s', async reason => {
+    const base = Date.parse('2026-06-12T12:00:00Z')
+    await render(runningTest(), [point(base), point(base + 2000)])
+    expect(lastResult?.importedDashboardsAvailable).toBe(true)
+
+    if (reason === 'forbidden') getImportedDashboardGraphs.mockRejectedValue(new ApiError('forbidden', 403))
+    else getImportedDashboardGraphs.mockResolvedValue({ ...okResponse(), enabled: reason !== 'disabled', dashboards: [] })
+    await act(async () => { vi.advanceTimersByTime(10_000); await Promise.resolve() })
+    expect(lastResult?.importedDashboardsAvailable).toBe(false)
+    expect(lastResult?.importedDashboards).toEqual([])
+  })
+
+  it('does not infer configuration from an initial failure', async () => {
+    getImportedDashboardGraphs.mockRejectedValue(new ApiError('unavailable', 502))
+    const base = Date.parse('2026-06-12T12:00:00Z')
+    await render(runningTest(), [point(base), point(base + 2000)])
+    expect(lastResult?.importedDashboardsAvailable).toBe(false)
+    expect(lastResult?.importedDashboardsError).toBe('unavailable')
+  })
+
+  it('loads terminal-run snapshots without current settings and does not poll them', async () => {
+    const base = Date.parse('2026-06-12T12:00:00Z')
+    await render({ ...runningTest(), status: 'COMPLETE', ended_at: new Date(base + 2000).toISOString() }, [point(base), point(base + 2000)])
+    expect(lastResult?.importedDashboardsAvailable).toBe(true)
+    expect(getImportedDashboardGraphs).toHaveBeenCalledWith(expect.objectContaining({ test_id: 'test-1', project_id: 'proj-a' }))
+    await act(async () => { vi.advanceTimersByTime(30_000); await Promise.resolve() })
+    expect(getImportedDashboardGraphs).toHaveBeenCalledTimes(1)
+
+    await render(null, [])
+    expect(lastResult?.importedDashboardsAvailable).toBe(false)
+    expect(lastResult?.importedDashboards).toEqual([])
   })
 })

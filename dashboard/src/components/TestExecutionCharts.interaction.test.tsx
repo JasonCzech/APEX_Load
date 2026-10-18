@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { act } from 'react'
-import type { ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -1242,6 +1242,40 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.hiddenCharts')).toContain('load_impact_heatmap')
   })
 
+  it.each([undefined, false])('does not advertise unconfirmed graph sources (%s) during loading or errors', async available => {
+    const availability = { prometheusAvailable: available, importedDashboardsAvailable: available }
+    await renderGraphSourceState({ ...availability, prometheusLoading: true, importedDashboardsLoading: true })
+    expect(container.querySelector('[role="tablist"][aria-label="Graph groups"]')?.textContent).not.toMatch(/Prometheus|Dashboards/)
+    expect(container.textContent).not.toContain('Loading Prometheus')
+
+    await renderGraphSourceState({ ...availability, prometheusError: 'Query failed', importedDashboardsError: 'Query failed' })
+    expect(container.querySelector('[role="tablist"][aria-label="Graph groups"]')?.textContent).not.toMatch(/Prometheus|Dashboards/)
+  })
+
+  it('retains confirmed source tabs and the selected tab through empty, loading and failed refreshes', async () => {
+    const availability = { prometheusAvailable: true, importedDashboardsAvailable: true, filteredData: [] }
+    const sourceTab = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find(tab => tab.textContent?.includes(label))
+    await renderGraphSourceState(availability)
+    expect(sourceTab('Prometheus')).toBeDefined()
+    expect(sourceTab('Dashboards')).toBeDefined()
+    await act(async () => sourceTab('Dashboards')!.click())
+
+    await renderGraphSourceState({ ...availability, prometheusLoading: true, importedDashboardsLoading: true })
+    expect(sourceTab('Prometheus')).toBeDefined()
+    expect(sourceTab('Dashboards')?.getAttribute('aria-selected')).toBe('true')
+
+    await renderGraphSourceState({ ...availability, prometheusError: 'Query failed', importedDashboardsError: 'Query failed' })
+    expect(sourceTab('Prometheus')).toBeDefined()
+    expect(sourceTab('Dashboards')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.textContent).toContain('Imported dashboards unavailable')
+
+    await renderGraphSourceState({ prometheusAvailable: false, importedDashboardsAvailable: false })
+    expect(sourceTab('Prometheus')).toBeUndefined()
+    expect(sourceTab('Dashboards')).toBeUndefined()
+    expect(sourceTab('Live Metrics')?.getAttribute('aria-selected')).toBe('true')
+  })
+
   it('shows Prometheus graphs as a graph group and supports metric row filtering', async () => {
     await act(async () => {
       root.render(
@@ -2328,6 +2362,37 @@ describe('TestExecutionCharts context menu', () => {
     Object.defineProperty(event, 'clientX', { value: coordinates.clientX ?? 0 })
     Object.defineProperty(event, 'clientY', { value: coordinates.clientY ?? 0 })
     element.dispatchEvent(event)
+  }
+
+  async function renderGraphSourceState(overrides: Partial<ComponentProps<typeof TestExecutionCharts>>) {
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130 },
+            { time: '10:00:01', vusers: 4, tps: 2, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p99: 135 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="all"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={[]}
+          showLoadImpact={false}
+          surface="command-center"
+          enableGraphGroupTabs
+          {...overrides}
+        />,
+      )
+    })
   }
 
   async function renderCharts(expandedChart: string | null = null, showLoadImpact = true, commandCenter = false, runId?: string) {

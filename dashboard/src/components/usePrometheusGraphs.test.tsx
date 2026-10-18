@@ -30,9 +30,18 @@ function okResponse(): PrometheusGraphsResponse {
 }
 
 let lastResult: ReturnType<typeof usePrometheusGraphs> | null = null
+const observedResults: ReturnType<typeof usePrometheusGraphs>[] = []
 function Harness({ test, filteredData }: { test: TestSummary | null; filteredData: MetricsHistoryPoint[] }) {
   lastResult = usePrometheusGraphs(test, filteredData)
+  observedResults.push(lastResult)
   return null
+}
+
+function deferredResponse() {
+  let resolve!: (response: PrometheusGraphsResponse) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<PrometheusGraphsResponse>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
 }
 
 function point(timestampMs: number): MetricsHistoryPoint {
@@ -72,6 +81,8 @@ describe('usePrometheusGraphs', () => {
     resetPrometheusGraphsAccessForTests()
     getPrometheusGraphs.mockReset()
     getPrometheusGraphs.mockResolvedValue(okResponse())
+    lastResult = null
+    observedResults.length = 0
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -114,6 +125,7 @@ describe('usePrometheusGraphs', () => {
     const base = Date.parse('2026-06-12T12:00:00Z')
     await render(runningTest(), [point(base), point(base + 2000)])
     expect(lastResult?.prometheusError).toBe('prometheus unreachable')
+    expect(lastResult?.prometheusAvailable).toBe(false)
   })
 
   it('does not refetch when data ticks within the same step bucket', async () => {
@@ -171,5 +183,91 @@ describe('usePrometheusGraphs', () => {
     })
     expect(getPrometheusGraphs).toHaveBeenCalledTimes(1)
     await act(async () => { resolveRequest(okResponse()); await Promise.resolve() })
+  })
+
+  it('confirms availability only from configuration and retains it during refreshes and errors', async () => {
+    const initial = deferredResponse()
+    getPrometheusGraphs.mockReturnValueOnce(initial.promise)
+    const base = Date.parse('2026-06-12T12:00:00Z')
+    await render(runningTest(), [point(base), point(base + 2000)])
+    expect(lastResult?.prometheusLoading).toBe(true)
+    expect(lastResult?.prometheusAvailable).toBe(false)
+
+    // A configured pack remains a destination even before it has samples/cards.
+    await act(async () => initial.resolve({ ...okResponse(), graphs: [] }))
+    expect(lastResult?.prometheusAvailable).toBe(true)
+    expect(lastResult?.prometheusGraphs).toEqual([])
+
+    const refresh = deferredResponse()
+    getPrometheusGraphs.mockReturnValueOnce(refresh.promise)
+    await render(runningTest(), [point(base), point(base + 30_000)])
+    expect(lastResult?.prometheusLoading).toBe(true)
+    expect(lastResult?.prometheusAvailable).toBe(true)
+
+    await act(async () => refresh.reject(new ApiError('upstream unavailable', 502)))
+    expect(lastResult?.prometheusAvailable).toBe(true)
+    expect(lastResult?.prometheusError).toBe('upstream unavailable')
+    expect(lastResult?.prometheusLoading).toBe(false)
+  })
+
+  it('keeps unconfigured polls hidden and clears availability when configuration is disabled', async () => {
+    const disabled = { ...okResponse(), enabled: true, configured: false, graphs: [] }
+    getPrometheusGraphs.mockResolvedValue({ ...disabled, enabled: false, configured: true })
+    const base = Date.parse('2026-06-12T12:00:00Z')
+    await render(runningTest(), [point(base), point(base + 2000)])
+    await render(runningTest(), [point(base), point(base + 30_000)])
+    await act(async () => { vi.advanceTimersByTime(10_000); await Promise.resolve() })
+    expect(getPrometheusGraphs).toHaveBeenCalledTimes(3)
+    expect(observedResults.every(result => !result.prometheusAvailable)).toBe(true)
+
+    getPrometheusGraphs.mockResolvedValue(okResponse())
+    await act(async () => { vi.advanceTimersByTime(10_000); await Promise.resolve() })
+    expect(lastResult?.prometheusAvailable).toBe(true)
+
+    getPrometheusGraphs.mockResolvedValue(disabled)
+    await act(async () => { vi.advanceTimersByTime(10_000); await Promise.resolve() })
+    expect(lastResult?.prometheusAvailable).toBe(false)
+    expect(lastResult?.prometheusGraphs).toEqual([])
+  })
+
+  it.each(['run', 'project'])('hides the prior %s scope immediately and ignores its pending response', async changedScope => {
+    const base = Date.parse('2026-06-12T12:00:00Z')
+    const first = { ...runningTest(), project_id: 'project-a' }
+    const initialData = [point(base), point(base + 2000)]
+    const refreshedData = [point(base), point(base + 30_000)]
+    await render(first, initialData)
+    expect(lastResult?.prometheusAvailable).toBe(true)
+
+    const stale = deferredResponse()
+    const next = deferredResponse()
+    getPrometheusGraphs.mockReturnValueOnce(stale.promise).mockReturnValueOnce(next.promise)
+    await render(first, refreshedData)
+    observedResults.length = 0
+    await render(changedScope === 'run' ? { ...first, id: 'test-2' } : { ...first, project_id: 'project-b' }, refreshedData)
+
+    expect(observedResults[0].prometheusAvailable).toBe(false)
+    expect(observedResults[0].prometheusGraphs).toEqual([])
+    await act(async () => stale.resolve(okResponse()))
+    expect(lastResult?.prometheusAvailable).toBe(false)
+    expect(lastResult?.prometheusGraphs).toEqual([])
+
+    await act(async () => next.resolve({ ...okResponse(), graphs: [{ id: 'new', title: 'New run', series: [] }] }))
+    expect(lastResult?.prometheusAvailable).toBe(true)
+    expect(lastResult?.prometheusGraphs[0].id).toBe('new')
+  })
+
+  it('clears confirmed availability on forbidden access or an absent query window', async () => {
+    const base = Date.parse('2026-06-12T12:00:00Z')
+    await render(runningTest(), [point(base), point(base + 2000)])
+    expect(lastResult?.prometheusAvailable).toBe(true)
+
+    getPrometheusGraphs.mockRejectedValue(new ApiError('forbidden', 403))
+    await act(async () => { vi.advanceTimersByTime(10_000); await Promise.resolve() })
+    expect(lastResult?.prometheusAvailable).toBe(false)
+    expect(lastResult?.prometheusError).toBe('')
+
+    await render(null, [])
+    expect(lastResult?.prometheusAvailable).toBe(false)
+    expect(lastResult?.prometheusGraphs).toEqual([])
   })
 })

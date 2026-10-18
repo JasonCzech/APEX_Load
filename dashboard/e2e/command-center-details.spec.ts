@@ -326,3 +326,129 @@ test('graph layout paginates selected graphs and preserves its choice through re
     expect(await readGraphIds()).toEqual(graphIds)
   })
 })
+
+test('monitoring graph tabs reflect confirmed configuration and stay stable during refresh failures', async ({ page, seedLiveRun }) => {
+  test.setTimeout(150_000)
+  const run = await seedLiveRun({ label: 'command-monitoring-tab-availability' })
+  const now = Date.now()
+  const generatedAt = new Date(now).toISOString()
+  const values = [1, 2].map((value, index) => ({
+    timestamp: new Date(now - (1 - index) * 1000).toISOString(),
+    timestamp_ms: now - (1 - index) * 1000,
+    value,
+  }))
+  const configuredResponses = {
+    prometheus: {
+      enabled: true,
+      configured: true,
+      generated_at: generatedAt,
+      graphs: [{ id: 'fixture_prometheus_cpu', title: 'Fixture Prometheus CPU', unit: '%', series: [{ key: 'cpu', label: 'CPU', values }] }],
+    },
+    dashboards: {
+      enabled: true,
+      configured: true,
+      generated_at: generatedAt,
+      dashboards: [{ dashboard_id: 'fixture-dashboard', dashboard_title: 'Fixture dashboard', panels: [{ panel_id: 1, title: 'Fixture dashboard CPU', kind: 'line', unit: '%', series: [{ key: 'cpu', label: 'CPU', values }] }] }],
+    },
+  }
+  const disabledResponses = {
+    prometheus: { enabled: false, configured: false, generated_at: generatedAt, graphs: [] },
+    dashboards: { enabled: false, configured: false, generated_at: generatedAt, dashboards: [] },
+  }
+  type ResponseMode = 'disabled' | 'configured' | 'error'
+  const phases: Array<{ release: () => void }> = []
+  const createPhase = (mode: ResponseMode) => {
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const phase = { mode, gate, release, requested: new Set<string>() }
+    phases.push(phase)
+    return phase
+  }
+  let currentPhase = createPhase('disabled')
+  const sources = ['dashboards', 'prometheus'] as const
+  await page.clock.install({ time: new Date(now) })
+  await page.route(/\/api\/v1\/monitoring\/(prometheus|dashboards)\/graphs(?:\?.*)?$/, async route => {
+    const source = new URL(route.request().url()).pathname.includes('/prometheus/') ? 'prometheus' : 'dashboards'
+    const phase = currentPhase
+    phase.requested.add(source)
+    await phase.gate
+    await route.fulfill(phase.mode === 'error'
+      ? { status: 503, json: { error: `${source} graph refresh unavailable` } }
+      : { json: phase.mode === 'configured' ? configuredResponses[source] : disabledResponses[source] })
+  })
+  const waitForPendingRequests = async () => {
+    await expect.poll(() => [...currentPhase.requested].sort()).toEqual(sources)
+    // Flush the hooks' loading updates while both source responses remain gated.
+    await page.clock.runFor(100)
+  }
+  const finishPhase = async () => {
+    const responses = sources.map(source => page.waitForResponse(response => new URL(response.url()).pathname === `/api/v1/monitoring/${source}/graphs`))
+    currentPhase.release()
+    await Promise.all((await Promise.all(responses)).map(response => response.finished()))
+    await page.clock.runFor(100)
+  }
+  const beginRefresh = async (mode: ResponseMode) => {
+    currentPhase = createPhase(mode)
+    await page.clock.fastForward(10_001)
+    await waitForPendingRequests()
+  }
+  try {
+    await page.goto(`/#/command-center/${run.testId}`)
+    const cockpit = page.locator('.command-center-page')
+    await cockpit.getByRole('button', { name: 'Graph Wall', exact: true }).click()
+    const tabs = cockpit.getByRole('tablist', { name: 'Graph groups', exact: true })
+    const prometheusTab = tabs.getByRole('tab', { name: /^Prometheus/ })
+    const dashboardsTab = tabs.getByRole('tab', { name: /^Dashboards/ })
+    const expectMonitoringTabsAbsent = async () => {
+      await expect(prometheusTab).toHaveCount(0)
+      await expect(dashboardsTab).toHaveCount(0)
+    }
+    const expectMonitoringTabsPresent = async () => {
+      await expect(prometheusTab).toBeVisible()
+      await expect(dashboardsTab).toBeVisible()
+    }
+
+    await waitForPendingRequests()
+    await expectMonitoringTabsAbsent()
+    await finishPhase()
+    await expectMonitoringTabsAbsent()
+    await beginRefresh('disabled')
+    await expectMonitoringTabsAbsent()
+    await finishPhase()
+    await expectMonitoringTabsAbsent()
+    await beginRefresh('error')
+    await expectMonitoringTabsAbsent()
+    await finishPhase()
+    await expectMonitoringTabsAbsent()
+
+    await beginRefresh('configured')
+    await expectMonitoringTabsAbsent()
+    await finishPhase()
+    await expectMonitoringTabsPresent()
+    await prometheusTab.click()
+    await expect(cockpit.getByRole('heading', { name: 'Fixture Prometheus CPU', exact: true })).toBeVisible()
+    await dashboardsTab.click()
+    await expect(cockpit.getByRole('heading', { name: 'Fixture dashboard · Fixture dashboard CPU', exact: true })).toBeVisible()
+
+    await beginRefresh('configured')
+    await expectMonitoringTabsPresent()
+    await expect(dashboardsTab).toHaveAttribute('aria-selected', 'true')
+    await finishPhase()
+    await expectMonitoringTabsPresent()
+    await beginRefresh('error')
+    await expectMonitoringTabsPresent()
+    await finishPhase()
+    await expectMonitoringTabsPresent()
+    await expect(dashboardsTab).toHaveAttribute('aria-selected', 'true')
+    await expect(cockpit.getByText('Imported dashboards unavailable', { exact: true })).toBeVisible()
+
+    await beginRefresh('disabled')
+    await expectMonitoringTabsPresent()
+    await finishPhase()
+    await expectMonitoringTabsAbsent()
+    await expect(tabs.getByRole('tab', { name: /^Live Metrics/ })).toHaveAttribute('aria-selected', 'true')
+  } finally {
+    phases.forEach(phase => phase.release())
+    await page.unrouteAll({ behavior: 'wait' })
+  }
+})

@@ -162,9 +162,11 @@ interface Props {
   loadImpactLoading?: boolean
   loadImpactError?: string
   prometheusGraphs?: PrometheusGraph[]
+  prometheusAvailable?: boolean
   prometheusLoading?: boolean
   prometheusError?: string
   importedDashboards?: ImportedDashboardResult[]
+  importedDashboardsAvailable?: boolean
   importedDashboardsLoading?: boolean
   importedDashboardsError?: string
   latestLatency?: NetworkLatency
@@ -526,9 +528,11 @@ export default function TestExecutionCharts({
   loadImpactLoading = false,
   loadImpactError = '',
   prometheusGraphs = EMPTY_PROMETHEUS_GRAPHS,
+  prometheusAvailable,
   prometheusLoading = false,
   prometheusError = '',
   importedDashboards = EMPTY_IMPORTED_DASHBOARDS,
+  importedDashboardsAvailable,
   importedDashboardsLoading = false,
   importedDashboardsError = '',
   latestLatency,
@@ -959,8 +963,11 @@ export default function TestExecutionCharts({
   }, [latencyKeys, selectedRouteLatencyKey])
 
   const latest = filteredData[filteredData.length - 1] || loadImpactSourceData[loadImpactSourceData.length - 1] || {}
-  const showPrometheusTab = prometheusGraphCharts.length > 0 || prometheusLoading || Boolean(prometheusError)
-  const showImportedTab = importedDashboardCharts.length > 0 || importedDashboardsLoading || Boolean(importedDashboardsError)
+  // Loading and query failures do not establish that a graph source exists.
+  // Live callers retain confirmed availability while refreshing; callers with
+  // retained graph definitions can establish availability from those instead.
+  const showPrometheusTab = prometheusAvailable ?? prometheusGraphCharts.length > 0
+  const showImportedTab = importedDashboardsAvailable ?? importedDashboardCharts.length > 0
   const visibleGraphGroupTabs = graphGroupTabs.filter(tab => {
     if (tab.id === 'prometheus') return showPrometheusTab
     if (tab.id === 'imported') return showImportedTab
@@ -1099,7 +1106,7 @@ export default function TestExecutionCharts({
     }
   }, [])
 
-  if (filteredData.length <= 1 && loadImpactCharts.length === 0 && prometheusGraphCharts.length === 0 && importedDashboardCharts.length === 0 && !loadImpactLoading && !loadImpactError && !prometheusLoading && !prometheusError && !importedDashboardsLoading && !importedDashboardsError) {
+  if (filteredData.length <= 1 && loadImpactCharts.length === 0 && !loadImpactLoading && !loadImpactError && !showPrometheusTab && !showImportedTab) {
     return (
       <section className="charts-section">
         <div className="chart-empty-state" role="status" aria-live="polite">Awaiting metrics</div>
@@ -2652,7 +2659,7 @@ export default function TestExecutionCharts({
             <span className="archive-chip">{timeAxisMode === 'relative' ? 'Relative time' : 'Clock time'}</span>
             {loadImpactLoading && <span className="archive-chip">Loading load metrics</span>}
             {!loadImpactLoading && loadImpactCharts.length > 0 && <span className="archive-chip">{loadImpactCharts.length} load metrics</span>}
-            {prometheusLoading && <span className="archive-chip">Loading Prometheus</span>}
+            {showPrometheusTab && prometheusLoading && <span className="archive-chip">Loading Prometheus</span>}
             {!prometheusLoading && prometheusGraphCharts.length > 0 && <span className="archive-chip">{prometheusGraphCharts.length} Prometheus graphs</span>}
           </div>
         </div>
