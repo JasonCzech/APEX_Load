@@ -176,6 +176,93 @@ func TestDetectCorrelationsCheckedDegradesWorkLimitToWarning(t *testing.T) {
 	}
 }
 
+// tokenReuseHAR is a two-request capture whose second request replays a token
+// from the first response, so the correlation pass always has a finding.
+func tokenReuseHAR(tokenURL, useURL string) []byte {
+	return []byte(`{
+	  "log": {
+	    "entries": [
+	      {
+	        "request": {"method": "GET", "url": "` + tokenURL + `", "headers": []},
+	        "response": {"headers": [], "content": {"text": "{\"access_token\":\"tok-abcdef123456\"}"}}
+	      },
+	      {
+	        "request": {"method": "POST", "url": "` + useURL + `", "headers": [], "postData": {"text": "{\"token\":\"tok-abcdef123456\"}"}},
+	        "response": {"headers": [], "content": {"text": "{\"ok\":true}"}}
+	      }
+	    ]
+	  }
+	}`)
+}
+
+func TestAnalyzeRequireDetectedSkipsCorrelationPassWithoutSalesforce(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "Generic Import",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://shop.example.test"},
+		Actions: []dsl.Action{
+			{Name: "Session", Type: "GET", Method: "GET", Target: "/session"},
+			{Name: "Order", Type: "POST", Method: "POST", Target: "/orders", Body: `{"token":"tok-abcdef123456"}`},
+		},
+	}
+	har := tokenReuseHAR("https://shop.example.test/session", "https://shop.example.test/orders")
+
+	// The pass assigns a confidence whenever it runs, and on this capture it
+	// finds the token reuse, so an empty confidence means it was skipped.
+	full, err := Analyze(script, AnalyzeOptions{HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if full.Detected {
+		t.Fatal("generic traffic was detected as Salesforce")
+	}
+	if full.CorrelationConfidence == "" || full.CorrelationConfidence == "none_detected" {
+		t.Fatalf("correlation confidence without RequireDetected = %q, want the token reuse found", full.CorrelationConfidence)
+	}
+
+	review, err := Analyze(script, AnalyzeOptions{HARData: har, RequireDetected: true})
+	if err != nil {
+		t.Fatalf("Analyze with RequireDetected returned error: %v", err)
+	}
+	if review.Detected {
+		t.Fatal("generic traffic was detected as Salesforce")
+	}
+	if review.CorrelationConfidence != "" || len(review.Parameterizations) != 0 {
+		t.Fatalf("correlation pass ran for an undetected review: confidence %q, parameterizations %#v", review.CorrelationConfidence, review.Parameterizations)
+	}
+	if review.HARMatchCoverage != full.HARMatchCoverage {
+		t.Fatalf("coverage = %#v, want the detection pass result %#v", review.HARMatchCoverage, full.HARMatchCoverage)
+	}
+}
+
+func TestAnalyzeRequireDetectedKeepsCorrelationPassForSalesforce(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "SF Import",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "Login", Type: "GET", Method: "GET", Target: "/login"},
+			{Name: "Aura", Type: "POST", Method: "POST", Target: "https://acme.lightning.force.com/aura", Body: `{"token":"tok-abcdef123456"}`},
+		},
+	}
+	har := tokenReuseHAR("https://acme.my.salesforce.com/login", "https://acme.lightning.force.com/aura")
+
+	full, err := Analyze(script, AnalyzeOptions{HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	review, err := Analyze(script, AnalyzeOptions{HARData: har, RequireDetected: true})
+	if err != nil {
+		t.Fatalf("Analyze with RequireDetected returned error: %v", err)
+	}
+	if !review.Detected {
+		t.Fatal("Salesforce traffic was not detected")
+	}
+	if review.CorrelationConfidence == "" || review.CorrelationConfidence != full.CorrelationConfidence {
+		t.Fatalf("correlation confidence with RequireDetected = %q, want %q from the full pass", review.CorrelationConfidence, full.CorrelationConfidence)
+	}
+}
+
 func TestAnalyzeReportsNativePreviewBlockerWithoutHAR(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "SF Import",

@@ -12,16 +12,29 @@ func TestSanitizedArchivePlanCacheUsesManifestIdentityAndInvalidatesByTest(t *te
 	if key != "cache-run|sanitized|abc123" {
 		t.Fatalf("cache key = %q", key)
 	}
+	t.Cleanup(func() { forgetRunArchiveCache(record.TestID) })
+	// The cache is process-global and other tests leave their own runs' plans in
+	// it, so count loads of this key rather than asserting on the cache size.
 	plan := &sanitizedRunArchivePlan{replacements: map[string][]byte{"manifest.json": []byte("safe")}}
-	if _, err := runArchiveSanitizedPlanCache.getOrLoad(key, func() (*sanitizedRunArchivePlan, error) { return plan, nil }); err != nil {
-		t.Fatalf("populate cache: %v", err)
+	loads := 0
+	load := func() (*sanitizedRunArchivePlan, error) {
+		loads++
+		return plan, nil
 	}
-	if runArchiveSanitizedPlanCache.len() == 0 {
-		t.Fatal("sanitized plan was not cached")
+	for range 2 {
+		if got, err := runArchiveSanitizedPlanCache.getOrLoad(key, load); err != nil || got != plan {
+			t.Fatalf("getOrLoad = %p, %v; want the loaded plan", got, err)
+		}
+	}
+	if loads != 1 {
+		t.Fatalf("loads = %d before invalidation, want 1: sanitized plan was not cached", loads)
 	}
 	forgetRunArchiveCache(record.TestID)
-	if runArchiveSanitizedPlanCache.len() != 0 {
-		t.Fatal("sanitized plan survived archive cache invalidation")
+	if _, err := runArchiveSanitizedPlanCache.getOrLoad(key, load); err != nil {
+		t.Fatalf("reload after invalidation: %v", err)
+	}
+	if loads != 2 {
+		t.Fatalf("loads = %d after invalidation, want 2: sanitized plan survived archive cache invalidation", loads)
 	}
 }
 

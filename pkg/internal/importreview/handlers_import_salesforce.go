@@ -27,10 +27,12 @@ func AugmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 	// Detect first with BuildNative:false so the expensive native preview (a full
 	// script clone + per-action rewrite in buildNativePreview) is never built for
 	// non-Salesforce HARs. handleImportHAR runs this for every HAR import, so
-	// detection must stay off the native-build hot path.
+	// detection must stay off the native-build hot path. A caller that drops
+	// undetected reviews also skips their correlation pass.
 	review, err := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{
-		BuildNative: false,
-		HARData:     data,
+		BuildNative:     false,
+		HARData:         data,
+		RequireDetected: requireDetected,
 	})
 	if err != nil {
 		if !requireDetected {

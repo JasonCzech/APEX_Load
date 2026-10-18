@@ -28,6 +28,10 @@ import (
 type AnalyzeOptions struct {
 	BuildNative bool
 	HARData     []byte
+	// RequireDetected is for callers that discard reviews without Salesforce
+	// traffic. An undetected review then returns before the correlation pass,
+	// which re-scans every HAR entry and dominates a large import's CPU.
+	RequireDetected bool
 }
 
 type Review struct {
@@ -238,6 +242,9 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 	}
 	if review.Detected && !hasRecognizedSalesforceEndpoints(review) {
 		review.Blockers = append(review.Blockers, "No Salesforce Aura or API endpoints were detected; validate that the capture includes the Salesforce transaction traffic.")
+	}
+	if opts.RequireDetected && !review.Detected {
+		return review, nil
 	}
 
 	correlations, correlationWarnings, err := detectCorrelationsChecked(entries)
