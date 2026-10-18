@@ -39,11 +39,11 @@ document.getElementById('open').addEventListener('click', () => setTimeout(() =>
 	}
 	defer recorder.Stop()
 	browserPage := recorder.context.Pages()[0]
-	if err := browserPage.Click("#open"); err != nil {
+	if err := browserPage.Locator("#open").Click(); err != nil {
 		t.Fatal(err)
 	}
 	waitForSteps(t, recorder, 1, 5*time.Second)
-	if err := browserPage.Click("#related"); err != nil {
+	if err := browserPage.Locator("#related").Click(); err != nil {
 		t.Fatal(err)
 	}
 	waitForSteps(t, recorder, 2, 5*time.Second)

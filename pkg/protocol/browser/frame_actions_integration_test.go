@@ -98,6 +98,50 @@ func testFrameScopedActions(t *testing.T, engine string) {
 	}
 }
 
+func TestBrowserProtocolDoubleClicksInsideAFrame(t *testing.T) {
+	for _, engine := range []string{"chromium", "webkit"} {
+		t.Run(engine, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/frame" {
+					_, _ = w.Write([]byte(`<!doctype html><button id="open" ondblclick="parent.postMessage('opened', '*')">Open</button>`))
+					return
+				}
+				_, _ = w.Write([]byte(`<!doctype html>
+<html>
+  <head>
+    <title>Framed list</title>
+    <script>
+      window.addEventListener('message', event => {
+        if (event.data === 'opened') document.querySelector('#status').textContent = 'Opened from iframe';
+      });
+    </script>
+  </head>
+  <body>
+    <iframe id="list-frame" src="/frame"></iframe>
+    <div id="status">Idle</div>
+  </body>
+</html>`))
+			}))
+			defer server.Close()
+
+			b := newIntegrationBrowser(t, engine, server.URL)
+			defer b.Teardown(context.Background())
+			executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open framed list", Type: "browser_navigate", Target: "/"})
+			executeSuccessfulBrowserAction(t, b, &protocol.Action{
+				Name:     "Open the row",
+				Type:     "browser_dblclick",
+				Selector: "#open",
+				Params:   map[string]any{"frame_selector": "#list-frame", "button": "left"},
+			})
+			executeSuccessfulBrowserAction(t, b, &protocol.Action{
+				Name:    "Wait for the framed double click",
+				Type:    "browser_wait",
+				WaitFor: &protocol.WaitCondition{Type: "text", Value: "Opened from iframe", TimeoutMs: 3000},
+			})
+		})
+	}
+}
+
 func TestBrowserProtocolExecutesNestedFramePathActions(t *testing.T) {
 	// BE-4: controlled pages in Chromium and WebKit.
 	for _, engine := range []string{"chromium", "webkit"} {

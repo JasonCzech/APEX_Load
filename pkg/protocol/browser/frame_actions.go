@@ -42,11 +42,11 @@ func (b *Browser) checkAction(ctx context.Context, action *protocol.Action, sele
 	}
 	timeout := b.actionTimeout(action)
 	if checked {
-		return b.currentPage().Check(selector, playwright.PageCheckOptions{
+		return firstMatch(b.currentPage(), selector).Check(playwright.LocatorCheckOptions{
 			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 		})
 	}
-	return b.currentPage().Uncheck(selector, playwright.PageUncheckOptions{
+	return firstMatch(b.currentPage(), selector).Uncheck(playwright.LocatorUncheckOptions{
 		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 	})
 }
@@ -189,11 +189,11 @@ func (b *Browser) dblclickAction(ctx context.Context, action *protocol.Action, s
 		}
 		options := locatorDblclickOptions(action)
 		options.Timeout = playwright.Float(b.timeoutMS(ctx, timeout))
-		return locator.Dblclick(options)
+		return locator.Click(options)
 	}
-	options := pageDblclickOptions(action)
+	options := locatorDblclickOptions(action)
 	options.Timeout = playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action)))
-	return b.currentPage().Dblclick(selector, options)
+	return firstMatch(b.currentPage(), selector).Click(options)
 }
 
 func (b *Browser) hoverAction(ctx context.Context, action *protocol.Action, selector string) error {
@@ -206,7 +206,7 @@ func (b *Browser) hoverAction(ctx context.Context, action *protocol.Action, sele
 			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 		})
 	}
-	return b.currentPage().Hover(selector, playwright.PageHoverOptions{
+	return firstMatch(b.currentPage(), selector).Hover(playwright.LocatorHoverOptions{
 		Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
 	})
 }
@@ -240,7 +240,7 @@ func (b *Browser) setInputFilesAction(ctx context.Context, action *protocol.Acti
 			Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
 		})
 	}
-	return b.currentPage().SetInputFiles(selector, files, playwright.PageSetInputFilesOptions{
+	return firstMatch(b.currentPage(), selector).SetInputFiles(files, playwright.LocatorSetInputFilesOptions{
 		Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
 	})
 }
@@ -257,7 +257,7 @@ func (b *Browser) pressKeyAction(ctx context.Context, action *protocol.Action, s
 				Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 			})
 		}
-		return b.currentPage().Press(selector, key, playwright.PagePressOptions{
+		return firstMatch(b.currentPage(), selector).Press(key, playwright.LocatorPressOptions{
 			Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
 		})
 	}
@@ -340,6 +340,13 @@ func (b *Browser) waitHiddenForAction(ctx context.Context, action *protocol.Acti
 		})
 	}
 	return b.waitHidden(ctx, selector)
+}
+
+// firstMatch locates selector the way Playwright's page-level actions did: on
+// the first matching element. A script whose selector matches several elements
+// keeps acting on the first one instead of failing a strict locator.
+func firstMatch(page playwright.Page, selector string) playwright.Locator {
+	return page.Locator(selector).First()
 }
 
 func (b *Browser) actionLocator(action *protocol.Action, selector string) (playwright.Locator, bool) {
@@ -499,30 +506,12 @@ func locatorClickOptions(action *protocol.Action) playwright.LocatorClickOptions
 	return options
 }
 
-func pageClickOptions(action *protocol.Action) playwright.PageClickOptions {
-	options := playwright.PageClickOptions{}
-	if button := mouseButtonParam(action); button != nil {
-		options.Button = button
-	}
-	options.Modifiers = keyboardModifiersParam(action)
-	return options
-}
-
-func locatorDblclickOptions(action *protocol.Action) playwright.LocatorDblclickOptions {
-	options := playwright.LocatorDblclickOptions{}
-	if button := mouseButtonParam(action); button != nil {
-		options.Button = button
-	}
-	options.Modifiers = keyboardModifiersParam(action)
-	return options
-}
-
-func pageDblclickOptions(action *protocol.Action) playwright.PageDblclickOptions {
-	options := playwright.PageDblclickOptions{}
-	if button := mouseButtonParam(action); button != nil {
-		options.Button = button
-	}
-	options.Modifiers = keyboardModifiersParam(action)
+// locatorDblclickOptions double-clicks through Locator.Click. In playwright-go
+// v0.6100.0, Locator.Dblclick rejects every options struct ("extra field Steps
+// in src"), and Playwright's double click is itself a click with clickCount 2.
+func locatorDblclickOptions(action *protocol.Action) playwright.LocatorClickOptions {
+	options := locatorClickOptions(action)
+	options.ClickCount = playwright.Int(2)
 	return options
 }
 

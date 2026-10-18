@@ -67,7 +67,7 @@ func TestRecordAndReplayReactSPAWithPollingAndDynamicAuraSelectors(t *testing.T)
 	defer recorder.Stop()
 	page := recorder.context.Pages()[0]
 	for index, value := range []string{"al", "alice"} {
-		if err := page.Fill(`[data-testid="search"]`, value); err != nil {
+		if err := page.Locator(`[data-testid="search"]`).Fill(value); err != nil {
 			t.Fatal(err)
 		}
 		// No blur: each settled search term must survive capture.
@@ -77,15 +77,15 @@ func TestRecordAndReplayReactSPAWithPollingAndDynamicAuraSelectors(t *testing.T)
 		t.Fatal(err)
 	}
 	recorder.SetAssertMode(true)
-	if err := page.Click("#suggestion"); err != nil {
+	if err := page.Locator("#suggestion").Click(); err != nil {
 		t.Fatal(err)
 	}
 	waitForSteps(t, recorder, 3, 5*time.Second)
 	recorder.SetAssertMode(false)
-	if err := page.Press(`[data-testid="search"]`, "ArrowDown"); err != nil {
+	if err := page.Locator(`[data-testid="search"]`).Press("ArrowDown"); err != nil {
 		t.Fatal(err)
 	}
-	if err := page.Click(`[aria-label="Save record"]`); err != nil {
+	if err := page.Locator(`[aria-label="Save record"]`).Click(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := page.WaitForFunction(`document.querySelector('#result').textContent === 'Saved alice'`, nil); err != nil {

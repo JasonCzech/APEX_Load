@@ -63,11 +63,11 @@ func TestRecordAndReplayReactAuraWithSessionCorrelation(t *testing.T) {
 		t.Fatal("fixture DOM identity empty")
 	}
 	domIDs := map[string]bool{id: true}
-	if err := page.Fill(`[aria-label="Account name"]`, "alice"); err != nil {
+	if err := page.Locator(`[aria-label="Account name"]`).Fill("alice"); err != nil {
 		t.Fatal(err)
 	}
 	waitForSteps(t, recorder, 1, 5*time.Second)
-	if err := page.Click(`[aria-label="Run Aura batch"]`); err != nil {
+	if err := page.Locator(`[aria-label="Run Aura batch"]`).Click(); err != nil {
 		t.Fatal(err)
 	}
 	// Waiting for the final result also ensures the HAR response has completed.

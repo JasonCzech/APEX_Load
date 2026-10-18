@@ -148,9 +148,9 @@ func (b *Browser) click(ctx context.Context, action *protocol.Action, selector s
 	if page == nil {
 		return fmt.Errorf("browser page is not initialized")
 	}
-	options := pageClickOptions(action)
+	options := locatorClickOptions(action)
 	options.Timeout = playwright.Float(b.timeoutMS(ctx, timeout))
-	return page.Click(selector, options)
+	return firstMatch(page, selector).Click(options)
 }
 
 func (b *Browser) fill(ctx context.Context, action *protocol.Action, selector, value string) error {
@@ -162,7 +162,7 @@ func (b *Browser) fill(ctx context.Context, action *protocol.Action, selector, v
 	if page == nil {
 		return fmt.Errorf("browser page is not initialized")
 	}
-	return page.Fill(selector, value, playwright.PageFillOptions{
+	return firstMatch(page, selector).Fill(value, playwright.LocatorFillOptions{
 		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 	})
 }
@@ -179,10 +179,10 @@ func (b *Browser) waitVisibleWithTimeout(ctx context.Context, selector string, t
 	if page == nil {
 		return fmt.Errorf("browser page is not initialized")
 	}
-	_, err := page.WaitForSelector(selector, playwright.PageWaitForSelectorOptions{
+	return firstMatch(page, selector).WaitFor(playwright.LocatorWaitForOptions{
+		State:   playwright.WaitForSelectorStateVisible,
 		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 	})
-	return err
 }
 
 func (b *Browser) waitHidden(ctx context.Context, selector string) error {
@@ -193,11 +193,10 @@ func (b *Browser) waitHidden(ctx context.Context, selector string) error {
 	if page == nil {
 		return fmt.Errorf("browser page is not initialized")
 	}
-	_, err := page.WaitForSelector(selector, playwright.PageWaitForSelectorOptions{
+	return firstMatch(page, selector).WaitFor(playwright.LocatorWaitForOptions{
 		State:   playwright.WaitForSelectorStateHidden,
 		Timeout: playwright.Float(b.timeoutMS(ctx, 10*time.Second)),
 	})
-	return err
 }
 
 func (b *Browser) evaluatePageExpression(ctx context.Context, expression string, result any) error {
@@ -258,12 +257,16 @@ func (b *Browser) captureScreenshot(ctx context.Context, action *protocol.Action
 		return "", fmt.Errorf("browser page is not initialized")
 	}
 	if selector != "" {
-		el, err := page.QuerySelector(selector)
+		// Like the element-handle query it replaces, a selector with no match
+		// falls back to a page screenshot instead of waiting for one.
+		matches, err := page.Locator(selector).Count()
 		if err != nil {
 			return "", err
 		}
-		if el != nil {
-			box, err := el.BoundingBox()
+		if matches > 0 {
+			target := firstMatch(page, selector)
+			timeout := playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action)))
+			box, err := target.BoundingBox(playwright.LocatorBoundingBoxOptions{Timeout: timeout})
 			if err != nil {
 				return "", err
 			}
@@ -273,8 +276,8 @@ func (b *Browser) captureScreenshot(ctx context.Context, action *protocol.Action
 			if err := validateBrowserScreenshotDimensions(box.Width, box.Height); err != nil {
 				return "", err
 			}
-			buf, err := el.Screenshot(playwright.ElementHandleScreenshotOptions{
-				Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
+			buf, err := target.Screenshot(playwright.LocatorScreenshotOptions{
+				Timeout: timeout,
 				Scale:   playwright.ScreenshotScaleCss,
 			})
 			return encodeBrowserScreenshot(buf, err)
@@ -428,9 +431,9 @@ func (b *Browser) selectOption(ctx context.Context, action *protocol.Action, sel
 	if page == nil {
 		return fmt.Errorf("browser page is not initialized")
 	}
-	_, err := page.SelectOption(selector, playwright.SelectOptionValues{
+	_, err := firstMatch(page, selector).SelectOption(playwright.SelectOptionValues{
 		ValuesOrLabels: playwright.StringSlice(values...),
-	}, playwright.PageSelectOptionOptions{
+	}, playwright.LocatorSelectOptionOptions{
 		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 	})
 	return err

@@ -246,7 +246,7 @@ func TestRecorderPageFollowsWindowSize(t *testing.T) {
 		t.Fatalf("page width after widening the window = %d, want the page to follow it", wide)
 	}
 	for _, selector := range []string{"#wide", "#more"} {
-		if err := page.Click(selector); err != nil {
+		if err := page.Locator(selector).Click(); err != nil {
 			t.Fatalf("click %s: %v", selector, err)
 		}
 	}
@@ -255,7 +255,7 @@ func TestRecorderPageFollowsWindowSize(t *testing.T) {
 	if narrow >= 1000 {
 		t.Fatalf("page width after narrowing the window = %d, want the page to follow it", narrow)
 	}
-	if err := page.Click("#narrow"); err != nil {
+	if err := page.Locator("#narrow").Click(); err != nil {
 		t.Fatalf("the narrow layout did not appear after the resize: %v", err)
 	}
 	waitForSteps(t, recorder, 3, 10*time.Second)

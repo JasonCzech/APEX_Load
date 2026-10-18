@@ -42,7 +42,7 @@ func TestRecordedLightningSelectorsMatchOneVisibleElement(t *testing.T) {
 	}
 	defer recorder.Stop()
 	browserPage := recorder.context.Pages()[0]
-	if err := browserPage.Click("#save-12"); err != nil {
+	if err := browserPage.Locator("#save-12").Click(); err != nil {
 		t.Fatal(err)
 	}
 	waitForSteps(t, recorder, 1, 5*time.Second)
@@ -125,10 +125,10 @@ func TestRecordedVerificationCodeIsMasked(t *testing.T) {
 	defer recorder.Stop()
 	page := recorder.context.Pages()[0]
 	for index, field := range []string{"#smc", "#other"} {
-		if err := page.Fill(field, "482913"); err != nil {
+		if err := page.Locator(field).Fill("482913"); err != nil {
 			t.Fatal(err)
 		}
-		if err := page.Press(field, "Tab"); err != nil {
+		if err := page.Locator(field).Press("Tab"); err != nil {
 			t.Fatal(err)
 		}
 		waitForSteps(t, recorder, index+1, 5*time.Second)

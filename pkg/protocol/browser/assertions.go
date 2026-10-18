@@ -116,7 +116,7 @@ func (b *Browser) assertionSelectorVisible(action *protocol.Action, selector str
 	if page == nil {
 		return false, fmt.Errorf("browser page is not initialized")
 	}
-	return page.IsVisible(selector)
+	return firstMatch(page, selector).IsVisible()
 }
 
 func (b *Browser) assertionSelectorText(action *protocol.Action, selector string) (string, error) {
@@ -127,7 +127,7 @@ func (b *Browser) assertionSelectorText(action *protocol.Action, selector string
 	if page == nil {
 		return "", fmt.Errorf("browser page is not initialized")
 	}
-	return page.TextContent(selector)
+	return firstMatch(page, selector).TextContent()
 }
 
 // Structured evidence keeps an evaluated assertion distinct from a locator

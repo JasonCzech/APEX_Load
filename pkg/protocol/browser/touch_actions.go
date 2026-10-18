@@ -27,7 +27,7 @@ func (b *Browser) dispatchTap(ctx context.Context, action *protocol.Action, sele
 	if page == nil {
 		return fmt.Errorf("browser tap failed: no active page")
 	}
-	return page.Tap(selector, playwright.PageTapOptions{
+	return firstMatch(page, selector).Tap(playwright.LocatorTapOptions{
 		Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
 	})
 }

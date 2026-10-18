@@ -108,19 +108,19 @@ func TestRecorderCapturesModernWebInteractions(t *testing.T) {
 	}
 	page := pages[0]
 
-	if err := page.Fill("#username", "jason"); err != nil {
+	if err := page.Locator("#username").Fill("jason"); err != nil {
 		t.Fatalf("fill: %v", err)
 	}
-	if err := page.Click(`[data-testid="go-btn"]`); err != nil {
+	if err := page.Locator(`[data-testid="go-btn"]`).Click(); err != nil {
 		t.Fatalf("click go: %v", err)
 	}
-	if err := page.Click("#sbtn"); err != nil { // pierces the open shadow root
+	if err := page.Locator("#sbtn").Click(); err != nil { // pierces the open shadow root
 		t.Fatalf("click shadow button: %v", err)
 	}
 	if err := page.FrameLocator("#payframe").Locator("#paybtn").Click(); err != nil {
 		t.Fatalf("click iframe button: %v", err)
 	}
-	if err := page.Click("#spa-link"); err != nil {
+	if err := page.Locator("#spa-link").Click(); err != nil {
 		t.Fatalf("click spa link: %v", err)
 	}
 
@@ -250,7 +250,7 @@ func TestRecorderCapturesSwitchBackToEarlierWindow(t *testing.T) {
 	if err := main.BringToFront(); err != nil {
 		t.Fatalf("bring main to front: %v", err)
 	}
-	if err := main.Click("#main"); err != nil {
+	if err := main.Locator("#main").Click(); err != nil {
 		t.Fatalf("click main: %v", err)
 	}
 	waitForSteps(t, recorder, 3, 10*time.Second)
@@ -292,10 +292,10 @@ func TestRecorderCapturesTabFillBeforePressKeyWithoutBlurDuplicate(t *testing.T)
 	}
 	page := pages[0]
 
-	if err := page.Fill("#first", "alice"); err != nil {
+	if err := page.Locator("#first").Fill("alice"); err != nil {
 		t.Fatalf("fill first: %v", err)
 	}
-	if err := page.Press("#first", "Tab"); err != nil {
+	if err := page.Locator("#first").Press("Tab"); err != nil {
 		t.Fatalf("press tab: %v", err)
 	}
 
@@ -336,7 +336,7 @@ func TestRecorderSuppressesSyntheticClickAfterEnterPress(t *testing.T) {
 	}
 	page := pages[0]
 
-	if err := page.Press("#save", "Enter"); err != nil {
+	if err := page.Locator("#save").Press("Enter"); err != nil {
 		t.Fatalf("press enter: %v", err)
 	}
 	waitForSteps(t, recorder, 1, 10*time.Second)
@@ -391,7 +391,7 @@ func TestRecorderCapturesDebouncedHover(t *testing.T) {
 	}
 	page := pages[0]
 
-	if err := page.Hover("#save"); err != nil {
+	if err := page.Locator("#save").Hover(); err != nil {
 		t.Fatalf("hover save: %v", err)
 	}
 	waitForSteps(t, recorder, 1, 10*time.Second)
@@ -472,7 +472,7 @@ func TestRecorderStopFlushesLastDebouncedClick(t *testing.T) {
 	}
 	defer recorder.ForceStop()
 	page := recorder.context.Pages()[0]
-	if err := page.Click(`[data-testid="go-btn"]`); err != nil {
+	if err := page.Locator(`[data-testid="go-btn"]`).Click(); err != nil {
 		t.Fatal(err)
 	}
 	// Stop immediately, before the capture script's 250ms click timer fires.
@@ -539,7 +539,7 @@ func TestControlTransitionsFlushThePrecedingClick(t *testing.T) {
 			}
 			defer recorder.ForceStop()
 			recorder.SetSection(SectionTeardown)
-			if err := recorder.context.Pages()[0].Click(`[data-testid="go-btn"]`); err != nil {
+			if err := recorder.context.Pages()[0].Locator(`[data-testid="go-btn"]`).Click(); err != nil {
 				t.Fatal(err)
 			}
 			switch control {
@@ -638,13 +638,13 @@ func TestRecorderFlushesPendingInputOnStopAndPreservesModifiedKeys(t *testing.T)
 	}
 	defer recorder.Stop()
 	page := recorder.context.Pages()[0]
-	if err := page.Fill("#second", "pending"); err != nil {
+	if err := page.Locator("#second").Fill("pending"); err != nil {
 		t.Fatal(err)
 	}
-	if err := page.Press("#second", "Shift+Tab"); err != nil {
+	if err := page.Locator("#second").Press("Shift+Tab"); err != nil {
 		t.Fatal(err)
 	}
-	if err := page.Fill("#first", "unblurred"); err != nil {
+	if err := page.Locator("#first").Fill("unblurred"); err != nil {
 		t.Fatal(err)
 	}
 	session, err := recorder.Stop()
@@ -685,38 +685,38 @@ func TestRecorderCapturesEditsWithoutInventingOrDroppingFills(t *testing.T) {
 	defer recorder.ForceStop()
 	page := recorder.context.Pages()[0]
 	// Merely focusing and leaving a password must not introduce an env binding.
-	if err := page.Focus("#password"); err != nil {
+	if err := page.Locator("#password").Focus(); err != nil {
 		t.Fatal(err)
 	}
-	if err := page.Focus("#search"); err != nil {
+	if err := page.Locator("#search").Focus(); err != nil {
 		t.Fatal(err)
 	}
-	if err := page.Fill("#search", "alice"); err != nil {
+	if err := page.Locator("#search").Fill("alice"); err != nil {
 		t.Fatal(err)
 	}
 	waitForSteps(t, recorder, 1, 5*time.Second)
 	// A delayed cursor key is not another fill (which would reset selection).
 	time.Sleep(1100 * time.Millisecond)
-	if err := page.Press("#search", "ArrowLeft"); err != nil {
+	if err := page.Locator("#search").Press("ArrowLeft"); err != nil {
 		t.Fatal(err)
 	}
-	if err := page.Click("#reset"); err != nil {
+	if err := page.Locator("#reset").Click(); err != nil {
 		t.Fatal(err)
 	}
 	waitForSteps(t, recorder, 3, 5*time.Second)
-	if err := page.Fill("#search", "alice"); err != nil {
+	if err := page.Locator("#search").Fill("alice"); err != nil {
 		t.Fatal(err)
 	}
 	// The click handler clears without blur. Flush the edit before that handler.
-	if err := page.Click("#reset"); err != nil {
+	if err := page.Locator("#reset").Click(); err != nil {
 		t.Fatal(err)
 	}
-	if err := page.Fill("#transient", "captured-before-clear"); err != nil {
+	if err := page.Locator("#transient").Fill("captured-before-clear"); err != nil {
 		t.Fatal(err)
 	}
 	// A settled second edit can have the same value, with no intervening click.
 	waitForSteps(t, recorder, 6, 5*time.Second)
-	if err := page.Fill("#transient", "captured-before-clear"); err != nil {
+	if err := page.Locator("#transient").Fill("captured-before-clear"); err != nil {
 		t.Fatal(err)
 	}
 	session, err := recorder.Stop()
