@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -35,7 +34,7 @@ type httpPolicyPool struct {
 	tcpBase stdhttp.RoundTripper
 
 	oauthOnce sync.Once
-	oauth     atomic.Pointer[httpOAuthClient]
+	oauth     *httpOAuthClient
 }
 
 type httpOAuthClient struct {
@@ -68,22 +67,8 @@ func (p *httpPolicyPool) oauthClient() *httpOAuthClient {
 	if p.base != nil {
 		return p.base.oauthClient()
 	}
-	p.oauthOnce.Do(func() { p.oauth.Store(p.builder.buildOAuth(p.policy)) })
-	return p.oauth.Load()
-}
-
-// builtOAuthTransport is the pool's OAuth transport if it has been built.
-func (p *httpPolicyPool) builtOAuthTransport() *stdhttp.Transport {
-	switch {
-	case p == nil:
-		return nil
-	case p.base != nil:
-		return p.base.builtOAuthTransport()
-	}
-	if oauth := p.oauth.Load(); oauth != nil {
-		return oauth.transport
-	}
-	return nil
+	p.oauthOnce.Do(func() { p.oauth = p.builder.buildOAuth(p.policy) })
+	return p.oauth
 }
 
 // tcpPoolRoundTripper sends through a TCP pool's tcpBase, building the pool
@@ -129,19 +114,29 @@ func (b *httpPoolBuilder) newClient(policy string) (*stdhttp.Client, *stdhttp.Tr
 	return client, transport
 }
 
+// route puts policy's frozen transport under the connection budget and the
+// session's PAC rule.
+func (b *httpPoolBuilder) route(transport *stdhttp.Transport, policy string) stdhttp.RoundTripper {
+	freezePolicyALPN(transport, policy)
+	var routed stdhttp.RoundTripper = b.connections.track(transport, b.dial)
+	if b.pacSource != "" {
+		routed = &pacRoundTripper{source: b.pacSource, allowed: b.allowed, base: transport, budget: b.connections, baseDial: b.dial}
+	}
+	return routed
+}
+
+// guard applies the session's target policy and user-agent handling.
+func (b *httpPoolBuilder) guard(next stdhttp.RoundTripper) stdhttp.RoundTripper {
+	if len(b.allowed) > 0 {
+		next = protocol.NewTargetPolicyRoundTripper(next, b.allowed)
+	}
+	return withoutImplicitUserAgent(next)
+}
+
 func (b *httpPoolBuilder) buildTCP(policy string) (*stdhttp.Client, *stdhttp.Transport, stdhttp.RoundTripper) {
 	client, transport := b.newClient(policy)
-	freezePolicyALPN(transport, policy)
-	client.Transport = b.connections.track(transport, b.dial)
-	if b.pacSource != "" {
-		client.Transport = &pacRoundTripper{source: b.pacSource, allowed: b.allowed, base: transport, budget: b.connections, baseDial: b.dial}
-	}
-	tcpBase := client.Transport
-	if len(b.allowed) > 0 {
-		client.Transport = protocol.NewTargetPolicyRoundTripper(client.Transport, b.allowed)
-	}
-	client.Transport = withoutImplicitUserAgent(client.Transport)
-	client.Transport = integratedAuthRoundTripper{base: client.Transport}
+	tcpBase := b.route(transport, policy)
+	client.Transport = integratedAuthRoundTripper{base: b.guard(tcpBase)}
 	if b.runCorrelation.enabled() {
 		client.Transport = runCorrelationRoundTripper{base: client.Transport, policy: b.runCorrelation}
 	}
@@ -155,15 +150,7 @@ func (b *httpPoolBuilder) buildOAuth(policy string) *httpOAuthClient {
 	base, transport := b.newClient(policy)
 	client := oauthRequestClient(base)
 	hardenOAuthTransport(transport)
-	freezePolicyALPN(transport, policy)
-	client.Transport = b.connections.track(transport, b.dial)
-	if b.pacSource != "" {
-		client.Transport = &pacRoundTripper{source: b.pacSource, allowed: b.allowed, base: transport, budget: b.connections, baseDial: b.dial}
-	}
-	if len(b.allowed) > 0 {
-		client.Transport = protocol.NewTargetPolicyRoundTripper(client.Transport, b.allowed)
-	}
-	client.Transport = withoutImplicitUserAgent(client.Transport)
+	client.Transport = b.guard(b.route(transport, policy))
 	return &httpOAuthClient{client: client, transport: transport}
 }
 
@@ -288,12 +275,27 @@ func (h *HTTP) forHTTPVersion(policy string) *HTTP {
 		return h
 	}
 	child := h.metaRefreshClient()
-	child.client, child.transport, child.oauthPool = pool.httpClient(), pool.httpTransport(), pool
-	child.httpVersion = policy
-	if policy == "auto" {
-		child.httpVersion = ""
+	child.client, child.oauthPool = pool.httpClient(), pool
+	if pool.base == nil {
+		// The HTTP/3 pools' children read no transport (an auto+h3 router
+		// reaches the TCP pools itself), so they keep the session's rather
+		// than building the automatic pool's.
+		child.transport = pool.httpTransport()
 	}
+	child.httpVersion = h.versionForPolicy(policy)
 	return child
+}
+
+// versionForPolicy is the session version forHTTPVersion gives a request
+// under policy, without building its pool.
+func (h *HTTP) versionForPolicy(policy string) string {
+	switch {
+	case h.policyPools[policy] == nil:
+		return h.httpVersion
+	case policy == "auto":
+		return ""
+	}
+	return policy
 }
 
 func (h *HTTP) validateHTTPVersionTLS(policy, target string) error {

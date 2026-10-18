@@ -27,7 +27,7 @@ func (h *HTTP) ValidateSharedSessionAction(action *protocol.Action) error {
 	if err := h.validateHTTPVersionTLS(policy, h.resolveURL(action.Target)); err != nil {
 		return err
 	}
-	h = h.forHTTPVersion(policy)
+	version := h.versionForPolicy(policy)
 	if _, _, err := buildActionAuthHeader(action.Auth); err != nil {
 		return fmt.Errorf("HTTP action authentication is invalid")
 	}
@@ -37,7 +37,7 @@ func (h *HTTP) ValidateSharedSessionAction(action *protocol.Action) error {
 		occurrences = action.DefaultHeaderList
 	}
 	headers, issues := effectiveAuthoredHeaderList(defaults, occurrences, action.Headers, action.HeaderList)
-	issues = append(issues, HeaderListIssuesForVersion(headers, h.httpVersion)...)
+	issues = append(issues, HeaderListIssuesForVersion(headers, version)...)
 	if len(issues) != 0 {
 		return fmt.Errorf("HTTP headers are invalid")
 	}

@@ -7,6 +7,8 @@ import (
 	"slices"
 	"sync"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func lazyVersionHTTP(t *testing.T) *HTTP {
@@ -29,8 +31,15 @@ func TestHTTPVersionPoolsBuildOnFirstUse(t *testing.T) {
 	if n := owners(); n != 1 {
 		t.Fatalf("budget owners after Init = %d, want the session pool's only", n)
 	}
-	if h.oauthPool.builtOAuthTransport() != nil {
+	if h.oauthPool.oauth != nil {
 		t.Fatal("OAuth client built before a token call")
+	}
+	// Shared-session validation has no side effects: it builds no pool.
+	if err := h.ValidateSharedSessionAction(&protocol.Action{Type: "GET", Target: server.URL, HTTPVersion: versionOverride(t, VersionHTTP2)}); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if n := owners(); n != 1 {
+		t.Fatalf("budget owners after validation = %d, want the session pool's only", n)
 	}
 
 	for _, step := range []struct {
@@ -50,10 +59,11 @@ func TestHTTPVersionPoolsBuildOnFirstUse(t *testing.T) {
 	}
 
 	client := h.forHTTPVersion(VersionHTTP11).OAuthHTTPClient()
-	transport := h.policyPools[VersionHTTP11].builtOAuthTransport()
-	if client == nil || transport == nil {
+	built := h.policyPools[VersionHTTP11].oauth
+	if client == nil || built == nil {
 		t.Fatal("token call did not build the pool's OAuth client")
 	}
+	transport := built.transport
 	if n := owners(); n != 4 {
 		t.Fatalf("budget owners after the token call = %d, want 4", n)
 	}
@@ -73,7 +83,7 @@ func TestHTTPVersionPoolsBuildOnFirstUse(t *testing.T) {
 	if !owned || transport == h.policyPools[VersionHTTP11].httpTransport() {
 		t.Fatal("OAuth transport is not its own connection-budget owner")
 	}
-	if h.policyPools["auto"].builtOAuthTransport() != nil || h.policyPools[VersionHTTP2].builtOAuthTransport() != nil {
+	if h.policyPools["auto"].oauth != nil || h.policyPools[VersionHTTP2].oauth != nil {
 		t.Fatal("a token call built other pools' OAuth clients")
 	}
 }
@@ -100,5 +110,59 @@ func TestHTTPVersionPoolsConcurrentFirstUseBuildsOnce(t *testing.T) {
 	}
 	if n := len(h.connections.snapshotOwners()); n != 3 {
 		t.Fatalf("budget owners = %d, want the session pool's and HTTP/2's transport and OAuth", n)
+	}
+}
+
+// HTTP/3 pools take their TCP transport and OAuth client from the automatic
+// pool, which a session pinned to another version has not built.
+func TestHTTPVersionPoolsHTTP3BorrowsUnbuiltAutomaticPool(t *testing.T) {
+	h := http3Session(t, map[string]any{"http_version": VersionHTTP11})
+	auto := h.policyPools["auto"]
+	for _, policy := range []string{VersionHTTP3, VersionAutoH3} {
+		if h.policyPools[policy] == nil {
+			t.Fatalf("no %s pool: %v", policy, h.http3Err)
+		}
+	}
+	if n := len(h.connections.snapshotOwners()); n != 1 {
+		t.Fatalf("budget owners after Init = %d, want the HTTP/1.1 session pool's only", n)
+	}
+	// An HTTP/3 request uses no TCP transport, so it builds none.
+	child := h.forHTTPVersion(VersionHTTP3)
+	if child.transport != h.transport || len(h.connections.snapshotOwners()) != 1 {
+		t.Fatal("an HTTP/3 request built the automatic TCP pool")
+	}
+	if child.OAuthHTTPClient() == nil || auto.oauth == nil {
+		t.Fatal("an HTTP/3 token call did not build the automatic pool's OAuth client")
+	}
+	if h.forHTTPVersion(VersionAutoH3).oauthPool.oauthClient() != auto.oauth {
+		t.Fatal("auto+h3 does not share the automatic pool's OAuth client")
+	}
+	if n := len(h.connections.snapshotOwners()); n != 2 {
+		t.Fatalf("budget owners = %d, want the session pool's and the automatic pool's OAuth client", n)
+	}
+	// The automatic pool still builds when it is first used.
+	if auto.httpTransport() == nil || len(h.connections.snapshotOwners()) != 3 {
+		t.Fatal("the automatic pool did not build on first use")
+	}
+}
+
+// A request refused before it is sent builds no version pool.
+func TestHTTPVersionPoolsRefusedRequestBuildsNoPool(t *testing.T) {
+	h := &HTTP{}
+	if err := h.Init(context.Background(), map[string]any{"tls_insecure_skip_verify": true, "default_headers": map[string]string{"Connection": "keep-alive"}}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = h.Teardown(context.Background()) })
+	for name, action := range map[string]*protocol.Action{
+		"HTTP/2 connection header": {Type: "GET", Target: "https://127.0.0.1:1/", HTTPVersion: versionOverride(t, VersionHTTP2)},
+		"invalid base64 body":      {Type: "POST", Target: "https://127.0.0.1:1/", Body: []byte("%%%"), BodyEncoding: "base64", HTTPVersion: versionOverride(t, VersionHTTP11)},
+	} {
+		result, err := h.Execute(context.Background(), action)
+		if err != nil || result.Success {
+			t.Fatalf("%s: request was not refused: success=%v err=%v", name, result.Success, err)
+		}
+		if n := len(h.connections.snapshotOwners()); n != 1 {
+			t.Fatalf("%s: budget owners = %d, want the session pool's only", name, n)
+		}
 	}
 }

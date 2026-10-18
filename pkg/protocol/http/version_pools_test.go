@@ -44,12 +44,11 @@ func versionHTTP(t *testing.T, config map[string]any) *HTTP {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = h.Teardown(context.Background()) })
-	buildPolicyPools(h)
 	return h
 }
 
 // buildPolicyPools builds every pool and OAuth client Init leaves for first
-// use, so a test can instrument or count all of them.
+// use, for a test that instruments or counts all of them.
 func buildPolicyPools(h *HTTP) {
 	for _, pool := range h.policyPools {
 		pool.httpTransport()
@@ -133,6 +132,7 @@ func (c *versionCountedConn) Close() error {
 	return err
 }
 func instrumentVersionDials(h *HTTP) (*atomic.Int64, *atomic.Int64) {
+	buildPolicyPools(h)
 	open, peak := new(atomic.Int64), new(atomic.Int64)
 	for _, owner := range h.connections.snapshotOwners() {
 		base := owner.baseDial
@@ -376,14 +376,17 @@ func TestHTTPVersionPoolsPACClonesKeepPolicyAndBoundOwnership(t *testing.T) {
 		}
 	}
 	_ = h.CloseIdleConnections(context.Background())
+	// The three policy pools' transports remain; no token call built an
+	// OAuth client.
+	const poolOwners = 3
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if len(h.connections.snapshotOwners()) == 6 {
+		if len(h.connections.snapshotOwners()) == poolOwners {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if n := len(h.connections.snapshotOwners()); n != 6 {
+	if n := len(h.connections.snapshotOwners()); n != poolOwners {
 		t.Fatalf("disposable PAC owners retained: %d", n)
 	}
 }

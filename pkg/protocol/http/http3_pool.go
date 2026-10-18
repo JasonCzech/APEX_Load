@@ -241,8 +241,9 @@ func (h *HTTP) newHTTP3Pool(settings transportConfig, tlsConfig *tls.Config, con
 	if h.runCorrelation.enabled() {
 		client.Transport = runCorrelationRoundTripper{base: client.Transport, policy: h.runCorrelation}
 	}
-	// The automatic pool's TCP transport serves its TLS settings (WebSocket
-	// steps); requests on this pool never use it.
+	// A session whose default is HTTP/3 takes the automatic pool's TCP
+	// transport for its TLS settings (WebSocket steps); requests on this pool
+	// never use it.
 	return &httpPolicyPool{policy: VersionHTTP3, client: client, base: auto}, nil
 }
 

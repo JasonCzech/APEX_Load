@@ -254,11 +254,14 @@ func TestHTTPVersionPoolsPACConcurrentClonesSharePhysicalCeiling(t *testing.T) {
 		t.Fatalf("PAC physical ceiling=%d", peak.Load())
 	}
 	waitVersionSockets(t, open, 0)
+	// The three policy pools' transports remain; no token call built an
+	// OAuth client.
+	const poolOwners = 3
 	deadline := time.Now().Add(time.Second)
-	for len(h.connections.snapshotOwners()) != 6 && time.Now().Before(deadline) {
+	for len(h.connections.snapshotOwners()) != poolOwners && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if owners := len(h.connections.snapshotOwners()); owners != 6 {
+	if owners := len(h.connections.snapshotOwners()); owners != poolOwners {
 		t.Fatalf("PAC canceled/finished owners retained: %d", owners)
 	}
 }

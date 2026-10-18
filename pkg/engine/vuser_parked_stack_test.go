@@ -4,6 +4,7 @@ import (
 	"context"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,12 +15,16 @@ import (
 const parkedStackProtocolName = "parked-stack-test"
 
 // parkedStackExecuted receives one value per Execute of the registered
-// parked-stack protocol.
-var parkedStackExecuted = make(chan struct{}, 1024)
+// parked-stack protocol, and parkedStackEnded counts its teardowns, which the
+// group engine runs when a VUser ends.
+var (
+	parkedStackExecuted = make(chan struct{}, 1024)
+	parkedStackEnded    atomic.Int64
+)
 
 func init() {
 	protocol.Register(parkedStackProtocolName, func() protocol.Protocol {
-		return &stackGrowingProtocol{executed: parkedStackExecuted}
+		return &stackGrowingProtocol{executed: parkedStackExecuted, ended: &parkedStackEnded}
 	})
 }
 
@@ -28,12 +33,20 @@ func init() {
 type stackGrowingProtocol struct {
 	stubProtocol
 	executed chan struct{}
+	ended    *atomic.Int64
 }
 
 func (p *stackGrowingProtocol) Execute(context.Context, *protocol.Action) (*protocol.Result, error) {
 	growStack(40)
 	p.executed <- struct{}{}
 	return &protocol.Result{Success: true, StartTime: time.Now()}, nil
+}
+
+func (p *stackGrowingProtocol) Teardown(ctx context.Context) error {
+	if p.ended != nil {
+		p.ended.Add(1)
+	}
+	return p.stubProtocol.Teardown(ctx)
 }
 
 // growStack uses about 20 KB of stack.
@@ -48,10 +61,14 @@ func growStack(depth int) byte {
 	return growStack(depth-1) + pad[(depth*7)%len(pad)]
 }
 
-// parkedStackScript runs one stack-growing action in phase ("action",
-// "init" or "teardown") and then parks in its think time. Teardown runs on
-// its own bounded context, so its think time is short enough for the test to
-// wait out.
+// parkedStackScript runs one stack-growing action and then parks:
+//   - "action", "init", "teardown": in that action's think time in the phase.
+//     Teardown runs on its own bounded context, so its think time is short
+//     enough for the test to wait out, yet long enough for every VUser to
+//     park and the stacks to be measured before the first one ends.
+//   - "nested": in the think time of an action inside a control_loop and a
+//     control_if.
+//   - "pacing": in the pacing before the second iteration.
 func parkedStackScript(phase string) *dsl.Script {
 	park := dsl.Action{
 		Name: "grow", Type: "request", Target: "/",
@@ -66,8 +83,16 @@ func parkedStackScript(phase string) *dsl.Script {
 	case "init":
 		script.Init = []dsl.Action{park}
 	case "teardown":
-		park.ThinkTime.MeanMs = 4000
+		park.ThinkTime.MeanMs = 8000
 		script.Teardown = []dsl.Action{park}
+	case "nested":
+		branch := dsl.Action{Name: "branch", Type: "control_if", Control: &dsl.ControlFlow{Steps: []dsl.Action{park}}}
+		script.Actions = []dsl.Action{{Name: "loop", Type: "control_loop", Control: &dsl.ControlFlow{Count: 1, Steps: []dsl.Action{branch}}}}
+	case "pacing":
+		park.ThinkTimeAfter = false
+		script.Config.RunLogic.Iterations = 2
+		script.Config.Pacing = dsl.PacingConfig{Type: "fixed_delay", DelayMs: 10 * 60 * 1000}
+		script.Actions = []dsl.Action{park}
 	default:
 		script.Actions = []dsl.Action{park}
 	}
@@ -81,11 +106,12 @@ func stackInuse() uint64 {
 }
 
 // assertParkedStacksShrink starts vusers VUsers that each grow their stack in
-// one action and then park in think time, and requires the GC to shrink the
-// parked stacks. Go halves a goroutine stack only while less than a quarter
-// of it is in use, so one large frame on the way to the think time keeps
-// every idle VUser's stack at 32 KB.
-func assertParkedStacksShrink(t *testing.T, vusers int, executed chan struct{}, start func()) {
+// one action and then park, and requires the GC to shrink the parked stacks.
+// Go halves a goroutine stack only while less than a quarter of it is in use,
+// so one large frame on the way to the wait keeps every idle VUser's stack at
+// 32 KB. ended counts the VUsers that have stopped: an ended VUser frees its
+// stack, which would pass for a shrunk one.
+func assertParkedStacksShrink(t *testing.T, vusers int, executed chan struct{}, ended *atomic.Int64, start func()) {
 	t.Helper()
 	runtime.GC()
 	runtime.GC()
@@ -111,20 +137,27 @@ func assertParkedStacksShrink(t *testing.T, vusers int, executed chan struct{}, 
 	for range 50 {
 		runtime.GC()
 		runtime.GC()
-		perVUser = (stackInuse() - min(before, stackInuse())) / uint64(vusers)
+		inuse := stackInuse()
+		if n := ended.Load(); n > 0 {
+			t.Fatalf("%d VUsers stopped before their parked stacks were measured", n)
+		}
+		perVUser = (inuse - min(before, inuse)) / uint64(vusers)
 		if perVUser < limit {
 			t.Logf("parked VUser stack = %d KB", perVUser>>10)
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("parked VUser stack = %d KB, want under %d KB: a frame on the think-time path is too large for the GC to shrink the stack", perVUser>>10, limit>>10)
+	t.Fatalf("parked VUser stack = %d KB, want under %d KB: a frame on the way to the wait is too large for the GC to shrink the stack", perVUser>>10, limit>>10)
 }
 
 func TestParkedVUserStackShrinks(t *testing.T) {
-	for _, phase := range []string{"action", "init", "teardown"} {
+	// The teardown case's think time must fit in the teardown context.
+	t.Setenv("APEXLOAD_TEARDOWN_TIMEOUT", "30s")
+	for _, phase := range []string{"action", "nested", "pacing", "init", "teardown"} {
 		t.Run(phase, func(t *testing.T) {
 			const vusers = 200
+			var ended atomic.Int64
 			proto := &stackGrowingProtocol{executed: make(chan struct{}, vusers)}
 			script := parkedStackScript(phase)
 			metrics := NewMetricsCollector(16)
@@ -134,9 +167,10 @@ func TestParkedVUserStackShrinks(t *testing.T) {
 				cancel()
 				wg.Wait()
 			}()
-			assertParkedStacksShrink(t, vusers, proto.executed, func() {
+			assertParkedStacksShrink(t, vusers, proto.executed, &ended, func() {
 				for id := range vusers {
 					wg.Go(func() {
+						defer ended.Add(1)
 						vu := &VUser{ID: id + 1, TotalVUsers: vusers, Proto: proto, Script: script, Metrics: metrics}
 						vu.Run(ctx)
 					})
@@ -149,9 +183,14 @@ func TestParkedVUserStackShrinks(t *testing.T) {
 // Group VUsers start from a larger goroutine frame and sleep through the
 // group engine's pause-aware clock.
 func TestParkedGroupVUserStackShrinks(t *testing.T) {
-	for _, phase := range []string{"action", "init"} {
+	for _, phase := range []string{"action", "pacing", "init"} {
 		t.Run(phase, func(t *testing.T) {
 			const vusers = 300
+			// A failed earlier run can leave values behind.
+			for len(parkedStackExecuted) > 0 {
+				<-parkedStackExecuted
+			}
+			parkedStackEnded.Store(0)
 			mge, err := NewMultiGroup(MultiGroupConfig{
 				Groups:       []GroupConfig{{Name: "parked", Script: parkedStackScript(phase), VUsers: vusers}},
 				Duration:     time.Minute,
@@ -166,7 +205,7 @@ func TestParkedGroupVUserStackShrinks(t *testing.T) {
 				cancel()
 				<-done
 			}()
-			assertParkedStacksShrink(t, vusers, parkedStackExecuted, func() {
+			assertParkedStacksShrink(t, vusers, parkedStackExecuted, &parkedStackEnded, func() {
 				go func() {
 					defer close(done)
 					_, _ = mge.Run(ctx)

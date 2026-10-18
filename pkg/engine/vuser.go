@@ -286,7 +286,12 @@ func (vu *VUser) Run(ctx context.Context) {
 // frame on the way to those waits stays small: the large ones (an action's
 // execution, iteration setup) return before the VUser parks. One large frame
 // on that path would hold every idle VUser's stack at the size its largest
-// action grew it to.
+// action grew it to. Waits inside an action, or at its start, still park
+// under its execution frames, for example think time between an
+// http_sequence's requests, rendezvous, parallel branches, http_sync,
+// WebSocket and async callback steps, the sampler schedule gate, and waits
+// for an execution-goal slot; so do waits in iteration setup, such as an
+// init re-run after a session renewal.
 type vuserRun struct {
 	vu     *VUser
 	cfg    *dsl.ScriptConfig
@@ -336,7 +341,9 @@ type vuserRun struct {
 	previousIterStart     time.Time
 	iterationGoalEntitled bool
 
-	// The running iteration's transaction and outcome.
+	// The running iteration's transaction and outcome. iterTransactionSource
+	// is dropped when the iteration ends, so a VUser waiting for its next
+	// iteration does not keep its last failed response alive.
 	iterTxStart            time.Time
 	iterTxDuration         time.Duration
 	iterTransactionSource  *protocol.Result
@@ -847,6 +854,7 @@ func (r *vuserRun) completeIteration() bool {
 	}
 	// Record iteration-level transaction
 	r.recordIterationTransaction(r.iterSuccess)
+	r.iterTransactionSource = nil
 	r.releaseReservedActionTransaction()
 
 	r.iteration++
@@ -859,6 +867,7 @@ func (r *vuserRun) completeIteration() bool {
 // endIterations is where the iteration loop ends, before teardown.
 func (r *vuserRun) endIterations() {
 	vu := r.vu
+	r.iterTransactionSource = nil
 	vu.iterationTemperature = ""
 	vu.stopAllAsyncConversations(r.iterCtx, "virtual user end")
 	vu.currentIteration.Store(0)
@@ -1273,7 +1282,7 @@ func (r *vuserRun) runLeaf(step *dsl.Action) (actionFlow, bool) {
 		}
 		vu.recordResult(child, cfg.ErrorHandling, cfg.Log)
 		if child != nil {
-			vu.noteSourceTransactionResult(action, child.Success)
+			vu.noteSourceTransactionResult(*step, child.Success)
 		}
 		if child != nil && child.BusinessTransaction {
 			r.restoreIterationBoundary()
@@ -1886,7 +1895,7 @@ func (lc *lifecycleRun) runLeaf(step *dsl.Action) (actionFlow, bool) {
 		}
 		vu.recordResult(child, lc.errCfg, lc.logCfg)
 		if child != nil {
-			vu.noteSourceTransactionResult(action, child.Success)
+			vu.noteSourceTransactionResult(*step, child.Success)
 		}
 		return nil
 	})
