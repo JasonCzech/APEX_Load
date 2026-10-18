@@ -37,12 +37,12 @@ func TestPostgresAuditEventTiesListInInsertionOrder(t *testing.T) {
 		// The common install: the login owns the tables, so the sequence is
 		// linked at once and no start warns.
 		warnings := captureInsertSeqWarnings(t)
-		store, err := NewPostgresStore(postgresAuditOrderSchema(t, databaseURL, "fresh"), StoreConnectionOptions{}, false)
+		store, err := NewPostgresStore(postgresIsolatedSchema(t, databaseURL, "fresh"), StoreConnectionOptions{}, false)
 		if err != nil {
 			t.Fatalf("NewPostgresStore returned error: %v", err)
 		}
 		defer store.Close()
-		if state, err := store.inspectPostgresAuditEventInsertSeq(); err != nil || !state.linked || state.sequenceOwner != state.tableOwner {
+		if state, err := store.inspectPostgresInsertSeq(auditEventsTable); err != nil || !state.linked || state.sequenceOwner != state.tableOwner {
 			t.Fatalf("fresh sequence state = %+v (err=%v), want linked and owned by the table owner", state, err)
 		}
 		if got := warnings(); len(got) != 0 {
@@ -72,7 +72,7 @@ func checkPostgresAuditEventInsertSeqUpgrade(t *testing.T, databaseURL string) {
 		ELSE pg_has_role('pg_database_owner', 'SET') AND pg_has_role('pg_database_owner', 'USAGE') END`) {
 		t.Skip("handing a table to pg_database_owner needs PostgreSQL 14 or later and a superuser or the database owner")
 	}
-	scopedURL := postgresAuditOrderSchema(t, databaseURL, "upgrade")
+	scopedURL := postgresIsolatedSchema(t, databaseURL, "upgrade")
 	tied := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
 	// A table owned by another role (here pg_database_owner): OWNED BY must
 	// still work. The grant lets a non-superuser database owner hand it over.
@@ -148,7 +148,7 @@ func checkPostgresAuditEventInsertSeqUpgrade(t *testing.T, databaseURL string) {
 	if tableOwner != "pg_database_owner" || sequenceOwner != tableOwner {
 		t.Fatalf("owners: table %q, sequence %q; want both pg_database_owner", tableOwner, sequenceOwner)
 	}
-	if state, err := store.inspectPostgresAuditEventInsertSeq(); err != nil || !state.linked {
+	if state, err := store.inspectPostgresInsertSeq(auditEventsTable); err != nil || !state.linked {
 		t.Fatalf("upgraded sequence state = %+v (err=%v), want linked", state, err)
 	}
 	// Rows from before the upgrade list below newer rows with the same time.
@@ -212,7 +212,7 @@ func checkPostgresAuditEventInsertSeqForMemberLogin(t *testing.T, databaseURL st
 	ownerRole := fmt.Sprintf("apexload_audit_owner_%d", suffix)
 	loginRole := fmt.Sprintf("apexload_audit_login_%d", suffix)
 	password := rand.Text()
-	schemaName := fmt.Sprintf("apexload_audit_order_member_%d", suffix)
+	schemaName := fmt.Sprintf("apexload_insert_seq_member_%d", suffix)
 	owner, login, schema := quotePostgresIdentifier(ownerRole), quotePostgresIdentifier(loginRole), quotePostgresIdentifier(schemaName)
 	admin := func(step, statement string) {
 		t.Helper()
@@ -290,8 +290,8 @@ func checkPostgresAuditEventInsertSeqForMemberLogin(t *testing.T, databaseURL st
 	if tableOwner != ownerRole || sequenceOwner != loginRole {
 		t.Fatalf("owners: table %q, sequence %q; want %q and %q", tableOwner, sequenceOwner, ownerRole, loginRole)
 	}
-	state, err := store.inspectPostgresAuditEventInsertSeq()
-	if want := (postgresAuditEventInsertSeqState{sequenceOwner: loginRole, tableOwner: ownerRole, schema: schemaName}); err != nil || state != want {
+	state, err := store.inspectPostgresInsertSeq(auditEventsTable)
+	if want := (postgresInsertSeqState{table: auditEventsTable, sequenceOwner: loginRole, tableOwner: ownerRole, schema: schemaName}); err != nil || state != want {
 		t.Fatalf("sequence state = %+v (err=%v), want %+v", state, err, want)
 	}
 	for _, privilege := range []string{"USAGE", "SELECT", "UPDATE"} {
@@ -326,6 +326,7 @@ func checkPostgresAuditEventInsertSeqForMemberLogin(t *testing.T, databaseURL st
 	}
 	for _, warning := range logged {
 		if warning.Msg != "audit_events_insert_seq is owned by a role other than the owner of audit_events" ||
+			warning.Table != "audit_events" || warning.Sequence != "audit_events_insert_seq" ||
 			warning.SequenceOwner != loginRole || warning.TableOwner != ownerRole || warning.Schema != schemaName ||
 			!strings.Contains(warning.Remediation, link[0]+"; "+link[1]+";") {
 			t.Fatalf("login-owned sequence warning = %+v, want owners %q/%q and remediation %q", warning, loginRole, ownerRole, link)
@@ -348,10 +349,11 @@ func checkPostgresAuditEventInsertSeqForMemberLogin(t *testing.T, databaseURL st
 		handedOver := open("reopen after the sequence was handed to the owner")
 		logged = warnings()
 		if len(logged) != 3 || logged[2].Msg != "audit_events_insert_seq is not linked to audit_events.insert_seq" ||
-			logged[2].TableOwner != ownerRole || !strings.Contains(logged[2].Remediation, link[1]+";") || strings.Contains(logged[2].Remediation, "OWNER TO") {
+			logged[2].Table != "audit_events" || logged[2].TableOwner != ownerRole ||
+			!strings.Contains(logged[2].Remediation, link[1]+";") || strings.Contains(logged[2].Remediation, "OWNER TO") {
 			t.Fatalf("insert_seq warnings after the hand-over = %+v, want a third asking only for %q", logged, link[1])
 		}
-		sameOwner, err := handedOver.inspectPostgresAuditEventInsertSeq()
+		sameOwner, err := handedOver.inspectPostgresInsertSeq(auditEventsTable)
 		if err != nil || sameOwner.linked || sameOwner.sequenceOwner != ownerRole {
 			t.Fatalf("sequence state after hand-over = %+v (err=%v), want unlinked and owned by %q", sameOwner, err, ownerRole)
 		}
@@ -386,7 +388,7 @@ func checkPostgresAuditEventInsertSeqForMemberLogin(t *testing.T, databaseURL st
 		}
 	}
 	relinked := open("reopen after linking the sequence")
-	if state, err := relinked.inspectPostgresAuditEventInsertSeq(); err != nil || !state.linked || state.sequenceOwner != ownerRole {
+	if state, err := relinked.inspectPostgresInsertSeq(auditEventsTable); err != nil || !state.linked || state.sequenceOwner != ownerRole {
 		t.Fatalf("sequence state after linking = %+v (err=%v), want linked and owned by %q", state, err, ownerRole)
 	}
 	if got := warnings(); len(got) != len(logged) {
@@ -397,6 +399,8 @@ func checkPostgresAuditEventInsertSeqForMemberLogin(t *testing.T, databaseURL st
 // insertSeqWarning is one insert_seq warning as the JSON handler logs it.
 type insertSeqWarning struct {
 	Msg           string `json:"msg"`
+	Table         string `json:"table"`
+	Sequence      string `json:"sequence"`
 	Schema        string `json:"schema"`
 	SequenceOwner string `json:"sequence_owner"`
 	TableOwner    string `json:"table_owner"`
@@ -436,7 +440,7 @@ func captureInsertSeqWarnings(t *testing.T) func() []insertSeqWarning {
 			if err := json.Unmarshal([]byte(line), &warning); err != nil {
 				t.Fatalf("log line is not JSON: %q: %v", line, err)
 			}
-			if strings.HasPrefix(warning.Msg, "audit_events_insert_seq") {
+			if strings.Contains(warning.Msg, "_insert_seq ") {
 				warnings = append(warnings, warning)
 			}
 		}
@@ -529,9 +533,9 @@ func postgresSearchPath(t *testing.T, scopedURL string) string {
 	return parsed.Query().Get("search_path")
 }
 
-// postgresAuditOrderSchema creates an isolated schema dropped after the test
+// postgresIsolatedSchema creates an isolated schema dropped after the test
 // and returns the database URL scoped to it.
-func postgresAuditOrderSchema(t *testing.T, databaseURL, label string) string {
+func postgresIsolatedSchema(t *testing.T, databaseURL, label string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -539,7 +543,7 @@ func postgresAuditOrderSchema(t *testing.T, databaseURL, label string) string {
 	if err != nil {
 		t.Fatalf("open PostgreSQL integration database: %v", err)
 	}
-	schemaName := fmt.Sprintf("apexload_audit_order_%s_%d", label, time.Now().UnixNano())
+	schemaName := fmt.Sprintf("apexload_insert_seq_%s_%d", label, time.Now().UnixNano())
 	quotedSchema := quotePostgresIdentifier(schemaName)
 	if _, err := adminDB.ExecContext(ctx, "CREATE SCHEMA "+quotedSchema); err != nil {
 		adminDB.Close()

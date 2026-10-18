@@ -1697,6 +1697,12 @@ func (s *SQLiteStore) DeleteAuditEventsBefore(cutoff time.Time) (int64, error) {
 }
 
 func (s *SQLiteStore) ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, error) {
+	return s.listAuditEvents(filter, s.db.dialect.newestFirst(""))
+}
+
+// listAuditEvents reads audit events in the given ORDER BY, newestFirst for
+// every reader except the legacy object activity backfill.
+func (s *SQLiteStore) listAuditEvents(filter AuditEventFilter, order string) ([]*AuditEvent, error) {
 	if filter.Limit <= 0 {
 		filter.Limit = 100
 	}
@@ -1707,7 +1713,7 @@ func (s *SQLiteStore) ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, e
 	query := strings.Builder{}
 	query.WriteString(`SELECT id, action, actor_type, actor_subject, actor_display_name, COALESCE(project_id, ''), COALESCE(domain_id, ''), resource_type, resource_id, status, details_json, created_at FROM audit_events`)
 	query.WriteString(where)
-	query.WriteString(` ORDER BY created_at DESC, ` + s.db.dialect.auditEventTieBreak() + ` LIMIT ? OFFSET ?`)
+	query.WriteString(` ORDER BY ` + order + ` LIMIT ? OFFSET ?`)
 	args = append(args, filter.Limit, filter.Offset)
 	rows, err := s.db.Query(query.String(), args...)
 	if err != nil {

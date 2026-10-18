@@ -16,8 +16,18 @@ func (s *SQLiteStore) backfillObjectActivity() error {
 	if done != 0 {
 		return nil
 	}
+	// Oldest first, the exact reverse of ListAuditEvents: each copy is inserted
+	// after the copies of the audit events it follows, so the copies list newest
+	// first exactly as audit history does, ties included. Copies made by
+	// releases before schema 64 are not reordered. They were inserted newest
+	// first, so on SQLite their ties now list, and decide a tied Deleted flag,
+	// in the reverse of the order those releases showed; neither order reflects
+	// how the audit events were written. Offset paging assumes no older audit
+	// row is deleted meanwhile; it runs once, when a database from before object
+	// activity is first opened, and audit retention on another controller during
+	// that copy could make it skip rows.
 	for offset := 0; ; offset += 250 {
-		events, err := s.ListAuditEvents(AuditEventFilter{Limit: 250, Offset: offset})
+		events, err := s.listAuditEvents(AuditEventFilter{Limit: 250, Offset: offset}, s.db.dialect.oldestFirst(""))
 		if err != nil {
 			return err
 		}

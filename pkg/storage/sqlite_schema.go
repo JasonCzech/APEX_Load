@@ -2423,10 +2423,14 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensurePostgresSchedulerLeaseGenerationBigint(); err != nil {
 		return err
 	}
-	// ListAuditEvents orders by insert_seq on PostgreSQL, so add the column
-	// before backfillObjectActivity reads audit history.
-	if err := s.ensurePostgresAuditEventInsertSeq(); err != nil {
-		return err
+	// On PostgreSQL backfillObjectActivity reads audit history ordered by
+	// audit_events.insert_seq, and its copies take
+	// object_activity_events.insert_seq in the order they are written, so add
+	// both columns before it runs.
+	for _, table := range []insertSeqTable{auditEventsTable, objectActivityTable} {
+		if err := s.ensurePostgresInsertSeq(table); err != nil {
+			return err
+		}
 	}
 	if _, err := s.db.Exec(`UPDATE releases SET group_id = id WHERE group_id IS NULL OR TRIM(group_id) = ''`); err != nil {
 		return fmt.Errorf("backfill release groups: %w", err)

@@ -91,6 +91,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 62, Name: "scenario-drafts", Fingerprint: "237838e015ad61c6e521a6af793e7cb5193528938640b54b1a0d63a17aba52cc"},
 	{Version: 63, Name: "run-execution-generation", Fingerprint: "0a2a6b72b8c7c8e16929b4cbe989d0dc8a572ae2651efc6ecc7a12d5f3c2f7a4"},
 	{Version: 64, Name: "audit-event-insertion-order", Fingerprint: "fec7a8de2eebeabca32564b9486d59915caa9879aa85be831b1d3c74fd72fbc3"},
+	{Version: 65, Name: "object-activity-insertion-order", Fingerprint: "acd96d0dbba6059750a45f64c020abb0ac3a24f87edcb5545ce7fb413aa50204"},
 }
 
 type SchemaMigrationRecord struct {
@@ -145,6 +146,7 @@ func schemaConvergenceFingerprint() string {
 		"execution-target-enrollment-expiry-backfill",
 		"postgres-scheduler-generation-bigint",
 		"postgres-audit-event-insert-seq",
+		"postgres-object-activity-insert-seq",
 		"release-group-backfill",
 		"scheduler-content-revision",
 		"start-admission-revision",
