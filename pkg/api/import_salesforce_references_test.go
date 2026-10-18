@@ -175,3 +175,27 @@ func TestEnterpriseArchiveSummaryUsesFinalNativeReferencesAfterAgentforceTransfo
 		t.Fatal("archive summary and reopened metadata have inconsistent final reference details/counts")
 	}
 }
+
+// Optional enterprise reviews discard undetected captures, whereas an explicit
+// native request retains the full review even without Salesforce detection.
+func TestEnterpriseArchiveSalesforceReviewRequiresDetectionWithoutNativeRequest(t *testing.T) {
+	const base = "https://shop.example.test"
+	data := []byte(`{"log":{"entries":[{"request":{"method":"GET","url":"` + base + `/session"},"response":{"content":{"text":"{\"token\":\"tok-abcdef123456\"}"}}}]}}`)
+	for _, native := range []bool{false, true} {
+		t.Run(map[bool]string{false: "review only", true: "native"}[native], func(t *testing.T) {
+			script := &dsl.Script{Name: "generic", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: base}, Actions: []dsl.Action{{Type: "GET", Target: base + "/session"}}}
+			result := &enterprisearchive.ConvertResult{Script: script}
+			attachSalesforceReviewToEnterpriseArchiveResult(result, &enterpriseArchiveImportRequest{SalesforceNative: native, HARData: data})
+			review, attached := ensureScriptImportPreserved(script, "enterprise_script_archive")["salesforce_review"]
+			if attached != native {
+				t.Fatalf("salesforce_review attached = %v, want %v for an undetected capture", attached, native)
+			}
+			if native {
+				details, ok := review.(*salesforce.Review)
+				if !ok || details.Detected || details.HARMatchCoverage.MatchedRequests != 1 || details.CorrelationConfidence == "" {
+					t.Fatalf("explicit native import lost its full undetected review: %#v", review)
+				}
+			}
+		})
+	}
+}

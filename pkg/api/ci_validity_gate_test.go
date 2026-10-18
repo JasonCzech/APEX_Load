@@ -83,7 +83,7 @@ func TestCIValidityGateNeverPassesARunItCouldNotJudge(t *testing.T) {
 
 func TestCachedRunArchiveValidityReportsAnUnbuildableReport(t *testing.T) {
 	record := &storage.RunArchiveRecord{TestID: "missing", ArchivePath: t.TempDir(), ManifestPath: "/nonexistent/manifest.json", ManifestSHA256: strings.Repeat("0", 64)}
-	if validity, err := cachedRunArchiveValidity(record); err == nil || validity != nil {
+	if validity, err := newArchiveReadCaches().cachedRunArchiveValidity(record); err == nil || validity != nil {
 		t.Fatalf("unbuildable report = %+v, %v", validity, err)
 	}
 }
@@ -98,7 +98,7 @@ func TestCIRunValidityComesFromTheDurableArchiveReport(t *testing.T) {
 			setCIRunValidityGate(t, server, testRun, gate)
 			record := persistValidCIRunArchive(t, store, testRun, 2, true, false, nil)
 			// The report built over this archive judged the run invalid.
-			if _, err := runArchiveReportCache.getOrLoad(runArchiveReportCacheKey(record), func() (*RunArchiveReport, error) {
+			if _, err := server.archiveReadCaches().reports.getOrLoad(runArchiveReportCacheKey(record), func() (*RunArchiveReport, error) {
 				return &RunArchiveReport{Validity: &rca.Validity{Verdict: rca.ValidityInvalid, Reasons: []string{rca.RuleDroppedResults}}}, nil
 			}); err != nil {
 				t.Fatal(err)

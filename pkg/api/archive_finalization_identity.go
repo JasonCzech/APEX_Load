@@ -16,10 +16,26 @@ type incarnationArchiveFinalizationStore interface {
 	CompleteArchiveFinalizationForRun(string, string, string, *storage.RunArchiveRecord, storage.ArchiveFinalizationRunIdentity) (bool, error)
 }
 
+// Keep analysis time separate from the durable identity used by the publication
+// CAS. Both values come from the same verified manifest, including prepared
+// recovery bytes and the catalog source used for an adjunct refresh.
+type archiveFinalizationInspection struct {
+	identity             *storage.ArchiveFinalizationRunIdentity
+	executionCompletedAt time.Time
+}
+
+func (tr *TestRunner) inspectArchiveFinalizationIdentity(ctx context.Context, job *storage.ArchiveFinalizationJob, durable *storage.TestRecord, useRefreshCatalog bool) (*storage.ArchiveFinalizationRunIdentity, error) {
+	inspection, err := tr.inspectArchiveFinalizationSource(ctx, job, durable, useRefreshCatalog)
+	if err != nil || inspection == nil {
+		return nil, err
+	}
+	return inspection.identity, nil
+}
+
 // Inspect source identity before any adjunct mutation. On refresh, the verified
 // catalog is the source which will be copied; a previous private staging path may
 // no longer exist. Prepared bytes remain authoritative after interrupted writes.
-func (tr *TestRunner) inspectArchiveFinalizationIdentity(ctx context.Context, job *storage.ArchiveFinalizationJob, durable *storage.TestRecord, useRefreshCatalog bool) (*storage.ArchiveFinalizationRunIdentity, error) {
+func (tr *TestRunner) inspectArchiveFinalizationSource(ctx context.Context, job *storage.ArchiveFinalizationJob, durable *storage.TestRecord, useRefreshCatalog bool) (*archiveFinalizationInspection, error) {
 	if durable == nil {
 		return nil, nil
 	}
@@ -71,10 +87,18 @@ func (tr *TestRunner) inspectArchiveFinalizationIdentity(ctx context.Context, jo
 	if err != nil {
 		return nil, fmt.Errorf("read finalization identity: %w", err)
 	}
-	return tr.validateArchiveFinalizationIdentity(job, record, durable, data)
+	return tr.validateArchiveFinalizationSource(job, record, durable, data)
 }
 
 func (tr *TestRunner) validateArchiveFinalizationIdentity(job *storage.ArchiveFinalizationJob, record *storage.RunArchiveRecord, durable *storage.TestRecord, data []byte) (*storage.ArchiveFinalizationRunIdentity, error) {
+	inspection, err := tr.validateArchiveFinalizationSource(job, record, durable, data)
+	if err != nil {
+		return nil, err
+	}
+	return inspection.identity, nil
+}
+
+func (tr *TestRunner) validateArchiveFinalizationSource(job *storage.ArchiveFinalizationJob, record *storage.RunArchiveRecord, durable *storage.TestRecord, data []byte) (*archiveFinalizationInspection, error) {
 	if durable == nil || durable.EndTime == nil || !isTerminalTestStatus(durable.Status) {
 		return nil, errors.New("archive finalization requires a terminal run identity")
 	}
@@ -88,14 +112,25 @@ func (tr *TestRunner) validateArchiveFinalizationIdentity(job *storage.ArchiveFi
 	if err != nil {
 		return nil, err
 	}
-	if normalizeProjectID(job.ProjectID) != normalizeProjectID(durable.ProjectID) ||
+	incarnation, err := archiveManifestRunIncarnation(manifest)
+	if err != nil {
+		return nil, err
+	}
+	durableIncarnation, err := storage.TestRunIncarnation(durable.InitialProvenance)
+	if err != nil {
+		return nil, err
+	}
+	if incarnation != durableIncarnation || manifest.Provenance.ExecutionGeneration != durable.ExecutionGeneration || normalizeProjectID(job.ProjectID) != normalizeProjectID(durable.ProjectID) ||
 		(strings.TrimSpace(manifest.Provenance.ProjectID) != "" && normalizeProjectID(manifest.Provenance.ProjectID) != normalizeProjectID(durable.ProjectID)) ||
 		manifest.Status != durable.Status || !archiveRunTimestampMatches(archiveManifestRequestedAt(manifest), durable.StartTime, tr.testStore) ||
 		!archiveRunTimestampMatches(manifest.CompletedAt, *durable.EndTime, tr.testStore) ||
 		!archiveRunTimestampMatches(record.CompletedAt, *durable.EndTime, tr.testStore) {
 		return nil, errors.New("archive finalization source does not match the durable terminal incarnation")
 	}
-	return &storage.ArchiveFinalizationRunIdentity{ProjectID: normalizeProjectID(durable.ProjectID), StartTime: durable.StartTime, EndTime: *durable.EndTime, Status: durable.Status}, nil
+	return &archiveFinalizationInspection{
+		identity:             &storage.ArchiveFinalizationRunIdentity{RunIncarnation: incarnation, ExecutionGeneration: durable.ExecutionGeneration, ProjectID: normalizeProjectID(durable.ProjectID), StartTime: durable.StartTime, EndTime: *durable.EndTime, Status: durable.Status},
+		executionCompletedAt: archiveExecutionCompletedAt(manifest),
+	}, nil
 }
 
 func readFinalizationLocalManifest(ctx context.Context, record *storage.RunArchiveRecord) ([]byte, error) {

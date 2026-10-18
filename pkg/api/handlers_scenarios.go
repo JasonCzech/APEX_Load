@@ -418,7 +418,7 @@ func (s *Server) handleSizeScenarioFromGoal(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		defer lease.Release()
-		report, err = cachedRunArchiveReport(record)
+		report, err = s.archiveReadCaches().cachedRunArchiveReport(record)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to build baseline report: "+err.Error())
 			return

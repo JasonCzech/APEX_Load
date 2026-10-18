@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-10-18",
+  "stale_after_days": 30,
+  "lanes": [
+    {
+      "name": "Full Go suite",
+      "status": "not run",
+      "detail": "Full suite not run for this change: the user restricted remaining validation to targeted checks after disk pressure. No full-suite pass claimed."
+    },
+    {
+      "name": "Go race lane",
+      "status": "not run",
+      "detail": "Full suite not run for this change: the user restricted remaining validation to targeted checks after disk pressure. No full-suite pass claimed."
+    },
+    {
+      "name": "Dashboard unit and static checks",
+      "status": "passed",
+      "detail": "The whole unit suite passed 7,906 tests before the final response-normalization compatibility correction; 73 affected tests passed afterward. TypeScript/build, ESLint and bundle budgets passed; accessibility lint had zero blocking errors and two pre-existing warnings.",
+      "last_success": {
+        "at": "2026-10-18",
+        "evidence": "reviews/peer-live-verification-2026-10-18/README.md#validation-scope"
+      }
+    },
+    {
+      "name": "Full dashboard browser suites",
+      "status": "not run",
+      "detail": "Neither complete auth-profile suite was run for this change after the user limited remaining validation to targeted checks. Affected workflows have separate entries below."
+    },
+    {
+      "name": "Targeted dashboard browser: dev-admin",
+      "status": "passed",
+      "detail": "43 passed across ten affected workflow files on pinned Chromium; one private LoadRunner acceptance fixture skipped. These workflows ran before final main integration; the frontend runtime is unchanged. Full suite not run.",
+      "last_success": {
+        "at": "2026-10-18",
+        "evidence": "reviews/peer-live-verification-2026-10-18/README.md#validation-scope"
+      }
+    },
+    {
+      "name": "Targeted dashboard browser: local-auth",
+      "status": "passed",
+      "detail": "42 passed across nine applicable workflow files on pinned Chromium; one private LoadRunner acceptance fixture skipped. These workflows ran before final main integration; the frontend runtime is unchanged. Full suite not run.",
+      "last_success": {
+        "at": "2026-10-18",
+        "evidence": "reviews/peer-live-verification-2026-10-18/README.md#validation-scope"
+      }
+    },
+    {
+      "name": "Full PostgreSQL storage/API",
+      "status": "not run",
+      "detail": "No complete suite result: the full tagged PostgreSQL storage run was stopped when the user restricted remaining validation to targeted checks after disk pressure. Partial results are not a full pass; the full API lane was not run."
+    },
+    {
+      "name": "Kafka local broker",
+      "status": "passed",
+      "detail": "Pinned local broker run passed 240 test results including TestKafkaFranzProduceConsumeIntegration, with no skips; fixture teardown passed. Basic interoperability only; separate transaction/seek and cloud lanes remain unqualified. See the peer live-verification report.",
+      "last_success": {
+        "at": "2026-10-18T03:54:49.898675+00:00",
+        "evidence": "reviews/peer-live-verification-2026-10-18/broker-receipt.json"
+      }
+    },
+    {
+      "name": "Solace local broker",
+      "status": "passed",
+      "detail": "Pinned local broker run passed 318 JMS/Solace test results including TestSolaceAMQPIntegrationPublish, with no skips; fixture teardown passed. Basic interoperability only; separate broker/provider lanes remain unqualified. See the peer live-verification report.",
+      "last_success": {
+        "at": "2026-10-18T03:54:49.898675+00:00",
+        "evidence": "reviews/peer-live-verification-2026-10-18/broker-receipt.json"
+      }
+    },
+    {
+      "name": "HA failover soak",
+      "status": "passed",
+      "detail": "25 deterministic controller handoffs passed again on the final integrated API binary using local SQLite transactional simulation. This does not qualify production AKS or PostgreSQL HA.",
+      "last_success": {
+        "at": "2026-10-18",
+        "evidence": "reviews/peer-live-verification-2026-10-18/README.md#final-main-integration"
+      }
+    },
+    {
+      "name": "Telemetry reference workload",
+      "status": "passed",
+      "detail": "Final integrated code passed the unchanged 60-second, 2,000/s reference and 2,000 ms sample-age gate: P99 1,468.3 ms, max 1,522.9 ms; 123,117 served, 123,115 archived, 123,107 live successes plus 8 errors. The difference of 2 is within the existing 20-request in-flight stop allowance, not proof of zero loss. All 93 archive-analysis reads passed.",
+      "last_success": {
+        "at": "2026-10-18T05:27:05.876556Z",
+        "evidence": "reviews/peer-live-verification-2026-10-18/telemetry-reference.json"
+      }
+    },
+    {
+      "name": "Pinned browser recording E2E",
+      "status": "not run",
+      "detail": "The pinned browser-recording E2E lane was not run in this sweep; targeted import workflows do not qualify recording."
+    },
+    {
+      "name": "Azure Service Bus live broker",
+      "status": "not configured",
+      "detail": "Requires an approved live service and connection settings; no local success claimed."
+    },
+    {
+      "name": "Azure Event Hubs live broker",
+      "status": "not configured",
+      "detail": "Requires an approved live service and connection settings; no local success claimed."
+    },
+    {
+      "name": "Protected protocol Actions workflow",
+      "status": "failed",
+      "detail": "13 completed runs through 2026-10-11, no successful run. Latest: https://github.com/JasonCzech/APEX_Load/actions/runs/38113651831"
+    }
+  ]
+}

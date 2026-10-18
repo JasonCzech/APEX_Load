@@ -131,9 +131,14 @@ func runAdoptedResumeScenario(t *testing.T, lossTolerant bool) {
 	if !secured || !keeperRunning {
 		t.Fatalf("Phase A left generator supervision to Phase B: secured=%v keeper=%v", secured, keeperRunning)
 	}
+	_, newGeneration := successor.executionLeaseTerm()
+	// The durable run now names the adopting term, so an archive the lost
+	// leader finalized for it no longer identifies as the run's outcome.
+	if durable, err := store.GetTest(test.ID); err != nil || durable.ExecutionGeneration != newGeneration || newGeneration <= lostGeneration {
+		t.Fatalf("adoption did not advance the durable execution term: %+v %v (want %d after %d)", durable, err, newGeneration, lostGeneration)
+	}
 	runner.resumeAdoptedRuns()
 
-	_, newGeneration := successor.executionLeaseTerm()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		runner.mu.RLock()

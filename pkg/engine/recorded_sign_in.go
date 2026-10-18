@@ -134,33 +134,16 @@ func (p *recordedSignInPlan) skips(index int) bool {
 // action is the init action as the observer runs it: a navigation to a
 // Salesforce sign-in page opens the recording's landing page instead.
 func (p *recordedSignInPlan) action(action dsl.Action) dsl.Action {
-	if p.opensSignIn(&action) {
-		action.Target = p.landing
-	}
-	return action
-}
-
-// actionRef is action for a caller holding the script's own action, which
-// it copies only when the observer runs something else.
-func (p *recordedSignInPlan) actionRef(action *dsl.Action) *dsl.Action {
-	if !p.opensSignIn(action) {
-		return action
-	}
-	landing := new(dsl.Action)
-	*landing = *action
-	landing.Target = p.landing
-	return landing
-}
-
-// opensSignIn reports a navigation to a Salesforce sign-in page that the
-// observer replaces with the recording's landing page.
-func (p *recordedSignInPlan) opensSignIn(action *dsl.Action) bool {
 	if p == nil || p.landing == "" || !strings.EqualFold(strings.TrimSpace(action.Type), "browser_navigate") {
-		return false
+		return action
 	}
 	target := strings.TrimSpace(action.Target)
 	if strings.HasPrefix(target, "/") && p.baseURL != "" {
 		target = strings.TrimRight(p.baseURL, "/") + target
 	}
-	return browserprotocol.SalesforceSignInURL(target)
+	if !browserprotocol.SalesforceSignInURL(target) {
+		return action
+	}
+	action.Target = p.landing
+	return action
 }

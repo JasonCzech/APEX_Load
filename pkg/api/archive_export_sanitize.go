@@ -26,14 +26,14 @@ type sanitizedRunArchivePlan struct {
 // every structured archive artifact that can carry runtime credentials. It is
 // intentionally used at read time so archives produced by older controllers
 // receive the same protection as new writes.
-func buildSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (*sanitizedRunArchivePlan, error) {
-	return buildSanitizedRunArchivePlanWith(ctx, record, manifest, false)
+func (c *archiveReadCaches) buildSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (*sanitizedRunArchivePlan, error) {
+	return c.buildSanitizedRunArchivePlanWith(ctx, record, manifest, false)
 }
 
 // buildSanitizedRunArchivePlanWith is buildSanitizedRunArchivePlan that, with
 // includeHAR, keeps the run's native HARs (for a requester who may download
 // them); without it the export omits them as safe_export.
-func buildSanitizedRunArchivePlanWith(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, includeHAR bool) (*sanitizedRunArchivePlan, error) {
+func (c *archiveReadCaches) buildSanitizedRunArchivePlanWith(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, includeHAR bool) (*sanitizedRunArchivePlan, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -48,7 +48,7 @@ func buildSanitizedRunArchivePlanWith(ctx context.Context, record *storage.RunAr
 	if includeHAR {
 		key += "|har"
 	}
-	prepared, err := runArchiveSanitizedPlanCache.getOrLoadContext(ctx, key, func() (*sanitizedRunArchivePlan, error) {
+	prepared, err := c.sanitizedPlans.getOrLoadContext(ctx, key, func() (*sanitizedRunArchivePlan, error) {
 		loadCtx, cancelLoad := context.WithTimeout(context.Background(), configuredArchiveMaterializationTimeout())
 		defer cancelLoad()
 		return prepareSanitizedRunArchivePlanWith(loadCtx, record, manifest, includeHAR)
@@ -240,30 +240,30 @@ func sanitizedArchivePlanForRequest(ctx context.Context, record *storage.RunArch
 	return plan
 }
 
-func zipSanitizedRunArchiveContext(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, dst io.Writer) error {
-	return zipSanitizedRunArchiveWith(ctx, record, manifest, false, dst)
+func (c *archiveReadCaches) zipSanitizedRunArchiveContext(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, dst io.Writer) error {
+	return c.zipSanitizedRunArchiveWith(ctx, record, manifest, false, dst)
 }
 
 // zipSanitizedRunArchiveWith writes the safe export, keeping the run's native
 // HARs when includeHAR.
-func zipSanitizedRunArchiveWith(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, includeHAR bool, dst io.Writer) error {
-	plan, err := buildSanitizedRunArchivePlanWith(ctx, record, manifest, includeHAR)
+func (c *archiveReadCaches) zipSanitizedRunArchiveWith(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, includeHAR bool, dst io.Writer) error {
+	plan, err := c.buildSanitizedRunArchivePlanWith(ctx, record, manifest, includeHAR)
 	if err != nil {
 		return err
 	}
 	return zipDirectoryContextWithSanitizers(ctx, record.ArchivePath, dst, plan.replacements, plan.stream, plan.omit)
 }
 
-func sanitizedRunArchiveManifest(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (*RunArchiveManifest, error) {
-	plan, err := buildSanitizedRunArchivePlan(ctx, record, manifest)
+func (c *archiveReadCaches) sanitizedRunArchiveManifest(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (*RunArchiveManifest, error) {
+	plan, err := c.buildSanitizedRunArchivePlan(ctx, record, manifest)
 	if err != nil {
 		return nil, err
 	}
 	return plan.manifest, nil
 }
 
-func sanitizedRunArchiveMetadata(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (string, int64, error) {
-	plan, err := buildSanitizedRunArchivePlan(ctx, record, manifest)
+func (c *archiveReadCaches) sanitizedRunArchiveMetadata(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (string, int64, error) {
+	plan, err := c.buildSanitizedRunArchivePlan(ctx, record, manifest)
 	if err != nil {
 		return "", 0, err
 	}
@@ -355,11 +355,11 @@ func sanitizedArchiveDirectorySize(ctx context.Context, root *os.Root, prefix st
 	return total, nil
 }
 
-func sanitizedRunArchiveArtifact(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, name string) ([]byte, os.FileInfo, bool, error) {
+func (c *archiveReadCaches) sanitizedRunArchiveArtifact(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, name string) ([]byte, os.FileInfo, bool, error) {
 	if name != runArchiveManifestFileName && name != strings.TrimSpace(manifest.TestManifestFile) {
 		return nil, nil, false, nil
 	}
-	plan, err := buildSanitizedRunArchivePlan(ctx, record, manifest)
+	plan, err := c.buildSanitizedRunArchivePlan(ctx, record, manifest)
 	if err != nil {
 		return nil, nil, true, err
 	}

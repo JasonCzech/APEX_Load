@@ -561,7 +561,7 @@ func (s *Server) handleGetRunArchiveAIRootCause(w http.ResponseWriter, r *http.R
 		return
 	}
 	defer lease.Release()
-	report, err := cachedRunArchiveReport(record)
+	report, err := s.archiveReadCaches().cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build AI root-cause summary: "+err.Error())
 		return

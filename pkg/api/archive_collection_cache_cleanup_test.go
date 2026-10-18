@@ -41,7 +41,7 @@ func collectionCachedDirectory(root string, intent *storage.RunArchiveCollection
 	return filepath.Join(root, "_collection", intent.TestID, intent.IntentToken, sha256BytesHex([]byte(target)), intent.CachedSources[target].ReceiptSHA256)
 }
 func TestCollectionCacheCleanupRequiresConfirmedUntamperedCopies(t *testing.T) {
-	for _, mode := range []string{"confirmed", "no catalog", "pending", "changed primary", "changed cache", "extra file", "no coverage", "partial coverage", "different run"} {
+	for _, mode := range []string{"confirmed", "no catalog", "pending", "changed primary", "changed cache", "extra file", "no coverage", "partial coverage", "different run", "different incarnation", "different generation", "matching generation"} {
 		t.Run(mode, func(t *testing.T) {
 			tr, store, run, record, intent := collectionCleanupFixture(t, "a", "b")
 			pathA := collectionCachedDirectory(resolveArchiveRoot(), intent, "a")
@@ -71,7 +71,20 @@ func TestCollectionCacheCleanupRequiresConfirmedUntamperedCopies(t *testing.T) {
 					t.Fatal(err)
 				}
 				wantsError = true
-			case "no coverage", "partial coverage":
+			case "different incarnation":
+				row, err := store.GetTest(run.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				row.InitialProvenance = map[string]any{"run_incarnation": "new-incarnation"}
+				if err := store.SaveTest(row); err != nil {
+					t.Fatal(err)
+				}
+				wantsError = true
+			case "different generation":
+				stampOrphanRunExecutionGeneration(t, store, run.ID)
+				wantsError = true
+			case "no coverage", "partial coverage", "matching generation":
 				data, err := os.ReadFile(record.ManifestPath)
 				if err != nil {
 					t.Fatal(err)
@@ -80,7 +93,9 @@ func TestCollectionCacheCleanupRequiresConfirmedUntamperedCopies(t *testing.T) {
 				if err := json.Unmarshal(data, &manifest); err != nil {
 					t.Fatal(err)
 				}
-				if mode == "no coverage" {
+				if mode == "matching generation" {
+					manifest.Provenance.ExecutionGeneration = stampOrphanRunExecutionGeneration(t, store, run.ID)
+				} else if mode == "no coverage" {
 					manifest.SourceCoverage = nil
 					wantsError = true
 				} else {
@@ -117,7 +132,7 @@ func TestCollectionCacheCleanupRequiresConfirmedUntamperedCopies(t *testing.T) {
 			}
 			for target, path := range map[string]string{"a": pathA, "b": pathB} {
 				_, err := os.Stat(path)
-				shouldRemove := mode == "confirmed" || (mode == "partial coverage" && target == "b")
+				shouldRemove := mode == "confirmed" || mode == "matching generation" || (mode == "partial coverage" && target == "b")
 				if os.IsNotExist(err) != shouldRemove {
 					t.Fatalf("%s removal=%v want=%v (%v)", target, os.IsNotExist(err), shouldRemove, err)
 				}

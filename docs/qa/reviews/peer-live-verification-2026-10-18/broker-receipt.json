@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-10-18T03:53:36.513826+00:00",
+  "commit": "ec42f607f4942c268c1527951b84af70636a5556",
+  "dirty": true,
+  "fixture": "docs/qa/reviews/import-fixture-matrix-2026-09-12/brokers.compose.yaml",
+  "profiles": {
+    "kafka": {
+      "status": "passed",
+      "required_test": "TestKafkaFranzProduceConsumeIntegration",
+      "log": "kafka.jsonl"
+    },
+    "solace": {
+      "status": "passed",
+      "required_test": "TestSolaceAMQPIntegrationPublish",
+      "log": "solace.jsonl"
+    }
+  },
+  "status": "passed",
+  "cleanup_status": "passed",
+  "completed_at": "2026-10-18T03:54:49.898675+00:00"
+}

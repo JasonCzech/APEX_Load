@@ -235,7 +235,7 @@ func (s *Server) handlePublishRunToPowerBI(w http.ResponseWriter, r *http.Reques
 	}
 	defer lease.Release()
 
-	report, err := cachedRunArchiveReport(record)
+	report, err := s.archiveReadCaches().cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
 		return

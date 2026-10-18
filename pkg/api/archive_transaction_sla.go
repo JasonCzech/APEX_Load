@@ -189,7 +189,7 @@ func transactionRulesFromManifest(manifest *RunArchiveManifest) []TransactionSLA
 }
 
 func transactionSLARunSeconds(manifest *RunArchiveManifest) float64 {
-	if manifest == nil || manifest.CompletedAt.IsZero() {
+	if manifest == nil || archiveExecutionCompletedAt(manifest).IsZero() {
 		return 0
 	}
 	startedAt := manifest.CreatedAt
@@ -198,7 +198,7 @@ func transactionSLARunSeconds(manifest *RunArchiveManifest) float64 {
 	} else if manifest.InitialProvenance != nil && manifest.InitialProvenance.StartedAt != nil {
 		startedAt = *manifest.InitialProvenance.StartedAt
 	}
-	if elapsed := manifest.CompletedAt.Sub(startedAt).Seconds(); elapsed > 0 {
+	if elapsed := archiveExecutionCompletedAt(manifest).Sub(startedAt).Seconds(); elapsed > 0 {
 		return elapsed
 	}
 	return 0

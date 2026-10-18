@@ -235,9 +235,11 @@ func TestManagedRunHeaderOAuthPoolsExcludeApplicationMarker(t *testing.T) {
 	// credential transport. No requests have begun when the fixture is installed.
 	roots := x509.NewCertPool()
 	roots.AddCert(server.Certificate())
-	for _, pool := range h.policyPools {
-		pool.oauthClient().transport.TLSClientConfig.RootCAs = roots
-		if pool.oauthClient().transport.TLSClientConfig.InsecureSkipVerify {
+	for _, policy := range []string{"auto", VersionHTTP11, VersionHTTP2} {
+		pool := h.policyPools[policy]
+		pool.roundTripper(true)
+		pool.oauthTransport.TLSClientConfig.RootCAs = roots
+		if pool.oauthTransport.TLSClientConfig.InsecureSkipVerify {
 			t.Fatal("OAuth inherited insecure application TLS policy")
 		}
 	}

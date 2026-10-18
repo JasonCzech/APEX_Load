@@ -1,3 +1,4 @@
+import { canonicalImportDraft } from './support/importResponse'
 import type { Page } from '@playwright/test'
 import type { ScriptDefinition } from '../src/types/scripts'
 import path from 'node:path'
@@ -249,10 +250,15 @@ test('LoadRunner guided repair previews redacted changes before applying', async
   let draft: Record<string, any> = {}
   const findings = [{ code: 'restored_body_required', action_path: 'actions[0]', source_ref: 'Action.c:2', detail: 'Supply a restored request body.', gate: 'execution' }]
   const expiry = new Date(Date.now() + 20 * 60_000).toISOString()
-  await page.route('**/api/v1/scripts/import/enterprise-script-archive/validate', async route => {
+  await page.route(url => url.pathname === '/api/v1/scripts/import/enterprise-script-archive/validate', async route => {
+    expect(new URL(route.request().url()).searchParams.get('response_format')).toBe('canonical-v1')
+    // Deliberately return the legacy direct-API response to exercise an older
+    // controller while this fixture adds protected repair state.
     const response = await page.context().request.post(`/api/v1/scripts/import/enterprise-script-archive/validate?project_id=${workspace.projectId}`, { multipart: { file: { name: 'guided-repair.zip', mimeType: 'application/zip', buffer: await readFile(path.join(process.cwd(), 'e2e/fixtures/guided-repair.zip')) } } })
     expect(response.ok(), await response.text()).toBeTruthy()
     const result = await response.json()
+    expect(result.response_format).toBeUndefined()
+    expect(result.script).toBeDefined()
     draft = result.script
     draft.metadata.import.preserved.server_import_attestation_v1 = 'protected:browser-repair-one'
     if (result.scripts?.length) result.scripts[0] = draft
@@ -536,6 +542,7 @@ test('LoadRunner credentials edit and apply in place while preserving protected 
   const validatedResponse = await validated
   expect(validatedResponse.ok()).toBeTruthy()
   const validatedResult = await json(validatedResponse)
+  const validatedDraft = canonicalImportDraft(validatedResult)
   await page.getByRole('tab', { name: /^Credentials(,|$)/ }).click()
   const review = page.locator('.secret-binding-review')
   await expect(review).not.toContainText('test-only-token')
@@ -567,7 +574,7 @@ test('LoadRunner credentials edit and apply in place while preserving protected 
   const updated = await json(response)
   expect(JSON.stringify(updated.script)).toContain('{{secret.INLINE_IMPORT_TOKEN}}')
   expect(JSON.stringify((updated.script as ScriptDefinition).actions)).not.toContain('test-only-token')
-  expect((updated.script as ScriptDefinition).metadata?.import?.preserved?.source_review).toEqual((validatedResult.script as ScriptDefinition).metadata?.import?.preserved?.source_review)
+  expect((updated.script as ScriptDefinition).metadata?.import?.preserved?.source_review).toEqual(validatedDraft.metadata?.import?.preserved?.source_review)
   await expect(page.getByRole('tab', { name: /^Credentials(,|$)/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('button', { name: 'Cancel credentials', exact: true })).toHaveCount(0)
   const saved = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')

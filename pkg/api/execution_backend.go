@@ -367,6 +367,14 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 		snapshot = copied
 	}
 	provenance = buildRunArchiveProvenanceFromSnapshot(snapshot)
+	provenance.ExecutionGeneration = snapshot.executionGeneration
+	if provenance.ExecutionGeneration == 0 {
+		// Retained-source recovery builds an archive from a detached durable
+		// snapshot, not a process-local execution claim. Keep the run's evidence
+		// term without granting ownership, while a real (possibly stale) worker
+		// must continue to name the term that actually executed its payload.
+		provenance.ExecutionGeneration = snapshot.durableExecutionGeneration
+	}
 	if tr != nil {
 		provenance.RequestedAt = archiveRunTimestamp(snapshot.CreatedAt, tr.testStore)
 	}
@@ -402,6 +410,7 @@ func buildRunArchiveProvenanceFromSnapshot(snapshot *ManagedTest) RunArchiveProv
 		return provenance
 	}
 	if snapshot.initialArchiveProvenance != nil {
+		provenance.RunIncarnation = snapshot.initialArchiveProvenance.RunIncarnation
 		provenance.TelemetryPolicy = cloneTelemetryBudgetPolicy(snapshot.initialArchiveProvenance.TelemetryPolicy)
 		provenance.PolicyPins = cloneRunPolicyPins(snapshot.initialArchiveProvenance.PolicyPins)
 		provenance.TelemetryAcceptancePolicy = cloneTelemetryAcceptancePolicySnapshot(snapshot.initialArchiveProvenance.TelemetryAcceptancePolicy)

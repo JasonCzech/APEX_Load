@@ -16,6 +16,8 @@ class QADashboardTest(unittest.TestCase):
             metrics = root / "metrics-table.md"
             api_contract = root / "api-contract-matrix.json"
             output = root / "DASHBOARD.md"
+            executions = root / "executions.json"
+            executions.write_text('{"as_of":"2026-10-18","lanes":[{"name":"Live broker","status":"not configured"}]}')
             status.write_text(
                 "## Milestones\n\n| ID | State |\n|---|---|\n| M0 | IN_PROGRESS |\n"
             )
@@ -27,10 +29,11 @@ class QADashboardTest(unittest.TestCase):
             api_contract.write_text(
                 '{"totals":{"routes":4,"green":2,"partial":1,"missing":1}}\n'
             )
-            command = [str(SCRIPT), "--status", str(status), "--matrix", str(matrix), "--metrics", str(metrics), "--api-contract", str(api_contract), "--output", str(output)]
+            command = [str(SCRIPT), "--status", str(status), "--matrix", str(matrix), "--metrics", str(metrics), "--api-contract", str(api_contract), "--executions", str(executions), "--output", str(output)]
             subprocess.run(command, check=True)
             generated = output.read_text()
             self.assertIn("| 1 | 1 | 1 | 3 |", generated)
+            self.assertIn("Live broker | not configured | No verified success recorded", generated)
             self.assertIn("| 2 | 1 | 1 | 4 |", generated)
             subprocess.run([*command, "--check"], check=True)
             output.write_text(generated + "stale\n")

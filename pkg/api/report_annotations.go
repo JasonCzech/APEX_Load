@@ -436,7 +436,7 @@ func defaultRiskComment(report *RunArchiveReport) string {
 			risks = append(risks, finding.Message)
 		}
 	}
-	if report.Manifest == nil || report.Manifest.TerminationReason == "" || report.Manifest.Provenance.StartedAt == nil || report.Manifest.CompletedAt.IsZero() {
+	if report.Manifest == nil || report.Manifest.TerminationReason == "" || report.Manifest.Provenance.StartedAt == nil || archiveExecutionCompletedAt(report.Manifest).IsZero() {
 		risks = append(risks, "Run timing or termination evidence is incomplete; completion of the planned workload is unverified.")
 	}
 	if report.Manifest != nil && report.Manifest.Provenance.TotalVUsers > 0 && report.Overview.PeakActiveVUsers < int64(report.Manifest.Provenance.TotalVUsers) {

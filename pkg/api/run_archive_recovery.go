@@ -111,7 +111,7 @@ func (tr *TestRunner) attachRunArchiveRecovery(test *ManagedTest) {
 func (tr *TestRunner) archiveRecoveryRunMatches(test *ManagedTest, row *storage.TestRecord) bool {
 	return test != nil && row != nil && row.ID == test.ID && test.EndedAt != nil && row.EndTime != nil &&
 		isTerminalTestStatus(row.Status) && row.Status == test.Status && normalizeProjectID(row.ProjectID) == normalizeProjectID(test.ProjectID) &&
-		archiveRunTimestampMatches(row.StartTime, test.CreatedAt, tr.testStore) && archiveRunTimestampMatches(*row.EndTime, *test.EndedAt, tr.testStore)
+		archiveRunTimestampMatches(row.StartTime, test.CreatedAt, tr.testStore) && archiveRunTimestampMatches(*row.EndTime, *test.EndedAt, tr.testStore) && sameArchiveRunIncarnation(test, row)
 }
 
 func cloneRunArchiveRecovery(status *RunArchiveRecovery) *RunArchiveRecovery {

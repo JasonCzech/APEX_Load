@@ -493,10 +493,79 @@ func scanDashboardControllerCalls(file, source string) []dashboardCall {
 		}
 		if literal {
 			call.Path = normalizeDashboardPath(argument, constants)
+		} else if path, ok := canonicalImportPathArgument(argument); ok {
+			call.Path = normalizeDashboardPath(path, constants)
 		}
 		calls = append(calls, call)
 	}
 	return calls
+}
+
+// canonicalImportURL (hooks/api/importResponse.ts) appends only the negotiated
+// query parameter. Recover its single literal/template path, while leaving
+// unknown helpers and dynamic expressions unresolved for the binding guard.
+func canonicalImportPathArgument(expression string) (string, bool) {
+	expression = strings.TrimSpace(expression)
+	const helper = "canonicalImportURL"
+	if !strings.HasPrefix(expression, helper) {
+		return "", false
+	}
+	open := skipSpace(expression, len(helper))
+	if open >= len(expression) || expression[open] != '(' {
+		return "", false
+	}
+	end, ok := scanBalanced(expression, open, '(', ')')
+	if !ok || end != len(expression) {
+		return "", false
+	}
+	start := skipSpace(expression, open+1)
+	if start >= end-1 || (expression[start] != '\'' && expression[start] != '"' && expression[start] != '`') {
+		return "", false
+	}
+	quotedEnd, ok := scanString(expression, start)
+	if !ok {
+		return "", false
+	}
+	next := skipSpace(expression, quotedEnd)
+	if next < end-1 && expression[next] == ',' {
+		next = skipSpace(expression, next+1) // A single trailing comma is valid TS.
+	}
+	if next != end-1 {
+		return "", false
+	}
+	return expression[start+1 : quotedEnd-1], true
+}
+
+func TestDashboardRouteScannerCanonicalImportURL(t *testing.T) {
+	tests := []struct {
+		name, source, path string
+	}{
+		{"literal", `request<ImportResult>(canonicalImportURL('/scripts/import/sample'), { method: 'POST' })`, "/api/v1/scripts/import/sample"},
+		{"existing query", `apiFetch(canonicalImportURL("/scripts/import/har?project_id=project-a"), { method: 'POST' })`, "/api/v1/scripts/import/har"},
+		{"conditional query", "apiFetch(canonicalImportURL(`/scripts/import/salesforce${suffix ? `?${suffix}` : ''}`), { method: 'POST' })", "/api/v1/scripts/import/salesforce"},
+		{"dynamic segment", "request(canonicalImportURL(`/scripts/${encodeURIComponent(id)}/preview?project_id=${project}`), { method: 'POST' })", "/api/v1/scripts/{param}/preview"},
+		{"whitespace and trailing comma", "request(canonicalImportURL (\n'/scripts/import/sample',\n), { method: 'POST' })", "/api/v1/scripts/import/sample"},
+		{"unknown wrapper", `request(otherImportURL('/scripts/import/sample'), { method: 'POST' })`, ""},
+		{"similar name", `request(canonicalImportURLExtra('/scripts/import/sample'), { method: 'POST' })`, ""},
+		{"unknown outer wrapper", `request(otherImportURL(canonicalImportURL('/scripts/import/sample')), { method: 'POST' })`, ""},
+		{"dynamic argument", `request(canonicalImportURL(path), { method: 'POST' })`, ""},
+		{"computed argument", `request(canonicalImportURL('/scripts/' + action), { method: 'POST' })`, ""},
+		{"multiple arguments", `request(canonicalImportURL('/scripts/import/sample', path), { method: 'POST' })`, ""},
+		{"changed result", `request(canonicalImportURL('/scripts/import/sample') + action, { method: 'POST' })`, ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			calls := scanDashboardControllerCalls("useScriptApi.ts", test.source)
+			if len(calls) != 1 || calls[0].Method != "POST" || calls[0].Path != test.path {
+				t.Fatalf("scanner calls=%+v, want one POST %q", calls, test.path)
+			}
+			if test.path == "" {
+				if _, rule := matchingDynamicCallRule(calls[0]); rule != nil {
+					t.Fatalf("unresolved wrapper bypassed the route guard: %+v", rule)
+				}
+			}
+		})
+	}
 }
 
 func scanDirectAPIV1Literals(file, source string) []dashboardCall {

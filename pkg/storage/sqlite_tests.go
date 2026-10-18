@@ -901,7 +901,7 @@ func (s *SQLiteStore) ListTestCapacityBindings(testIDs []string) ([]TestCapacity
 }
 
 func testSelectColumns() string {
-	return `SELECT id, COALESCE(ref_key, ''), COALESCE(materialization_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(start_delay, ''), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, COALESCE(cumulative_pause_ns, 0), capacity_window_start_at, capacity_window_end_at, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), COALESCE(stopped_by_subject, ''), COALESCE(stopped_by_display_name, ''), groups_json, COALESCE(data_pools_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), COALESCE(traffic_profile_json, ''), COALESCE(elk_capture_json, ''), COALESCE(dynatrace_capture_json, ''), COALESCE(start_authorization_json, ''), COALESCE(execution_plan_approval_json, ''), COALESCE(execution_plan_json, ''), COALESCE(initial_provenance_json, ''), timeslot_id, COALESCE(continuity_checkpoint_json, ''), COALESCE(monitor_bindings_json,''), COALESCE(trace_context_json, ''), COALESCE(joint_evidence_json, '')`
+	return `SELECT id, COALESCE(ref_key, ''), COALESCE(materialization_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(start_delay, ''), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, COALESCE(cumulative_pause_ns, 0), capacity_window_start_at, capacity_window_end_at, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), COALESCE(stopped_by_subject, ''), COALESCE(stopped_by_display_name, ''), groups_json, COALESCE(data_pools_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), COALESCE(traffic_profile_json, ''), COALESCE(elk_capture_json, ''), COALESCE(dynatrace_capture_json, ''), COALESCE(start_authorization_json, ''), COALESCE(execution_plan_approval_json, ''), COALESCE(execution_plan_json, ''), COALESCE(initial_provenance_json, ''), timeslot_id, COALESCE(continuity_checkpoint_json, ''), COALESCE(monitor_bindings_json,''), COALESCE(trace_context_json, ''), COALESCE(joint_evidence_json, ''), COALESCE(execution_generation, 0)`
 }
 
 // rowScanner abstracts *sql.Row and *sql.Rows so scan helpers work with both
@@ -915,8 +915,12 @@ type rowScanner interface {
 func scanTest(scanner rowScanner) (TestRecord, error) {
 	var test TestRecord
 	var groupsJSON, dataPoolsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON, trafficProfileJSON, elkCaptureJSON, dynatraceCaptureJSON, startAuthorizationJSON, executionPlanApprovalJSON, executionPlanJSON, initialProvenanceJSON, monitorBindingsJSON, traceContextJSON, jointEvidenceJSON string
-	if err := scanner.Scan(&test.ID, &test.RefKey, &test.MaterializationKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.TerminationMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.StartDelay, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.StartedAt, &test.PendingSince, &test.PausedAt, &test.CumulativePause, &test.CapacityWindowStartAt, &test.CapacityWindowEndAt, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &test.StoppedBySubject, &test.StoppedByDisplayName, &groupsJSON, &dataPoolsJSON, &runtimeSettingsJSON, &goalConfigJSON, &trafficProfileJSON, &elkCaptureJSON, &dynatraceCaptureJSON, &startAuthorizationJSON, &executionPlanApprovalJSON, &executionPlanJSON, &initialProvenanceJSON, &test.TimeslotID, &test.ContinuityCheckpoint, &monitorBindingsJSON, &traceContextJSON, &jointEvidenceJSON); err != nil {
+	var executionGeneration int64
+	if err := scanner.Scan(&test.ID, &test.RefKey, &test.MaterializationKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.TerminationMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.StartDelay, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.StartedAt, &test.PendingSince, &test.PausedAt, &test.CumulativePause, &test.CapacityWindowStartAt, &test.CapacityWindowEndAt, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &test.StoppedBySubject, &test.StoppedByDisplayName, &groupsJSON, &dataPoolsJSON, &runtimeSettingsJSON, &goalConfigJSON, &trafficProfileJSON, &elkCaptureJSON, &dynatraceCaptureJSON, &startAuthorizationJSON, &executionPlanApprovalJSON, &executionPlanJSON, &initialProvenanceJSON, &test.TimeslotID, &test.ContinuityCheckpoint, &monitorBindingsJSON, &traceContextJSON, &jointEvidenceJSON, &executionGeneration); err != nil {
 		return test, err
+	}
+	if executionGeneration > 0 {
+		test.ExecutionGeneration = uint64(executionGeneration)
 	}
 	if monitorBindingsJSON != "" && monitorBindingsJSON != "null" {
 		if err := json.Unmarshal([]byte(monitorBindingsJSON), &test.MonitorBindings); err != nil {
@@ -1413,6 +1417,41 @@ func (s *SQLiteStore) UpdateTestContinuityCheckpointIfLeaseHeld(id, checkpoint, 
 // to the exact durable snapshot read before planning an adoption token rotation.
 func (s *SQLiteStore) CompareAndSwapTestContinuityCheckpointIfLeaseHeld(id, expected, checkpoint, leaseName, leaseOwnerID string) (TestStatusTransitionResult, error) {
 	return s.updateTestContinuityCheckpointIfLeaseHeld(id, &expected, checkpoint, leaseName, leaseOwnerID)
+}
+
+// AdvanceTestExecutionGenerationIfLeaseTermHeld records that the current
+// execution term now executes an active run (HA adoption). The generation only
+// moves forward, so a run's archive from the term that lost it no longer
+// matches the durable row. False means the term is not held or the run is no
+// longer active.
+func (s *SQLiteStore) AdvanceTestExecutionGenerationIfLeaseTermHeld(id, leaseName, leaseOwnerID string, generation uint64) (bool, error) {
+	leaseName = strings.TrimSpace(leaseName)
+	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
+	if strings.TrimSpace(id) == "" || leaseName == "" || leaseOwnerID == "" || generation == 0 {
+		return false, errors.New("test id and a complete execution lease term are required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	held, err := schedulerLeaseTermHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID, generation)
+	if err != nil || !held {
+		return false, err
+	}
+	result, err := tx.Exec(`UPDATE tests SET execution_generation = ? WHERE id = ? AND status IN ('INITIALIZING', 'STARTING', 'RUNNING', 'PAUSED', 'STOPPING') AND COALESCE(execution_generation, 0) <= ?`,
+		int64(generation), id, int64(generation))
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected != 1 {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *SQLiteStore) updateTestContinuityCheckpointIfLeaseHeld(id string, expected *string, checkpoint, leaseName, leaseOwnerID string) (TestStatusTransitionResult, error) {

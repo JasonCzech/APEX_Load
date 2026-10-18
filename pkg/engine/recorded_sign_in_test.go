@@ -59,21 +59,6 @@ func TestRecordedSignInPlan(t *testing.T) {
 		}
 	}
 
-	// actionRef, for callers holding the script's own action, copies only a
-	// rewritten navigation and never changes the script.
-	script := recordedSignInScript(dsl.BrowserSessionStorageStatePool)
-	navigation := &script.Init[0]
-	if got := plan.actionRef(navigation); got == navigation || got.Target != landingPage || navigation.Target != "/" {
-		t.Fatalf("actionRef(sign-in navigation) = %p %q, script action %p %q", got, got.Target, navigation, navigation.Target)
-	}
-	if fill := &script.Init[2]; plan.actionRef(fill) != fill {
-		t.Fatal("actionRef copied an action it does not rewrite")
-	}
-	var none *recordedSignInPlan
-	if none.actionRef(navigation) != navigation || none.opensSignIn(navigation) {
-		t.Fatal("a nil plan rewrote the navigation")
-	}
-
 	// A transaction around more than the sign-in still measures the rest.
 	wider := recordedSignInScript(dsl.BrowserSessionSalesforceJWT)
 	wider.Init = append(wider.Init[:5:5], dsl.Action{Name: "Home", Type: "browser_wait", Selector: "one-app-nav-bar"}, wider.Init[5])

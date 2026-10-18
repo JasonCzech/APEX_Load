@@ -46,15 +46,6 @@ func versionHTTP(t *testing.T, config map[string]any) *HTTP {
 	t.Cleanup(func() { _ = h.Teardown(context.Background()) })
 	return h
 }
-
-// buildPolicyPools builds every pool and OAuth client Init leaves for first
-// use, for a test that instruments or counts all of them.
-func buildPolicyPools(h *HTTP) {
-	for _, pool := range h.policyPools {
-		pool.httpTransport()
-		pool.oauthClient()
-	}
-}
 func executeVersion(t *testing.T, h *HTTP, target, policy string) *protocol.Result {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -131,8 +122,18 @@ func (c *versionCountedConn) Close() error {
 	c.once.Do(func() { c.open.Add(-1) })
 	return err
 }
+
+// Fixtures that instrument every physical owner explicitly demand all TCP
+// pools before installing their dial hooks. Normal Init leaves them cold.
+func initializeTestVersionPools(h *HTTP) {
+	for _, policy := range []string{"auto", VersionHTTP11, VersionHTTP2} {
+		h.policyPools[policy].roundTripper(false)
+		h.policyPools[policy].roundTripper(true)
+	}
+}
+
 func instrumentVersionDials(h *HTTP) (*atomic.Int64, *atomic.Int64) {
-	buildPolicyPools(h)
+	initializeTestVersionPools(h)
 	open, peak := new(atomic.Int64), new(atomic.Int64)
 	for _, owner := range h.connections.snapshotOwners() {
 		base := owner.baseDial
@@ -376,17 +377,14 @@ func TestHTTPVersionPoolsPACClonesKeepPolicyAndBoundOwnership(t *testing.T) {
 		}
 	}
 	_ = h.CloseIdleConnections(context.Background())
-	// The three policy pools' transports remain; no token call built an
-	// OAuth client.
-	const poolOwners = 3
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if len(h.connections.snapshotOwners()) == poolOwners {
+		if len(h.connections.snapshotOwners()) == 3 {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if n := len(h.connections.snapshotOwners()); n != poolOwners {
+	if n := len(h.connections.snapshotOwners()); n != 3 {
 		t.Fatalf("disposable PAC owners retained: %d", n)
 	}
 }

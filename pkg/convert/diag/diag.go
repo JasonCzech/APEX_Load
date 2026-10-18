@@ -15,12 +15,15 @@ const (
 )
 
 type Diagnostic struct {
-	Code      string   `json:"code,omitempty"`
-	SourceRef string   `json:"source_ref,omitempty"`
-	Element   string   `json:"element"`
-	Detail    string   `json:"detail"`
-	Severity  Severity `json:"severity"`
-	Location  string   `json:"location,omitempty"`
+	Code               string   `json:"code,omitempty"`
+	SourceRef          string   `json:"source_ref,omitempty"`
+	Element            string   `json:"element"`
+	Detail             string   `json:"detail"`
+	Severity           Severity `json:"severity"`
+	Location           string   `json:"location,omitempty"`
+	Count              int      `json:"count,omitempty"`
+	Locations          []string `json:"locations,omitempty"`
+	LocationsTruncated bool     `json:"locations_truncated,omitempty"`
 }
 
 type Diagnostics []Diagnostic
@@ -86,7 +89,13 @@ func (d Diagnostic) String() string {
 		element = "import element"
 	}
 	prefix := element
-	if d.Location != "" {
+	if d.Count > 1 {
+		prefix += fmt.Sprintf(" (%d occurrences", d.Count)
+		if len(d.Locations) > 0 {
+			prefix += "; examples: " + strings.Join(d.Locations, ", ")
+		}
+		prefix += ")"
+	} else if d.Location != "" {
 		prefix += " at " + d.Location
 	}
 	if d.Detail == "" {

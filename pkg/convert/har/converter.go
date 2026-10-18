@@ -74,6 +74,8 @@ type ArtifactGovernance struct {
 }
 
 type ConvertResult struct {
+	// Document retains parsed source evidence for private analysis passes.
+	Document     *sample.HARDocument  `json:"-"`
 	Script       *dsl.Script          `json:"script"`
 	Warnings     []string             `json:"warnings,omitempty"`
 	Unsupported  diag.Diagnostics     `json:"unsupported,omitempty"`
@@ -150,6 +152,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 	converted := &ConvertResult{
+		Document:     result.Document,
 		Script:       result.Script,
 		Warnings:     warnings,
 		Unsupported:  result.Unsupported,

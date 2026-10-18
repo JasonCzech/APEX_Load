@@ -1147,6 +1147,9 @@ components:
           type: object
           additionalProperties: true
           nullable: true
+        primary_script_index:
+          type: integer
+          description: Zero-based index into scripts for the primary draft. Omitted when no primary draft exists; the legacy script alias is absent in canonical responses.
         protocol_compat_report:
           type: object
           additionalProperties: true
@@ -1156,6 +1159,16 @@ components:
           items:
             type: object
             additionalProperties: true
+        response_format:
+          type: string
+          description: Present only for the negotiated canonical representation.
+          enum:
+            - canonical-v1
+        result_aliases:
+          type: object
+          description: Maps omitted result field names to equal top-level response fields. Canonical result retains converter-specific facts; script and scripts aliases are omitted.
+          additionalProperties:
+            type: string
         review_artifact:
           type: object
           additionalProperties: true
@@ -1165,6 +1178,9 @@ components:
           items:
             type: object
             additionalProperties: true
+        salesforce_preview_script_index:
+          type: integer
+          description: Zero-based index into scripts replacing summary.salesforce_review.native_preview.script only when that preview is identical to a canonical draft. A distinct preview stays inline.
         script:
           type: object
           additionalProperties: true
@@ -1206,16 +1222,38 @@ components:
           type: array
           items:
             type: string
+        unsupported_from_diagnostics:
+          type: boolean
+          description: When true, unsupported_elements is omitted because its strings are exactly represented by the grouped diagnostics. Distinct unsupported notes remain inline.
         warnings:
           type: array
           items:
             type: string
       additionalProperties: true
       required:
-        - script
         - scripts
         - warnings
         - summary
+      oneOf:
+        - type: object
+          description: Legacy response, including omitted or unrecognized response_format requests.
+          properties:
+            script:
+              type: object
+              additionalProperties: true
+              nullable: true
+          required:
+            - script
+        - type: object
+          description: Canonical response without the inline script alias.
+          properties:
+            response_format:
+              type: string
+              description: Present only for the negotiated canonical representation.
+              enum:
+                - canonical-v1
+          required:
+            - response_format
     ErrorResponse:
       type: object
       properties:
@@ -1415,6 +1453,156 @@ components:
           type: string
       required:
         - name
+    RecorderImportReplayInvalidResponse:
+      type: object
+      description: Converted recorder import retained for review after replay validation fails. The envelope follows the requested response format; valid is false and issues identifies the replay refusals.
+      properties:
+        batch:
+          type: object
+          additionalProperties: true
+        data_pool_drafts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        diagnostics:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        dispositions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        environment_drafts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+        http_script:
+          type: object
+          additionalProperties: true
+          nullable: true
+        import_session_id:
+          type: string
+        import_session_ids:
+          type: array
+          items:
+            type: string
+        issues:
+          type: array
+          items:
+            type: string
+        monitor_drafts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        preserved_artifacts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        primary_script_index:
+          type: integer
+          description: Zero-based index into scripts for the primary draft. Omitted when no primary draft exists; the legacy script alias is absent in canonical responses.
+        replay_session:
+          type: object
+          additionalProperties: true
+        replay_session_id:
+          type: string
+        response_format:
+          type: string
+          description: Present only for the negotiated canonical representation.
+          enum:
+            - canonical-v1
+        result:
+          type: object
+          additionalProperties: true
+          nullable: true
+        result_aliases:
+          type: object
+          description: Maps omitted result field names to equal top-level response fields. Canonical result retains converter-specific facts; script and scripts aliases are omitted.
+          additionalProperties:
+            type: string
+        salesforce_preview_script_index:
+          type: integer
+          description: Zero-based index into scripts replacing summary.salesforce_review.native_preview.script only when that preview is identical to a canonical draft. A distinct preview stays inline.
+        scenario_drafts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        script:
+          type: object
+          additionalProperties: true
+          nullable: true
+        scripts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        source_retention:
+          type: object
+          additionalProperties: true
+        stats:
+          type: object
+          additionalProperties: true
+        summary:
+          type: object
+          additionalProperties: true
+        unsupported_elements:
+          type: array
+          items:
+            type: string
+        unsupported_from_diagnostics:
+          type: boolean
+          description: When true, unsupported_elements is omitted because its strings are exactly represented by the grouped diagnostics. Distinct unsupported notes remain inline.
+        valid:
+          type: boolean
+          description: Always false for this replay-validation refusal.
+        warnings:
+          type: array
+          items:
+            type: string
+      additionalProperties: true
+      required:
+        - scripts
+        - warnings
+        - summary
+        - valid
+        - issues
+      oneOf:
+        - type: object
+          description: Legacy response, including omitted or unrecognized response_format requests.
+          properties:
+            script:
+              type: object
+              additionalProperties: true
+              nullable: true
+          required:
+            - script
+        - type: object
+          description: Canonical response without the inline script alias.
+          properties:
+            response_format:
+              type: string
+              description: Present only for the negotiated canonical representation.
+              enum:
+                - canonical-v1
+          required:
+            - response_format
     ReleaseFamily:
       type: object
       description: Canonical project release family. id and group_id are the stable family id; member_ids maps application ids to physical release ids used for run placement.
@@ -1466,6 +1654,127 @@ components:
       required:
         - releases
         - count
+    SavedRecordingConversionResponse:
+      type: object
+      description: Saved recording conversion. script and scripts contain StoredScript envelopes, not bare drafts. The required script alias remains present even when response_format is canonical-v1; optional http_script is a saved HTTP companion.
+      properties:
+        batch:
+          type: object
+          additionalProperties: true
+        data_pool_drafts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        diagnostics:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        dispositions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        environment_drafts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+        http_script:
+          type: object
+          additionalProperties: true
+          nullable: true
+        import_session_id:
+          type: string
+        import_session_ids:
+          type: array
+          items:
+            type: string
+        monitor_drafts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        preserved_artifacts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        primary_script_index:
+          type: integer
+          description: Zero-based primary index retained when canonical negotiation was requested; the saved script alias remains present.
+        replay_session:
+          type: object
+          additionalProperties: true
+        replay_session_id:
+          type: string
+        response_format:
+          type: string
+          description: Present only for the negotiated canonical representation.
+          enum:
+            - canonical-v1
+        result:
+          type: object
+          additionalProperties: true
+          nullable: true
+        result_aliases:
+          type: object
+          description: Maps omitted result field names to equal top-level response fields. Canonical result retains converter-specific facts; script and scripts aliases are omitted.
+          additionalProperties:
+            type: string
+        salesforce_preview_script_index:
+          type: integer
+          description: Zero-based index into scripts replacing summary.salesforce_review.native_preview.script only when that preview is identical to a canonical draft. A distinct preview stays inline.
+        scenario_drafts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        script:
+          type: object
+          additionalProperties: true
+        scripts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        source_retention:
+          type: object
+          additionalProperties: true
+        stats:
+          type: object
+          additionalProperties: true
+        summary:
+          type: object
+          additionalProperties: true
+        unsupported_elements:
+          type: array
+          items:
+            type: string
+        unsupported_from_diagnostics:
+          type: boolean
+          description: When true, unsupported_elements is omitted because its strings are exactly represented by the grouped diagnostics. Distinct unsupported notes remain inline.
+        warnings:
+          type: array
+          items:
+            type: string
+      additionalProperties: true
+      required:
+        - scripts
+        - warnings
+        - summary
+        - script
     ScriptDebugBreakpoint:
       type: object
       properties:
@@ -1521,6 +1830,147 @@ components:
             - into
             - over
             - loop_end
+    ScriptImportReviewResponse:
+      type: object
+      description: Converted drafts and review facts. The default legacy representation includes script, which may be null. With response_format=canonical-v1, scripts is the only top-level draft collection and optional indexes and aliases identify convenience values without repeating them.
+      properties:
+        batch:
+          type: object
+          additionalProperties: true
+        data_pool_drafts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        diagnostics:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        dispositions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        environment_drafts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+        http_script:
+          type: object
+          additionalProperties: true
+          nullable: true
+        import_session_id:
+          type: string
+        import_session_ids:
+          type: array
+          items:
+            type: string
+        monitor_drafts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        preserved_artifacts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        primary_script_index:
+          type: integer
+          description: Zero-based index into scripts for the primary draft. Omitted when no primary draft exists; the legacy script alias is absent in canonical responses.
+        replay_session:
+          type: object
+          additionalProperties: true
+        replay_session_id:
+          type: string
+        response_format:
+          type: string
+          description: Present only for the negotiated canonical representation.
+          enum:
+            - canonical-v1
+        result:
+          type: object
+          additionalProperties: true
+          nullable: true
+        result_aliases:
+          type: object
+          description: Maps omitted result field names to equal top-level response fields. Canonical result retains converter-specific facts; script and scripts aliases are omitted.
+          additionalProperties:
+            type: string
+        salesforce_preview_script_index:
+          type: integer
+          description: Zero-based index into scripts replacing summary.salesforce_review.native_preview.script only when that preview is identical to a canonical draft. A distinct preview stays inline.
+        scenario_drafts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        script:
+          type: object
+          additionalProperties: true
+          nullable: true
+        scripts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        source_retention:
+          type: object
+          additionalProperties: true
+        stats:
+          type: object
+          additionalProperties: true
+        summary:
+          type: object
+          additionalProperties: true
+        unsupported_elements:
+          type: array
+          items:
+            type: string
+        unsupported_from_diagnostics:
+          type: boolean
+          description: When true, unsupported_elements is omitted because its strings are exactly represented by the grouped diagnostics. Distinct unsupported notes remain inline.
+        warnings:
+          type: array
+          items:
+            type: string
+      additionalProperties: true
+      required:
+        - scripts
+        - warnings
+        - summary
+      oneOf:
+        - type: object
+          description: Legacy response, including omitted or unrecognized response_format requests.
+          properties:
+            script:
+              type: object
+              additionalProperties: true
+              nullable: true
+          required:
+            - script
+        - type: object
+          description: Canonical response without the inline script alias.
+          properties:
+            response_format:
+              type: string
+              description: Present only for the negotiated canonical representation.
+              enum:
+                - canonical-v1
+          required:
+            - response_format
     SystemReadinessCheck:
       type: object
       properties:
@@ -9664,6 +10114,10 @@ paths:
                           type: string
                         error:
                           type: string
+                        executor_completed_at:
+                          type: string
+                          format: date-time
+                          nullable: true
                         exemplar_count:
                           type: integer
                           format: int64
@@ -9854,6 +10308,9 @@ paths:
                               type: object
                               additionalProperties: true
                               nullable: true
+                            execution_generation:
+                              type: integer
+                              format: int64
                             execution_settings:
                               type: object
                               additionalProperties: true
@@ -9986,6 +10443,8 @@ paths:
                               format: date-time
                             resource_baseline:
                               type: boolean
+                            run_incarnation:
+                              type: string
                             runtime_settings:
                               type: object
                               additionalProperties: true
@@ -10366,6 +10825,9 @@ paths:
                               type: object
                               additionalProperties: true
                               nullable: true
+                            execution_generation:
+                              type: integer
+                              format: int64
                             execution_settings:
                               type: object
                               additionalProperties: true
@@ -10498,6 +10960,8 @@ paths:
                               format: date-time
                             resource_baseline:
                               type: boolean
+                            run_incarnation:
+                              type: string
                             runtime_settings:
                               type: object
                               additionalProperties: true
@@ -36062,7 +36526,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/SavedRecordingConversionResponse'
         "400":
           description: Bad Request
           content:
@@ -36120,6 +36584,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
+          required: false
+          schema:
+            type: string
       tags:
         - Browser Recorder
       x-handler: handleConvertBrowserRecording
@@ -36166,7 +36636,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -36210,6 +36680,12 @@ paths:
         - name: id
           in: path
           required: true
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
+          required: false
           schema:
             type: string
       tags:
@@ -59873,6 +60349,9 @@ paths:
                                 created_at:
                                   type: string
                                   format: date-time
+                                execution_generation:
+                                  type: integer
+                                  format: int64
                                 interval_summary_count:
                                   type: integer
                                   format: int64
@@ -59887,6 +60366,8 @@ paths:
                                 resource_sample_count:
                                   type: integer
                                   format: int64
+                                run_incarnation:
+                                  type: string
                                 schema_version:
                                   type: string
                                 test_id:
@@ -84658,7 +85139,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/SavedRecordingConversionResponse'
         "400":
           description: Bad Request
           content:
@@ -84710,6 +85191,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
+          required: false
+          schema:
+            type: string
       tags:
         - Recorder
       x-handler: handleConvertRecording
@@ -84746,7 +85233,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -84790,6 +85277,12 @@ paths:
         - name: id
           in: path
           required: true
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
+          required: false
           schema:
             type: string
       tags:
@@ -89775,6 +90268,9 @@ paths:
                           created_at:
                             type: string
                             format: date-time
+                          execution_generation:
+                            type: integer
+                            format: int64
                           interval_summary_count:
                             type: integer
                             format: int64
@@ -89789,6 +90285,8 @@ paths:
                           resource_sample_count:
                             type: integer
                             format: int64
+                          run_incarnation:
+                            type: string
                           schema_version:
                             type: string
                           test_id:
@@ -96417,6 +96915,9 @@ paths:
                           created_at:
                             type: string
                             format: date-time
+                          execution_generation:
+                            type: integer
+                            format: int64
                           interval_summary_count:
                             type: integer
                             format: int64
@@ -96431,6 +96932,8 @@ paths:
                           resource_sample_count:
                             type: integer
                             format: int64
+                          run_incarnation:
+                            type: string
                           schema_version:
                             type: string
                           test_id:
@@ -103060,6 +103563,9 @@ paths:
                           created_at:
                             type: string
                             format: date-time
+                          execution_generation:
+                            type: integer
+                            format: int64
                           interval_summary_count:
                             type: integer
                             format: int64
@@ -103074,6 +103580,8 @@ paths:
                           resource_sample_count:
                             type: integer
                             format: int64
+                          run_incarnation:
+                            type: string
                           schema_version:
                             type: string
                           test_id:
@@ -109715,6 +110223,9 @@ paths:
                           created_at:
                             type: string
                             format: date-time
+                          execution_generation:
+                            type: integer
+                            format: int64
                           interval_summary_count:
                             type: integer
                             format: int64
@@ -109729,6 +110240,8 @@ paths:
                           resource_sample_count:
                             type: integer
                             format: int64
+                          run_incarnation:
+                            type: string
                           schema_version:
                             type: string
                           test_id:
@@ -116370,6 +116883,9 @@ paths:
                           created_at:
                             type: string
                             format: date-time
+                          execution_generation:
+                            type: integer
+                            format: int64
                           interval_summary_count:
                             type: integer
                             format: int64
@@ -116384,6 +116900,8 @@ paths:
                           resource_sample_count:
                             type: integer
                             format: int64
+                          run_incarnation:
+                            type: string
                           schema_version:
                             type: string
                           test_id:
@@ -123025,6 +123543,9 @@ paths:
                           created_at:
                             type: string
                             format: date-time
+                          execution_generation:
+                            type: integer
+                            format: int64
                           interval_summary_count:
                             type: integer
                             format: int64
@@ -123039,6 +123560,8 @@ paths:
                           resource_sample_count:
                             type: integer
                             format: int64
+                          run_incarnation:
+                            type: string
                           schema_version:
                             type: string
                           test_id:
@@ -129680,6 +130203,9 @@ paths:
                           created_at:
                             type: string
                             format: date-time
+                          execution_generation:
+                            type: integer
+                            format: int64
                           interval_summary_count:
                             type: integer
                             format: int64
@@ -129694,6 +130220,8 @@ paths:
                           resource_sample_count:
                             type: integer
                             format: int64
+                          run_incarnation:
+                            type: string
                           schema_version:
                             type: string
                           test_id:
@@ -276575,7 +277103,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -276619,6 +277147,12 @@ paths:
         - name: project_id
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -279018,7 +279552,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -279069,6 +279603,12 @@ paths:
         - name: project_id
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -281033,7 +281573,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -281061,6 +281601,13 @@ paths:
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
+      parameters:
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
+          required: false
+          schema:
+            type: string
       tags:
         - Scripts
       x-handler: handleAttestBridgedBrowserRecordingImport
@@ -281422,7 +281969,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -281460,6 +282007,12 @@ paths:
         - name: project_id
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -283141,7 +283694,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -283185,6 +283738,12 @@ paths:
         - name: project_id
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -283326,6 +283885,12 @@ paths:
         - name: expire_draft
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -285051,6 +285616,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
+          required: false
+          schema:
+            type: string
         - name: salesforce_native
           in: query
           description: Handler-defined query parameter.
@@ -285086,7 +285657,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -285137,6 +285708,12 @@ paths:
         - name: project_id
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -285213,7 +285790,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -285241,6 +285818,13 @@ paths:
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
+      parameters:
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
+          required: false
+          schema:
+            type: string
       tags:
         - Scripts
       x-handler: handleImportGitHub
@@ -285286,7 +285870,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -285375,6 +285959,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
+          required: false
+          schema:
+            type: string
         - name: retention_days
           in: query
           description: Handler-defined query parameter.
@@ -285427,7 +286017,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -285471,6 +286061,12 @@ paths:
         - name: filename
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -287536,7 +288132,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -287583,6 +288179,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
+          required: false
+          schema:
+            type: string
       tags:
         - Scripts
       x-handler: handleValidateJMeterImport
@@ -287612,7 +288214,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -287656,6 +288258,12 @@ paths:
         - name: project_id
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -287730,7 +288338,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -287780,6 +288388,12 @@ paths:
         - name: project_id
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -293063,7 +293677,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -293107,6 +293721,12 @@ paths:
         - name: project_id
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -293927,7 +294547,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -293974,6 +294594,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
+          required: false
+          schema:
+            type: string
       tags:
         - Scripts
       x-handler: handleValidatePostmanImport
@@ -294003,7 +294629,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -294047,6 +294673,12 @@ paths:
         - name: project_id
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -294121,7 +294753,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -294171,6 +294803,12 @@ paths:
         - name: project_id
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -294203,13 +294841,15 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
-          description: Bad Request
+          description: Invalid request, or converted recording refused by replay validation. Validation refusals retain the negotiated review plus valid=false and issues; decoding errors retain the ordinary error response.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/RecorderImportReplayInvalidResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -294253,6 +294893,12 @@ paths:
         - name: project_id
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -294285,7 +294931,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -294335,6 +294981,12 @@ paths:
         - name: project_id
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -309623,7 +310275,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -309712,6 +310364,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
+          required: false
+          schema:
+            type: string
         - name: retention_days
           in: query
           description: Handler-defined query parameter.
@@ -309786,7 +310444,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -309814,6 +310472,13 @@ paths:
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
+      parameters:
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
+          required: false
+          schema:
+            type: string
       tags:
         - Scripts
       x-handler: handleImportSample
@@ -319419,7 +320084,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ScriptImportReviewResponse'
         "400":
           description: Bad Request
           content:
@@ -319457,6 +320122,12 @@ paths:
         - name: project_id
           in: query
           description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: response_format
+          in: query
+          description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
           required: false
           schema:
             type: string
@@ -347787,6 +348458,9 @@ paths:
                       created_at:
                         type: string
                         format: date-time
+                      execution_generation:
+                        type: integer
+                        format: int64
                       interval_summary_count:
                         type: integer
                         format: int64
@@ -347801,6 +348475,8 @@ paths:
                       resource_sample_count:
                         type: integer
                         format: int64
+                      run_incarnation:
+                        type: string
                       schema_version:
                         type: string
                       test_id:
@@ -361696,6 +362372,9 @@ paths:
                       created_at:
                         type: string
                         format: date-time
+                      execution_generation:
+                        type: integer
+                        format: int64
                       interval_summary_count:
                         type: integer
                         format: int64
@@ -361710,6 +362389,8 @@ paths:
                       resource_sample_count:
                         type: integer
                         format: int64
+                      run_incarnation:
+                        type: string
                       schema_version:
                         type: string
                       test_id:
@@ -378617,6 +379298,10 @@ paths:
                     type: string
                   error:
                     type: string
+                  executor_completed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
                   exemplar_count:
                     type: integer
                     format: int64
@@ -378955,6 +379640,9 @@ paths:
                         required:
                           - connection_id
                         nullable: true
+                      execution_generation:
+                        type: integer
+                        format: int64
                       execution_settings:
                         type: object
                         properties:
@@ -380366,6 +381054,8 @@ paths:
                         format: date-time
                       resource_baseline:
                         type: boolean
+                      run_incarnation:
+                        type: string
                       runtime_settings:
                         type: object
                         properties:
@@ -382005,6 +382695,9 @@ paths:
                         required:
                           - connection_id
                         nullable: true
+                      execution_generation:
+                        type: integer
+                        format: int64
                       execution_settings:
                         type: object
                         properties:
@@ -383416,6 +384109,8 @@ paths:
                         format: date-time
                       resource_baseline:
                         type: boolean
+                      run_incarnation:
+                        type: string
                       runtime_settings:
                         type: object
                         properties:
@@ -394136,6 +394831,10 @@ paths:
                         type: string
                       error:
                         type: string
+                      executor_completed_at:
+                        type: string
+                        format: date-time
+                        nullable: true
                       exemplar_count:
                         type: integer
                         format: int64
@@ -394445,6 +395144,9 @@ paths:
                             required:
                               - connection_id
                             nullable: true
+                          execution_generation:
+                            type: integer
+                            format: int64
                           execution_settings:
                             type: object
                             properties:
@@ -395174,6 +395876,8 @@ paths:
                             format: date-time
                           resource_baseline:
                             type: boolean
+                          run_incarnation:
+                            type: string
                           runtime_settings:
                             type: object
                             properties:
@@ -396067,6 +396771,9 @@ paths:
                             required:
                               - connection_id
                             nullable: true
+                          execution_generation:
+                            type: integer
+                            format: int64
                           execution_settings:
                             type: object
                             properties:
@@ -396796,6 +397503,8 @@ paths:
                             format: date-time
                           resource_baseline:
                             type: boolean
+                          run_incarnation:
+                            type: string
                           runtime_settings:
                             type: object
                             properties:
@@ -407590,6 +408299,9 @@ paths:
                       created_at:
                         type: string
                         format: date-time
+                      execution_generation:
+                        type: integer
+                        format: int64
                       interval_summary_count:
                         type: integer
                         format: int64
@@ -407604,6 +408316,8 @@ paths:
                       resource_sample_count:
                         type: integer
                         format: int64
+                      run_incarnation:
+                        type: string
                       schema_version:
                         type: string
                       test_id:
@@ -421443,6 +422157,9 @@ paths:
                       created_at:
                         type: string
                         format: date-time
+                      execution_generation:
+                        type: integer
+                        format: int64
                       interval_summary_count:
                         type: integer
                         format: int64
@@ -421457,6 +422174,8 @@ paths:
                       resource_sample_count:
                         type: integer
                         format: int64
+                      run_incarnation:
+                        type: string
                       schema_version:
                         type: string
                       test_id:
@@ -441360,6 +442079,9 @@ paths:
                       created_at:
                         type: string
                         format: date-time
+                      execution_generation:
+                        type: integer
+                        format: int64
                       interval_summary_count:
                         type: integer
                         format: int64
@@ -441374,6 +442096,8 @@ paths:
                       resource_sample_count:
                         type: integer
                         format: int64
+                      run_incarnation:
+                        type: string
                       schema_version:
                         type: string
                       test_id:

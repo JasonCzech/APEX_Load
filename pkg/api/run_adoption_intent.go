@@ -96,6 +96,36 @@ func (tr *TestRunner) openRunAdoptionToken(ctx context.Context, testID string, g
 	return token, nil
 }
 
+// advanceAdoptedRunExecutionGeneration records the adopting term on the durable
+// run before any generator sees it. An archive the previous term finalized for
+// this run then no longer identifies as the run's outcome in orphan recovery.
+func (tr *TestRunner) advanceAdoptedRunExecutionGeneration(test *ManagedTest, generation uint64, owner string) error {
+	store, ok := tr.testStore.(interface {
+		AdvanceTestExecutionGenerationIfLeaseTermHeld(string, string, string, uint64) (bool, error)
+	})
+	if !ok {
+		return fmt.Errorf("test store cannot record the adopting execution term")
+	}
+	var advanced bool
+	err := tr.trackDurableWrite(func() error {
+		var writeErr error
+		advanced, writeErr = store.AdvanceTestExecutionGenerationIfLeaseTermHeld(test.ID, executionLeaseName, owner, generation)
+		return writeErr
+	})
+	if err != nil {
+		return err
+	}
+	if !advanced {
+		return fmt.Errorf("adoption execution term write not applied")
+	}
+	tr.mu.Lock()
+	if tr.tests[test.ID] == test && test.durableExecutionGeneration <= generation {
+		test.durableExecutionGeneration = generation
+	}
+	tr.mu.Unlock()
+	return nil
+}
+
 func (tr *TestRunner) persistRunAdoptionIntent(test *ManagedTest, expected string, checkpoint runContinuityCheckpoint, owner string) error {
 	store, ok := tr.testStore.(interface {
 		CompareAndSwapTestContinuityCheckpointIfLeaseHeld(string, string, string, string, string) (storage.TestStatusTransitionResult, error)

@@ -363,6 +363,11 @@ func TestHAControllerFailoverSoak(t *testing.T) {
 		if durable.Status != "FAILED" || durable.EndTime == nil {
 			t.Fatalf("iteration %d: successor reconciliation = status:%s end:%v", iteration, durable.Status, durable.EndTime)
 		}
+		// Reconciliation does not take over execution, so the row still names
+		// the term whose archive is the run's outcome.
+		if durable.ExecutionGeneration != oldGeneration {
+			t.Fatalf("iteration %d: durable execution generation = %d, want the executing term %d", iteration, durable.ExecutionGeneration, oldGeneration)
+		}
 		starts := backend.starts(run.ID)
 		if len(starts) != 1 || starts[0] != active.controllerID {
 			t.Fatalf("iteration %d: execution starts = %v, want exactly one by %q", iteration, starts, active.controllerID)
@@ -388,6 +393,17 @@ func TestHAControllerFailoverSoak(t *testing.T) {
 		}
 		if manifest.TestID != run.ID || manifest.Status != "FAILED" || manifest.CompletedAt.IsZero() {
 			t.Fatalf("iteration %d: recovered terminal manifest = test:%q status:%q completed:%v", iteration, manifest.TestID, manifest.Status, manifest.CompletedAt)
+		}
+		incarnation, err := storage.TestRunIncarnation(durable.InitialProvenance)
+		if err != nil || incarnation == "" || manifest.Provenance.RunIncarnation != incarnation || manifest.InitialProvenance == nil || manifest.InitialProvenance.RunIncarnation != incarnation {
+			t.Fatalf("iteration %d: recovered archive lost durable run incarnation: %q %v", iteration, incarnation, err)
+		}
+		// Recovery preserves the durable end; the executor's own finalization
+		// time remains separately visible in the recovered manifest.
+		if !archiveRunTimestampMatches(manifest.CompletedAt, *durable.EndTime, archiveStore) || !archiveRunTimestampMatches(archive.CompletedAt, *durable.EndTime, archiveStore) ||
+			manifest.ExecutorCompletedAt == nil || !manifest.ExecutorCompletedAt.Equal(staged.record.CompletedAt) || manifest.Provenance.ExecutionGeneration != oldGeneration {
+			t.Fatalf("iteration %d: recovered completion = manifest:%v catalog:%v executor:%v generation:%d, durable end:%v executor finalized:%v term:%d",
+				iteration, manifest.CompletedAt, archive.CompletedAt, manifest.ExecutorCompletedAt, manifest.Provenance.ExecutionGeneration, *durable.EndTime, staged.record.CompletedAt, oldGeneration)
 		}
 		assertSingleHAFailoverArchiveDirectory(t, archiveRoot, run.ID)
 

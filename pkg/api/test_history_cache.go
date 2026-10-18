@@ -128,7 +128,8 @@ func storedTestHistoryCacheKey(test *ManagedTest) string {
 	// every identity for an ID. Project and immutable lifecycle timestamps bind
 	// the cached evidence to the durable tenant/run identity, not merely the
 	// reusable primary key.
-	return fmt.Sprintf("%s|%d:%s|%d|%d", test.ID, len(projectID), projectID, test.CreatedAt.UTC().UnixNano(), endedAt.UnixNano())
+	incarnation := managedTestRunIncarnation(test)
+	return fmt.Sprintf("%s|%d:%s|%d|%d|%d:%s|%d", test.ID, len(projectID), projectID, test.CreatedAt.UTC().UnixNano(), endedAt.UnixNano(), len(incarnation), incarnation, test.durableExecutionGeneration)
 }
 
 func sameStoredTestHistoryIdentity(left, right *ManagedTest) bool {
@@ -136,6 +137,9 @@ func sameStoredTestHistoryIdentity(left, right *ManagedTest) bool {
 		return false
 	}
 	if normalizeProjectID(left.ProjectID) != normalizeProjectID(right.ProjectID) || !left.CreatedAt.Equal(right.CreatedAt) {
+		return false
+	}
+	if managedTestRunIncarnation(left) != managedTestRunIncarnation(right) || left.durableExecutionGeneration != right.durableExecutionGeneration {
 		return false
 	}
 	if left.EndedAt == nil || right.EndedAt == nil {

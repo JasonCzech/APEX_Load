@@ -466,7 +466,7 @@ func (s *Server) libraryResultBundleItem(id string) (LibraryBundleItem, error) {
 			if err != nil {
 				return LibraryBundleItem{}, fmt.Errorf("load result archive manifest: %w", err)
 			}
-			manifestHash, archiveSize, err := sanitizedRunArchiveMetadata(context.Background(), record, manifest)
+			manifestHash, archiveSize, err := s.archiveReadCaches().sanitizedRunArchiveMetadata(context.Background(), record, manifest)
 			if err != nil {
 				return LibraryBundleItem{}, fmt.Errorf("prepare safe result archive: %w", err)
 			}

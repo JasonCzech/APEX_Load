@@ -157,7 +157,11 @@ type metricsBroker struct {
 	nextSubscriberID      int
 
 	terminalBatches map[terminalBatchKey]terminalMetricsTombstone
-	batchSequences  map[terminalBatchKey]uint64
+	// finalizingBatches lives only while the corresponding stopped execution
+	// owns an archive finalizer. Terminal publication removes it. Unlike a
+	// terminal tombstone, this phase never reports a completed outcome.
+	finalizingBatches map[terminalBatchKey]*pb.MetricsBatch
+	batchSequences    map[terminalBatchKey]uint64
 	// windowPublished marks a test generation that has published a
 	// sequenced metric window; before it, every sequence was state-only.
 	windowPublished map[terminalBatchKey]bool
@@ -184,6 +188,7 @@ func newMetricsBroker(maxSubscribers, terminalMax int, terminalTTL time.Duration
 		unscopedSubscriberIDs: make(map[int]struct{}),
 		maxSubscribers:        maxSubscribers,
 		terminalBatches:       make(map[terminalBatchKey]terminalMetricsTombstone),
+		finalizingBatches:     make(map[terminalBatchKey]*pb.MetricsBatch),
 		batchSequences:        make(map[terminalBatchKey]uint64),
 		windowPublished:       make(map[terminalBatchKey]bool),
 		terminalMax:           terminalMax,
@@ -291,6 +296,11 @@ func (broker *metricsBroker) registerLocked(executionGeneration uint64, testID s
 			clone.SourceEpoch, clone.SourceEpochStartedUnixMs = processSourceEpoch.id, processSourceEpoch.startedUnixMs
 		}
 		initial = append(initial, clone)
+	}
+	for key, batch := range broker.finalizingBatches {
+		if key.generation == executionGeneration && (testID == "" || key.testID == testID) && batch != nil {
+			initial = append(initial, proto.Clone(batch).(*pb.MetricsBatch))
+		}
 	}
 	for key, tombstone := range broker.terminalBatches {
 		if key.generation == executionGeneration && (testID == "" || key.testID == testID) && tombstone.batch != nil {
@@ -442,6 +452,36 @@ func (broker *metricsBroker) assignBatchSequenceLocked(batch *pb.MetricsBatch) {
 	}
 }
 
+// publishFinalizing retains explicit completion-phase evidence until the
+// durable terminal outcome exists. Publication and reconnect snapshots share
+// one immutable sequence; a stale stopping generation cannot replace it.
+func (broker *metricsBroker) publishFinalizing(batch *pb.MetricsBatch, accept func(*pb.MetricsBatch) bool) {
+	if broker == nil || batch == nil || batch.GetLifecycleState() != MetricsLifecycleFinalizing {
+		return
+	}
+	broker.publishMu.Lock()
+	defer broker.publishMu.Unlock()
+	if accept == nil || !accept(batch) {
+		return
+	}
+	clone := proto.Clone(batch).(*pb.MetricsBatch)
+	key := terminalBatchKey{testID: clone.GetTestId(), generation: clone.GetExecutionGeneration()}
+	broker.mu.RLock()
+	prior, terminal := broker.finalizingBatches[key], broker.terminalBatches[key].batch
+	broker.mu.RUnlock()
+	if terminal != nil {
+		return
+	}
+	if prior != nil {
+		return // The completed collection cannot change during finalization.
+	}
+	broker.assignBatchSequenceLocked(clone)
+	broker.mu.Lock()
+	broker.finalizingBatches[key] = clone
+	broker.mu.Unlock()
+	broker.publishOwnedLocked(clone, nil)
+}
+
 func (broker *metricsBroker) publishTerminal(batch *pb.MetricsBatch) {
 	broker.publishTerminalAt(batch, time.Now())
 }
@@ -471,6 +511,7 @@ func (broker *metricsBroker) publishTerminalAt(batch *pb.MetricsBatch, now time.
 	}
 	broker.mu.Lock()
 	broker.terminalBatches[key] = terminalMetricsTombstone{batch: clone, completedAt: completedAt}
+	delete(broker.finalizingBatches, key)
 	broker.pruneTerminalLocked(now)
 	broker.mu.Unlock()
 	broker.publishOwnedLocked(clone, nil)
@@ -578,6 +619,11 @@ func (broker *metricsBroker) deleteTerminalsForTest(testID string) {
 	for key := range broker.terminalBatches {
 		if key.testID == testID {
 			delete(broker.terminalBatches, key)
+		}
+	}
+	for key := range broker.finalizingBatches {
+		if key.testID == testID {
+			delete(broker.finalizingBatches, key)
 		}
 	}
 	broker.mu.Unlock()

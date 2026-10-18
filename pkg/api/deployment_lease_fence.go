@@ -36,6 +36,10 @@ func newManagedTestStartPersistenceSnapshot(test *ManagedTest) managedTestStartP
 		snapshot.testID = test.ID
 		snapshot.executionFence = test.executionFence
 		snapshot.executionGeneration = test.executionGeneration
+		if snapshot.record != nil {
+			// The fenced Start commit stamps this term on the durable row.
+			snapshot.record.ExecutionGeneration = test.executionGeneration
+		}
 	}
 	return snapshot
 }
@@ -59,7 +63,14 @@ func classifyStartTransitionPersistenceError(err error) error {
 // that may begin execution. It combines the durable test write with the shared
 // deployment lease guard, and (under HA) with the execution-leader fence.
 func (tr *TestRunner) saveManagedTestStartRecord(test *ManagedTest) error {
-	return tr.saveManagedTestStartSnapshot(newManagedTestStartPersistenceSnapshot(test))
+	snapshot := newManagedTestStartPersistenceSnapshot(test)
+	if err := tr.saveManagedTestStartSnapshot(snapshot); err != nil {
+		return err
+	}
+	if test != nil && tr.durableExecutionFence {
+		test.durableExecutionGeneration = snapshot.record.ExecutionGeneration
+	}
+	return nil
 }
 
 // saveManagedTestStartSnapshot persists an immutable start transition without

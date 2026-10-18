@@ -355,7 +355,7 @@ func evaluateArchiveBrowserFindings(ctx context.Context, inputs *browserIntellig
 		}
 		incomplete, dropped = accumulator.incomplete, accumulator.dropped
 	}
-	window := BrowserFindingWindow{Start: manifest.CreatedAt.UTC(), End: manifest.CompletedAt.UTC()}
+	window := BrowserFindingWindow{Start: manifest.CreatedAt.UTC(), End: archiveExecutionCompletedAt(manifest).UTC()}
 	if manifest.Provenance.StartedAt != nil {
 		window.Start = manifest.Provenance.StartedAt.UTC()
 	}

@@ -21,7 +21,7 @@ func (vu *VUser) dispatchWebSocketCallbacks(ctx context.Context, wait bool) erro
 	if err != nil {
 		// This failure occurs before the next authored action executes. It must
 		// still reach metrics/evidence rather than only stopping the VUser.
-		cfg := &vu.Script.Config
+		cfg := vu.Script.Config
 		vu.recordResult(&protocol.Result{ActionName: "WebSocket callback dispatch", StartTime: time.Now(), Success: false, ErrorMessage: err.Error(), DependencyType: "websocket"}, cfg.ErrorHandling, cfg.Log)
 		return err
 	}
@@ -38,7 +38,7 @@ func (vu *VUser) dispatchWebSocketCallbacks(ctx context.Context, wait bool) erro
 		vu.Variables["ws_message_type"] = strconv.Itoa(message.MessageType)
 		// Callback ingress is measured once, separately from authored child actions.
 		vu.recordResult(&protocol.Result{ActionName: "WebSocket callback message", StartTime: callbackReceivedAt(message.ReceivedAt), Success: true, BytesReceived: message.BytesReceived, DependencyType: "websocket", ServerTelemetry: &protocol.ServerTelemetry{MessagesReceived: 1, WebSocket: message.Diagnostics.Clone()}}, vu.Script.Config.ErrorHandling, vu.Script.Config.Log)
-		cfg := &vu.Script.Config
+		cfg := vu.Script.Config
 		if !vu.runLifecycleActions(ctx, vu.webSocketCallbackSteps, "WebSocket callback", false, vu.makeLogger(cfg.Log), cfg.Log, cfg.ErrorHandling) {
 			return fmt.Errorf("WebSocket callback failed")
 		}

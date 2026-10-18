@@ -30,12 +30,16 @@ type runTotalsAccumulator struct {
 	distributed bool
 	// windows is each generator's last counted window: its source epoch and
 	// the number and publication time of the collection that produced it.
-	windows    map[string]distributedWindowMark
-	lastWindow time.Time
-	last       runTotalsCounts
-	lastGroups map[string]runTotalsCounts
-	total      runTotalsCounts
-	groups     map[string]runTotalsCounts
+	windows map[string]distributedWindowMark
+	// publishedWindows is the last collection per target that reached a
+	// guarded live installation. Counting a received window alone does not
+	// prove it was published: throttling or a rejected revision can defer it.
+	publishedWindows map[string]distributedWindowMark
+	lastWindow       time.Time
+	last             runTotalsCounts
+	lastGroups       map[string]runTotalsCounts
+	total            runTotalsCounts
+	groups           map[string]runTotalsCounts
 	// requestsUnknown: the request totals are incomplete, so samples carry no
 	// request counts at all, run-to-date or window: the run is shown in
 	// transactions throughout, rather than switching between requests and
@@ -49,6 +53,30 @@ type distributedWindowMark struct {
 	epoch       string
 	collection  uint64
 	publishedAt int64
+	// Preserve the first accepted envelope for native evidence identity when a
+	// later lifecycle envelope re-sends this collection.
+	batchSequence  uint64
+	batchTimestamp int64
+}
+
+// distributedCollectionMark retains the identity of the collection, not the
+// later lifecycle envelope carrying it. Unknown legacy identity is not proof.
+func distributedCollectionMark(batch generatorrpc.MetricsBatch) (distributedWindowMark, bool) {
+	mark := distributedWindowMark{epoch: batch.SourceEpoch, batchSequence: batch.BatchSequence, batchTimestamp: batch.TimestampUnixMs}
+	if batch.Telemetry != nil {
+		mark.collection, mark.publishedAt = batch.Telemetry.CollectionSequence, batch.Telemetry.PublishedAtUnixMs
+	}
+	return mark, mark.collection > 0 || mark.publishedAt > 0
+}
+
+func (m distributedWindowMark) sameCollection(other distributedWindowMark) bool {
+	if m.epoch != other.epoch {
+		return false
+	}
+	if m.collection > 0 || other.collection > 0 {
+		return m.collection > 0 && m.collection == other.collection
+	}
+	return m.publishedAt > 0 && m.publishedAt == other.publishedAt
 }
 
 // newDistributedWindow reports whether batch carries a window not yet
@@ -62,12 +90,9 @@ type distributedWindowMark struct {
 // A batch with neither number nor time is counted unless it is terminal; a
 // terminal one is taken to re-send.
 func (a *runTotalsAccumulator) newDistributedWindow(target string, batch generatorrpc.MetricsBatch) bool {
-	var collection uint64
-	var published int64
-	if batch.Telemetry != nil {
-		collection, published = batch.Telemetry.CollectionSequence, batch.Telemetry.PublishedAtUnixMs
-	}
-	if collection == 0 && published <= 0 {
+	mark, identified := distributedCollectionMark(batch)
+	collection, published := mark.collection, mark.publishedAt
+	if !identified {
 		return !isTerminalRemoteLifecycle(batch.LifecycleState)
 	}
 	if a.windows == nil {
@@ -78,7 +103,7 @@ func (a *runTotalsAccumulator) newDistributedWindow(target string, batch generat
 			return false
 		}
 	}
-	a.windows[target] = distributedWindowMark{epoch: batch.SourceEpoch, collection: collection, publishedAt: published}
+	a.windows[target] = mark
 	return true
 }
 

@@ -52,7 +52,7 @@ func (s *parallelResultSink) RecordTransaction(result *protocol.Result) error {
 	return s.RecordResult(result)
 }
 
-func (vu *VUser) executeParallelBlock(ctx context.Context, action *dsl.Action, phase string) bool {
+func (vu *VUser) executeParallelBlock(ctx context.Context, action dsl.Action, phase string) bool {
 	started := time.Now()
 	// Branch VUsers carry no transaction state, so the block resolves its
 	// correlation context once: inside an open transaction every branch keeps
@@ -249,7 +249,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		branchVU.Parameters.inheritSourceParameterState(vu.Parameters)
 	}
 	_ = branchVU.refreshImportedCredentialRuntimeValues()
-	cfg := &vu.Script.Config
+	cfg := vu.Script.Config
 	ignoreErrors := strings.EqualFold(strings.TrimSpace(phase), "teardown")
 	if !branchVU.runLifecycleActionsWithContexts(ctx, ctx, branch.Steps, phase, ignoreErrors, branchVU.makeLogger(cfg.Log), cfg.Log, cfg.ErrorHandling) {
 		result.failed = true

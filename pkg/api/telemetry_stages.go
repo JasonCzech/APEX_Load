@@ -171,9 +171,11 @@ func (r *telemetryStageRecorder) excludeLocked(current *telemetryStageDigest, re
 	current.excluded[reason]++
 }
 
-// observeGeneratorBatch samples a newly received generator batch once: its
-// own processing lag, and its transport lag when the generator's clock was
-// qualified at receipt.
+// observeGeneratorBatch samples each accepted collection once: its own
+// processing lag, and its transport lag when the generator's clock was
+// qualified at receipt. Without a collection identity, legacy peers retain
+// the batch-position fallback; known lifecycle/subscription replays do not
+// turn the same collection into another timing observation.
 func (r *telemetryStageRecorder) observeGeneratorBatch(target string, batch generatorrpc.MetricsBatch) {
 	if r == nil || batch.Telemetry == nil {
 		return
@@ -191,6 +193,9 @@ func (r *telemetryStageRecorder) observeGeneratorBatch(target string, batch gene
 	r.lastSeen[target] = position
 	r.mu.Unlock()
 	telemetry := batch.Telemetry
+	if telemetry.CollectionRepeated {
+		return
+	}
 	processing := telemetry.GeneratorProcessingLagMs
 	if processing <= 0 && telemetry.CollectedAtUnixMs > 0 && telemetry.PublishedAtUnixMs > 0 {
 		processing = float64(telemetry.PublishedAtUnixMs - telemetry.CollectedAtUnixMs)

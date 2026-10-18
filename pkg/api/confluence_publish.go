@@ -82,7 +82,7 @@ func (s *Server) publishRunConfluence(ctx context.Context, testID, connectionID,
 	if err != nil {
 		return fail(fmt.Errorf("materialize run archive: %w", err))
 	}
-	report, err := cachedRunArchiveReport(record)
+	report, err := s.archiveReadCaches().cachedRunArchiveReport(record)
 	lease.Release()
 	if err != nil {
 		return fail(fmt.Errorf("build archived report: %w", err))

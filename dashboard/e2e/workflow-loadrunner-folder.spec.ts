@@ -1,3 +1,4 @@
+import { canonicalImportDraft } from './support/importResponse'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Page } from '@playwright/test'
@@ -21,7 +22,7 @@ async function validateQueuedFolder(page: Page) {
   const response = await validated
   expect(response.ok()).toBeTruthy()
   const result = await response.json()
-  expect(result.script?.name).toBe('VuGen24Real')
+  expect(canonicalImportDraft(result).name).toBe('VuGen24Real')
   await expect(page.getByRole('tab', { name: /^Review(,|$)/ })).toBeVisible()
 }
 

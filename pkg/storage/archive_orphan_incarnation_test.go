@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"sync"
@@ -127,5 +129,47 @@ func TestArchiveOrphanIncarnationRequiresIdentity(t *testing.T) {
 		if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job, time.Now(), tc[0], tc[1], tc[2]); err == nil || ok {
 			t.Fatal("invalid recovery fence accepted")
 		}
+	}
+}
+
+func TestArchiveOrphanPreparedManifestTravelsWithFencedJob(t *testing.T) {
+	checkArchiveOrphanPreparedManifest(t, newHAFencingStore(t))
+}
+
+// Failed-over recovery commits a restamped manifest with the fenced job. Only
+// bytes matching the record's trust anchor are accepted, and they survive the
+// insert for finalization to restore.
+func checkArchiveOrphanPreparedManifest(t *testing.T, s *SQLiteStore) {
+	t.Helper()
+	now := time.Now().UTC()
+	row := &TestRecord{ID: "orphan-prepared", Name: "orphan", ProjectID: DefaultProjectID, StartTime: now.Add(-time.Minute), EndTime: &now, Status: "FAILED"}
+	if err := s.SaveTest(row); err != nil {
+		t.Fatal(err)
+	}
+	prepared := `{"test_id":"orphan-prepared","status":"FAILED"}`
+	sum := sha256.Sum256([]byte(prepared))
+	job := func(manifest, digest string) *ArchiveFinalizationJob {
+		return &ArchiveFinalizationJob{TestID: row.ID, ProjectID: row.ProjectID, PreparedManifestJSON: manifest, ArchiveRecord: RunArchiveRecord{
+			TestID: row.ID, CreatedAt: row.StartTime, CompletedAt: now, ManifestSHA256: digest, ArchivePath: "/archive/run", ManifestPath: "/archive/run/manifest.json",
+		}}
+	}
+	for _, bad := range []*ArchiveFinalizationJob{
+		job(prepared, strings.Repeat("0", 64)),
+		job(`{"test_id":"another-run"}`, hex.EncodeToString(sum[:])),
+	} {
+		if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(bad, row.StartTime, "FAILED", "", ""); err == nil || ok {
+			t.Fatalf("unanchored prepared manifest accepted: %v %v", ok, err)
+		}
+	}
+	if _, err := s.GetArchiveFinalizationJob(row.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatal("rejected prepared manifest left outbox", err)
+	}
+	good := job(prepared, hex.EncodeToString(sum[:]))
+	if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(good, row.StartTime, "FAILED", "", ""); err != nil || !ok || good.PreparedManifestJSON != prepared {
+		t.Fatalf("anchored prepared manifest = %v %v", ok, err)
+	}
+	stored, err := s.GetArchiveFinalizationJob(row.ID)
+	if err != nil || stored.PreparedManifestJSON != prepared || stored.ArchiveRecord.ManifestSHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("prepared manifest was not committed with the job: %+v %v", stored, err)
 	}
 }

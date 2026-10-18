@@ -1,7 +1,6 @@
 package sample
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -24,11 +23,11 @@ import (
 // It also returns where each original action went (nil when the script was
 // not reshaped; -1 for an action folded into a conversation) and when each
 // action of the reshaped script started in the recording.
-func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, asyncScan bool, background []string, mappings []sourceview.Mapping) ([]sourceview.Mapping, []int, []time.Time, []string) {
+func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, document *HARDocument, asyncScan bool, background []string, mappings []sourceview.Mapping) ([]sourceview.Mapping, []int, []time.Time, []string) {
 	if script == nil || len(script.Actions) != len(exchanges) {
 		return mappings, nil, nil, nil
 	}
-	sockets := harWebSockets(content)
+	sockets := document.webSockets()
 	matchesBackground := false
 	for _, ex := range exchanges {
 		if recordingprofile.MatchBackgroundRequest(background, ex.URL) != "" {
@@ -82,8 +81,11 @@ func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, 
 // made up (cache-busters, poll times) a fresh value at replay. It runs
 // before the async scan: a timestamp is found by changing on every request,
 // which folding a poll's repeats would hide.
-func applyRecordedClientTimestamps(script *dsl.Script, content string) string {
-	evidence, err := clienttimestamps.FromHAR([]byte(content))
+func applyRecordedClientTimestamps(script *dsl.Script, document *HARDocument, content string) string {
+	evidence, err := document.ClientTimestamps()
+	if err != nil {
+		evidence, err = clienttimestamps.FromHAR([]byte(content))
+	}
 	if err != nil {
 		return ""
 	}
@@ -97,14 +99,15 @@ func cloneScriptActions(actions []dsl.Action) []dsl.Action {
 // harWebSockets reads the WebSocket connections a browser HAR recorded
 // (Chrome and Firefox keep their frames in _webSocketMessages).
 func harWebSockets(content string) []recordedshape.Socket {
-	var payload any
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(content, "\uFEFF")), &payload); err != nil {
-		return nil
-	}
-	items, err := extractHARItems(payload)
+	document, err := ParseHARDocument(content)
 	if err != nil {
 		return nil
 	}
+	return document.webSockets()
+}
+
+func (d *HARDocument) webSockets() []recordedshape.Socket {
+	items := d.items
 	var sockets []recordedshape.Socket
 	for _, item := range items {
 		if !isHARWebSocketUpgrade(item) {

@@ -80,10 +80,10 @@ func (a *archivePopulationAccumulator) finish(window time.Duration) ArchiveMetri
 // Use elapsed execution time, including pauses and idle/pacing time, for every
 // population. Missing or invalid legacy timestamps cannot establish a rate.
 func archivePopulationWindow(manifest *RunArchiveManifest) time.Duration {
-	if manifest == nil || manifest.Provenance.StartedAt == nil || manifest.Provenance.StartedAt.IsZero() || manifest.CompletedAt.IsZero() {
+	if manifest == nil || manifest.Provenance.StartedAt == nil || manifest.Provenance.StartedAt.IsZero() || archiveExecutionCompletedAt(manifest).IsZero() {
 		return 0
 	}
-	if elapsed := manifest.CompletedAt.Sub(*manifest.Provenance.StartedAt); elapsed > 0 {
+	if elapsed := archiveExecutionCompletedAt(manifest).Sub(*manifest.Provenance.StartedAt); elapsed > 0 {
 		return elapsed
 	}
 	return 0

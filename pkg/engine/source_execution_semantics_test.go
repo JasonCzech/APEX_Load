@@ -710,7 +710,7 @@ func TestLoadThinkTimeAccountsActiveElapsed(t *testing.T) {
 		}},
 	}
 	vu.handleSourceTransactionAction(sourceTransactionAction("lr_start_transaction", ""))
-	completed := vu.applyActionThinkTime(context.Background(), &dsl.Action{
+	completed := vu.applyActionThinkTime(context.Background(), dsl.Action{
 		Name:           "inside",
 		ThinkTime:      dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 500},
 		ThinkTimeAfter: true,

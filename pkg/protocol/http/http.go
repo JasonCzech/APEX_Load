@@ -48,8 +48,9 @@ type HTTP struct {
 	policyPools                map[string]*httpPolicyPool
 	connections                *httpConnectionBudget
 	client                     *http.Client
+	oauthClient                *http.Client
 	transport                  *http.Transport
-	oauthPool                  *httpPolicyPool // the pool whose OAuth client token calls use
+	oauthTransport             *http.Transport
 	allowedTargetHosts         []string
 	baseURL                    string
 	bufPool                    *httpBufferPool
@@ -333,6 +334,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.ErrorMessage = policyErr.Error()
 		return result, nil
 	}
+	h = h.forHTTPVersion(policy)
 	ctx = context.WithValue(ctx, httpVersionCacheKey{}, policy)
 	result.HTTPVersionPolicy = policy
 	defer func() { result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result) }()
@@ -351,11 +353,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		defaultHeaderList = action.DefaultHeaderList
 	}
 	effectiveHeaders, headerMapIssues := effectiveAuthoredHeaderList(defaultHeaders, defaultHeaderList, action.Headers, action.HeaderList)
-	// Until its client is needed, h stays the session: a request refused
-	// before then builds no version pool, and everything read until then is
-	// the same on the session and its version child, apart from the version.
-	version := h.versionForPolicy(policy)
-	headerIssues := append(headerMapIssues, HeaderListIssuesForVersion(effectiveHeaders, version)...)
+	headerIssues := append(headerMapIssues, HeaderListIssuesForVersion(effectiveHeaders, h.httpVersion)...)
 	if len(headerIssues) > 0 {
 		err := &HeaderListValidationError{Issues: headerIssues}
 		result.StatusCode = http.StatusBadRequest
@@ -511,7 +509,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	if integratedAuth != nil && IsIntegratedAuthType(integratedAuth.Type) && !authorizationAuthored &&
 		(actionAuthOverride || authHostScopesAllow(h.authHosts, targetURL)) {
-		if version == VersionHTTP3 {
+		if h.httpVersion == VersionHTTP3 {
 			h3Receipt.refuse("integrated_auth")
 			result.StatusCode = http.StatusBadRequest
 			result.Duration = time.Since(result.StartTime)
@@ -666,7 +664,6 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		defer h3Cancel(nil)
 		req = req.WithContext(budgetCtx)
 	}
-	h = h.forHTTPVersion(policy)
 	client := *h.client
 	if action.TimeoutMs > 0 {
 		client.Timeout = time.Duration(action.TimeoutMs) * time.Millisecond
@@ -1383,10 +1380,10 @@ func injectActiveTraceContext(ctx context.Context, headers http.Header) string {
 }
 
 func (h *HTTP) OAuthHTTPClient() *http.Client {
-	if h == nil || h.oauthPool == nil {
+	if h == nil || h.oauthClient == nil {
 		return nil
 	}
-	client := *h.oauthPool.oauthClient().client
+	client := *h.oauthClient
 	return &client
 }
 
@@ -1494,6 +1491,9 @@ func (h *HTTP) Teardown(ctx context.Context) error {
 	} else if h.transport != nil {
 		h.transport.CloseIdleConnections()
 	}
+	if h.oauthTransport != nil && h.oauthTransport != h.transport {
+		h.oauthTransport.CloseIdleConnections()
+	}
 	if h.http3 != nil {
 		// VUser stop: H3_NO_ERROR on every connection, then release the
 		// sockets, inside the bounded teardown window.
@@ -1509,6 +1509,9 @@ func (h *HTTP) CloseIdleConnections(_ context.Context) error {
 		h.connections.closeIdle()
 	} else if h.transport != nil {
 		h.transport.CloseIdleConnections()
+	}
+	if h.oauthTransport != nil && h.oauthTransport != h.transport {
+		h.oauthTransport.CloseIdleConnections()
 	}
 	if h.http3 != nil {
 		h.http3.CloseIdleConnections()

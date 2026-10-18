@@ -59,8 +59,8 @@ func buildIntegrationOutcome(report *RunArchiveReport) *IntegrationOutcome {
 		seconds := duration.Seconds()
 		outcome.Execution.PlannedDurationSeconds = &seconds
 	}
-	if manifest.Provenance.StartedAt != nil && !manifest.CompletedAt.IsZero() && !manifest.CompletedAt.Before(*manifest.Provenance.StartedAt) {
-		seconds := manifest.CompletedAt.Sub(*manifest.Provenance.StartedAt).Seconds()
+	if manifest.Provenance.StartedAt != nil && !archiveExecutionCompletedAt(manifest).IsZero() && !archiveExecutionCompletedAt(manifest).Before(*manifest.Provenance.StartedAt) {
+		seconds := archiveExecutionCompletedAt(manifest).Sub(*manifest.Provenance.StartedAt).Seconds()
 		outcome.Execution.ObservedDurationSeconds = &seconds
 	}
 	if report.Completeness.Status != "" {

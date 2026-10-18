@@ -12,16 +12,41 @@ func TestSanitizedArchivePlanCacheUsesManifestIdentityAndInvalidatesByTest(t *te
 	if key != "cache-run|sanitized|abc123" {
 		t.Fatalf("cache key = %q", key)
 	}
+	caches := newArchiveReadCaches()
+	t.Cleanup(func() { caches.forgetRunArchiveCache(record.TestID) })
 	plan := &sanitizedRunArchivePlan{replacements: map[string][]byte{"manifest.json": []byte("safe")}}
-	if _, err := runArchiveSanitizedPlanCache.getOrLoad(key, func() (*sanitizedRunArchivePlan, error) { return plan, nil }); err != nil {
-		t.Fatalf("populate cache: %v", err)
+	loads := 0
+	load := func() (*sanitizedRunArchivePlan, error) {
+		loads++
+		return plan, nil
 	}
-	if runArchiveSanitizedPlanCache.len() == 0 {
-		t.Fatal("sanitized plan was not cached")
+	for range 2 {
+		if got, err := caches.sanitizedPlans.getOrLoad(key, load); err != nil || got != plan {
+			t.Fatalf("cached plan = %p, %v; want %p", got, err, plan)
+		}
 	}
-	forgetRunArchiveCache(record.TestID)
-	if runArchiveSanitizedPlanCache.len() != 0 {
-		t.Fatal("sanitized plan survived archive cache invalidation")
+	if loads != 1 {
+		t.Fatalf("cache miss for unchanged manifest: %d loads", loads)
+	}
+	otherKey := "unrelated-run|sanitized|other"
+	t.Cleanup(func() { caches.forgetRunArchiveCache("unrelated-run") })
+	otherLoads := 0
+	otherLoad := func() (*sanitizedRunArchivePlan, error) {
+		otherLoads++
+		return &sanitizedRunArchivePlan{}, nil
+	}
+	if _, err := caches.sanitizedPlans.getOrLoad(otherKey, otherLoad); err != nil {
+		t.Fatal(err)
+	}
+	caches.forgetRunArchiveCache(record.TestID)
+	if _, err := caches.sanitizedPlans.getOrLoad(key, load); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := caches.sanitizedPlans.getOrLoad(otherKey, otherLoad); err != nil {
+		t.Fatal(err)
+	}
+	if loads != 2 || otherLoads != 1 {
+		t.Fatalf("invalidation loads: run=%d unrelated=%d; want 2 and 1", loads, otherLoads)
 	}
 }
 

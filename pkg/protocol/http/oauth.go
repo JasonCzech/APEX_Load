@@ -132,25 +132,19 @@ func hardenedOAuthHTTPClient(base *http.Client) *http.Client {
 	client := oauthRequestClient(base)
 	if transport, ok := base.Transport.(*http.Transport); ok && transport != nil {
 		secureTransport := transport.Clone()
-		hardenOAuthTransport(secureTransport)
+		if secureTransport.TLSClientConfig == nil {
+			secureTransport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		} else {
+			secureTransport.TLSClientConfig = secureTransport.TLSClientConfig.Clone()
+			secureTransport.TLSClientConfig.InsecureSkipVerify = false
+			if secureTransport.TLSClientConfig.MinVersion == 0 {
+				secureTransport.TLSClientConfig.MinVersion = tls.VersionTLS12
+			}
+		}
+		secureTransport.MaxResponseHeaderBytes = maxOAuthResponseHeaderBytes
 		client.Transport = secureTransport
 	}
 	return client
-}
-
-// hardenOAuthTransport applies the token-request TLS and header limits to a
-// transport that only token requests use.
-func hardenOAuthTransport(transport *http.Transport) {
-	if transport.TLSClientConfig == nil {
-		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-	} else {
-		transport.TLSClientConfig = transport.TLSClientConfig.Clone()
-		transport.TLSClientConfig.InsecureSkipVerify = false
-		if transport.TLSClientConfig.MinVersion == 0 {
-			transport.TLSClientConfig.MinVersion = tls.VersionTLS12
-		}
-	}
-	transport.MaxResponseHeaderBytes = maxOAuthResponseHeaderBytes
 }
 
 func oauthRequestClient(base *http.Client) *http.Client {

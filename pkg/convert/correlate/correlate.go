@@ -1014,9 +1014,23 @@ func salesforceRegexCandidates(body string) []Candidate {
 	return salesforceRegexCandidatesForSource(body, "body")
 }
 
+// correlationLiteralFold matches ASCII literal markers under regexp's Unicode
+// simple folding. Lowercasing handles Kelvin K; long s is the other non-ASCII
+// rune in an ASCII letter's folding class.
+func correlationLiteralFold(body string) string {
+	return strings.ReplaceAll(strings.ToLower(body), "ſ", "s")
+}
+
 func salesforceRegexCandidatesForSource(body string, source string) []Candidate {
+	// One literal scan per marker avoids running every case-insensitive regex
+	// over large unrelated payloads. Simple-fold normalization also preserves
+	// Go regexp's Unicode matches (notably long s and the Kelvin sign).
+	folded := correlationLiteralFold(body)
 	candidates := make([]Candidate, 0)
-	addMatches := func(pattern *regexp.Regexp, name, ruleID, reason string, confidence float64) {
+	addMatches := func(pattern *regexp.Regexp, marker, name, ruleID, reason string, confidence float64) {
+		if !strings.Contains(folded, marker) {
+			return
+		}
 		limit := remainingCandidateMatchLimit(candidates)
 		if limit == 0 {
 			return
@@ -1042,21 +1056,24 @@ func salesforceRegexCandidatesForSource(body string, source string) []Candidate 
 			})
 		}
 	}
-	addMatches(auraTokenPattern, "salesforce_aura_token", RuleSalesforceAuraToken, "Salesforce aura.token value", 0.95)
-	addMatches(auraFWUIDPattern, "salesforce_aura_fwuid", RuleSalesforceAuraContextFWUID, "Salesforce Aura context fwuid", 0.94)
-	addMatches(auraAppPattern, "salesforce_aura_app", RuleSalesforceAuraAppDescriptor, "Salesforce Aura app descriptor", 0.9)
-	addMatches(auraLoadedPattern, "salesforce_aura_loaded", RuleSalesforceAuraLoaded, "Salesforce Aura loaded map", 0.88)
-	addMatches(auraPageURIJSONPattern, "salesforce_aura_page_uri", RuleSalesforceAuraPageURI, "Salesforce Aura page URI", 0.86)
-	addMatches(auraPageURIFormPattern, "salesforce_aura_page_uri", RuleSalesforceAuraPageURI, "Salesforce Aura page URI", 0.86)
-	addMatches(auraPageScopeIDPattern, "salesforce_page_scope_id", RuleSalesforcePageScopeID, "Salesforce pageScopeId value", 0.85)
-	addMatches(visualforcePattern, "salesforce_viewstate", RuleSalesforceViewState, "Salesforce Visualforce ViewState field", 0.94)
-	addMatches(confirmationPattern, "salesforce_confirmation_token", RuleSalesforceConfirmationToken, "Salesforce confirmation token", 0.93)
-	addMatches(frontdoorSIDPattern, "salesforce_frontdoor_sid", RuleSalesforceFrontdoorSID, "Salesforce frontdoor sid/session value", 0.85)
-	addMatches(salesforceCSHCPattern, "salesforce_cshc", RuleSalesforceCSHC, "Salesforce cshc login/session handoff value", 0.92)
+	addMatches(auraTokenPattern, "aura.token", "salesforce_aura_token", RuleSalesforceAuraToken, "Salesforce aura.token value", 0.95)
+	addMatches(auraFWUIDPattern, "\"fwuid\"", "salesforce_aura_fwuid", RuleSalesforceAuraContextFWUID, "Salesforce Aura context fwuid", 0.94)
+	addMatches(auraAppPattern, "\"app\"", "salesforce_aura_app", RuleSalesforceAuraAppDescriptor, "Salesforce Aura app descriptor", 0.9)
+	addMatches(auraLoadedPattern, "\"loaded\"", "salesforce_aura_loaded", RuleSalesforceAuraLoaded, "Salesforce Aura loaded map", 0.88)
+	addMatches(auraPageURIJSONPattern, "\"pageuri\"", "salesforce_aura_page_uri", RuleSalesforceAuraPageURI, "Salesforce Aura page URI", 0.86)
+	addMatches(auraPageURIFormPattern, "aura.pageuri", "salesforce_aura_page_uri", RuleSalesforceAuraPageURI, "Salesforce Aura page URI", 0.86)
+	addMatches(auraPageScopeIDPattern, "\"pagescopeid\"", "salesforce_page_scope_id", RuleSalesforcePageScopeID, "Salesforce pageScopeId value", 0.85)
+	addMatches(visualforcePattern, "viewstate", "salesforce_viewstate", RuleSalesforceViewState, "Salesforce Visualforce ViewState field", 0.94)
+	addMatches(confirmationPattern, "_confirmationtoken", "salesforce_confirmation_token", RuleSalesforceConfirmationToken, "Salesforce confirmation token", 0.93)
+	addMatches(frontdoorSIDPattern, "sid", "salesforce_frontdoor_sid", RuleSalesforceFrontdoorSID, "Salesforce frontdoor sid/session value", 0.85)
+	addMatches(salesforceCSHCPattern, "cshc", "salesforce_cshc", RuleSalesforceCSHC, "Salesforce cshc login/session handoff value", 0.92)
 	// addJSONPath emits a clean JSONPath extractor (not a brittle regex one) for
 	// values that live at a well-known top-level JSON field, so the generated
 	// extractor reads $.<field> at replay rather than re-running the match regex.
-	addJSONPath := func(pattern *regexp.Regexp, name, ruleID, expression, reason string, confidence float64) {
+	addJSONPath := func(pattern *regexp.Regexp, marker, name, ruleID, expression, reason string, confidence float64) {
+		if !strings.Contains(folded, marker) {
+			return
+		}
 		limit := remainingCandidateMatchLimit(candidates)
 		if limit == 0 {
 			return
@@ -1104,8 +1121,8 @@ func salesforceRegexCandidatesForSource(body string, source string) []Candidate 
 			})
 		}
 	}
-	addJSONPath(salesforceNextRecordsURLPattern, "salesforce_soql_next_records_url", RuleSalesforceNextRecordsURL, "$.nextRecordsUrl", "Salesforce SOQL pagination nextRecordsUrl cursor", 0.9)
-	addJSONPath(salesforceBulkContentURLPattern, "salesforce_bulk_content_url", RuleSalesforceBulkContentURL, "$.contentUrl", "Salesforce Bulk API ingest contentUrl upload target", 0.9)
+	addJSONPath(salesforceNextRecordsURLPattern, `"nextrecordsurl"`, "salesforce_soql_next_records_url", RuleSalesforceNextRecordsURL, "$.nextRecordsUrl", "Salesforce SOQL pagination nextRecordsUrl cursor", 0.9)
+	addJSONPath(salesforceBulkContentURLPattern, `"contenturl"`, "salesforce_bulk_content_url", RuleSalesforceBulkContentURL, "$.contentUrl", "Salesforce Bulk API ingest contentUrl upload target", 0.9)
 	return candidates
 }
 
@@ -1454,6 +1471,9 @@ func jsonCandidatesCheckedWithTruncation(body string) ([]Candidate, bool, error)
 		return nil, false, err
 	} else if ok {
 		return parsed, truncated, nil
+	}
+	if !strings.Contains(body, `"`) || !strings.Contains(body, ":") {
+		return nil, false, nil
 	}
 	candidates := make([]Candidate, 0)
 	truncated := false
@@ -1936,6 +1956,9 @@ func classifyJSONKey(key string) (string, float64) {
 }
 
 func htmlInputCandidates(body string) []Candidate {
+	if !strings.Contains(body, "<") || !strings.Contains(correlationLiteralFold(body), "<input") {
+		return nil
+	}
 	candidates := make([]Candidate, 0)
 	ordinals := make(map[string]int)
 	for _, pattern := range htmlInputPatterns {
@@ -2117,6 +2140,9 @@ func aspNetHiddenCandidates(body string) []Candidate {
 }
 
 func aspNetHiddenCandidatesWithTruncation(body string) ([]Candidate, bool) {
+	if !strings.Contains(body, "__") || !strings.Contains(correlationLiteralFold(body), "<input") {
+		return nil, false
+	}
 	candidates := make([]Candidate, 0)
 	ordinals := make(map[string]int)
 	matchLimit := maxCorrelationCandidatesPerObservation + 1
@@ -2168,7 +2194,13 @@ func xmlCandidatesWithTruncation(body string) ([]Candidate, bool) {
 	elementOrdinals := make(map[string]int)
 	attributeOrdinals := make(map[string]int)
 	matchLimit := maxCorrelationCandidatesPerObservation + 1
-	elementMatches := xmlElementTokenPattern.FindAllStringSubmatchIndex(body, matchLimit+1)
+	var elementMatches [][]int
+	// Sniff syntax rather than trusting Content-Type: mixed HTML/XML and
+	// mislabeled responses keep their existing candidates. These literals are
+	// necessary for a regex match, so absent markers can skip the family safely.
+	if strings.Contains(body, "</") && strings.Contains(body, ">") {
+		elementMatches = xmlElementTokenPattern.FindAllStringSubmatchIndex(body, matchLimit+1)
+	}
 	truncated := len(elementMatches) > matchLimit
 	if truncated {
 		elementMatches = elementMatches[:matchLimit]
@@ -2215,7 +2247,10 @@ func xmlCandidatesWithTruncation(body string) ([]Candidate, bool) {
 	if remaining == 0 {
 		return candidates, true
 	}
-	attributeMatches := xmlAttrTokenPattern.FindAllStringSubmatchIndex(body, remaining+1)
+	var attributeMatches [][]int
+	if strings.Contains(body, "=") && strings.Contains(body, `"`) {
+		attributeMatches = xmlAttrTokenPattern.FindAllStringSubmatchIndex(body, remaining+1)
+	}
 	if len(attributeMatches) > remaining {
 		attributeMatches = attributeMatches[:remaining]
 		truncated = true

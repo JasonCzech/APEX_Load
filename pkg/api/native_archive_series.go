@@ -149,7 +149,7 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 	if err != nil {
 		return result, err
 	}
-	if manifest.CompletedAt.IsZero() || manifest.Provenance.StartedAt == nil || manifest.Provenance.StartedAt.IsZero() {
+	if archiveExecutionCompletedAt(manifest).IsZero() || manifest.Provenance.StartedAt == nil || manifest.Provenance.StartedAt.IsZero() {
 		return result, errors.New("completed archive with execution start time required")
 	}
 	result.Fingerprint = manifest.Provenance.ComparisonFingerprint
@@ -228,7 +228,7 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 	for i, v := range values {
 		result.Buckets[i].Count = len(v)
 		result.Buckets[i].subset = int64(failures[i])
-		result.Buckets[i].complete = missingProperty == 0 && unknownPopulation == 0 && !archiveCollectionIncomplete(manifest) && !result.Buckets[i].To.After(manifest.CompletedAt)
+		result.Buckets[i].complete = missingProperty == 0 && unknownPopulation == 0 && !archiveCollectionIncomplete(manifest) && !result.Buckets[i].To.After(archiveExecutionCompletedAt(manifest))
 		if len(v) == 0 {
 			continue
 		}
@@ -271,7 +271,7 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 	if unknownPopulation > 0 {
 		result.Warnings = append(result.Warnings, "Legacy observations with unknown population were excluded.")
 	}
-	if to.After(manifest.CompletedAt) {
+	if to.After(archiveExecutionCompletedAt(manifest)) {
 		result.Warnings = append(result.Warnings, "The requested window extends past run completion.")
 	}
 	if manifest.SourceCoverage != nil {
@@ -342,7 +342,7 @@ func buildNativeMessageSeries(ctx context.Context, record *storage.RunArchiveRec
 	any := false
 	for i := range result.Buckets {
 		b := &result.Buckets[i]
-		b.complete = evidenced[i] && !incomplete[i] && (counter == "" || counted[i]) && !archiveCollectionIncomplete(manifest) && !b.To.After(manifest.CompletedAt)
+		b.complete = evidenced[i] && !incomplete[i] && (counter == "" || counted[i]) && !archiveCollectionIncomplete(manifest) && !b.To.After(archiveExecutionCompletedAt(manifest))
 		if !evidenced[i] {
 			continue
 		}
@@ -365,7 +365,7 @@ func buildNativeMessageSeries(ctx context.Context, record *storage.RunArchiveRec
 	if counter == "duplicate" {
 		result.Warnings = append(result.Warnings, "Duplicates are counted within each consumer's local sequence window, so the ratio is a lower bound.")
 	}
-	if to.After(manifest.CompletedAt) {
+	if to.After(archiveExecutionCompletedAt(manifest)) {
 		result.Warnings = append(result.Warnings, "The requested window extends past run completion.")
 	}
 	return result, nil

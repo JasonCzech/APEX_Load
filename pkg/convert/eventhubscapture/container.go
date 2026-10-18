@@ -68,8 +68,7 @@ type containerScan struct {
 // maxDecodedBytes, so the records before it still import.
 func scanContainer(data []byte, maxEvents int) (containerScan, error) {
 	if !bytes.HasPrefix(data, ocfMagic) {
-		// Not a container; let hamba report the format error.
-		return containerScan{usable: len(data)}, nil
+		return containerScan{}, errors.New("not an Avro Object Container File: expected the Obj version 1 header")
 	}
 	r := ocfReader{data: data, pos: len(ocfMagic)}
 	codec, err := r.header()

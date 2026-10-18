@@ -720,7 +720,7 @@ func (tr *TestRunner) reloadStoredTestSnapshotLocked(activeOnly bool) error {
 			return fmt.Errorf("execution leadership changed while reloading tests")
 		}
 		current, currentOK := tr.tests[record.ID]
-		if currentOK && current != nil && (liveTestRuntimeForExecutionEpoch(current, tr.durableExecutionFence, executionFenceAtStart) || current.passiveOperationToken != "" || (isTerminalTestStatus(current.Status) && !isTerminalTestStatus(managedTest.Status))) {
+		if currentOK && current != nil && (liveTestRuntimeForExecutionEpoch(current, tr.durableExecutionFence, executionFenceAtStart) || current.passiveOperationToken != "" || (sameStoredTestIdentity(current, record) && isTerminalTestStatus(current.Status) && !isTerminalTestStatus(managedTest.Status))) {
 			tr.mu.Unlock()
 			continue
 		}
@@ -758,7 +758,7 @@ func (tr *TestRunner) reloadStoredTestSnapshotLocked(activeOnly bool) error {
 		if currentOK && current != nil {
 			tr.removeRefKeyLocked(current.RefKey)
 			tr.forgetRunSnapshotWriteStateLocked(record.ID)
-			forgetRunArchiveCache(record.ID)
+			tr.archiveReadCaches().forgetRunArchiveCache(record.ID)
 			deleteGroupMetricsHistoryCache(record.ID)
 			if tr.storedHistoryCache != nil {
 				tr.storedHistoryCache.deleteTest(record.ID)
@@ -844,6 +844,19 @@ func sameStoredTestIdentity(test *ManagedTest, record *storage.TestRecord) bool 
 	if test == nil || record == nil || test.ID != record.ID {
 		return false
 	}
+	if test.durableExecutionGeneration != record.ExecutionGeneration {
+		return false
+	}
+	// The immutable admission receipt distinguishes replacements even when
+	// their public ID and creation timestamp are identical. A missing token is
+	// still compatible with a legacy row or the normal pre-admission -> admitted
+	// transition; two known identities must never share runtime/read state.
+	if current := managedTestRunIncarnation(test); current != "" {
+		stored, err := storage.TestRunIncarnation(record.InitialProvenance)
+		if err != nil || (stored != "" && stored != current) {
+			return false
+		}
+	}
 	// PostgreSQL stores timestamps at microsecond precision. A freshly created
 	// in-memory test can retain finer Go nanoseconds until its first reload, so
 	// compare the immutable creation identity at the least precise supported
@@ -897,6 +910,7 @@ func applyStoredManagedTestSnapshot(current, stored *ManagedTest) {
 	current.StartAuthorization = cloneQueuedStartAuthorization(stored.StartAuthorization)
 	current.ExecutionPlanApproval = cloneRunArchiveExecutionPlanApprovalSnapshot(stored.ExecutionPlanApproval)
 	current.ExecutionPlan = cloneTestExecutionPlanLink(stored.ExecutionPlan)
+	current.durableExecutionGeneration = stored.durableExecutionGeneration
 	current.initialArchiveProvenance = decodeStoredInitialProvenance(stored.initialArchiveProvenance)
 	current.Error = stored.Error
 }
@@ -1068,6 +1082,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		Error:                    record.Error,
 		pinnedSecrets:            &runPinnedSecretState{},
 	}
+	managedTest.durableExecutionGeneration = record.ExecutionGeneration
 	if record.EndTime != nil {
 		managedTest.EndedAt = record.EndTime
 	}
@@ -1854,7 +1869,7 @@ func (tr *TestRunner) forgetProject(projectID string) {
 			delete(tr.tests, id)
 			tr.phaseLogs.Delete(id)
 			delete(tr.archives, id)
-			forgetRunArchiveCache(id)
+			tr.archiveReadCaches().forgetRunArchiveCache(id)
 			deleteGroupMetricsHistoryCache(id)
 			if tr.storedHistoryCache != nil {
 				tr.storedHistoryCache.deleteTest(id)
@@ -1946,6 +1961,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		ExecutionPlanApproval:          test.ExecutionPlanApproval,
 		ExecutionPlan:                  executionPlanLinkForStorage(test.ExecutionPlan),
 		InitialProvenance:              initialProvenanceForStorage(test.initialArchiveProvenance),
+		ExecutionGeneration:            test.durableExecutionGeneration,
 		ExpectedProjectUpdatedAt:       test.expectedProjectUpdatedAt,
 		ExpectedApplicationUpdatedAt:   test.expectedApplicationUpdatedAt,
 		ExpectedReleaseUpdatedAt:       test.expectedReleaseUpdatedAt,
@@ -2313,6 +2329,9 @@ func (tr *TestRunner) persistInitialArchiveProvenance(test *ManagedTest, provena
 		return RunArchiveProvenance{}, fmt.Errorf("test and initial archive provenance are required")
 	}
 	masked := maskRunArchiveProvenance(*provenance)
+	// The executing term belongs to the final provenance refreshed when the
+	// archive is finalized; admission-time captures do not know it yet.
+	masked.ExecutionGeneration = 0
 	tr.mu.Lock()
 	if test.initialArchiveProvenance == nil {
 		test.initialArchiveProvenance = &masked
@@ -2661,7 +2680,7 @@ func (tr *TestRunner) populateRunArchiveTrendPoint(record *storage.RunArchiveRec
 	if !ok || test == nil {
 		return
 	}
-	report, err := cachedRunArchiveReport(record)
+	report, err := tr.archiveReadCaches().cachedRunArchiveReport(record)
 	if err != nil {
 		slog.Warn("archive trend point could not be generated", "test_id", record.TestID, "err", err)
 		return

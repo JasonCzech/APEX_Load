@@ -130,7 +130,7 @@ func (s *Server) remoteLibraryImportArchive(ctx context.Context, remote LibraryR
 			_ = multipartWriter.Close()
 			return
 		}
-		if err := zipSanitizedRunArchiveContext(ctx, record, manifest, archivePart); err != nil {
+		if err := s.archiveReadCaches().zipSanitizedRunArchiveContext(ctx, record, manifest, archivePart); err != nil {
 			errCh <- err
 			_ = multipartWriter.Close()
 			return

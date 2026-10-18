@@ -58,7 +58,7 @@ func enterpriseArchiveCollectionOpenAPISchemas() map[string]oasSchema {
 	optionalObject := object
 	optionalObject.Nullable = true
 	strings := oasSchema{Type: "array", Items: &oasSchema{Type: "string"}}
-	return map[string]oasSchema{
+	schemas := map[string]oasSchema{
 		"EnterpriseArchiveReviewResponse": {
 			Description: "Single-project review or a bounded ZIP package of independent ZIP/USZ script projects.",
 			OneOf: []oasSchema{
@@ -120,4 +120,8 @@ func enterpriseArchiveCollectionOpenAPISchemas() map[string]oasSchema {
 			Required: []string{"archive_collection", "archives", "count", "successful_count", "failed_count", "warnings", "unassigned_files"},
 		},
 	}
+	review := schemas["EnterpriseArchiveScriptReviewResponse"]
+	applyCanonicalImportResponseSchema(&review)
+	schemas["EnterpriseArchiveScriptReviewResponse"] = review
+	return schemas
 }

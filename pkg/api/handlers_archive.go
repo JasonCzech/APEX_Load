@@ -40,12 +40,12 @@ func (s *Server) handleGetRunArchiveManifest(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	defer lease.Release()
-	manifest, err := cachedRunArchiveManifest(record)
+	manifest, err := s.archiveReadCaches().cachedRunArchiveManifest(record)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	manifest, err = sanitizedRunArchiveManifest(r.Context(), record, manifest)
+	manifest, err = s.archiveReadCaches().sanitizedRunArchiveManifest(r.Context(), record, manifest)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to prepare safe archive manifest: "+err.Error())
 		return
@@ -128,7 +128,7 @@ func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request
 		return
 	}
 	staged, err := stageArchiveDownload(prepCtx, func(destination io.Writer) error {
-		return zipSanitizedRunArchiveWith(prepCtx, record, manifest, includeHAR, destination)
+		return s.archiveReadCaches().zipSanitizedRunArchiveWith(prepCtx, record, manifest, includeHAR, destination)
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive bundle: "+err.Error())
@@ -220,7 +220,7 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 		http.ServeContent(w, r, filename, record.CompletedAt.UTC(), staged.File)
 		return
 	}
-	if data, info, handled, err := sanitizedRunArchiveArtifact(prepCtx, record, manifest, name); handled {
+	if data, info, handled, err := s.archiveReadCaches().sanitizedRunArchiveArtifact(prepCtx, record, manifest, name); handled {
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to prepare safe archive artifact: "+err.Error())
 			return
@@ -511,7 +511,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	defer lease.Release()
-	report, err := cachedRunArchiveReport(record)
+	report, err := s.archiveReadCaches().cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
 		return
@@ -727,7 +727,7 @@ func (s *Server) handleGetRunArchiveReportsBatch(w http.ResponseWriter, r *http.
 			errorsByID[id] = err.Error()
 			continue
 		}
-		report, err := cachedRunArchiveReport(record)
+		report, err := s.archiveReadCaches().cachedRunArchiveReport(record)
 		lease.Release()
 		if err != nil {
 			errorsByID[id] = err.Error()
@@ -1013,7 +1013,7 @@ func testsShareProject(left *ManagedTest, right *ManagedTest) bool {
 }
 
 func (s *Server) archiveComparisonRunFromRecord(id string, test *ManagedTest, record *storage.RunArchiveRecord, action string) (archiveComparisonRunWithStart, error) {
-	report, err := cachedRunArchiveReport(record)
+	report, err := s.archiveReadCaches().cachedRunArchiveReport(record)
 	if err != nil {
 		return archiveComparisonRunWithStart{}, err
 	}
@@ -1104,7 +1104,7 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	defer lease.Release()
-	report, err := cachedRunArchiveReport(record)
+	report, err := s.archiveReadCaches().cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
 		return
