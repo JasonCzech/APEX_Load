@@ -47,12 +47,23 @@ const (
 	storeDialectPostgres storeDialect = "postgres"
 )
 
-// versionTimestamp stamps a row's updated_at version at microseconds, the
-// precision PostgreSQL keeps, so the copy a writer holds after saving
-// compares equal to the stored value on every backend. Optimistic writes
-// compare that version exactly.
+// versionTimestamp stamps a row's updated_at version, or the created_at that
+// is its incarnation, at microseconds, the precision PostgreSQL keeps, so the
+// copy a writer holds after saving compares equal to the stored value on every
+// backend. Optimistic writes and identity checks compare these exactly.
 func versionTimestamp() time.Time {
 	return time.Now().UTC().Truncate(time.Microsecond)
+}
+
+// newRowTimestamp is the created_at an insert of a new row stores: the
+// caller's value at versionTimestamp's precision, or a fresh stamp. Only an
+// insert may do this. A row that already exists can still hold nanoseconds in
+// SQLite, and a caller's copy read from it must keep matching it.
+func newRowTimestamp(createdAt time.Time) time.Time {
+	if createdAt.IsZero() {
+		return versionTimestamp()
+	}
+	return createdAt.Truncate(time.Microsecond)
 }
 
 type storeDB struct {

@@ -225,6 +225,12 @@ func newBrunoImportTestStore(t *testing.T) *SQLiteStore {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
+	seedBrunoImportProject(t, store)
+	return store
+}
+
+func seedBrunoImportProject(t *testing.T, store *SQLiteStore) {
+	t.Helper()
 	now := time.Now().UTC()
 	if err := store.SaveProject(&Project{ID: "project-bruno", Name: "Bruno", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
@@ -239,7 +245,6 @@ func newBrunoImportTestStore(t *testing.T) *SQLiteStore {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return store
 }
 
 func brunoImportCommitFixture(scriptID, projectID, revisionID, rawID, sanitizedID, rawSHA, sanitizedSHA string) *BrunoImportCommit {

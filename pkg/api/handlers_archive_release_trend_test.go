@@ -30,7 +30,7 @@ func (s *releaseTrendArchiveCASStore) GetRunArchive(testID string) (*storage.Run
 }
 
 func (s *releaseTrendArchiveCASStore) UpdateRunArchiveTrendPointIfUnchanged(expected *storage.RunArchiveRecord, trendPointJSON string) (bool, error) {
-	if !sameRunArchiveRecordVersion(s.record, expected) || s.record.TrendPointJSON != expected.TrendPointJSON {
+	if !sameRunArchiveRecordVersion(s.record, expected, nil) || s.record.TrendPointJSON != expected.TrendPointJSON {
 		return false, nil
 	}
 	s.record.TrendPointJSON = trendPointJSON

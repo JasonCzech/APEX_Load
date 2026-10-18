@@ -167,7 +167,8 @@ func TestPublishFinalLocalMetricsReconcilesTickerPublishedTerminalSLAWithoutDupl
 	if testRun.LiveMetrics.GoalStatus != nil || !testRun.ciSLAEvaluated || testRun.ciSLABreached {
 		t.Fatalf("pre-reconciliation SLA state = goal:%#v evaluated:%t breached:%t", testRun.LiveMetrics.GoalStatus, testRun.ciSLAEvaluated, testRun.ciSLABreached)
 	}
-	if !testRun.LiveMetrics.Timestamp.Equal(publishedAt) || testRun.LiveMetrics.Telemetry == nil ||
+	// A published point is stamped at microseconds, the precision PostgreSQL stores.
+	if !testRun.LiveMetrics.Timestamp.Equal(publishedAt.Truncate(time.Microsecond)) || testRun.LiveMetrics.Telemetry == nil ||
 		!testRun.LiveMetrics.Telemetry.CollectedAt.Equal(timestamp) {
 		t.Fatalf("ticker timestamps = published:%s collected:%#v", testRun.LiveMetrics.Timestamp, testRun.LiveMetrics.Telemetry)
 	}

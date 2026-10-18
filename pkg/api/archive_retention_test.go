@@ -81,6 +81,26 @@ func TestPruneRunArchiveRejectsSupersededPublicationBeforeDeletingFiles(t *testi
 	}
 }
 
+// A cached archive record keeps the run's nanosecond clock; PostgreSQL stored
+// its publication times at microseconds.
+func TestSameRunArchiveRecordVersionComparesTimesAtStoreResolution(t *testing.T) {
+	createdAt := time.Date(2026, time.October, 18, 12, 0, 0, 123456789, time.UTC)
+	cached := &storage.RunArchiveRecord{TestID: "run", ArchivePath: "/archives/run", ManifestSHA256: "sha", CreatedAt: createdAt, CompletedAt: createdAt.Add(time.Minute)}
+	stored := *cached
+	stored.CreatedAt = cached.CreatedAt.Truncate(time.Microsecond)
+	stored.CompletedAt = cached.CompletedAt.Truncate(time.Microsecond)
+	if !sameRunArchiveRecordVersion(cached, &stored, archiveTimestampBackend(storage.StoreBackendPostgres)) {
+		t.Fatal("the cached record and its PostgreSQL row are different versions")
+	}
+	if sameRunArchiveRecordVersion(cached, &stored, archiveTimestampBackend(storage.StoreBackendSQLite)) {
+		t.Fatal("SQLite records differing below a microsecond compared equal")
+	}
+	stored.ManifestSHA256 = "other-sha"
+	if sameRunArchiveRecordVersion(cached, &stored, archiveTimestampBackend(storage.StoreBackendPostgres)) {
+		t.Fatal("a different publication compared equal")
+	}
+}
+
 func TestGetRunArchiveContextEvictsHACacheWhenDurablePointerWasDeleted(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

@@ -449,6 +449,7 @@ func (s *SQLiteStore) createScenarioAuthoringIfAbsent(input *Scenario, groups []
 	if err != nil {
 		return nil, err
 	}
+	scenario.CreatedAt = newRowTimestamp(scenario.CreatedAt)
 	assignment, goals, runtime, traffic, err := prepareScenarioForSave(scenario)
 	if err != nil {
 		return nil, err

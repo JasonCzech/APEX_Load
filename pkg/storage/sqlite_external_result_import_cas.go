@@ -14,6 +14,11 @@ import (
 // identity. Library evidence uses deterministic IDs, so an UPSERT here would
 // let a retry or another controller silently replace already-imported evidence.
 func (s *SQLiteStore) CreateExternalResultImportIfAbsent(result *ExternalResultImport) (bool, error) {
+	// A rollback deletes the created row only while it still matches the
+	// caller's copy, created_at included.
+	if result != nil {
+		result.CreatedAt = newRowTimestamp(result.CreatedAt)
+	}
 	summaryJSON, rawJSON, archiveRecordJSON, err := prepareExternalResultImportInsert(result)
 	if err != nil {
 		return false, err
@@ -199,8 +204,10 @@ func prepareExternalResultImportInsert(result *ExternalResultImport) (string, st
 		result.Name = result.Provider + " import"
 	}
 	result.ProjectID = normalizeProjectID(result.ProjectID)
+	// SaveExternalResultImport keeps an existing row's created_at, so only a
+	// missing one is stamped here.
 	if result.CreatedAt.IsZero() {
-		result.CreatedAt = time.Now().UTC()
+		result.CreatedAt = versionTimestamp()
 	}
 	summaryJSON, err := json.Marshal(result.Summary)
 	if err != nil {

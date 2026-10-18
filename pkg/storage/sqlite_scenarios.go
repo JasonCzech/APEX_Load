@@ -41,8 +41,10 @@ func prepareScenarioForSave(scenario *Scenario) ([]byte, []byte, []byte, []byte,
 	if scenario.TerminationMode != "iterations" && strings.TrimSpace(scenario.Duration) == "" {
 		return nil, nil, nil, nil, errors.New("scenario duration is required")
 	}
+	// Saves may update an existing row, which keeps its created_at, so only a
+	// missing one is stamped here. Create-only callers use newRowTimestamp.
 	if scenario.CreatedAt.IsZero() {
-		scenario.CreatedAt = time.Now().UTC()
+		scenario.CreatedAt = versionTimestamp()
 	}
 	scenario.UpdatedAt = versionTimestamp()
 	assignmentJSON, err := json.Marshal(scenario.Assignment)
@@ -224,6 +226,9 @@ func replaceScenarioScriptsTx(tx *storeTx, scenarioID string, scripts []Scenario
 // CreateScenarioWithDataPoolBindingsIfAbsent atomically creates every durable
 // component of a scenario and never overwrites an existing deterministic ID.
 func (s *SQLiteStore) CreateScenarioWithDataPoolBindingsIfAbsent(scenario *Scenario, scripts []ScenarioScript, bindings []ScenarioDataPoolBinding) (bool, error) {
+	if scenario != nil {
+		scenario.CreatedAt = newRowTimestamp(scenario.CreatedAt)
+	}
 	assignmentJSON, goalJSON, runtimeJSON, trafficJSON, err := prepareScenarioForSave(scenario)
 	if err != nil {
 		return false, err
