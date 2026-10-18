@@ -25,12 +25,10 @@ func storedArchiveCatalogAvailable(record *storage.RunArchiveRecord) bool {
 }
 
 type archiveCatalogIdentity struct {
-	projectHash [32]byte
-	requestedAt time.Time
+	runIncarnation string
+	projectHash    [32]byte
+	requestedAt    time.Time
 }
-
-var archiveCatalogIdentities = newBoundedArchiveCache[archiveCatalogIdentity](128)
-var archiveCatalogReadSlots = make(chan struct{}, 2)
 
 // Only single-run terminal reads consult the shared catalog. List polling retains
 // its bounded snapshot scan instead of issuing a catalog query per row.
@@ -46,15 +44,15 @@ func (tr *TestRunner) attachTerminalArchiveCatalog(test *ManagedTest) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	identity, err := readArchiveCatalogIdentity(ctx, record)
-	if err != nil || identity.projectHash != sha256.Sum256([]byte(normalizeProjectID(test.ProjectID))) ||
+	identity, err := tr.archiveReadCaches().readArchiveCatalogIdentity(ctx, record)
+	if err != nil || identity.runIncarnation != managedTestRunIncarnation(test) || identity.projectHash != sha256.Sum256([]byte(normalizeProjectID(test.ProjectID))) ||
 		(!identity.requestedAt.IsZero() && !test.CreatedAt.IsZero() && !archiveRunTimestampMatches(identity.requestedAt, test.CreatedAt, tr.testStore)) {
 		return
 	}
 	// A peer can replace the run or catalog during manifest I/O. Never attach that
 	// earlier version to the replacement identity, including the local canonical.
 	durable, err := tr.testStore.GetTest(test.ID)
-	if err != nil || !sameStoredTestIdentity(test, durable) || !archiveRunTimestampMatches(test.CreatedAt, durable.StartTime, tr.testStore) {
+	if err != nil || !sameArchiveRunIncarnation(test, durable) || !sameStoredTestIdentity(test, durable) || !archiveRunTimestampMatches(test.CreatedAt, durable.StartTime, tr.testStore) {
 		return
 	}
 	latest, found, err := tr.loadRunArchiveFromStore(test.ID)
@@ -63,7 +61,7 @@ func (tr *TestRunner) attachTerminalArchiveCatalog(test *ManagedTest) {
 	}
 	test.Archive = cloneRunArchiveRecord(record)
 	tr.mu.Lock()
-	if current := tr.tests[test.ID]; sameStoredTestIdentity(current, durable) && archiveCatalogVersion(current.Archive) == archiveCatalogVersion(prior) {
+	if current := tr.tests[test.ID]; sameStoredTestIdentity(current, durable) && sameArchiveRunIncarnation(current, durable) && archiveCatalogVersion(current.Archive) == archiveCatalogVersion(prior) {
 		current.Archive = cloneRunArchiveRecord(record)
 		tr.archives[test.ID] = cloneRunArchiveRecord(record)
 	}
@@ -78,7 +76,7 @@ func archiveCatalogVersion(record *storage.RunArchiveRecord) string {
 	return sha256BytesHex(data)
 }
 
-func readArchiveCatalogIdentity(ctx context.Context, record *storage.RunArchiveRecord) (*archiveCatalogIdentity, error) {
+func (c *archiveReadCaches) readArchiveCatalogIdentity(ctx context.Context, record *storage.RunArchiveRecord) (*archiveCatalogIdentity, error) {
 	if record == nil {
 		return nil, errors.New("archive catalog is required")
 	}
@@ -102,11 +100,11 @@ func readArchiveCatalogIdentity(ctx context.Context, record *storage.RunArchiveR
 		// Fail closed on saturation; an unbounded number of summary requests must
 		// never produce an unbounded number of manifest downloads or decodes.
 		select {
-		case archiveCatalogReadSlots <- struct{}{}:
+		case c.catalogReadSlots <- struct{}{}:
 		default:
 			return nil, errors.New("archive catalog reader busy")
 		}
-		defer func() { <-archiveCatalogReadSlots }()
+		defer func() { <-c.catalogReadSlots }()
 		loadCtx, cancel := context.WithTimeout(baseCtx, 2*time.Second)
 		defer cancel()
 		var manifest *RunArchiveManifest
@@ -134,7 +132,11 @@ func readArchiveCatalogIdentity(ctx context.Context, record *storage.RunArchiveR
 		if manifest.TestID != record.TestID {
 			return nil, errors.New("archive manifest identity mismatch")
 		}
-		return &archiveCatalogIdentity{projectHash: sha256.Sum256([]byte(normalizeProjectID(manifest.Provenance.ProjectID))), requestedAt: manifest.Provenance.RequestedAt}, nil
+		incarnation, err := archiveManifestRunIncarnation(manifest)
+		if err != nil {
+			return nil, err
+		}
+		return &archiveCatalogIdentity{runIncarnation: incarnation, projectHash: sha256.Sum256([]byte(normalizeProjectID(manifest.Provenance.ProjectID))), requestedAt: manifest.Provenance.RequestedAt}, nil
 	}
 	// Only digest-anchored identities are immutable. Legacy manifests are read
 	// afresh and must not become permanent identity proofs after replacement.
@@ -142,5 +144,5 @@ func readArchiveCatalogIdentity(ctx context.Context, record *storage.RunArchiveR
 		return load()
 	}
 	key := record.TestID + "|" + archiveObjectNamespace(backend) + "|" + archiveCatalogVersion(record)
-	return archiveCatalogIdentities.getOrLoadContext(ctx, key, load)
+	return c.catalogIdentities.getOrLoadContext(ctx, key, load)
 }

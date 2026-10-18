@@ -189,17 +189,17 @@ func TestFilterLiveMetricsHistoryForGroupsCachedInvalidatesOnNewPoint(t *testing
 	second.Timestamp = first.Timestamp.Add(time.Second)
 	second.GroupMetrics["Checkout"].TPS = 9
 
-	initial := filterLiveMetricsHistoryForGroupsCached(testID, []*LiveMetrics{first}, filter)
+	initial := filterLiveMetricsHistoryForGroupsCached(&ManagedTest{ID: testID}, []*LiveMetrics{first}, filter)
 	if len(initial) != 1 || initial[0].TPS != 4 {
 		t.Fatalf("initial cached filter = %#v, want one checkout point with tps 4", initial)
 	}
 
-	cachedAgain := filterLiveMetricsHistoryForGroupsCached(testID, []*LiveMetrics{first}, filter)
+	cachedAgain := filterLiveMetricsHistoryForGroupsCached(&ManagedTest{ID: testID}, []*LiveMetrics{first}, filter)
 	if len(cachedAgain) != 1 || cachedAgain[0].TPS != 4 {
 		t.Fatalf("cached filter = %#v, want one checkout point with tps 4", cachedAgain)
 	}
 
-	updated := filterLiveMetricsHistoryForGroupsCached(testID, []*LiveMetrics{first, second}, filter)
+	updated := filterLiveMetricsHistoryForGroupsCached(&ManagedTest{ID: testID}, []*LiveMetrics{first, second}, filter)
 	if len(updated) != 2 || updated[1].TPS != 9 {
 		t.Fatalf("updated cached filter = %#v, want second checkout point with tps 9", updated)
 	}
@@ -235,7 +235,7 @@ func TestGroupMetricsHistoryCacheDropsNonResponseEvidence(t *testing.T) {
 	t.Cleanup(func() { deleteGroupMetricsHistoryCache(testID) })
 	original := liveMetricsForGroupFilterTest()
 	original.ErrorEvidence = []LiveErrorEvidence{{ID: "sensitive-evidence"}}
-	filtered := filterLiveMetricsHistoryForGroupsCached(testID, []*LiveMetrics{original}, groupFilterQuery{Names: []string{"Checkout"}, Explicit: true})
+	filtered := filterLiveMetricsHistoryForGroupsCached(&ManagedTest{ID: testID}, []*LiveMetrics{original}, groupFilterQuery{Names: []string{"Checkout"}, Explicit: true})
 	if len(filtered) != 1 || filtered[0] == nil {
 		t.Fatalf("filtered history = %#v", filtered)
 	}
@@ -247,6 +247,32 @@ func TestGroupMetricsHistoryCacheDropsNonResponseEvidence(t *testing.T) {
 	}
 	if len(original.ErrorEvidence) != 1 || original.GroupMetrics["Checkout"].DurationDigest == nil || len(original.Transactions) != 2 {
 		t.Fatal("cache compaction mutated canonical live history")
+	}
+}
+
+func TestGroupMetricsHistoryCacheSeparatesRunIncarnations(t *testing.T) {
+	const id = "group-incarnation-replacement"
+	deleteGroupMetricsHistoryCache(id)
+	t.Cleanup(func() { deleteGroupMetricsHistoryCache(id) })
+	prior := &ManagedTest{ID: id, CreatedAt: time.Now(), initialArchiveProvenance: &RunArchiveProvenance{RunIncarnation: "prior"}}
+	next := *prior
+	next.initialArchiveProvenance = &RunArchiveProvenance{RunIncarnation: "next"}
+	oldPoint, newPoint := liveMetricsForGroupFilterTest(), liveMetricsForGroupFilterTest()
+	newPoint.Timestamp = oldPoint.Timestamp
+	newPoint.GroupMetrics["Checkout"].TPS = 91
+	filter := groupFilterQuery{Names: []string{"Checkout"}, Explicit: true}
+	if got := filterLiveMetricsHistoryForGroupsCached(prior, []*LiveMetrics{oldPoint}, filter); len(got) != 1 || got[0].TPS != 4 {
+		t.Fatal("prior fixture not cached")
+	}
+	for range 2 {
+		got := filterLiveMetricsHistoryForGroupsCached(&next, []*LiveMetrics{newPoint}, filter)
+		if len(got) != 1 || got[0].TPS != 91 {
+			t.Fatalf("replacement reused prior group history: %+v", got)
+		}
+		// A late old request may finish after replacement invalidation. Its
+		// cache fill must remain owned by the old incarnation.
+		deleteGroupMetricsHistoryCache(id)
+		filterLiveMetricsHistoryForGroupsCached(prior, []*LiveMetrics{oldPoint}, filter)
 	}
 }
 

@@ -24,35 +24,28 @@ func AugmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 		Summary:        HarImportSummary(result),
 		Source:         source,
 	}
-	// Detect first with BuildNative:false so the expensive native preview (a full
-	// script clone + per-action rewrite in buildNativePreview) is never built for
-	// non-Salesforce HARs. handleImportHAR runs this for every HAR import, so
-	// detection must stay off the native-build hot path.
+	// Optional review callers stop before matching or correlation when detection
+	// is negative. A detected capture is analyzed only once, including its native
+	// preview; native preparation failures retain the completed review.
 	review, err := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{
-		BuildNative: false,
-		HARData:     data,
+		HARData:               data,
+		Document:              result.Document,
+		RequireDetected:       requireDetected,
+		BuildNativeIfDetected: buildNative,
+		Source:                source,
 	})
 	if err != nil {
-		if !requireDetected {
-			result.Warnings = append(result.Warnings, "Salesforce review failed: "+err.Error())
+		if review != nil {
+			result.Warnings = append(result.Warnings, "Salesforce native preview failed: "+err.Error())
+		} else {
+			if !requireDetected {
+				result.Warnings = append(result.Warnings, "Salesforce review failed: "+err.Error())
+			}
+			return augmentation
 		}
-		return augmentation
 	}
 	if requireDetected && (review == nil || !review.Detected) {
 		return augmentation
-	}
-
-	// Only build the native Salesforce preview once Salesforce traffic is confirmed.
-	if buildNative && review != nil && review.Detected {
-		nativeReview, nativeErr := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{
-			BuildNative: true,
-			HARData:     data,
-		})
-		if nativeErr != nil {
-			result.Warnings = append(result.Warnings, "Salesforce native preview failed: "+nativeErr.Error())
-		} else if nativeReview != nil {
-			review = nativeReview
-		}
 	}
 
 	augmentation.Detected = review != nil && review.Detected

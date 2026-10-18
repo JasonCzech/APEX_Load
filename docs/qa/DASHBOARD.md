@@ -29,7 +29,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Tier-0
 | Playwright spec files | 3 | 89 | assertion-driven |
 | Go statement coverage | 77.01% | 77.01% | ratchet |
 | Go coverage floor enforced | 0 | 0 | 1 |
-| Packages with no test file | 6 | 11 | 3 |
+| Packages with no test file | 6 | 10 | 3 |
 | Open inherited review defects | 11 | 1 | 0 |
 | Resource-leak linters enabled | 0 | 2 | 1 |
 | Converter golden files | 0 | 30 | all registered converters |
@@ -46,6 +46,28 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Tier-0
 | GREEN | PARTIAL | MISSING | Total |
 |---:|---:|---:|---:|
 | 764 | 0 | 0 | 764 |
+
+## Last verified executions
+
+Evidence checked through 2026-10-18; successes older than 30 days are marked stale. Coverage counts above do not prove that a lane ran. Missing receipts are unverified, never green.
+
+| Lane | Latest status | Last verified success | Evidence / limitation |
+|---|---|---|---|
+| Full Go suite | not run | No verified success recorded | Full suite not run for this change: the user restricted remaining validation to targeted checks after disk pressure. No full-suite pass claimed. |
+| Go race lane | not run | No verified success recorded | Full suite not run for this change: the user restricted remaining validation to targeted checks after disk pressure. No full-suite pass claimed. |
+| Dashboard unit and static checks | passed | [2026-10-18](reviews/peer-live-verification-2026-10-18/README.md#validation-scope) | The whole unit suite passed 7,906 tests before the final response-normalization compatibility correction; 73 affected tests passed afterward. TypeScript/build, ESLint and bundle budgets passed; accessibility lint had zero blocking errors and two pre-existing warnings. |
+| Full dashboard browser suites | not run | No verified success recorded | Neither complete auth-profile suite was run for this change after the user limited remaining validation to targeted checks. Affected workflows have separate entries below. |
+| Targeted dashboard browser: dev-admin | passed | [2026-10-18](reviews/peer-live-verification-2026-10-18/README.md#validation-scope) | 43 passed across ten affected workflow files on pinned Chromium; one private LoadRunner acceptance fixture skipped. Full suite not run. |
+| Targeted dashboard browser: local-auth | passed | [2026-10-18](reviews/peer-live-verification-2026-10-18/README.md#validation-scope) | 42 passed across nine applicable workflow files on pinned Chromium; one private LoadRunner acceptance fixture skipped. Full suite not run. |
+| Full PostgreSQL storage/API | not run | No verified success recorded | No complete suite result: the full tagged PostgreSQL storage run was stopped when the user restricted remaining validation to targeted checks after disk pressure. Partial results are not a full pass; the full API lane was not run. |
+| Kafka local broker | passed | [2026-10-18](reviews/peer-live-verification-2026-10-18/broker-receipt.json) | Pinned local broker run passed 240 test results including TestKafkaFranzProduceConsumeIntegration, with no skips; fixture teardown passed. Basic interoperability only; separate transaction/seek and cloud lanes remain unqualified. See the peer live-verification report. |
+| Solace local broker | passed | [2026-10-18](reviews/peer-live-verification-2026-10-18/broker-receipt.json) | Pinned local broker run passed 318 JMS/Solace test results including TestSolaceAMQPIntegrationPublish, with no skips; fixture teardown passed. Basic interoperability only; separate broker/provider lanes remain unqualified. See the peer live-verification report. |
+| HA failover soak | passed | [2026-10-18](reviews/peer-live-verification-2026-10-18/README.md#validation-scope) | 25 deterministic controller handoffs passed using local SQLite transactional simulation. This does not qualify production AKS or PostgreSQL HA. |
+| Telemetry reference workload | passed | [2026-10-18](reviews/peer-live-verification-2026-10-18/telemetry-reference.json) | Final code passed the unchanged 60-second, 2,000/s reference and 2,000 ms sample-age gate: P99 1,532.8 ms, max 1,535.0 ms, 123,134 matching served/archived/live transactions, zero unreported loss and 0/100 archive-analysis failures. |
+| Pinned browser recording E2E | not run | No verified success recorded | The pinned browser-recording E2E lane was not run in this sweep; targeted import workflows do not qualify recording. |
+| Azure Service Bus live broker | not configured | No verified success recorded | Requires an approved live service and connection settings; no local success claimed. |
+| Azure Event Hubs live broker | not configured | No verified success recorded | Requires an approved live service and connection settings; no local success claimed. |
+| Protected protocol Actions workflow | failed | No verified success recorded | 13 completed runs through 2026-10-11, no successful run. Latest: https://github.com/JasonCzech/APEX_Load/actions/runs/38113651831 |
 
 ## Gate tiers
 

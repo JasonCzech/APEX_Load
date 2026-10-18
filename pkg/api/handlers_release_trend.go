@@ -75,7 +75,7 @@ func (s *Server) collectReleaseTrendRunsForFamily(family resolvedReleaseFamily, 
 				}
 			}
 		}
-		report, err := cachedRunArchiveReport(record)
+		report, err := s.archiveReadCaches().cachedRunArchiveReport(record)
 		if err != nil {
 			// One corrupt/unreadable archive must not fail the whole trend; skip it.
 			slog.Warn("release trend: archive report unavailable", "test", test.ID, "err", err)

@@ -47,7 +47,7 @@ func ValidateZIPDirectory(data []byte, maxEntries int) error {
 		return fmt.Errorf("inspect ZIP central directory: %w", err)
 	}
 	if metadata.records > uint64(maxEntries) {
-		return fmt.Errorf("archive has too many entries (%d > maximum %d)", metadata.records, maxEntries)
+		return limitErrorf("archive has too many entries (%d > maximum %d)", metadata.records, maxEntries)
 	}
 
 	start, _, err := zipDirectoryBounds(data, metadata)
@@ -69,7 +69,7 @@ func ValidateZIPDirectory(data []byte, maxEntries int) error {
 		return fmt.Errorf("inspect ZIP central directory: %w", err)
 	}
 	if count > maxEntries {
-		return fmt.Errorf("archive has too many entries (%d > maximum %d)", count, maxEntries)
+		return limitErrorf("archive has too many entries (%d > maximum %d)", count, maxEntries)
 	}
 	return nil
 }

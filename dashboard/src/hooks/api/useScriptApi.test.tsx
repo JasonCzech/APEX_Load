@@ -358,7 +358,7 @@ describe('useScriptApi import wrappers', () => {
     const file = new File(['{}'], 'capture.har', { type: 'application/json' })
     await api[method](file, { project_id: 'project with spaces', name: 'Capture', base_url: 'https://example.test', agentforce_transform: true })
     const [url, options] = (apiFetch as Mock).mock.calls[0]
-    expect(url).toBe(`/scripts/import/${method === 'importHAR' ? 'har' : 'salesforce'}?project_id=project+with+spaces&agentforce_transform=true`)
+    expect(url).toBe(`/scripts/import/${method === 'importHAR' ? 'har' : 'salesforce'}?project_id=project+with+spaces&agentforce_transform=true&response_format=canonical-v1`)
     const body = options.body as FormData
     expect(Array.from(body.keys())).toEqual(['project_id', 'file', 'name', 'base_url'])
     expect(body.get('project_id')).toBe('project with spaces')
@@ -370,7 +370,7 @@ describe('useScriptApi import wrappers', () => {
     const second = new File(['{}'], 'second.har')
     await api.importHAR(file, { project_id: 'project-1', salesforce_native: false, secondary_file: second, include_static_assets: true })
     const [url, options] = (apiFetch as Mock).mock.calls[0]
-    expect(url).toBe('/scripts/import/har?project_id=project-1&salesforce_native=false')
+    expect(url).toBe('/scripts/import/har?project_id=project-1&salesforce_native=false&response_format=canonical-v1')
     expect(Array.from((options.body as FormData).keys())).toEqual(['project_id', 'file', 'include_static_assets', 'secondary_file'])
     expect((options.body as FormData).get('secondary_file')).toBe(second)
   })

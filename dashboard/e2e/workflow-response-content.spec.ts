@@ -1,3 +1,4 @@
+import { canonicalImportDraft } from './support/importResponse'
 import { createServer } from 'node:http'
 import type { Socket } from 'node:net'
 import { readFile } from 'node:fs/promises'
@@ -119,7 +120,7 @@ async function inspectHAR(page: Page, workspace: Workspace, name: string, entrie
   await controls.getByRole('button', { name: 'Inspect & review', exact: true }).click()
   const result = await json(await inspected)
   await expect(controls.getByRole('heading', { name: 'Review Generated Script', exact: true })).toBeVisible()
-  return { controls, result, script: result.script as unknown as ScriptDefinition }
+  return { controls, result, script: canonicalImportDraft(result) }
 }
 
 async function saveAndOpen(page: Page, controls: Locator) {

@@ -115,6 +115,8 @@ var legacyCredentialImportProvenance = map[string]map[string]struct{}{
 	},
 	"apexload-salesforce-builder": {
 		"enterprise_script_archive+har": {},
+		"har":                           {},
+		"browser_recording_har":         {},
 	},
 	"apexload-recorder-importer": {
 		"recorder": {}, "browser_recording": {}, "browser_recording_har": {},

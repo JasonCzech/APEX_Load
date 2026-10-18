@@ -287,13 +287,13 @@ func TestRunValidityIsAnnouncedOncePerVerdict(t *testing.T) {
 	// The fixture archives no generator samples (validity unknown): nothing.
 	server.notifyRunValidity("rca-run")
 	expectNoNotification(t, received)
-	runArchiveReportCache.deleteTest("rca-run")
-	if _, err := runArchiveReportCache.getOrLoad(runArchiveReportCacheKey(record), func() (*RunArchiveReport, error) {
+	server.archiveReadCaches().reports.deleteTest("rca-run")
+	if _, err := server.archiveReadCaches().reports.getOrLoad(runArchiveReportCacheKey(record), func() (*RunArchiveReport, error) {
 		return &RunArchiveReport{Validity: &rca.Validity{Verdict: rca.ValidityInvalid, Reasons: []string{"generator-1 was OOM-killed"}}}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { runArchiveReportCache.deleteTest("rca-run") })
+	t.Cleanup(func() { server.archiveReadCaches().reports.deleteTest("rca-run") })
 	server.notifyRunValidity("rca-run")
 	payload := expectNotification(t, received)
 	if text := fmt.Sprint(payload); !strings.Contains(text, "Run Validity") || !strings.Contains(text, "run validity invalid: generator-1 was OOM-killed") {

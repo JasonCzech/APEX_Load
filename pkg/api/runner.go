@@ -194,6 +194,7 @@ type runtimeSecretRecoveryState struct {
 }
 
 type TestRunner struct {
+	archiveCacheOwner archiveCacheOwner
 	// evidenceAcknowledgements tracks background acknowledgements of
 	// published run evidence to generators.
 	evidenceAcknowledgements sync.WaitGroup

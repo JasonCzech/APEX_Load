@@ -152,6 +152,7 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 		testName               string
 		projectID              string
 		expectedManifestTestID string
+		expectedRunIncarnation string
 		importedEvidence       bool
 		record                 *storage.RunArchiveRecord
 	)
@@ -166,6 +167,12 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 			projectID = normalizeProjectID(durableTest.ProjectID)
 			testName = durableTest.Name
 			expectedManifestTestID = id
+			var identityErr error
+			expectedRunIncarnation, identityErr = storage.TestRunIncarnation(durableTest.InitialProvenance)
+			if identityErr != nil {
+				writeError(w, http.StatusNotFound, "archive run identity is invalid")
+				return
+			}
 			if !requireAuthorizedProjectMatch(w, r, projectID) {
 				return
 			}
@@ -196,6 +203,7 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 			projectID = normalizeProjectID(test.ProjectID)
 			testName = test.Name
 			expectedManifestTestID = id
+			expectedRunIncarnation = managedTestRunIncarnation(test)
 			if !requireAuthorizedProjectMatch(w, r, projectID) {
 				return
 			}
@@ -227,7 +235,7 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer lease.Release()
-	manifest, err := cachedRunArchiveManifest(record)
+	manifest, err := s.archiveReadCaches().cachedRunArchiveManifest(record)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -236,12 +244,19 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "archive does not belong to result")
 		return
 	}
+	if !importedEvidence {
+		incarnation, err := archiveManifestRunIncarnation(manifest)
+		if err != nil || incarnation != expectedRunIncarnation {
+			writeError(w, http.StatusNotFound, "archive does not belong to run incarnation")
+			return
+		}
+	}
 	if manifestProjectID := strings.TrimSpace(manifest.Provenance.ProjectID); !importedEvidence && manifestProjectID != "" && normalizeProjectID(manifestProjectID) != projectID {
 		writeError(w, http.StatusNotFound, "archive does not belong to result project")
 		return
 	}
 	staged, err := stageArchiveDownload(prepCtx, func(destination io.Writer) error {
-		return zipSanitizedRunArchiveContext(prepCtx, record, manifest, destination)
+		return s.archiveReadCaches().zipSanitizedRunArchiveContext(prepCtx, record, manifest, destination)
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive bundle: "+err.Error())

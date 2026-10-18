@@ -1,3 +1,4 @@
+import { canonicalImportDraft } from './support/importResponse'
 import { createServer, type ServerResponse } from 'node:http'
 import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
@@ -286,7 +287,7 @@ test('LoadRunner concurrent markers import exact child mappings and replay on th
     const converted = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
     await page.getByRole('button', { name: 'Validate Script', exact: true }).click()
     const result = await json(await converted)
-    const draft = result.script as unknown as ScriptDefinition
+    const draft = canonicalImportDraft(result)
     const group = draft.actions.find(action => action.type === 'http_sequence' && action.params?.execution_mode === 'concurrent')
     expect(group).toBeDefined()
     expect(group!.params!.requests).toHaveLength(2)

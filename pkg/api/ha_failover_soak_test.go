@@ -389,6 +389,17 @@ func TestHAControllerFailoverSoak(t *testing.T) {
 		if manifest.TestID != run.ID || manifest.Status != "FAILED" || manifest.CompletedAt.IsZero() {
 			t.Fatalf("iteration %d: recovered terminal manifest = test:%q status:%q completed:%v", iteration, manifest.TestID, manifest.Status, manifest.CompletedAt)
 		}
+		durable, err = standby.store.GetTest(run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		incarnation, err := storage.TestRunIncarnation(durable.InitialProvenance)
+		if err != nil || incarnation == "" || manifest.Provenance.RunIncarnation != incarnation || manifest.InitialProvenance == nil || manifest.InitialProvenance.RunIncarnation != incarnation {
+			t.Fatalf("iteration %d: recovered archive lost durable run incarnation: %q %v", iteration, incarnation, err)
+		}
+		if durable.EndTime == nil || !archiveRunTimestampMatches(*durable.EndTime, manifest.CompletedAt, standby.store) {
+			t.Fatalf("iteration %d: recovery did not adopt verified archive completion", iteration)
+		}
 		assertSingleHAFailoverArchiveDirectory(t, archiveRoot, run.ID)
 
 		// Repeat both recovery stages. The create-if-orphan transition and archive

@@ -186,7 +186,18 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchiveUnderSourceFence(ctx context
 	if declared := strings.TrimSpace(manifest.Provenance.ProjectID); declared != "" && normalizeProjectID(declared) != project {
 		return fmt.Errorf("orphan archive %s belongs to another project", record.TestID)
 	}
-	if row.EndTime == nil || manifest.Status != row.Status || !archiveRunTimestampMatches(archiveManifestRequestedAt(manifest), row.StartTime, tr.testStore) || !archiveRunTimestampMatches(manifest.CompletedAt, *row.EndTime, tr.testStore) {
+	incarnation, err := archiveManifestRunIncarnation(manifest)
+	if err != nil {
+		return err
+	}
+	durableIncarnation, err := storage.TestRunIncarnation(row.InitialProvenance)
+	if err != nil {
+		return err
+	}
+	if row.EndTime == nil || manifest.CompletedAt.IsZero() || manifest.Status != row.Status ||
+		!archiveRunTimestampMatches(archiveManifestRequestedAt(manifest), row.StartTime, tr.testStore) ||
+		incarnation != durableIncarnation ||
+		(incarnation == "" && !archiveRunTimestampMatches(manifest.CompletedAt, *row.EndTime, tr.testStore)) {
 		return fmt.Errorf("orphan archive %s does not match the durable terminal incarnation", record.TestID)
 	}
 	lease, owner := "", ""
@@ -201,10 +212,26 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchiveUnderSourceFence(ctx context
 		return err
 	}
 	record.RefKey = strings.TrimSpace(row.RefKey)
-	return tr.trackDurableWrite(func() error {
-		_, err := store.SaveArchiveFinalizationJobIfOrphanForRun(&storage.ArchiveFinalizationJob{TestID: record.TestID, ProjectID: project, ArchiveRecord: *record, PersistArtifacts: true}, archiveManifestRequestedAt(manifest), manifest.Status, lease, owner)
-		return err
+	record.RunIncarnation = incarnation
+	var created bool
+	err = tr.trackDurableWrite(func() error {
+		var saveErr error
+		created, saveErr = store.SaveArchiveFinalizationJobIfOrphanForRun(&storage.ArchiveFinalizationJob{TestID: record.TestID, ProjectID: project, ArchiveRecord: *record, PersistArtifacts: true}, archiveManifestRequestedAt(manifest), manifest.Status, lease, owner)
+		return saveErr
 	})
+	if err == nil && created && incarnation != "" {
+		// Keep this controller's terminal projection consistent with the
+		// committed adoption. A replacement or independently changed pointer
+		// must never inherit the old run's completion time.
+		tr.mu.Lock()
+		current := tr.tests[row.ID]
+		if sameStoredTestIdentity(current, row) && sameArchiveRunIncarnation(current, row) && current.Status == row.Status && current.EndedAt != nil && archiveRunTimestampMatches(*current.EndedAt, *row.EndTime, tr.testStore) {
+			end := record.CompletedAt
+			current.EndedAt = &end
+		}
+		tr.mu.Unlock()
+	}
+	return err
 }
 
 func discoverOrphanArchiveDirectories(ctx context.Context, root string) ([]orphanArchiveCandidate, error) {
@@ -486,4 +513,14 @@ func archiveManifestRequestedAt(manifest *RunArchiveManifest) time.Time {
 		return manifest.Provenance.RequestedAt
 	}
 	return manifest.CreatedAt
+}
+
+// The frozen and current projections must agree whenever initial provenance is
+// present. Legacy archives with neither token retain exact timestamp fencing.
+func archiveManifestRunIncarnation(manifest *RunArchiveManifest) (string, error) {
+	incarnation := manifest.Provenance.RunIncarnation
+	if manifest.InitialProvenance != nil && manifest.InitialProvenance.RunIncarnation != incarnation {
+		return "", errors.New("archive initial and current run incarnation differ")
+	}
+	return incarnation, nil
 }

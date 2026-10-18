@@ -195,7 +195,7 @@ func (s *Server) buildReleaseSLAGovernance(releaseID string) (ReleaseSLAGovernan
 			CompletedAt: test.EndedAt,
 		}
 		if record, ok := s.runner.GetRunArchive(test.ID); ok {
-			report, err := cachedRunArchiveReport(record)
+			report, err := s.archiveReadCaches().cachedRunArchiveReport(record)
 			if err != nil {
 				// A single corrupt/unreadable archive must not 500 the whole
 				// release's governance view. Surface the run as degraded

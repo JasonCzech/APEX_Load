@@ -9986,6 +9986,8 @@ paths:
                               format: date-time
                             resource_baseline:
                               type: boolean
+                            run_incarnation:
+                              type: string
                             runtime_settings:
                               type: object
                               additionalProperties: true
@@ -10498,6 +10500,8 @@ paths:
                               format: date-time
                             resource_baseline:
                               type: boolean
+                            run_incarnation:
+                              type: string
                             runtime_settings:
                               type: object
                               additionalProperties: true
@@ -59887,6 +59891,8 @@ paths:
                                 resource_sample_count:
                                   type: integer
                                   format: int64
+                                run_incarnation:
+                                  type: string
                                 schema_version:
                                   type: string
                                 test_id:
@@ -89789,6 +89795,8 @@ paths:
                           resource_sample_count:
                             type: integer
                             format: int64
+                          run_incarnation:
+                            type: string
                           schema_version:
                             type: string
                           test_id:
@@ -96431,6 +96439,8 @@ paths:
                           resource_sample_count:
                             type: integer
                             format: int64
+                          run_incarnation:
+                            type: string
                           schema_version:
                             type: string
                           test_id:
@@ -103074,6 +103084,8 @@ paths:
                           resource_sample_count:
                             type: integer
                             format: int64
+                          run_incarnation:
+                            type: string
                           schema_version:
                             type: string
                           test_id:
@@ -109729,6 +109741,8 @@ paths:
                           resource_sample_count:
                             type: integer
                             format: int64
+                          run_incarnation:
+                            type: string
                           schema_version:
                             type: string
                           test_id:
@@ -116384,6 +116398,8 @@ paths:
                           resource_sample_count:
                             type: integer
                             format: int64
+                          run_incarnation:
+                            type: string
                           schema_version:
                             type: string
                           test_id:
@@ -123039,6 +123055,8 @@ paths:
                           resource_sample_count:
                             type: integer
                             format: int64
+                          run_incarnation:
+                            type: string
                           schema_version:
                             type: string
                           test_id:
@@ -129694,6 +129712,8 @@ paths:
                           resource_sample_count:
                             type: integer
                             format: int64
+                          run_incarnation:
+                            type: string
                           schema_version:
                             type: string
                           test_id:
@@ -347801,6 +347821,8 @@ paths:
                       resource_sample_count:
                         type: integer
                         format: int64
+                      run_incarnation:
+                        type: string
                       schema_version:
                         type: string
                       test_id:
@@ -361710,6 +361732,8 @@ paths:
                       resource_sample_count:
                         type: integer
                         format: int64
+                      run_incarnation:
+                        type: string
                       schema_version:
                         type: string
                       test_id:
@@ -380366,6 +380390,8 @@ paths:
                         format: date-time
                       resource_baseline:
                         type: boolean
+                      run_incarnation:
+                        type: string
                       runtime_settings:
                         type: object
                         properties:
@@ -383416,6 +383442,8 @@ paths:
                         format: date-time
                       resource_baseline:
                         type: boolean
+                      run_incarnation:
+                        type: string
                       runtime_settings:
                         type: object
                         properties:
@@ -395174,6 +395202,8 @@ paths:
                             format: date-time
                           resource_baseline:
                             type: boolean
+                          run_incarnation:
+                            type: string
                           runtime_settings:
                             type: object
                             properties:
@@ -396796,6 +396826,8 @@ paths:
                             format: date-time
                           resource_baseline:
                             type: boolean
+                          run_incarnation:
+                            type: string
                           runtime_settings:
                             type: object
                             properties:
@@ -407604,6 +407636,8 @@ paths:
                       resource_sample_count:
                         type: integer
                         format: int64
+                      run_incarnation:
+                        type: string
                       schema_version:
                         type: string
                       test_id:
@@ -421457,6 +421491,8 @@ paths:
                       resource_sample_count:
                         type: integer
                         format: int64
+                      run_incarnation:
+                        type: string
                       schema_version:
                         type: string
                       test_id:
@@ -441374,6 +441410,8 @@ paths:
                       resource_sample_count:
                         type: integer
                         format: int64
+                      run_incarnation:
+                        type: string
                       schema_version:
                         type: string
                       test_id:

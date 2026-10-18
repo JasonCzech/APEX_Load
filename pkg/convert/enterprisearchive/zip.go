@@ -2,6 +2,7 @@ package enterprisearchive
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"path"
 	"regexp"
@@ -66,6 +67,9 @@ func readEnterpriseArchive(zipData []byte) (map[string]string, error) {
 		StripFirstComponent: true,
 	})
 	if err != nil {
+		if errors.Is(err, archiveingest.ErrLimitExceeded) {
+			return nil, fmt.Errorf("zip archive exceeds import limits (size=%d bytes): %w", len(zipData), err)
+		}
 		return nil, fmt.Errorf("failed to open zip archive (size=%d bytes): %w; the file may be corrupted, incomplete, or use an unsupported ZIP compression method", len(zipData), err)
 	}
 

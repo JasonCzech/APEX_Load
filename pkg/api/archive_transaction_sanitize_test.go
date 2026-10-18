@@ -192,7 +192,7 @@ func TestLegacyArchiveZIPRewritesTransactionsAndOmitsUnsafeParquet(t *testing.T)
 	}
 	record := &storage.RunArchiveRecord{TestID: manifest.TestID, ArchivePath: dir, ManifestPath: filepath.Join(dir, runArchiveManifestFileName)}
 	var archive bytes.Buffer
-	if err := zipSanitizedRunArchiveContext(context.Background(), record, &manifest, &archive); err != nil {
+	if err := newArchiveReadCaches().zipSanitizedRunArchiveContext(context.Background(), record, &manifest, &archive); err != nil {
 		t.Fatalf("zipSanitizedRunArchiveContext: %v", err)
 	}
 	reader, err := zip.NewReader(bytes.NewReader(archive.Bytes()), int64(archive.Len()))

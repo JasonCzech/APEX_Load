@@ -119,7 +119,7 @@ func (s *Server) notifyRunValidity(testID string) {
 		slog.Warn("the run archive could not be leased to announce its validity", "test_id", testID, "error", err)
 		return
 	}
-	validity, err := cachedRunArchiveValidity(record)
+	validity, err := s.archiveReadCaches().cachedRunArchiveValidity(record)
 	lease.Release()
 	if err != nil || validity == nil || (validity.Verdict != rca.ValiditySuspect && validity.Verdict != rca.ValidityInvalid) {
 		return

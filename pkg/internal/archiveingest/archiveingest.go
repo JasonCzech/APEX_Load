@@ -47,6 +47,19 @@ const (
 	tarEndRecordBytes    = int64(2 * 512)
 )
 
+// ErrLimitExceeded distinguishes a valid archive refused by configured import
+// bounds from a malformed archive. Callers should keep the detailed limit in
+// the error instead of advising the operator to repair the file.
+var ErrLimitExceeded = errors.New("archive import limit exceeded")
+
+type limitError struct{ message string }
+
+func (e *limitError) Error() string { return e.message }
+func (e *limitError) Unwrap() error { return ErrLimitExceeded }
+func limitErrorf(format string, args ...any) error {
+	return &limitError{message: fmt.Sprintf(format, args...)}
+}
+
 // Limits bounds both archive metadata work and decompressed bytes.
 type Limits struct {
 	MaxEntries          int
@@ -131,7 +144,7 @@ func ReadZIP(data []byte, options Options) ([]File, error) {
 		return nil, err
 	}
 	if len(reader.File) > limits.MaxEntries {
-		return nil, fmt.Errorf("archive has too many entries (%d > maximum %d)", len(reader.File), limits.MaxEntries)
+		return nil, limitErrorf("archive has too many entries (%d > maximum %d)", len(reader.File), limits.MaxEntries)
 	}
 
 	result := make([]File, 0, len(reader.File))
@@ -160,17 +173,17 @@ func ReadZIP(data []byte, options Options) ([]File, error) {
 		}
 		declared := int64(entry.UncompressedSize64)
 		if declared < 0 || declared > limits.MaxEntryBytes {
-			return nil, fmt.Errorf("archive entry %q exceeds the maximum allowed uncompressed size of %d bytes (decompression limit)", name, limits.MaxEntryBytes)
+			return nil, limitErrorf("archive entry %q exceeds the maximum allowed uncompressed size of %d bytes (decompression limit)", name, limits.MaxEntryBytes)
 		}
 		if exceedsZIPCompressionRatio(
 			entry.UncompressedSize64,
 			entry.CompressedSize64,
 			limits.MaxCompressionRatio,
 		) {
-			return nil, fmt.Errorf("archive entry %q exceeds the maximum compression-ratio limit of %d", name, limits.MaxCompressionRatio)
+			return nil, limitErrorf("archive entry %q exceeds the maximum compression-ratio limit of %d", name, limits.MaxCompressionRatio)
 		}
 		if declared > limits.MaxTotalBytes-total {
-			return nil, fmt.Errorf("archive exceeds the maximum allowed total uncompressed size of %d bytes", limits.MaxTotalBytes)
+			return nil, limitErrorf("archive exceeds the maximum allowed total uncompressed size of %d bytes", limits.MaxTotalBytes)
 		}
 		body, err := readZIPEntry(entry, limits.MaxEntryBytes, limits.MaxTotalBytes-total)
 		if err != nil {
@@ -206,13 +219,13 @@ func ReadTAR(reader io.Reader, options Options) ([]File, error) {
 		}
 		if err != nil {
 			if bounded.N == 0 {
-				return nil, fmt.Errorf("archive exceeds the maximum TAR input size of %d bytes", inputLimit)
+				return nil, limitErrorf("archive exceeds the maximum TAR input size of %d bytes", inputLimit)
 			}
 			return nil, fmt.Errorf("read archive header: %w", err)
 		}
 		entries++
 		if entries > limits.MaxEntries {
-			return nil, fmt.Errorf("archive has too many entries (> maximum %d)", limits.MaxEntries)
+			return nil, limitErrorf("archive has too many entries (> maximum %d)", limits.MaxEntries)
 		}
 		name, isDirectory, err := validatePath(header.Name, false, options, limits)
 		if err != nil {
@@ -235,10 +248,10 @@ func ReadTAR(reader io.Reader, options Options) ([]File, error) {
 			return nil, err
 		}
 		if header.Size < 0 || header.Size > limits.MaxEntryBytes {
-			return nil, fmt.Errorf("archive entry %q exceeds the maximum allowed uncompressed size of %d bytes (decompression limit)", name, limits.MaxEntryBytes)
+			return nil, limitErrorf("archive entry %q exceeds the maximum allowed uncompressed size of %d bytes (decompression limit)", name, limits.MaxEntryBytes)
 		}
 		if header.Size > limits.MaxTotalBytes-total {
-			return nil, fmt.Errorf("archive exceeds the maximum allowed total uncompressed size of %d bytes", limits.MaxTotalBytes)
+			return nil, limitErrorf("archive exceeds the maximum allowed total uncompressed size of %d bytes", limits.MaxTotalBytes)
 		}
 		body, err := io.ReadAll(io.LimitReader(tr, header.Size+1))
 		if err != nil {
@@ -337,7 +350,7 @@ func readZIPEntry(entry *zip.File, maxEntry, remaining int64) ([]byte, error) {
 		return nil, closeErr
 	}
 	if int64(len(body)) > limit {
-		return nil, errors.New("decompression limit exceeded (possible archive bomb)")
+		return nil, limitErrorf("decompression limit exceeded (possible archive bomb)")
 	}
 	return body, nil
 }
@@ -383,7 +396,7 @@ func validatePath(raw string, declaredNonUTF8 bool, options Options, limits Limi
 		maxDepth++
 	}
 	if len(parts) > maxDepth {
-		return "", false, fmt.Errorf("entry path depth exceeds %d", limits.MaxDepth)
+		return "", false, limitErrorf("entry path depth exceeds %d", limits.MaxDepth)
 	}
 	return strings.Join(parts, "/"), isDirectory, nil
 }
@@ -416,7 +429,7 @@ func finalizeArchivePaths(files []File, options Options, limits Limits) ([]File,
 			name = strings.TrimPrefix(name, commonRoot+"/")
 		}
 		if len(strings.Split(name, "/")) > limits.MaxDepth {
-			return nil, fmt.Errorf("archive entry %q path depth exceeds %d after common-root evaluation", name, limits.MaxDepth)
+			return nil, limitErrorf("archive entry %q path depth exceeds %d after common-root evaluation", name, limits.MaxDepth)
 		}
 		if err := recordName(seen, name); err != nil {
 			return nil, err

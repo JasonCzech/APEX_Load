@@ -48,9 +48,12 @@ import (
 const telemetryReferenceAgeTargetMs = 2000
 
 type telemetryReferenceResults struct {
-	Schema      string    `json:"schema"`
-	GeneratedAt time.Time `json:"generated_at"`
-	Host        struct {
+	BatchTrace          []telemetryReferenceBatchTrace       `json:"batch_trace,omitempty"`
+	PublicationTrace    []telemetryReferencePublicationTrace `json:"publication_trace,omitempty"`
+	DroppedTraceRecords int                                  `json:"dropped_trace_records,omitempty"`
+	Schema              string                               `json:"schema"`
+	GeneratedAt         time.Time                            `json:"generated_at"`
+	Host                struct {
 		OS   string `json:"os"`
 		Arch string `json:"arch"`
 		CPUs int    `json:"cpus"`
@@ -181,10 +184,11 @@ func TestTelemetryReferenceWorkload(t *testing.T) {
 	t.Cleanup(target.Close)
 
 	// Two generator services, reached over in-memory gRPC.
+	trace := &telemetryReferenceTrace{}
 	listeners := map[string]*bufconn.Listener{}
 	for _, id := range []string{"gen-a", "gen-b"} {
 		listener := bufconn.Listen(4 << 20)
-		grpcServer := grpc.NewServer()
+		grpcServer := grpc.NewServer(grpc.StreamInterceptor(trace.intercept))
 		service := generatorrpc.NewService(id, 500, generatorrpc.WithExecution())
 		pb.RegisterGeneratorControlServer(grpcServer, service)
 		go func() { _ = grpcServer.Serve(listener) }()
@@ -273,6 +277,12 @@ func TestTelemetryReferenceWorkload(t *testing.T) {
 	sampler := startReferenceRSSSampler(250 * time.Millisecond)
 	defer sampler.stop()
 	run := runOnce("Telemetry reference workload", duration)
+	defer func() {
+		results.BatchTrace, results.DroppedTraceRecords = trace.forTest(run.ID)
+		if final, ok := server.runner.GetTest(run.ID); ok {
+			results.PublicationTrace = telemetryReferencePublicationTraces(final.History)
+		}
+	}()
 
 	// The foreground dashboard.
 	stopDashboard := telemetryReferenceDashboard(t, api.URL+"/#/test/"+run.ID+"?tab=diagnostics&projectId="+storage.DefaultProjectID, &results)

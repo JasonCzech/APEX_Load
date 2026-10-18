@@ -4,7 +4,6 @@ package sample
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"net/http"
@@ -56,8 +55,16 @@ func HARSourceObservations(content string, includeStaticAssets bool) ([]HARSourc
 }
 
 func harObservations(content string, includeStaticAssets, sourceIDs bool) ([]HARSourceObservation, error) {
+	document, err := ParseHARDocument(content)
+	if err != nil {
+		return nil, err
+	}
+	return document.observations(includeStaticAssets, sourceIDs)
+}
+
+func (d *HARDocument) observations(includeStaticAssets, sourceIDs bool) ([]HARSourceObservation, error) {
 	var diagnostics diag.Collector
-	exchanges, _, _, _, err := parseHAR(content, includeStaticAssets, &diagnostics)
+	exchanges, _, _, _, err := d.parse(includeStaticAssets, requestimport.HTTPVersionModeUpgrade, &diagnostics)
 	if err != nil {
 		return nil, err
 	}
@@ -91,23 +98,15 @@ func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collec
 // parseHARWithMode parses a HAR, mapping each observed HTTP version to a leaf
 // policy by mode (requestimport.HTTPVersionMode*).
 func parseHARWithMode(content string, includeStaticAssets bool, mode string, diagnostics *diag.Collector) ([]exchange, []string, int, int, error) {
-	var payload any
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(content, "\uFEFF")), &payload); err != nil {
-		return nil, nil, 0, 0, fmt.Errorf("failed to parse HAR JSON: %w", err)
-	}
-	items, err := extractHARItems(payload)
+	document, err := ParseHARDocument(content)
 	if err != nil {
 		return nil, nil, 0, 0, err
 	}
-	legacyRecorder := false
-	if root, ok := payload.(map[string]any); ok {
-		if log, ok := root["log"].(map[string]any); ok {
-			root = log
-		}
-		if creator, ok := root["creator"].(map[string]any); ok {
-			legacyRecorder = creator["name"] == "APEX Load Recorder"
-		}
-	}
+	return document.parse(includeStaticAssets, mode, diagnostics)
+}
+
+func (d *HARDocument) parse(includeStaticAssets bool, mode string, diagnostics *diag.Collector) ([]exchange, []string, int, int, error) {
+	items, legacyRecorder := d.items, d.legacyRecorder
 	exchanges := make([]exchange, 0, len(items))
 	filtered := 0
 	skipped := 0
@@ -700,9 +699,28 @@ func metadataMap(value any) map[string]any {
 	}
 	out := make(map[string]any, len(typed))
 	for key, item := range typed {
-		out[key] = item
+		out[key] = cloneHARMetadataValue(item)
 	}
 	return out
+}
+
+func cloneHARMetadataValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			out[key] = cloneHARMetadataValue(item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for i, item := range typed {
+			out[i] = cloneHARMetadataValue(item)
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 func itemListMetadata(value any) ([]map[string]any, bool) {
@@ -1168,14 +1186,15 @@ func mergeHARCookies(value any, ex *exchange, diagnostics *diag.Collector, locat
 // recent page before it. It returns the explicit resources per page entry
 // (keyed by SourceEntryID), bounded per page.
 func harInStepResources(content string) map[int][]any {
-	var payload any
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(content, "\uFEFF")), &payload); err != nil {
-		return nil
-	}
-	items, err := extractHARItems(payload)
+	document, err := ParseHARDocument(content)
 	if err != nil {
 		return nil
 	}
+	return document.inStepResources()
+}
+
+func (d *HARDocument) inStepResources() map[int][]any {
+	items := d.items
 	resources := map[int][]any{}
 	pageByURL := map[string]int{}
 	lastPage := 0

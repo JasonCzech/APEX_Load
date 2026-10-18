@@ -1,3 +1,4 @@
+import { canonicalImportDraft } from './support/importResponse'
 import path from 'node:path'
 import { test, expect, json, mutation } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
@@ -16,10 +17,10 @@ test('transaction names survive archive import without requiring secret bindings
   await page.getByRole('button', { name: 'Validate Script', exact: true }).click()
   const result = await json(await validated)
   expect(result.secret_binding_requirements || []).toEqual([])
-  const script = result.script as { actions: { type: string; params?: { args?: string[] } }[] }
+  const script = canonicalImportDraft(result)
   const markers = script.actions.filter(action => action.type === 'source_transaction')
   expect(markers).toHaveLength(2)
-  expect(markers.every(action => action.params?.args?.[0] === label)).toBe(true)
+  expect(markers.every(action => (action.params?.args as string[] | undefined)?.[0] === label)).toBe(true)
   await expect(page.locator('.lr-tab-readiness')).toContainText('0 grouped issues block replay')
   await expect(page.locator('.secret-binding-review')).toHaveCount(0)
   await page.getByRole('tab', { name: 'DSL Preview', exact: true }).click()

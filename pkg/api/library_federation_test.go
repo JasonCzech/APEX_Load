@@ -544,7 +544,7 @@ func TestLibraryResultArchiveStreamsAndImportsMultipart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantManifestHash, wantArchiveSize, err := sanitizedRunArchiveMetadata(context.Background(), record, manifest)
+	wantManifestHash, wantArchiveSize, err := newArchiveReadCaches().sanitizedRunArchiveMetadata(context.Background(), record, manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -749,10 +749,22 @@ func TestLibraryRemoteCatalogAnnotatesLinksWithLocalMappedProjectID(t *testing.T
 }
 
 func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) {
+	for _, incarnation := range []string{"", "controller-admitted-incarnation"} {
+		name := "legacy"
+		if incarnation != "" {
+			name = "explicit incarnation"
+		}
+		t.Run(name, func(t *testing.T) { checkLibraryRemotePullAndPushResultArchivesBetweenControllers(t, incarnation) })
+	}
+}
+
+func checkLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T, incarnation string) {
 	// Federation targets are loopback httptest servers; opt past the SSRF guard.
 	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	host := NewServer(ServerConfig{})
 	local := NewServer(ServerConfig{})
+	t.Cleanup(func() { _ = host.Shutdown(context.Background()); _ = local.Shutdown(context.Background()) })
 
 	hostScript := host.runner.StoreScript(libraryTestScript("host-archive-script", "Host Archive Script", "team-project", "/host-archive"))
 	hostTest, err := host.runner.CreateTest(CreateTestRequest{
@@ -770,7 +782,7 @@ func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) 
 	if err != nil {
 		t.Fatalf("CreateTest host: %v", err)
 	}
-	attachLibraryArchiveFixture(t, host, hostTest)
+	attachLibraryArchiveFixture(t, host, hostTest, incarnation)
 
 	hostHTTP := httptest.NewServer(host.mux)
 	defer hostHTTP.Close()
@@ -800,7 +812,7 @@ func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) 
 	if pulled.Bundle == nil || len(pulled.Bundle.Items) != 1 || pulled.Bundle.Items[0].Result == nil {
 		t.Fatalf("pulled bundle = %#v, want one result item", pulled.Bundle)
 	}
-	assertLibraryArchiveImport(t, local, "team-project", pulled.Bundle.Items[0].Result.ArchiveManifestHash, 1)
+	assertLibraryArchiveImport(t, local, "team-project", pulled.Bundle.Items[0].Result.ArchiveManifestHash, 1, incarnation)
 
 	localScript := local.runner.StoreScript(libraryTestScript("local-archive-script", "Local Archive Script", "team-project", "/local-archive"))
 	localTest, err := local.runner.CreateTest(CreateTestRequest{
@@ -818,7 +830,7 @@ func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) 
 	if err != nil {
 		t.Fatalf("CreateTest local: %v", err)
 	}
-	attachLibraryArchiveFixture(t, local, localTest)
+	attachLibraryArchiveFixture(t, local, localTest, incarnation)
 
 	pushBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "result", ID: localTest.ID})
 	pushResp := httptest.NewRecorder()
@@ -836,7 +848,7 @@ func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) 
 	if pushed.Bundle.Items[0].Result.ArchiveZipB64 != "" {
 		t.Fatal("remote result push should stream archives instead of base64 encoding them")
 	}
-	assertLibraryArchiveImport(t, host, "team-project", pushed.Bundle.Items[0].Result.ArchiveManifestHash, 1)
+	assertLibraryArchiveImport(t, host, "team-project", pushed.Bundle.Items[0].Result.ArchiveManifestHash, 1, incarnation)
 }
 
 func TestLibraryRemotePushMapsResultDestinationIdentity(t *testing.T) {
@@ -1105,7 +1117,7 @@ func createMappedLibraryRemoteForTest(t *testing.T, server *Server, baseURL stri
 	return remote
 }
 
-func assertLibraryArchiveImport(t *testing.T, server *Server, projectID string, manifestHash string, wantCount int) {
+func assertLibraryArchiveImport(t *testing.T, server *Server, projectID string, manifestHash string, wantCount int, incarnations ...string) {
 	t.Helper()
 	imports, err := server.listExternalResultImports(storage.ExternalResultImportFilter{ProjectID: projectID, Provider: "apexload"})
 	if err != nil {
@@ -1131,6 +1143,21 @@ func assertLibraryArchiveImport(t *testing.T, server *Server, projectID string, 
 	archivePath := libraryImportedArchiveDir(lastImport.ID)
 	if _, err := os.Stat(filepath.Join(archivePath, "manifest.json")); err != nil {
 		t.Fatalf("imported archive manifest missing: %v", err)
+	}
+	if len(incarnations) > 0 {
+		manifest, err := loadRunArchiveManifest(filepath.Join(archivePath, "manifest.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		incarnation, err := archiveManifestRunIncarnation(manifest)
+		if err != nil || incarnation != incarnations[0] {
+			t.Fatalf("imported source incarnation=%q want=%q err=%v", incarnation, incarnations[0], err)
+		}
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/library/results/"+lastImport.ID+"/archive", nil))
+		if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "application/zip" || response.Body.Len() == 0 {
+			t.Fatalf("imported token-bearing archive unreadable: status=%d body=%s", response.Code, response.Body.String())
+		}
 	}
 }
 
@@ -1159,7 +1186,7 @@ func marshalLibraryTestJSON(t *testing.T, value any) []byte {
 	return payload
 }
 
-func attachLibraryArchiveFixture(t *testing.T, server *Server, testRun *ManagedTest) *storage.RunArchiveRecord {
+func attachLibraryArchiveFixture(t *testing.T, server *Server, testRun *ManagedTest, incarnations ...string) *storage.RunArchiveRecord {
 	t.Helper()
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	started := now.Add(-5 * time.Minute)
@@ -1181,6 +1208,11 @@ func attachLibraryArchiveFixture(t *testing.T, server *Server, testRun *ManagedT
 		ResourceSampleCount:   0,
 		IntervalSummaryCount:  0,
 		SLABreached:           false,
+	}
+	if len(incarnations) > 0 && incarnations[0] != "" {
+		initial := RunArchiveProvenance{RunIncarnation: incarnations[0], ProjectID: testRun.ProjectID, RequestedAt: testRun.CreatedAt}
+		manifest.Provenance = initial
+		manifest.InitialProvenance = &initial
 	}
 	writeLibraryArchiveText(t, filepath.Join(archiveDir, "transactions.jsonl"), `{"action_name":"archive","duration_ms":42}`+"\n")
 	writeLibraryArchiveText(t, filepath.Join(archiveDir, "resources.jsonl"), "")
@@ -1207,6 +1239,7 @@ func attachLibraryArchiveFixture(t *testing.T, server *Server, testRun *ManagedT
 		t.Fatalf("test %s not found in runner", testRun.ID)
 	}
 	stored.Status = "COMPLETE"
+	stored.initialArchiveProvenance = manifest.InitialProvenance
 	stored.Archive = record
 	stored.StartedAt = &started
 	stored.EndedAt = &now

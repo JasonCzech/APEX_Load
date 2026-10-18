@@ -127,6 +127,7 @@ type Correlation struct {
 }
 
 type ConvertResult struct {
+	Document     *HARDocument       `json:"-"`
 	Script       *dsl.Script        `json:"script"`
 	Warnings     []string           `json:"warnings,omitempty"`
 	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
@@ -226,6 +227,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	var document *HARDocument
 	var pageResources map[int][]any
 	switch format {
 	case "raw_http":
@@ -236,9 +238,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		exchanges, warnings, err = parseRESTJSON(req.Content)
 	case "har":
 		includeStatic := convertutil.BoolOption(req.Options.IncludeStaticAssets, false) || strings.EqualFold(req.Options.ResourceMode, "separate")
-		exchanges, warnings, filtered, skipped, err = parseHARWithMode(req.Content, includeStatic, httpVersionMode, &diagnostics)
+		document, err = ParseHARDocument(req.Content)
+		if err != nil {
+			break
+		}
+		exchanges, warnings, filtered, skipped, err = document.parse(includeStatic, httpVersionMode, &diagnostics)
 		if err == nil && !includeStatic && strings.EqualFold(req.Options.ResourceMode, "in_step") {
-			pageResources = harInStepResources(req.Content)
+			pageResources = document.inStepResources()
 		}
 	default:
 		return nil, fmt.Errorf("unsupported format %q", req.Format)
@@ -343,6 +349,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	result := &ConvertResult{
+		Document: document,
 		Script: &dsl.Script{
 			Name:          scriptName,
 			Version:       "1.0.0",
@@ -634,13 +641,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 	var timestampsNote string
 	if format == "har" {
-		if timestampsNote = applyRecordedClientTimestamps(result.Script, req.Content); timestampsNote != "" {
+		if timestampsNote = applyRecordedClientTimestamps(result.Script, document, req.Content); timestampsNote != "" {
 			result.Warnings = append(result.Warnings, timestampsNote)
 		}
 		var shapeWarnings []string
 		var newIndex []int
 		var startedAt []time.Time
-		sourceMappings, newIndex, startedAt, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, req.Content, convertutil.BoolOption(req.Options.AsyncScan, true), req.Options.Profile.BackgroundRequestPatterns(), sourceMappings)
+		sourceMappings, newIndex, startedAt, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, document, convertutil.BoolOption(req.Options.AsyncScan, true), req.Options.Profile.BackgroundRequestPatterns(), sourceMappings)
 		result.Warnings = append(result.Warnings, shapeWarnings...)
 		if len(req.Options.Transactions) > 0 {
 			if newIndex == nil {

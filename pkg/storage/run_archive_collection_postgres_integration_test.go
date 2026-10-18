@@ -47,6 +47,8 @@ func TestPostgresRunArchiveCollectionDurability(t *testing.T) {
 	checkPostgresArchiveCompletionLeaseExpiryWhileWaiting(t, store.SQLiteStore, false)
 	checkPostgresArchiveCompletionLeaseExpiryWhileWaiting(t, store.SQLiteStore, true)
 	checkArchiveOrphanIncarnationFence(t, store.SQLiteStore)
+	checkArchiveOrphanExplicitIncarnation(t, store.SQLiteStore)
+	checkArchiveFinalizationCASRejectsReplacedIncarnation(t, store.SQLiteStore)
 	checkRunArchiveCollectionCache(t, store.SQLiteStore)
 	checkRunArchiveCollectionDurability(t, store.SQLiteStore)
 	checkRunArchiveCollectionPublicationPrecedence(t, store.SQLiteStore)

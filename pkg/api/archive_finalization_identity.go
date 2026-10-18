@@ -88,14 +88,22 @@ func (tr *TestRunner) validateArchiveFinalizationIdentity(job *storage.ArchiveFi
 	if err != nil {
 		return nil, err
 	}
-	if normalizeProjectID(job.ProjectID) != normalizeProjectID(durable.ProjectID) ||
+	incarnation, err := archiveManifestRunIncarnation(manifest)
+	if err != nil {
+		return nil, err
+	}
+	durableIncarnation, err := storage.TestRunIncarnation(durable.InitialProvenance)
+	if err != nil {
+		return nil, err
+	}
+	if incarnation != durableIncarnation || normalizeProjectID(job.ProjectID) != normalizeProjectID(durable.ProjectID) ||
 		(strings.TrimSpace(manifest.Provenance.ProjectID) != "" && normalizeProjectID(manifest.Provenance.ProjectID) != normalizeProjectID(durable.ProjectID)) ||
 		manifest.Status != durable.Status || !archiveRunTimestampMatches(archiveManifestRequestedAt(manifest), durable.StartTime, tr.testStore) ||
 		!archiveRunTimestampMatches(manifest.CompletedAt, *durable.EndTime, tr.testStore) ||
 		!archiveRunTimestampMatches(record.CompletedAt, *durable.EndTime, tr.testStore) {
 		return nil, errors.New("archive finalization source does not match the durable terminal incarnation")
 	}
-	return &storage.ArchiveFinalizationRunIdentity{ProjectID: normalizeProjectID(durable.ProjectID), StartTime: durable.StartTime, EndTime: *durable.EndTime, Status: durable.Status}, nil
+	return &storage.ArchiveFinalizationRunIdentity{RunIncarnation: incarnation, ProjectID: normalizeProjectID(durable.ProjectID), StartTime: durable.StartTime, EndTime: *durable.EndTime, Status: durable.Status}, nil
 }
 
 func readFinalizationLocalManifest(ctx context.Context, record *storage.RunArchiveRecord) ([]byte, error) {

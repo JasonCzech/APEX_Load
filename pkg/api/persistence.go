@@ -720,7 +720,7 @@ func (tr *TestRunner) reloadStoredTestSnapshotLocked(activeOnly bool) error {
 			return fmt.Errorf("execution leadership changed while reloading tests")
 		}
 		current, currentOK := tr.tests[record.ID]
-		if currentOK && current != nil && (liveTestRuntimeForExecutionEpoch(current, tr.durableExecutionFence, executionFenceAtStart) || current.passiveOperationToken != "" || (isTerminalTestStatus(current.Status) && !isTerminalTestStatus(managedTest.Status))) {
+		if currentOK && current != nil && (liveTestRuntimeForExecutionEpoch(current, tr.durableExecutionFence, executionFenceAtStart) || current.passiveOperationToken != "" || (sameStoredTestIdentity(current, record) && isTerminalTestStatus(current.Status) && !isTerminalTestStatus(managedTest.Status))) {
 			tr.mu.Unlock()
 			continue
 		}
@@ -758,7 +758,7 @@ func (tr *TestRunner) reloadStoredTestSnapshotLocked(activeOnly bool) error {
 		if currentOK && current != nil {
 			tr.removeRefKeyLocked(current.RefKey)
 			tr.forgetRunSnapshotWriteStateLocked(record.ID)
-			forgetRunArchiveCache(record.ID)
+			tr.archiveReadCaches().forgetRunArchiveCache(record.ID)
 			deleteGroupMetricsHistoryCache(record.ID)
 			if tr.storedHistoryCache != nil {
 				tr.storedHistoryCache.deleteTest(record.ID)
@@ -843,6 +843,16 @@ func (tr *TestRunner) pendingStopProofHandleForExecutionEpoch(test *ManagedTest,
 func sameStoredTestIdentity(test *ManagedTest, record *storage.TestRecord) bool {
 	if test == nil || record == nil || test.ID != record.ID {
 		return false
+	}
+	// The immutable admission receipt distinguishes replacements even when
+	// their public ID and creation timestamp are identical. A missing token is
+	// still compatible with a legacy row or the normal pre-admission -> admitted
+	// transition; two known identities must never share runtime/read state.
+	if current := managedTestRunIncarnation(test); current != "" {
+		stored, err := storage.TestRunIncarnation(record.InitialProvenance)
+		if err != nil || (stored != "" && stored != current) {
+			return false
+		}
 	}
 	// PostgreSQL stores timestamps at microsecond precision. A freshly created
 	// in-memory test can retain finer Go nanoseconds until its first reload, so
@@ -1854,7 +1864,7 @@ func (tr *TestRunner) forgetProject(projectID string) {
 			delete(tr.tests, id)
 			tr.phaseLogs.Delete(id)
 			delete(tr.archives, id)
-			forgetRunArchiveCache(id)
+			tr.archiveReadCaches().forgetRunArchiveCache(id)
 			deleteGroupMetricsHistoryCache(id)
 			if tr.storedHistoryCache != nil {
 				tr.storedHistoryCache.deleteTest(id)
@@ -2661,7 +2671,7 @@ func (tr *TestRunner) populateRunArchiveTrendPoint(record *storage.RunArchiveRec
 	if !ok || test == nil {
 		return
 	}
-	report, err := cachedRunArchiveReport(record)
+	report, err := tr.archiveReadCaches().cachedRunArchiveReport(record)
 	if err != nil {
 		slog.Warn("archive trend point could not be generated", "test_id", record.TestID, "err", err)
 		return

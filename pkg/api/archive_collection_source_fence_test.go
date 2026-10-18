@@ -166,7 +166,7 @@ func TestArchiveCollectionReusesExistingPublicationSource(t *testing.T) {
 }
 
 func TestArchiveCollectionSourceGuardRejectsDeletedReplacedAndRetainedRuns(t *testing.T) {
-	for _, mode := range []string{"deleted", "replaced", "cleanup", "resolved"} {
+	for _, mode := range []string{"deleted", "replaced", "replaced incarnation", "cleanup", "resolved"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
@@ -183,6 +183,16 @@ func TestArchiveCollectionSourceGuardRejectsDeletedReplacedAndRetainedRuns(t *te
 				}
 			case "replaced":
 				run.CreatedAt = run.CreatedAt.Add(time.Second)
+			case "replaced incarnation":
+				row, err := store.GetTest(run.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				row.InitialProvenance = map[string]any{"run_incarnation": "replacement"}
+				if err := store.SaveTest(row); err != nil {
+					t.Fatal(err)
+				}
+				run.initialArchiveProvenance = &RunArchiveProvenance{RunIncarnation: "prior"}
 			case "cleanup":
 				if err := store.SaveArchiveCleanupJob(&storage.ArchiveCleanupJob{TestID: run.ID, ProjectID: run.ProjectID, ArchiveRecord: record}); err != nil {
 					t.Fatal(err)
@@ -219,7 +229,7 @@ func (c *collectionInterleavingClient) StreamArchiveArtifact(ctx context.Context
 }
 
 func TestArchiveCollectionRechecksPublicationAndDeletionAfterDownload(t *testing.T) {
-	for _, mode := range []string{"catalog", "outbox", "deleted", "replaced"} {
+	for _, mode := range []string{"catalog", "outbox", "deleted", "replaced", "replaced incarnation"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
@@ -231,6 +241,17 @@ func TestArchiveCollectionRechecksPublicationAndDeletionAfterDownload(t *testing
 			defer store.Close()
 			runner := NewTestRunner(1, nil, store)
 			run, record := createArchiveFinalizationTest(t, store, "collection-race", filepath.Join(root, "remote"))
+			if mode == "replaced incarnation" {
+				row, err := store.GetTest(run.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				row.InitialProvenance = map[string]any{"run_incarnation": "prior"}
+				if err := store.SaveTest(row); err != nil {
+					t.Fatal(err)
+				}
+				run.initialArchiveProvenance = &RunArchiveProvenance{RunIncarnation: "prior"}
+			}
 			before, err := os.ReadFile(record.ManifestPath)
 			if err != nil {
 				t.Fatal(err)
@@ -242,10 +263,12 @@ func TestArchiveCollectionRechecksPublicationAndDeletionAfterDownload(t *testing
 					mutationErr = store.SaveRunArchive(record)
 				case "outbox":
 					mutationErr = store.SaveArchiveFinalizationJob(&storage.ArchiveFinalizationJob{TestID: run.ID, ProjectID: run.ProjectID, ArchiveRecord: *record})
-				case "deleted", "replaced":
+				case "deleted", "replaced", "replaced incarnation":
 					mutationErr = store.DeleteTest(run.ID)
 					if mutationErr == nil && mode == "replaced" {
 						mutationErr = store.SaveTest(&storage.TestRecord{ID: run.ID, ProjectID: run.ProjectID, Name: "replacement", Status: "RUNNING", StartTime: run.CreatedAt.Add(time.Second)})
+					} else if mutationErr == nil && mode == "replaced incarnation" {
+						mutationErr = store.SaveTest(&storage.TestRecord{ID: run.ID, ProjectID: run.ProjectID, Name: "replacement", Status: "RUNNING", StartTime: run.CreatedAt, InitialProvenance: map[string]any{"run_incarnation": "replacement"}})
 					}
 				}
 			}}
@@ -255,7 +278,7 @@ func TestArchiveCollectionRechecksPublicationAndDeletionAfterDownload(t *testing
 			if mutationErr != nil {
 				t.Fatal(mutationErr)
 			}
-			if mode == "deleted" || mode == "replaced" {
+			if mode == "deleted" || mode == "replaced" || mode == "replaced incarnation" {
 				if err == nil || got != nil {
 					t.Fatalf("stale collection committed: %+v %v", got, err)
 				}

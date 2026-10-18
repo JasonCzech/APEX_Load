@@ -115,7 +115,7 @@ func (tr *TestRunner) finalizeRunArchiveDurablyUnderFence(ctx context.Context, t
 		if completed {
 			*record = job.ArchiveRecord
 			tr.mu.RLock()
-			identity := storage.ArchiveFinalizationRunIdentity{ProjectID: test.ProjectID, StartTime: test.CreatedAt, Status: test.Status}
+			identity := storage.ArchiveFinalizationRunIdentity{RunIncarnation: managedTestRunIncarnation(test), ProjectID: test.ProjectID, StartTime: test.CreatedAt, Status: test.Status}
 			if test.EndedAt != nil {
 				identity.EndTime = *test.EndedAt
 			}
@@ -409,7 +409,7 @@ func (tr *TestRunner) preferredArchiveFinalizationTestSnapshot(testID string, du
 	// follower may still retain an object for a deleted/recreated ID; never let
 	// that stale object's groups, actors, or runtime provenance cross into the
 	// current tenant's archive.
-	if durable != nil && !sameStoredTestIdentity(current, durable) {
+	if durable != nil && (!sameStoredTestIdentity(current, durable) || !sameArchiveRunIncarnation(current, durable)) {
 		return fallback
 	}
 	return cloneManagedTestForReadLocked(current)
@@ -560,7 +560,7 @@ func (tr *TestRunner) attachFinalizedRunArchive(testID string, record *storage.R
 	}
 	// A shared-store refresh may have loaded a replacement while I/O or the
 	// catalog transaction completed. Never attach the old proof to that run.
-	if identity != nil && (normalizeProjectID(current.ProjectID) != normalizeProjectID(identity.ProjectID) ||
+	if identity != nil && (managedTestRunIncarnation(current) != identity.RunIncarnation || normalizeProjectID(current.ProjectID) != normalizeProjectID(identity.ProjectID) ||
 		!isTerminalTestStatus(current.Status) || current.Status != identity.Status || current.EndedAt == nil ||
 		!archiveRunTimestampMatches(current.CreatedAt, identity.StartTime, tr.testStore) ||
 		!archiveRunTimestampMatches(*current.EndedAt, identity.EndTime, tr.testStore)) {
@@ -1025,4 +1025,20 @@ func (s *Server) wakeArchiveFinalizationRetry() {
 		default:
 		}
 	}
+}
+
+// Caller holds the runner lock when reading a live ManagedTest.
+func managedTestRunIncarnation(test *ManagedTest) string {
+	if test == nil || test.initialArchiveProvenance == nil {
+		return ""
+	}
+	return test.initialArchiveProvenance.RunIncarnation
+}
+
+func sameArchiveRunIncarnation(test *ManagedTest, durable *storage.TestRecord) bool {
+	if test == nil || durable == nil {
+		return false
+	}
+	incarnation, err := storage.TestRunIncarnation(durable.InitialProvenance)
+	return err == nil && managedTestRunIncarnation(test) == incarnation
 }

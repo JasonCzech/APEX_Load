@@ -19,7 +19,7 @@ func (tr *TestRunner) existingCollectedArchive(test *ManagedTest) (*storage.RunA
 		if err != nil {
 			return nil, err
 		}
-		if row == nil || row.ID != test.ID || normalizeProjectID(row.ProjectID) != normalizeProjectID(test.ProjectID) || !archiveRunTimestampMatches(row.StartTime, test.CreatedAt, tr.testStore) {
+		if row == nil || row.ID != test.ID || normalizeProjectID(row.ProjectID) != normalizeProjectID(test.ProjectID) || !archiveRunTimestampMatches(row.StartTime, test.CreatedAt, tr.testStore) || !sameArchiveRunIncarnation(test, row) {
 			return nil, fmt.Errorf("archive collection belongs to a different durable run")
 		}
 	}

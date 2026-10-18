@@ -122,7 +122,18 @@ func (c *versionCountedConn) Close() error {
 	c.once.Do(func() { c.open.Add(-1) })
 	return err
 }
+
+// Fixtures that instrument every physical owner explicitly demand all TCP
+// pools before installing their dial hooks. Normal Init leaves them cold.
+func initializeTestVersionPools(h *HTTP) {
+	for _, policy := range []string{"auto", VersionHTTP11, VersionHTTP2} {
+		h.policyPools[policy].roundTripper(false)
+		h.policyPools[policy].roundTripper(true)
+	}
+}
+
 func instrumentVersionDials(h *HTTP) (*atomic.Int64, *atomic.Int64) {
+	initializeTestVersionPools(h)
 	open, peak := new(atomic.Int64), new(atomic.Int64)
 	for _, owner := range h.connections.snapshotOwners() {
 		base := owner.baseDial
@@ -368,12 +379,12 @@ func TestHTTPVersionPoolsPACClonesKeepPolicyAndBoundOwnership(t *testing.T) {
 	_ = h.CloseIdleConnections(context.Background())
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if len(h.connections.snapshotOwners()) == 6 {
+		if len(h.connections.snapshotOwners()) == 3 {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if n := len(h.connections.snapshotOwners()); n != 6 {
+	if n := len(h.connections.snapshotOwners()); n != 3 {
 		t.Fatalf("disposable PAC owners retained: %d", n)
 	}
 }

@@ -21,6 +21,9 @@ import (
 )
 
 type ScriptImportResponseOptions struct {
+	// CanonicalResponse is an explicitly negotiated wire format. Legacy clients
+	// keep their convenience aliases; canonical clients receive each draft once.
+	CanonicalResponse   bool
 	Result              any
 	Scripts             any
 	Script              any
@@ -134,7 +137,7 @@ func NewScriptImportResponseWithProjection(opts ScriptImportResponseOptions) (ma
 	// Publish them exactly as converted; redaction belongs only to run/debug
 	// evidence and must never rewrite an import draft or its review material.
 	exactScripts := ImportResponseRawScriptValue(opts.Scripts)
-	exactScript := ImportResponseRawScriptValue(opts.Script)
+	exactScript := exactPrimaryImportScript(opts.Scripts, exactScripts, opts.Script)
 	scripts := CredentialPreservingImportResponseValueFromExact(opts.Scripts, exactScripts, opts.AttestedProjections)
 	// The primary convenience field normally repeats a member of scripts. Its
 	// private disclosure projection is read-only, so reuse that member instead
@@ -258,7 +261,9 @@ func NewScriptImportResponseWithProjection(opts ScriptImportResponseOptions) (ma
 	if !opts.Accounting.Empty() {
 		response["accounting"] = opts.Accounting
 	}
-	if opts.Result != nil {
+	if opts.CanonicalResponse {
+		canonicalImportResponse(response, opts)
+	} else if opts.Result != nil {
 		response["result"] = ImportResponseReviewValue(opts.Result)
 	}
 

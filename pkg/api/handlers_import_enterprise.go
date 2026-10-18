@@ -150,8 +150,10 @@ func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.C
 		return
 	}
 	review, err := salesforce.Analyze(reviewScript, salesforce.AnalyzeOptions{
-		BuildNative: importReq.SalesforceNative,
-		HARData:     importReq.HARData,
+		BuildNative:     importReq.SalesforceNative,
+		HARData:         importReq.HARData,
+		RequireDetected: !importReq.SalesforceNative,
+		Source:          "enterprise_script_archive",
 	})
 	if err != nil {
 		result.Warnings = append(result.Warnings, "Salesforce review failed: "+err.Error())

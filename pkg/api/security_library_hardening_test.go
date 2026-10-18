@@ -430,7 +430,7 @@ func TestHistoricalArchiveSecretSurfacesAreMasked(t *testing.T) {
 	// The disclosure-safe manifest and ZIP are a derived export, with integrity
 	// metadata adjusted to the sanitized test manifest rather than reusing stale
 	// hashes from the historical raw artifact.
-	safeManifest, err := sanitizedRunArchiveManifest(context.Background(), record, manifest)
+	safeManifest, err := newArchiveReadCaches().sanitizedRunArchiveManifest(context.Background(), record, manifest)
 	if err != nil {
 		t.Fatal(err)
 	}

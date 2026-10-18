@@ -212,10 +212,6 @@ func archiveJSONWeight[T any](value *T) int64 {
 	return writer.bytes
 }
 
-var runArchiveReportCache = newWeightedBoundedArchiveCache(runArchiveReportCacheEntries, runArchiveReportCacheBytes, archiveJSONWeight[RunArchiveReport])
-var runArchiveManifestCache = newWeightedBoundedArchiveCache(runArchiveManifestCacheEntries, runArchiveManifestCacheBytes, archiveJSONWeight[RunArchiveManifest])
-var runArchiveSanitizedPlanCache = newWeightedBoundedArchiveCache(runArchiveManifestCacheEntries, runArchiveManifestCacheBytes, sanitizedArchivePlanWeight)
-
 // boundedCache is the small untyped LRU shared by lightweight process caches
 // whose callers need explicit Load, Store, and Delete operations.
 type boundedCache struct {
@@ -273,9 +269,9 @@ func (c *boundedCache) Store(key string, value any) {
 	}
 }
 
-func cachedRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport, error) {
+func (c *archiveReadCaches) cachedRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport, error) {
 	key := runArchiveReportCacheKey(record)
-	report, err := runArchiveReportCache.getOrLoad(key, func() (*RunArchiveReport, error) {
+	report, err := c.reports.getOrLoad(key, func() (*RunArchiveReport, error) {
 		return buildRunArchiveReport(record)
 	})
 	if err != nil {
@@ -315,14 +311,14 @@ func cloneRunArchiveReport(report *RunArchiveReport) (*RunArchiveReport, error) 
 	return &cloned, nil
 }
 
-func cachedRunArchiveManifest(record *storage.RunArchiveRecord) (*RunArchiveManifest, error) {
+func (c *archiveReadCaches) cachedRunArchiveManifest(record *storage.RunArchiveRecord) (*RunArchiveManifest, error) {
 	lease, err := acquireArchiveMaterialized(context.Background(), record)
 	if err != nil {
 		return nil, err
 	}
 	defer lease.Release()
 	key := runArchiveReportCacheKey(record)
-	manifest, err := runArchiveManifestCache.getOrLoad(key, func() (*RunArchiveManifest, error) {
+	manifest, err := c.manifests.getOrLoad(key, func() (*RunArchiveManifest, error) {
 		return loadRunArchiveManifestFromRecord(record)
 	})
 	if err != nil {
@@ -346,9 +342,9 @@ func cloneRunArchiveManifest(manifest *RunArchiveManifest) (*RunArchiveManifest,
 	return &cloned, nil
 }
 
-func forgetRunArchiveCache(testID string) {
-	archiveCatalogIdentities.deleteTest(testID)
-	runArchiveReportCache.deleteTest(testID)
-	runArchiveManifestCache.deleteTest(testID)
-	runArchiveSanitizedPlanCache.deleteTest(testID)
+func (c *archiveReadCaches) forgetRunArchiveCache(testID string) {
+	c.catalogIdentities.deleteTest(testID)
+	c.reports.deleteTest(testID)
+	c.manifests.deleteTest(testID)
+	c.sanitizedPlans.deleteTest(testID)
 }

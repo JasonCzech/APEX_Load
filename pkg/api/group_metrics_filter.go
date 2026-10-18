@@ -199,14 +199,20 @@ func filterLiveMetricsHistoryForGroups(history []*LiveMetrics, filter groupFilte
 	return filtered
 }
 
-func filterLiveMetricsHistoryForGroupsCached(testID string, history []*LiveMetrics, filter groupFilterQuery) []*LiveMetrics {
+func filterLiveMetricsHistoryForGroupsCached(test *ManagedTest, history []*LiveMetrics, filter groupFilterQuery) []*LiveMetrics {
 	if len(history) == 0 {
 		return nil
 	}
 	if !filter.Explicit {
 		return history
 	}
-	key := groupMetricsHistoryCacheKey(history, filter)
+	if test == nil {
+		return filterLiveMetricsHistoryForGroups(history, filter)
+	}
+	// Keep deletion scoped to the canonical ID, but never reuse a prior run's
+	// filtered points when a replacement has identical history timestamps.
+	testID := test.ID
+	key := storedTestHistoryCacheKey(test) + "|" + groupMetricsHistoryCacheKey(history, filter)
 	if cached, ok := groupMetricsHistoryCaches.get(testID, key); ok {
 		return cached
 	}

@@ -1,3 +1,4 @@
+import { canonicalImportDraft } from './support/importResponse'
 import { createServer } from 'node:http'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, login, mutation, json, idOf, expectDebugOutcome } from './support/workflow'
@@ -183,7 +184,7 @@ test('native correlation review preserves exact original source navigation throu
   type Review = { native_preview: { native_path_domain: string; correlations: Correlation[]; correlation_coverage: { discovered_correlations: number; native_unmapped_consumer_references: number; source_linked_consumer_references: number } } }
   type Script = { actions: { type: string }[]; metadata: { import: { preserved: { source_review: { target_domain: string; mappings: { id: string; source_file: string; target_path: string }[] }; salesforce_review: Review; source_mapping_review?: unknown } } } }
   const result = await json(response)
-  const draft = result.script as Script
+  const draft = canonicalImportDraft(result) as unknown as Script
   expect(draft.actions.filter(action => action.type === 'control_loop')).toHaveLength(2)
   expect(draft.metadata.import.preserved.source_review.target_domain).toBe('original_import')
   const preview = (result.summary as { salesforce_review: Review }).salesforce_review.native_preview

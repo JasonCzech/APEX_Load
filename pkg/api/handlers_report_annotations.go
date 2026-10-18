@@ -177,7 +177,7 @@ func (s *Server) tryBuildRunArchiveReport(ctx context.Context, testID string) *R
 		return nil
 	}
 	defer lease.Release()
-	report, err := cachedRunArchiveReport(record)
+	report, err := s.archiveReadCaches().cachedRunArchiveReport(record)
 	if err != nil {
 		return nil
 	}

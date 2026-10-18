@@ -28,6 +28,19 @@ import (
 type AnalyzeOptions struct {
 	BuildNative bool
 	HARData     []byte
+	// RequireDetected skips matching, correlation and native preparation when
+	// the capture contains no Salesforce traffic. Explicit analyzer callers
+	// retain the full review by leaving this false.
+	RequireDetected bool
+	// BuildNativeIfDetected combines the optional import review and native
+	// preparation in one analysis. On a native preparation error it returns the
+	// completed review with the error, so importers can retain the review.
+	BuildNativeIfDetected bool
+	// Source identifies the input, independently of the selected output profile.
+	// Empty inherits the input script's provenance.
+	Source string
+	// Document reuses parsed evidence only when it matches HARData.
+	Document *sample.HARDocument
 }
 
 type Review struct {
@@ -173,17 +186,31 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inspect Salesforce request actions: %w", err)
 	}
-	entries, err := parseHAR(opts.HARData)
+	document, err := resolveHARDocument(opts.HARData, opts.Document)
 	if err != nil {
 		return nil, err
 	}
+	if opts.RequireDetected && !detectsSalesforce(refs, nil) && !document.AnyRequestURL(func(rawURL string) bool {
+		return salesforceHost(hostOf(rawURL)) != ""
+	}) {
+		return &Review{Detected: false}, nil
+	}
+	entries, err := harDocumentEntries(document)
+	if err != nil {
+		return nil, err
+	}
+	detected := detectsSalesforce(refs, entries)
+	if opts.RequireDetected && !detected {
+		return &Review{Detected: false}, nil
+	}
+	buildNative := opts.BuildNative || (opts.BuildNativeIfDetected && detected)
 	matches := matchHAR(refs, entries)
 	for index, harID := range matches {
 		refs[index].HARID = harID
 	}
 
 	review := &Review{
-		Detected:            detectsSalesforce(refs, entries),
+		Detected:            detected,
 		Domains:             domainObservations(refs, entries),
 		AuraEndpoints:       endpointObservations(refs, "aura"),
 		LightningEndpoints:  endpointObservations(refs, "lightning"),
@@ -226,14 +253,14 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 		if failed > outcomes.RecordedFailureActions {
 			review.Warnings = append(review.Warnings, "Captured Aura responses contain unsuccessful action states that could not be matched to the imported request; review those baseline failures before controlled replay.")
 		}
-		if opts.BuildNative && outcomes.InvalidRequests > 0 {
+		if buildNative && outcomes.InvalidRequests > 0 {
 			review.Blockers = append(review.Blockers, "Imported Aura requests could not be validated; native replay is gated until those request envelopes are repaired.")
 		}
 	}
-	if opts.BuildNative && len(entries) == 0 {
+	if buildNative && len(entries) == 0 {
 		review.Blockers = append(review.Blockers, "Salesforce native preview requires a HAR captured from the same recording for high-confidence correlation.")
 	}
-	if opts.BuildNative && len(entries) > 0 && review.HARMatchCoverage.CoveragePct < 80 {
+	if buildNative && len(entries) > 0 && review.HARMatchCoverage.CoveragePct < 80 {
 		review.Blockers = append(review.Blockers, "Salesforce native preview HAR coverage is below 80%; attach a HAR from the same recording that covers the missing imported requests.")
 	}
 	if review.Detected && !hasRecognizedSalesforceEndpoints(review) {
@@ -257,10 +284,16 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 	var parameterWarnings []string
 	review.Parameterizations, parameterWarnings = auraMessageParameterizationsChecked(refs, correlations)
 	review.Warnings = append(review.Warnings, parameterWarnings...)
-	if opts.BuildNative {
+	if buildNative {
 		preview, err := buildNativePreview(script, refs, entries, matches, correlations, review.AuraOutcomes.RecordedFailures())
 		if err != nil {
+			if opts.BuildNativeIfDetected {
+				return review, err
+			}
 			return nil, err
+		}
+		if opts.Source != "" {
+			preview.Script.GeneratedFrom = nativeGeneratedFrom(opts.Source)
 		}
 		review.NativePreview = preview
 		if warning := auraTokenProvenanceWarning(preview.Script, correlations); warning != "" {
@@ -468,10 +501,36 @@ func resolveActionURL(baseURL, target string) string {
 }
 
 func parseHAR(data []byte) ([]harEntry, error) {
+	return parseHARDocument(data, nil)
+}
+
+func parseHARDocument(data []byte, document *sample.HARDocument) ([]harEntry, error) {
+	document, err := resolveHARDocument(data, document)
+	if err != nil {
+		return nil, err
+	}
+	return harDocumentEntries(document)
+}
+
+func resolveHARDocument(data []byte, document *sample.HARDocument) (*sample.HARDocument, error) {
 	if len(data) == 0 || strings.TrimSpace(string(data)) == "" {
 		return nil, nil
 	}
-	observations, err := sample.HARSourceObservations(string(data), true)
+	if document.Matches(data) {
+		return document, nil
+	}
+	document, err := sample.ParseHARDocument(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("parse Salesforce HAR: %w", err)
+	}
+	return document, nil
+}
+
+func harDocumentEntries(document *sample.HARDocument) ([]harEntry, error) {
+	if document == nil {
+		return nil, nil
+	}
+	observations, err := document.SourceObservations(true)
 	if err != nil {
 		return nil, fmt.Errorf("parse Salesforce HAR: %w", err)
 	}
@@ -1109,6 +1168,19 @@ func prepareCorrelationNames(correlations []correlate.Correlation, refs []action
 	return out, registry
 }
 
+// A native rewrite retains the actual input provenance. Archive imports carry
+// supplemental HAR evidence; direct HAR and recorder captures are not archives.
+func nativeGeneratedFrom(source string) string {
+	switch strings.TrimSpace(source) {
+	case "enterprise_script_archive":
+		return "enterprise_script_archive+har"
+	case "", "salesforce_har":
+		return "har"
+	default:
+		return strings.TrimSpace(source)
+	}
+}
+
 func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry, matches map[int]int, correlations []correlate.Correlation, recordedAuraFailures map[string][]aura.RecordedOutcome) (*NativePreview, error) {
 	clone, err := cloneScript(script)
 	if err != nil {
@@ -1116,7 +1188,7 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 	}
 	clone.Name = strings.TrimSpace(script.Name) + " Salesforce Native Preview"
 	clone.GeneratedBy = "apexload-salesforce-builder"
-	clone.GeneratedFrom = "enterprise_script_archive+har"
+	clone.GeneratedFrom = nativeGeneratedFrom(script.GeneratedFrom)
 	ensureMetadata(clone)["salesforce_native_preview"] = true
 
 	cloneRefs, err := flattenRequestActionsChecked(clone, true)

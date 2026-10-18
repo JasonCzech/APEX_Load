@@ -182,7 +182,7 @@ func (s *recoveryReadStore) GetRunArchiveCollection(id string) (*storage.RunArch
 }
 
 func TestRunArchiveRecoverySingleRunReadsAndIncarnationRecheck(t *testing.T) {
-	for _, mode := range []string{"read", "store failure", "replaced during read"} {
+	for _, mode := range []string{"read", "store failure", "replaced during read", "replaced incarnation during read"} {
 		t.Run(mode, func(t *testing.T) {
 			_, sqlite, run, _ := collectionCacheFixture(t, "private-target")
 			end := time.Now().UTC()
@@ -191,15 +191,32 @@ func TestRunArchiveRecoverySingleRunReadsAndIncarnationRecheck(t *testing.T) {
 			}
 			run.Status = "FAILED"
 			run.EndedAt = &end
+			if mode == "replaced incarnation during read" {
+				row, err := sqlite.GetTest(run.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				row.InitialProvenance = map[string]any{"run_incarnation": "prior"}
+				if err := sqlite.SaveTest(row); err != nil {
+					t.Fatal(err)
+				}
+			}
 			store := &recoveryReadStore{SQLiteStore: sqlite, failure: mode == "store failure"}
 			tr := NewTestRunner(1, NewHub(), sqliteOverlay(store))
-			if mode == "replaced during read" {
+			if mode == "replaced during read" || mode == "replaced incarnation during read" {
 				store.afterRead = func() {
 					row, err := sqlite.GetTest(run.ID)
 					if err != nil {
 						t.Fatal(err)
 					}
-					row.StartTime = row.StartTime.Add(time.Second)
+					if mode == "replaced incarnation during read" {
+						if err := sqlite.DeleteTest(run.ID); err != nil {
+							t.Fatal(err)
+						}
+						row.InitialProvenance = map[string]any{"run_incarnation": "replacement"}
+					} else {
+						row.StartTime = row.StartTime.Add(time.Second)
+					}
 					if err := sqlite.SaveTest(row); err != nil {
 						t.Fatal(err)
 					}
