@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/internal/testlog"
 )
 
 const bridgeTestOrigin = "https://controller.example.test"
@@ -58,9 +60,7 @@ func pairBridgeForTest(t *testing.T, server *Server, origin string) string {
 func TestBrowserRecorderBridgeSkipsAuditWithoutWarning(t *testing.T) {
 	server := newBrowserRecorderBridgeTestServer(t, nil)
 	logs := &lockedBuffer{}
-	original := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(original) })
+	testlog.SetDefault(t, slog.New(slog.NewJSONHandler(logs, nil)))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions", nil)
 	server.recordAuditEvent(req, "browser_recording.agent_audit_test", "success", "browser_recording", "rec-agent-audit-test", "", nil)
 	server.recordAuditEventWithProjectSnapshot(req, "browser_recording.agent_audit_test", "success", "browser_recording", "rec-agent-audit-test", "", "", nil)

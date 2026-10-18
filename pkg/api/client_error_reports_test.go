@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/internal/testlog"
 )
 
 func postClientErrorReport(t *testing.T, server *Server, report any) *httptest.ResponseRecorder {
@@ -26,9 +28,7 @@ func postClientErrorReport(t *testing.T, server *Server, report any) *httptest.R
 func captureDefaultLogs(t *testing.T) *lockedBuffer {
 	t.Helper()
 	logs := &lockedBuffer{}
-	original := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(original) })
+	testlog.SetDefault(t, slog.New(slog.NewJSONHandler(logs, nil)))
 	return logs
 }
 

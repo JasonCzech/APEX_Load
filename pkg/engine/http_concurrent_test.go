@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/testlog"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
@@ -827,9 +828,7 @@ func TestConcurrentHTTPFreshSensitiveOutputsProtectEarlierSiblingsAndRemainExact
 	var consumed atomic.Int32
 	var requestReplicasExact atomic.Int32
 	var logs bytes.Buffer
-	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-	defer slog.SetDefault(previousLogger)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logs, nil)))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/early":
@@ -928,9 +927,7 @@ func TestConcurrentHTTPJoinedAdmissionFailureOmitsUnknownSiblingSecretEvidence(t
 	var consumed atomic.Int32
 	var requestReplicasExact atomic.Int32
 	var logs bytes.Buffer
-	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-	defer slog.SetDefault(previousLogger)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logs, nil)))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/consume" {
 			if r.Header.Get("X-Ordinary") != values[producers-1] || r.Header.Get("X-Session") != values[producers-1] {
@@ -1175,9 +1172,7 @@ func TestConcurrentHTTPVariableCapacityRetainsSensitiveObservation(t *testing.T)
 	sink := &concurrentCaptureSink{}
 	vu.ResultSink = sink
 	var futureLogs bytes.Buffer
-	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&futureLogs, nil)))
-	defer slog.SetDefault(previousLogger)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&futureLogs, nil)))
 	retainedLogger := vu.makeLogger(dsl.LogConfig{Level: "extended"}).With("ordinary_alias", token).WithGroup("future")
 	result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{}, nil)
 	if err != nil || result.Success || vu.Variables["ordinary_value"] != token || vu.Variables["session_token_95"] != "" || vu.extractedVariableBytes > maxVUserExtractionBytes {
@@ -1291,9 +1286,7 @@ func TestSensitiveExtractionClassificationFailureClosesFuturePublication(t *test
 	vu.Script.Config.Log = dsl.LogConfig{Level: "extended", OnErrorOnly: true, ExtendedOptions: []string{"parameter_substitution"}}
 	defer vu.closeErrorLogs()
 	var logs bytes.Buffer
-	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-	defer slog.SetDefault(previousLogger)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logs, nil)))
 	// Seed the exact supported observation cardinality. This tests the next
 	// real builder admission before it allocates a new matcher index.
 	vu.ensureRuntimeCredentialRedactionState()
@@ -1491,9 +1484,7 @@ func (o *concurrentErrorObserver) AfterAction(context.Context, ReplayDebugAction
 func TestSensitiveExtractionObservedValuesProtectBufferedLogs(t *testing.T) {
 	vu := newConcurrentVU(t, "http://127.0.0.1:1")
 	var logs bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-	defer slog.SetDefault(previous)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logs, nil)))
 	defer vu.closeErrorLogs()
 	short, long := "synthetic-buffered-session-value", strings.Repeat("z", 16<<10)
 	logger := vu.makeLogger(dsl.LogConfig{Level: "extended", OnErrorOnly: true}).With("inherited", short).WithGroup("synthetic")

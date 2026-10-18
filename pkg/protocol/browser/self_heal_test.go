@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/internal/testlog"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/selector"
 )
@@ -186,9 +187,7 @@ func TestRecordSelfHealRedactsRuntimeSecretSelectors(t *testing.T) {
 	result := &protocol.Result{}
 
 	var logBuf bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, nil)))
-	defer slog.SetDefault(previous)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logBuf, nil)))
 
 	b.recordSelfHeal(
 		action,
