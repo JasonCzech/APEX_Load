@@ -11,9 +11,8 @@ func limitPACWorkerMemory() error {
 	if err := syscall.Getrlimit(syscall.RLIMIT_DATA, &current); err != nil {
 		return err
 	}
-	const limit = 256 << 20
-	if current.Cur > limit {
-		current.Cur = limit
+	if current.Cur > pacWorkerDataLimit {
+		current.Cur = pacWorkerDataLimit
 	}
 	return syscall.Setrlimit(syscall.RLIMIT_DATA, &current)
 }

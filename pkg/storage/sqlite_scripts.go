@@ -31,7 +31,7 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 	if script.CreatedAt.IsZero() {
 		script.CreatedAt = time.Now().UTC()
 	}
-	script.UpdatedAt = time.Now().UTC()
+	script.UpdatedAt = versionTimestamp()
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -111,7 +111,7 @@ func (s *SQLiteStore) CreateScriptAuthoringIfAbsent(script *dsl.Script) (*Script
 	if script.CreatedAt.IsZero() {
 		script.CreatedAt = time.Now().UTC()
 	}
-	script.UpdatedAt = time.Now().UTC()
+	script.UpdatedAt = versionTimestamp()
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
@@ -319,7 +319,7 @@ func (s *SQLiteStore) updateScriptConditional(
 	if err := ensureObjectActiveTx(tx, "script", script.ID); err != nil {
 		return nil, err
 	}
-	script.UpdatedAt = time.Now().UTC()
+	script.UpdatedAt = versionTimestamp()
 	query := `UPDATE scripts SET
 		ref_key = ?, name = ?, protocol = ?, version = ?, folder_id = ?,
 		generated_by = ?, generated_from = ?, metadata_json = ?, goal_config_json = ?, config = ?, data_sources = ?, parameters = ?, init = ?, actions = ?, teardown = ?, updated_at = ?

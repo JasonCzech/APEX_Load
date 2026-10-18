@@ -106,7 +106,7 @@ func telemetryReferencePublicationTraces(history []*LiveMetrics) []telemetryRefe
 			break
 		}
 		tele := live.Telemetry
-		out = append(out, telemetryReferencePublicationTrace{Timestamp: live.Timestamp, ActiveVUsers: int64(live.ActiveVUsers), CollectedAt: tele.CollectedAt, GeneratorPublishedAt: tele.GeneratorPublishedAt, ReceivedAt: tele.ControllerReceivedAt, PublishedAt: tele.PublishedAt, SampleAgeMs: tele.SampleAgeMs, ProcessingMs: tele.GeneratorProcessingLagMs, TransportMs: tele.TransportLagMs, FanoutMs: tele.ControllerFanoutLagMs})
+		out = append(out, telemetryReferencePublicationTrace{Timestamp: live.Timestamp, ActiveVUsers: live.ActiveVUsers, CollectedAt: tele.CollectedAt, GeneratorPublishedAt: tele.GeneratorPublishedAt, ReceivedAt: tele.ControllerReceivedAt, PublishedAt: tele.PublishedAt, SampleAgeMs: tele.SampleAgeMs, ProcessingMs: tele.GeneratorProcessingLagMs, TransportMs: tele.TransportLagMs, FanoutMs: tele.ControllerFanoutLagMs})
 	}
 	return out
 }

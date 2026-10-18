@@ -45,6 +45,32 @@ func TestDurableExecutionGenerationDoesNotGrantRuntimeOwnership(t *testing.T) {
 	}
 }
 
+// A start whose committed response has not returned yet has not learned the
+// execution generation its commit stamped. It keeps its run's identity while
+// that start is in flight, and only then; a generation the start did not stamp
+// never matches.
+func TestStagedStartKeepsIdentityBeforeLearningGeneration(t *testing.T) {
+	now := time.Now().UTC()
+	row := &storage.TestRecord{ID: "run", StartTime: now, ExecutionGeneration: 7, InitialProvenance: map[string]any{"run_incarnation": "same"}}
+	for _, learned := range []uint64{0, 6} {
+		staged := managedTestFromRecord(row)
+		staged.durableExecutionGeneration = learned
+		staged.executionGeneration = 7
+		if sameStoredTestIdentity(staged, row) {
+			t.Fatal("an unlearned generation matched without a start in flight", learned)
+		}
+		staged.passiveOperationToken = "staged-start"
+		if !sameStoredTestIdentity(staged, row) {
+			t.Fatal("a staged start lost its run's identity before learning the generation it stamped", learned)
+		}
+		// Another leader's start, with a generation this one did not stamp.
+		staged.executionGeneration = 8
+		if sameStoredTestIdentity(staged, row) {
+			t.Fatal("a start in flight matched a generation it did not stamp", learned)
+		}
+	}
+}
+
 func TestFollowerReplacesEvidenceAfterExecutionGenerationAdvance(t *testing.T) {
 	for _, mode := range []string{"single", "reload", "metrics", "messaging"} {
 		t.Run(mode, func(t *testing.T) {
