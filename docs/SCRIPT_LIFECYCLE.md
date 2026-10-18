@@ -280,20 +280,22 @@ the `dsl.Script` data structure.
 
 `pkg/engine/engine.go → Engine.Run` launches `vusers` goroutines with ramp-up
 (`for i := 0; i < e.vusers; i++ { … go func(){…}() }`). Each goroutine runs
-one `VUser` (`pkg/engine/vuser.go`, ~2–4 KB stack), holding a pointer to the parsed
-`*dsl.Script` and a `protocol.Protocol` handler.
+one `VUser` (`pkg/engine/vuser.go`, parked on an 8 KB stack between actions),
+holding a pointer to the parsed `*dsl.Script` and a `protocol.Protocol` handler.
 
 ### 3.2 The interpreter loop
 
-`VUser.Run(ctx)` (`vuser.go`) executes the script's phases: **`Init` once → loop over
-`Actions` → `Teardown` once**. Inside the loop, the `runOne` closure (a local function value inside `VUser.Run` in `vuser.go`) is
-the action-dispatch switch:
+`VUser.Run(ctx)` (`vuser_run.go`) executes the script's phases: **`Init` once → loop over
+`Actions` → `Teardown` once**. Inside the loop, the `vuserRun.runAction` method
+(`vuser_run.go`) is the action-dispatch switch; init and teardown run through the
+`lifecycleRun` methods in `vuser.go`. Both keep their state on the heap and their frames
+small, so the GC can shrink the stack of a VUser parked in think time or pacing:
 
 - `control_if` / `control_loop` — evaluated *at runtime* via `vu.evalCondition`
   (`pkg/engine/control_flow.go`), which supports both a legacy `left/op/right` form and
   CEL expressions (`pkg/engine/condition_expr.go`, normalized in
-  `pkg/dsl/condition_expr.go`). The closure recurses into the chosen branch / loop body via
-  `runActions`, a sibling closure declared in the same function in `vuser.go` (not a package-level function).
+  `pkg/dsl/condition_expr.go`). The runner recurses into the chosen branch / loop body via
+  its `runActions` method.
 - **engine-level actions** — `vu.handleEngineAction` (`vuser.go` →
   `pkg/engine/vuser_source_actions.go`) handles `rendezvous`, `source_transaction`,
   `http_oauth2_token`, `source_*`, etc. without touching a protocol.

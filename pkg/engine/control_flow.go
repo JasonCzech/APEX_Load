@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -23,6 +24,92 @@ const (
 	flowBreak
 	flowContinue
 )
+
+// controlRunner is what the iteration loop (vuserRun) and the lifecycle
+// runner (lifecycleRun) share to run control blocks. Each block type runs in
+// its own small function, so every level of nesting adds little to the
+// stack of a VUser parked in a nested think time.
+type controlRunner interface {
+	// controlBlockRuns reports whether a control block can run at depth.
+	controlBlockRuns(action *dsl.Action, depth int) bool
+	runActions(actions []dsl.Action, depth int) actionFlow
+	// stopped reports that the runner's action boundary or action context
+	// has ended.
+	stopped() bool
+	vuser() *VUser
+	log() *slog.Logger
+}
+
+// The block functions return the flow and whether the block's own think
+// time follows.
+
+func runIfBlock(r controlRunner, action *dsl.Action, depth int) (actionFlow, bool) {
+	if !r.controlBlockRuns(action, depth) {
+		return flowNext, false
+	}
+	body := action.Control.Else
+	if r.vuser().evalCondition(action.Control.Condition) {
+		body = action.Control.Steps
+	}
+	return runBlockBody(r, body, depth)
+}
+
+func runSwitchBlock(r controlRunner, action *dsl.Action, depth int) (actionFlow, bool) {
+	if !r.controlBlockRuns(action, depth) {
+		return flowNext, false
+	}
+	body, _ := r.vuser().selectSwitchBranch(action.Control)
+	return runBlockBody(r, body, depth)
+}
+
+// runBlockBody runs the body a control_if or control_switch selected. It
+// propagates a break/continue from its body up to the enclosing loop, and a
+// teardown aborts the phase; otherwise the block's think time follows.
+func runBlockBody(r controlRunner, body []dsl.Action, depth int) (actionFlow, bool) {
+	switch flow := r.runActions(body, depth+1); flow {
+	case flowTeardown, flowBreak, flowContinue:
+		return flow, false
+	}
+	return flowNext, true
+}
+
+func runLoopBlock(r controlRunner, action *dsl.Action, depth int) (actionFlow, bool) {
+	if !r.controlBlockRuns(action, depth) {
+		return flowNext, false
+	}
+	loop := action.Control
+	cursor := newControlLoopCursor(r.vuser(), loop)
+	if count := cursor.implicitTruncation(); count > 0 {
+		warnLoopTruncation(r.log(), action.Name, count, cursor.maxPasses)
+	}
+passes:
+	for cursor.pending() {
+		if r.stopped() {
+			cursor.restoreBindings()
+			return flowTeardown, false
+		}
+		pass, ok := cursor.next()
+		if !ok {
+			if cursor.conditionCapReached {
+				warnConditionLoopSafetyCap(r.log(), action.Name, cursor.maxPasses)
+			}
+			break
+		}
+		if pass.checkCondition && !r.vuser().evalCondition(pass.condition) {
+			break
+		}
+		switch r.runActions(loop.Steps, depth+1) {
+		case flowTeardown:
+			cursor.restoreBindings()
+			return flowTeardown, false
+		case flowBreak:
+			break passes
+		}
+		// flowContinue / flowNext: advance to the next pass.
+	}
+	cursor.restoreBindings()
+	return flowNext, true
+}
 
 // defaultControlLoopMaxIterations bounds condition-driven control_loop blocks so a
 // non-terminating predicate can never hang a VUser goroutine.

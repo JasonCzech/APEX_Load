@@ -5,8 +5,11 @@ import (
 	"io"
 	stdhttp "net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func TestHTTPPolicyPoolsAreIndependentAndInitializeOnlyOnRequest(t *testing.T) {
@@ -121,6 +124,35 @@ func TestHTTPPolicyLazyPoolsKeepInitializationErrors(t *testing.T) {
 		h := &HTTP{}
 		if err := h.Init(context.Background(), config); err == nil {
 			t.Fatalf("Init accepted invalid config before any request: %v", config)
+		}
+	}
+}
+
+// Shared-session validation and a request refused before it is sent build no
+// transport.
+func TestHTTPPolicyPoolsRefusedRequestsBuildNoTransport(t *testing.T) {
+	h := versionHTTP(t, map[string]any{"default_headers": map[string]string{"Connection": "keep-alive"}})
+	owners := func() int { return len(h.connections.snapshotOwners()) }
+	if err := h.ValidateSharedSessionAction(&protocol.Action{Type: "GET", Target: "https://127.0.0.1:1/", HTTPVersion: versionOverride(t, VersionHTTP11)}); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if n := owners(); n != 0 {
+		t.Fatalf("validation built %d transports", n)
+	}
+	for _, refused := range []struct {
+		name, message string
+		action        *protocol.Action
+	}{
+		{"HTTP/2 connection header", "connection-specific headers", &protocol.Action{Type: "GET", Target: "https://127.0.0.1:1/", HTTPVersion: versionOverride(t, VersionHTTP2)}},
+		{"invalid base64 body", "invalid base64 http body", &protocol.Action{Type: "POST", Target: "https://127.0.0.1:1/", Body: []byte("%%%"), BodyEncoding: "base64", HTTPVersion: versionOverride(t, VersionHTTP11)}},
+	} {
+		name := refused.name
+		result, err := h.Execute(context.Background(), refused.action)
+		if err != nil || result == nil || result.Success || !strings.Contains(strings.ToLower(result.ErrorMessage), refused.message) {
+			t.Fatalf("%s: request was not refused before sending: result=%+v err=%v", name, result, err)
+		}
+		if n := owners(); n != 0 {
+			t.Fatalf("%s: refused request built %d transports", name, n)
 		}
 	}
 }

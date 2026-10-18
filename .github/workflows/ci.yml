@@ -387,6 +387,12 @@ jobs:
         if: matrix.lane == 'race'
         run: go test -race -count=1 github.com/mxschmitt/playwright-go -run '^TestAPEXOwnedHAR'
 
+      # The race detector's larger frames leave some parked stacks at 16 KB,
+      # so the 8 KB parked-stack bound is checked in a normal build.
+      - name: Require parked VUser stacks to shrink to 8 KB
+        if: matrix.lane == 'race'
+        run: go test -count=1 -timeout=2m ./pkg/engine -run '^TestParked(Group|Engine)?VUserStackShrinks$'
+
       - name: Run race tests
         if: matrix.lane == 'race'
         run: |

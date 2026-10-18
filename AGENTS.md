@@ -134,7 +134,10 @@ whose first token is the directory name — a mention elsewhere in the fence
 `api/static/` does not stand in for the package's own line.
 
 ## Key Design Decisions
-- 1 goroutine = 1 VUser (~2–4 KB stack)
+- 1 goroutine = 1 VUser. Frames on the way to think time and pacing stay
+  small (`vuserRun`, `lifecycleRun`), so the GC can shrink the stack of a
+  VUser parked between actions or in pacing to 8 KB
+  (`vuser_parked_stack_test.go`); waits inside an action keep it larger
 - Metrics via buffered channels (cap 10,000) — zero-lock hot path
 - Protocol plugins compiled in (not Go runtime plugins)
 - `sync.Pool` for request/response buffers to reduce GC pressure

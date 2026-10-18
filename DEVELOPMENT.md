@@ -393,7 +393,7 @@ npm run build
 
 ### Backend
 
-- **Goroutine scaling**: 1 VUser = 1 goroutine (~2–4 KB stack). 10,000 VUsers = ~40–80 MB overhead.
+- **Goroutine scaling**: 1 VUser = 1 goroutine, parked on an 8 KB stack between actions. The `pkg/perfevidence` footprint harness measures an idle VUser at about 12 KB of Go memory (heap and stack) with no protocol and about 41 KB with HTTP on macOS; process RSS per VUser is higher.
 - **Metrics hot path**: Buffered channel (10,000) avoids locks; aggregated periodically.
 - **Database**: SQLite is adequate for single-controller metadata. Running multiple controller replicas requires `APEXLOAD_CONTROLLER_HA`, PostgreSQL, Redis/Valkey, and shared archive storage (see [ARCHITECTURE.md](ARCHITECTURE.md)).
 - **Memory**: Reuse buffers via `sync.Pool` to reduce GC pressure during high-throughput runs.
