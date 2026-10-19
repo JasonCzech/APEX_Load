@@ -22,6 +22,14 @@ describe('Help documentation', () => {
     await act(async () => { root.render(<TopbarContributionProvider><Topbar /><ApiGuidePage {...props} /></TopbarContributionProvider>); await Promise.all(helpArticles.map(loadHelpSource)) })
   }
   async function navigate(hash: string) { await act(async () => { window.location.hash = hash; window.dispatchEvent(new HashChangeEvent('hashchange')); await Promise.all(helpArticles.map(loadHelpSource)) }) }
+  it('canonicalizes repository heading fragments before selecting and focusing their help section', async () => {
+    await navigate('#/docs?guide=user-guide&article=messaging&section=webapi-execution-support-matrix')
+    await render()
+    expect(window.location.hash).toContain('article=web-api-support')
+    expect(window.location.hash).toContain('section=web-api-execution-support-matrix')
+    expect(container.querySelector('#web-api-execution-support-matrix')).not.toBeNull()
+    expect(container.textContent).not.toContain('That section is not available')
+  })
   it('starts with a self-contained first test and five semantic areas for administrators', async () => {
     await render({ effectiveAccessResources: access(['manage_system']) })
     expect(container.querySelector('[data-testid="topbar"]')?.textContent).toContain('Help & documentation')

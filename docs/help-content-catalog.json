@@ -708,5 +708,29 @@
     "path": "docs/IMPORT_FIDELITY_AND_REPAIRS.md",
     "group": "Reference",
     "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "web-api-support",
+    "area": "user-guide",
+    "title": "Web/API execution support",
+    "path": "docs/PROTOCOL_SUPPORT.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Web/API Execution Support Matrix"
+    ]
+  },
+  {
+    "id": "monitoring-governance",
+    "area": "user-guide",
+    "title": "Monitoring provider governance",
+    "path": "docs/OBSERVABILITY_INTEGRATIONS.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Run-bound monitoring storage and signing",
+      "Prometheus target-system test monitoring",
+      "Governed provider registry"
+    ]
   }
 ]

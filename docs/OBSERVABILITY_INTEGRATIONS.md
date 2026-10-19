@@ -658,7 +658,7 @@ Apply `Is Latest Publish = 1` as a report/page filter (equivalent measure on `tr
 
 Status: Current
 
-Source note: provider setup and compatibility details now live in [Dynatrace](DYNATRACE.md) and [Elastic](ELASTIC.md); the shared pipeline, notification overview and qualification table remain here. Originally consolidated 2026-09-24 from the former `DYNATRACE_SAAS_MONITORING.md`, `DYNATRACE_WEBHOOKS.md` and `ELK_MONITORING.md`. Prometheus, OpenTelemetry and Power BI have their own references: [Prometheus metrics](OBSERVABILITY_INTEGRATIONS.md#prometheus-scrape-endpoint), [OpenTelemetry](OBSERVABILITY_INTEGRATIONS.md#opentelemetry-tracing), [Power BI](OBSERVABILITY_INTEGRATIONS.md).
+Source note: provider setup and compatibility details now live in [Dynatrace](DYNATRACE.md) and [Elastic](ELASTIC.md); the shared pipeline, notification overview and qualification table remain here. Originally consolidated 2026-09-24 from the former `DYNATRACE_SAAS_MONITORING.md`, `DYNATRACE_WEBHOOKS.md` and `ELK_MONITORING.md`. Prometheus, OpenTelemetry and Power BI have their own references: [Prometheus metrics](OBSERVABILITY_INTEGRATIONS.md#prometheus-scrape-endpoint), [OpenTelemetry](OBSERVABILITY_INTEGRATIONS.md#opentelemetry-tracing), [Power BI](OBSERVABILITY_INTEGRATIONS.md#power-bi-publishing-workflow).
 
 | Integration | Direction | Scope |
 | --- | --- | --- |

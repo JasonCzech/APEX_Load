@@ -1,6 +1,6 @@
 import { settingsDestination, settingsOwner } from './components/settingsNavigation'
 import { describe, expect, it } from 'vitest'
-import { articleBlocks, articleForSection, helpArticles, helpArticleHash, loadHelpSource, resolveHelpLink, searchHelp } from './helpContent'
+import { articleBlocks, articleForSection, helpArticles, helpArticleHash, helpSectionID, loadHelpSource, resolveHelpLink, searchHelp } from './helpContent'
 import { parseMarkdown } from './components/repositoryGuideMarkdown'
 import { apiGuideHashForToggle, apiGuideToggleOptions, helpAreaForPage } from './apiGuideNavigation'
 
@@ -56,6 +56,31 @@ describe('Help catalogue and content contracts', () => {
     }
     const apiGuide = helpArticles.find(value => value.id === 'api-workflows')!
     expect(resolveHelpLink('PROJECT_LIVE_TABLES.md', apiGuide, await loadHelpSource(apiGuide))).toBe(helpArticleHash(article))
+  })
+  it('keeps repository-style fragments navigable across every bundled help source', async () => {
+    for (const article of helpArticles) {
+      const source = await loadHelpSource(article)
+      for (const match of source.matchAll(/\]\(([^)]+)\)/g)) {
+        const href = match[1]
+        if (/^(https?:|mailto:|#\/)/.test(href)) continue
+        const destination = resolveHelpLink(href, article, source)
+        if (!destination.startsWith('#/docs?')) continue
+        const params = new URLSearchParams(destination.split('?')[1])
+        const section = params.get('section')
+        if (!section) continue
+        const target = helpArticles.find(candidate => candidate.id === params.get('article'))!
+        expect(articleForSection(target.path, section, await loadHelpSource(target)), `${article.path}: ${href}`).toBeDefined()
+      }
+    }
+  })
+  it('resolves punctuation and duplicate repository headings without changing existing help IDs', () => {
+    const source = '# Guide\n\n## Web/API\n\n## Web/API\n\n## A & B\n\n## Café\n'
+    expect(helpSectionID(source, 'webapi')).toBe('web-api')
+    expect(helpSectionID(source, 'webapi-1')).toBe('web-api-1')
+    expect(helpSectionID(source, 'web-api')).toBe('web-api')
+    expect(helpSectionID(source, 'a--b')).toBe('a-b')
+    expect(helpSectionID(source, 'café')).toBe('caf')
+    expect(helpSectionID(source, 'unknown')).toBe('unknown')
   })
   it('loads every catalogue source and every selected task section', async () => {
     expect(new Set(helpArticles.map(a => a.id)).size).toBe(helpArticles.length)

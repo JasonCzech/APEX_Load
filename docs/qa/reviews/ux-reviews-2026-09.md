@@ -2,7 +2,7 @@
 
 Status: Open. Both reviews still have unimplemented recommendations.
 
-The `command-center-usability-2026-09-09/` and `heatmap-audit-2026-09-14/` folders next to this file hold the screenshots. Completed UX reviews are in [../../archive/qa-reviews/](../../archive/README.md#qa-ux-reviews-qa-reviews).
+The `command-center-usability-2026-09-09/` and `heatmap-audit-2026-09-14/` folders next to this file hold the screenshots. Completed UX reviews are in [the consolidated September audit record](../../archive/qa-reviews/AUDITS_2026-09.md).
 
 ## Command Center usability review
 

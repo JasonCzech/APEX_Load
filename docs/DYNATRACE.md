@@ -82,7 +82,7 @@ Existing connection IDs, references and old archives remain readable. The legacy
 | Grail numeric/log/event/span/trace summaries and Smartscape | Fixture projections and typed ingestion scenarios | None yet |
 | Direct/collector, durable ingestion and reconciliation | Fixture integration/race/database/browser scenarios | None yet |
 
-Fixture success does not establish compatibility with a real licensed tenant. Publish exact tenant release/API capabilities, permissions and qualification dates after SaaS testing. See [the implementation contract](DYNATRACE_SPEC.md), [observability integrations](OBSERVABILITY_INTEGRATIONS.md), [generated OpenAPI](swagger.yaml), and [archive retention](ARCHIVE_SOURCE_RETENTION.md).
+Fixture success does not establish compatibility with a real licensed tenant. Publish exact tenant release/API capabilities, permissions and qualification dates after SaaS testing. See [the implementation contract](DYNATRACE_SPEC.md), [provider qualification](OBSERVABILITY_INTEGRATIONS.md#provider-qualification), [generated OpenAPI](swagger.yaml), and [archive retention](ARCHIVE_SOURCE_RETENTION.md).
 
 ## Dynatrace lifecycle webhooks
 

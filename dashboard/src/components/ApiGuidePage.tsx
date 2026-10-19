@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { API_GUIDE_DEFAULT_PAGE, helpAreaForPage, isApiGuideContentPageID, type ApiGuideContentPageID } from '../apiGuideNavigation'
 import { buildAllowedOperationSet } from '../apiGuideAccess'
-import { articleBlocks, articleForSection, helpArticles, helpArticleHash, loadHelpSource, resolveHelpLink, type HelpArticle } from '../helpContent'
+import { articleBlocks, articleForSection, helpArticles, helpArticleHash, helpSectionID, loadHelpSource, resolveHelpLink, type HelpArticle } from '../helpContent'
 import { useHasTopbarContributionProvider } from '../hooks/TopbarContributionProvider'
 import type { DashboardAuthEffectiveAccessResource } from '../types'
 import { ApiGuideTopbarToggle } from './ApiGuideTopbarToggle'
@@ -68,18 +68,20 @@ function HelpArticleContent({ article, section, isAdmin }: { article: HelpArticl
     loadHelpSource(article).then(source => { if (!cancelled) setState({ source }) }, () => { if (!cancelled) setState({ error: 'This article could not be loaded. Reload the page to retry, or choose another article.' }) })
     return () => { cancelled = true }
   }, [article])
+  const resolvedSection = state.source && section ? helpSectionID(state.source, section) : section
   const resolvedArticle = state.source && section ? articleForSection(article.path, section, state.source) : undefined
   const displayArticle = resolvedArticle && (isAdmin || resolvedArticle.area !== 'admin-guide') ? resolvedArticle : article
   useEffect(() => {
-    if (displayArticle.id === article.id) return
+    if (displayArticle.id === article.id && resolvedSection === section) return
     const url = new URL(window.location.href)
     const params = new URLSearchParams(url.hash.split('?')[1] || '')
     params.set('guide', displayArticle.area)
     params.set('article', displayArticle.id)
+    if (resolvedSection) params.set('section', resolvedSection)
     url.hash = `/docs?${params}`
     window.history.replaceState(window.history.state, '', url)
     window.dispatchEvent(new HashChangeEvent('hashchange'))
-  }, [article.id, displayArticle.id, displayArticle.area])
+  }, [article.id, displayArticle.id, displayArticle.area, resolvedSection, section])
   const validURL = /^https?:\/\//.test(controllerURL) && (() => { try { const u = new URL(controllerURL); return !u.username && !u.password && !u.search && !u.hash && /^[a-zA-Z0-9:/._~%[\]-]+$/.test(controllerURL) } catch { return false } })()
   const source = state.source && article.id === 'api-overview' && validURL ? state.source.split('http://localhost:8080/api/v1').join(controllerURL.replace(/\/$/, '')) : state.source || ''
   const blocks = useMemo(() => articleBlocks(displayArticle, source), [displayArticle, source])
@@ -87,7 +89,7 @@ function HelpArticleContent({ article, section, isAdmin }: { article: HelpArticl
     {/* The section list marks the open article, so its title is for screen readers only. */}
     <header className="help-article-header"><h2 className="sr-only">{displayArticle.title}</h2>
       <button type="button" className="btn btn-secondary btn-sm" onClick={async () => {
-        const url = `${window.location.href.split('#')[0]}${helpArticleHash(displayArticle, section)}`
+        const url = `${window.location.href.split('#')[0]}${helpArticleHash(displayArticle, resolvedSection)}`
         setCopied(await copyTextToClipboard(url) ? 'Link copied' : 'Copy unavailable. Copy the address from your browser.')
       }}>Copy article link</button><span role="status">{copied}</span>
     </header>
@@ -101,7 +103,7 @@ function HelpArticleContent({ article, section, isAdmin }: { article: HelpArticl
     </label>}
     {state.source && section && !resolvedArticle && <p role="status">That section is not available in this build. Choose a section from On this page.</p>}
     {state.error ? <div role="alert"><p>{state.error}</p><button type="button" onClick={() => window.location.reload()}>Reload to retry</button></div> : state.source === undefined ? <p role="status">Loading article…</p> : <GuideMarkdownArticle
-      source={source} blocks={blocks} section={section}
+      source={source} blocks={blocks} section={resolvedSection}
       sectionHref={id => helpArticleHash(displayArticle, id)}
       resolveLink={href => resolveHelpLink(href, displayArticle, state.source!)}
     />}

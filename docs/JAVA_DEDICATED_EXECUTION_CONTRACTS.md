@@ -149,10 +149,7 @@ account tokens/service links, equal CPU/memory resource requests/limits, bounded
 scratch and a read-only host transport secret. Approved assets and a compatible
 supervisor must be supplied by the immutable image. The PID 1 supervisor, asset/readiness verification, authenticated host
 control transport and durable commit adapter are now implemented below. This
-builder is not wired into a runnable broker deployment: generator-facing facade,
-broker service orchestration, infrastructure
-fencing/termination attestation, Helm/Kustomize deployment wiring and assignment
-staging remain implementation work. No AKS backend is enabled by these utilities.
+builder is a component of the [experimental broker integration](JAVA_BROKER_SERVICE.md), whose facade, orchestration, inactive deployment scaffold and distributed assignment contracts are documented separately. Independent fencing/termination attestation and live infrastructure qualification remain required. No AKS backend is enabled by these utilities.
 
 No Linux PSS improvement, hour-long soak, Windows containment, AKS termination,
 or production workload qualification has been measured on this macOS host.

@@ -68,7 +68,7 @@ missing placement metadata, and reporting in the compact Configuration view.
    termination evidence and durable quarantine; epoch fencing and reconciliation;
    prepare/ready/commit integration and bounded assignment staging; manifests and
    real network/descendant/node-failure tests. Durable dedicated reservation and
-   reconciliation primitives are implemented below; no AKS execution backend is enabled.
+   reconciliation primitives are documented in [dedicated execution contracts](JAVA_DEDICATED_EXECUTION_CONTRACTS.md#durable-dedicated-broker-state-and-explicit-pilot-diagnostics); no AKS execution backend is enabled.
 3. **After the synthetic gate:** normal-engine mode selection, distributed pooled placement and reservations,
    Windows execution/containment validation, qualified AKS pooling, preflight and
    reporting UI/API changes, real-workload qualification, and production release.
