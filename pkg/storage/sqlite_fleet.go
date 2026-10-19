@@ -48,7 +48,7 @@ func (s *SQLiteStore) SaveFleetPool(pool *FleetPool) error {
 		pool.Status = "active"
 	}
 	normalizeFleetPoolPlacementDefaults(pool)
-	now := time.Now()
+	now := localVersionTimestamp()
 	if pool.CreatedAt.IsZero() {
 		pool.CreatedAt = now
 	}
@@ -134,7 +134,7 @@ func (s *SQLiteStore) CreateFleetPoolWithMembers(pool *FleetPool, members []*Fle
 		pool.Status = "active"
 	}
 	normalizeFleetPoolPlacementDefaults(pool)
-	now := time.Now()
+	now := localVersionTimestamp()
 	if pool.CreatedAt.IsZero() {
 		pool.CreatedAt = now
 	}
@@ -220,7 +220,7 @@ func (s *SQLiteStore) UpdateFleetPoolIfUnchanged(pool *FleetPool, members []*Fle
 			}
 		}
 	}
-	pool.UpdatedAt = time.Now()
+	pool.UpdatedAt = localVersionTimestamp()
 	// domain_id MUST be in this SET list. This method writes exactly what it is
 	// given, so omitting the column would silently reset a constrained pool to
 	// unscoped on every unrelated edit — a silent widening of blast radius.

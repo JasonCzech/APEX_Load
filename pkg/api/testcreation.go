@@ -857,7 +857,9 @@ type managedTestRunReferenceReservation struct {
 // the exact leadership term is retained throughout every transparent rebuild so
 // an old goroutine cannot adopt a newer term after same-process reacquisition.
 func (tr *TestRunner) createTestWithIDAndTerm(req CreateTestRequest, broadcast bool, id string, leaseTerm executionLeaseTerm) (*ManagedTest, error) {
-	requestedAt := time.Now()
+	// Followers read the run's creation time back from PostgreSQL, so the
+	// leader's copy takes the precision PostgreSQL stores.
+	requestedAt := atMicrosecond(time.Now())
 	runReference := managedTestRunReferenceReservation{createdAt: requestedAt}
 	var lastErr error
 	for attempt := 0; attempt < managedTestCreateBuildAttempts; attempt++ {
@@ -1514,7 +1516,9 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		return nil, err
 	}
 	req.ReleaseID = releaseID
-	now := time.Now()
+	// HA followers read a run's times back from PostgreSQL, which keeps
+	// microseconds; schedules build runs here without createTestWithIDAndTerm.
+	now := atMicrosecond(time.Now())
 	creationActor := normalizeTestCreationActor(req.creationActor)
 	refKey := ""
 	if status != "DRAFT" && !req.deferRunRefKey {

@@ -521,7 +521,9 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 		script.RefKey = refkey.Script(envCode, sequence, 1)
 	}
 
-	createdAt := time.Now()
+	// Scripts are stored at microseconds, and the cached copy's CreatedAt must
+	// equal the stored one.
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
 	if existing != nil && !existing.CreatedAt.IsZero() {
 		createdAt = existing.CreatedAt
 	}
@@ -838,7 +840,7 @@ func (tr *TestRunner) createScriptDurable(
 
 	createdAt := persisted.CreatedAt
 	if createdAt.IsZero() {
-		createdAt = time.Now()
+		createdAt = time.Now().UTC().Truncate(time.Microsecond)
 	}
 	stored := &StoredScript{
 		ID:              persisted.ID,

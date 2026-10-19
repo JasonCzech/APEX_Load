@@ -2666,12 +2666,12 @@ func (tr *TestRunner) updateRunArchiveTrendPointIfUnchanged(expected *storage.Ru
 
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	if current := tr.archives[expected.TestID]; sameRunArchiveRecordVersion(current, expected) && current.TrendPointJSON == expected.TrendPointJSON {
+	if current := tr.archives[expected.TestID]; sameRunArchiveRecordVersion(current, expected, tr.archiveStore) && current.TrendPointJSON == expected.TrendPointJSON {
 		copy := *current
 		copy.TrendPointJSON = trendPointJSON
 		tr.archives[expected.TestID] = &copy
 	}
-	if test := tr.tests[expected.TestID]; test != nil && sameRunArchiveRecordVersion(test.Archive, expected) && test.Archive.TrendPointJSON == expected.TrendPointJSON {
+	if test := tr.tests[expected.TestID]; test != nil && sameRunArchiveRecordVersion(test.Archive, expected, tr.archiveStore) && test.Archive.TrendPointJSON == expected.TrendPointJSON {
 		copy := *test.Archive
 		copy.TrendPointJSON = trendPointJSON
 		test.Archive = &copy

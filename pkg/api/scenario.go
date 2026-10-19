@@ -398,7 +398,9 @@ func (tr *TestRunner) storeScenarioLockedWithSources(id string, req CreateScenar
 	if runtimeSettingsReview := buildRuntimeSettingsScenarioReview(testGroups, engineGroups); runtimeSettingsReview != nil && runtimeSettingsReview.Status == "blocked" {
 		return nil, fmt.Errorf("runtime settings blocked: %s", runtimeSettingsReview.Summary)
 	}
-	now := time.Now().UTC()
+	// Scenarios are stored at microseconds, and the cached copy's CreatedAt
+	// must equal the stored one.
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	createdAt := now
 	refKey := ""
 	if existing != nil && !existing.CreatedAt.IsZero() {

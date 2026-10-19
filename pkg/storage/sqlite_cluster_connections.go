@@ -69,7 +69,7 @@ func (s *SQLiteStore) CreateClusterConnection(conn *ClusterConnection) error {
 	if err := conn.Validate(); err != nil {
 		return err
 	}
-	now := time.Now()
+	now := localVersionTimestamp()
 	if conn.CreatedAt.IsZero() {
 		conn.CreatedAt = now
 	}
@@ -139,7 +139,7 @@ func (s *SQLiteStore) UpdateClusterConnectionIfUnchanged(conn *ClusterConnection
 	if currentKind != conn.Kind {
 		return false, ErrClusterConnectionKindImmutable
 	}
-	conn.UpdatedAt = time.Now()
+	conn.UpdatedAt = localVersionTimestamp()
 	result, err := tx.Exec(`UPDATE cluster_connections SET
 			name = ?, description = ?, kind = ?, api_server_url = ?, namespace = ?, generator_selector = ?,
 			generator_statefulset = ?, generator_container = ?, ca_certificate_pem = ?, tls_mode = ?, auth_mode = ?,

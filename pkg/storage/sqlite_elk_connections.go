@@ -29,7 +29,7 @@ func (s *SQLiteStore) CreateELKConnection(connection *ELKConnection) error {
 	if err != nil {
 		return err
 	}
-	now := time.Now().UTC()
+	now := versionTimestamp()
 	if connection.CreatedAt.IsZero() {
 		connection.CreatedAt = now
 	}
@@ -134,7 +134,7 @@ func (s *SQLiteStore) UpdateELKConnectionIfUnchanged(connection *ELKConnection, 
 	if err != nil {
 		return false, err
 	}
-	updatedAt := time.Now().UTC()
+	updatedAt := versionTimestamp()
 	result, err := tx.Exec(`UPDATE elk_connections SET name=?, description=?, enabled=?, endpoint=?, index_pattern=?,
 		timestamp_field=?, level_field=?, message_field=?, test_id_field=?, trace_id_field=?, base_filter=?, error_filter=?,
 		auth_type=?, api_key_secret_name=?, username_secret_name=?, password_secret_name=?, metric_aggregations_json=?, elastic_profile_json=?,last_checked_at=?,last_check_status=?,last_check_message=?, updated_at=?

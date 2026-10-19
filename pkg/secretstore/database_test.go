@@ -125,3 +125,48 @@ func TestEnvironmentStoreIsReadOnlyAndProjectScoped(t *testing.T) {
 		t.Fatalf("cross-project environment read error = %v", err)
 	}
 }
+
+// The dashboard keeps the metadata a create or rotation returns and compares
+// it with the listed metadata. PostgreSQL keeps microseconds and Go's clock
+// has nanoseconds on Linux, so the returned times must be the stored ones.
+func TestDatabaseStoreReturnsTheStoredMetadataTimes(t *testing.T) {
+	records, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = records.Close() })
+	now := time.Now().UTC()
+	if err := records.SaveProject(&storage.Project{ID: "project-a", Name: "A", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x31}, 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &DatabaseStore{Records: records, Wrapper: wrapper}
+	ctx := context.Background()
+	for _, write := range []struct {
+		name string
+		do   func() (Metadata, error)
+	}{
+		{"create", func() (Metadata, error) { return store.Create(ctx, "project-a", "API_TOKEN", "first", "tester") }},
+		{"rotate", func() (Metadata, error) { return store.Replace(ctx, "project-a", "API_TOKEN", "second", "tester") }},
+	} {
+		returned, err := write.do()
+		if err != nil {
+			t.Fatalf("%s: %v", write.name, err)
+		}
+		listed, err := store.List(ctx, "project-a")
+		if err != nil || len(listed) != 1 {
+			t.Fatalf("list after %s = %+v, %v", write.name, listed, err)
+		}
+		for field, times := range map[string][2]time.Time{
+			"created_at": {returned.CreatedAt, listed[0].CreatedAt},
+			"updated_at": {returned.UpdatedAt, listed[0].UpdatedAt},
+		} {
+			if !times[0].Equal(times[1]) || !times[0].Equal(times[0].Truncate(time.Microsecond)) {
+				t.Fatalf("%s returned %s %s, listed %s: want the stored value, at microseconds", write.name, field, times[0].Format(time.RFC3339Nano), times[1].Format(time.RFC3339Nano))
+			}
+		}
+	}
+}

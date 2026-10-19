@@ -171,7 +171,9 @@ func (s *AzureKeyVaultStore) write(ctx context.Context, projectID, name, value, 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return Metadata{}, fmt.Errorf("Azure Key Vault secret write returned %d", response.StatusCode)
 	}
-	now := time.Now().UTC()
+	// The metadata record stores this value, and the dashboard compares the
+	// returned metadata with the listed one; PostgreSQL keeps microseconds.
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	return Metadata{
 		ProjectID: projectID,
 		Name:      name,

@@ -85,7 +85,7 @@ func (s *SQLiteStore) CreateDynatraceConnection(c *DynatraceConnection) error {
 	if err != nil {
 		return fmt.Errorf("encode Dynatrace connection: %w", err)
 	}
-	now := time.Now().UTC()
+	now := versionTimestamp()
 	if c.CreatedAt.IsZero() {
 		c.CreatedAt = now
 	}
@@ -224,7 +224,7 @@ func (s *SQLiteStore) updateDynatraceConnection(c *DynatraceConnection, expected
 	if err != nil {
 		return false, err
 	}
-	updated := time.Now().UTC()
+	updated := versionTimestamp()
 	result, err := tx.Exec(`UPDATE dynatrace_connections SET name=?,description=?,enabled=?,environment_url=?,platform_url=?,metrics_enabled=?,problems_enabled=?,logs_enabled=?,environment_token_secret=?,platform_auth_type=?,platform_token_secret=?,oauth_client_id_secret=?,oauth_client_secret_secret=?,oauth_resource=?,oauth_scopes_json=?,metric_queries_json=?,problem_selector=?,problem_entity_selector=?,log_base_filter=?,log_test_id_field=?,log_timestamp_field=?,log_status_field=?,log_message_field=?,log_trace_id_field=?,poll_interval_seconds=?,last_capability_health_json=?,updated_at=?,revision=?,verified_revision=?,native_config_json=?,last_checked_at=?,last_check_status=?,last_check_message=? WHERE id=? AND project_id=? AND revision=?`, c.Name, c.Description, c.Enabled, c.EnvironmentURL, c.PlatformURL, c.MetricsEnabled, c.ProblemsEnabled, c.LogsEnabled, c.EnvironmentTokenSecret, c.PlatformAuthType, c.PlatformTokenSecret, c.OAuthClientIDSecret, c.OAuthClientSecretSecret, c.OAuthResource, scopes, metrics, c.ProblemSelector, c.ProblemEntitySelector, c.LogBaseFilter, c.LogTestIDField, c.LogTimestampField, c.LogStatusField, c.LogMessageField, c.LogTraceIDField, c.PollIntervalSeconds, health, updated, c.Revision, c.VerifiedRevision, native, c.LastCheckedAt, c.LastCheckStatus, c.LastCheckMessage, c.ID, c.ProjectID, prior.Revision)
 	if err != nil {
 		return false, err

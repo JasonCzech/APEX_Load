@@ -97,7 +97,8 @@ func (s *Server) handleCreateTestNote(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	now := time.Now().UTC()
+	// Notes are stored at microseconds, and an edit sends this updated_at back.
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	_, actorSubject, actorDisplay := s.resolveAuditActor(r)
 	actor := firstNonEmpty(actorDisplay, actorSubject)
 	note := &storage.TestNote{

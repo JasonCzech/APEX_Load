@@ -92,8 +92,10 @@ func newImportTransaction(server *Server, source string, scripts []*dsl.Script, 
 		}
 		// Direct imports are local creates, so source timestamps are not ownership
 		// evidence. Give even the in-memory store a non-zero version fence; SQL
-		// stores may advance UpdatedAt again during the atomic insert.
-		now := time.Now().UTC()
+		// stores may advance UpdatedAt again during the atomic insert. Stamp at
+		// microseconds, the precision scripts are stored at, because recording
+		// bindings compare CreatedAt exactly.
+		now := time.Now().UTC().Truncate(time.Microsecond)
 		script.CreatedAt = now
 		script.UpdatedAt = now
 		key := createImportItemKey("script", id)

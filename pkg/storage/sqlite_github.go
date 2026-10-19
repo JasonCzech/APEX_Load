@@ -866,6 +866,9 @@ func (s *SQLiteStore) CommitGitHubScriptImport(script *dsl.Script, link *GitHubS
 		return GitHubScriptImportConflict, err
 	}
 	if !currentExists {
+		// The row is new, so the caller's creation stamp takes the stored
+		// precision too, as its version did above.
+		script.CreatedAt = script.CreatedAt.Truncate(time.Microsecond)
 		if script.CreatedAt.IsZero() {
 			script.CreatedAt = now
 		}

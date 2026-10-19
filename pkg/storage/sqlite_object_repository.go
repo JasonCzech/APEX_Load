@@ -24,7 +24,7 @@ func (s *SQLiteStore) SaveObjectRepository(repo *ObjectRepository) error {
 		return errors.New("object repository name is required")
 	}
 	repo.ProjectID = normalizeProjectID(repo.ProjectID)
-	now := time.Now()
+	now := localVersionTimestamp()
 	if repo.CreatedAt.IsZero() {
 		repo.CreatedAt = now
 	}
@@ -173,7 +173,7 @@ func (s *SQLiteStore) updateObjectRepositoryIfUnchangedContext(
 		return false, nil
 	}
 	repo.ProjectID = normalizeProjectID(currentProjectID)
-	repo.UpdatedAt = time.Now()
+	repo.UpdatedAt = localVersionTimestamp()
 	result, err := tx.ExecContext(ctx, `UPDATE object_repositories
 		SET name = ?, description = ?, source = ?, objects_json = ?, auto_promote_on_heal = ?, updated_at = ?
 		WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, repo.Name, repo.Description, repo.Source, string(objectsJSON), repo.AutoPromoteOnHeal, repo.UpdatedAt, repo.ID, currentUpdatedRaw)

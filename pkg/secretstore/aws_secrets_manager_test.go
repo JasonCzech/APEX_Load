@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
@@ -355,4 +356,23 @@ func itoa(i int) string {
 		i /= 10
 	}
 	return digits
+}
+
+// The dashboard keeps the metadata a rotation returns and compares it with
+// the listed metadata, which the stored record serves. PostgreSQL keeps
+// microseconds and Go's clock has nanoseconds on Linux.
+func TestSecretsManagerReplaceReturnsTheStoredMetadataTime(t *testing.T) {
+	store := newSecretsManagerStore(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"Name": "x", "VersionId": "v1"})
+	})
+	records := &recordingMetadataStore{provider: secretsManagerProvider}
+	store.Metadata = records
+	returned, err := store.Replace(context.Background(), "project-1", "TOKEN", "new-value", "actor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := records.records[records.key("project-1", "TOKEN")]
+	if stored == nil || !returned.UpdatedAt.Equal(stored.UpdatedAt) || !returned.UpdatedAt.Equal(returned.UpdatedAt.Truncate(time.Microsecond)) {
+		t.Fatalf("rotation returned updated_at %s, stored %+v: want the stored value, at microseconds", returned.UpdatedAt.Format(time.RFC3339Nano), stored)
+	}
 }

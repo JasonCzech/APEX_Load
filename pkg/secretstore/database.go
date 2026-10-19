@@ -152,7 +152,9 @@ func (s *DatabaseStore) encryptedRecord(ctx context.Context, projectID, name, va
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now().UTC()
+	// The record is stored and returned as the secret's metadata, which the
+	// dashboard compares with the listed metadata; PostgreSQL keeps microseconds.
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	return &storage.ProjectSecretCipher{
 		ProjectID:      projectID,
 		SecretName:     name,

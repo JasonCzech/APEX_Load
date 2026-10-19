@@ -28,8 +28,10 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 		return err
 	}
 
+	// An upsert keeps an existing row's created_at, so only a missing one is
+	// stamped here.
 	if script.CreatedAt.IsZero() {
-		script.CreatedAt = time.Now().UTC()
+		script.CreatedAt = versionTimestamp()
 	}
 	script.UpdatedAt = versionTimestamp()
 
@@ -108,9 +110,7 @@ func (s *SQLiteStore) CreateScriptAuthoringIfAbsent(script *dsl.Script) (*Script
 	if err != nil {
 		return nil, err
 	}
-	if script.CreatedAt.IsZero() {
-		script.CreatedAt = time.Now().UTC()
-	}
+	script.CreatedAt = newRowTimestamp(script.CreatedAt)
 	script.UpdatedAt = versionTimestamp()
 	tx, err := s.db.Begin()
 	if err != nil {

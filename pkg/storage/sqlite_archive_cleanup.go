@@ -332,7 +332,7 @@ func (s *SQLiteStore) SaveArchiveCleanupJobIfArchiveUnchanged(job *ArchiveCleanu
 	if err != nil {
 		return false, err
 	}
-	if !sameRunArchivePublicationVersion(current, &job.ArchiveRecord) {
+	if !sameRunArchivePublicationVersion(tx.dialect, current, &job.ArchiveRecord) {
 		return false, nil
 	}
 	if err := enqueueArchiveCleanupTx(tx, job.ProjectID, &job.ArchiveRecord); err != nil {
@@ -361,7 +361,10 @@ func (s *SQLiteStore) SaveArchiveCleanupJobIfArchiveUnchanged(job *ArchiveCleanu
 	return true, nil
 }
 
-func sameRunArchivePublicationVersion(left, right *RunArchiveRecord) bool {
+// The caller's record can be the one its controller published, which keeps the
+// run's nanosecond clock while PostgreSQL stored microseconds, so the
+// publication times compare as archive identities do.
+func sameRunArchivePublicationVersion(dialect storeDialect, left, right *RunArchiveRecord) bool {
 	if left == nil || right == nil {
 		return false
 	}
@@ -377,8 +380,8 @@ func sameRunArchivePublicationVersion(left, right *RunArchiveRecord) bool {
 		left.TransactionCount == right.TransactionCount &&
 		left.ResourceSampleCount == right.ResourceSampleCount &&
 		left.IntervalSummaryCount == right.IntervalSummaryCount &&
-		left.CreatedAt.Equal(right.CreatedAt) &&
-		left.CompletedAt.Equal(right.CompletedAt)
+		archiveIdentityTimestampEqual(dialect, left.CreatedAt, right.CreatedAt) &&
+		archiveIdentityTimestampEqual(dialect, left.CompletedAt, right.CompletedAt)
 }
 
 func (s *SQLiteStore) ListArchiveCleanupJobs(limit int) ([]*ArchiveCleanupJob, error) {

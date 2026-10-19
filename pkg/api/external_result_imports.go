@@ -104,7 +104,7 @@ func (s *Server) handleImportExternalResults(w http.ResponseWriter, r *http.Requ
 		Source:        strings.TrimSpace(req.Source),
 		Summary:       summary,
 		RawResult:     raw,
-		CreatedAt:     time.Now().UTC(),
+		CreatedAt:     time.Now().UTC().Truncate(time.Microsecond),
 	}
 	if err := s.saveExternalResultImport(result); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save external result import: "+err.Error())

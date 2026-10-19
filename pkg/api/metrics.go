@@ -523,6 +523,11 @@ func capacityDemandByRegion(test *ManagedTest) map[string]int {
 // install guards run while tr.mu is held immediately before any ManagedTest
 // mutation; returning false rejects the snapshot atomically.
 func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, artifacts *runArtifacts, installGuards ...func() bool) bool {
+	// The point is one interval, identified by its time in the runner's
+	// history, the stored history and the archive. PostgreSQL keeps
+	// microseconds, so every copy takes that precision; early-stop windows
+	// measure elapsed time from it on the monotonic clock.
+	live.Timestamp = atMicrosecond(live.Timestamp)
 	now := time.Now()
 	hubStats := HubStats{}
 	if tr.hub != nil {

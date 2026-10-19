@@ -190,7 +190,10 @@ func upsertBrunoImportScriptTx(tx *storeTx, script *dsl.Script, encoded storedSc
 		if expectedUpdatedAt != nil && !expectedUpdatedAt.IsZero() {
 			return false, ErrBrunoImportConcurrentChange
 		}
-		now := time.Now().UTC()
+		// The row is new, so the caller's creation stamp takes the stored
+		// precision too.
+		now := versionTimestamp()
+		script.CreatedAt = script.CreatedAt.Truncate(time.Microsecond)
 		if script.CreatedAt.IsZero() {
 			script.CreatedAt = now
 		}
@@ -216,7 +219,7 @@ func upsertBrunoImportScriptTx(tx *storeTx, script *dsl.Script, encoded storedSc
 		return false, ErrBrunoImportConcurrentChange
 	}
 	script.CreatedAt = currentCreatedAt
-	script.UpdatedAt = time.Now().UTC()
+	script.UpdatedAt = versionTimestamp()
 	result, err := tx.Exec(`UPDATE scripts SET
 		ref_key = CASE WHEN TRIM(COALESCE(?, '')) = '' THEN ref_key ELSE ? END,
 		name = ?, protocol = ?, version = ?, folder_id = ?, generated_by = ?, generated_from = ?,

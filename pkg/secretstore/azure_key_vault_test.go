@@ -266,3 +266,41 @@ func TestAzureKeyVaultManagedMetadataDiscoveryIsRequestAndDeadlineBounded(t *tes
 		}
 	})
 }
+
+// The dashboard keeps the metadata a rotation returns and compares it with
+// the listed metadata, which the stored record serves. PostgreSQL keeps
+// microseconds and Go's clock has nanoseconds on Linux.
+func TestAzureKeyVaultStoreReplaceReturnsTheStoredMetadataTime(t *testing.T) {
+	records, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = records.Close() })
+	now := time.Now().UTC()
+	if err := records.SaveProject(&storage.Project{ID: "vault-precision", Name: "Vault", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if created, err := records.CreateProjectSecretMetadata(&storage.ProjectSecretMetadata{
+		ProjectID: "vault-precision", SecretName: "TOKEN", Provider: keyVaultProvider,
+		CreatedAt: now, UpdatedAt: now, CreatedBy: "admin",
+	}); err != nil || !created {
+		t.Fatalf("seed metadata = %t, %v", created, err)
+	}
+	vault := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"https://vault.example.test/secrets/token/1"}`))
+	}))
+	t.Cleanup(vault.Close)
+	store := &AzureKeyVaultStore{
+		BaseURL: vault.URL, APIVersion: "7.4", Credential: staticVaultCredential{},
+		Client: vault.Client(), Metadata: records,
+	}
+	returned, err := store.Replace(context.Background(), "vault-precision", "TOKEN", "replacement-value", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := records.GetProjectSecretMetadata("vault-precision", "TOKEN")
+	if err != nil || stored == nil || !returned.UpdatedAt.Equal(stored.UpdatedAt) || !returned.UpdatedAt.Equal(returned.UpdatedAt.Truncate(time.Microsecond)) {
+		t.Fatalf("rotation returned updated_at %s, stored %+v (%v): want the stored value, at microseconds", returned.UpdatedAt.Format(time.RFC3339Nano), stored, err)
+	}
+}

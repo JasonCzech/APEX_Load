@@ -2118,7 +2118,7 @@ func (s *Server) handleUpdateServiceAccount(w http.ResponseWriter, r *http.Reque
 	if !applyServiceAccountUpdate(w, account, req) {
 		return
 	}
-	account.UpdatedAt = time.Now().UTC()
+	account.UpdatedAt = time.Now().UTC().Truncate(time.Microsecond)
 	if account.RotationIntervalDays > 0 {
 		anchor := account.CreatedAt
 		if account.KeyRotatedAt != nil {
@@ -2322,7 +2322,9 @@ func (s *Server) handleRotateServiceAccount(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	updatedAt := time.Now().UTC()
+	// Stored at microseconds; the dashboard compares the returned account with
+	// the listed one.
+	updatedAt := time.Now().UTC().Truncate(time.Microsecond)
 	hashedKey := hashAPIKey(apiKey)
 	rotator, ok := s.store.(interface {
 		RotateServiceAccountKeyIfUnchanged(id, keyHash string, expectedUpdatedAt, updatedAt time.Time) (bool, error)
@@ -2573,7 +2575,9 @@ func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount
 	if err != nil {
 		return nil, "", err
 	}
-	now := time.Now().UTC()
+	// Stored at microseconds; the dashboard compares the returned account with
+	// the listed one.
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	account := &storage.ServiceAccount{
 		ID:                   uuid.New().String(),
 		Name:                 name,

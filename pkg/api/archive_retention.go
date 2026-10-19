@@ -341,7 +341,7 @@ func (s *Server) ensureArchiveCleanupIntent(record *storage.RunArchiveRecord) er
 		return fmt.Errorf("archive cleanup durability is not supported by the configured store")
 	}
 	if existing, err := outbox.GetArchiveCleanupJob(record.TestID); err == nil {
-		if !sameRunArchiveRecordVersion(&existing.ArchiveRecord, record) {
+		if !sameRunArchiveRecordVersion(&existing.ArchiveRecord, record, s.store) {
 			return errArchivePublicationChanged
 		}
 		return nil
@@ -376,7 +376,9 @@ func (s *Server) ensureArchiveCleanupIntent(record *storage.RunArchiveRecord) er
 	return nil
 }
 
-func sameRunArchiveRecordVersion(left, right *storage.RunArchiveRecord) bool {
+// A cached record keeps the run's nanosecond clock while PostgreSQL stores
+// microseconds, so the publication times compare at metadataStore's precision.
+func sameRunArchiveRecordVersion(left, right *storage.RunArchiveRecord, metadataStore any) bool {
 	if left == nil || right == nil {
 		return false
 	}
@@ -392,8 +394,8 @@ func sameRunArchiveRecordVersion(left, right *storage.RunArchiveRecord) bool {
 		left.TransactionCount == right.TransactionCount &&
 		left.ResourceSampleCount == right.ResourceSampleCount &&
 		left.IntervalSummaryCount == right.IntervalSummaryCount &&
-		left.CreatedAt.Equal(right.CreatedAt) &&
-		left.CompletedAt.Equal(right.CompletedAt)
+		archiveRunTimestampMatches(left.CreatedAt, right.CreatedAt, metadataStore) &&
+		archiveRunTimestampMatches(left.CompletedAt, right.CompletedAt, metadataStore)
 }
 
 func (s *Server) completeArchiveCleanupIntent(testID string) error {
