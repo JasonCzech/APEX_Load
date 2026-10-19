@@ -1,6 +1,6 @@
 # Native HAR ownership qualification
 
-Current composed source/test qualification: the default full Go suite, full dashboard cycle in both authentication profiles, affected API races, actual PostgreSQL cohort, SDK contract and generated-contract checks passed in the [composed review](../feature-completion-composed-review-2026-10-05/README.md). That qualification is scoped; the broader feature requirements and explicitly unrun acceptance remain open. The following component checkpoint predates these composed results. Its original bytes are preserved in [the historical checkpoint](README.component-checkpoint.txt).
+Current composed source/test qualification: the default full Go suite, full dashboard cycle in both authentication profiles, affected API races, actual PostgreSQL cohort, SDK contract and generated-contract checks passed in the [composed review](../../../archive/qa-reviews/INTEGRATION_2026-10.md#feature-completion-composed-review-2026-10-05). That qualification is scoped; the broader feature requirements and explicitly unrun acceptance remain open. The following component checkpoint predates these composed results. Its original bytes are preserved in [the historical checkpoint](README.component-checkpoint.txt).
 
 The v7 candidate preserves the qualified v6 production behavior and passes
 the refreshed documentation, provenance and packaging gates. The scoped SDK,

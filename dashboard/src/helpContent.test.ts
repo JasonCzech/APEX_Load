@@ -1,12 +1,34 @@
 import { settingsDestination, settingsOwner } from './components/settingsNavigation'
 import { isSharedAssetsSection } from './components/sharedAssetsNavigation'
 import { describe, expect, it } from 'vitest'
-import { articleBlocks, articleForSection, helpArticles, helpArticleHash, loadHelpSource, resolveHelpLink, searchHelp } from './helpContent'
+import { articleBlocks, articleForSection, helpArticles, helpArticleHash, helpSectionID, loadHelpSource, resolveHelpLink, searchHelp } from './helpContent'
 import { parseMarkdown } from './components/repositoryGuideMarkdown'
 import { apiGuideHashForToggle, apiGuideToggleOptions, helpAreaForPage } from './apiGuideNavigation'
 
 const first = helpArticles.find(a => a.id === 'first-test')!
 describe('Help catalogue and content contracts', () => {
+  it('keeps consolidated browser interpretation searchable and links capture contracts in app', async () => {
+    const article = helpArticles.find(value => value.id === 'browser-intelligence')!
+    const source = await loadHelpSource(article)
+    expect(searchHelp([{ article, source }], 'weighted test-journey risk')).toHaveLength(1)
+    expect(source).not.toContain("run report's Diagnostics")
+    expect(resolveHelpLink('#the-browser-area-of-a-run-report', article, source)).toBe(helpArticleHash(article, 'the-browser-area-of-a-run-report'))
+    expect(source).toContain('remaining metrics are never renormalized')
+    expect(source).toContain('never revenue or conversion impact')
+    for (const section of ['score', 'journey-accounting', 'patterns-and-heatmaps']) {
+      expect(articleForSection(article.path, section, source)?.id).toBe(article.id)
+      expect(resolveHelpLink(`#${section}`, article, source)).toBe(helpArticleHash(article, section))
+    }
+    for (const id of ['browser-document-evidence', 'browser-interaction-evidence', 'browser-har-ownership', 'retained-resource-inspection']) {
+      const target = helpArticles.find(value => value.id === id)!
+      expect(await loadHelpSource(target)).not.toBe('')
+      expect(resolveHelpLink(target.path.split('/').pop()!, article, source)).toBe(helpArticleHash(target))
+    }
+    const capture = helpArticles.find(value => value.id === 'browser-interaction-evidence')!
+    const captureSource = await loadHelpSource(capture)
+    expect(captureSource).not.toContain('| `scripted_repetition` |')
+    expect(resolveHelpLink('BROWSER_INTELLIGENCE_WORKFLOWS.md#patterns-and-heatmaps', capture, captureSource)).toBe(helpArticleHash(article, 'patterns-and-heatmaps'))
+  })
   it('bundles retained resource inspection with searchable bounded-page guidance and honest coverage', async () => {
     const article = helpArticles.find(value => value.id === 'retained-resource-inspection')!
     expect(article.path).toBe('docs/guides/RETAINED_RESOURCE_INSPECTION.md')
@@ -35,6 +57,31 @@ describe('Help catalogue and content contracts', () => {
     }
     const apiGuide = helpArticles.find(value => value.id === 'api-workflows')!
     expect(resolveHelpLink('PROJECT_LIVE_TABLES.md', apiGuide, await loadHelpSource(apiGuide))).toBe(helpArticleHash(article))
+  })
+  it('keeps repository-style fragments navigable across every bundled help source', async () => {
+    for (const article of helpArticles) {
+      const source = await loadHelpSource(article)
+      for (const match of source.matchAll(/\]\(([^)]+)\)/g)) {
+        const href = match[1]
+        if (/^(https?:|mailto:|#\/)/.test(href)) continue
+        const destination = resolveHelpLink(href, article, source)
+        if (!destination.startsWith('#/docs?')) continue
+        const params = new URLSearchParams(destination.split('?')[1])
+        const section = params.get('section')
+        if (!section) continue
+        const target = helpArticles.find(candidate => candidate.id === params.get('article'))!
+        expect(articleForSection(target.path, section, await loadHelpSource(target)), `${article.path}: ${href}`).toBeDefined()
+      }
+    }
+  })
+  it('resolves punctuation and duplicate repository headings without changing existing help IDs', () => {
+    const source = '# Guide\n\n## Web/API\n\n## Web/API\n\n## A & B\n\n## Café\n'
+    expect(helpSectionID(source, 'webapi')).toBe('web-api')
+    expect(helpSectionID(source, 'webapi-1')).toBe('web-api-1')
+    expect(helpSectionID(source, 'web-api')).toBe('web-api')
+    expect(helpSectionID(source, 'a--b')).toBe('a-b')
+    expect(helpSectionID(source, 'café')).toBe('caf')
+    expect(helpSectionID(source, 'unknown')).toBe('unknown')
   })
   it('loads every catalogue source and every selected task section', async () => {
     expect(new Set(helpArticles.map(a => a.id)).size).toBe(helpArticles.length)
@@ -163,4 +210,17 @@ describe('Help catalogue and content contracts', () => {
     expect(apiGuideToggleOptions({ includeAdminGuide: true })).toHaveLength(5)
     expect(apiGuideToggleOptions({ includeAdminGuide: false })).toHaveLength(4)
   })
+  it.each([
+    ['DYNATRACE.md#dynatrace-lifecycle-webhooks', 'dynatrace-monitoring', 'apexload.idempotency_key'],
+    ['ELASTIC.md#bucketed-elasticsearch-capture', 'elastic-monitoring', 'never reinterpreted as intervals'],
+    ['IMPORT_FIDELITY_AND_REPAIRS.md#shared-http-import-safety-contract', 'import-fidelity', 'executable_bounded'],
+  ])('resolves consolidated contracts and search destinations: %s', async (href, id, query) => {
+    const article = helpArticles.find(candidate => candidate.id === id)!
+    const source = await loadHelpSource(article)
+    expect(resolveHelpLink(href, first, '')).toContain(`article=${id}`)
+    const results = searchHelp([{ article, source }], query)
+    expect(results).toHaveLength(1)
+    expect(articleForSection(article.path, results[0].section!, source)?.id).toBe(id)
+  })
+
 })

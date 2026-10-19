@@ -13,6 +13,7 @@ kept for planning or audit context only.
 | [HELP_CENTER.md](HELP_CENTER.md#build-and-run-your-first-test) | Current | In-app help: first test, capabilities, support, changes, and troubleshooting |
 | [README.md](../README.md) | Current | Project overview, quick start, and primary links |
 | [APPLICATION_USER_GUIDE.md](APPLICATION_USER_GUIDE.md) | Current | End-user guide to the dashboard application |
+| [Browser intelligence workflows](guides/BROWSER_INTELLIGENCE_WORKFLOWS.md) | Current | Report workflows, finding/score contracts, journey accounting, gesture patterns, heatmaps, CLI and MCP |
 | [Browser document evidence](guides/BROWSER_DOCUMENT_EVIDENCE.md) | Current | Opt-in capture, lifecycle populations, bounded live/archive inspection and qualification limits |
 | [HTTP/3 and QUIC](guides/HTTP3_AND_QUIC.md) | Preview | Version policies, QUIC settings, import mapping, results, and operator enablement, egress and buffers |
 | [Retained resource inspection](guides/RETAINED_RESOURCE_INSPECTION.md) | Current | Authorized bounded archive resource pages, exact filters, native availability and CLI inspection |
@@ -28,8 +29,6 @@ kept for planning or audit context only.
 | [Native script data services](NATIVE_SCRIPT_DATA_SERVICES.md) | Current | Java SDK and isolated JavaScript actions, native permissions and runner support |
 | [Distributed rendezvous](DISTRIBUTED_RENDEZVOUS.md) | Current | Opt-in group barriers, fixed membership, durable outcomes and transport bounds |
 | [VTS compatibility](LIVE_DATA_TABLES_VTS_COMPATIBILITY.md) | Current | Supported authoring primitives and blocked vendor imports without unproven parity |
-| [Live table design](LIVE_DATA_TABLES_REVISED_PLAN.md) | Design | Rationale, compatibility contract, and staged rollout criteria |
-| [Native shared-data extension](LIVE_DATA_TABLES_PROJECT_PLAN.md) | Design | Project ownership, governed mutations, native adapters and distributed rendezvous |
 | [OBJECT_ACTIVITY.md](OBJECT_ACTIVITY.md) | Current | Project object history, disclosure-safe activity and archive workflows |
 | [HELP_DSL_OPERATOR_GUIDE.md](HELP_DSL_OPERATOR_GUIDE.md) | Current | DSL execution, examples, and migration guidance for LoadRunner and JMeter operators |
 | [recording-agent.md](recording-agent.md) | Current | Local browser Recording Agent |
@@ -72,14 +71,24 @@ kept for planning or audit context only.
 | [RUNTIME_SETTINGS_PARITY.md](RUNTIME_SETTINGS_PARITY.md) | Runtime-settings parity evidence and API contract |
 | [RECORDING_PROFILES.md](RECORDING_PROFILES.md) | Project recording profiles and how VuGen's recording options map to them |
 | [PERFORMANCE_BENCHMARKS.md](PERFORMANCE_BENCHMARKS.md) | Harness-overhead benchmark, local performance evidence, and browser benchmark procedures |
-| [JAVA_VUSER_POOLING_IMPLEMENTATION.md](JAVA_VUSER_POOLING_IMPLEMENTATION.md) | Experimental Java evidence tooling, operator AppCDS, slot foundations, and remaining pooling/AKS gates |
+| [JAVA_SHARED_JVMS.md](JAVA_SHARED_JVMS.md) | Operator-enabled shared JVMs, LoadRunner thread mode, distributed capacity and scoped benchmark evidence |
+| [JAVA_VUSER_POOLING_IMPLEMENTATION.md](JAVA_VUSER_POOLING_IMPLEMENTATION.md) | Java shared-runtime and pilot scope, component map, reference ownership and open release gates |
+| [JAVA_PILOT_OPERATIONS.md](JAVA_PILOT_OPERATIONS.md) | Fixture construction, baseline/pilot evidence, comparison gates and operator AppCDS |
+| [JAVA_POOLED_RUNTIME_CONTRACTS.md](JAVA_POOLED_RUNTIME_CONTRACTS.md) | IPC, containment, shared admission, ownership, lifecycle and review-derived constraints |
+| [JAVA_DEDICATED_EXECUTION_CONTRACTS.md](JAVA_DEDICATED_EXECUTION_CONTRACTS.md) | Durable broker authority, execution-pod supervision, preparation and distributed contracts |
 | [JAVA_BOUNDARY_ATTESTOR_CONTRACT.md](JAVA_BOUNDARY_ATTESTOR_CONTRACT.md) | Authenticated external runtime and infrastructure-fencing proof contract for dedicated Java cleanup |
 | [JAVA_BROKER_SERVICE.md](JAVA_BROKER_SERVICE.md) | Experimental dedicated Java broker command, operator profiles, host credentials and authenticated preparation API |
 | [ACCESS_SURFACES.md](ACCESS_SURFACES.md) | Supported hosted, desktop, and CLI access surfaces |
 | [AI_ASSISTED_WORKFLOWS.md](AI_ASSISTED_WORKFLOWS.md) | Governed assisted-authoring workflow and API contract |
-| [COMPETITIVE_COMPARISON.md](COMPETITIVE_COMPARISON.md) | Competitive positioning, evaluator trust pack, REST API comparison, and migration reference |
+| [COMPETITIVE_COMPARISON.md](COMPETITIVE_COMPARISON.md) | Competitive positioning, evaluator trust pack, REST API comparison, and stable links to maintained import contracts |
 | [ENTERPRISE_CONTRACTS.md](ENTERPRISE_CONTRACTS.md) | Enterprise authoring lifecycle, workload shape/load model, and project-first governance contracts |
-| [HA_RUN_CONTINUITY_PLAN.md](HA_RUN_CONTINUITY_PLAN.md) | Plan and P0 evidence for keeping in-flight distributed runs alive across HA controller failover |
+| [HA_RUN_CONTINUITY_PLAN.md](HA_RUN_CONTINUITY_PLAN.md) | Historical design and P0–P4/later review evidence; current continuity operations are in the enterprise runbook |
+| [NODE_STORAGE_RECOVERY.md](NODE_STORAGE_RECOVERY.md) | Worker state inventory, fencing, storage recovery, and qualification limits |
+| [ARCHIVE_SOURCE_RETENTION.md](ARCHIVE_SOURCE_RETENTION.md) | Opt-in confirmed-source retention, publication fences and recoverability limits |
+| [ANALYSIS_WORKFLOWS.md](ANALYSIS_WORKFLOWS.md) | Project/native-build enablement and navigation to monitoring, native analytics and RCA contracts |
+| [MONITORING_AND_PREPARATION.md](MONITORING_AND_PREPARATION.md) | Collector trust, source binding, traffic-free preparation, capacity and messaging management |
+| [ROOT_CAUSE_ANALYSIS.md](ROOT_CAUSE_ANALYSIS.md) | Validity, budgets, onset, browser anomalies, graph/hypothesis and service contracts |
+| [NATIVE_ANALYTICS.md](NATIVE_ANALYTICS.md) | Parquet imports, measurement identities, queries, panels and resource/acceptance limits |
 
 Every Markdown file directly under `docs/`, other than this index itself, appears in one of the audience or lifecycle tables on this page. That is machine-enforced: `check_index_membership` in `scripts/check-docs.py` fails the CI documentation job if a `docs/*.md` file is not linked from a table row here. Point-in-time material under `docs/qa/reviews/` and `docs/archive/` is excluded from this index and the check.
 
@@ -100,13 +109,9 @@ not the source of truth for current API or DSL contracts.
 
 | Document | Status |
 | --- | --- |
-| [NODE_FAILURE_READINESS_PLAN.md](NODE_FAILURE_READINESS_PLAN.md) | Proposed implementation and qualification plan for worker recovery, KEDA capacity, liveness, storage, and archive issues found in September 2026 fault tests |
+| [NODE_FAILURE_READINESS_PLAN.md](NODE_FAILURE_READINESS_PLAN.md) | Open implementation and qualification ledger for worker recovery, KEDA capacity, liveness, storage, and archive issues found in September 2026 fault tests |
 | [HTTP3_IMPLEMENTATION.md](HTTP3_IMPLEMENTATION.md) | HTTP/3 delivery status, quic-go contract, test fixture, and transport decision records (timing, retries, socket ownership, defaults) |
-| [NODE_STORAGE_RECOVERY.md](NODE_STORAGE_RECOVERY.md) | Worker state inventory, fencing, storage recovery, and qualification limits |
-| [ARCHIVE_SOURCE_RETENTION.md](ARCHIVE_SOURCE_RETENTION.md) | Opt-in confirmed-source retention, publication fences and recoverability limits |
-| [ANALYSIS_WORKFLOWS.md](ANALYSIS_WORKFLOWS.md) | Project-gated run monitoring, traffic-free preparation, native Parquet imports, saved mappings and correlation; validation limits |
-| [ANALYSIS_IDENTITY.md](ANALYSIS_IDENTITY.md) | Imported source/host/service and bounded dimensions, exact query filters, saved comparisons and evidence limits |
-| [ROADMAP.md](ROADMAP.md) | Roadmap: runtime telemetry SLA, protocol telemetry parity, script authoring consolidation, PT Analysis Parquet import, messaging open work and design record, browser/mobile roadmap, CloudTest outcome-parity ledger and phases |
+| [ROADMAP.md](ROADMAP.md) | Remaining engineering work and qualification gates; dated delivery history is archived |
 | [FEATURE_COMPLETION_SPEC.md](FEATURE_COMPLETION_SPEC.md) | Approved implementation and acceptance specification for Event Hubs/messaging, browser evidence/intelligence, telemetry reporting, native analytics and authoring cleanup |
 | [qa/TEST_PROGRAM.md](qa/TEST_PROGRAM.md) | Nine-month progressive test and infrastructure-readiness program; scope of record, live risk register, and release test checklist |
 | [qa/DASHBOARD.md](qa/DASHBOARD.md) | Generated current QA status, headline metrics, Tier-0/API coverage, and gate tiers |
@@ -115,13 +120,24 @@ not the source of truth for current API or DSL contracts.
 | [qa/DEFECTS.md](qa/DEFECTS.md) | Rolling defect log and resolution evidence |
 | [qa/FLAKE_LOG.md](qa/FLAKE_LOG.md) | Quarantined non-deterministic tests, root causes, and un-quarantine dates |
 
+### Acceptance references
+
+The inventories below retain qualification gates. Nested guides are listed in the user-guide table; the existing top-level checker does not enforce their membership.
+
+| Acceptance reference | Purpose |
+| --- | --- |
+| [Analytics acceptance](qa/ANALYTICS_ACCEPTANCE.md) | Native platform and reference-workload gates |
+| [Browser acceptance](qa/BROWSER_ACCEPTANCE.md) | Browser evidence inventory and qualification |
+| [Browser intelligence acceptance](qa/BROWSER_INTELLIGENCE_ACCEPTANCE.md) | Findings, baselines and journey workflows |
+| [Telemetry acceptance](qa/TELEMETRY_ACCEPTANCE.md) | Fault matrix and reference-workload limits |
+| [Lifecycle parity](qa/LIFECYCLE_PARITY_MATRIX.md) | Authoring lifecycle evidence |
+| [Adapter retirement](qa/ADAPTER_RETIREMENT.md) | Remaining adapters and retirement evidence |
+
 ## Historical
 
 Historical material is preserved for audit context, is excluded from current-document freshness checks, and should not be treated as current product documentation.
 
 | Location | Contents |
 | --- | --- |
-| [archive/README.md](archive/README.md) | Archive map: consolidated September 2026 QA/UX audits (`archive/qa-reviews/AUDITS_2026-09.md`), the retired DSL guide, and the list of removed plans and reviews with `git show` restore commands |
-| [qa/reviews/README.md](qa/reviews/README.md) | Single index of point-in-time reviews and evaluations (open vs complete), including the Data Pools and LoadRunner runtime-settings evaluations, with captured evidence; points to `archive/README.md` for completed reviews |
-
-- [Priority implementation pass review](qa/reviews/priority-pass-2026-10-01/REVIEW.md)
+| [archive/README.md](archive/README.md) | Archive map: September audits, October themed reviews, completed live-table plans, roadmap history and restore commands |
+| [qa/reviews/README.md](qa/reviews/README.md) | Review navigation: open records, all retained Markdown records, completed themed reports and unchanged evidence folders |

@@ -2,6 +2,9 @@
 
 APEX Load reads Dynatrace SaaS monitoring data during explicitly selected managed tests. Classic Environment APIs supply metric buckets, entities and relationships, problems and events. Optional Platform/Grail queries supply numeric aggregates, bounded log, event, span and sampled trace summaries, and Smartscape identities. Operators must already instrument the system under test. Capture does not install OneAgent, configure Dynatrace, or ingest telemetry into Dynatrace. Outbound lifecycle notifications remain a separate integration.
 
+
+Shared pipeline ownership and provider qualification are in [observability integrations](OBSERVABILITY_INTEGRATIONS.md#governed-provider-registry). [Lifecycle webhooks](#dynatrace-lifecycle-webhooks) publish notifications separately from read-side monitoring.
+
 ## Set up a connection
 
 1. Store credentials in the project's secret provider. Use a read-only Environment API token for selected Classic capabilities. Metrics, entity discovery, problems and events need their corresponding read permissions. Platform/Grail needs separate authentication: a dedicated OAuth client with client ID, client secret, resource and approved read scopes, or an explicitly configured Platform token. Grant only selected dataset and bucket access. Availability also depends on tenant configuration, data retention and licensing.
@@ -79,4 +82,44 @@ Existing connection IDs, references and old archives remain readable. The legacy
 | Grail numeric/log/event/span/trace summaries and Smartscape | Fixture projections and typed ingestion scenarios | None yet |
 | Direct/collector, durable ingestion and reconciliation | Fixture integration/race/database/browser scenarios | None yet |
 
-Fixture success does not establish compatibility with a real licensed tenant. Publish exact tenant release/API capabilities, permissions and qualification dates after SaaS testing. See [the implementation contract](DYNATRACE_SPEC.md), [observability integrations](OBSERVABILITY_INTEGRATIONS.md), [generated OpenAPI](swagger.yaml), and [archive retention](ARCHIVE_SOURCE_RETENTION.md).
+Fixture success does not establish compatibility with a real licensed tenant. Publish exact tenant release/API capabilities, permissions and qualification dates after SaaS testing. See [the implementation contract](DYNATRACE_SPEC.md), [provider qualification](OBSERVABILITY_INTEGRATIONS.md#provider-qualification), [generated OpenAPI](swagger.yaml), and [archive retention](ARCHIVE_SOURCE_RETENTION.md).
+
+## Dynatrace lifecycle webhooks
+
+APEX Load sends lifecycle and telemetry-health notifications to Dynatrace through the Dynatrace Events API v2. This is an event webhook integration, not an OTLP exporter.
+
+### Setup
+
+1. Create a Dynatrace API token with event-ingest permissions.
+2. In APEX Load settings, add a notification webhook with format `dynatrace`.
+3. Use the Dynatrace Events API endpoint, for example `https://<tenant>/api/v2/events/ingest`.
+4. Paste the API token once. The settings API stores it server-side and returns only `has_api_token: true`; the raw token is write-only.
+5. Optionally set `entity_selector` and `timeout_minutes`.
+
+### Delivery Behavior
+
+- APEX Load sends `Authorization: Api-Token <token>`.
+- Retryable delivery failures (`408`, `429`, `5xx`, or transport errors) are retried with bounded exponential backoff and `Retry-After` support.
+- Failed deliveries after retry increment `apexload_notification_delivery_failures_total`.
+- Dynatrace payloads include an `apexload.idempotency_key` property so downstream workflows can dedupe repeated attempts.
+
+### Events
+
+Dynatrace webhooks can subscribe to the same event names as Slack and Teams, including `test_started`, `test_complete`, `test_failed`, `telemetry_degraded`, `telemetry_breached`, `telemetry_recovered`, `telemetry_acceptance`, `rca_analysis_completed`, `run_validity`, `load_phase` and fleet alert events. `load_phase` events are sent as `CUSTOM_ANNOTATION` on the webhook's entity selector. A `telemetry_acceptance` event is an `ERROR_EVENT` when the verdict failed (severity `danger`) and a `CUSTOM_ALERT` when it was inconclusive (severity `warning`). A `run_validity` event is an `ERROR_EVENT` for an invalid run and a `CUSTOM_ALERT` for a suspect one; `rca_analysis_completed` is `CUSTOM_INFO`.
+
+### Root-cause events
+
+- `rca_analysis_completed`: a root-cause analysis completed for a project
+  that presents root cause, sent once per analysis. Status is the outcome
+  (`supported`, `no_supported_hypothesis`, `insufficient_evidence`); severity
+  is `danger` for an invalid run, `warning` for a suspect run or a supported
+  cause, otherwise `info`; the summary is the reports' one-line root cause;
+  conditions name the analysis, its origin, the run's validity, the report
+  route and up to three hypotheses.
+- `run_validity`: a run whose load generators or telemetry could not carry
+  the load it reports, sent once per run and verdict (`suspect` or
+  `invalid`) with its reasons, after the run's archive is attached. It is
+  sent whether or not the project presents root cause, because validity is
+  judged for every archived run.
+
+Webhooks set to *All events* receive both.

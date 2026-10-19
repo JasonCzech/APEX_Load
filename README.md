@@ -251,7 +251,7 @@ Controller runtime configuration:
 - `APEXLOAD_ARCHIVE_BUCKET`, `APEXLOAD_ARCHIVE_CONTAINER`, `APEXLOAD_ARCHIVE_PREFIX`, `APEXLOAD_ARCHIVE_REGION`, `APEXLOAD_ARCHIVE_ENDPOINT`: object archive target metadata for enterprise deployments
 - `APEXLOAD_PROMETHEUS_REMOTE_WRITE_URL`: optional Prometheus-compatible long-term metrics retention endpoint
 
-See [Project Secrets](docs/ADMIN_USER_GUIDE.md#project-secrets) for provider setup, import
+See [Project Secrets](docs/ADMIN_USER_GUIDE.md#application-and-project-secrets) for provider setup, import
 migration governance, and secure distributed delivery requirements.
 
 Note: If you run with `APEXLOAD_ENV=production|prod` or enable `APEXLOAD_REQUIRE_AUTH`, the persisted authentication mode (Settings → Authentication, stored as `auth.mode`) must not be `dev`, `disabled`, or the fixed-credential `local` test-login mode. The controller refuses to start in that combination by design; use `oidc` or `trusted_headers`.

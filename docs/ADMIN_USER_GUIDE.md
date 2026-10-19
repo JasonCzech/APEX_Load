@@ -298,10 +298,10 @@ Start with [Choose an installation](../deployments/README.md) for the environmen
 - [Identity and access operations](AUTH_RBAC_OPERATIONS_RUNBOOK.md)
 - [Backup, restore, retention and recovery](ENTERPRISE_PLATFORM_RUNBOOK.md)
 - [Deployment and HA architecture](ENTERPRISE_PLATFORM_RUNBOOK.md)
-- [Cluster connections](CLUSTERS_AND_CLOUD.md#cluster-connections-host-resource-allocation)
+- [Cluster connections](CLUSTERS_AND_CLOUD.md#cluster-connections--host-resource-allocation)
 - [Generator restart controls](CLUSTERS_AND_CLOUD.md#kubernetes-restart-controls)
 - [SQLite to PostgreSQL migration](ENTERPRISE_PLATFORM_RUNBOOK.md#sqlite-to-postgresql-migration-guide)
-- [Telemetry configuration](OBSERVABILITY_INTEGRATIONS.md)
+- [Telemetry configuration](OBSERVABILITY_INTEGRATIONS.md#opentelemetry-tracing)
 - [Support escalation template](HELP_CENTER.md#build-and-run-your-first-test)
 
 For upgrades, record the current build, review the deployment release notes and storage compatibility, back up metadata and archives, verify a restore in an isolated environment, and follow your deployment's rollout/rollback procedure. Recheck identity, generator readiness and one small test after rollout. The runbooks above describe deployment-specific requirements; do not assume a database rollback is safe after a schema migration.

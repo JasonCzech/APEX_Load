@@ -181,7 +181,7 @@ To store managed values in Azure Key Vault instead, set
 `APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED=true` in the controller ConfigMap; the
 controller workload identity must have `Key Vault Secrets Officer`. Generators
 never receive the write-enable setting. See
-[Project Secrets](../../../docs/ADMIN_USER_GUIDE.md#project-secrets) for security and runtime
+[Project Secrets](../../../docs/ADMIN_USER_GUIDE.md#application-and-project-secrets) for security and runtime
 delivery details.
 
 Java Vuser execution is also opt-in. Set `javaVuser.enabled=true` to add the

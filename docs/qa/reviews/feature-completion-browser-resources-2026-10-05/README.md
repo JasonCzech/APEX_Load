@@ -1,6 +1,6 @@
 # Retained browser resource inspection — scoped qualification
 
-Current composed source/test qualification: the default full Go suite, full dashboard cycle in both authentication profiles, affected API races, actual PostgreSQL cohort, SDK contract and generated-contract checks passed in the [composed review](../feature-completion-composed-review-2026-10-05/README.md). That qualification is scoped; the broader feature requirements and explicitly unrun acceptance remain open. The following component checkpoint predates these composed results. Its original bytes are preserved in [the historical checkpoint](README.component-checkpoint.txt).
+Current composed source/test qualification: the default full Go suite, full dashboard cycle in both authentication profiles, affected API races, actual PostgreSQL cohort, SDK contract and generated-contract checks passed in the [composed review](../../../archive/qa-reviews/INTEGRATION_2026-10.md#feature-completion-composed-review-2026-10-05). That qualification is scoped; the broader feature requirements and explicitly unrun acceptance remain open. The following component checkpoint predates these composed results. Its original bytes are preserved in [the historical checkpoint](README.component-checkpoint.txt).
 
 The candidate implements an authorized bounded archive resource reader, a closed CLI query and an explicitly opened dashboard inspector. It is awaiting authoring/Help composition and full repository/dashboard checks before commit. This record does not close the browser evidence or intelligence program.
 

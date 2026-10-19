@@ -492,7 +492,7 @@ and is not written into the stored CI metadata or returned in API responses.
 #### Run validity gate
 
 Every completed CI run reports the run's validity verdict (see
-[Run validity](ANALYSIS_WORKFLOWS.md#run-validity)) as `validity` in the run
+[Run validity](ROOT_CAUSE_ANALYSIS.md#run-validity)) as `validity` in the run
 response and in `apexctl ci run`'s JSON result, and as `Run validity` in the
 Check and the job summary. It is advisory unless the project opts in with the
 Actions policy's `validity_gate`:
@@ -523,7 +523,7 @@ invalid controller response and exits `3`.
 #### Root-cause summary
 
 For a project that presents root cause (see
-[Root-cause analysis service](ANALYSIS_WORKFLOWS.md#root-cause-analysis-service)),
+[Root-cause analysis service](ROOT_CAUSE_ANALYSIS.md#root-cause-analysis-service)),
 a completed CI run's response and `apexctl ci run`'s JSON result carry
 `root_cause`: the `state` of the run's newest analysis (`none`, `queued`,
 `running`, `completed`, `failed` or `cancelled`), and once one completed its

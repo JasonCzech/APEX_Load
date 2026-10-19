@@ -1,6 +1,6 @@
 import catalog from '../../docs/help-content-catalog.json'
 import { type HelpAreaID } from './apiGuideNavigation'
-import { parseMarkdown, type MarkdownBlock } from './components/repositoryGuideMarkdown'
+import { markdownPlainText, parseMarkdown, type MarkdownBlock } from './components/repositoryGuideMarkdown'
 
 export type HelpArticle = { id: string; area: HelpAreaID; title: string; path: string; sections?: string[]; group?: string; owner: string }
 export const helpArticles = catalog as HelpArticle[]
@@ -10,11 +10,17 @@ const sources = import.meta.glob<string>([
   '../../docs/HELP_CENTER.md',
   '../../docs/PROTOCOL_SUPPORT.md',
   '../../docs/guides/BROWSER_DOCUMENT_EVIDENCE.md',
+  '../../docs/guides/BROWSER_INTELLIGENCE_WORKFLOWS.md',
+  '../../docs/guides/BROWSER_INTERACTION_EVIDENCE.md',
+  '../../docs/guides/BROWSER_HAR_WORKING_OWNERSHIP.md',
   '../../docs/guides/RETAINED_RESOURCE_INSPECTION.md',
   '../../docs/guides/HTTP3_AND_QUIC.md',
   '../../docs/guides/TELEMETRY_POLICY_RECEIPTS.md',
   '../../docs/guides/AUTHORING_SCENARIO_FIDELITY.md',
   '../../docs/OBSERVABILITY_INTEGRATIONS.md',
+  '../../docs/DYNATRACE.md',
+  '../../docs/ELASTIC.md',
+  '../../docs/IMPORT_FIDELITY_AND_REPAIRS.md',
   '../../docs/CLUSTERS_AND_CLOUD.md',
   '../../docs/ENTERPRISE_PLATFORM_RUNBOOK.md',
   '../../docs/ADMIN_USER_GUIDE.md',
@@ -66,7 +72,22 @@ export function articleBlocks(article: HelpArticle, source: string): MarkdownBlo
     return include
   })
 }
+// Repository links use GitHub heading slugs; the help renderer keeps its existing IDs.
+// Resolve aliases only against parsed headings, never arbitrary paths or HTML.
+export function helpSectionID(source: string, section: string): string {
+  const headings = parseMarkdown(source).filter(block => block.kind === 'heading')
+  if (headings.some(heading => heading.id === section)) return section
+  const counts = new Map<string, number>()
+  for (const heading of headings) {
+    const base = markdownPlainText(heading.text).toLowerCase().replace(/[^\p{L}\p{N}\p{M}_ -]/gu, '').replace(/ /g, '-')
+    const count = counts.get(base) || 0
+    counts.set(base, count + 1)
+    if (`${base}${count ? `-${count}` : ''}` === section) return heading.id
+  }
+  return section
+}
 export function articleForSection(path: string, section: string, source: string): HelpArticle | undefined {
+  section = helpSectionID(source, section)
   let parent = ''
   for (const block of parseMarkdown(source)) {
     if (block.kind !== 'heading') continue
@@ -85,6 +106,7 @@ export function resolveHelpLink(href: string, current: HelpArticle, source: stri
   let section: string
   try { section = decodeURIComponent(rawSection || '') } catch { return '' }
   if (!rawPath) {
+    section = helpSectionID(source, section)
     const target = articleForSection(current.path, section, source) || current
     return helpArticleHash(target, section)
   }

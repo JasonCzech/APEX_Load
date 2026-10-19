@@ -1,6 +1,20 @@
 # Browser intelligence workflows
 
-Status: implemented (Wave 5, E6). This guide covers BI-4 of the [feature completion specification](../FEATURE_COMPLETION_SPEC.md#bi-4-user-workflows-and-acceptance): where a run's browser intelligence is read, how its policies are edited, and what reports, the CLI and MCP tools carry. The results themselves are described in [browser findings](BROWSER_FINDINGS.md), [interaction evidence](BROWSER_INTERACTION_EVIDENCE.md) and [journey accounting](JOURNEY_ACCOUNTING.md).
+Status: implemented (Wave 5, E6). This guide covers BI-4 of the [feature completion specification](../FEATURE_COMPLETION_SPEC.md#bi-4-user-workflows-and-acceptance): where a run's browser intelligence is read, how its policies are edited, and what reports, the CLI and MCP tools carry. The results themselves are described in [browser findings](#browser-findings-and-qualified-scores), [interaction evidence](BROWSER_INTERACTION_EVIDENCE.md) and [journey accounting](#journey-accounting).
+
+## Guide map
+
+Use this guide to interpret archived evidence and operate policies, evaluations, reports and exports. Capture and retention have separate contracts:
+
+| Task | Reference |
+| --- | --- |
+| Capture page timings and document populations | [Browser document evidence](BROWSER_DOCUMENT_EVIDENCE.md) |
+| Capture gestures, provenance and layout revisions | [Browser interaction evidence](BROWSER_INTERACTION_EVIDENCE.md) |
+| Inspect retained requests and exact filters | [Retained resource inspection](RETAINED_RESOURCE_INSPECTION.md) |
+| Understand native/synthetic HAR ownership and export bounds | [HAR working-file ownership](BROWSER_HAR_WORKING_OWNERSHIP.md) |
+| Interpret findings and scores | [Findings contract](#browser-findings-and-qualified-scores) |
+| Interpret journey outcomes and weighted risk | [Journey accounting](#journey-accounting) |
+| Interpret gestures and heatmap coverage | [Patterns and heatmaps](#patterns-and-heatmaps) |
 
 ## The Browser area of a run report
 
@@ -69,3 +83,348 @@ Each section reads its result when the report is exported. A section whose resul
 ## Acceptance
 
 [Browser intelligence acceptance](../qa/BROWSER_INTELLIGENCE_ACCEPTANCE.md) lists the tests that accept each of these behaviors, including a golden page run in Chromium and WebKit against measured ground truth.
+
+## Browser findings and qualified scores
+
+Browser findings judge a run's archived document metrics against a
+versioned `browser_policy`, server side. They produce two things:
+
+- versioned finding records (`browser_findings.v1`);
+- a weighted score (`browser_score.v1`).
+
+Only qualified final observations count. The dashboard's legacy summary
+estimate (`legacy-summary-availability-v2`) stays for runs that have no
+server result.
+
+### Policy
+
+A `browser_policy` (Analysis policies, `POST /api/v1/analysis/policies`)
+contains:
+
+- **Metrics:** up to four of `fcp`, `lcp`, `cls` and `inp`. Each has a
+  `good` and a `poor` threshold (`0 <= good < poor`) and a non-negative
+  `weight`. A metric with a positive weight is **required** for an overall
+  score.
+- **Applicability:** optional engine (`chromium`, `webkit`) and device
+  profile lists. A cohort outside them is suppressed, never scored.
+- **Effect floors and baseline mode:** these are used by RCA's browser
+  baseline anomalies (`browser_baseline.v1`, a separate rule set). The floors
+  can only raise its minimums. Mode `none` turns the comparison off,
+  `pinned_run` compares only when the analysis's baseline is that run, and
+  `latest_compatible` uses the analysis's baseline run. A threshold finding
+  records the baseline mode with status `not_evaluated`.
+
+A policy marked `apply_by_default` is pinned to every run started in the
+project, by revision and digest.
+
+### When evaluation runs
+
+Evaluation is a `browser_intelligence` evaluation job.
+
+- **Automatically:** when a run's archive is finalized, if the run pinned a
+  browser policy and requested document evidence. An evaluation of the same
+  inputs (same archive digest and policy revision) is never queued twice.
+- **On demand:**
+  - `POST /api/v1/analysis/evaluations` with
+    `{"kind":"browser_intelligence","request":{"run":"<id>"}}`. Add
+    `"policy":{"id":…,"revision":…}` for another revision.
+  - The Evaluate button on the run report's Browser findings panel.
+  - `apexctl analysis browser-findings --run ID --evaluate --project P [--wait]`.
+
+The job's input fingerprint covers the rule set, the score version, the
+policy revision's digest and the archive manifest's digest.
+
+A run's own result is always an evaluation under its pinned policy. An
+evaluation under a named revision is an ordinary evaluation job: read it from
+the evaluation API (`apexctl … --policy …` prints the job, and with `--wait`
+its result). It never
+replaces the run's result and never sends webhooks. Evaluations are indexed
+by their run (schema v53 `feature_evaluation_jobs.subject_id`), so a run's
+result is found however many evaluations the project has.
+
+### What is judged
+
+Only main-frame navigations are judged. Child frames and back/forward-cache
+restores are listed in the result's notes, never scored.
+
+Each cohort (engine and device profile) is judged per policy metric. The
+observed value is the nearest-rank p75 of the qualified final
+observations' values.
+
+Provisional, censored, unqualified and unavailable observations are
+reported in the finding's `quality`, never in its value.
+
+| Rule | Category | Produces |
+| --- | --- | --- |
+| `threshold` | application outcome | `active` with severity `needs_improvement` (p75 above good) or `poor` (above poor); `suppressed` outside applicability; `unscored` when the metric was not observed or has no qualified final observation. Within good, there is no finding. |
+| `collection.incomplete` | collection health | `active` when the run's document evidence lost observations. |
+| `collection.absent` | collection health | `active` when document evidence was requested and none was retained. |
+
+Every finding records:
+
+- the rule set, rule ID and version, and the category;
+- the metric, algorithm and unit, the cohort and the run window;
+- applicability, the statistic and observed value, and the thresholds;
+- quality counts and baseline criteria;
+- evidence: up to five of the worst qualified documents, each with the
+  archive query of its retained resources;
+- its state, with a reason when it is not active.
+
+A record's `id` covers the evaluation's input fingerprint, so an identical
+rerun reproduces it. Its `key` (run, rule, metric, cohort, window)
+identifies the finding across evaluations.
+
+### Score
+
+Each policy metric's component is computed as follows:
+
+- The p75 of the qualified final observations of every applicable cohort.
+- Scored 100 at or below good and 0 at or above poor, linear between.
+- Its contribution is `weight × score / Σ required weights`.
+
+The overall score is the sum of the contributions:
+
+- **Bands:** `good` from 90, `needs_improvement` from 50, `poor` below.
+- **No score** when a required metric is missing (`missing_required_metric`,
+  listing the metrics), or when no document evidence was retained
+  (`no_document_evidence`).
+
+When there is no overall score, the observed components and their
+coverage are shown instead. The remaining metrics are never renormalized.
+
+### Reading results
+
+- **API:** `GET /api/v1/tests/{id}/archive/browser-findings` returns the
+  run's latest ready result under its pinned policy (`status: ready`),
+  `pending`, `failed` (the newest evaluation failed or expired, claimed
+  repeatedly without finishing, and none is ready, with `failure`), or
+  `not_evaluated`. Queuing the automatic evaluation is best effort: if it
+  cannot be queued when the archive is attached (the evaluation quota, a
+  changed pin, an archive that cannot be read), the controller logs it and the
+  run stays `not_evaluated` until someone evaluates it.
+- **Dashboard:** the Browser findings panel in the run report's
+  [Browser area](#the-browser-area-of-a-run-report) shows the score, its components and contributions,
+  the findings by state, and the notes. It checks a pending evaluation again
+  until it settles.
+- **Webhooks:** subscribe to `browser_finding` and `browser_finding_resolved`.
+  When an evaluation under the run's pinned policy is stored as ready:
+  - one `browser_finding` event lists the findings active now but not in the
+    run's previous ready pinned evaluation;
+  - one `browser_finding_resolved` event lists those active before and not
+    now;
+  - an identical rerun sends nothing, and a completion that stored nothing
+    (cancelled, overtaken) sends nothing;
+  - each event lists at most 20 finding keys.
+
+## Journey accounting
+
+Journey accounting reads a finished run's archived samples and counts how its
+declared journeys turned out. The result is weighted test-journey risk under
+a versioned policy. It is never revenue or conversion impact, which would
+need an authorized external model.
+
+### Declare journeys
+
+Journeys live in a project `journey_policy` (Analysis policies,
+`POST /api/v1/analysis/policies`). Each journey has:
+
+- an `id` (lowercase slug) and a `name`;
+- an explicit `start` and `success` boundary, each naming one authored
+  `transaction` or one `action`. A transaction boundary matches a
+  transaction sample of that name; an action boundary matches an action
+  sample;
+- a `weight` from 0 to 1000.
+
+`step_risk_enabled: true` adds the separate step-risk index. A policy marked
+`apply_by_default` is pinned to every run started in the project, with its
+revision and digest. Revisions are immutable, so a later edit never
+rewrites an earlier run's accounting.
+
+### How attempts are classified
+
+Every archived sample carries its VUser, its 1-based iteration and a random
+VUser lifetime. A VUser ID is reused by later VUsers (open-workload
+arrivals, scale-up); a lifetime never is, so each lifetime is its own
+context. Each iteration is read in time order. Samples are archived as they
+are recorded, so a transaction's row follows its own steps. Ordering by time
+puts it back around them, using each transaction's wall-clock span
+(`elapsed_ms`) when its duration excludes think time inside it:
+
+- A start boundary opens an attempt when it begins.
+- Action samples that begin while an attempt is open are its steps.
+- The success boundary decides the attempt when it ends.
+
+| Outcome | Meaning |
+| --- | --- |
+| completed | The success boundary succeeded. Failed steps before it are still counted as step failures. |
+| failed | The success boundary failed, or the iteration ended after one of the attempt's steps failed. One failed journey counts once, however many steps failed. |
+| aborted | The iteration ended, or the journey started again, without the outcome and without a failed step. |
+| censored | The outcome is unknown, because the run (or a generator's share of it) ended while the attempt was open, or a stop or the generator's own resource limit cut it. |
+| skipped | An iteration of a group that ran the journey somewhere never started it. A possibly cut iteration does not count. |
+
+Eligible attempts are the completed, failed and aborted ones. Censored and
+skipped attempts never enter the index.
+
+#### Stops and interrupted samples
+
+The engine marks a failure `interrupted` when it was recorded after the VUser
+was told to stop, or when the load generator itself refused it. That covers
+four cases:
+
+- The action in flight was cancelled by a hard stop (or by Run's own context
+  when there is no hard-stop context).
+- A stop or goal boundary abandoned the iteration and left a failed
+  transaction behind.
+- A transaction the VUser still had open when a goal boundary ended it.
+- A resource-limit failure (the error class `resource_limit`, for example a
+  browser context closed at its HAR or memory limit): the generator, not the
+  system under test, ended the action.
+
+Work a stop cut off is left out of the results altogether, as LoadRunner
+does: a request the stop cancelled, a transaction a hard stop cut off, and a
+transaction still open when the run's stop or end, a ramp-down or a
+scale-down ended the VUser. The attempt it was part of has no settling row,
+so it is censored.
+
+Neither cancellation nor a generator limit can establish a failure of the
+system under test. An interrupted failure therefore censors every attempt it
+cut and is not counted as a step failure. An attempt that still reaches its
+outcome keeps it, and a boundary that fails after one of its attempt's steps
+was interrupted is censored rather than counted as failed.
+
+The last iteration of each VUser lifetime is the one a stop may have cut,
+for instance during think time between transactions, where no sample shows
+it. The engine therefore marks the rows it records because an iteration
+ended on its own (`ends_iteration`): the iteration transaction, and the
+transactions a VUser left open when it ended on its own (its iterations
+done, or a genuine failure that ends it). An attempt still open in a
+lifetime's last iteration is settled (failed or aborted) only when that
+iteration has such a row that is not interrupted; otherwise it is censored.
+A transaction still open when the next iteration starts is carried into it.
+
+So scripts that record an iteration transaction (automatic transactions per
+iteration, or none and no explicit transactions) settle every last
+iteration that ended on its own. Scripts without one (explicit
+transactions, or automatic transactions per action) settle a last
+iteration only when the VUser ended on its own with transactions still
+open; a last iteration that ended on its own with none open, or a
+fail-fast failure outside any open transaction, is censored. In an open
+workload every arrival runs a single iteration, so for such scripts every
+arrival's unsettled attempt is censored. Censoring excludes an attempt from
+the index rather than guessing its outcome. Whether a VUser ended on its own
+(its iterations or data done, a genuine failure with continue on error off)
+or was ended (a stop, ramp-down, scale-down or goal limit) is recorded by
+the engine where its loop ends. A fail-fast failure while a shared
+execution goal is spent is taken for the goal limit's, since a parallel
+branch or WebSocket callback refused a goal slot fails the same way.
+
+Rows without a lifetime (written before lifetimes existed) fall back to the
+VUser ID: their last iteration is always censored, and a replacement
+generator that continues an evacuated VUser restarts its iterations, so
+the earlier share's last iteration is censored too. A group's once-only
+init/teardown VUser records lifecycle rows without a lifetime; they are not
+counted as rows without identity.
+
+### Indexes
+
+- **Weighted failure index:** `sum(weight × failed) / sum(weight × eligible)`.
+  It is unscored (`no_weighted_eligible_attempts`) when the denominator is
+  zero.
+- **Step-risk index** (only with `step_risk_enabled`):
+  `sum(weight × step_failures) / sum(weight × steps)`, counting the steps of
+  eligible attempts. It is unscored (`no_weighted_steps`) when there are no
+  weighted steps.
+
+Accounting is bounded:
+
+- 200,000 tracked VUsers;
+- 10,000 buffered samples per open iteration;
+- 1,000,000 buffered samples in total.
+
+The report is also incomplete when the archive scan stops at its budget
+(2,000,000 rows or 512 MiB), when a distributed run's generator sources were
+not all collected, or when rows from a source without VUser identity (an
+older generator) sit beside rows with it. An incomplete report lists its
+`incomplete_reasons`, and both indexes are withheld
+(`accounting_incomplete`). A run that recorded identity but ran no iteration
+is `unavailable` with `no_iterations` (as is an archive with no samples at
+all).
+
+### Read the result
+
+- **API:** `GET /api/v1/tests/{id}/archive/journeys` (viewer access). It
+  applies the run's pinned `journey_policy` revision. To use another, pass
+  `?policy=ID`, which takes its latest revision, or add `&revision=N`.
+  - A run that pinned none is `unavailable` with `no_journey_policy`.
+  - An archive written before VUser iteration identity existed is
+    `unavailable` with `archive_lacks_vuser_iteration_identity`.
+  - A pin whose digest no longer matches the stored revision is refused
+    (409), as is a run whose archive is not finalized.
+- **CLI:** `apexctl analysis journeys --run ID [--policy ID [--revision N]]`.
+- **Dashboard:** the run report's Performance tab has a Journey risk panel.
+  It shows the per-journey counts, the indexes, up to five example attempts
+  per journey (group, VUser, iteration, first failed step) and the report's
+  notes. You can apply another policy revision from the panel.
+
+Each journey's report lists its counts, eligible attempts, steps and step
+failures, failure rate and example attempts. The report also names the
+policy revision (`pinned` or `requested`) and its digest, and counts the
+rows outside iterations (init, teardown, or no identity).
+
+## Patterns and heatmaps
+
+`GET /api/v1/tests/{id}/archive/browser-interactions` reads a finalized run's
+interaction evidence (`browser_interaction_patterns.v1`). Viewer access is
+enough. The run report shows the result in its [Browser area](#the-browser-area-of-a-run-report), under **Interaction patterns**. A run without interaction evidence answers
+`not_captured`; a run that captured some but kept none in its archive (a
+failed transfer, a refused or torn sidecar) answers `unavailable` with what
+was lost. The response states its thresholds and coverage: interactions,
+records, dropped (by capture bounds, or lost before the archive) and
+incomplete evidence (the archive's own account, which includes sources that
+never arrived), counts by provenance, gestures mapped,
+and gestures left out by reason. A run without an archive answers `404` (on
+an HA controller, also until the finalized archive is published, so the run
+report offers to check again), an archive not yet finalized `409`, and
+unreadable evidence or an archive that cannot be read `500`. Nothing is
+replayed or injected.
+
+Patterns are found per document, in capture order:
+
+| Pattern | Rule |
+| --- | --- |
+| `scripted_repetition` | At least 3 clicks, taps or checks (a double click is one gesture; hovers, drags, swipes and long presses do not count) within 2 s, on one route and layout, when any of them is scripted or of unknown provenance. Gestures with dispatched points repeat within 32 CSS px of the first; gestures without points (touch gestures are dispatched synthetically) repeat when they share an action name and gesture kind, and their target's role and label when one is recorded. The 2 s window is measured on capture time, taken after each gesture's wait and page reads (E3 records no dispatch time), so gestures dispatched closer together than their waits may not count. |
+| `repeated_gesture` | The same, when every gesture was recorded with consent. It is the only pattern that can suggest human frustration. |
+| `retry` | A failed gesture followed at once by further attempts of the same step (its action name and gesture kind: each engine retry is a new execution with its own action ID), up to the first that succeeded. Retries never count as repetition. Distinct steps that share an action name and kind are one step here. |
+| `dead_interaction` | A gesture whose authored outcome (its post-action `sync`) asserts that the page responded (`element_visible`, `load` or `domcontentloaded`) observed as `missed` within its deadline. A missed `dom_stable`, `network_idle` or pause says nothing about whether the page responded, and an unchanged page alone is never one. Authored assertion, dialog and download outcomes are not used. |
+| `unexpected_navigation` | A gesture that navigated away while its declared `element_visible` outcome was `missed`: the element the step waited for never appeared. Navigating is otherwise normal (a recorded step waits for the next page's element, met), and a `dom_stable` or pause outcome says nothing about which page the gesture should leave. A gesture that navigated away is never a dead interaction. |
+
+Each pattern lists its route, layout, action, count, window and up to 16
+interaction IDs.
+
+Heatmaps place each pointer gesture's first dispatched point on an abstract
+64×64 grid of its viewport. One map is kept per sanitized route, layout
+revision, viewport size, device pixel ratio and orientation, engine and
+device profile. A cell is a viewport position in CSS pixels at dispatch
+(`coordinate_space` `viewport_css_px`): gestures made at different scroll
+offsets share a map, which states their scroll range. The layout revision is
+the one read after the gesture and its wait. Engine and profile come from the
+gesture's source generation (its browser context) in the run's document
+evidence, read in full. Without it they are `unknown`, the map says why, and
+the analysis lists an `engine_profile_unknown` limitation, since gestures of
+different engines with one layout can then share a map. The reason is that the
+run kept no document evidence for those gestures, that the document evidence
+could not be read (`document_evidence_unreadable`), or that the context is past
+the first 65,536 the analysis keeps (`document_evidence_truncated`). Keyboard and form gestures fill a per-map
+table of target roles and hashed labels, never positions.
+
+Some gestures are counted, by reason, instead of mapped:
+- those with an unavailable reason (`child_frame_unobserved`,
+  `document_changed`, `synthetic_dispatch`, `page_state_unavailable`);
+- those without points or without a viewport;
+- those outside the viewport (they make no map);
+- those beyond 64 maps.
+
+At most 200 patterns are kept, and patterns are found among the first 100,000
+interactions (`interactions_truncated` beyond that). Screenshot overlays are
+not produced. Incomplete journeys are E5's journey accounting
+(`/archive/journeys`), not a pattern here.

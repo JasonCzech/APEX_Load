@@ -150,6 +150,27 @@
     "owner": "APEX Load maintainers"
   },
   {
+    "id": "browser-intelligence",
+    "area": "user-guide",
+    "title": "Browser intelligence workflows",
+    "path": "docs/guides/BROWSER_INTELLIGENCE_WORKFLOWS.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "browser-interaction-evidence",
+    "area": "user-guide",
+    "title": "Browser interaction evidence",
+    "path": "docs/guides/BROWSER_INTERACTION_EVIDENCE.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "browser-har-ownership",
+    "area": "user-guide",
+    "title": "Native HAR working-file ownership",
+    "path": "docs/guides/BROWSER_HAR_WORKING_OWNERSHIP.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
     "id": "telemetry-policy-receipts",
     "area": "user-guide",
     "title": "Telemetry budget policy receipts",
@@ -521,7 +542,8 @@
       "Overview",
       "Validation Baseline",
       "AI provider setup for local Kubernetes",
-      "Java Vuser runner component"
+      "Java Vuser runner component",
+      "Browser generator for observer pools"
     ]
   },
   {
@@ -662,6 +684,54 @@
       "Read the results",
       "Browser VUsers",
       "Troubleshooting"
+    ]
+  },
+  {
+    "id": "dynatrace-monitoring",
+    "area": "user-guide",
+    "title": "Dynatrace monitoring and webhooks",
+    "path": "docs/DYNATRACE.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "elastic-monitoring",
+    "area": "user-guide",
+    "title": "Elastic monitoring and capture",
+    "path": "docs/ELASTIC.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "import-fidelity",
+    "area": "user-guide",
+    "title": "Import fidelity and repairs",
+    "path": "docs/IMPORT_FIDELITY_AND_REPAIRS.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "web-api-support",
+    "area": "user-guide",
+    "title": "Web/API execution support",
+    "path": "docs/PROTOCOL_SUPPORT.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Web/API Execution Support Matrix"
+    ]
+  },
+  {
+    "id": "monitoring-governance",
+    "area": "user-guide",
+    "title": "Monitoring provider governance",
+    "path": "docs/OBSERVABILITY_INTEGRATIONS.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Run-bound monitoring storage and signing",
+      "Prometheus target-system test monitoring",
+      "Governed provider registry"
     ]
   }
 ]

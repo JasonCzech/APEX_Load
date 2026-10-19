@@ -1344,7 +1344,7 @@ Reports compute percentiles from every observation up to their exact limits (20,
 
 For baseline comparisons, hold target environment, release context, script version, data, load shape, runtime settings and measurement windows constant where possible. Explain intentional differences. Separate warm-up/ramp behavior from steady state, and inspect generator saturation before blaming the target.
 
-The run's validity verdict does that check: `suspect` when a load generator stayed saturated at a steady load, `invalid` when results were lost (an OOM-killed generator, dropped results, shed arrivals), and `unknown` when generator statistics are missing. A closed-model run whose throughput falls while latency rises stays valid; that is the system under test, reported as an anomaly. See [run validity](ANALYSIS_WORKFLOWS.md#run-validity) for the rules.
+The run's validity verdict does that check: `suspect` when a load generator stayed saturated at a steady load, `invalid` when results were lost (an OOM-killed generator, dropped results, shed arrivals), and `unknown` when generator statistics are missing. A closed-model run whose throughput falls while latency rises stays valid; that is the system under test, reported as an anomaly. See [run validity](ROOT_CAUSE_ANALYSIS.md#run-validity) for the rules.
 
 When a generator is lost mid-run, the run fails, and its error names the generator, its region, its groups and how far into the run it was lost. The report still keeps what the other generators collected: **Archive evidence needs review** lists every generator with its region and groups, marks the lost one "Not collected", and says which groups the surviving measurements cover. If the run used live tables, leases the lost generator still held may be redelivered once they expire, and pops it had in flight may have unknown outcomes.
 
@@ -1478,7 +1478,7 @@ analysis completed* and *Run validity suspect or invalid*. CI runs report the
 root cause beside validity; see
 [Root-cause summary](CICD_INTEGRATION.md#root-cause-summary). The engine, its
 rules and its limits are described in
-[Root-cause analysis service](ANALYSIS_WORKFLOWS.md#root-cause-analysis-service).
+[Root-cause analysis service](ROOT_CAUSE_ANALYSIS.md#root-cause-analysis-service).
 
 ## Repository And Shared Assets
 
@@ -1642,7 +1642,7 @@ GitHub.com with OIDC and GHES with a scoped API key.
 | **GitHub / GHES** | Script sync between a repository and a project, plus pull-request checks | Settings → Integrations → GitHub |
 | **Kubernetes clusters** | Register AKS/EKS/generic control planes so an administrator can place generator pools on them with per-pool CPU, memory, and node placement | Admin cluster registry |
 
-Each has its own reference document: [Prometheus metrics](OBSERVABILITY_INTEGRATIONS.md#prometheus-scrape-endpoint), [Power BI](OBSERVABILITY_INTEGRATIONS.md), [Dynatrace webhooks and monitoring](OBSERVABILITY_INTEGRATIONS.md), [OpenTelemetry](OBSERVABILITY_INTEGRATIONS.md#opentelemetry-tracing), [GitHub integration](CICD_INTEGRATION.md#github-enterprise-integration), and [Cluster connections](CLUSTERS_AND_CLOUD.md#cluster-connections-host-resource-allocation).
+Each has its own reference document: [Prometheus metrics](OBSERVABILITY_INTEGRATIONS.md#prometheus-scrape-endpoint), [Power BI](OBSERVABILITY_INTEGRATIONS.md#power-bi-publishing-workflow), [Dynatrace webhooks and monitoring](DYNATRACE.md), [OpenTelemetry](OBSERVABILITY_INTEGRATIONS.md#opentelemetry-tracing), [GitHub integration](CICD_INTEGRATION.md#github-enterprise-integration), and [Cluster connections](CLUSTERS_AND_CLOUD.md#cluster-connections--host-resource-allocation).
 
 ## Troubleshooting And FAQ
 

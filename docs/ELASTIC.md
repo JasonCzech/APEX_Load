@@ -2,9 +2,12 @@
 
 APEX Load reads existing indexed telemetry during an opted-in test. Elasticsearch and OpenSearch use separate adapters over a verified HTTPS transport. This connector works with controller-reachable public services or approved private services through an assigned collector, including Azure Native Elastic, Elastic Cloud, AKS, and on-premises installations. Installing ELK, agents, index templates, or ingest pipelines is outside this connector.
 
+
+For shared storage/signing, provider dispatch and the qualification inventory, see [observability integrations](OBSERVABILITY_INTEGRATIONS.md#governed-provider-registry). The native source contract below is distinct from the [bucketed legacy-connection adapter](#bucketed-elasticsearch-capture) and [cumulative legacy capture](#optional-elastic-elk-in-flight-monitoring); their different coverage and failure semantics remain explicit.
+
 ## Setup
 
-1. Enable the project in `APEXLOAD_RUN_MONITOR_PROJECTS` (comma-separated exact project IDs). Configure persistent monitoring signing keys and durable monitoring artifact storage as described in [observability integrations](OBSERVABILITY_INTEGRATIONS.md). HA controllers must share the artifact backend and database. The feature remains opt-in.
+1. Enable the project in `APEXLOAD_RUN_MONITOR_PROJECTS` (comma-separated exact project IDs). Configure persistent monitoring signing keys and durable monitoring artifact storage as described in [monitoring storage and signing](OBSERVABILITY_INTEGRATIONS.md#run-bound-monitoring-storage-and-signing). HA controllers must share the artifact backend and database. The feature remains opt-in.
 2. Create logical project-secret references containing the upstream credentials. Use a dedicated identity with read/search permission on the selected indices and field/discovery metadata access. Elasticsearch accepts API key, Basic, Bearer, or mTLS; OpenSearch accepts configured Basic, Bearer, or mTLS. AWS IAM/SigV4 authentication is outside this release. Azure portal sign-in does not supply an Elasticsearch API credential.
 3. In the existing Elastic integration settings, save a **disabled** connection with its explicit product, HTTPS endpoint, execution location, and credential references. An optional base path is supported. Redirects, ambient proxies, node sniffing, and credentials in endpoint URLs are prohibited.
 4. Private destinations require explicit system-administrator approval of private network CIDRs. Supply the issuing CA PEM when system trust is insufficient; hostname verification remains enabled. Loopback, link-local, multicast, and cloud metadata addresses stay prohibited. Kibana and Logstash have separate endpoints, credentials, CA trust, and network approval. An optional saved `dashboards_url` approves browser navigation to Kibana or OpenSearch Dashboards; it must be an HTTPS URL without credentials, query parameters or fragments. The connector never sends API requests or credentials to that navigation URL.
@@ -75,3 +78,102 @@ Sources may lower retention ceilings. Request ceilings belong to deployment poli
 `apexctl elastic` provides `list|create|get|update|delete|test|inspect|operation|cancel`. For example, `apexctl elastic inspect --project PROJECT --id CONNECTION --revision 2 --kind verify --wait`. Query preview and field discovery use `--file` with the typed request. Existing `apexctl monitor` commands manage sources, bindings, run series and evidence. MCP has equivalent `elastic_connection_*` and `elastic_inspection_*` tools plus the generic monitoring tools.
 
 Use the generated [OpenAPI](swagger.yaml) and [endpoint catalog](api-endpoint-catalog.json) for request shapes and current routes. [Implementation specification](ELASTIC_SPEC.md) records contracts and qualification gates. The [exact-version qualification report](ELASTIC_QUALIFICATION.md) records passing local TLS/auth, query and pagination trials for Elasticsearch 8.14.3/9.1.0 and OpenSearch 2.19.0/3.3.0, including scoped readers, filtered aliases and both OpenSearch tie paths. Hosted/Serverless, Azure Native and actual collector-to-vendor deployments remain unqualified. These local results do not extend to every patch version or deployment. Serverless capabilities are probed rather than inferred from reported version.
+
+## Bucketed Elasticsearch capture
+
+An `elastic-query` monitor source reads an existing ELK connection (its
+endpoint, index pattern, timestamp field, filters and API-key or basic
+credentials from project secrets, through the same outbound host allowlist)
+and collects interval buckets instead of the legacy capture's run totals:
+
+```json
+{"pack": "elastic-query", "executor_mode": "direct", "connection_id": "<elk connection>", "interval_seconds": 60,
+ "elastic_query": {"project_id": "<project>", "bucket_seconds": 60, "terms_fields": ["http.method"], "terms_size": 10}}
+```
+
+- **Buckets:** each poll runs a `date_histogram` with a fixed interval of
+  30–300 seconds (default 60) aligned to UTC. Each bucket yields `logs.count`,
+  `logs.errors` (from the connection's error filter) and
+  `logs.terms.<field>.<value>` for the top `terms_size` values of each field.
+- **Truncation:** at most 16 terms fields are queried, each at most 128
+  bytes. Extra fields, values beyond the top ones, and values too long to name
+  a series within the 256-byte metric name are flagged as coverage warnings.
+  Values are named as the server displays them (`key_as_string`, or a
+  number's exact literal).
+- **Late data:** each poll re-reads from five minutes (`overlap_seconds`)
+  before the last watermark and upserts buckets by start, so a late document
+  updates its bucket. A bucket is marked settled once it falls behind the
+  overlap; ingestion rejects earlier settled claims.
+- **Execution:** sources run in the controller only (`executor_mode: direct`).
+  One poll reads at most 120 buckets, fewer when terms are heavy, so a search
+  stays under 10,000 aggregation buckets (`search.max_buckets` before
+  Elasticsearch 7.9). A selection whose overlap re-read plus one new bucket
+  does not fit one search is rejected, so every poll can advance.
+- **OpenSearch:** set `"profile": "opensearch"` in `elastic_query`. The
+  search is the same (`date_histogram` with `fixed_interval`, terms and
+  filters exist in OpenSearch 1.x and 2.x), and points record
+  `backend: opensearch`. OpenSearch has no Elasticsearch API keys, so the
+  connection must use basic authentication. Saving an OpenSearch source on an
+  API-key connection is refused, and a run whose connection has since switched
+  to an API key records `connection_source_mismatch` for that source. AWS
+  SigV4 signing is not supported; use fine-grained access control's internal
+  users. The ELK connection's default trace link is Kibana's legacy Discover
+  URL; newer OpenSearch Dashboards Discover pages use a different URL, so if
+  the default does not open the trace, save a trace template for your
+  version.
+
+The legacy ELK capture keeps running unchanged. Its status and the archive
+manifest label it `observation: cumulative` (`elk_observation`), and its run
+totals are never reinterpreted as intervals. Fixture-tested only; not yet
+qualified against a live cluster.
+
+## Optional Elastic (ELK) in-flight monitoring
+
+APEX Load can poll an Elasticsearch-compatible search endpoint while a test is running. The integration is project-scoped, inactive by default, and runs in the controller rather than in virtual-user goroutines. It does not configure Kibana and does not write to Logstash.
+
+### Compatibility and privileges
+
+The client uses the Elasticsearch 7/8-compatible JSON REST search API:
+
+- `POST /{index-pattern}/_search`
+- `track_total_hits: true`
+- a timestamp `range` filter and optional `query_string` filters
+- filter aggregations for error counts
+- `avg`, `min`, `max`, and `sum` numeric metric aggregations
+
+The Elasticsearch identity needs only read/search access to the configured index pattern and fields. Do not grant index administration, document write, cluster administration, or Kibana privileges.
+
+### Setup
+
+1. Create the authentication material as project secrets. API-key authentication uses one secret whose value is the Elasticsearch REST API key. Basic authentication uses separate username and password secrets.
+2. Open **Settings → Connections → Elastic test capture**, or use **Manage Elastic connections** from Monitoring → Telemetry. Confirm the active project. **Save draft** needs only a name; the checklist identifies details to supply later.
+3. Enter an HTTPS Elasticsearch endpoint, index pattern, field mappings, authentication type, and project-secret references. Secret-reference names are accepted as write-only input and are not returned by the API.
+4. Use **Test saved connection** while it is disabled, then edit and select **Enable for new tests**. Configuration, enablement, and last-check status are separate. Only enabled, fully configured connections appear in the create-test selector. Blank replacement credential fields preserve existing secrets; saved values and reference names remain hidden.
+5. Opt a test into capture with **Elastic log capture**. Existing tests and new tests without a selection make no ELK requests.
+
+No environment-specific endpoint or credential belongs in source control.
+
+### Field-mapping checklist
+
+- Timestamp field: required; usually `@timestamp`.
+- Level field: optional; for example `log.level`.
+- Message field: required for a ready connection; usually `message`.
+- Test ID field: optional. When configured, APEX Load adds an exact term filter for the current test ID.
+- Trace ID field: optional. When no test-ID field is configured, observed run trace IDs are used for correlation as they become available and are retained in evidence samples for cross-tool navigation.
+- Base filter: optional fixed Elasticsearch query-string expression applied to every poll.
+- Error filter: optional query-string expression used to calculate the cumulative error count.
+- Numeric aggregations: up to 16 named field aggregations using `avg`, `min`, `max`, or `sum`.
+
+When no test-ID mapping is supplied, APEX Load uses observed trace IDs if a trace field is mapped. Before any trace is observed—or when neither correlation field is mapped—capture falls back to the test start-to-current time window plus the base filter. This fallback is deliberately broad; use a test identifier or a sufficiently restrictive base filter when multiple workloads share an index.
+
+### Runtime and privacy behavior
+
+The controller polls at a bounded cadence and queries the cumulative window from test start through the current poll. Failures are fail-open: they update capture health but do not stop, pause, or otherwise affect the load test. Cumulative values are published as external resource metrics under `elk.<connection-id>.<metric>`, including `logs_total`, `errors_total`, and configured aggregation names.
+
+Polling runs in a cancellable background worker; live metric publication reads cached results without waiting for Elasticsearch. Timed-out searches, failed shards, early termination, and inexact hit counts are treated as incomplete capture rather than healthy results. Last-good values remain available with degraded health. Both local and distributed runs contribute observed trace IDs to the bounded correlation set.
+
+Search responses are size-bounded. Only mapped fields are requested. A run retains at most 50 deduplicated samples, and individual messages are capped at 4 KiB. Built-in credential/PII scrubbing runs before samples reach live state and again at the archive boundary. The archive stores only cumulative metrics and bounded scrubbed samples in `elk_evidence.jsonl`; it never stores raw Elasticsearch documents, authentication values, or secret-reference names.
+
+HTTPS is required. Requests are restricted by the outbound network policy to the one saved endpoint host, including for internal Elasticsearch deployments, and redirects cannot escape that exact origin. Credential-bearing, query-bearing, fragment-bearing, cleartext, and otherwise malformed endpoint URLs are rejected.
+
+Connection edits do not mutate an active or archived run: APEX Load snapshots the operational capture definition into durable private test state at creation. Public run provenance and the manifest retain only the immutable connection ID and safe display name.

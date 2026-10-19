@@ -1,6 +1,6 @@
 # Node-failure readiness implementation plan
 
-Status: In progress on `codex/node-recovery`, continuing `codex/node-failure-readiness`; see implementation ledger below.
+Status: Open qualification and implementation ledger. Original work branches: `codex/node-recovery` and `codex/node-failure-readiness`. See the ledger below for remaining gates.
 Date: 2026-09-27.
 Baseline: application commit `72e17af3c24fdd46089792679f9b6cb1a105daf2`.
 Evidence: local KEDA and node-failure report at
@@ -9,6 +9,8 @@ in the same ignored directory.
 These local evidence files are ignored artifacts, not distributed repository fixtures.
 This plan extends [HA Run Continuity](HA_RUN_CONTINUITY_PLAN.md) to worker loss;
 it does not equate successful controller-only adoption with combined controller/generator recovery.
+
+Current operating procedures live in the [enterprise runbook](ENTERPRISE_PLATFORM_RUNBOOK.md#operating-run-continuity) and [node storage recovery guide](NODE_STORAGE_RECOVERY.md). This plan retains the implementation sequence and fault evidence; it does not supersede those procedures.
 
 ## Implementation ledger
 
