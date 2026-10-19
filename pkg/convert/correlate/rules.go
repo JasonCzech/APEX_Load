@@ -96,7 +96,7 @@ func RuleCatalog() []RuleInfo {
 		{RuleSalesforceOAuthAuthorizePage, FamilyHeader, "Salesforce OAuth authorize redirect", "The source state of the approval-page redirect a Salesforce /services/oauth2/authorize returns; the sign-in requests that follow echo it.", 0.93},
 		{RuleSalesforceCometdClientID, FamilyForm, "Salesforce CometD clientId", "Bayeux clientId from a /cometd /meta/handshake response (a JSON array) reused in every later /meta/connect and /meta/subscribe request.", 0.95},
 		{RuleASPNetState, FamilyHTML, "ASP.NET state field", "WebForms __VIEWSTATE / __EVENTVALIDATION style hidden fields that change every request.", 0.95},
-		{RuleHTMLHiddenToken, FamilyHTML, "Hidden anti-CSRF/state token", "Hidden form inputs named like csrf, xsrf, token, nonce, state, viewstate, authenticity.", 0.9},
+		{RuleHTMLHiddenToken, FamilyHTML, "Hidden anti-CSRF/state token", "Hidden form inputs named like csrf, xsrf, token, nonce, state, viewstate, authenticity or session, or named exactly sid or lm (Salesforce session hand-off pages).", 0.9},
 		{RuleJSONCSRFToken, FamilyJSON, "JSON CSRF token", "JSON fields whose name contains csrf/xsrf.", 0.9},
 		{RuleXMLSOAPToken, FamilyXML, "XML/SOAP token", "XML/SOAP elements or attributes named like token, csrf, nonce, session, MessageID, RelatesTo, or CorrelationID.", 0.88},
 		{RuleJMSCorrelationID, FamilyMessage, "JMS correlation id", "JMSCorrelationID/JMSMessageID response fields, properties, or headers that later requests/messages reuse.", 0.88},

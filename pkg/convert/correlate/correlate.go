@@ -135,8 +135,8 @@ var (
 		nameGroup  int
 		valueGroup int
 	}{
-		{regexp.MustCompile(`(?i)<input[^>]*\bname="([A-Za-z0-9_.\-\[\]]*(?:csrf|xsrf|token|nonce|state|viewstate|authenticity)[A-Za-z0-9_.\-\[\]]*)"[^>]*\bvalue="([^"]{4,})"`), 1, 2},
-		{regexp.MustCompile(`(?i)<input[^>]*\bvalue="([^"]{4,})"[^>]*\bname="([A-Za-z0-9_.\-\[\]]*(?:csrf|xsrf|token|nonce|state|viewstate|authenticity)[A-Za-z0-9_.\-\[\]]*)"`), 2, 1},
+		{regexp.MustCompile(`(?i)<input[^>]*\bname="(` + htmlStateFieldName + `)"[^>]*\bvalue="([^"]{4,})"`), 1, 2},
+		{regexp.MustCompile(`(?i)<input[^>]*\bvalue="([^"]{4,})"[^>]*\bname="(` + htmlStateFieldName + `)"`), 2, 1},
 	}
 	nonWordCorrelationChars = regexp.MustCompile(`[^a-z0-9]+`)
 	// ASP.NET WebForms hidden state fields (__VIEWSTATE, __EVENTVALIDATION, …).
@@ -247,15 +247,10 @@ scan:
 				break scan
 			}
 			checkedValues[candidate.Value] = true
-			usedIn := make([]int, 0)
-			for later := index + 1; later < len(observations); later++ {
-				if chargeSearch(requests.SearchBytes(later)) != nil {
-					truncated = true
-					break scan
-				}
-				if requests.Contains(later, candidate.Value) {
-					usedIn = append(usedIn, observations[later].ID)
-				}
+			usedIn, err := requests.UsedAfter(index, candidate.Value, chargeSearch)
+			if err != nil {
+				truncated = true
+				break scan
 			}
 			if len(usedIn) == 0 {
 				continue
@@ -1955,6 +1950,14 @@ func classifyJSONKey(key string) (string, float64) {
 	}
 }
 
+// htmlStateFieldName matches the names of form fields that carry server
+// state a later request must echo: anti-forgery and state tokens, session
+// ids, and the exact names Salesforce's auto-submitted session hand-off pages
+// use (frontdoor.jsp posts sid and lm to contentDoor; visualforce/session
+// posts sid to recsession). One alternation keeps each field to one match,
+// so its extractor ordinal counts real occurrences only.
+const htmlStateFieldName = `[A-Za-z0-9_.\-\[\]]*(?:csrf|xsrf|token|nonce|state|viewstate|authenticity|session)[A-Za-z0-9_.\-\[\]]*|sid|lm`
+
 func htmlInputCandidates(body string) []Candidate {
 	if !strings.Contains(body, "<") || !strings.Contains(correlationLiteralFold(body), "<input") {
 		return nil
@@ -2005,6 +2008,12 @@ func htmlInputCorrelationRule(field string) (string, float64, string) {
 	lower := strings.ToLower(strings.TrimSpace(field))
 	if strings.Contains(lower, "visualforce.viewstate") {
 		return RuleSalesforceViewState, 0.94, "Salesforce Visualforce ViewState hidden field"
+	}
+	switch {
+	case lower == "sid", strings.Contains(lower, "session"):
+		return RuleHTMLHiddenToken, 0.9, "Hidden form field " + field + " (session id)"
+	case lower == "lm":
+		return RuleHTMLHiddenToken, 0.9, "Hidden form field " + field + " (session hand-off state)"
 	}
 	return RuleHTMLHiddenToken, 0.9, "Hidden form field " + field + " (anti-CSRF/state token)"
 }

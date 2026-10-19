@@ -3,6 +3,7 @@ package scrub
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -216,4 +217,23 @@ func truncateStructuredString(value string, limit int) string {
 		value = value[:len(value)-1]
 	}
 	return value
+}
+
+// publicCacheKeyParams are query parameters whose values are public content
+// hashes, not credentials: Salesforce Aura's application and component-
+// definition cache keys (/auraCmpDef?_au=4385_ZsFss-efN4RuL6razjopzA), served
+// identically to every user of an org. They are long mixed-case base64url
+// runs, so the credential-shape heuristic would otherwise flag every one.
+var publicCacheKeyParams = map[string]bool{"_au": true, "_uid": true}
+
+// auraCacheKeyValue is the exact shape of an Aura cache key: a numeric
+// version, an underscore and a 22-character base64url hash.
+var auraCacheKeyValue = regexp.MustCompile(`^[0-9]{1,10}_[A-Za-z0-9_-]{22}$`)
+
+// PublicCacheKey reports whether a query parameter holds a public cache key
+// the credential-shape heuristic must leave alone: an Aura cache-key name with
+// a value of exactly that shape. Anything else under those names (a JWT, an
+// e-mail address) is judged as usual, and SensitiveName always wins.
+func PublicCacheKey(name, value string) bool {
+	return publicCacheKeyParams[strings.TrimSpace(name)] && !SensitiveName(name) && auraCacheKeyValue.MatchString(value)
 }
