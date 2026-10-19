@@ -27,7 +27,7 @@ async function cartTarget() {
 /** Selects `text` in the replayed response, as a reader would with the mouse. */
 async function selectInResponse(page: Page, text: string) {
   const found = await page.evaluate(wanted => {
-    const area = document.querySelector('.response-selection > div:not([class])')
+    const area = document.querySelector('.response-selection-content')
     if (!area) return false
     const walker = document.createTreeWalker(area, NodeFilter.SHOW_TEXT)
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
