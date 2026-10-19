@@ -197,7 +197,9 @@ func (s *AwsSecretsManagerStore) write(ctx context.Context, projectID, name, val
 	if err != nil {
 		return Metadata{}, err
 	}
-	now := time.Now().UTC()
+	// The metadata record stores this value, and the dashboard compares the
+	// returned metadata with the listed one; PostgreSQL keeps microseconds.
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	return Metadata{
 		ProjectID: projectID,
 		Name:      name,

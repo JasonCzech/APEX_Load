@@ -163,7 +163,7 @@ func (s *SQLiteStore) CreateExecutionTarget(target *ExecutionTarget) error {
 	if err := validateExecutionTargetReferences(tx, target); err != nil {
 		return err
 	}
-	now := time.Now()
+	now := localVersionTimestamp()
 	if target.CreatedAt.IsZero() {
 		target.CreatedAt = now
 	}
@@ -258,7 +258,7 @@ func (s *SQLiteStore) UpdateExecutionTargetIfUnchanged(target *ExecutionTarget, 
 	if err := validateExecutionTargetReferences(tx, target); err != nil {
 		return false, err
 	}
-	target.UpdatedAt = time.Now()
+	target.UpdatedAt = localVersionTimestamp()
 	result, err := tx.Exec(`UPDATE execution_targets SET name = ?, description = ?, kind = ?,
 		cloud_connection_id = ?, cluster_connection_id = ?, region = ?, connectivity_mode = ?,
 		standing_owner = ?, burst_owner = ?, archive_mode = ?, reverse_token_hash = ?, reverse_token_expires_at = ?,

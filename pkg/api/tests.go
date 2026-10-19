@@ -1423,6 +1423,12 @@ func archiveRunTimestamp(at time.Time, metadataStore any) time.Time {
 	return at
 }
 
+// atMicrosecond drops t's sub-microsecond digits, which PostgreSQL does not
+// store, and keeps its monotonic reading, which Truncate would drop.
+func atMicrosecond(t time.Time) time.Time {
+	return t.Add(-time.Duration(t.Nanosecond() % int(time.Microsecond)))
+}
+
 func cloneRunArchiveRecord(record *storage.RunArchiveRecord) *storage.RunArchiveRecord {
 	if record == nil {
 		return nil

@@ -127,7 +127,9 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid project placement: "+err.Error())
 		return
 	}
-	now := time.Now()
+	// Projects are stored at microseconds, and the dashboard compares the
+	// created project with the listed one.
+	now := time.Now().Truncate(time.Microsecond)
 	project := &storage.Project{ID: uuid.New().String(), DomainID: domainID, CategoryID: categoryID, Name: strings.TrimSpace(req.Name), Settings: req.Settings, CreatedAt: now, UpdatedAt: now}
 	projectCreator, supportsAtomicHierarchy := s.store.(interface {
 		CreateProjectWithLegacyHierarchy(project *storage.Project) error

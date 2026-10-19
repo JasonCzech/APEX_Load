@@ -540,9 +540,9 @@ func (s *SQLiteStore) SaveApplication(application *Application) error {
 		return errors.New("application name is required")
 	}
 	if application.CreatedAt.IsZero() {
-		application.CreatedAt = time.Now()
+		application.CreatedAt = localVersionTimestamp()
 	}
-	application.UpdatedAt = time.Now()
+	application.UpdatedAt = localVersionTimestamp()
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -670,7 +670,7 @@ func (s *SQLiteStore) UpdateApplicationIfUnchanged(application *Application, exp
 		return false, nil
 	}
 	application.ProjectID = normalizeProjectID(currentProjectID)
-	application.UpdatedAt = time.Now()
+	application.UpdatedAt = localVersionTimestamp()
 	result, err := tx.Exec(`UPDATE applications SET name = ?, updated_at = ? WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, application.Name, application.UpdatedAt, application.ID, currentUpdatedRaw)
 	if err != nil {
 		return false, err
@@ -815,9 +815,9 @@ func (s *SQLiteStore) SaveRelease(release *Release) error {
 		return errors.New("release name is required")
 	}
 	if release.CreatedAt.IsZero() {
-		release.CreatedAt = time.Now()
+		release.CreatedAt = localVersionTimestamp()
 	}
-	release.UpdatedAt = time.Now()
+	release.UpdatedAt = localVersionTimestamp()
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -925,7 +925,7 @@ func (s *SQLiteStore) UpdateReleaseIfUnchanged(release *Release, expectedUpdated
 	release.ProjectID = normalizeProjectID(currentProjectID)
 	release.ID = currentID
 	release.GroupID = groupID
-	release.UpdatedAt = time.Now()
+	release.UpdatedAt = localVersionTimestamp()
 	result, err := tx.Exec(`UPDATE releases SET name = ?, updated_at = ?
 		WHERE COALESCE(NULLIF(group_id, ''), id) = ? AND project_id = ?
 		AND EXISTS (SELECT 1 FROM releases current WHERE current.id = ? AND CAST(current.updated_at AS TEXT) = ?)`,
@@ -1122,9 +1122,12 @@ func (s *SQLiteStore) CreateProjectReleaseFamily(projectID, name, preferredAppli
 	if name == "" {
 		return nil, errors.New("release name is required")
 	}
+	// Every row this inserts is new, and the version it returns is sent back
+	// with the next edit, so it takes the stored precision.
 	if createdAt.IsZero() {
 		createdAt = time.Now()
 	}
+	createdAt = createdAt.Truncate(time.Microsecond)
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
@@ -1348,9 +1351,9 @@ func (s *SQLiteStore) saveProject(project *Project, provisionLegacyHierarchy boo
 	project.DomainID = normalizeDomainID(project.DomainID)
 	project.CategoryID = normalizeRepositoryCategoryID(project.CategoryID)
 	if project.CreatedAt.IsZero() {
-		project.CreatedAt = time.Now()
+		project.CreatedAt = localVersionTimestamp()
 	}
-	project.UpdatedAt = time.Now()
+	project.UpdatedAt = localVersionTimestamp()
 	settingsJSON, err := json.Marshal(project.Settings)
 	if err != nil {
 		return fmt.Errorf("marshal project settings: %w", err)
@@ -1415,7 +1418,7 @@ func (s *SQLiteStore) UpdateProjectIfUnchanged(project *Project, expectedUpdated
 	if !currentUpdatedAt.Equal(expectedUpdatedAt) {
 		return false, nil
 	}
-	project.UpdatedAt = time.Now()
+	project.UpdatedAt = localVersionTimestamp()
 	result, err := tx.Exec(`UPDATE projects SET domain_id = ?, category_id = ?, name = ?, settings_json = ?, updated_at = ?
 		WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, project.DomainID, project.CategoryID, project.Name, string(settingsJSON), project.UpdatedAt, project.ID, currentUpdatedRaw)
 	if err != nil {

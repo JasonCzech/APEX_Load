@@ -135,7 +135,7 @@ func (s *SQLiteStore) UpsertDomainDeploymentTargetIfUnchanged(target *DomainDepl
 			// deleted). Refuse rather than resurrect it under stale intent.
 			return false, nil
 		}
-		now := time.Now()
+		now := localVersionTimestamp()
 		target.CreatedAt, target.UpdatedAt = now, now
 		if _, err := tx.Exec(`INSERT INTO domain_deployment_targets (
 				domain_id, provider, default_cluster_id, default_execution_target_id, updated_by_subject, created_at, updated_at)
@@ -155,7 +155,7 @@ func (s *SQLiteStore) UpsertDomainDeploymentTargetIfUnchanged(target *DomainDepl
 	if expectedUpdatedAt.IsZero() || !currentUpdatedAt.Equal(expectedUpdatedAt) {
 		return false, nil
 	}
-	target.UpdatedAt = time.Now()
+	target.UpdatedAt = localVersionTimestamp()
 	result, err := tx.Exec(`UPDATE domain_deployment_targets SET
 			provider = ?, default_cluster_id = ?, default_execution_target_id = ?, updated_by_subject = ?, updated_at = ?
 		WHERE domain_id = ? AND CAST(updated_at AS TEXT) = ?`,

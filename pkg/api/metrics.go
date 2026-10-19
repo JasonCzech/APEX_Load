@@ -525,10 +525,9 @@ func capacityDemandByRegion(test *ManagedTest) map[string]int {
 func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, artifacts *runArtifacts, installGuards ...func() bool) bool {
 	// The point is one interval, identified by its time in the runner's
 	// history, the stored history and the archive. PostgreSQL keeps
-	// microseconds, so every copy takes that precision. Subtracting the
-	// remainder, unlike Truncate, keeps the monotonic reading that early-stop
-	// windows measure elapsed time with.
-	live.Timestamp = live.Timestamp.Add(-time.Duration(live.Timestamp.Nanosecond() % int(time.Microsecond)))
+	// microseconds, so every copy takes that precision; early-stop windows
+	// measure elapsed time from it on the monotonic clock.
+	live.Timestamp = atMicrosecond(live.Timestamp)
 	now := time.Now()
 	hubStats := HubStats{}
 	if tr.hub != nil {

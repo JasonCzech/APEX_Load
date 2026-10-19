@@ -42,6 +42,24 @@ func TestPublishedLivePointKeepsMonotonicClock(t *testing.T) {
 	}
 }
 
+// Scenario schedules build their runs directly, so the builder stamps the
+// run's creation time at the stored precision too.
+func TestScheduledRunCreationTimeIsStoredPrecision(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	storePreflightScript(runner, "precision-schedule-script", storage.DefaultProjectID)
+	req := CreateTestRequest{Name: "scheduled", ScriptID: "precision-schedule-script", VUsers: 1, Duration: "1m"}
+	req.projectQuotaEvidence = runner.loadCreateTestProjectQuotaEvidence(req)
+	runner.mu.Lock()
+	run, err := runner.buildManagedTestLocked(req, "precision-scheduled-run", "QUEUED")
+	runner.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.CreatedAt.Nanosecond()%int(time.Microsecond) != 0 || run.CreatedAt == run.CreatedAt.Round(0) {
+		t.Fatalf("scheduled run created at %s: want microseconds with the monotonic reading kept", run.CreatedAt.Format(time.RFC3339Nano))
+	}
+}
+
 func exerciseCreatedAtPrecisionAPI(t *testing.T, server *Server, store *storage.SQLiteStore) {
 	t.Run("direct_import_recording_binding", func(t *testing.T) {
 		script := libraryTestScript("dddddddd-dddd-4ddd-8ddd-dddddddddddd", "precision import", storage.DefaultProjectID, "/precision")
@@ -115,6 +133,28 @@ func exerciseCreatedAtPrecisionAPI(t *testing.T, server *Server, store *storage.
 		}
 		if err := server.ensureArchiveCleanupIntent(reread); err != nil {
 			t.Fatalf("cleanup intent for the stored record: %v", err)
+		}
+	})
+	t.Run("run_created_at", func(t *testing.T) {
+		// HA followers read a run back from PostgreSQL, and the Command Center
+		// identifies a queued run by its created_at text on every read.
+		storePreflightScript(server.runner, "precision-run-script", storage.DefaultProjectID)
+		run, err := server.runner.CreateTest(CreateTestRequest{Name: "precision run", ScriptID: "precision-run-script", VUsers: 1, Duration: "1m"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			server.runner.mu.Lock()
+			delete(server.runner.tests, run.ID)
+			server.runner.mu.Unlock()
+		})
+		record, err := store.GetTest(run.ID)
+		if err != nil || record == nil {
+			t.Fatalf("read the run back = %+v, %v", record, err)
+		}
+		requireAPIStoredTimestamp(t, "run created_at", run.CreatedAt, record.StartTime)
+		if run.CreatedAt == run.CreatedAt.Round(0) {
+			t.Error("the run's creation time lost its monotonic clock reading")
 		}
 	})
 	t.Run("published_live_point", func(t *testing.T) {

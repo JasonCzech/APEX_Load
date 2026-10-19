@@ -65,7 +65,7 @@ func (s *SQLiteStore) CreateCloudConnection(connection *CloudConnection) error {
 	if err := connection.Validate(); err != nil {
 		return err
 	}
-	now := time.Now()
+	now := localVersionTimestamp()
 	if connection.CreatedAt.IsZero() {
 		connection.CreatedAt = now
 	}
@@ -144,7 +144,7 @@ func (s *SQLiteStore) UpdateCloudConnectionIfUnchanged(connection *CloudConnecti
 			return false, ErrCloudConnectionScopeImmutable
 		}
 	}
-	connection.UpdatedAt = time.Now()
+	connection.UpdatedAt = localVersionTimestamp()
 	result, err := tx.Exec(`UPDATE cloud_connections SET name = ?, description = ?, provider = ?, auth_mode = ?,
 		azure_cloud = ?, azure_tenant_id = ?, azure_subscription_id = ?, azure_resource_group = ?, azure_client_id = ?,
 		aws_partition = ?, aws_account_id = ?, aws_region = ?, aws_access_key_id = ?, aws_role_arn = ?,

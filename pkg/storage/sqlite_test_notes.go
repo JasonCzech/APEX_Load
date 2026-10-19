@@ -13,10 +13,10 @@ func (s *SQLiteStore) CreateTestNote(note *TestNote) error {
 	if note == nil {
 		return errors.New("test note is nil")
 	}
-	now := time.Now().UTC()
-	if note.CreatedAt.IsZero() {
-		note.CreatedAt = now
-	}
+	// The row is new, so the caller's stamps take the stored precision: a
+	// later edit sends this updated_at back as the version it expects.
+	note.CreatedAt = newRowTimestamp(note.CreatedAt)
+	note.UpdatedAt = note.UpdatedAt.Truncate(time.Microsecond)
 	if note.UpdatedAt.IsZero() {
 		note.UpdatedAt = note.CreatedAt
 	}
@@ -37,10 +37,10 @@ func (s *SQLiteStore) CreateTestNoteAndArchiveRefresh(note *TestNote) error {
 	if note == nil {
 		return errors.New("test note is nil")
 	}
-	now := time.Now().UTC()
-	if note.CreatedAt.IsZero() {
-		note.CreatedAt = now
-	}
+	// The row is new, so the caller's stamps take the stored precision: a
+	// later edit sends this updated_at back as the version it expects.
+	note.CreatedAt = newRowTimestamp(note.CreatedAt)
+	note.UpdatedAt = note.UpdatedAt.Truncate(time.Microsecond)
 	if note.UpdatedAt.IsZero() {
 		note.UpdatedAt = note.CreatedAt
 	}

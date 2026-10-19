@@ -56,7 +56,7 @@ func (s *Server) handleCreateApplication(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "application name is required")
 		return
 	}
-	application := &storage.Application{ID: uuid.New().String(), ProjectID: normalizeProjectID(req.ProjectID), Name: strings.TrimSpace(req.Name), CreatedAt: time.Now()}
+	application := &storage.Application{ID: uuid.New().String(), ProjectID: normalizeProjectID(req.ProjectID), Name: strings.TrimSpace(req.Name), CreatedAt: time.Now().Truncate(time.Microsecond)}
 	if err := s.store.SaveApplication(application); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

@@ -55,6 +55,14 @@ func versionTimestamp() time.Time {
 	return time.Now().UTC().Truncate(time.Microsecond)
 }
 
+// localVersionTimestamp is versionTimestamp in the local zone, for stores
+// that have always stamped local times. SQLite keeps a timestamp as text with
+// its zone and orders rows by that text, so a store keeps one zone for all of
+// its rows.
+func localVersionTimestamp() time.Time {
+	return time.Now().Truncate(time.Microsecond)
+}
+
 // newRowTimestamp is the created_at an insert of a new row stores: the
 // caller's value at versionTimestamp's precision, or a fresh stamp. Only an
 // insert may do this. A row that already exists can still hold nanoseconds in
