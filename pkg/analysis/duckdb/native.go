@@ -220,14 +220,20 @@ func (e *Engine) childNativePreview(ctx context.Context, path string) (Preview, 
 
 func timestampExpression(mapping Mapping) string {
 	c := column(mapping.Timestamp)
+	// A suffix alone can mistake a date's -DD for an hour offset. Require
+	// a clock component followed by Z or an explicit ISO numeric offset.
+	// The cast still validates dates, ranges and the actual offset value.
+	offsetText := "regexp_matches(trim(try_cast(" + c + " AS VARCHAR)), '[Tt ][0-9]{2}:[0-9]{2}(:[0-9]{2}([.][0-9]+)?)?[[:space:]]*([zZ]|[+-][0-9]{2}(:?[0-9]{2})?)$')"
 	if mapping.TimestampEncoding == "timestamp_offset" {
-		return "try_cast(" + c + " AS TIMESTAMPTZ)"
+		// DuckDB otherwise supplies the session timezone to offset-free
+		// text, DATE and TIMESTAMP values, inventing an absolute instant.
+		return "CASE WHEN typeof(" + c + ")='TIMESTAMP WITH TIME ZONE' OR " + offsetText + " THEN try_cast(" + c + " AS TIMESTAMPTZ) ELSE NULL END"
 	}
 	if mapping.TimestampEncoding == "timestamp" {
 		// Offset-aware columns retain their absolute instant. Text with an
 		// explicit offset requires the corresponding mapping rather than
 		// silently dropping its offset during a TIMESTAMP cast.
-		return "CASE WHEN typeof(" + c + ")='TIMESTAMP WITH TIME ZONE' THEN try_cast(" + c + " AS TIMESTAMPTZ) WHEN regexp_matches(try_cast(" + c + " AS VARCHAR), '(Z|[+-][0-9]{2}:?[0-9]{2})$') THEN NULL ELSE try_cast(" + c + " AS TIMESTAMP) AT TIME ZONE " + literal(mapping.Timezone) + " END"
+		return "CASE WHEN typeof(" + c + ")='TIMESTAMP WITH TIME ZONE' THEN try_cast(" + c + " AS TIMESTAMPTZ) WHEN " + offsetText + " THEN NULL ELSE try_cast(" + c + " AS TIMESTAMP) AT TIME ZONE " + literal(mapping.Timezone) + " END"
 	}
 	scale := map[string]string{"unix_s": "1", "unix_ms": "1000", "unix_us": "1000000", "unix_ns": "1000000000"}[mapping.TimestampEncoding]
 	return "TRY(to_timestamp(try_cast(" + c + " AS DOUBLE)/" + scale + "))"

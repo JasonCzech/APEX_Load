@@ -29,6 +29,8 @@ The themed reports preserve the original narrative of each consolidated review, 
 
 Completion here applies only to the reviewed slice. Outstanding provider, platform, scale and parent-feature gates are retained inside each report and linked from the [roadmap](../../ROADMAP.md). Consolidation does not mark those gates passed. Evidence directories and non-Markdown artifacts remain unchanged.
 
+[Native timestamp source offsets — 2026-10-19](roadmap-analytics-timestamp-offsets-2026-10-19/README.md) records explicit source-offset validation, per-row DST fixtures, rejection provenance and source non-mutation.
+
 [Java HTTP body conversion — 2026-10-19](roadmap-java-body-conversion-2026-10-19/README.md) records single conversion, independent endpoint bytes, compression and replay-provenance regression evidence.
 
 [Monotonic browser timing — 2026-10-19](roadmap-monotonic-browser-timing-2026-10-19/README.md) records local receipt identity, monotonic callback timing and visibility/session regression evidence; visible-presentation qualification remains open.

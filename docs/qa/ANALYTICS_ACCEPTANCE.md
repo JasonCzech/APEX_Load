@@ -10,6 +10,10 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 |  | `TestDecodeParquetMappingDefinitionRejectsUnsupportedAmbiguousAndMalformedFields` (`pkg/analysis/parquet_mapping_decode_test.go`) | Default build |
 | Decimals | `TestNativeAcceptanceDecimalValues` (`pkg/analysis/duckdb/native_acceptance_golden_test.go`) | DuckDB build |
 | Timezones and DST | `TestNativeSummaryWallTimeWindowsAcrossDaylightSaving` (`pkg/analysis/duckdb/native_summary_test.go`) | DuckDB build |
+|  | `TestNativeAbsoluteTimestampRequiresSourceOffset` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
+|  | `TestNativeTimestampUsesEachRowsTimezoneOffset` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
+|  | `TestNativeLocalTimestampRejectsShortOffsetText` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
+|  | `TestNativeAbsoluteTimestampRejectsNaiveTypedColumns` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
 | Nulls | `TestNativeRejectionProvenanceAndNullBuckets` (`pkg/analysis/duckdb/native_test.go`) | DuckDB build |
 |  | `TestNativeSummaryPartialWindowsDuplicatesNullsAndMissingCounts` (`pkg/analysis/duckdb/native_summary_test.go`) | DuckDB build |
 | Malformed files and rows | `TestNativeHistogramRejectsMalformedRowsWithProvenance` (`pkg/analysis/duckdb/native_histogram_test.go`) | DuckDB build |
@@ -35,6 +39,7 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 |  | `TestAnalysisHistogramImportCommitQueryReconcile` (`pkg/api/analysis_histogram_native_test.go`) | DuckDB build |
 |  | `TestNativeReconciliationPinsStoreAtRealServerConstruction` (`pkg/api/analysis_reconciliation_test.go`) | Default build |
 | Source non-mutation | `TestNativeAcceptanceMappingLayoutsAgree` (`pkg/analysis/duckdb/native_acceptance_golden_test.go`) | DuckDB build |
+|  | `TestNativeAbsoluteTimestampRequiresSourceOffset` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
 | Cross-project denial | `TestAnalysisSavedMappingsProjectIsolationAndRevision` (`pkg/api/analysis_queries_test.go`) | Default build |
 |  | `TestAnalysisComparisonBoundsAndForeignRun` (`pkg/api/analysis_queries_test.go`) | Default build |
 |  | `TestAnalysisUploadCursorRefusesForeignReturnedImportIdentity` (`pkg/api/analysis_upload_reconciliation_test.go`) | Default build |

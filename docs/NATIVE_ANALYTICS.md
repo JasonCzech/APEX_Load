@@ -43,6 +43,17 @@ Rejected measurements fail publication by default. Explicitly accepting them ret
 Mappings distinguish gauges, counters, raw transaction observations and summary
 values. Timestamp mappings require an explicit timezone and encoding. Offset
 text requires `timestamp_offset`; local wall timestamps use `timestamp`.
+The absolute-time mapping accepts a timezone-aware Parquet timestamp or text
+with an explicit `Z`/numeric offset (`±HH`, `±HHMM` or `±HH:MM`) after its
+clock component. Offset-free text, DATE and naive TIMESTAMP columns are
+rejected rather than assigned the worker's timezone. Use a local-wall mapping
+with the source timezone for those values. Local-wall mappings refuse offset
+text, including short offsets, rather than discard its offset. Conversion uses
+each row's source instant; one file may cross a daylight-saving transition.
+This tightening applies to new normalization; retained canonical artifacts
+and historical query results are not rewritten. Ambiguous/nonexistent local
+wall times still require further qualification; an explicit source offset
+avoids choosing between repeated local times.
 Units are normalized before comparison. Saved mappings retain immutable
 revisions, and imports record the selected revision when one is used.
 Mapping version 2 preserves source, host, service and exact bounded dimensions.
