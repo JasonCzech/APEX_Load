@@ -2244,6 +2244,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_appdynamics_quota_expiry ON appdynamics_quota_leases(resource_key,expires_at)`, "idx_appdynamics_quota_expiry"},
 	{`CREATE INDEX IF NOT EXISTS idx_object_activity_scope_time ON object_activity_events(project_id,created_at,id)`, "idx_object_activity_scope_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_object_activity_resource_time ON object_activity_events(project_id,resource_type,resource_id,created_at)`, "idx_object_activity_resource_time"},
+	{`CREATE INDEX IF NOT EXISTS idx_object_activity_summary ON object_activity_events(project_id,resource_type,resource_id,action,status,created_at)`, "idx_object_activity_summary"},
 	{`CREATE INDEX IF NOT EXISTS idx_preparations_test ON preparations(test_id, expires_at)`, "idx_preparations_test"},
 	{`CREATE INDEX IF NOT EXISTS idx_analysis_upload_cursor ON analysis_upload_writers(project_id,import_id,file_id,chunk_offset)`, "idx_analysis_upload_cursor"},
 	{`CREATE INDEX IF NOT EXISTS idx_analysis_attempt_project_import ON analysis_attempt_journal(project_id,import_id)`, "idx_analysis_attempt_project_import"},
