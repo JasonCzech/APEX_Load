@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/testlog"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -1589,9 +1590,7 @@ func TestVUser_Run_LogsExtendedOptions(t *testing.T) {
 	}}
 
 	var logBuf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	defer slog.SetDefault(prev)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	vu := &VUser{
 		ID:    1,
@@ -1786,9 +1785,7 @@ func TestVUser_Run_HTTPSequenceContinueOnErrorRunsRemainingChildren(t *testing.T
 func TestVUser_Run_HTTPSequenceScrubsAdapterErrorBeforeTransactionSinks(t *testing.T) {
 	const secret = "http-sequence-runtime-secret"
 	var logBuffer bytes.Buffer
-	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	defer slog.SetDefault(previousLogger)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	protoStub := &sequenceProtocol{executeError: secret}
 	sink := &sequenceCaptureSink{}
@@ -1859,9 +1856,7 @@ func TestVUser_Run_RedactsSecretValuesFromLogs(t *testing.T) {
 	}}
 
 	var logBuf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	defer slog.SetDefault(prev)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	vu := &VUser{
 		ID:    1,
@@ -1901,9 +1896,7 @@ func TestVUser_Run_RedactsExtractedSecretValuesFromLogs(t *testing.T) {
 	protoStub := &sequenceProtocol{}
 
 	var logBuf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	defer slog.SetDefault(prev)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	vu := &VUser{
 		ID:    1,
@@ -1993,9 +1986,7 @@ func TestVUser_Run_ErrorMessageActionHonorsDisabledLogging(t *testing.T) {
 	}}
 
 	var logBuf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	defer slog.SetDefault(prev)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	vu := &VUser{
 		ID:        7,

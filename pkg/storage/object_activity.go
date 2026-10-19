@@ -120,7 +120,7 @@ func (s *SQLiteStore) ListObjectActivity(f ObjectActivityFilter) ([]*ObjectActiv
 		f.Offset = 0
 	}
 	args = append(args, f.Limit, f.Offset)
-	rows, err := s.db.Query(`SELECT payload,COALESCE((SELECT action FROM object_activity_events latest WHERE latest.project_id=object_activity_events.project_id AND latest.resource_type=object_activity_events.resource_type AND latest.resource_id=object_activity_events.resource_id AND latest.status='success' AND latest.action IN ('create','delete') ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1),'') FROM object_activity_events`+where+` ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`, args...)
+	rows, err := s.db.Query(`SELECT payload,COALESCE((SELECT action FROM object_activity_events latest WHERE latest.project_id=object_activity_events.project_id AND latest.resource_type=object_activity_events.resource_type AND latest.resource_id=object_activity_events.resource_id AND latest.status='success' AND latest.action IN ('create','delete') ORDER BY `+s.db.dialect.newestFirst("latest.")+` LIMIT 1),'') FROM object_activity_events`+where+` ORDER BY `+s.db.dialect.newestFirst("")+` LIMIT ? OFFSET ?`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,14 @@ func (s *SQLiteStore) ListObjectActivity(f ObjectActivityFilter) ([]*ObjectActiv
 	return events, rows.Err()
 }
 
-// Window queries return at most three rows per object, regardless of history size.
+// Window queries return at most three rows per object, regardless of history
+// size. Only activity since the object's latest successful create counts, so a
+// reused ID does not inherit its previous incarnation's history, ties included.
+// A row that ties with that create but was inserted before it, such as, on
+// SQLite, a copy an earlier release's backfill wrote newest first or, on
+// PostgreSQL, a row from before insert_seq tied with a create made after it,
+// now counts as older than the create and drops out. Between two PostgreSQL rows from before
+// insert_seq the ID decides, as it does in the list.
 func (s *SQLiteStore) ObjectActivitySummaries(projectID, kind string, ids []string) (map[string]ObjectActivitySummary, error) {
 	result := map[string]ObjectActivitySummary{}
 	if len(ids) == 0 {
@@ -154,7 +161,7 @@ func (s *SQLiteStore) ObjectActivitySummaries(projectID, kind string, ids []stri
 			end = len(ids)
 		}
 		where, args := objectActivityWhere(ObjectActivityFilter{ProjectID: projectID, ResourceType: kind, ResourceIDs: ids[start:end]})
-		rows, err := s.db.Query(`SELECT payload,category FROM (SELECT payload,resource_id,CASE WHEN action='create' THEN 'creator' WHEN action IN ('archive','restore') THEN 'archive' ELSE 'modifier' END AS category,ROW_NUMBER() OVER(PARTITION BY resource_id,CASE WHEN action='create' THEN 'creator' WHEN action IN ('archive','restore') THEN 'archive' ELSE 'modifier' END ORDER BY created_at DESC,id DESC) AS rank FROM object_activity_events`+where+` AND status IN ('success','accepted','pending','started') AND action IN ('create','modify','move','archive','restore','start','stop','abort','pause','resume') AND created_at>=COALESCE((SELECT MAX(c.created_at) FROM object_activity_events c WHERE c.project_id=object_activity_events.project_id AND c.resource_type=object_activity_events.resource_type AND c.resource_id=object_activity_events.resource_id AND c.action='create' AND c.status='success'),created_at) ) ranked WHERE rank=1`, args...)
+		rows, err := s.db.Query(`SELECT payload,category FROM (SELECT payload,resource_id,CASE WHEN action='create' THEN 'creator' WHEN action IN ('archive','restore') THEN 'archive' ELSE 'modifier' END AS category,ROW_NUMBER() OVER(PARTITION BY resource_id,CASE WHEN action='create' THEN 'creator' WHEN action IN ('archive','restore') THEN 'archive' ELSE 'modifier' END ORDER BY `+s.db.dialect.newestFirst("")+`) AS rank FROM object_activity_events`+where+` AND status IN ('success','accepted','pending','started') AND action IN ('create','modify','move','archive','restore','start','stop','abort','pause','resume') AND NOT EXISTS (SELECT 1 FROM object_activity_events c WHERE c.project_id=object_activity_events.project_id AND c.resource_type=object_activity_events.resource_type AND c.resource_id=object_activity_events.resource_id AND c.action='create' AND c.status='success' AND `+s.db.dialect.newerThan("c.", "object_activity_events.")+`) ) ranked WHERE rank=1`, args...)
 		if err != nil {
 			return nil, err
 		}

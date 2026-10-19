@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/testlog"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/recordbridge"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -649,9 +650,7 @@ func TestWriteBrowserReplayStartErrorExplainsTheCause(t *testing.T) {
 	}
 
 	logs := &lockedBuffer{}
-	original := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(original) })
+	testlog.SetDefault(t, slog.New(slog.NewJSONHandler(logs, nil)))
 	failed := httptest.NewRecorder()
 	writeBrowserReplayStartError(failed, errors.New("browser runtime missing"))
 	if failed.Code != http.StatusInternalServerError || strings.Contains(failed.Body.String(), "runtime missing") {

@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/internal/testlog"
 )
 
 // lockedBuffer lets a test capture the process-wide default logger while
@@ -338,9 +340,7 @@ func TestErrorReferenceForUsesStampedRequestID(t *testing.T) {
 // covered, not just the middleware in isolation.
 func TestAPIRoutesStampRequestIDAndLogErrorReason(t *testing.T) {
 	logs := &lockedBuffer{}
-	original := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(original) })
+	testlog.SetDefault(t, slog.New(slog.NewJSONHandler(logs, nil)))
 
 	server, _ := newTimeslotServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/no-such-script", nil)
@@ -364,9 +364,7 @@ func TestAPIRoutesStampRequestIDAndLogErrorReason(t *testing.T) {
 
 func TestLogServerErrorLogsScrubbedCauseUnderStampedRef(t *testing.T) {
 	logs := &lockedBuffer{}
-	original := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(original) })
+	testlog.SetDefault(t, slog.New(slog.NewJSONHandler(logs, nil)))
 
 	const jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
 	w := httptest.NewRecorder()
@@ -438,9 +436,7 @@ func TestFailureLoggingMiddlewareSkipsSuccessfulRequests(t *testing.T) {
 	}))
 	// Routes are built before the agent's logger is set; it still applies.
 	logs := &lockedBuffer{}
-	original := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(original) })
+	testlog.SetDefault(t, slog.New(slog.NewJSONHandler(logs, nil)))
 	for _, path := range []string{"/api/v1/agent-quiet-test/status", "/api/v1/agent-quiet-test/missing"} {
 		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
 	}

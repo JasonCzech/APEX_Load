@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/testlog"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
@@ -158,9 +159,7 @@ func TestConcurrentHTTPLifecycleTeardownUsesObservedAndUnavailablePolicy(t *test
 				group := dsl.Action{Name: "Observed producer group", Type: "http_sequence", Params: map[string]any{"execution_mode": "concurrent", "requests": []dsl.Action{producer}}}
 				script := &dsl.Script{Name: "Lifecycle publication", Protocol: concurrentPublicationFixtureProtocol, Config: dsl.ScriptConfig{BaseURL: server.URL, RunLogic: dsl.RunLogicConfig{Iterations: 1}}, Actions: []dsl.Action{group}}
 				var logs bytes.Buffer
-				previous := slog.Default()
-				slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-				defer slog.SetDefault(previous)
+				testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logs, nil)))
 				var runErr error
 				switch runner {
 				case "replay":
@@ -248,9 +247,7 @@ func TestConcurrentHTTPLifecycleCapacityFailureUpdatesRetainedCallbacksAndPanic(
 	}
 	p.observed.Store(true)
 	var logs bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-	defer slog.SetDefault(previous)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logs, nil)))
 	if err := runProtocolTeardown(p, vu.resultPublicationRedactionConfig); err == nil || errors.Is(err, protocol.ErrContainmentUnproven) {
 		t.Fatal("teardown failure changed its execution/sentinel disposition")
 	}
@@ -276,9 +273,7 @@ func TestSerialHTTPIncompleteOutputBlocksRetriesFutureTrafficAndFinalDetail(t *t
 	}, Actions: []dsl.Action{{Name: "Earlier ordinary echo", Type: "GET", Target: "/ordinary"}, producer, {Name: "Following consumer", Type: "GET", Target: "/consume"}}}
 	registerConcurrentHTTPFixture()
 	var logs bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-	defer slog.SetDefault(previous)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logs, nil)))
 	var progress [][]byte
 	report, err := ReplayScript(context.Background(), script, ReplayOptions{IgnoreThinkTime: true, OnProgress: func(event ReplayProgressEvent) { data, _ := json.Marshal(event); progress = append(progress, data) }})
 	if err != nil || report.Success || !report.RuntimeEvidenceUnavailable || report.FinalVariables != nil || len(report.Events) != 3 || requests.Load() != 2 {
@@ -302,9 +297,7 @@ func TestSerialHTTPSensitiveObservationPrecedesResultLogs(t *testing.T) {
 		BaseURL: server.URL, Log: dsl.LogConfig{Level: "extended", ExtendedOptions: []string{"data_returned"}},
 	}, Actions: []dsl.Action{producer}}
 	var logs bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-	defer slog.SetDefault(previous)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logs, nil)))
 	report, err := ReplayScript(context.Background(), script, ReplayOptions{IgnoreThinkTime: true})
 	if err != nil || !report.Success || report.RuntimeEvidenceUnavailable || report.FinalVariables["access_token"] != redactedPayloadValue {
 		t.Fatal("serial valid output was not classified and retained correctly")
@@ -322,9 +315,7 @@ func TestConcurrentHTTPDiagnosticResultErrorClosesGroupAndSerialPublication(t *t
 				ordinary, producer := concurrentPublicationActions()
 				group := dsl.Action{Name: "Diagnostic error group", Type: "http_sequence", Params: map[string]any{"execution_mode": "concurrent", "max_concurrency": 1, "requests": []dsl.Action{ordinary, producer}}}
 				var logs bytes.Buffer
-				previous := slog.Default()
-				slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-				defer slog.SetDefault(previous)
+				testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logs, nil)))
 				if runner == "load" {
 					p := &concurrentPublicationHTTP{HTTP: &httpprotocol.HTTP{}}
 					if err := p.Init(context.Background(), map[string]any{"base_url": server.URL}); err != nil {

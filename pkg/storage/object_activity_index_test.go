@@ -93,12 +93,14 @@ func TestObjectActivitySummaryIndex(t *testing.T) {
 
 func checkObjectActivitySummaryIndexPlan(t *testing.T, s *SQLiteStore) {
 	t.Helper()
-	// Exercise the correlated incarnation boundary used by ObjectActivitySummaries.
+	// Exercise the correlated incarnation boundary used by ObjectActivitySummaries,
+	// with the same tie-aware newerThan predicate.
 	rows, err := s.db.Query(`EXPLAIN QUERY PLAN SELECT payload FROM object_activity_events
 		WHERE project_id=? AND resource_type=? AND resource_id=?
-		AND created_at>=COALESCE((SELECT MAX(c.created_at) FROM object_activity_events c
+		AND NOT EXISTS (SELECT 1 FROM object_activity_events c
 		WHERE c.project_id=object_activity_events.project_id AND c.resource_type=object_activity_events.resource_type
-		AND c.resource_id=object_activity_events.resource_id AND c.action='create' AND c.status='success'),created_at)`, DefaultProjectID, "script", "indexed-script")
+		AND c.resource_id=object_activity_events.resource_id AND c.action='create' AND c.status='success'
+		AND `+s.db.dialect.newerThan("c.", "object_activity_events.")+`)`, DefaultProjectID, "script", "indexed-script")
 	if err != nil {
 		t.Fatal(err)
 	}

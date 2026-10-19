@@ -20,6 +20,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/collectoragent"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/internal/testlog"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 	"github.com/jasonczech/apexload/pkg/secretstore"
@@ -161,9 +162,7 @@ func TestPrometheusDirectSelectedInspectionHonorsOperationDeadline(t *testing.T)
 func TestPrometheusCredentialsNeverUseDevelopmentPlaceholdersOrDiscloseReferences(t *testing.T) {
 	t.Setenv(devFakeSecretsEnv, "1")
 	var logs bytes.Buffer
-	original := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(original) })
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logs, nil)))
 	for _, providerError := range []error{secretstore.ErrNotFound, errors.New("PRIVATE_PROM_REFERENCE credential-do-not-log provider failure")} {
 		runner := &TestRunner{projectSecretStore: &devSecretStore{err: providerError}}
 		credentials, err := resolvePrometheusCredentials(context.Background(), runner.prometheusSecretResolverForProject("private-project"), &storage.PrometheusConnectionSnapshot{TokenSecretName: "PRIVATE_PROM_REFERENCE"})

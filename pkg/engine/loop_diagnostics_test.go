@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/testlog"
 )
 
 func TestWarnLoopTruncation_DedupesPerKey(t *testing.T) {
@@ -26,9 +27,7 @@ func TestControlLoop_FixedCountRunsFully(t *testing.T) {
 	// Route the VUser's default-backed logger into a buffer so we can assert the
 	// warning fires from the real Run path.
 	var buf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	defer slog.SetDefault(prev)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
 	proto := &captureProtocol{}
 	// A unique action name keeps the process-wide dedup key fresh for this test.
@@ -53,9 +52,7 @@ func TestControlLoop_FixedCountRunsFully(t *testing.T) {
 
 func TestControlLoop_ConditionSafetyCapWarns(t *testing.T) {
 	var buf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	defer slog.SetDefault(prev)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
 	proto := &captureProtocol{}
 	loop := dsl.Action{
@@ -80,9 +77,7 @@ func TestControlLoop_ConditionSafetyCapWarns(t *testing.T) {
 func TestControlLoop_ExplicitMaxIterationsNoWarn(t *testing.T) {
 	// When max_iterations is set, the bound is intentional — no truncation warning.
 	var buf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	defer slog.SetDefault(prev)
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
 	proto := &captureProtocol{}
 	loop := dsl.Action{

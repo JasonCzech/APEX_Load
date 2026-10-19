@@ -3,25 +3,25 @@ package engine
 import (
 	"bytes"
 	"context"
-	gorilla "github.com/gorilla/websocket"
-	"github.com/jasonczech/apexload/pkg/dsl"
-	"github.com/jasonczech/apexload/pkg/protocol"
-	ws "github.com/jasonczech/apexload/pkg/protocol/websocket"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	gorilla "github.com/gorilla/websocket"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/testlog"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	ws "github.com/jasonczech/apexload/pkg/protocol/websocket"
 )
 
 func TestNativeErrorOnlyReplayAndDisabledLogging(t *testing.T) {
 	for _, level := range []string{"standard", "extended", "disabled"} {
 		t.Run(level, func(t *testing.T) {
 			var output bytes.Buffer
-			original := slog.Default()
-			slog.SetDefault(slog.New(slog.NewTextHandler(&output, nil)))
-			defer slog.SetDefault(original)
+			testlog.SetDefault(t, slog.New(slog.NewTextHandler(&output, nil)))
 			protocolName := registerReplayProtocol(t, func(a *protocol.Action) (*protocol.Result, error) {
 				return &protocol.Result{ActionName: a.Name, StartTime: time.Now(), Success: a.Name != "failure", StatusCode: 200}, nil
 			})

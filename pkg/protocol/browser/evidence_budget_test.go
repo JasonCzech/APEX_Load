@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"log"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -16,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/internal/testlog"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	playwright "github.com/mxschmitt/playwright-go"
 )
@@ -631,14 +631,7 @@ func (c *evidenceLogCapture) count(message string) int {
 func captureEvidenceLogs(t *testing.T) *evidenceLogCapture {
 	t.Helper()
 	capture := &evidenceLogCapture{}
-	// slog.SetDefault also redirects the log package; restore both.
-	previous, writer, flags := slog.Default(), log.Writer(), log.Flags()
-	slog.SetDefault(slog.New(slog.NewTextHandler(capture, nil)))
-	t.Cleanup(func() {
-		slog.SetDefault(previous)
-		log.SetOutput(writer)
-		log.SetFlags(flags)
-	})
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(capture, nil)))
 	return capture
 }
 

@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/internal/testlog"
 )
 
 type lockedLogBuffer struct {
@@ -32,9 +34,7 @@ func (b *lockedLogBuffer) String() string {
 // the expiry itself must leave a record naming the runs it stopped.
 func TestExecutionEpochExpiryLogsStoppedAssignments(t *testing.T) {
 	logs := &lockedLogBuffer{}
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(previous) })
+	testlog.SetDefault(t, slog.New(slog.NewJSONHandler(logs, nil)))
 
 	service := newEpochTestService(t, filepath.Join(t.TempDir(), "epoch.json"))
 	var clock atomic.Int64
