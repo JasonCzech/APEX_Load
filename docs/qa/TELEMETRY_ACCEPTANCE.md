@@ -20,9 +20,18 @@ Each fault in TEL-4's matrix names the tests that accept it. The Go tests run in
 |  | `TestDistributedPublicationRetryKeepsHeldJointBatches` (`pkg/api/distributed_publication_visibility_test.go`) | Go |
 |  | `TestDistributedMetricsSequenceGapIsRetainedInTelemetry` (`pkg/api/distributed_stream_freshness_test.go`) | Go |
 |  | `TestTelemetryCoverageBridgesJitterButNotLoss` (`pkg/api/telemetry_coverage_test.go`) | Go |
+|  | `TestTelemetryCoverageDoesNotRetimeReplayedWindows` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+|  | `TestTelemetryCoverageLegacyAndMissingCollectionIdentity` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+|  | `TestTelemetryCoverageReplayCannotBridgeTheNextFreshWindow` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+|  | `TestTelemetryCoverageLateSequenceDoesNotMoveCursor` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+|  | `TestTelemetryCoverageTerminalReplayRetiresWithoutNewWindow` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
 | Ownership and source epochs | `TestMetricsBrokerStampsTheProcessSourceEpoch` (`pkg/distributed/generatorrpc/metrics_broker_test.go`) | Go |
 |  | `TestMissingMetricWindowsAreCountedWithinOneSourceEpoch` (`pkg/api/telemetry_sources_test.go`) | Go |
 |  | `TestGeneratorEpochKeeperWaitsForAdoptionReconcile` (`pkg/api/run_adoption_test.go`) | Go |
+|  | `TestTelemetryCoverageOlderEpochCannotRetireCurrentSource` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+|  | `TestTelemetryCoverageNewEpochRestartsCollectionIdentity` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+|  | `TestTelemetryCoverageEpochLimitDoesNotCreateUntrackedWindows` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+|  | `TestTelemetryCoverageAlgorithmKeepsLegacyComparisonSeparate` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
 | Policy changes | `TestTelemetryPolicySegmentRejectsAnInvalidPolicy` (`pkg/api/telemetry_coverage_test.go`) | Go |
 |  | `TestProjectTelemetryPolicyUpdateChangesOnlyTheOptIn` (`pkg/api/telemetry_stages_test.go`) | Go |
 |  | telemetry policy remains immutable in live, archive and manifest views after settings change (`dashboard/e2e/workflow-telemetry-policy.spec.ts`) | End to end, both profiles |

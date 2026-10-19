@@ -325,7 +325,6 @@ func (l *telemetrySourceLedger) observe(source string, batch generatorrpc.Metric
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.observeCoverage(source, batch, at)
 	key := telemetrySourceKey{source: source, generation: batch.ExecutionGeneration, epoch: batch.SourceEpoch}
 	record := l.epochs[key]
 	if record == nil {
@@ -346,6 +345,7 @@ func (l *telemetrySourceLedger) observe(source string, batch generatorrpc.Metric
 	if sequence == 0 {
 		record.Unsequenced++
 		record.observeCounters(batch)
+		l.observeCoverage(source, batch, at)
 		return
 	}
 	if isTerminalRemoteLifecycle(batch.LifecycleState) && sequence > record.TerminalSequence {
@@ -367,6 +367,7 @@ func (l *telemetrySourceLedger) observe(source string, batch generatorrpc.Metric
 	}
 	record.add(sequence)
 	record.observeCounters(batch)
+	l.observeCoverage(source, batch, at)
 }
 
 func (r *TelemetrySourceEpoch) covers(sequence uint64) bool {

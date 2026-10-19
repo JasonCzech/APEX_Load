@@ -29,6 +29,8 @@ The themed reports preserve the original narrative of each consolidated review, 
 
 Completion here applies only to the reviewed slice. Outstanding provider, platform, scale and parent-feature gates are retained inside each report and linked from the [roadmap](../../ROADMAP.md). Consolidation does not mark those gates passed. Evidence directories and non-Markdown artifacts remain unchanged.
 
+[Replay-safe telemetry coverage — 2026-10-19](roadmap-telemetry-coverage-2026-10-19/README.md) records the first bounded TEL-A implementation slice, regression evidence and remaining gates.
+
 | Themed report | Scope |
 | --- | --- |
 | [Messaging](../../archive/qa-reviews/MESSAGING_2026-10.md) | Eight Event Hubs, Kafka, Service Bus and Solace implementation reviews |
