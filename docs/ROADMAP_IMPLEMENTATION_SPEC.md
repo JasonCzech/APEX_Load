@@ -228,6 +228,8 @@ Retain recommended **1–2 browser VUsers and maximum 5 per generator**. A highe
 
 ### BI-A — Qualified baseline selection and findings
 
+The [baseline qualification guard slice](qa/reviews/roadmap-browser-baseline-qualification-2026-10-19/README.md) prevents per-metric floors from lowering the effective timing/CLS thresholds and leaves cohorts with known document loss unscored. The v1 estimator is unchanged; configured policy editing, compatible baseline selection and real-run qualification below remain open.
+
 Extend the existing RCA browser baseline with stable authored identity and actual `latest_compatible` selection. Qualify immutable script, engine/profile/runtime cohort, policy revision, comparable load/window, clocks and source coverage before selection. Exclude pause/shaping/loss/insufficient-window mismatches and show why; do not select merely the newest run. Add configured per-metric effect floors and immutable links from each threshold/baseline finding to its selected baseline and pinned policy.
 
 Keep the current [browser_baseline.v1 estimator](../pkg/rca/browser_baseline.go) explicit: the run-side statistic is the median of its bucket p75 values, compared with the qualified baseline bucket values at the same load. This gives buckets equal weight; it is neither a pooled per-document percentile nor an independent per-document statistical test. Qualify unequal document counts per bucket, cadence changes, repeated document publications, sparse/short windows and the configured exclusions. Preserve existing versioned results; a future per-document inference method needs its own algorithm version and qualification rather than relabelling v1.

@@ -307,11 +307,17 @@ the analysis, which can be retried.
   buckets at every steady level with the same load. A cohort needs at least
   30 such buckets. An anomaly needs |z| ≥ 3 and a practical effect: at least
   max(50 ms, 10% of the baseline mean) for a timing, 0.02 for layout shift,
-  or a catalog floor for any other metric.
+  or a positive catalog/configured floor for any other metric. Per-metric
+  overrides can only raise the effective timing or CLS floor; invalid or
+  non-finite configured floors leave the comparison unscored.
 - **Results.** Each result is `anomaly` (with its direction), `within_range`
   or `unscored`. An unscored result has a reason:
   - `insufficient_baseline`: fewer than 30 buckets;
   - `zero_variance`;
+  - `source_loss` or `baseline_source_loss`: the current or baseline cohort
+    lost document observations. Retained counts and baseline identity remain
+    visible, but neither an anomaly nor a within-range verdict is qualified;
+    the section is `partial`;
   - `no_same_load_window`;
   - `no_baseline_cohort`;
   - `cohort_changed`: the baseline measured the same measurement under another
@@ -338,7 +344,8 @@ the analysis, which can be retried.
   baseline run with its qualification and reasons, its own evidence
   reference, the level's start (two steady levels at one load stay apart),
   and `source_loss` or `baseline_source_loss` when that run's document
-  evidence dropped observations. A scored result also carries the expected
+  evidence dropped observations. These known-loss cohorts are unscored;
+  existing stored results are not rewritten. A scored result also carries the expected
   range, the baseline's evidence reference, z and the effect. The expected
   range is the baseline mean ± the larger of 3σ and the effect floor (never
   below zero), so a value inside it is within range and one outside it is an
