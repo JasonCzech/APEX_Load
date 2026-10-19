@@ -62,3 +62,79 @@ func TestMaskedScriptCacheIsBoundedByEntriesAndBytes(t *testing.T) {
 		t.Fatal("an oversized entry was kept")
 	}
 }
+
+func TestMaskScriptSecretsKeepsAuraCacheKeysOnly(t *testing.T) {
+	const appKey = "4385_ZsFss-efN4RuL6razjopzA"
+	script := &dsl.Script{Name: "aura", Protocol: "http", Actions: []dsl.Action{{
+		Type: "request", Name: "component defs", Method: "GET",
+		Target: "https://b.static.lightning.force.com/x/auraCmpDef?_au=" + appKey + "&_uid=" + appKey,
+		Metadata: map[string]any{"har.request.query_string": []any{
+			map[string]any{"name": "_au", "value": appKey},
+			map[string]any{"name": "_uid", "value": appKey},
+			map[string]any{"name": "other", "value": appKey},
+		}},
+	}}}
+	requirements := DiscoverSecretBindingRequirements(MaskScriptSecrets(script), 0)
+	if len(requirements) != 1 || requirements[0].Path != "/actions/0/metadata/har.request.query_string/2/value" {
+		t.Fatalf("requirements = %#v, want only the lookalike token under another name", requirements)
+	}
+}
+
+func TestMaskScriptSecretsKeepsGeneratedSetCookieExtractorName(t *testing.T) {
+	// The Salesforce aura.token producer reads the __Host-ERIC_PROD<digits>
+	// Set-Cookie of /one/one.app. Masking that long name broke the regex, and
+	// every Aura request then sent a stale token.
+	expression := `(?m)^(?i:Set-Cookie):[ \t]*__Host-ERIC_PROD6073380544767438430=[ \t]*"?([^";\s,]+)"?(?:[ \t]*;|[ \t]*$)`
+	script := &dsl.Script{Name: "aura", Protocol: "http", Actions: []dsl.Action{{
+		Type: "request", Name: "one.app", Method: "GET", Target: "https://example.lightning.force.com/one/one.app",
+		Extractors: []dsl.Extractor{{Type: "regex", Source: "headers", Expression: expression, Name: "corr_cookie_host_eric_prod"}},
+	}}}
+	projected := MaskScriptSecrets(script)
+	if got := projected.Actions[0].Extractors[0].Expression; got != expression {
+		t.Fatalf("generated Set-Cookie extractor was masked: %s", got)
+	}
+	if requirements := DiscoverSecretBindingRequirements(projected, 0); len(requirements) != 0 {
+		t.Fatalf("requirements = %#v, want none", requirements)
+	}
+}
+
+func TestMaskScriptSecretsCacheKeyExemptionIsScoped(t *testing.T) {
+	const appKey = "4385_ZsFss-efN4RuL6razjopzA"
+	script := &dsl.Script{Name: "aura", Protocol: "http", Actions: []dsl.Action{{
+		Type: "request", Name: "defs", Method: "GET",
+		Target:  "https://b.static.lightning.force.com/x/auraCmpDef?_uid=" + appKey,
+		Headers: map[string]string{"X-Api-Key": appKey},
+		Metadata: map[string]any{
+			// A cookie map is not a recorded query parameter.
+			"har.response.cookies": []any{map[string]any{"name": "_uid", "value": "9999_k3Jq9LmN8vR3sT6wY1uE5i"}},
+			// The same value is a known credential elsewhere in the script.
+			"har.request.query_string": []any{map[string]any{"name": "_uid", "value": appKey}},
+		},
+	}}}
+	projected := MaskScriptSecrets(script)
+	metadata := projected.Actions[0].Metadata
+	cookie := metadata["har.response.cookies"].([]any)[0].(map[string]any)["value"]
+	query := metadata["har.request.query_string"].([]any)[0].(map[string]any)["value"]
+	if cookie == "9999_k3Jq9LmN8vR3sT6wY1uE5i" {
+		t.Fatal("a cookie map took the query-parameter cache-key exemption")
+	}
+	if query == appKey {
+		t.Fatal("a cache-key value that is a known credential elsewhere was kept")
+	}
+}
+
+func TestMaskScriptSecretsKeepsLightningWorkspacePaths(t *testing.T) {
+	// Lightning sends the open workspace as a site-relative path. Both
+	// projections swap the bound record id for a placeholder before scrubbing;
+	// the path must still read as a path, not one high-entropy token.
+	for _, record := range []string{"{{var.corr_id_2}}", "a1B8c00000ABCDeEAP"} {
+		referer := "https://x.lightning.force.com/lightning/n/BuyFlow?c__objId={{var.corr_id_2}}&ws=%2Flightning%2Fr%2FInteraction__c%2F" + record + "%2Fview"
+		script := &dsl.Script{Name: "ws", Protocol: "http", Actions: []dsl.Action{{
+			Type: "request", Name: "aura", Method: "POST", Target: "https://x.lightning.force.com/aura",
+			Headers: map[string]string{"referer": referer},
+		}}}
+		if got := MaskScriptSecrets(script).Actions[0].Headers["referer"]; got != referer {
+			t.Fatalf("workspace path masked: %s", got)
+		}
+	}
+}

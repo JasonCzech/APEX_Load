@@ -21,6 +21,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -195,6 +196,14 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 	case map[string]any:
 		if ctx.headerList {
 			return p.projectHeaderEntry(typed, depth)
+		}
+		if ctx.metadata && ctx.key == harQueryStringMetadataKey && p.publicCacheKeyPair(typed) {
+			// A recorded query parameter whose value is a public cache key
+			// (scrub.PublicCacheKey) is disclosed as the URL discloses it:
+			// exempt from the credential-shape heuristic, never from known
+			// credential values.
+			value, _ := typed["value"].(string)
+			return map[string]any{"name": typed["name"], "value": p.replaceKnown(value)}, nil
 		}
 		if ctx.dataSource {
 			typed = p.projectDataSource(typed)
@@ -501,6 +510,13 @@ func (p *projector) projectString(value string, ctx projectionContext) string {
 	}
 	if ctx.label || credential.LabelField(ctx.key) {
 		return p.replaceKnown(p.scrubMemo.ValueLabel(value))
+	}
+	if normalizeName(ctx.key) == "expression" {
+		if _, generated := correlate.GeneratedSetCookieExtractor(value); generated {
+			// The importer's own Set-Cookie extractor names a cookie and
+			// captures its value; the name is an identifier, not a credential.
+			return p.replaceKnown(value)
+		}
 	}
 	if ctx.opaque || isFreeTextKey(ctx.key) {
 		return p.replaceKnown(p.scrubText(value))
@@ -1350,4 +1366,24 @@ func sortedSecrets(values map[string]struct{}) []string {
 		return len(result[i]) > len(result[j])
 	})
 	return result
+}
+
+// harQueryStringMetadataKey holds a HAR request's recorded query parameters
+// as {name, value} pairs.
+const harQueryStringMetadataKey = "har.request.query_string"
+
+// publicCacheKeyPair reports whether a map is exactly a recorded
+// {name, value} query parameter whose value is a public cache key and not a
+// value an import marked as a credential.
+func (p *projector) publicCacheKeyPair(value map[string]any) bool {
+	if len(value) != 2 {
+		return false
+	}
+	name, nameOK := value["name"].(string)
+	text, valueOK := value["value"].(string)
+	if !nameOK || !valueOK || !scrub.PublicCacheKey(name, text) {
+		return false
+	}
+	_, forced := p.forcedSecrets[text]
+	return !forced
 }

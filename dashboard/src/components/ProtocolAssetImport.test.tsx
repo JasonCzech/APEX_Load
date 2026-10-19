@@ -1933,9 +1933,10 @@ describe('ProtocolAssetImport', () => {
   })
 
   it.each([
-    { kind: 'har' as const, index: 0, name: 'primary.har', sizeMB: 96, rejected: false, limit: 100 },
-    { kind: 'har' as const, index: 1, name: 'comparison.har', sizeMB: 96, rejected: false, limit: 100 },
-    { kind: 'har' as const, index: 0, name: 'too-large.har', sizeMB: 101, rejected: true, limit: 100 },
+    { kind: 'har' as const, index: 0, name: 'primary.har', sizeMB: 296, rejected: false, limit: 300 },
+    { kind: 'har' as const, index: 0, name: 'zipped-capture.zip', sizeMB: 40, rejected: false, limit: 300 },
+    { kind: 'har' as const, index: 1, name: 'comparison.har', sizeMB: 296, rejected: false, limit: 300 },
+    { kind: 'har' as const, index: 0, name: 'too-large.har', sizeMB: 301, rejected: true, limit: 300 },
     { kind: 'postman' as const, index: 0, name: 'collection.json', sizeMB: 51, rejected: true, limit: 50 },
   ])('checks the $kind $name file envelope', async ({ kind, index, name, sizeMB, rejected, limit }) => {
     await act(async () => {
@@ -1963,7 +1964,7 @@ describe('ProtocolAssetImport', () => {
     const fileInputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]')
     const primary = new File(['{"log":{"entries":[]}}'], 'capture.har', { type: 'application/json' })
     const oversized = new File(['{}'], 'comparison.har', { type: 'application/json' })
-    Object.defineProperty(oversized, 'size', { configurable: true, value: 101 * 1024 * 1024 })
+    Object.defineProperty(oversized, 'size', { configurable: true, value: 301 * 1024 * 1024 })
 
     await act(async () => {
       Object.defineProperty(fileInputs[0], 'files', { configurable: true, value: [primary] })
@@ -1972,7 +1973,7 @@ describe('ProtocolAssetImport', () => {
       fileInputs[1].dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('comparison.har is 101.0 MB; imports are limited')
+    expect(container.textContent).toContain('comparison.har is 301.0 MB; imports are limited')
     await act(async () => {
       Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))

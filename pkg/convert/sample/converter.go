@@ -305,7 +305,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			if req.Options.Profile != nil {
 				settings = &req.Options.Profile.Correlation
 			}
-			correlations, analysisWarnings, err = detectHARCorrelationsWithSettings(exchanges, settings)
+			var omission correlate.StaticEvidenceOmission
+			correlations, analysisWarnings, omission, err = detectHARCorrelationsWithSettings(exchanges, settings)
+			if note := omission.Note(); note != "" {
+				warnings = append(warnings, note)
+				diagnostics.Add(diag.Info, "HAR correlation evidence", "HAR import", note)
+			}
 		} else {
 			correlations, err = detectCorrelationsChecked(exchanges)
 		}

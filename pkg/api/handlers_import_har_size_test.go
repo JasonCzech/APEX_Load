@@ -13,7 +13,10 @@ import (
 func TestHARUploadAboveFormerLimitPreservesBytes(t *testing.T) {
 	// A valid capture with padding exercises the upload envelope without
 	// allocating thousands of exchange objects or depending on customer data.
-	capture := append([]byte(`{"log":{"entries":[]}}`), bytes.Repeat([]byte(" "), 51<<20)...)
+	// It sits exactly at the file limit, so the multipart run also proves the
+	// body limit leaves room for the framing around a capture at the limit.
+	envelope := []byte(`{"log":{"entries":[]}}`)
+	capture := append(envelope, bytes.Repeat([]byte(" "), int(harImportMaxFileBytes)-len(envelope))...)
 	for _, transport := range []string{"raw", "multipart"} {
 		t.Run(transport, func(t *testing.T) {
 			var body io.Reader = bytes.NewReader(capture)

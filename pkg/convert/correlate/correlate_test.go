@@ -1036,7 +1036,9 @@ func TestDetectCheckedHandlesRealisticCandidateBySurfaceProducts(t *testing.T) {
 
 func TestDetectCheckedWithWarningsTruncatesWhenSearchBudgetExhausted(t *testing.T) {
 	restore := maxCorrelationSearchBytes
-	maxCorrelationSearchBytes = 64
+	// An indexed lookup costs the value's length plus its matches, so a budget
+	// below the 18-byte value exhausts on the first lookup.
+	maxCorrelationSearchBytes = 8
 	t.Cleanup(func() { maxCorrelationSearchBytes = restore })
 
 	observations := []Observation{

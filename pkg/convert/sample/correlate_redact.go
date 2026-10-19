@@ -56,21 +56,24 @@ func detectCorrelationsChecked(exchanges []exchange) ([]Correlation, error) {
 // HAR review can retain bounded discoveries from incomplete analysis. These
 // candidates must never be applied automatically unless analysis completed.
 func detectHARCorrelationsForReview(exchanges []exchange) ([]Correlation, []string, error) {
-	return detectHARCorrelationsWithSettings(exchanges, nil)
+	correlations, warnings, _, err := detectHARCorrelationsWithSettings(exchanges, nil)
+	return correlations, warnings, err
 }
 
 // detectHARCorrelationsWithSettings detects correlations and applies a
-// recording profile's correlation settings, when given.
-func detectHARCorrelationsWithSettings(exchanges []exchange, settings *recordingprofile.CorrelationSettings) ([]Correlation, []string, error) {
-	observations := sampleCorrelationObservations(exchanges)
+// recording profile's correlation settings, when given. Static-asset bodies
+// that do not fit the evidence budget are left out of the analysis; the
+// returned omission says how many, so the import can note it.
+func detectHARCorrelationsWithSettings(exchanges []exchange, settings *recordingprofile.CorrelationSettings) ([]Correlation, []string, correlate.StaticEvidenceOmission, error) {
+	observations, omission := correlate.FitStaticAssetEvidence(sampleCorrelationObservations(exchanges))
 	shared, warnings, err := correlate.DetectCheckedWithWarnings(observations)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, omission, err
 	}
 	if settings != nil {
 		shared = settings.ApplyCorrelation(observations, shared)
 	}
-	return sampleCorrelations(shared), warnings, nil
+	return sampleCorrelations(shared), warnings, omission, nil
 }
 
 func sampleCorrelations(shared []correlate.Correlation) []Correlation {

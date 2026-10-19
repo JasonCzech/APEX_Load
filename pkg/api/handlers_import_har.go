@@ -128,6 +128,10 @@ func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportReq
 	if !ok {
 		return nil, false
 	}
+	// A capture may arrive zipped; everything after this sees the HAR itself.
+	if !unwrapHARImportArchives(w, req) {
+		return nil, false
+	}
 	// A truncated capture is imported only on explicit request; otherwise the
 	// error says how many complete entries it holds and how to keep them.
 	if salvaged, report, truncated := har.SalvageTruncated(req.Data); truncated {

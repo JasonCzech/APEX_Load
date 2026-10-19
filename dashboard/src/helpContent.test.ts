@@ -68,7 +68,7 @@ describe('Help catalogue and content contracts', () => {
         if (!destination.startsWith('#/docs?')) continue
         const params = new URLSearchParams(destination.split('?')[1])
         const section = params.get('section')
-        if (!section) continue
+        if (!section) continue // a link to a whole article has no section to resolve
         const target = helpArticles.find(candidate => candidate.id === params.get('article'))!
         expect(articleForSection(target.path, section, await loadHelpSource(target)), `${article.path}: ${href}`).toBeDefined()
       }

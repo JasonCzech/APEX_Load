@@ -807,6 +807,12 @@ func isSafeRequestMethod(method string) bool {
 	}
 }
 
+// harImportMaxFileBytes is the largest HAR (or Salesforce HAR) capture the
+// importer accepts, uploaded as is or decompressed from a .zip.
+// harImportMaxBodyBytes adds headroom for multipart framing and sibling form
+// fields so a capture at the limit still fits.
+const harImportMaxFileBytes int64 = 300 << 20
+
 // defaultMaxRequestBodyBytes is the conservative backstop for ordinary JSON
 // mutations. Routes that intentionally accept larger imports must opt in via
 // accessRequirement.MaxBodyBytes; otherwise a small CRUD request must not be
@@ -816,7 +822,7 @@ const (
 	recorderImportMaxBodyBytes          int64 = 10 << 20
 	oracleReviewImportMaxBodyBytes      int64 = 10 << 20
 	webAPIImportMaxBodyBytes            int64 = 20 << 20
-	harImportMaxBodyBytes               int64 = 100 << 20
+	harImportMaxBodyBytes               int64 = harImportMaxFileBytes + (1 << 20)
 	importAssetMaxBodyBytes             int64 = 50 << 20
 	jmeterImportMaxBodyBytes            int64 = 50 << 20
 	enterpriseArchiveImportMaxBodyBytes int64 = 100 << 20
