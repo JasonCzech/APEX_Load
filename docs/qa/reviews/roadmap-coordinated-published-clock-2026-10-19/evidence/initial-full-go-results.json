@@ -1,0 +1,1095 @@
+{
+  "exit_code": 1,
+  "counts": {
+    "skip": 10,
+    "pass": 167,
+    "fail": 1
+  },
+  "failed_tests": [
+    {
+      "Time": "2026-10-19T19:00:36.17738-04:00",
+      "Action": "fail",
+      "Package": "github.com/jasonczech/apexload/pkg/api",
+      "Test": "TestAdoptedRunResumesAgainstRealGenerator",
+      "Elapsed": 0.22
+    },
+    {
+      "Time": "2026-10-19T19:00:36.38115-04:00",
+      "Action": "fail",
+      "Package": "github.com/jasonczech/apexload/pkg/api",
+      "Test": "TestAdoptedLossTolerantRunResumesAgainstRealGenerator",
+      "Elapsed": 0.2
+    }
+  ],
+  "raw_sha256": "8ffdd2d621a89827521dcb978007f09b7116c48a0483f13d23ed5e1dd8059475",
+  "packages": [
+    {
+      "Time": "2026-10-19T18:03:57.780408-04:00",
+      "Action": "skip",
+      "Package": "github.com/jasonczech/apexload/api/proto",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T18:04:09.468371-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/cmd/apexbench",
+      "Elapsed": 0.352
+    },
+    {
+      "Time": "2026-10-19T18:04:43.137377-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/cmd/apexctl",
+      "Elapsed": 15.791
+    },
+    {
+      "Time": "2026-10-19T18:04:43.145591-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/cmd/apexctl/internal/ciclient",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T18:04:43.149451-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/cmd/apexfault-target",
+      "Elapsed": 0.001
+    },
+    {
+      "Time": "2026-10-19T18:04:44.895055-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/cmd/apexload-collector-agent",
+      "Elapsed": 0.163
+    },
+    {
+      "Time": "2026-10-19T18:04:45.373106-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/cmd/apexload-java-host-broker",
+      "Elapsed": 0.232
+    },
+    {
+      "Time": "2026-10-19T18:04:45.722489-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/cmd/apexload-java-host-facade",
+      "Elapsed": 0.186
+    },
+    {
+      "Time": "2026-10-19T18:04:46.108205-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/cmd/apexload-java-host-supervisor",
+      "Elapsed": 0.155
+    },
+    {
+      "Time": "2026-10-19T18:04:46.404845-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/cmd/apexload-java-vuser-runner",
+      "Elapsed": 0.166
+    },
+    {
+      "Time": "2026-10-19T18:04:46.445688-04:00",
+      "Action": "skip",
+      "Package": "github.com/jasonczech/apexload/cmd/apexload-record-agent",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T18:05:27.723608-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/cmd/controller",
+      "Elapsed": 1.202
+    },
+    {
+      "Time": "2026-10-19T18:05:27.774597-04:00",
+      "Action": "skip",
+      "Package": "github.com/jasonczech/apexload/cmd/dslschema",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T18:05:31.691254-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/cmd/generator",
+      "Elapsed": 1.51
+    },
+    {
+      "Time": "2026-10-19T18:05:31.700815-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/cmd/openapits",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T18:05:31.774102-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/cmd/storeoverlay",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T18:05:31.869198-04:00",
+      "Action": "skip",
+      "Package": "github.com/jasonczech/apexload/cmd/swaggergen",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T18:05:33.934052-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/cmd/webcoverage",
+      "Elapsed": 0.405
+    },
+    {
+      "Time": "2026-10-19T18:05:42.066614-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/deployments/k8s",
+      "Elapsed": 7.968
+    },
+    {
+      "Time": "2026-10-19T18:06:01.539697-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/desktop",
+      "Elapsed": 3.666
+    },
+    {
+      "Time": "2026-10-19T18:06:12.186389-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/docs/qa",
+      "Elapsed": 10.507
+    },
+    {
+      "Time": "2026-10-19T18:06:12.550963-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/analysis",
+      "Elapsed": 0.217
+    },
+    {
+      "Time": "2026-10-19T18:06:58.371334-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/analysis/duckdb",
+      "Elapsed": 44.783
+    },
+    {
+      "Time": "2026-10-19T19:01:56.845225-04:00",
+      "Action": "fail",
+      "Package": "github.com/jasonczech/apexload/pkg/api",
+      "Elapsed": 875.572
+    },
+    {
+      "Time": "2026-10-19T19:02:00.544036-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/api/testexec",
+      "Elapsed": 0.523
+    },
+    {
+      "Time": "2026-10-19T19:02:00.554849-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/archivecontract",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:02:00.560201-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/browserresource",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:02:00.565988-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/buildinfo",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:02:46.065964-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/collectoragent",
+      "Elapsed": 42.533
+    },
+    {
+      "Time": "2026-10-19T19:02:46.074013-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/compute",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:02:47.944678-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/compute/aws",
+      "Elapsed": 0.551
+    },
+    {
+      "Time": "2026-10-19T19:02:49.550446-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/compute/azure",
+      "Elapsed": 0.366
+    },
+    {
+      "Time": "2026-10-19T19:02:49.563218-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/config",
+      "Elapsed": 0.001
+    },
+    {
+      "Time": "2026-10-19T19:02:49.569756-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/contentmutation",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:02:49.903046-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/controller",
+      "Elapsed": 0.158
+    },
+    {
+      "Time": "2026-10-19T19:02:50.259785-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/agentforce",
+      "Elapsed": 0.16
+    },
+    {
+      "Time": "2026-10-19T19:02:51.896097-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/asyncapi",
+      "Elapsed": 0.377
+    },
+    {
+      "Time": "2026-10-19T19:02:53.250968-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/brokerconfig",
+      "Elapsed": 0.369
+    },
+    {
+      "Time": "2026-10-19T19:02:56.050911-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/bruno",
+      "Elapsed": 0.86
+    },
+    {
+      "Time": "2026-10-19T19:02:56.426653-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/clientids",
+      "Elapsed": 0.176
+    },
+    {
+      "Time": "2026-10-19T19:02:56.752655-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/clienttimestamps",
+      "Elapsed": 0.155
+    },
+    {
+      "Time": "2026-10-19T19:02:57.127968-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/cloudtest",
+      "Elapsed": 0.178
+    },
+    {
+      "Time": "2026-10-19T19:02:57.128663-04:00",
+      "Action": "skip",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/convertresult",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:02:57.133068-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/convertutil",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:02:59.052928-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/correlate",
+      "Elapsed": 1.309
+    },
+    {
+      "Time": "2026-10-19T19:02:59.066098-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/credentialpolicy",
+      "Elapsed": 0.005
+    },
+    {
+      "Time": "2026-10-19T19:03:00.800248-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/devweb",
+      "Elapsed": 0.485
+    },
+    {
+      "Time": "2026-10-19T19:03:00.809629-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/diag",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:03:18.666271-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/enterprisearchive",
+      "Elapsed": 11.37
+    },
+    {
+      "Time": "2026-10-19T19:03:20.355176-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/eventhubscapture",
+      "Elapsed": 0.387
+    },
+    {
+      "Time": "2026-10-19T19:03:20.362997-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/grafana",
+      "Elapsed": 0.001
+    },
+    {
+      "Time": "2026-10-19T19:03:21.959895-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/har",
+      "Elapsed": 0.406
+    },
+    {
+      "Time": "2026-10-19T19:03:24.008192-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/importcontract",
+      "Elapsed": 0.59
+    },
+    {
+      "Time": "2026-10-19T19:03:24.332771-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/importreview",
+      "Elapsed": 0.151
+    },
+    {
+      "Time": "2026-10-19T19:03:26.701543-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/jmeter",
+      "Elapsed": 0.568
+    },
+    {
+      "Time": "2026-10-19T19:03:27.323948-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/k6",
+      "Elapsed": 0.204
+    },
+    {
+      "Time": "2026-10-19T19:03:27.651201-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/mulesoft",
+      "Elapsed": 0.155
+    },
+    {
+      "Time": "2026-10-19T19:03:29.637822-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/openapi",
+      "Elapsed": 0.395
+    },
+    {
+      "Time": "2026-10-19T19:03:33.212572-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/paramize",
+      "Elapsed": 1.424
+    },
+    {
+      "Time": "2026-10-19T19:03:35.094751-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/postman",
+      "Elapsed": 0.42
+    },
+    {
+      "Time": "2026-10-19T19:03:35.443856-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/raml",
+      "Elapsed": 0.167
+    },
+    {
+      "Time": "2026-10-19T19:03:35.769838-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/recordedshape",
+      "Elapsed": 0.151
+    },
+    {
+      "Time": "2026-10-19T19:03:36.0958-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/recorderjson",
+      "Elapsed": 0.152
+    },
+    {
+      "Time": "2026-10-19T19:03:38.375638-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/requestimport",
+      "Elapsed": 0.381
+    },
+    {
+      "Time": "2026-10-19T19:03:43.632678-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/salesforce",
+      "Elapsed": 3.7
+    },
+    {
+      "Time": "2026-10-19T19:03:45.722826-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/sample",
+      "Elapsed": 0.772
+    },
+    {
+      "Time": "2026-10-19T19:03:46.344122-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/sharedvalue",
+      "Elapsed": 0.256
+    },
+    {
+      "Time": "2026-10-19T19:03:46.831744-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/sourceview",
+      "Elapsed": 0.33
+    },
+    {
+      "Time": "2026-10-19T19:03:46.838259-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/srcparse",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:03:46.841557-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/tmpl",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:03:47.396575-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/trueclient",
+      "Elapsed": 0.353
+    },
+    {
+      "Time": "2026-10-19T19:03:47.785544-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/uniquify",
+      "Elapsed": 0.222
+    },
+    {
+      "Time": "2026-10-19T19:03:48.855104-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/convert/wsdl",
+      "Elapsed": 0.385
+    },
+    {
+      "Time": "2026-10-19T19:03:48.862518-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/credential",
+      "Elapsed": 0.001
+    },
+    {
+      "Time": "2026-10-19T19:03:48.866886-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/debugserver",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:03:48.871107-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/deeplink",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:04:42.480795-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/distributed/generatorrpc",
+      "Elapsed": 48.433
+    },
+    {
+      "Time": "2026-10-19T19:04:42.492065-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/distributed/rendezvous",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:04:46.538819-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/dsl",
+      "Elapsed": 0.655
+    },
+    {
+      "Time": "2026-10-19T19:04:47.16859-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/dsl/schemagen",
+      "Elapsed": 0.363
+    },
+    {
+      "Time": "2026-10-19T19:04:47.489628-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/dslwalk",
+      "Elapsed": 0.145
+    },
+    {
+      "Time": "2026-10-19T19:04:53.430547-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/dynatrace",
+      "Elapsed": 5.356
+    },
+    {
+      "Time": "2026-10-19T19:04:59.268458-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/elastic",
+      "Elapsed": 5.094
+    },
+    {
+      "Time": "2026-10-19T19:06:28.678824-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/engine",
+      "Elapsed": 81.373
+    },
+    {
+      "Time": "2026-10-19T19:06:28.689992-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/fileasset",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:32.250319-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/harsynth",
+      "Elapsed": 2.451
+    },
+    {
+      "Time": "2026-10-19T19:06:32.255132-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/hostnet",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:32.259483-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/identitypolicy",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:40.104555-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/importartifact",
+      "Elapsed": 4.772
+    },
+    {
+      "Time": "2026-10-19T19:06:40.111921-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/importartifact/legacyresolver",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:40.114116-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/importsession",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:40.118484-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/archiveingest",
+      "Elapsed": 0.001
+    },
+    {
+      "Time": "2026-10-19T19:06:42.365929-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/archivequota",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:42.369848-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/aurafixture",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:42.375631-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/aurapayload",
+      "Elapsed": 0.001
+    },
+    {
+      "Time": "2026-10-19T19:06:42.378773-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/bodyencoding",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:42.380718-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/boundedcache",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:42.382369-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/boundedtext",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:42.382499-04:00",
+      "Action": "skip",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/contentcontract",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:42.385639-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/contentdecode",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:42.389234-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/diskspace",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:42.390686-04:00",
+      "Action": "skip",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/extractiontest",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:42.393595-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/filelock",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:42.396444-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/grpcclient",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:42.400229-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/h3fixture",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:42.402732-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/hostpattern",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:44.915653-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/importreview",
+      "Elapsed": 0.594
+    },
+    {
+      "Time": "2026-10-19T19:06:44.922855-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/jsonquery",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:46.502615-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/paritytest",
+      "Elapsed": 0.383
+    },
+    {
+      "Time": "2026-10-19T19:06:46.511008-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/pwshutdown",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:46.514266-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/strftime",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:46.518604-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/subprocessguard",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:46.520787-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/templatedjson",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:46.523616-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/testlog",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:46.524587-04:00",
+      "Action": "skip",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/winfs",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:06:46.527088-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/internal/zipbounds",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:07:00.186545-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/javarunner",
+      "Elapsed": 12.598
+    },
+    {
+      "Time": "2026-10-19T19:07:04.281688-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/javarunner/broker",
+      "Elapsed": 3.21
+    },
+    {
+      "Time": "2026-10-19T19:07:04.289759-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/javarunner/ipc",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:07:35.275468-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/javasidecar",
+      "Elapsed": 29.647
+    },
+    {
+      "Time": "2026-10-19T19:07:35.280731-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/keywrap",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:07:35.286564-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/kubeops",
+      "Elapsed": 0.001
+    },
+    {
+      "Time": "2026-10-19T19:07:35.289278-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/librarycontract",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:07:35.293889-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/livetable",
+      "Elapsed": 0.001
+    },
+    {
+      "Time": "2026-10-19T19:07:35.295659-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/monitorcontract",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:07:37.188774-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/monitorprovider",
+      "Elapsed": 1.649
+    },
+    {
+      "Time": "2026-10-19T19:07:37.192823-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/netpolicy",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:07:43.969299-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/perfevidence",
+      "Elapsed": 3.122
+    },
+    {
+      "Time": "2026-10-19T19:07:44.991565-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/prometheus",
+      "Elapsed": 0.18
+    },
+    {
+      "Time": "2026-10-19T19:07:45.006684-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol",
+      "Elapsed": 0.004
+    },
+    {
+      "Time": "2026-10-19T19:07:45.009767-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/appium",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:07:45.012735-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/aura",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:09:13.155124-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/browser",
+      "Elapsed": 85.005
+    },
+    {
+      "Time": "2026-10-19T19:09:13.162954-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/browsercontract",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:09:16.289817-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/builtin",
+      "Elapsed": 0.472
+    },
+    {
+      "Time": "2026-10-19T19:09:16.796554-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/database",
+      "Elapsed": 0.195
+    },
+    {
+      "Time": "2026-10-19T19:09:16.807911-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/eventhubs",
+      "Elapsed": 0.001
+    },
+    {
+      "Time": "2026-10-19T19:09:20.343706-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/grpc",
+      "Elapsed": 0.804
+    },
+    {
+      "Time": "2026-10-19T19:09:45.389475-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/http",
+      "Elapsed": 22.418
+    },
+    {
+      "Time": "2026-10-19T19:09:45.394204-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/http/internal/h3transport",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:09:45.396735-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/http/pagecontext",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:09:45.400304-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/httpcontract",
+      "Elapsed": 0.001
+    },
+    {
+      "Time": "2026-10-19T19:09:46.054911-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/java_http",
+      "Elapsed": 0.233
+    },
+    {
+      "Time": "2026-10-19T19:09:51.697942-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/java_vuser",
+      "Elapsed": 4.87
+    },
+    {
+      "Time": "2026-10-19T19:09:51.71248-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/jms",
+      "Elapsed": 0.003
+    },
+    {
+      "Time": "2026-10-19T19:09:51.722013-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/jsonextract",
+      "Elapsed": 0.002
+    },
+    {
+      "Time": "2026-10-19T19:09:51.722209-04:00",
+      "Action": "skip",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/jsonextract/jsonextracttest",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:10:07.896648-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/kafka",
+      "Elapsed": 15.474
+    },
+    {
+      "Time": "2026-10-19T19:10:07.902951-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/kafkacontract",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:10:07.905896-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/messaging",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:10:07.910262-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/network",
+      "Elapsed": 0.001
+    },
+    {
+      "Time": "2026-10-19T19:10:08.594128-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/soap",
+      "Elapsed": 0.21
+    },
+    {
+      "Time": "2026-10-19T19:10:09.200849-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/protocol/websocket",
+      "Elapsed": 0.24
+    },
+    {
+      "Time": "2026-10-19T19:10:09.20687-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/qrcode",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:10:10.064901-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/rca",
+      "Elapsed": 0.172
+    },
+    {
+      "Time": "2026-10-19T19:10:10.068468-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/rca/signatures",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:10:12.327573-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/recordagent",
+      "Elapsed": 0.402
+    },
+    {
+      "Time": "2026-10-19T19:10:15.72234-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/recordbridge",
+      "Elapsed": 1.216
+    },
+    {
+      "Time": "2026-10-19T19:10:22.29057-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/recorder",
+      "Elapsed": 4.826
+    },
+    {
+      "Time": "2026-10-19T19:10:52.996101-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/recorder/browser",
+      "Elapsed": 28.731
+    },
+    {
+      "Time": "2026-10-19T19:10:53.003083-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/recorder/marker",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:10:53.533401-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/recordingprofile",
+      "Elapsed": 0.085
+    },
+    {
+      "Time": "2026-10-19T19:10:53.536832-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/refkey",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:10:53.819978-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/runcontract",
+      "Elapsed": 0.09
+    },
+    {
+      "Time": "2026-10-19T19:10:53.824559-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/runtimetuning",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:10:59.040905-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/scriptdisclosure",
+      "Elapsed": 2.976
+    },
+    {
+      "Time": "2026-10-19T19:10:59.818811-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/scrub",
+      "Elapsed": 0.373
+    },
+    {
+      "Time": "2026-10-19T19:11:03.648033-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/secretstore",
+      "Elapsed": 1.494
+    },
+    {
+      "Time": "2026-10-19T19:11:03.670277-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/selector",
+      "Elapsed": 0.001
+    },
+    {
+      "Time": "2026-10-19T19:12:42.005919-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/storage",
+      "Elapsed": 88.537
+    },
+    {
+      "Time": "2026-10-19T19:12:42.014968-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/telemetry",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:12:42.021104-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/telemetrypolicy",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:12:43.199158-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/pkg/trafficprofile",
+      "Elapsed": 0.241
+    },
+    {
+      "Time": "2026-10-19T19:13:22.874853-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/runners/java_vuser",
+      "Elapsed": 37.843
+    },
+    {
+      "Time": "2026-10-19T19:13:22.93466-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/scripts",
+      "Elapsed": 0.007
+    },
+    {
+      "Time": "2026-10-19T19:13:22.940297-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/scripts/fault_s3_probe",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:13:23.062376-04:00",
+      "Action": "skip",
+      "Package": "github.com/jasonczech/apexload/scripts/java-shared-jvm-bench",
+      "Elapsed": 0
+    },
+    {
+      "Time": "2026-10-19T19:13:23.066176-04:00",
+      "Action": "pass",
+      "Package": "github.com/jasonczech/apexload/scripts/multiproject",
+      "Elapsed": 0
+    }
+  ]
+}

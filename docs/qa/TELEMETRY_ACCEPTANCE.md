@@ -55,6 +55,8 @@ Each fault in TEL-4's matrix names the tests that accept it. The Go tests run in
 |  | `TestClockCalibrationStepBetweenProbes` (`pkg/api/clock_qualification_test.go`) | Go |
 |  | `TestClockPipelineUnscoredIsNotHealthy` (`pkg/api/clock_qualification_pipeline_test.go`) | Go |
 |  | `TestClockStepToleranceBelowTheTransportBudget` (`pkg/api/clock_qualification_pipeline_test.go`) | Go |
+|  | `TestCoordinatedStartTranslatesPublishedClockToLocalWallDeadline` (`pkg/distributed/generatorrpc/coordinated_published_clock_test.go`) | Go |
+|  | `TestCoordinatedStartExecutesAtWallDeadlineAfterPublishedClockDrift` (`pkg/distributed/generatorrpc/coordinated_published_clock_test.go`) | Go |
 | Browser background tabs, render stalls and reconnects | `TestClientRenderSamplesCountOnlyVisibleRenders` (`pkg/api/telemetry_stages_test.go`) | Go |
 |  | `TestClientRenderReportsRotatingTabsShareTheViewerBudget` (`pkg/api/telemetry_stages_test.go`) | Go |
 |  | `TestClientRenderReportRefusedOnAFollower` (`pkg/api/telemetry_stages_test.go`) | Go |
