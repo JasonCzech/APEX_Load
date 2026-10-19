@@ -1,0 +1,1 @@
+PASS: repeated protoc generation produced identical generator.pb.go (SHA-256 6311e4d95d4726ba62c1c8ac5e5cb4096d51362c6a3befb42215f284099e0db1).

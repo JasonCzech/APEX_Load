@@ -386,15 +386,16 @@ type archiveBrowserDeviceMetric struct {
 }
 
 type archiveTelemetryHealth struct {
-	DroppedResultsAvailable  bool      `json:"dropped_results_available,omitempty"`
-	DroppedResults           int64     `json:"dropped_results,omitempty"`
-	SheddedArrivals          int64     `json:"shedded_arrivals,omitempty"`
-	DroppedSubscriberBatches int64     `json:"dropped_subscriber_batches,omitempty"`
-	GeneratorPublishedAt     time.Time `json:"generator_published_at,omitempty"`
-	CollectedAt              time.Time `json:"collected_at,omitempty"`
-	GeneratorProcessingLagMs float64   `json:"generator_processing_lag_ms,omitempty"`
-	TransportLagMs           float64   `json:"transport_lag_ms,omitempty"`
-	SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
+	CollectionWindows        *archiveCollectionWindows `json:"collection_windows,omitempty"`
+	DroppedResultsAvailable  bool                      `json:"dropped_results_available,omitempty"`
+	DroppedResults           int64                     `json:"dropped_results,omitempty"`
+	SheddedArrivals          int64                     `json:"shedded_arrivals,omitempty"`
+	DroppedSubscriberBatches int64                     `json:"dropped_subscriber_batches,omitempty"`
+	GeneratorPublishedAt     time.Time                 `json:"generator_published_at,omitempty"`
+	CollectedAt              time.Time                 `json:"collected_at,omitempty"`
+	GeneratorProcessingLagMs float64                   `json:"generator_processing_lag_ms,omitempty"`
+	TransportLagMs           float64                   `json:"transport_lag_ms,omitempty"`
+	SampleAgeMs              float64                   `json:"sample_age_ms,omitempty"`
 }
 
 type archiveRecorder struct {

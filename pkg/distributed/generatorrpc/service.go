@@ -78,6 +78,7 @@ type assignedTest struct {
 	activeGroups                    map[string]int32
 	groupStats                      map[string]GeneratorStats
 	groupTelemetry                  map[string]MetricsTelemetry
+	groupCollectionWindows          map[string]MetricsCollectionWindow
 	groupTransactions               map[string][]TransactionMetric
 	groupAggregates                 map[string]metricsAggregateSet
 	groupTransactionResponseTimeSLA map[string][]engine.TransactionResponseTimeSLACompliance
@@ -148,6 +149,7 @@ type groupExecution struct {
 }
 
 type executionMetricsSnapshot struct {
+	collectionWindow           MetricsCollectionWindow
 	stats                      GeneratorStats
 	transactions               []TransactionMetric
 	telemetry                  MetricsTelemetry
@@ -746,7 +748,7 @@ func (b *transactionBuffer) Drain() []TransactionMetric {
 // wall-clock window since the previous drain, computed under the buffer lock so
 // it is race-free against concurrent publishers (the periodic ticker and the
 // final post-run publish). The first drain reports the window since the buffer
-// was created (see newTransactionBuffer).
+// was initialized at execution staging.
 func (b *transactionBuffer) DrainWindow() ([]TransactionMetric, *transactionWindowAggregate, time.Duration) {
 	return b.drainWindow(true)
 }
@@ -755,25 +757,37 @@ func (b *transactionBuffer) DrainWindow() ([]TransactionMetric, *transactionWind
 // advance idle windows to preserve cadence, while out-of-band final drains must
 // not split a sibling's rate window unless they actually publish new evidence.
 func (b *transactionBuffer) drainWindow(advanceEmpty bool) ([]TransactionMetric, *transactionWindowAggregate, time.Duration) {
+	transactions, aggregate, window, _ := b.drainObservedWindow(advanceEmpty)
+	return transactions, aggregate, window
+}
+
+// drainObservedWindow captures both boundaries under the same lock that drains
+// results. The interval is independent of any later rate normalization.
+func (b *transactionBuffer) drainObservedWindow(advanceEmpty bool) ([]TransactionMetric, *transactionWindowAggregate, time.Duration, MetricsCollectionWindow) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if !advanceEmpty && len(b.transactions) == 0 && b.window.empty() {
-		return nil, nil, 0
+		return nil, nil, 0, MetricsCollectionWindow{}
 	}
 	now := time.Now()
 	var window time.Duration
+	var observed MetricsCollectionWindow
 	if !b.lastDrainAt.IsZero() {
 		window = now.Sub(b.lastDrainAt)
+		observed.Start = generatorPublishedClock.at(b.lastDrainAt)
+		// Use one clock anchor for both endpoints even if an idle
+		// heartbeat re-anchors the published clock concurrently.
+		observed.End = observed.Start.Add(window)
 	}
 	b.lastDrainAt = now
 	aggregate := b.window
 	b.window = nil
 	if len(b.transactions) == 0 {
-		return nil, aggregate, window
+		return nil, aggregate, window, observed
 	}
 	out := append([]TransactionMetric(nil), b.transactions...)
 	b.transactions = nil
-	return out, aggregate, window
+	return out, aggregate, window, observed
 }
 
 type Service struct {
@@ -2007,6 +2021,7 @@ func (s *Service) publishMetricsWithAggregates(testID string, groupName string, 
 	// again.
 	assignment.groupTransactions = make(map[string][]TransactionMetric)
 	assignment.groupAggregates = make(map[string]metricsAggregateSet)
+	assignment.groupCollectionWindows = map[string]MetricsCollectionWindow{groupName: {}}
 	if assignment.groupTransactionResponseTimeSLA == nil {
 		assignment.groupTransactionResponseTimeSLA = make(map[string][]engine.TransactionResponseTimeSLACompliance)
 	}
@@ -2198,6 +2213,7 @@ func archiveSummaryTelemetryFromBatch(batch *pb.MetricsBatch) *archiveTelemetryH
 	}
 	telemetry := batch.GetTelemetry()
 	out := &archiveTelemetryHealth{
+		CollectionWindows:       archiveCollectionWindowsFromBatch(batch),
 		DroppedResultsAvailable: telemetry.GetDroppedResults() >= 0,
 		DroppedResults:          telemetry.GetDroppedResults(), SheddedArrivals: telemetry.GetSheddedArrivals(),
 		DroppedSubscriberBatches: telemetry.GetDroppedSubscriberBatches(),
@@ -2413,6 +2429,7 @@ func (s *Service) metricsBatchForAssignment(testID string, assignment assignedTe
 	}
 	batch.TransactionResponseTimeSla = transactionResponseTimeSLA
 	batch.HttpVersionMix = httpVersionMixToProto(assignment.groupHTTPVersions)
+	batch.CollectionWindows, batch.CollectionWindowsComplete = collectionWindowsToProto(assignment.groupCollectionWindows)
 	return batch
 }
 
@@ -2775,6 +2792,7 @@ func (s *Service) publishTestExecutionSnapshot(testID string, groupName string, 
 	// and deliberately retain their latest values.
 	assignment.groupTransactions = make(map[string][]TransactionMetric)
 	assignment.groupAggregates = make(map[string]metricsAggregateSet)
+	assignment.groupCollectionWindows = make(map[string]MetricsCollectionWindow)
 	assignment.metricsCollection = nextMetricsCollection()
 	for _, group := range collected {
 		if group.ok {
@@ -2833,8 +2851,9 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 	var transactions []TransactionMetric
 	var aggregateWindow *transactionWindowAggregate
 	var window time.Duration
+	var observed MetricsCollectionWindow
 	if exec.results != nil {
-		transactions, aggregateWindow, window = exec.results.drainWindow(includeIdle || changes.sourceSnapshot)
+		transactions, aggregateWindow, window, observed = exec.results.drainObservedWindow(includeIdle || changes.sourceSnapshot)
 	}
 	hasWindowEvidence := len(transactions) > 0 || !aggregateWindow.empty()
 	changes.windowEvidence = hasWindowEvidence
@@ -2843,6 +2862,7 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 	}
 	if !changes.sourceSnapshot && !hasWindowEvidence {
 		idle := *previous
+		idle.collectionWindow = observed
 		idle.stats = stats
 		idle.transactions = nil
 		idle.aggregates = metricsAggregateSet{MessagingProgress: previous.aggregates.MessagingProgress.Clone()}
@@ -2909,7 +2929,7 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 		httpVersions = previous.httpVersions
 	}
 	metrics := executionMetricsSnapshot{
-		stats: stats, transactions: transactions, telemetry: telemetry, aggregates: aggregates,
+		stats: stats, transactions: transactions, telemetry: telemetry, aggregates: aggregates, collectionWindow: observed,
 		transactionResponseTimeSLA: append([]engine.TransactionResponseTimeSLACompliance(nil), transactionResponseTimeSLA...),
 		httpVersions:               httpVersions.Clone(),
 	}
@@ -3013,6 +3033,10 @@ func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName strin
 	assignment.activeGroups[groupName] = metrics.stats.ActiveVUsers
 	assignment.groupStats[groupName] = metrics.stats
 	assignment.groupTelemetry[groupName] = metrics.telemetry
+	if assignment.groupCollectionWindows == nil {
+		assignment.groupCollectionWindows = make(map[string]MetricsCollectionWindow)
+	}
+	assignment.groupCollectionWindows[groupName] = metrics.collectionWindow
 	if len(metrics.transactions) > 0 {
 		transactions := append([]TransactionMetric(nil), metrics.transactions...)
 		for index := range transactions {
@@ -3091,6 +3115,7 @@ func (s *Service) captureStoppedExecutionMetrics(assignment *assignedTest, execu
 	}
 	assignment.groupTransactions = make(map[string][]TransactionMetric)
 	assignment.groupAggregates = make(map[string]metricsAggregateSet)
+	assignment.groupCollectionWindows = make(map[string]MetricsCollectionWindow)
 	assignment.metricsCollection = nextMetricsCollection()
 	for _, group := range drained {
 		applyExecutionMetricsToAssignment(assignment, group.groupName, group.metrics)

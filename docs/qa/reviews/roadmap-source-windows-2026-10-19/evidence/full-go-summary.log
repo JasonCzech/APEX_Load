@@ -1,0 +1,188 @@
+Command: GOMAXPROCS=3 go test -json -p 1 -parallel 4 -count=1 -timeout=20m ./...
+Exit: 1. One storage initialization test failed with SQLITE_BUSY; see storage retry evidence.
+Package results extracted from the complete retained JSON event stream:
+?   	github.com/jasonczech/apexload/api/proto	[no test files]
+ok  	github.com/jasonczech/apexload/cmd/apexbench	0.612s
+ok  	github.com/jasonczech/apexload/cmd/apexctl	15.304s
+ok  	github.com/jasonczech/apexload/cmd/apexctl/internal/ciclient	0.110s
+ok  	github.com/jasonczech/apexload/cmd/apexfault-target	0.302s
+ok  	github.com/jasonczech/apexload/cmd/apexload-collector-agent	0.162s
+ok  	github.com/jasonczech/apexload/cmd/apexload-java-host-broker	0.183s
+ok  	github.com/jasonczech/apexload/cmd/apexload-java-host-facade	0.163s
+ok  	github.com/jasonczech/apexload/cmd/apexload-java-host-supervisor	0.154s
+ok  	github.com/jasonczech/apexload/cmd/apexload-java-vuser-runner	0.135s
+?   	github.com/jasonczech/apexload/cmd/apexload-record-agent	[no test files]
+ok  	github.com/jasonczech/apexload/cmd/controller	0.966s
+?   	github.com/jasonczech/apexload/cmd/dslschema	[no test files]
+ok  	github.com/jasonczech/apexload/cmd/generator	1.422s
+ok  	github.com/jasonczech/apexload/cmd/openapits	20.143s
+ok  	github.com/jasonczech/apexload/cmd/storeoverlay	0.104s
+?   	github.com/jasonczech/apexload/cmd/swaggergen	[no test files]
+ok  	github.com/jasonczech/apexload/cmd/webcoverage	0.353s
+ok  	github.com/jasonczech/apexload/deployments/k8s	4.696s
+ok  	github.com/jasonczech/apexload/desktop	3.204s
+ok  	github.com/jasonczech/apexload/docs/qa	6.884s
+ok  	github.com/jasonczech/apexload/pkg/analysis	0.206s
+ok  	github.com/jasonczech/apexload/pkg/analysis/duckdb	45.034s
+ok  	github.com/jasonczech/apexload/pkg/api	810.209s
+ok  	github.com/jasonczech/apexload/pkg/api/testexec	0.431s
+ok  	github.com/jasonczech/apexload/pkg/archivecontract	0.088s
+ok  	github.com/jasonczech/apexload/pkg/browserresource	0.118s
+ok  	github.com/jasonczech/apexload/pkg/buildinfo	0.107s
+ok  	github.com/jasonczech/apexload/pkg/collectoragent	42.945s
+ok  	github.com/jasonczech/apexload/pkg/compute	0.161s
+ok  	github.com/jasonczech/apexload/pkg/compute/aws	0.410s
+ok  	github.com/jasonczech/apexload/pkg/compute/azure	0.402s
+ok  	github.com/jasonczech/apexload/pkg/config	0.100s
+ok  	github.com/jasonczech/apexload/pkg/contentmutation	0.117s
+ok  	github.com/jasonczech/apexload/pkg/controller	0.154s
+ok  	github.com/jasonczech/apexload/pkg/convert/agentforce	0.186s
+ok  	github.com/jasonczech/apexload/pkg/convert/asyncapi	0.379s
+ok  	github.com/jasonczech/apexload/pkg/convert/brokerconfig	0.404s
+ok  	github.com/jasonczech/apexload/pkg/convert/bruno	0.673s
+ok  	github.com/jasonczech/apexload/pkg/convert/clientids	0.177s
+ok  	github.com/jasonczech/apexload/pkg/convert/clienttimestamps	0.149s
+ok  	github.com/jasonczech/apexload/pkg/convert/cloudtest	0.174s
+?   	github.com/jasonczech/apexload/pkg/convert/convertresult	[no test files]
+ok  	github.com/jasonczech/apexload/pkg/convert/convertutil	0.081s
+ok  	github.com/jasonczech/apexload/pkg/convert/correlate	0.646s
+ok  	github.com/jasonczech/apexload/pkg/convert/credentialpolicy	0.123s
+ok  	github.com/jasonczech/apexload/pkg/convert/devweb	0.536s
+ok  	github.com/jasonczech/apexload/pkg/convert/diag	0.126s
+ok  	github.com/jasonczech/apexload/pkg/convert/enterprisearchive	10.034s
+ok  	github.com/jasonczech/apexload/pkg/convert/eventhubscapture	0.393s
+ok  	github.com/jasonczech/apexload/pkg/convert/grafana	0.122s
+ok  	github.com/jasonczech/apexload/pkg/convert/har	0.440s
+ok  	github.com/jasonczech/apexload/pkg/convert/importcontract	0.599s
+ok  	github.com/jasonczech/apexload/pkg/convert/importreview	0.151s
+ok  	github.com/jasonczech/apexload/pkg/convert/jmeter	0.544s
+ok  	github.com/jasonczech/apexload/pkg/convert/k6	0.191s
+ok  	github.com/jasonczech/apexload/pkg/convert/mulesoft	0.158s
+ok  	github.com/jasonczech/apexload/pkg/convert/openapi	0.425s
+ok  	github.com/jasonczech/apexload/pkg/convert/paramize	1.376s
+ok  	github.com/jasonczech/apexload/pkg/convert/postman	0.414s
+ok  	github.com/jasonczech/apexload/pkg/convert/raml	0.166s
+ok  	github.com/jasonczech/apexload/pkg/convert/recordedshape	0.160s
+ok  	github.com/jasonczech/apexload/pkg/convert/recorderjson	0.175s
+ok  	github.com/jasonczech/apexload/pkg/convert/requestimport	0.383s
+ok  	github.com/jasonczech/apexload/pkg/convert/salesforce	3.557s
+ok  	github.com/jasonczech/apexload/pkg/convert/sample	0.584s
+ok  	github.com/jasonczech/apexload/pkg/convert/sharedvalue	0.180s
+ok  	github.com/jasonczech/apexload/pkg/convert/sourceview	0.111s
+ok  	github.com/jasonczech/apexload/pkg/convert/srcparse	0.106s
+ok  	github.com/jasonczech/apexload/pkg/convert/tmpl	0.111s
+ok  	github.com/jasonczech/apexload/pkg/convert/trueclient	0.226s
+ok  	github.com/jasonczech/apexload/pkg/convert/uniquify	0.174s
+ok  	github.com/jasonczech/apexload/pkg/convert/wsdl	0.343s
+ok  	github.com/jasonczech/apexload/pkg/credential	0.111s
+ok  	github.com/jasonczech/apexload/pkg/debugserver	0.153s
+ok  	github.com/jasonczech/apexload/pkg/deeplink	0.105s
+ok  	github.com/jasonczech/apexload/pkg/distributed/generatorrpc	47.971s
+ok  	github.com/jasonczech/apexload/pkg/distributed/rendezvous	0.314s
+ok  	github.com/jasonczech/apexload/pkg/dsl	0.480s
+ok  	github.com/jasonczech/apexload/pkg/dsl/schemagen	0.368s
+ok  	github.com/jasonczech/apexload/pkg/dslwalk	0.186s
+ok  	github.com/jasonczech/apexload/pkg/dynatrace	5.387s
+ok  	github.com/jasonczech/apexload/pkg/elastic	5.113s
+ok  	github.com/jasonczech/apexload/pkg/engine	77.852s
+ok  	github.com/jasonczech/apexload/pkg/fileasset	0.164s
+ok  	github.com/jasonczech/apexload/pkg/harsynth	2.470s
+ok  	github.com/jasonczech/apexload/pkg/hostnet	0.094s
+ok  	github.com/jasonczech/apexload/pkg/identitypolicy	0.103s
+ok  	github.com/jasonczech/apexload/pkg/importartifact	4.550s
+ok  	github.com/jasonczech/apexload/pkg/importartifact/legacyresolver	0.097s
+ok  	github.com/jasonczech/apexload/pkg/importsession	0.092s
+ok  	github.com/jasonczech/apexload/pkg/internal/archiveingest	0.098s
+ok  	github.com/jasonczech/apexload/pkg/internal/archivequota	8.348s
+ok  	github.com/jasonczech/apexload/pkg/internal/aurafixture	0.195s
+ok  	github.com/jasonczech/apexload/pkg/internal/aurapayload	0.172s
+ok  	github.com/jasonczech/apexload/pkg/internal/bodyencoding	0.098s
+ok  	github.com/jasonczech/apexload/pkg/internal/boundedcache	0.087s
+ok  	github.com/jasonczech/apexload/pkg/internal/boundedtext	0.091s
+?   	github.com/jasonczech/apexload/pkg/internal/contentcontract	[no test files]
+ok  	github.com/jasonczech/apexload/pkg/internal/contentdecode	0.235s
+ok  	github.com/jasonczech/apexload/pkg/internal/diskspace	0.091s
+?   	github.com/jasonczech/apexload/pkg/internal/extractiontest	[no test files]
+ok  	github.com/jasonczech/apexload/pkg/internal/filelock	0.295s
+ok  	github.com/jasonczech/apexload/pkg/internal/grpcclient	0.146s
+ok  	github.com/jasonczech/apexload/pkg/internal/h3fixture	2.141s
+ok  	github.com/jasonczech/apexload/pkg/internal/hostpattern	0.091s
+ok  	github.com/jasonczech/apexload/pkg/internal/importreview	0.593s
+ok  	github.com/jasonczech/apexload/pkg/internal/jsonquery	0.161s
+ok  	github.com/jasonczech/apexload/pkg/internal/paritytest	0.383s
+ok  	github.com/jasonczech/apexload/pkg/internal/pwshutdown	0.202s
+ok  	github.com/jasonczech/apexload/pkg/internal/strftime	0.102s
+ok  	github.com/jasonczech/apexload/pkg/internal/subprocessguard	0.145s
+ok  	github.com/jasonczech/apexload/pkg/internal/templatedjson	0.099s
+ok  	github.com/jasonczech/apexload/pkg/internal/testlog	0.095s
+?   	github.com/jasonczech/apexload/pkg/internal/winfs	[no test files]
+ok  	github.com/jasonczech/apexload/pkg/internal/zipbounds	0.107s
+ok  	github.com/jasonczech/apexload/pkg/javarunner	15.134s
+ok  	github.com/jasonczech/apexload/pkg/javarunner/broker	3.079s
+ok  	github.com/jasonczech/apexload/pkg/javarunner/ipc	0.092s
+ok  	github.com/jasonczech/apexload/pkg/javasidecar	30.100s
+ok  	github.com/jasonczech/apexload/pkg/keywrap	0.163s
+ok  	github.com/jasonczech/apexload/pkg/kubeops	0.305s
+ok  	github.com/jasonczech/apexload/pkg/librarycontract	0.101s
+ok  	github.com/jasonczech/apexload/pkg/livetable	0.713s
+ok  	github.com/jasonczech/apexload/pkg/monitorcontract	0.100s
+ok  	github.com/jasonczech/apexload/pkg/monitorprovider	1.667s
+ok  	github.com/jasonczech/apexload/pkg/netpolicy	0.100s
+ok  	github.com/jasonczech/apexload/pkg/perfevidence	3.127s
+ok  	github.com/jasonczech/apexload/pkg/prometheus	0.163s
+ok  	github.com/jasonczech/apexload/pkg/protocol	0.684s
+ok  	github.com/jasonczech/apexload/pkg/protocol/appium	3.741s
+ok  	github.com/jasonczech/apexload/pkg/protocol/aura	0.134s
+ok  	github.com/jasonczech/apexload/pkg/protocol/browser	93.026s
+ok  	github.com/jasonczech/apexload/pkg/protocol/browsercontract	0.247s
+ok  	github.com/jasonczech/apexload/pkg/protocol/builtin	0.410s
+ok  	github.com/jasonczech/apexload/pkg/protocol/database	0.209s
+ok  	github.com/jasonczech/apexload/pkg/protocol/eventhubs	0.282s
+ok  	github.com/jasonczech/apexload/pkg/protocol/grpc	0.852s
+ok  	github.com/jasonczech/apexload/pkg/protocol/http	22.664s
+ok  	github.com/jasonczech/apexload/pkg/protocol/http/internal/h3transport	5.197s
+ok  	github.com/jasonczech/apexload/pkg/protocol/http/pagecontext	0.106s
+ok  	github.com/jasonczech/apexload/pkg/protocol/httpcontract	0.135s
+ok  	github.com/jasonczech/apexload/pkg/protocol/java_http	0.259s
+ok  	github.com/jasonczech/apexload/pkg/protocol/java_vuser	6.532s
+ok  	github.com/jasonczech/apexload/pkg/protocol/jms	5.444s
+ok  	github.com/jasonczech/apexload/pkg/protocol/jsonextract	0.161s
+?   	github.com/jasonczech/apexload/pkg/protocol/jsonextract/jsonextracttest	[no test files]
+ok  	github.com/jasonczech/apexload/pkg/protocol/kafka	15.482s
+ok  	github.com/jasonczech/apexload/pkg/protocol/kafkacontract	0.109s
+ok  	github.com/jasonczech/apexload/pkg/protocol/messaging	0.108s
+ok  	github.com/jasonczech/apexload/pkg/protocol/network	0.320s
+ok  	github.com/jasonczech/apexload/pkg/protocol/soap	0.264s
+ok  	github.com/jasonczech/apexload/pkg/protocol/websocket	0.268s
+ok  	github.com/jasonczech/apexload/pkg/qrcode	0.117s
+ok  	github.com/jasonczech/apexload/pkg/rca	0.205s
+ok  	github.com/jasonczech/apexload/pkg/rca/signatures	0.098s
+ok  	github.com/jasonczech/apexload/pkg/recordagent	0.487s
+ok  	github.com/jasonczech/apexload/pkg/recordbridge	1.299s
+ok  	github.com/jasonczech/apexload/pkg/recorder	4.728s
+ok  	github.com/jasonczech/apexload/pkg/recorder/browser	30.387s
+ok  	github.com/jasonczech/apexload/pkg/recorder/marker	0.166s
+ok  	github.com/jasonczech/apexload/pkg/recordingprofile	0.117s
+ok  	github.com/jasonczech/apexload/pkg/refkey	0.094s
+ok  	github.com/jasonczech/apexload/pkg/runcontract	0.128s
+ok  	github.com/jasonczech/apexload/pkg/runtimetuning	0.105s
+ok  	github.com/jasonczech/apexload/pkg/scriptdisclosure	3.104s
+ok  	github.com/jasonczech/apexload/pkg/scrub	0.443s
+ok  	github.com/jasonczech/apexload/pkg/secretstore	1.534s
+ok  	github.com/jasonczech/apexload/pkg/selector	0.118s
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/storage	104.445s
+ok  	github.com/jasonczech/apexload/pkg/telemetry	0.189s
+ok  	github.com/jasonczech/apexload/pkg/telemetrypolicy	0.089s
+ok  	github.com/jasonczech/apexload/pkg/trafficprofile	0.220s
+ok  	github.com/jasonczech/apexload/runners/java_vuser	47.737s
+ok  	github.com/jasonczech/apexload/scripts	22.423s
+ok  	github.com/jasonczech/apexload/scripts/fault_s3_probe	0.111s
+?   	github.com/jasonczech/apexload/scripts/java-shared-jvm-bench	[no test files]
+ok  	github.com/jasonczech/apexload/scripts/multiproject	0.052s
+
+Failed test output:
+=== RUN   TestScriptContentRevisionConcurrentInitialization
+    script_content_revision_test.go:959: create legacy application for project unassigned: database is locked (5) (SQLITE_BUSY)
+--- FAIL: TestScriptContentRevisionConcurrentInitialization (0.26s)
+Raw event SHA-256: 41c79e9225531e0fec22554caa1f33069a8f751d21ec2c3b8754e1d6e765d249

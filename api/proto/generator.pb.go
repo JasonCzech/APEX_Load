@@ -10,6 +10,7 @@ import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -3834,8 +3835,16 @@ type MetricsBatch struct {
 	// transactions (transaction_metrics). An older generator sends 0: its
 	// transactions belong to no group's share.
 	GroupTransactionsVersion uint32 `protobuf:"varint,38,opt,name=group_transactions_version,json=groupTransactionsVersion,proto3" json:"group_transactions_version,omitempty"`
-	unknownFields            protoimpl.UnknownFields
-	sizeCache                protoimpl.SizeCache
+	// Actual per-group result-buffer drain intervals on the source's published
+	// clock. These are not the effective/clamped window_ms rate denominator.
+	// Lifecycle replays repeat them under the same collection_sequence.
+	CollectionWindows []*MetricsCollectionWindow `protobuf:"bytes,39,rep,name=collection_windows,json=collectionWindows,proto3" json:"collection_windows,omitempty"`
+	// True only if every group drained in this collection has valid retained
+	// boundaries. False for legacy, missing, invalid or bounded-out evidence.
+	// This does not certify cross-host clock quality or durable delivery.
+	CollectionWindowsComplete bool `protobuf:"varint,40,opt,name=collection_windows_complete,json=collectionWindowsComplete,proto3" json:"collection_windows_complete,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *MetricsBatch) Reset() {
@@ -4134,6 +4143,80 @@ func (x *MetricsBatch) GetGroupTransactionsVersion() uint32 {
 	return 0
 }
 
+func (x *MetricsBatch) GetCollectionWindows() []*MetricsCollectionWindow {
+	if x != nil {
+		return x.CollectionWindows
+	}
+	return nil
+}
+
+func (x *MetricsBatch) GetCollectionWindowsComplete() bool {
+	if x != nil {
+		return x.CollectionWindowsComplete
+	}
+	return false
+}
+
+type MetricsCollectionWindow struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Group         string                 `protobuf:"bytes,1,opt,name=group,proto3" json:"group,omitempty"`
+	Start         *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=start,proto3" json:"start,omitempty"`
+	End           *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=end,proto3" json:"end,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MetricsCollectionWindow) Reset() {
+	*x = MetricsCollectionWindow{}
+	mi := &file_api_proto_generator_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricsCollectionWindow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricsCollectionWindow) ProtoMessage() {}
+
+func (x *MetricsCollectionWindow) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_generator_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricsCollectionWindow.ProtoReflect.Descriptor instead.
+func (*MetricsCollectionWindow) Descriptor() ([]byte, []int) {
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *MetricsCollectionWindow) GetGroup() string {
+	if x != nil {
+		return x.Group
+	}
+	return ""
+}
+
+func (x *MetricsCollectionWindow) GetStart() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Start
+	}
+	return nil
+}
+
+func (x *MetricsCollectionWindow) GetEnd() *timestamppb.Timestamp {
+	if x != nil {
+		return x.End
+	}
+	return nil
+}
+
 type MetricsBatchTelemetry struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	DroppedResults    int64                  `protobuf:"varint,1,opt,name=dropped_results,json=droppedResults,proto3" json:"dropped_results,omitempty"`
@@ -4165,7 +4248,7 @@ type MetricsBatchTelemetry struct {
 
 func (x *MetricsBatchTelemetry) Reset() {
 	*x = MetricsBatchTelemetry{}
-	mi := &file_api_proto_generator_proto_msgTypes[42]
+	mi := &file_api_proto_generator_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4177,7 +4260,7 @@ func (x *MetricsBatchTelemetry) String() string {
 func (*MetricsBatchTelemetry) ProtoMessage() {}
 
 func (x *MetricsBatchTelemetry) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[42]
+	mi := &file_api_proto_generator_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4190,7 +4273,7 @@ func (x *MetricsBatchTelemetry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsBatchTelemetry.ProtoReflect.Descriptor instead.
 func (*MetricsBatchTelemetry) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{42}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *MetricsBatchTelemetry) GetDroppedResults() int64 {
@@ -4287,7 +4370,7 @@ type GroupMetric struct {
 
 func (x *GroupMetric) Reset() {
 	*x = GroupMetric{}
-	mi := &file_api_proto_generator_proto_msgTypes[43]
+	mi := &file_api_proto_generator_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4299,7 +4382,7 @@ func (x *GroupMetric) String() string {
 func (*GroupMetric) ProtoMessage() {}
 
 func (x *GroupMetric) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[43]
+	mi := &file_api_proto_generator_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4312,7 +4395,7 @@ func (x *GroupMetric) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GroupMetric.ProtoReflect.Descriptor instead.
 func (*GroupMetric) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{43}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *GroupMetric) GetName() string {
@@ -4385,7 +4468,7 @@ type HTTPVersionMix struct {
 
 func (x *HTTPVersionMix) Reset() {
 	*x = HTTPVersionMix{}
-	mi := &file_api_proto_generator_proto_msgTypes[44]
+	mi := &file_api_proto_generator_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4397,7 +4480,7 @@ func (x *HTTPVersionMix) String() string {
 func (*HTTPVersionMix) ProtoMessage() {}
 
 func (x *HTTPVersionMix) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[44]
+	mi := &file_api_proto_generator_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4410,7 +4493,7 @@ func (x *HTTPVersionMix) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HTTPVersionMix.ProtoReflect.Descriptor instead.
 func (*HTTPVersionMix) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{44}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *HTTPVersionMix) GetActions() int64 {
@@ -4505,7 +4588,7 @@ type TransactionResponseTimeSLACompliance struct {
 
 func (x *TransactionResponseTimeSLACompliance) Reset() {
 	*x = TransactionResponseTimeSLACompliance{}
-	mi := &file_api_proto_generator_proto_msgTypes[45]
+	mi := &file_api_proto_generator_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4517,7 +4600,7 @@ func (x *TransactionResponseTimeSLACompliance) String() string {
 func (*TransactionResponseTimeSLACompliance) ProtoMessage() {}
 
 func (x *TransactionResponseTimeSLACompliance) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[45]
+	mi := &file_api_proto_generator_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4530,7 +4613,7 @@ func (x *TransactionResponseTimeSLACompliance) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use TransactionResponseTimeSLACompliance.ProtoReflect.Descriptor instead.
 func (*TransactionResponseTimeSLACompliance) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{45}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *TransactionResponseTimeSLACompliance) GetGroup() string {
@@ -4592,7 +4675,7 @@ type TDigestCentroid struct {
 
 func (x *TDigestCentroid) Reset() {
 	*x = TDigestCentroid{}
-	mi := &file_api_proto_generator_proto_msgTypes[46]
+	mi := &file_api_proto_generator_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4604,7 +4687,7 @@ func (x *TDigestCentroid) String() string {
 func (*TDigestCentroid) ProtoMessage() {}
 
 func (x *TDigestCentroid) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[46]
+	mi := &file_api_proto_generator_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4617,7 +4700,7 @@ func (x *TDigestCentroid) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TDigestCentroid.ProtoReflect.Descriptor instead.
 func (*TDigestCentroid) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{46}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *TDigestCentroid) GetMean() float64 {
@@ -4648,7 +4731,7 @@ type TDigestSnapshot struct {
 
 func (x *TDigestSnapshot) Reset() {
 	*x = TDigestSnapshot{}
-	mi := &file_api_proto_generator_proto_msgTypes[47]
+	mi := &file_api_proto_generator_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4660,7 +4743,7 @@ func (x *TDigestSnapshot) String() string {
 func (*TDigestSnapshot) ProtoMessage() {}
 
 func (x *TDigestSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[47]
+	mi := &file_api_proto_generator_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4673,7 +4756,7 @@ func (x *TDigestSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TDigestSnapshot.ProtoReflect.Descriptor instead.
 func (*TDigestSnapshot) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{47}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *TDigestSnapshot) GetCompression() float64 {
@@ -4729,7 +4812,7 @@ type DurationSketchBin struct {
 
 func (x *DurationSketchBin) Reset() {
 	*x = DurationSketchBin{}
-	mi := &file_api_proto_generator_proto_msgTypes[48]
+	mi := &file_api_proto_generator_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4741,7 +4824,7 @@ func (x *DurationSketchBin) String() string {
 func (*DurationSketchBin) ProtoMessage() {}
 
 func (x *DurationSketchBin) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[48]
+	mi := &file_api_proto_generator_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4754,7 +4837,7 @@ func (x *DurationSketchBin) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DurationSketchBin.ProtoReflect.Descriptor instead.
 func (*DurationSketchBin) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{48}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *DurationSketchBin) GetIndex() int32 {
@@ -4792,7 +4875,7 @@ type DurationSketchSnapshot struct {
 
 func (x *DurationSketchSnapshot) Reset() {
 	*x = DurationSketchSnapshot{}
-	mi := &file_api_proto_generator_proto_msgTypes[49]
+	mi := &file_api_proto_generator_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4804,7 +4887,7 @@ func (x *DurationSketchSnapshot) String() string {
 func (*DurationSketchSnapshot) ProtoMessage() {}
 
 func (x *DurationSketchSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[49]
+	mi := &file_api_proto_generator_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4817,7 +4900,7 @@ func (x *DurationSketchSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DurationSketchSnapshot.ProtoReflect.Descriptor instead.
 func (*DurationSketchSnapshot) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{49}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *DurationSketchSnapshot) GetVersion() int32 {
@@ -4917,7 +5000,7 @@ type MetricAggregate struct {
 
 func (x *MetricAggregate) Reset() {
 	*x = MetricAggregate{}
-	mi := &file_api_proto_generator_proto_msgTypes[50]
+	mi := &file_api_proto_generator_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4929,7 +5012,7 @@ func (x *MetricAggregate) String() string {
 func (*MetricAggregate) ProtoMessage() {}
 
 func (x *MetricAggregate) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[50]
+	mi := &file_api_proto_generator_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4942,7 +5025,7 @@ func (x *MetricAggregate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricAggregate.ProtoReflect.Descriptor instead.
 func (*MetricAggregate) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{50}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *MetricAggregate) GetName() string {
@@ -5114,7 +5197,7 @@ type TraceExemplar struct {
 
 func (x *TraceExemplar) Reset() {
 	*x = TraceExemplar{}
-	mi := &file_api_proto_generator_proto_msgTypes[51]
+	mi := &file_api_proto_generator_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5126,7 +5209,7 @@ func (x *TraceExemplar) String() string {
 func (*TraceExemplar) ProtoMessage() {}
 
 func (x *TraceExemplar) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[51]
+	mi := &file_api_proto_generator_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5139,7 +5222,7 @@ func (x *TraceExemplar) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TraceExemplar.ProtoReflect.Descriptor instead.
 func (*TraceExemplar) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{51}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *TraceExemplar) GetTraceId() string {
@@ -5214,7 +5297,7 @@ type BrowserMetrics struct {
 
 func (x *BrowserMetrics) Reset() {
 	*x = BrowserMetrics{}
-	mi := &file_api_proto_generator_proto_msgTypes[52]
+	mi := &file_api_proto_generator_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5226,7 +5309,7 @@ func (x *BrowserMetrics) String() string {
 func (*BrowserMetrics) ProtoMessage() {}
 
 func (x *BrowserMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[52]
+	mi := &file_api_proto_generator_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5239,7 +5322,7 @@ func (x *BrowserMetrics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BrowserMetrics.ProtoReflect.Descriptor instead.
 func (*BrowserMetrics) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{52}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *BrowserMetrics) GetSamples() int64 {
@@ -5339,7 +5422,7 @@ type BrowserDeviceMetrics struct {
 
 func (x *BrowserDeviceMetrics) Reset() {
 	*x = BrowserDeviceMetrics{}
-	mi := &file_api_proto_generator_proto_msgTypes[53]
+	mi := &file_api_proto_generator_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5351,7 +5434,7 @@ func (x *BrowserDeviceMetrics) String() string {
 func (*BrowserDeviceMetrics) ProtoMessage() {}
 
 func (x *BrowserDeviceMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[53]
+	mi := &file_api_proto_generator_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5364,7 +5447,7 @@ func (x *BrowserDeviceMetrics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BrowserDeviceMetrics.ProtoReflect.Descriptor instead.
 func (*BrowserDeviceMetrics) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{53}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *BrowserDeviceMetrics) GetDeviceProfile() string {
@@ -5450,7 +5533,7 @@ type ServerTelemetry struct {
 
 func (x *ServerTelemetry) Reset() {
 	*x = ServerTelemetry{}
-	mi := &file_api_proto_generator_proto_msgTypes[54]
+	mi := &file_api_proto_generator_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5462,7 +5545,7 @@ func (x *ServerTelemetry) String() string {
 func (*ServerTelemetry) ProtoMessage() {}
 
 func (x *ServerTelemetry) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[54]
+	mi := &file_api_proto_generator_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5475,7 +5558,7 @@ func (x *ServerTelemetry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerTelemetry.ProtoReflect.Descriptor instead.
 func (*ServerTelemetry) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{54}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *ServerTelemetry) GetServerProcessingMs() float64 {
@@ -5762,7 +5845,7 @@ type WebSocketDiagnostics struct {
 
 func (x *WebSocketDiagnostics) Reset() {
 	*x = WebSocketDiagnostics{}
-	mi := &file_api_proto_generator_proto_msgTypes[55]
+	mi := &file_api_proto_generator_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5774,7 +5857,7 @@ func (x *WebSocketDiagnostics) String() string {
 func (*WebSocketDiagnostics) ProtoMessage() {}
 
 func (x *WebSocketDiagnostics) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[55]
+	mi := &file_api_proto_generator_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5787,7 +5870,7 @@ func (x *WebSocketDiagnostics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebSocketDiagnostics.ProtoReflect.Descriptor instead.
 func (*WebSocketDiagnostics) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{55}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *WebSocketDiagnostics) GetOperation() string {
@@ -5932,7 +6015,7 @@ type GRPCDiagnostics struct {
 
 func (x *GRPCDiagnostics) Reset() {
 	*x = GRPCDiagnostics{}
-	mi := &file_api_proto_generator_proto_msgTypes[56]
+	mi := &file_api_proto_generator_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5944,7 +6027,7 @@ func (x *GRPCDiagnostics) String() string {
 func (*GRPCDiagnostics) ProtoMessage() {}
 
 func (x *GRPCDiagnostics) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[56]
+	mi := &file_api_proto_generator_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5957,7 +6040,7 @@ func (x *GRPCDiagnostics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GRPCDiagnostics.ProtoReflect.Descriptor instead.
 func (*GRPCDiagnostics) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{56}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *GRPCDiagnostics) GetMethod() string {
@@ -6084,7 +6167,7 @@ type TransactionMetric struct {
 
 func (x *TransactionMetric) Reset() {
 	*x = TransactionMetric{}
-	mi := &file_api_proto_generator_proto_msgTypes[57]
+	mi := &file_api_proto_generator_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6096,7 +6179,7 @@ func (x *TransactionMetric) String() string {
 func (*TransactionMetric) ProtoMessage() {}
 
 func (x *TransactionMetric) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[57]
+	mi := &file_api_proto_generator_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6109,7 +6192,7 @@ func (x *TransactionMetric) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionMetric.ProtoReflect.Descriptor instead.
 func (*TransactionMetric) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{57}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *TransactionMetric) GetWorkerDurationMs() float64 {
@@ -6333,7 +6416,7 @@ type GeneratorStats struct {
 
 func (x *GeneratorStats) Reset() {
 	*x = GeneratorStats{}
-	mi := &file_api_proto_generator_proto_msgTypes[58]
+	mi := &file_api_proto_generator_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6345,7 +6428,7 @@ func (x *GeneratorStats) String() string {
 func (*GeneratorStats) ProtoMessage() {}
 
 func (x *GeneratorStats) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[58]
+	mi := &file_api_proto_generator_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6358,7 +6441,7 @@ func (x *GeneratorStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GeneratorStats.ProtoReflect.Descriptor instead.
 func (*GeneratorStats) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{58}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *GeneratorStats) GetCompletedIterations() int64 {
@@ -6641,7 +6724,7 @@ type ControlSignal struct {
 
 func (x *ControlSignal) Reset() {
 	*x = ControlSignal{}
-	mi := &file_api_proto_generator_proto_msgTypes[59]
+	mi := &file_api_proto_generator_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6653,7 +6736,7 @@ func (x *ControlSignal) String() string {
 func (*ControlSignal) ProtoMessage() {}
 
 func (x *ControlSignal) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[59]
+	mi := &file_api_proto_generator_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6666,7 +6749,7 @@ func (x *ControlSignal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlSignal.ProtoReflect.Descriptor instead.
 func (*ControlSignal) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{59}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *ControlSignal) GetSignal() isControlSignal_Signal {
@@ -6742,7 +6825,7 @@ type PauseRequest struct {
 
 func (x *PauseRequest) Reset() {
 	*x = PauseRequest{}
-	mi := &file_api_proto_generator_proto_msgTypes[60]
+	mi := &file_api_proto_generator_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6754,7 +6837,7 @@ func (x *PauseRequest) String() string {
 func (*PauseRequest) ProtoMessage() {}
 
 func (x *PauseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[60]
+	mi := &file_api_proto_generator_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6767,7 +6850,7 @@ func (x *PauseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PauseRequest.ProtoReflect.Descriptor instead.
 func (*PauseRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{60}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *PauseRequest) GetTestId() string {
@@ -6835,7 +6918,7 @@ type PauseAck struct {
 
 func (x *PauseAck) Reset() {
 	*x = PauseAck{}
-	mi := &file_api_proto_generator_proto_msgTypes[61]
+	mi := &file_api_proto_generator_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6847,7 +6930,7 @@ func (x *PauseAck) String() string {
 func (*PauseAck) ProtoMessage() {}
 
 func (x *PauseAck) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[61]
+	mi := &file_api_proto_generator_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6860,7 +6943,7 @@ func (x *PauseAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PauseAck.ProtoReflect.Descriptor instead.
 func (*PauseAck) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{61}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *PauseAck) GetAccepted() bool {
@@ -6916,7 +6999,7 @@ type HeartbeatPing struct {
 
 func (x *HeartbeatPing) Reset() {
 	*x = HeartbeatPing{}
-	mi := &file_api_proto_generator_proto_msgTypes[62]
+	mi := &file_api_proto_generator_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6928,7 +7011,7 @@ func (x *HeartbeatPing) String() string {
 func (*HeartbeatPing) ProtoMessage() {}
 
 func (x *HeartbeatPing) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[62]
+	mi := &file_api_proto_generator_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6941,7 +7024,7 @@ func (x *HeartbeatPing) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatPing.ProtoReflect.Descriptor instead.
 func (*HeartbeatPing) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{62}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *HeartbeatPing) GetGeneratorId() string {
@@ -6991,7 +7074,7 @@ type ProtocolRuntimeCapacity struct {
 
 func (x *ProtocolRuntimeCapacity) Reset() {
 	*x = ProtocolRuntimeCapacity{}
-	mi := &file_api_proto_generator_proto_msgTypes[63]
+	mi := &file_api_proto_generator_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7003,7 +7086,7 @@ func (x *ProtocolRuntimeCapacity) String() string {
 func (*ProtocolRuntimeCapacity) ProtoMessage() {}
 
 func (x *ProtocolRuntimeCapacity) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[63]
+	mi := &file_api_proto_generator_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7016,7 +7099,7 @@ func (x *ProtocolRuntimeCapacity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProtocolRuntimeCapacity.ProtoReflect.Descriptor instead.
 func (*ProtocolRuntimeCapacity) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{63}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *ProtocolRuntimeCapacity) GetProtocol() string {
@@ -7096,7 +7179,7 @@ type SharedJVMCapacity struct {
 
 func (x *SharedJVMCapacity) Reset() {
 	*x = SharedJVMCapacity{}
-	mi := &file_api_proto_generator_proto_msgTypes[64]
+	mi := &file_api_proto_generator_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7108,7 +7191,7 @@ func (x *SharedJVMCapacity) String() string {
 func (*SharedJVMCapacity) ProtoMessage() {}
 
 func (x *SharedJVMCapacity) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[64]
+	mi := &file_api_proto_generator_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7121,7 +7204,7 @@ func (x *SharedJVMCapacity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SharedJVMCapacity.ProtoReflect.Descriptor instead.
 func (*SharedJVMCapacity) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{64}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *SharedJVMCapacity) GetVusersPerJvm() int32 {
@@ -7166,7 +7249,7 @@ type GeneratorSafetyExitEvidence struct {
 
 func (x *GeneratorSafetyExitEvidence) Reset() {
 	*x = GeneratorSafetyExitEvidence{}
-	mi := &file_api_proto_generator_proto_msgTypes[65]
+	mi := &file_api_proto_generator_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7178,7 +7261,7 @@ func (x *GeneratorSafetyExitEvidence) String() string {
 func (*GeneratorSafetyExitEvidence) ProtoMessage() {}
 
 func (x *GeneratorSafetyExitEvidence) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[65]
+	mi := &file_api_proto_generator_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7191,7 +7274,7 @@ func (x *GeneratorSafetyExitEvidence) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GeneratorSafetyExitEvidence.ProtoReflect.Descriptor instead.
 func (*GeneratorSafetyExitEvidence) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{65}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *GeneratorSafetyExitEvidence) GetTestId() string {
@@ -7278,7 +7361,7 @@ type HeartbeatPong struct {
 
 func (x *HeartbeatPong) Reset() {
 	*x = HeartbeatPong{}
-	mi := &file_api_proto_generator_proto_msgTypes[66]
+	mi := &file_api_proto_generator_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7290,7 +7373,7 @@ func (x *HeartbeatPong) String() string {
 func (*HeartbeatPong) ProtoMessage() {}
 
 func (x *HeartbeatPong) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[66]
+	mi := &file_api_proto_generator_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7303,7 +7386,7 @@ func (x *HeartbeatPong) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatPong.ProtoReflect.Descriptor instead.
 func (*HeartbeatPong) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{66}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *HeartbeatPong) GetGeneratorId() string {
@@ -7451,7 +7534,7 @@ type ScriptPayload struct {
 
 func (x *ScriptPayload) Reset() {
 	*x = ScriptPayload{}
-	mi := &file_api_proto_generator_proto_msgTypes[67]
+	mi := &file_api_proto_generator_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7463,7 +7546,7 @@ func (x *ScriptPayload) String() string {
 func (*ScriptPayload) ProtoMessage() {}
 
 func (x *ScriptPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[67]
+	mi := &file_api_proto_generator_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7476,7 +7559,7 @@ func (x *ScriptPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScriptPayload.ProtoReflect.Descriptor instead.
 func (*ScriptPayload) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{67}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *ScriptPayload) GetScriptId() string {
@@ -7517,7 +7600,7 @@ type ScriptAck struct {
 
 func (x *ScriptAck) Reset() {
 	*x = ScriptAck{}
-	mi := &file_api_proto_generator_proto_msgTypes[68]
+	mi := &file_api_proto_generator_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7529,7 +7612,7 @@ func (x *ScriptAck) String() string {
 func (*ScriptAck) ProtoMessage() {}
 
 func (x *ScriptAck) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[68]
+	mi := &file_api_proto_generator_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7542,7 +7625,7 @@ func (x *ScriptAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScriptAck.ProtoReflect.Descriptor instead.
 func (*ScriptAck) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{68}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *ScriptAck) GetCached() bool {
@@ -7571,7 +7654,7 @@ type ArchiveArtifactRequest struct {
 
 func (x *ArchiveArtifactRequest) Reset() {
 	*x = ArchiveArtifactRequest{}
-	mi := &file_api_proto_generator_proto_msgTypes[69]
+	mi := &file_api_proto_generator_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7583,7 +7666,7 @@ func (x *ArchiveArtifactRequest) String() string {
 func (*ArchiveArtifactRequest) ProtoMessage() {}
 
 func (x *ArchiveArtifactRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[69]
+	mi := &file_api_proto_generator_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7596,7 +7679,7 @@ func (x *ArchiveArtifactRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveArtifactRequest.ProtoReflect.Descriptor instead.
 func (*ArchiveArtifactRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{69}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *ArchiveArtifactRequest) GetTestId() string {
@@ -7631,7 +7714,7 @@ type ArchiveArtifact struct {
 
 func (x *ArchiveArtifact) Reset() {
 	*x = ArchiveArtifact{}
-	mi := &file_api_proto_generator_proto_msgTypes[70]
+	mi := &file_api_proto_generator_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7643,7 +7726,7 @@ func (x *ArchiveArtifact) String() string {
 func (*ArchiveArtifact) ProtoMessage() {}
 
 func (x *ArchiveArtifact) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[70]
+	mi := &file_api_proto_generator_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7656,7 +7739,7 @@ func (x *ArchiveArtifact) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveArtifact.ProtoReflect.Descriptor instead.
 func (*ArchiveArtifact) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{70}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *ArchiveArtifact) GetName() string {
@@ -7694,7 +7777,7 @@ type ArchiveArtifactChunk struct {
 
 func (x *ArchiveArtifactChunk) Reset() {
 	*x = ArchiveArtifactChunk{}
-	mi := &file_api_proto_generator_proto_msgTypes[71]
+	mi := &file_api_proto_generator_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7706,7 +7789,7 @@ func (x *ArchiveArtifactChunk) String() string {
 func (*ArchiveArtifactChunk) ProtoMessage() {}
 
 func (x *ArchiveArtifactChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[71]
+	mi := &file_api_proto_generator_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7719,7 +7802,7 @@ func (x *ArchiveArtifactChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveArtifactChunk.ProtoReflect.Descriptor instead.
 func (*ArchiveArtifactChunk) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{71}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *ArchiveArtifactChunk) GetName() string {
@@ -7774,7 +7857,7 @@ type RunAdoptionProof struct {
 
 func (x *RunAdoptionProof) Reset() {
 	*x = RunAdoptionProof{}
-	mi := &file_api_proto_generator_proto_msgTypes[72]
+	mi := &file_api_proto_generator_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7786,7 +7869,7 @@ func (x *RunAdoptionProof) String() string {
 func (*RunAdoptionProof) ProtoMessage() {}
 
 func (x *RunAdoptionProof) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[72]
+	mi := &file_api_proto_generator_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7799,7 +7882,7 @@ func (x *RunAdoptionProof) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunAdoptionProof.ProtoReflect.Descriptor instead.
 func (*RunAdoptionProof) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{72}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *RunAdoptionProof) GetGeneration() uint64 {
@@ -7826,7 +7909,7 @@ type HTTP3ProbeRequest struct {
 
 func (x *HTTP3ProbeRequest) Reset() {
 	*x = HTTP3ProbeRequest{}
-	mi := &file_api_proto_generator_proto_msgTypes[73]
+	mi := &file_api_proto_generator_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7838,7 +7921,7 @@ func (x *HTTP3ProbeRequest) String() string {
 func (*HTTP3ProbeRequest) ProtoMessage() {}
 
 func (x *HTTP3ProbeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[73]
+	mi := &file_api_proto_generator_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7851,7 +7934,7 @@ func (x *HTTP3ProbeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HTTP3ProbeRequest.ProtoReflect.Descriptor instead.
 func (*HTTP3ProbeRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{73}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *HTTP3ProbeRequest) GetTestId() string {
@@ -7877,7 +7960,7 @@ type HTTP3ProbeResponse struct {
 
 func (x *HTTP3ProbeResponse) Reset() {
 	*x = HTTP3ProbeResponse{}
-	mi := &file_api_proto_generator_proto_msgTypes[74]
+	mi := &file_api_proto_generator_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7889,7 +7972,7 @@ func (x *HTTP3ProbeResponse) String() string {
 func (*HTTP3ProbeResponse) ProtoMessage() {}
 
 func (x *HTTP3ProbeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[74]
+	mi := &file_api_proto_generator_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7902,7 +7985,7 @@ func (x *HTTP3ProbeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HTTP3ProbeResponse.ProtoReflect.Descriptor instead.
 func (*HTTP3ProbeResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{74}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *HTTP3ProbeResponse) GetResults() []*HTTP3ProbeResult {
@@ -7932,7 +8015,7 @@ type HTTP3ProbeResult struct {
 
 func (x *HTTP3ProbeResult) Reset() {
 	*x = HTTP3ProbeResult{}
-	mi := &file_api_proto_generator_proto_msgTypes[75]
+	mi := &file_api_proto_generator_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7944,7 +8027,7 @@ func (x *HTTP3ProbeResult) String() string {
 func (*HTTP3ProbeResult) ProtoMessage() {}
 
 func (x *HTTP3ProbeResult) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[75]
+	mi := &file_api_proto_generator_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7957,7 +8040,7 @@ func (x *HTTP3ProbeResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HTTP3ProbeResult.ProtoReflect.Descriptor instead.
 func (*HTTP3ProbeResult) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{75}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *HTTP3ProbeResult) GetGroup() string {
@@ -8046,7 +8129,7 @@ type LiveTableRequest struct {
 
 func (x *LiveTableRequest) Reset() {
 	*x = LiveTableRequest{}
-	mi := &file_api_proto_generator_proto_msgTypes[76]
+	mi := &file_api_proto_generator_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8058,7 +8141,7 @@ func (x *LiveTableRequest) String() string {
 func (*LiveTableRequest) ProtoMessage() {}
 
 func (x *LiveTableRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[76]
+	mi := &file_api_proto_generator_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8071,7 +8154,7 @@ func (x *LiveTableRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiveTableRequest.ProtoReflect.Descriptor instead.
 func (*LiveTableRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{76}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *LiveTableRequest) GetGroupName() string {
@@ -8124,7 +8207,7 @@ type LiveTableReply struct {
 
 func (x *LiveTableReply) Reset() {
 	*x = LiveTableReply{}
-	mi := &file_api_proto_generator_proto_msgTypes[77]
+	mi := &file_api_proto_generator_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8136,7 +8219,7 @@ func (x *LiveTableReply) String() string {
 func (*LiveTableReply) ProtoMessage() {}
 
 func (x *LiveTableReply) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[77]
+	mi := &file_api_proto_generator_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8149,7 +8232,7 @@ func (x *LiveTableReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiveTableReply.ProtoReflect.Descriptor instead.
 func (*LiveTableReply) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{77}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *LiveTableReply) GetTestId() string {
@@ -8212,7 +8295,7 @@ type RendezvousRequest struct {
 
 func (x *RendezvousRequest) Reset() {
 	*x = RendezvousRequest{}
-	mi := &file_api_proto_generator_proto_msgTypes[78]
+	mi := &file_api_proto_generator_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8224,7 +8307,7 @@ func (x *RendezvousRequest) String() string {
 func (*RendezvousRequest) ProtoMessage() {}
 
 func (x *RendezvousRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[78]
+	mi := &file_api_proto_generator_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8237,7 +8320,7 @@ func (x *RendezvousRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RendezvousRequest.ProtoReflect.Descriptor instead.
 func (*RendezvousRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{78}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *RendezvousRequest) GetGroupName() string {
@@ -8276,7 +8359,7 @@ type RendezvousReply struct {
 
 func (x *RendezvousReply) Reset() {
 	*x = RendezvousReply{}
-	mi := &file_api_proto_generator_proto_msgTypes[79]
+	mi := &file_api_proto_generator_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8288,7 +8371,7 @@ func (x *RendezvousReply) String() string {
 func (*RendezvousReply) ProtoMessage() {}
 
 func (x *RendezvousReply) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[79]
+	mi := &file_api_proto_generator_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8301,7 +8384,7 @@ func (x *RendezvousReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RendezvousReply.ProtoReflect.Descriptor instead.
 func (*RendezvousReply) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{79}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *RendezvousReply) GetTestId() string {
@@ -8357,7 +8440,7 @@ var File_api_proto_generator_proto protoreflect.FileDescriptor
 
 const file_api_proto_generator_proto_rawDesc = "" +
 	"\n" +
-	"\x19api/proto/generator.proto\x12\vapexload.v1\x1a\x1egoogle/protobuf/duration.proto\"\x9c\x01\n" +
+	"\x19api/proto/generator.proto\x12\vapexload.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9c\x01\n" +
 	"\x17EvidenceAcknowledgement\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12'\n" +
 	"\x0fsource_identity\x18\x02 \x01(\tR\x0esourceIdentity\x12?\n" +
@@ -8710,7 +8793,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x15run_supervision_token\x18\x04 \x01(\fR\x13runSupervisionToken\"T\n" +
 	"\aStopAck\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x12%\n" +
-	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xde\x12\n" +
+	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xf3\x13\n" +
 	"\fMetricsBatch\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12!\n" +
 	"\fgenerator_id\x18\x02 \x01(\tR\vgeneratorId\x12*\n" +
@@ -8750,7 +8833,13 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x12joint_metrics_info\x18# \x01(\v2\x1d.apexload.v1.JointMetricsInfoR\x10jointMetricsInfo\x12E\n" +
 	"\x10http_version_mix\x18$ \x01(\v2\x1b.apexload.v1.HTTPVersionMixR\x0ehttpVersionMix\x124\n" +
 	"\x16request_counts_version\x18% \x01(\rR\x14requestCountsVersion\x12<\n" +
-	"\x1agroup_transactions_version\x18& \x01(\rR\x18groupTransactionsVersion\"\xb9\x04\n" +
+	"\x1agroup_transactions_version\x18& \x01(\rR\x18groupTransactionsVersion\x12S\n" +
+	"\x12collection_windows\x18' \x03(\v2$.apexload.v1.MetricsCollectionWindowR\x11collectionWindows\x12>\n" +
+	"\x1bcollection_windows_complete\x18( \x01(\bR\x19collectionWindowsComplete\"\x8f\x01\n" +
+	"\x17MetricsCollectionWindow\x12\x14\n" +
+	"\x05group\x18\x01 \x01(\tR\x05group\x120\n" +
+	"\x05start\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x05start\x12,\n" +
+	"\x03end\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x03end\"\xb9\x04\n" +
 	"\x15MetricsBatchTelemetry\x12'\n" +
 	"\x0fdropped_results\x18\x01 \x01(\x03R\x0edroppedResults\x12/\n" +
 	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x12/\n" +
@@ -9273,7 +9362,7 @@ func file_api_proto_generator_proto_rawDescGZIP() []byte {
 }
 
 var file_api_proto_generator_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_api_proto_generator_proto_msgTypes = make([]protoimpl.MessageInfo, 91)
+var file_api_proto_generator_proto_msgTypes = make([]protoimpl.MessageInfo, 92)
 var file_api_proto_generator_proto_goTypes = []any{
 	(RunSupervisionState)(0),                     // 0: apexload.v1.RunSupervisionState
 	(RunAdoptionOutcome)(0),                      // 1: apexload.v1.RunAdoptionOutcome
@@ -9319,198 +9408,203 @@ var file_api_proto_generator_proto_goTypes = []any{
 	(*StopRequest)(nil),                          // 41: apexload.v1.StopRequest
 	(*StopAck)(nil),                              // 42: apexload.v1.StopAck
 	(*MetricsBatch)(nil),                         // 43: apexload.v1.MetricsBatch
-	(*MetricsBatchTelemetry)(nil),                // 44: apexload.v1.MetricsBatchTelemetry
-	(*GroupMetric)(nil),                          // 45: apexload.v1.GroupMetric
-	(*HTTPVersionMix)(nil),                       // 46: apexload.v1.HTTPVersionMix
-	(*TransactionResponseTimeSLACompliance)(nil), // 47: apexload.v1.TransactionResponseTimeSLACompliance
-	(*TDigestCentroid)(nil),                      // 48: apexload.v1.TDigestCentroid
-	(*TDigestSnapshot)(nil),                      // 49: apexload.v1.TDigestSnapshot
-	(*DurationSketchBin)(nil),                    // 50: apexload.v1.DurationSketchBin
-	(*DurationSketchSnapshot)(nil),               // 51: apexload.v1.DurationSketchSnapshot
-	(*MetricAggregate)(nil),                      // 52: apexload.v1.MetricAggregate
-	(*TraceExemplar)(nil),                        // 53: apexload.v1.TraceExemplar
-	(*BrowserMetrics)(nil),                       // 54: apexload.v1.BrowserMetrics
-	(*BrowserDeviceMetrics)(nil),                 // 55: apexload.v1.BrowserDeviceMetrics
-	(*ServerTelemetry)(nil),                      // 56: apexload.v1.ServerTelemetry
-	(*WebSocketDiagnostics)(nil),                 // 57: apexload.v1.WebSocketDiagnostics
-	(*GRPCDiagnostics)(nil),                      // 58: apexload.v1.GRPCDiagnostics
-	(*TransactionMetric)(nil),                    // 59: apexload.v1.TransactionMetric
-	(*GeneratorStats)(nil),                       // 60: apexload.v1.GeneratorStats
-	(*ControlSignal)(nil),                        // 61: apexload.v1.ControlSignal
-	(*PauseRequest)(nil),                         // 62: apexload.v1.PauseRequest
-	(*PauseAck)(nil),                             // 63: apexload.v1.PauseAck
-	(*HeartbeatPing)(nil),                        // 64: apexload.v1.HeartbeatPing
-	(*ProtocolRuntimeCapacity)(nil),              // 65: apexload.v1.ProtocolRuntimeCapacity
-	(*SharedJVMCapacity)(nil),                    // 66: apexload.v1.SharedJVMCapacity
-	(*GeneratorSafetyExitEvidence)(nil),          // 67: apexload.v1.GeneratorSafetyExitEvidence
-	(*HeartbeatPong)(nil),                        // 68: apexload.v1.HeartbeatPong
-	(*ScriptPayload)(nil),                        // 69: apexload.v1.ScriptPayload
-	(*ScriptAck)(nil),                            // 70: apexload.v1.ScriptAck
-	(*ArchiveArtifactRequest)(nil),               // 71: apexload.v1.ArchiveArtifactRequest
-	(*ArchiveArtifact)(nil),                      // 72: apexload.v1.ArchiveArtifact
-	(*ArchiveArtifactChunk)(nil),                 // 73: apexload.v1.ArchiveArtifactChunk
-	(*RunAdoptionProof)(nil),                     // 74: apexload.v1.RunAdoptionProof
-	(*HTTP3ProbeRequest)(nil),                    // 75: apexload.v1.HTTP3ProbeRequest
-	(*HTTP3ProbeResponse)(nil),                   // 76: apexload.v1.HTTP3ProbeResponse
-	(*HTTP3ProbeResult)(nil),                     // 77: apexload.v1.HTTP3ProbeResult
-	(*LiveTableRequest)(nil),                     // 78: apexload.v1.LiveTableRequest
-	(*LiveTableReply)(nil),                       // 79: apexload.v1.LiveTableReply
-	(*RendezvousRequest)(nil),                    // 80: apexload.v1.RendezvousRequest
-	(*RendezvousReply)(nil),                      // 81: apexload.v1.RendezvousReply
-	nil,                                          // 82: apexload.v1.PreparationCheckRequest.ExpectedGroupsEntry
-	nil,                                          // 83: apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry
-	nil,                                          // 84: apexload.v1.CapacityVector.ProtocolsEntry
-	nil,                                          // 85: apexload.v1.PodCapacityClaim.GroupPeaksEntry
-	nil,                                          // 86: apexload.v1.WorkAssignment.EnvironmentEntry
-	nil,                                          // 87: apexload.v1.WorkAssignment.SecretBundleEntry
-	nil,                                          // 88: apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry
-	nil,                                          // 89: apexload.v1.HTTPVersionMix.ByVersionEntry
-	nil,                                          // 90: apexload.v1.HTTPVersionMix.BySelectionEntry
-	nil,                                          // 91: apexload.v1.HTTPVersionMix.ByFallbackEntry
-	nil,                                          // 92: apexload.v1.HTTPVersionMix.ByQuicErrorEntry
-	(*durationpb.Duration)(nil),                  // 93: google.protobuf.Duration
+	(*MetricsCollectionWindow)(nil),              // 44: apexload.v1.MetricsCollectionWindow
+	(*MetricsBatchTelemetry)(nil),                // 45: apexload.v1.MetricsBatchTelemetry
+	(*GroupMetric)(nil),                          // 46: apexload.v1.GroupMetric
+	(*HTTPVersionMix)(nil),                       // 47: apexload.v1.HTTPVersionMix
+	(*TransactionResponseTimeSLACompliance)(nil), // 48: apexload.v1.TransactionResponseTimeSLACompliance
+	(*TDigestCentroid)(nil),                      // 49: apexload.v1.TDigestCentroid
+	(*TDigestSnapshot)(nil),                      // 50: apexload.v1.TDigestSnapshot
+	(*DurationSketchBin)(nil),                    // 51: apexload.v1.DurationSketchBin
+	(*DurationSketchSnapshot)(nil),               // 52: apexload.v1.DurationSketchSnapshot
+	(*MetricAggregate)(nil),                      // 53: apexload.v1.MetricAggregate
+	(*TraceExemplar)(nil),                        // 54: apexload.v1.TraceExemplar
+	(*BrowserMetrics)(nil),                       // 55: apexload.v1.BrowserMetrics
+	(*BrowserDeviceMetrics)(nil),                 // 56: apexload.v1.BrowserDeviceMetrics
+	(*ServerTelemetry)(nil),                      // 57: apexload.v1.ServerTelemetry
+	(*WebSocketDiagnostics)(nil),                 // 58: apexload.v1.WebSocketDiagnostics
+	(*GRPCDiagnostics)(nil),                      // 59: apexload.v1.GRPCDiagnostics
+	(*TransactionMetric)(nil),                    // 60: apexload.v1.TransactionMetric
+	(*GeneratorStats)(nil),                       // 61: apexload.v1.GeneratorStats
+	(*ControlSignal)(nil),                        // 62: apexload.v1.ControlSignal
+	(*PauseRequest)(nil),                         // 63: apexload.v1.PauseRequest
+	(*PauseAck)(nil),                             // 64: apexload.v1.PauseAck
+	(*HeartbeatPing)(nil),                        // 65: apexload.v1.HeartbeatPing
+	(*ProtocolRuntimeCapacity)(nil),              // 66: apexload.v1.ProtocolRuntimeCapacity
+	(*SharedJVMCapacity)(nil),                    // 67: apexload.v1.SharedJVMCapacity
+	(*GeneratorSafetyExitEvidence)(nil),          // 68: apexload.v1.GeneratorSafetyExitEvidence
+	(*HeartbeatPong)(nil),                        // 69: apexload.v1.HeartbeatPong
+	(*ScriptPayload)(nil),                        // 70: apexload.v1.ScriptPayload
+	(*ScriptAck)(nil),                            // 71: apexload.v1.ScriptAck
+	(*ArchiveArtifactRequest)(nil),               // 72: apexload.v1.ArchiveArtifactRequest
+	(*ArchiveArtifact)(nil),                      // 73: apexload.v1.ArchiveArtifact
+	(*ArchiveArtifactChunk)(nil),                 // 74: apexload.v1.ArchiveArtifactChunk
+	(*RunAdoptionProof)(nil),                     // 75: apexload.v1.RunAdoptionProof
+	(*HTTP3ProbeRequest)(nil),                    // 76: apexload.v1.HTTP3ProbeRequest
+	(*HTTP3ProbeResponse)(nil),                   // 77: apexload.v1.HTTP3ProbeResponse
+	(*HTTP3ProbeResult)(nil),                     // 78: apexload.v1.HTTP3ProbeResult
+	(*LiveTableRequest)(nil),                     // 79: apexload.v1.LiveTableRequest
+	(*LiveTableReply)(nil),                       // 80: apexload.v1.LiveTableReply
+	(*RendezvousRequest)(nil),                    // 81: apexload.v1.RendezvousRequest
+	(*RendezvousReply)(nil),                      // 82: apexload.v1.RendezvousReply
+	nil,                                          // 83: apexload.v1.PreparationCheckRequest.ExpectedGroupsEntry
+	nil,                                          // 84: apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry
+	nil,                                          // 85: apexload.v1.CapacityVector.ProtocolsEntry
+	nil,                                          // 86: apexload.v1.PodCapacityClaim.GroupPeaksEntry
+	nil,                                          // 87: apexload.v1.WorkAssignment.EnvironmentEntry
+	nil,                                          // 88: apexload.v1.WorkAssignment.SecretBundleEntry
+	nil,                                          // 89: apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry
+	nil,                                          // 90: apexload.v1.HTTPVersionMix.ByVersionEntry
+	nil,                                          // 91: apexload.v1.HTTPVersionMix.BySelectionEntry
+	nil,                                          // 92: apexload.v1.HTTPVersionMix.ByFallbackEntry
+	nil,                                          // 93: apexload.v1.HTTPVersionMix.ByQuicErrorEntry
+	(*durationpb.Duration)(nil),                  // 94: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil),                // 95: google.protobuf.Timestamp
 }
 var file_api_proto_generator_proto_depIdxs = []int32{
 	3,   // 0: apexload.v1.EvidenceAcknowledgement.artifacts:type_name -> apexload.v1.AcknowledgedEvidence
-	82,  // 1: apexload.v1.PreparationCheckRequest.expected_groups:type_name -> apexload.v1.PreparationCheckRequest.ExpectedGroupsEntry
-	83,  // 2: apexload.v1.PreparationCheckRequest.expected_runtime_resources:type_name -> apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry
-	84,  // 3: apexload.v1.CapacityVector.protocols:type_name -> apexload.v1.CapacityVector.ProtocolsEntry
+	83,  // 1: apexload.v1.PreparationCheckRequest.expected_groups:type_name -> apexload.v1.PreparationCheckRequest.ExpectedGroupsEntry
+	84,  // 2: apexload.v1.PreparationCheckRequest.expected_runtime_resources:type_name -> apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry
+	85,  // 3: apexload.v1.CapacityVector.protocols:type_name -> apexload.v1.CapacityVector.ProtocolsEntry
 	6,   // 4: apexload.v1.PodCapacityClaim.schedulable:type_name -> apexload.v1.CapacityVector
 	6,   // 5: apexload.v1.PodCapacityClaim.demand:type_name -> apexload.v1.CapacityVector
-	85,  // 6: apexload.v1.PodCapacityClaim.group_peaks:type_name -> apexload.v1.PodCapacityClaim.GroupPeaksEntry
+	86,  // 6: apexload.v1.PodCapacityClaim.group_peaks:type_name -> apexload.v1.PodCapacityClaim.GroupPeaksEntry
 	6,   // 7: apexload.v1.PodCapacitySnapshot.schedulable:type_name -> apexload.v1.CapacityVector
 	6,   // 8: apexload.v1.PodCapacitySnapshot.reserved:type_name -> apexload.v1.CapacityVector
 	8,   // 9: apexload.v1.PodCapacityAck.snapshot:type_name -> apexload.v1.PodCapacitySnapshot
 	11,  // 10: apexload.v1.SourcePlanManifest.groups:type_name -> apexload.v1.SourcePlanGroup
-	86,  // 11: apexload.v1.WorkAssignment.environment:type_name -> apexload.v1.WorkAssignment.EnvironmentEntry
+	87,  // 11: apexload.v1.WorkAssignment.environment:type_name -> apexload.v1.WorkAssignment.EnvironmentEntry
 	31,  // 12: apexload.v1.WorkAssignment.data_files:type_name -> apexload.v1.DataFile
 	30,  // 13: apexload.v1.WorkAssignment.redaction_rules:type_name -> apexload.v1.RedactionRule
-	93,  // 14: apexload.v1.WorkAssignment.target_duration:type_name -> google.protobuf.Duration
-	93,  // 15: apexload.v1.WorkAssignment.ramp_up:type_name -> google.protobuf.Duration
-	93,  // 16: apexload.v1.WorkAssignment.ramp_down:type_name -> google.protobuf.Duration
-	93,  // 17: apexload.v1.WorkAssignment.pre_baseline:type_name -> google.protobuf.Duration
-	93,  // 18: apexload.v1.WorkAssignment.post_baseline:type_name -> google.protobuf.Duration
-	93,  // 19: apexload.v1.WorkAssignment.duration_offset:type_name -> google.protobuf.Duration
-	87,  // 20: apexload.v1.WorkAssignment.secret_bundle:type_name -> apexload.v1.WorkAssignment.SecretBundleEntry
-	93,  // 21: apexload.v1.WorkAssignment.start_offset:type_name -> google.protobuf.Duration
+	94,  // 14: apexload.v1.WorkAssignment.target_duration:type_name -> google.protobuf.Duration
+	94,  // 15: apexload.v1.WorkAssignment.ramp_up:type_name -> google.protobuf.Duration
+	94,  // 16: apexload.v1.WorkAssignment.ramp_down:type_name -> google.protobuf.Duration
+	94,  // 17: apexload.v1.WorkAssignment.pre_baseline:type_name -> google.protobuf.Duration
+	94,  // 18: apexload.v1.WorkAssignment.post_baseline:type_name -> google.protobuf.Duration
+	94,  // 19: apexload.v1.WorkAssignment.duration_offset:type_name -> google.protobuf.Duration
+	88,  // 20: apexload.v1.WorkAssignment.secret_bundle:type_name -> apexload.v1.WorkAssignment.SecretBundleEntry
+	94,  // 21: apexload.v1.WorkAssignment.start_offset:type_name -> google.protobuf.Duration
 	10,  // 22: apexload.v1.WorkAssignment.source_plan:type_name -> apexload.v1.SourcePlanManifest
-	93,  // 23: apexload.v1.WorkAssignment.adoption_grace:type_name -> google.protobuf.Duration
+	94,  // 23: apexload.v1.WorkAssignment.adoption_grace:type_name -> google.protobuf.Duration
 	19,  // 24: apexload.v1.WorkAssignment.java_host:type_name -> apexload.v1.JavaHostSelection
 	16,  // 25: apexload.v1.WorkAssignment.runtime_resource_claim:type_name -> apexload.v1.RuntimeResourceClaim
 	13,  // 26: apexload.v1.WorkAssignment.joint_evidence_projection:type_name -> apexload.v1.JointEvidenceProjection
-	52,  // 27: apexload.v1.JointMetricsInfo.other:type_name -> apexload.v1.MetricAggregate
+	53,  // 27: apexload.v1.JointMetricsInfo.other:type_name -> apexload.v1.MetricAggregate
 	15,  // 28: apexload.v1.RuntimeResourceClaim.requested:type_name -> apexload.v1.RuntimeResourceDemand
 	16,  // 29: apexload.v1.RuntimeResourceAdmission.claim:type_name -> apexload.v1.RuntimeResourceClaim
 	15,  // 30: apexload.v1.RuntimeResourceAdmission.admitted:type_name -> apexload.v1.RuntimeResourceDemand
 	20,  // 31: apexload.v1.JavaHostCapabilities.profiles:type_name -> apexload.v1.JavaHostProfile
-	88,  // 32: apexload.v1.WorkCommitAck.runtime_resource_admissions:type_name -> apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry
+	89,  // 32: apexload.v1.WorkCommitAck.runtime_resource_admissions:type_name -> apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry
 	0,   // 33: apexload.v1.RunSupervisionAck.state:type_name -> apexload.v1.RunSupervisionState
 	27,  // 34: apexload.v1.ExecutionEpochClaim.adoptions:type_name -> apexload.v1.RunAdoption
-	74,  // 35: apexload.v1.RunAdoption.prior_proofs:type_name -> apexload.v1.RunAdoptionProof
+	75,  // 35: apexload.v1.RunAdoption.prior_proofs:type_name -> apexload.v1.RunAdoptionProof
 	1,   // 36: apexload.v1.RunAdoptionResult.outcome:type_name -> apexload.v1.RunAdoptionOutcome
 	28,  // 37: apexload.v1.ExecutionEpochAck.adoptions:type_name -> apexload.v1.RunAdoptionResult
 	19,  // 38: apexload.v1.JavaHostPlacement.selection:type_name -> apexload.v1.JavaHostSelection
 	32,  // 39: apexload.v1.AssignmentAck.java_host:type_name -> apexload.v1.JavaHostPlacement
 	17,  // 40: apexload.v1.AssignmentAck.runtime_resource_admission:type_name -> apexload.v1.RuntimeResourceAdmission
 	34,  // 41: apexload.v1.AssignmentAck.java_vm:type_name -> apexload.v1.JavaVMOutcome
-	93,  // 42: apexload.v1.VUserAdjustment.ramp_duration:type_name -> google.protobuf.Duration
-	93,  // 43: apexload.v1.DurationAdjustment.target_duration:type_name -> google.protobuf.Duration
-	93,  // 44: apexload.v1.DurationAck.current_duration:type_name -> google.protobuf.Duration
-	59,  // 45: apexload.v1.MetricsBatch.transactions:type_name -> apexload.v1.TransactionMetric
-	60,  // 46: apexload.v1.MetricsBatch.stats:type_name -> apexload.v1.GeneratorStats
-	45,  // 47: apexload.v1.MetricsBatch.groups:type_name -> apexload.v1.GroupMetric
-	44,  // 48: apexload.v1.MetricsBatch.telemetry:type_name -> apexload.v1.MetricsBatchTelemetry
-	52,  // 49: apexload.v1.MetricsBatch.transaction_metrics:type_name -> apexload.v1.MetricAggregate
-	52,  // 50: apexload.v1.MetricsBatch.dependency_metrics:type_name -> apexload.v1.MetricAggregate
-	52,  // 51: apexload.v1.MetricsBatch.soap_metrics:type_name -> apexload.v1.MetricAggregate
-	52,  // 52: apexload.v1.MetricsBatch.network_profile_metrics:type_name -> apexload.v1.MetricAggregate
-	52,  // 53: apexload.v1.MetricsBatch.fleet_metrics:type_name -> apexload.v1.MetricAggregate
-	54,  // 54: apexload.v1.MetricsBatch.browser_metrics:type_name -> apexload.v1.BrowserMetrics
-	55,  // 55: apexload.v1.MetricsBatch.browser_device_metrics:type_name -> apexload.v1.BrowserDeviceMetrics
-	52,  // 56: apexload.v1.MetricsBatch.region_metrics:type_name -> apexload.v1.MetricAggregate
-	52,  // 57: apexload.v1.MetricsBatch.property_metrics:type_name -> apexload.v1.MetricAggregate
-	52,  // 58: apexload.v1.MetricsBatch.action_metrics:type_name -> apexload.v1.MetricAggregate
-	52,  // 59: apexload.v1.MetricsBatch.action_property_metrics:type_name -> apexload.v1.MetricAggregate
-	52,  // 60: apexload.v1.MetricsBatch.action_dimension_metrics:type_name -> apexload.v1.MetricAggregate
-	47,  // 61: apexload.v1.MetricsBatch.transaction_response_time_sla:type_name -> apexload.v1.TransactionResponseTimeSLACompliance
-	52,  // 62: apexload.v1.MetricsBatch.joint_metrics_v4:type_name -> apexload.v1.MetricAggregate
+	94,  // 42: apexload.v1.VUserAdjustment.ramp_duration:type_name -> google.protobuf.Duration
+	94,  // 43: apexload.v1.DurationAdjustment.target_duration:type_name -> google.protobuf.Duration
+	94,  // 44: apexload.v1.DurationAck.current_duration:type_name -> google.protobuf.Duration
+	60,  // 45: apexload.v1.MetricsBatch.transactions:type_name -> apexload.v1.TransactionMetric
+	61,  // 46: apexload.v1.MetricsBatch.stats:type_name -> apexload.v1.GeneratorStats
+	46,  // 47: apexload.v1.MetricsBatch.groups:type_name -> apexload.v1.GroupMetric
+	45,  // 48: apexload.v1.MetricsBatch.telemetry:type_name -> apexload.v1.MetricsBatchTelemetry
+	53,  // 49: apexload.v1.MetricsBatch.transaction_metrics:type_name -> apexload.v1.MetricAggregate
+	53,  // 50: apexload.v1.MetricsBatch.dependency_metrics:type_name -> apexload.v1.MetricAggregate
+	53,  // 51: apexload.v1.MetricsBatch.soap_metrics:type_name -> apexload.v1.MetricAggregate
+	53,  // 52: apexload.v1.MetricsBatch.network_profile_metrics:type_name -> apexload.v1.MetricAggregate
+	53,  // 53: apexload.v1.MetricsBatch.fleet_metrics:type_name -> apexload.v1.MetricAggregate
+	55,  // 54: apexload.v1.MetricsBatch.browser_metrics:type_name -> apexload.v1.BrowserMetrics
+	56,  // 55: apexload.v1.MetricsBatch.browser_device_metrics:type_name -> apexload.v1.BrowserDeviceMetrics
+	53,  // 56: apexload.v1.MetricsBatch.region_metrics:type_name -> apexload.v1.MetricAggregate
+	53,  // 57: apexload.v1.MetricsBatch.property_metrics:type_name -> apexload.v1.MetricAggregate
+	53,  // 58: apexload.v1.MetricsBatch.action_metrics:type_name -> apexload.v1.MetricAggregate
+	53,  // 59: apexload.v1.MetricsBatch.action_property_metrics:type_name -> apexload.v1.MetricAggregate
+	53,  // 60: apexload.v1.MetricsBatch.action_dimension_metrics:type_name -> apexload.v1.MetricAggregate
+	48,  // 61: apexload.v1.MetricsBatch.transaction_response_time_sla:type_name -> apexload.v1.TransactionResponseTimeSLACompliance
+	53,  // 62: apexload.v1.MetricsBatch.joint_metrics_v4:type_name -> apexload.v1.MetricAggregate
 	14,  // 63: apexload.v1.MetricsBatch.joint_metrics_info:type_name -> apexload.v1.JointMetricsInfo
-	46,  // 64: apexload.v1.MetricsBatch.http_version_mix:type_name -> apexload.v1.HTTPVersionMix
-	52,  // 65: apexload.v1.GroupMetric.metrics:type_name -> apexload.v1.MetricAggregate
-	52,  // 66: apexload.v1.GroupMetric.transaction_metrics:type_name -> apexload.v1.MetricAggregate
-	89,  // 67: apexload.v1.HTTPVersionMix.by_version:type_name -> apexload.v1.HTTPVersionMix.ByVersionEntry
-	90,  // 68: apexload.v1.HTTPVersionMix.by_selection:type_name -> apexload.v1.HTTPVersionMix.BySelectionEntry
-	91,  // 69: apexload.v1.HTTPVersionMix.by_fallback:type_name -> apexload.v1.HTTPVersionMix.ByFallbackEntry
-	92,  // 70: apexload.v1.HTTPVersionMix.by_quic_error:type_name -> apexload.v1.HTTPVersionMix.ByQuicErrorEntry
-	48,  // 71: apexload.v1.TDigestSnapshot.centroids:type_name -> apexload.v1.TDigestCentroid
-	50,  // 72: apexload.v1.DurationSketchSnapshot.bins:type_name -> apexload.v1.DurationSketchBin
-	49,  // 73: apexload.v1.MetricAggregate.duration_digest:type_name -> apexload.v1.TDigestSnapshot
-	53,  // 74: apexload.v1.MetricAggregate.exemplars:type_name -> apexload.v1.TraceExemplar
-	51,  // 75: apexload.v1.MetricAggregate.duration_sketch:type_name -> apexload.v1.DurationSketchSnapshot
-	54,  // 76: apexload.v1.BrowserDeviceMetrics.metrics:type_name -> apexload.v1.BrowserMetrics
-	58,  // 77: apexload.v1.ServerTelemetry.grpc:type_name -> apexload.v1.GRPCDiagnostics
-	57,  // 78: apexload.v1.ServerTelemetry.websocket:type_name -> apexload.v1.WebSocketDiagnostics
-	56,  // 79: apexload.v1.TransactionMetric.server_telemetry:type_name -> apexload.v1.ServerTelemetry
-	35,  // 80: apexload.v1.ControlSignal.adjust:type_name -> apexload.v1.VUserAdjustment
-	41,  // 81: apexload.v1.ControlSignal.stop:type_name -> apexload.v1.StopRequest
-	62,  // 82: apexload.v1.ControlSignal.pause:type_name -> apexload.v1.PauseRequest
-	60,  // 83: apexload.v1.HeartbeatPing.stats:type_name -> apexload.v1.GeneratorStats
-	18,  // 84: apexload.v1.ProtocolRuntimeCapacity.resources:type_name -> apexload.v1.RuntimeResourceCapacity
-	66,  // 85: apexload.v1.ProtocolRuntimeCapacity.shared_jvm:type_name -> apexload.v1.SharedJVMCapacity
-	60,  // 86: apexload.v1.HeartbeatPong.stats:type_name -> apexload.v1.GeneratorStats
-	65,  // 87: apexload.v1.HeartbeatPong.runtime_capacities:type_name -> apexload.v1.ProtocolRuntimeCapacity
-	67,  // 88: apexload.v1.HeartbeatPong.last_safety_exit:type_name -> apexload.v1.GeneratorSafetyExitEvidence
-	67,  // 89: apexload.v1.HeartbeatPong.safety_exits:type_name -> apexload.v1.GeneratorSafetyExitEvidence
-	8,   // 90: apexload.v1.HeartbeatPong.pod_capacity:type_name -> apexload.v1.PodCapacitySnapshot
-	21,  // 91: apexload.v1.HeartbeatPong.java_host:type_name -> apexload.v1.JavaHostCapabilities
-	77,  // 92: apexload.v1.HTTP3ProbeResponse.results:type_name -> apexload.v1.HTTP3ProbeResult
-	16,  // 93: apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry.value:type_name -> apexload.v1.RuntimeResourceClaim
-	17,  // 94: apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry.value:type_name -> apexload.v1.RuntimeResourceAdmission
-	7,   // 95: apexload.v1.GeneratorControl.ReservePodCapacity:input_type -> apexload.v1.PodCapacityClaim
-	26,  // 96: apexload.v1.GeneratorControl.ClaimExecutionEpoch:input_type -> apexload.v1.ExecutionEpochClaim
-	24,  // 97: apexload.v1.GeneratorControl.ClaimRunSupervision:input_type -> apexload.v1.RunSupervisionClaim
-	12,  // 98: apexload.v1.GeneratorControl.AssignWork:input_type -> apexload.v1.WorkAssignment
-	22,  // 99: apexload.v1.GeneratorControl.CommitWork:input_type -> apexload.v1.WorkCommitRequest
-	5,   // 100: apexload.v1.GeneratorControl.CheckPreparation:input_type -> apexload.v1.PreparationCheckRequest
-	35,  // 101: apexload.v1.GeneratorControl.AdjustVUsers:input_type -> apexload.v1.VUserAdjustment
-	39,  // 102: apexload.v1.GeneratorControl.AdjustDuration:input_type -> apexload.v1.DurationAdjustment
-	37,  // 103: apexload.v1.GeneratorControl.SetThroughputCap:input_type -> apexload.v1.ThroughputCapRequest
-	62,  // 104: apexload.v1.GeneratorControl.SetPaused:input_type -> apexload.v1.PauseRequest
-	41,  // 105: apexload.v1.GeneratorControl.StopTest:input_type -> apexload.v1.StopRequest
-	61,  // 106: apexload.v1.GeneratorControl.StreamMetrics:input_type -> apexload.v1.ControlSignal
-	79,  // 107: apexload.v1.GeneratorControl.LiveTableChannel:input_type -> apexload.v1.LiveTableReply
-	81,  // 108: apexload.v1.GeneratorControl.RendezvousChannel:input_type -> apexload.v1.RendezvousReply
-	64,  // 109: apexload.v1.GeneratorControl.Heartbeat:input_type -> apexload.v1.HeartbeatPing
-	69,  // 110: apexload.v1.GeneratorControl.DistributeScript:input_type -> apexload.v1.ScriptPayload
-	71,  // 111: apexload.v1.GeneratorControl.GetArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
-	71,  // 112: apexload.v1.GeneratorControl.StreamArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
-	2,   // 113: apexload.v1.GeneratorControl.AcknowledgeEvidence:input_type -> apexload.v1.EvidenceAcknowledgement
-	75,  // 114: apexload.v1.GeneratorControl.ProbeHTTP3:input_type -> apexload.v1.HTTP3ProbeRequest
-	9,   // 115: apexload.v1.GeneratorControl.ReservePodCapacity:output_type -> apexload.v1.PodCapacityAck
-	29,  // 116: apexload.v1.GeneratorControl.ClaimExecutionEpoch:output_type -> apexload.v1.ExecutionEpochAck
-	25,  // 117: apexload.v1.GeneratorControl.ClaimRunSupervision:output_type -> apexload.v1.RunSupervisionAck
-	33,  // 118: apexload.v1.GeneratorControl.AssignWork:output_type -> apexload.v1.AssignmentAck
-	23,  // 119: apexload.v1.GeneratorControl.CommitWork:output_type -> apexload.v1.WorkCommitAck
-	23,  // 120: apexload.v1.GeneratorControl.CheckPreparation:output_type -> apexload.v1.WorkCommitAck
-	36,  // 121: apexload.v1.GeneratorControl.AdjustVUsers:output_type -> apexload.v1.AdjustmentAck
-	40,  // 122: apexload.v1.GeneratorControl.AdjustDuration:output_type -> apexload.v1.DurationAck
-	38,  // 123: apexload.v1.GeneratorControl.SetThroughputCap:output_type -> apexload.v1.ThroughputCapAck
-	63,  // 124: apexload.v1.GeneratorControl.SetPaused:output_type -> apexload.v1.PauseAck
-	42,  // 125: apexload.v1.GeneratorControl.StopTest:output_type -> apexload.v1.StopAck
-	43,  // 126: apexload.v1.GeneratorControl.StreamMetrics:output_type -> apexload.v1.MetricsBatch
-	78,  // 127: apexload.v1.GeneratorControl.LiveTableChannel:output_type -> apexload.v1.LiveTableRequest
-	80,  // 128: apexload.v1.GeneratorControl.RendezvousChannel:output_type -> apexload.v1.RendezvousRequest
-	68,  // 129: apexload.v1.GeneratorControl.Heartbeat:output_type -> apexload.v1.HeartbeatPong
-	70,  // 130: apexload.v1.GeneratorControl.DistributeScript:output_type -> apexload.v1.ScriptAck
-	72,  // 131: apexload.v1.GeneratorControl.GetArchiveArtifact:output_type -> apexload.v1.ArchiveArtifact
-	73,  // 132: apexload.v1.GeneratorControl.StreamArchiveArtifact:output_type -> apexload.v1.ArchiveArtifactChunk
-	4,   // 133: apexload.v1.GeneratorControl.AcknowledgeEvidence:output_type -> apexload.v1.EvidenceAck
-	76,  // 134: apexload.v1.GeneratorControl.ProbeHTTP3:output_type -> apexload.v1.HTTP3ProbeResponse
-	115, // [115:135] is the sub-list for method output_type
-	95,  // [95:115] is the sub-list for method input_type
-	95,  // [95:95] is the sub-list for extension type_name
-	95,  // [95:95] is the sub-list for extension extendee
-	0,   // [0:95] is the sub-list for field type_name
+	47,  // 64: apexload.v1.MetricsBatch.http_version_mix:type_name -> apexload.v1.HTTPVersionMix
+	44,  // 65: apexload.v1.MetricsBatch.collection_windows:type_name -> apexload.v1.MetricsCollectionWindow
+	95,  // 66: apexload.v1.MetricsCollectionWindow.start:type_name -> google.protobuf.Timestamp
+	95,  // 67: apexload.v1.MetricsCollectionWindow.end:type_name -> google.protobuf.Timestamp
+	53,  // 68: apexload.v1.GroupMetric.metrics:type_name -> apexload.v1.MetricAggregate
+	53,  // 69: apexload.v1.GroupMetric.transaction_metrics:type_name -> apexload.v1.MetricAggregate
+	90,  // 70: apexload.v1.HTTPVersionMix.by_version:type_name -> apexload.v1.HTTPVersionMix.ByVersionEntry
+	91,  // 71: apexload.v1.HTTPVersionMix.by_selection:type_name -> apexload.v1.HTTPVersionMix.BySelectionEntry
+	92,  // 72: apexload.v1.HTTPVersionMix.by_fallback:type_name -> apexload.v1.HTTPVersionMix.ByFallbackEntry
+	93,  // 73: apexload.v1.HTTPVersionMix.by_quic_error:type_name -> apexload.v1.HTTPVersionMix.ByQuicErrorEntry
+	49,  // 74: apexload.v1.TDigestSnapshot.centroids:type_name -> apexload.v1.TDigestCentroid
+	51,  // 75: apexload.v1.DurationSketchSnapshot.bins:type_name -> apexload.v1.DurationSketchBin
+	50,  // 76: apexload.v1.MetricAggregate.duration_digest:type_name -> apexload.v1.TDigestSnapshot
+	54,  // 77: apexload.v1.MetricAggregate.exemplars:type_name -> apexload.v1.TraceExemplar
+	52,  // 78: apexload.v1.MetricAggregate.duration_sketch:type_name -> apexload.v1.DurationSketchSnapshot
+	55,  // 79: apexload.v1.BrowserDeviceMetrics.metrics:type_name -> apexload.v1.BrowserMetrics
+	59,  // 80: apexload.v1.ServerTelemetry.grpc:type_name -> apexload.v1.GRPCDiagnostics
+	58,  // 81: apexload.v1.ServerTelemetry.websocket:type_name -> apexload.v1.WebSocketDiagnostics
+	57,  // 82: apexload.v1.TransactionMetric.server_telemetry:type_name -> apexload.v1.ServerTelemetry
+	35,  // 83: apexload.v1.ControlSignal.adjust:type_name -> apexload.v1.VUserAdjustment
+	41,  // 84: apexload.v1.ControlSignal.stop:type_name -> apexload.v1.StopRequest
+	63,  // 85: apexload.v1.ControlSignal.pause:type_name -> apexload.v1.PauseRequest
+	61,  // 86: apexload.v1.HeartbeatPing.stats:type_name -> apexload.v1.GeneratorStats
+	18,  // 87: apexload.v1.ProtocolRuntimeCapacity.resources:type_name -> apexload.v1.RuntimeResourceCapacity
+	67,  // 88: apexload.v1.ProtocolRuntimeCapacity.shared_jvm:type_name -> apexload.v1.SharedJVMCapacity
+	61,  // 89: apexload.v1.HeartbeatPong.stats:type_name -> apexload.v1.GeneratorStats
+	66,  // 90: apexload.v1.HeartbeatPong.runtime_capacities:type_name -> apexload.v1.ProtocolRuntimeCapacity
+	68,  // 91: apexload.v1.HeartbeatPong.last_safety_exit:type_name -> apexload.v1.GeneratorSafetyExitEvidence
+	68,  // 92: apexload.v1.HeartbeatPong.safety_exits:type_name -> apexload.v1.GeneratorSafetyExitEvidence
+	8,   // 93: apexload.v1.HeartbeatPong.pod_capacity:type_name -> apexload.v1.PodCapacitySnapshot
+	21,  // 94: apexload.v1.HeartbeatPong.java_host:type_name -> apexload.v1.JavaHostCapabilities
+	78,  // 95: apexload.v1.HTTP3ProbeResponse.results:type_name -> apexload.v1.HTTP3ProbeResult
+	16,  // 96: apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry.value:type_name -> apexload.v1.RuntimeResourceClaim
+	17,  // 97: apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry.value:type_name -> apexload.v1.RuntimeResourceAdmission
+	7,   // 98: apexload.v1.GeneratorControl.ReservePodCapacity:input_type -> apexload.v1.PodCapacityClaim
+	26,  // 99: apexload.v1.GeneratorControl.ClaimExecutionEpoch:input_type -> apexload.v1.ExecutionEpochClaim
+	24,  // 100: apexload.v1.GeneratorControl.ClaimRunSupervision:input_type -> apexload.v1.RunSupervisionClaim
+	12,  // 101: apexload.v1.GeneratorControl.AssignWork:input_type -> apexload.v1.WorkAssignment
+	22,  // 102: apexload.v1.GeneratorControl.CommitWork:input_type -> apexload.v1.WorkCommitRequest
+	5,   // 103: apexload.v1.GeneratorControl.CheckPreparation:input_type -> apexload.v1.PreparationCheckRequest
+	35,  // 104: apexload.v1.GeneratorControl.AdjustVUsers:input_type -> apexload.v1.VUserAdjustment
+	39,  // 105: apexload.v1.GeneratorControl.AdjustDuration:input_type -> apexload.v1.DurationAdjustment
+	37,  // 106: apexload.v1.GeneratorControl.SetThroughputCap:input_type -> apexload.v1.ThroughputCapRequest
+	63,  // 107: apexload.v1.GeneratorControl.SetPaused:input_type -> apexload.v1.PauseRequest
+	41,  // 108: apexload.v1.GeneratorControl.StopTest:input_type -> apexload.v1.StopRequest
+	62,  // 109: apexload.v1.GeneratorControl.StreamMetrics:input_type -> apexload.v1.ControlSignal
+	80,  // 110: apexload.v1.GeneratorControl.LiveTableChannel:input_type -> apexload.v1.LiveTableReply
+	82,  // 111: apexload.v1.GeneratorControl.RendezvousChannel:input_type -> apexload.v1.RendezvousReply
+	65,  // 112: apexload.v1.GeneratorControl.Heartbeat:input_type -> apexload.v1.HeartbeatPing
+	70,  // 113: apexload.v1.GeneratorControl.DistributeScript:input_type -> apexload.v1.ScriptPayload
+	72,  // 114: apexload.v1.GeneratorControl.GetArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
+	72,  // 115: apexload.v1.GeneratorControl.StreamArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
+	2,   // 116: apexload.v1.GeneratorControl.AcknowledgeEvidence:input_type -> apexload.v1.EvidenceAcknowledgement
+	76,  // 117: apexload.v1.GeneratorControl.ProbeHTTP3:input_type -> apexload.v1.HTTP3ProbeRequest
+	9,   // 118: apexload.v1.GeneratorControl.ReservePodCapacity:output_type -> apexload.v1.PodCapacityAck
+	29,  // 119: apexload.v1.GeneratorControl.ClaimExecutionEpoch:output_type -> apexload.v1.ExecutionEpochAck
+	25,  // 120: apexload.v1.GeneratorControl.ClaimRunSupervision:output_type -> apexload.v1.RunSupervisionAck
+	33,  // 121: apexload.v1.GeneratorControl.AssignWork:output_type -> apexload.v1.AssignmentAck
+	23,  // 122: apexload.v1.GeneratorControl.CommitWork:output_type -> apexload.v1.WorkCommitAck
+	23,  // 123: apexload.v1.GeneratorControl.CheckPreparation:output_type -> apexload.v1.WorkCommitAck
+	36,  // 124: apexload.v1.GeneratorControl.AdjustVUsers:output_type -> apexload.v1.AdjustmentAck
+	40,  // 125: apexload.v1.GeneratorControl.AdjustDuration:output_type -> apexload.v1.DurationAck
+	38,  // 126: apexload.v1.GeneratorControl.SetThroughputCap:output_type -> apexload.v1.ThroughputCapAck
+	64,  // 127: apexload.v1.GeneratorControl.SetPaused:output_type -> apexload.v1.PauseAck
+	42,  // 128: apexload.v1.GeneratorControl.StopTest:output_type -> apexload.v1.StopAck
+	43,  // 129: apexload.v1.GeneratorControl.StreamMetrics:output_type -> apexload.v1.MetricsBatch
+	79,  // 130: apexload.v1.GeneratorControl.LiveTableChannel:output_type -> apexload.v1.LiveTableRequest
+	81,  // 131: apexload.v1.GeneratorControl.RendezvousChannel:output_type -> apexload.v1.RendezvousRequest
+	69,  // 132: apexload.v1.GeneratorControl.Heartbeat:output_type -> apexload.v1.HeartbeatPong
+	71,  // 133: apexload.v1.GeneratorControl.DistributeScript:output_type -> apexload.v1.ScriptAck
+	73,  // 134: apexload.v1.GeneratorControl.GetArchiveArtifact:output_type -> apexload.v1.ArchiveArtifact
+	74,  // 135: apexload.v1.GeneratorControl.StreamArchiveArtifact:output_type -> apexload.v1.ArchiveArtifactChunk
+	4,   // 136: apexload.v1.GeneratorControl.AcknowledgeEvidence:output_type -> apexload.v1.EvidenceAck
+	77,  // 137: apexload.v1.GeneratorControl.ProbeHTTP3:output_type -> apexload.v1.HTTP3ProbeResponse
+	118, // [118:138] is the sub-list for method output_type
+	98,  // [98:118] is the sub-list for method input_type
+	98,  // [98:98] is the sub-list for extension type_name
+	98,  // [98:98] is the sub-list for extension extendee
+	0,   // [0:98] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_generator_proto_init() }
@@ -9518,24 +9612,24 @@ func file_api_proto_generator_proto_init() {
 	if File_api_proto_generator_proto != nil {
 		return
 	}
-	file_api_proto_generator_proto_msgTypes[42].OneofWrappers = []any{}
 	file_api_proto_generator_proto_msgTypes[43].OneofWrappers = []any{}
-	file_api_proto_generator_proto_msgTypes[54].OneofWrappers = []any{}
+	file_api_proto_generator_proto_msgTypes[44].OneofWrappers = []any{}
 	file_api_proto_generator_proto_msgTypes[55].OneofWrappers = []any{}
 	file_api_proto_generator_proto_msgTypes[56].OneofWrappers = []any{}
-	file_api_proto_generator_proto_msgTypes[59].OneofWrappers = []any{
+	file_api_proto_generator_proto_msgTypes[57].OneofWrappers = []any{}
+	file_api_proto_generator_proto_msgTypes[60].OneofWrappers = []any{
 		(*ControlSignal_Adjust)(nil),
 		(*ControlSignal_Stop)(nil),
 		(*ControlSignal_Pause)(nil),
 	}
-	file_api_proto_generator_proto_msgTypes[61].OneofWrappers = []any{}
+	file_api_proto_generator_proto_msgTypes[62].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_generator_proto_rawDesc), len(file_api_proto_generator_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   91,
+			NumMessages:   92,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -32,6 +32,12 @@ Each fault in TEL-4's matrix names the tests that accept it. The Go tests run in
 |  | `TestTelemetryCoverageNewEpochRestartsCollectionIdentity` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
 |  | `TestTelemetryCoverageEpochLimitDoesNotCreateUntrackedWindows` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
 |  | `TestTelemetryCoverageAlgorithmKeepsLegacyComparisonSeparate` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+| Source collection windows and rate denominators | `TestCollectionWindowsDrainBoundariesAndConcurrency` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
+|  | `TestCollectionWindowsRemainIndependentOfRateWindow` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
+|  | `TestCollectionWindowsLifecycleReplayAndStopCohort` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
+|  | `TestCollectionWindowsWireCompatibilityBoundsAndValidation` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
+|  | `TestCollectionWindowsArchiveRetainsIdentityAndPrecision` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
+|  | `TestCollectionWindowsCoordinatedCohortAndUnmeasuredPublication` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
 | Policy changes | `TestTelemetryPolicySegmentRejectsAnInvalidPolicy` (`pkg/api/telemetry_coverage_test.go`) | Go |
 |  | `TestProjectTelemetryPolicyUpdateChangesOnlyTheOptIn` (`pkg/api/telemetry_stages_test.go`) | Go |
 |  | telemetry policy remains immutable in live, archive and manifest views after settings change (`dashboard/e2e/workflow-telemetry-policy.spec.ts`) | End to end, both profiles |

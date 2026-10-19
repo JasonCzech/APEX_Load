@@ -175,13 +175,15 @@ type PauseResult struct {
 }
 
 type MetricsBatch struct {
-	BrowserDocuments         *protocol.BrowserDocumentSummary
-	BrowserDocumentsVersion  uint32
-	MessagingProgress        *protocol.MessagingProgressSnapshot
-	MessagingProgressVersion uint32
-	TestID                   string
-	ExecutionGeneration      uint64
-	BatchSequence            uint64
+	CollectionWindows         []MetricsCollectionWindow
+	CollectionWindowsComplete bool
+	BrowserDocuments          *protocol.BrowserDocumentSummary
+	BrowserDocumentsVersion   uint32
+	MessagingProgress         *protocol.MessagingProgressSnapshot
+	MessagingProgressVersion  uint32
+	TestID                    string
+	ExecutionGeneration       uint64
+	BatchSequence             uint64
 	// SourceEpoch identifies the generator process that numbered
 	// BatchSequence; sequences restart with each epoch. Empty for older peers.
 	SourceEpoch              string
@@ -1773,8 +1775,10 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 
 	stats := generatorStatsFromProto(batch.GetStats())
 	telemetry := metricsTelemetryFromProto(batch.GetTelemetry())
+	windows, windowsComplete := collectionWindowsFromProto(batch.GetCollectionWindows(), batch.GetCollectionWindowsComplete())
 
 	return MetricsBatch{
+		CollectionWindows: windows, CollectionWindowsComplete: windowsComplete,
 		BrowserDocuments:           browserDocumentsFromJSON(batch.GetBrowserDocumentSummaryJson(), batch.GetBrowserDocumentSummaryVersion()),
 		BrowserDocumentsVersion:    batch.GetBrowserDocumentSummaryVersion(),
 		MessagingProgress:          messagingProgressFromJSON(batch.GetMessagingProgressJson(), batch.GetMessagingProgressVersion()),
