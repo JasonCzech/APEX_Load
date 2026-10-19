@@ -738,7 +738,7 @@ export function ScriptReplayDebuggerView({
                       ×
                     </TooltipButton>
                   </div>
-                  <div className="debugger-center-body">
+                  <div className={`debugger-center-body ${debuggerTab === 'request' ? 'debugger-request-body' : ''}`}>
                     {debuggerTab === 'variables' ? (
                       <div className="debugger-variables-body">
                         {selectedOutlineParameterName && <DebugParameterInspector key={`${selectedOutlineParameterName}:${selectedReplayEventIndex}`} script={script} name={selectedOutlineParameterName} values={replayVariableInspector} evidenceUnavailable={runtimeVariablesUnavailable} event={selectedReplayEvent} matchesDraft={replayMatchesCurrentScript} runtimeParameter={runtimeInspectionMode === 'current' ? currentRuntimeParameter(currentRuntimeSnapshot, selectedOutlineParameterName) : undefined} currentMode={runtimeInspectionMode === 'current'} onFindUsages={() => { selectOutlineParameter(selectedOutlineParameterName); setNarrowPane('editor') }} onEdit={onEditParameterDefinition} />}
@@ -1070,7 +1070,7 @@ export function ScriptReplayDebuggerView({
                                 )}
                                 {event.snapshot && (
                                   hasStructuredReplaySnapshot(event.snapshot) ? (
-                                    <div className="replay-event-detail-grid">
+                                    <div className="replay-event-detail-grid debugger-http-snapshot">
                                       {snapshotSoapFault && (
                                         <div className="replay-code-block">
                                           <div className="replay-code-block-header">
@@ -1099,11 +1099,13 @@ export function ScriptReplayDebuggerView({
                                         </div>
                                         <pre>{`${event.snapshot.request_method || 'n/a'} ${event.snapshot.request_url || ''}`.trim()}</pre>
                                         <SnapshotTextPreview text={formatReplayHeaders(event.snapshot.request_headers)} />
-                                        <SnapshotBodyPreview
-                                          body={event.snapshot.request_body}
-                                          headers={event.snapshot.request_headers}
-                                          emptyMessage="No request body captured"
-                                        />
+                                        <div className="debugger-snapshot-body">
+                                          <SnapshotBodyPreview
+                                            body={event.snapshot.request_body}
+                                            headers={event.snapshot.request_headers}
+                                            emptyMessage="No request body captured"
+                                          />
+                                        </div>
                                       </div>
                                       <div className="replay-code-block">
                                         <div className="replay-code-block-header">
@@ -1120,11 +1122,13 @@ export function ScriptReplayDebuggerView({
                                           const response = <>
                                             <pre>{String(event.snapshot.response_status || event.status_code || 'n/a')}</pre>
                                             <SnapshotTextPreview text={formatReplayHeaders(event.snapshot.response_headers)} />
-                                            <SnapshotBodyPreview
-                                              body={event.snapshot.response_body}
-                                              headers={event.snapshot.response_headers}
-                                              emptyMessage="No response body captured"
-                                            />
+                                            <div className="debugger-snapshot-body">
+                                              <SnapshotBodyPreview
+                                                body={event.snapshot.response_body}
+                                                headers={event.snapshot.response_headers}
+                                                emptyMessage="No response body captured"
+                                              />
+                                            </div>
                                           </>
                                           const bodyState = event.snapshot.response_body_state || event.response_body_state
                                           // One selection per event: another event, or a new replay, starts afresh.

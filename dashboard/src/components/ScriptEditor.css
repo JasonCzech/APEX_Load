@@ -6972,6 +6972,32 @@ details.replay-code-block > summary,
   flex-direction: column;
   gap: 12px;
 }
+/* Let the payloads use the space left above the dock. Keep intrinsic heights
+   for longer evidence so the detail pane can still scroll as a whole. */
+.debugger-request-body,
+.debugger-http-snapshot > .replay-code-block,
+.debugger-http-snapshot .response-selection,
+.debugger-http-snapshot .response-selection-content,
+.debugger-snapshot-body {
+  display: flex;
+  flex-direction: column;
+}
+.debugger-request-body > *,
+.debugger-http-snapshot > .replay-code-block > *,
+.debugger-http-snapshot .response-selection > *,
+.debugger-http-snapshot .response-selection-content > *,
+.debugger-snapshot-body > * {
+  flex-shrink: 0;
+}
+.debugger-request-body > .debugger-detail,
+.debugger-request-body .debugger-detail > .replay-event-body,
+.debugger-http-snapshot,
+.debugger-http-snapshot .response-selection,
+.debugger-http-snapshot .response-selection-content,
+.debugger-snapshot-body,
+.debugger-snapshot-body > .snapshot-code {
+  flex: 1 0 auto;
+}
 .debugger-detail-head {
   display: flex;
   align-items: center;

@@ -12,6 +12,14 @@ test.beforeAll(async () => {
       await capturePageGate
       res.setHeader('Content-Type', 'text/html'); res.end('<img src="/capture-resource">'); return
     }
+    if (req.url === '/layout-short') {
+      res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ status: 'ready' })); return
+    }
+    if (req.url === '/layout-long') {
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ lines: Array.from({ length: 40 }, (_, index) => `Retained response line ${index + 1}`), tail: 'last-retained-response-value' }))
+      return
+    }
     res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ customer: 'debug-customer', path: req.url, message: 'diagnostic evidence' }))
   })
   await new Promise<void>(resolve => target.listen(0, '127.0.0.1', resolve))
@@ -120,6 +128,89 @@ test('debugger captures successful evidence, diagnoses runtime failure, repairs 
   await page.setViewportSize({ width: 900, height: 850 })
   await expect(page.getByRole('button', { name: 'Export session', exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('debugger-operator-experience.png'), fullPage: true })
+})
+
+test('request and response code fills the debug pane and follows dock resizing', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script: {
+    name: 'Debugger_payload_height', version: '1.0', protocol: 'http', config: { base_url: targetURL },
+    actions: [
+      { name: 'Short payload', type: 'request', method: 'POST', target: '/layout-short', body: 'debug-customer' },
+      { name: 'Long payload', type: 'request', method: 'GET', target: '/layout-long' },
+    ],
+  } } })))
+  // Leave enough height for the evidence metadata and both payloads when the dock is open.
+  await page.setViewportSize({ width: 1800, height: 1800 })
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
+  await page.locator('.topbar-debug-action-run').click()
+  await expectDebugOutcome(page, 'passed')
+  const actions = page.getByRole('complementary', { name: 'Actions', exact: true })
+  await actions.getByRole('treeitem', { name: /^Short payload/ }).click()
+  const detail = page.getByRole('region', { name: 'Debug detail', exact: true })
+  const requestCard = detail.locator('.replay-code-block').filter({ has: page.locator('.replay-code-block-header .replay-detail-label').filter({ hasText: /^Request$/ }) })
+  const responseCard = detail.locator('.replay-code-block').filter({ has: page.locator('.replay-code-block-header .replay-detail-label').filter({ hasText: /^Response$/ }) })
+  await expect(requestCard.locator('.snapshot-code')).toContainText('debug-customer')
+  await expect(responseCard.locator('.snapshot-code')).toContainText('ready')
+  if (await page.getByRole('button', { name: 'Collapse logs and problems', exact: true }).isVisible()) {
+    await page.getByRole('button', { name: 'Collapse logs and problems', exact: true }).click()
+  }
+
+  const geometry = async () => Promise.all([requestCard, responseCard].map(card => card.evaluate(element => {
+    const code = element.querySelector<HTMLElement>('.snapshot-code')!
+    const body = code.closest('.debugger-snapshot-body') || code.parentElement!
+    const buttons = Array.from(body.querySelectorAll<HTMLElement>('.snapshot-body-actions')).at(-1)!
+    const grid = element.closest<HTMLElement>('.replay-event-detail-grid')!
+    const scrollport = element.closest<HTMLElement>('.debugger-center-body')!
+    const codeBounds = code.getBoundingClientRect()
+    const gridBounds = grid.getBoundingClientRect()
+    const scrollBounds = scrollport.getBoundingClientRect()
+    return {
+      codeHeight: codeBounds.height,
+      codeToActionsGap: buttons.getBoundingClientRect().top - codeBounds.bottom,
+      gridBottomGap: scrollBounds.top + scrollport.clientTop + scrollport.clientHeight - parseFloat(getComputedStyle(scrollport).paddingBottom) - gridBounds.bottom,
+      bodyBottomGap: body.getBoundingClientRect().bottom - buttons.getBoundingClientRect().bottom,
+    }
+  })))
+  const expectFilledBodies = async () => {
+    await expect.poll(async () => (await geometry()).map(bounds => ({
+      ...bounds,
+      fillsPane: bounds.codeHeight > 40 && Math.abs(bounds.gridBottomGap) <= 30
+        && bounds.codeToActionsGap >= 0 && bounds.codeToActionsGap <= 12
+        && Math.abs(bounds.bodyBottomGap) <= 2,
+    })), { message: 'Both payload code areas must stretch to their actions and the remaining debug pane height' }).toMatchObject([{ fillsPane: true }, { fillsPane: true }])
+    return geometry()
+  }
+  const collapsed = await expectFilledBodies()
+  await page.getByRole('button', { name: 'Expand logs and problems', exact: true }).click()
+  const expanded = await expectFilledBodies()
+  for (let index = 0; index < expanded.length; index++) expect(collapsed[index].codeHeight - expanded[index].codeHeight).toBeGreaterThan(80)
+  const separator = page.getByRole('separator', { name: 'Resize bottom panel', exact: true })
+  await separator.focus()
+  await separator.press('Home')
+  const resized = await expectFilledBodies()
+  for (let index = 0; index < resized.length; index++) expect(resized[index].codeHeight - expanded[index].codeHeight).toBeGreaterThan(40)
+  await page.getByRole('button', { name: 'Collapse logs and problems', exact: true }).click()
+  await page.setViewportSize({ width: 1800, height: 1600 })
+  const shorterViewport = await expectFilledBodies()
+  for (let index = 0; index < shorterViewport.length; index++) expect(collapsed[index].codeHeight - shorterViewport[index].codeHeight).toBeGreaterThan(80)
+  await page.screenshot({ path: testInfo.outputPath('debugger-payload-height.png') })
+
+  // Full retained payloads remain reachable through the existing preview control.
+  await actions.getByRole('treeitem', { name: /^Long payload/ }).click()
+  await page.setViewportSize({ width: 900, height: 1000 })
+  const paneSwitch = page.getByRole('group', { name: 'Debug panes', exact: true })
+  if (await paneSwitch.isVisible()) await paneSwitch.getByRole('button', { name: 'Editor', exact: true }).click()
+  await responseCard.getByRole('button', { name: 'Open full body', exact: true }).click()
+  const fullBody = page.getByRole('dialog', { name: 'Full body', exact: true })
+  const lastValue = fullBody.getByText('"last-retained-response-value"', { exact: true })
+  await lastValue.scrollIntoViewIfNeeded()
+  await expect(lastValue).toBeVisible()
+  await fullBody.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(responseCard.getByRole('button', { name: 'Open full body', exact: true })).toBeVisible()
 })
 
 test('run-to starts at the beginning and consumes its temporary breakpoint without deleting a permanent breakpoint', async ({ page }) => {

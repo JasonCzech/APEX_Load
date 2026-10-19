@@ -328,6 +328,38 @@ export default function SourceMappingReview({
   const acknowledgedMappingIds = useMemo(() => new Set(mappings.filter(mapping => identity.state && decisionMatches(identity.state.decisions[mapping.id], identity.state, identity.resolved[mapping.id]) && identity.state.decisions[mapping.id]?.outcome === 'acknowledged').map(mapping => mapping.id)), [mappings, identity.state, identity.resolved])
   const tableWrapRef = useRef<HTMLDivElement | null>(null)
   const reviewRootRef = useRef<HTMLElement | null>(null)
+  const codePanelsRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const panels = codePanelsRef.current
+    const review = reviewRootRef.current
+    const importReview = panels?.closest('.script-import-review-preview-aside')
+    if (!panels || !review || !importReview) return
+    // Import review is a scrolling document rather than a fixed-height editor.
+    // Measure the comparison's top so its code can use the rest of the viewport.
+    let frame = 0
+    const measure = () => {
+      frame = 0
+      const bounds = panels.getBoundingClientRect()
+      if (bounds.width === 0) return
+      const top = `${Math.max(0, Math.round(bounds.top))}px`
+      if (panels.style.getPropertyValue('--source-map-panels-top') !== top) {
+        panels.style.setProperty('--source-map-panels-top', top)
+      }
+    }
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(measure) }
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
+    observer?.observe(review)
+    observer?.observe(importReview.parentElement || importReview)
+    window.addEventListener('resize', schedule)
+    document.addEventListener('scroll', schedule, true)
+    measure()
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', schedule)
+      document.removeEventListener('scroll', schedule, true)
+      cancelAnimationFrame(frame)
+    }
+  }, [files.length, mappings.length])
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
   const lastTableScrollFocusRequestRef = useRef<number | null>(null)
   // A focus request (an issue's source, or a mapping or file the caller names)
@@ -951,7 +983,7 @@ export default function SourceMappingReview({
       {!sourceOnly && onEditTarget && destinationPath && destinationView === 'current' && <button type="button" className="btn btn-sm btn-secondary" onClick={() => onEditTarget(destinationPath)}>Edit destination in Author</button>}
       {exportError && <div className="scenario-script-status error" role="alert">{exportError}</div>}
 
-      <div className="source-map-panels">
+      <div ref={codePanelsRef} className="source-map-panels">
         <div className={`source-map-panel ${maximizedPane === 'dsl' ? 'hidden' : maximizedPane === 'source' ? 'maximized' : ''}`}>
           <div className="source-map-panel-header">
             <strong title={selectedFile?.path}>Original source · {selectedFile?.path || 'Unavailable'}</strong>

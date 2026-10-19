@@ -194,6 +194,46 @@ describe('SourceMappingReview', () => {
     window.localStorage.removeItem(CODE_LINE_WRAP_STORAGE_KEY)
   })
 
+  it('tracks import mapping viewport space after content arrives and cleans up observers', async () => {
+    let top = 250
+    let width = 800
+    let frame: FrameRequestCallback | undefined
+    const disconnect = vi.fn()
+    vi.stubGlobal('ResizeObserver', class {
+      observe = vi.fn()
+      unobserve = vi.fn()
+      disconnect = disconnect
+    })
+    onTestFinished(() => { vi.unstubAllGlobals() })
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { frame = callback; return 7 })
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame')
+    const originalBounds = HTMLElement.prototype.getBoundingClientRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('source-map-panels') ? new DOMRect(0, top, width, 360) : originalBounds.call(this)
+    })
+    await act(async () => { root.render(<div className="script-import-review-preview-aside"><SourceMappingReview sourceReview={{ source_files: [], mappings: [] }} script={script} /></div>) })
+    await act(async () => { root.render(<div className="script-import-review-preview-aside"><SourceMappingReview sourceReview={sourceReview} script={script} /></div>) })
+    const panels = container.querySelector<HTMLElement>('.source-map-panels')!
+    expect(panels.style.getPropertyValue('--source-map-panels-top')).toBe('250px')
+    top = -40
+    document.dispatchEvent(new Event('scroll'))
+    frame!(0)
+    expect(panels.style.getPropertyValue('--source-map-panels-top')).toBe('0px')
+    top = 400
+    width = 0
+    window.dispatchEvent(new Event('resize'))
+    frame!(0)
+    expect(panels.style.getPropertyValue('--source-map-panels-top')).toBe('0px')
+    width = 800
+    window.dispatchEvent(new Event('resize'))
+    frame!(0)
+    expect(panels.style.getPropertyValue('--source-map-panels-top')).toBe('400px')
+    window.dispatchEvent(new Event('resize'))
+    await act(async () => { root.render(null) })
+    expect(disconnect).toHaveBeenCalled()
+    expect(cancel).toHaveBeenCalledWith(7)
+  })
+
   it('updates the generated DSL selection when the source file changes', async () => {
     await act(async () => {
       root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)

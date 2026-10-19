@@ -310,6 +310,13 @@
   overflow: hidden;
 }
 
+/* Import review has no fixed-height parent to stretch into. Use its measured
+   viewport offset, retaining room to read code on shorter screens. */
+.script-import-review-preview-aside .source-map-panels {
+  height: max(360px, calc(100dvh - var(--source-map-panels-top, 0px) - 24px));
+  max-height: none;
+}
+
 .source-map-panel-header {
   align-items: center;
   flex-wrap: wrap;

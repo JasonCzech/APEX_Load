@@ -187,6 +187,50 @@ test('JMeter review uses the shared six tabs and retains project scope during up
     await expect(tab).toHaveAttribute('aria-selected', 'true')
     await expect(controls.getByRole('tabpanel', { name: label, exact: true })).toBeVisible()
   }
+  await page.setViewportSize({ width: 1800, height: 2400 })
+  await tabs.getByRole('tab', { name: 'Source Mapping', exact: true }).click()
+  const mappingPanels = controls.locator('.source-map-panels')
+  await expect(mappingPanels.locator('.cm-editor')).toHaveCount(2)
+  await mappingPanels.evaluate(element => element.scrollIntoView({ block: 'start' }))
+  const expectMappingFillsViewport = async () => {
+    await expect.poll(() => mappingPanels.evaluate(element => {
+      const bounds = element.getBoundingClientRect()
+      return Math.abs(bounds.bottom - (window.innerHeight - 24))
+    })).toBeLessThan(2)
+    const bounds = await mappingPanels.boundingBox()
+    expect(bounds!.height).toBeGreaterThan(620)
+    for (const editor of await mappingPanels.locator('.source-map-panel:not(.hidden) .cm-editor').all()) {
+      const code = await editor.boundingBox()
+      expect(Math.abs(code!.y + code!.height - bounds!.y - bounds!.height)).toBeLessThan(3)
+    }
+    return bounds!.height
+  }
+  const tallMappingHeight = await expectMappingFillsViewport()
+  await page.setViewportSize({ width: 1800, height: 2600 })
+  const tallerMappingHeight = await expectMappingFillsViewport()
+  expect(tallerMappingHeight - tallMappingHeight).toBeGreaterThan(150)
+  await controls.getByRole('button', { name: 'Expand destination', exact: true }).click()
+  await expect(mappingPanels.locator('.source-map-panel:not(.hidden)')).toHaveCount(1)
+  await expectMappingFillsViewport()
+  await controls.getByRole('button', { name: 'Return to comparison', exact: true }).click()
+  await expect(mappingPanels.locator('.source-map-panel:not(.hidden)')).toHaveCount(2)
+  await page.screenshot({ path: testInfo.outputPath('mapping-height.png') })
+  await page.setViewportSize({ width: 760, height: 900 })
+  for (const pane of await mappingPanels.locator('.source-map-panel:not(.hidden)').all()) {
+    await pane.scrollIntoViewIfNeeded()
+    const geometry = await pane.evaluate(element => ({
+      width: element.getBoundingClientRect().width,
+      availableWidth: element.parentElement!.getBoundingClientRect().width,
+      height: element.getBoundingClientRect().height,
+    }))
+    expect(geometry.width).toBeLessThanOrEqual(geometry.availableWidth + 1)
+    expect(geometry.height).toBeGreaterThanOrEqual(360)
+    const scroller = pane.locator('.cm-scroller')
+    await scroller.evaluate(element => { element.scrollTop = element.scrollHeight })
+    await expect.poll(() => scroller.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThan(2)
+  }
+
+  await page.setViewportSize({ width: 1280, height: 900 })
   await tabs.getByRole('tab', { name: 'Runtime settings', exact: true }).click()
   await controls.getByRole('checkbox', { name: /Show \d+ unconfigured APEX settings/ }).check()
   const runtimeCategories = controls.getByRole('navigation', { name: 'Runtime categories' })

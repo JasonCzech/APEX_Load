@@ -78,7 +78,7 @@ export default function ResponseSelection({ body, bodyState = 'whole', status, c
           {checkedStatus !== undefined && checkedStatus !== status ? `Change the status check from ${checkedStatus} to ${status}` : `Check that the status is ${status}`}
         </button>}
     </div> : null}
-    <div ref={area}>{children}</div>
+    <div className="response-selection-content" ref={area}>{children}</div>
     {selected && <div className="response-selection-actions" role="group" aria-label="Use the selected text">
       <span>Selected “{preview}”{!found ? ': not in the response as it was sent, so select it in the raw text' : ''}</span>
       {disabledReason ? <span>{disabledReason}</span> : <>
