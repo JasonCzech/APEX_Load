@@ -2,7 +2,7 @@
 
 Status: Roadmap — approved implementation program, authorized and evaluated 2026-10-02 against published commit `2314ab698c805f5b75ac8b984143a6389deef03b`.
 
-The evaluation below is the **2026-10-02 baseline**, not a current gap inventory. Requirements remain here; dated implementation contracts, delivery narratives and their qualification limits are preserved in the [delivery snapshot](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md). Retained deviation lists and the linked delivery records must be read together; moving a record does not close its gates. Use [ROADMAP.md](ROADMAP.md) for remaining priorities.
+The evaluation below is the **2026-10-02 baseline**, not a current gap inventory. Requirements remain here; dated implementation contracts, delivery narratives and their qualification limits are preserved in the [delivery snapshot](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md). Retained deviation lists and the linked delivery records must be read together; moving a record does not close its gates. Use [ROADMAP.md](ROADMAP.md) for remaining priorities. The proposed [remaining-roadmap implementation specification](ROADMAP_IMPLEMENTATION_SPEC.md) reconciles those priorities against the October 19 current-main implementation, excluding Messaging and CloudTest outcome parity.
 
 ## 1. Objective and completion contract
 

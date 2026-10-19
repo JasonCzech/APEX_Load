@@ -112,6 +112,7 @@ not the source of truth for current API or DSL contracts.
 | [NODE_FAILURE_READINESS_PLAN.md](NODE_FAILURE_READINESS_PLAN.md) | Open implementation and qualification ledger for worker recovery, KEDA capacity, liveness, storage, and archive issues found in September 2026 fault tests |
 | [HTTP3_IMPLEMENTATION.md](HTTP3_IMPLEMENTATION.md) | HTTP/3 delivery status, quic-go contract, test fixture, and transport decision records (timing, retries, socket ownership, defaults) |
 | [ROADMAP.md](ROADMAP.md) | Remaining engineering work and qualification gates; dated delivery history is archived |
+| [ROADMAP_IMPLEMENTATION_SPEC.md](ROADMAP_IMPLEMENTATION_SPEC.md) | Proposed implementation delta against current main for all remaining roadmap tracks except Messaging and CloudTest outcome parity; dependencies, compatibility and acceptance gates |
 | [FEATURE_COMPLETION_SPEC.md](FEATURE_COMPLETION_SPEC.md) | Approved implementation and acceptance specification for Event Hubs/messaging, browser evidence/intelligence, telemetry reporting, native analytics and authoring cleanup |
 | [qa/TEST_PROGRAM.md](qa/TEST_PROGRAM.md) | Nine-month progressive test and infrastructure-readiness program; scope of record, live risk register, and release test checklist |
 | [qa/DASHBOARD.md](qa/DASHBOARD.md) | Generated current QA status, headline metrics, Tier-0/API coverage, and gate tiers |

@@ -4,6 +4,8 @@ Status: Roadmap. This page identifies remaining work and qualification gates. Im
 
 The [dated roadmap snapshot](archive/ROADMAP_2026-10-19.md) retains the former delivery narratives, design decisions and phase history. [Review records](qa/reviews/README.md) preserve exact checks, failed attempts, accepted limits and evidence. Older slice-level backlog statements can be superseded by later waves; use the linked acceptance inventories and requirement records before scheduling work.
 
+The proposed [remaining-roadmap implementation specification](ROADMAP_IMPLEMENTATION_SPEC.md) reconciles current code with the remaining telemetry, non-Messaging protocol diagnostics, authoring, analytics, browser and recovery work. It defines dependencies and acceptance gates; Messaging and CloudTest outcome parity remain outside that plan.
+
 ## Track status
 
 | Track | Remaining work / authority |
