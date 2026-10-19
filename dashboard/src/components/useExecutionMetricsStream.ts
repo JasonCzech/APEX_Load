@@ -4,6 +4,7 @@ import { useTestApi } from '../hooks/api/useTestApi'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { LiveMetrics, MetricsHistoryPoint, NetworkLatency, TelemetryHealth, TestStatus, WSMessage } from '../types'
 import { isCompletedTestStatus } from '../utils/testStatusUtils'
+import { recordClientTelemetryReceipt } from './clientTelemetryReceipt'
 import { routeLatencySeriesValuesForTarget } from './latencySeries'
 import { mapExecutionHistory, mapExecutionMetricToHistoryPoint, mergeMetricsHistory } from './testExecutionMetricsModel'
 
@@ -137,6 +138,7 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
 
     const receivedAt = new Date()
     const telemetry = buildClientTelemetry(msg.data.telemetry, receivedAt)
+    if (telemetry) recordClientTelemetryReceipt(telemetry, activeTestIdRef.current)
 
     setLatestMetrics({
       ...msg.data,

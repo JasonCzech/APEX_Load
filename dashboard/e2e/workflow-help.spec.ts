@@ -110,7 +110,7 @@ test('DSL operators can discover the guide, validate its example, and follow ref
 test('evidence guides are searchable, readable and retain their scope after reload', async ({ page }, testInfo) => {
   const guides = [
     { query: 'provisional history', id: 'browser-document-evidence', title: 'Browser document evidence', body: 'No-interaction INP is unavailable.' },
-    { query: 'semantic SHA-256', id: 'telemetry-policy-receipts', title: 'Telemetry budget policy receipts', body: 'explicit zero disables a stage' },
+    { query: 'paint opportunity', id: 'telemetry-policy-receipts', title: 'Telemetry budget policy receipts', body: 'explicit zero disables a stage' },
     { query: 'sub-millisecond thresholds', id: 'authoring-scenario-fidelity', title: 'Scenario and queued-run authoring fidelity', body: 'A present empty section is a whole-section replacement.' },
   ]
   for (const guide of guides) {
@@ -120,6 +120,10 @@ test('evidence guides are searchable, readable and retain their scope after relo
     await expect(page.getByRole('heading', { name: guide.title, exact: true })).toBeVisible()
     await expect(page.locator('.guide-markdown-article')).toBeVisible()
     await expect(page.locator('.guide-markdown-article')).toContainText(guide.body)
+    if (guide.id === 'telemetry-policy-receipts') {
+      await expect(page.locator('.guide-markdown-article')).toContainText('not proof that a frame was visibly presented')
+      await expect(page.locator('.guide-markdown-article')).not.toContainText('to the first paint after it rendered')
+    }
     await expect(page.locator('.guide-markdown-article')).toContainText('remain open')
     await page.reload()
     await expect(page.locator('.guide-markdown-article')).toContainText(guide.body)

@@ -1,0 +1,15 @@
+Building controller...
+Starting controller on http://127.0.0.1:18441 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.4NzhttoD0P)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 2 tests using 1 worker
+
+(node:42429) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/workflow-help.spec.ts:110:1 › evidence guides are searchable, readable and retain their scope after reload (1.8s)
+(node:42436) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 e2e/workflow-telemetry-stages.spec.ts:9:1 › an opted-in project collects visible render evidence as an advisory stage (7.0s)
+
+  2 passed (9.9s)

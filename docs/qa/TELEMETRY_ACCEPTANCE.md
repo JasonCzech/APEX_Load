@@ -59,7 +59,14 @@ Each fault in TEL-4's matrix names the tests that accept it. The Go tests run in
 |  | `TestClientRenderReportsRotatingTabsShareTheViewerBudget` (`pkg/api/telemetry_stages_test.go`) | Go |
 |  | `TestClientRenderReportRefusedOnAFollower` (`pkg/api/telemetry_stages_test.go`) | Go |
 |  | measures receive to render and marks a hidden tab as background (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
-|  | counts a render as visible only if the tab stayed visible since receipt (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | remembers a hidden interval before the reporter is enabled (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | excludes a hidden receipt even when visible before React processes it (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | uses monotonic elapsed time across forward and backward wall-clock steps (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | requires a local receipt bound to this run, not a wire timestamp (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | distinguishes receipts sharing a wall timestamp without resampling a latency update (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | clears disabled samples and cannot sample the same receipt twice (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | ignores a late refusal from a disabled reporting session (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | keeps local receipt identity outside serialized telemetry and history (`dashboard/src/components/clientTelemetryReceipt.test.ts`) | Dashboard |
 |  | reports a render whose tab was hidden before it painted as background (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
 |  | does not measure a publication received while the tab is hidden (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
 |  | seeds history on first open and backfills only the missed window on reconnect (`dashboard/src/components/useExecutionMetricsStream.test.tsx`) | Dashboard |

@@ -29,6 +29,8 @@ The themed reports preserve the original narrative of each consolidated review, 
 
 Completion here applies only to the reviewed slice. Outstanding provider, platform, scale and parent-feature gates are retained inside each report and linked from the [roadmap](../../ROADMAP.md). Consolidation does not mark those gates passed. Evidence directories and non-Markdown artifacts remain unchanged.
 
+[Monotonic browser timing — 2026-10-19](roadmap-monotonic-browser-timing-2026-10-19/README.md) records local receipt identity, monotonic callback timing and visibility/session regression evidence; visible-presentation qualification remains open.
+
 [Durable controller cursors — 2026-10-19](roadmap-durable-cursors-2026-10-19/README.md) records atomic cursor/effects persistence, bounded source-window recovery, fencing, migration and replay evidence.
 
 [Source collection windows — 2026-10-19](roadmap-source-windows-2026-10-19/README.md) records the next bounded TEL-A prerequisite: source drain-window provenance on the wire and in generator archives; controller recovery follows in the slice above.
