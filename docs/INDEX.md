@@ -73,7 +73,10 @@ kept for planning or audit context only.
 | [RUNTIME_SETTINGS_PARITY.md](RUNTIME_SETTINGS_PARITY.md) | Runtime-settings parity evidence and API contract |
 | [RECORDING_PROFILES.md](RECORDING_PROFILES.md) | Project recording profiles and how VuGen's recording options map to them |
 | [PERFORMANCE_BENCHMARKS.md](PERFORMANCE_BENCHMARKS.md) | Harness-overhead benchmark, local performance evidence, and browser benchmark procedures |
-| [JAVA_VUSER_POOLING_IMPLEMENTATION.md](JAVA_VUSER_POOLING_IMPLEMENTATION.md) | Experimental Java evidence tooling, operator AppCDS, slot foundations, and remaining pooling/AKS gates |
+| [JAVA_VUSER_POOLING_IMPLEMENTATION.md](JAVA_VUSER_POOLING_IMPLEMENTATION.md) | Experimental Java scope, component map, reference ownership and open release gates |
+| [JAVA_PILOT_OPERATIONS.md](JAVA_PILOT_OPERATIONS.md) | Fixture construction, baseline/pilot evidence, comparison gates and operator AppCDS |
+| [JAVA_POOLED_RUNTIME_CONTRACTS.md](JAVA_POOLED_RUNTIME_CONTRACTS.md) | IPC, containment, shared admission, ownership, lifecycle and review-derived constraints |
+| [JAVA_DEDICATED_EXECUTION_CONTRACTS.md](JAVA_DEDICATED_EXECUTION_CONTRACTS.md) | Durable broker authority, execution-pod supervision, preparation and distributed contracts |
 | [JAVA_BOUNDARY_ATTESTOR_CONTRACT.md](JAVA_BOUNDARY_ATTESTOR_CONTRACT.md) | Authenticated external runtime and infrastructure-fencing proof contract for dedicated Java cleanup |
 | [JAVA_BROKER_SERVICE.md](JAVA_BROKER_SERVICE.md) | Experimental dedicated Java broker command, operator profiles, host credentials and authenticated preparation API |
 | [ACCESS_SURFACES.md](ACCESS_SURFACES.md) | Supported hosted, desktop, and CLI access surfaces |
@@ -83,8 +86,10 @@ kept for planning or audit context only.
 | [HA_RUN_CONTINUITY_PLAN.md](HA_RUN_CONTINUITY_PLAN.md) | Plan and P0 evidence for keeping in-flight distributed runs alive across HA controller failover |
 | [NODE_STORAGE_RECOVERY.md](NODE_STORAGE_RECOVERY.md) | Worker state inventory, fencing, storage recovery, and qualification limits |
 | [ARCHIVE_SOURCE_RETENTION.md](ARCHIVE_SOURCE_RETENTION.md) | Opt-in confirmed-source retention, publication fences and recoverability limits |
-| [ANALYSIS_WORKFLOWS.md](ANALYSIS_WORKFLOWS.md) | Project-gated run monitoring, traffic-free preparation, native Parquet imports, saved mappings and correlation; validation limits |
-| [ANALYSIS_IDENTITY.md](ANALYSIS_IDENTITY.md) | Imported source/host/service and bounded dimensions, exact query filters, saved comparisons and evidence limits |
+| [ANALYSIS_WORKFLOWS.md](ANALYSIS_WORKFLOWS.md) | Project/native-build enablement and navigation to monitoring, native analytics and RCA contracts |
+| [MONITORING_AND_PREPARATION.md](MONITORING_AND_PREPARATION.md) | Collector trust, source binding, traffic-free preparation, capacity and messaging management |
+| [ROOT_CAUSE_ANALYSIS.md](ROOT_CAUSE_ANALYSIS.md) | Validity, budgets, onset, browser anomalies, graph/hypothesis and service contracts |
+| [NATIVE_ANALYTICS.md](NATIVE_ANALYTICS.md) | Parquet imports, measurement identities, queries, panels and resource/acceptance limits |
 
 Every Markdown file directly under `docs/`, other than this index itself, appears in one of the audience or lifecycle tables on this page. That is machine-enforced: `check_index_membership` in `scripts/check-docs.py` fails the CI documentation job if a `docs/*.md` file is not linked from a table row here. Point-in-time material under `docs/qa/reviews/` and `docs/archive/` is excluded from this index and the check.
 

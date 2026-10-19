@@ -43,7 +43,7 @@ Use NA-1–NA-6 and the [analytics acceptance inventory](qa/ANALYTICS_ACCEPTANCE
 
 Outstanding qualification includes the reproducible **1 GiB compressed-input** reference workload on the specified 4 vCPU/16 GiB host, all five native packaging lanes, controller restart/HA takeover and remote artifact-backend lifecycle. Correctness fixtures and local SQLite/PostgreSQL checks do not establish these outcomes. The **10 GB benchmark is waived, not passed**; that waiver does not waive the 1 GiB gate.
 
-Current operation: [analysis workflows](ANALYSIS_WORKFLOWS.md), [imported identities](ANALYSIS_IDENTITY.md), and [baseline comparison](BASELINE_COMPARISON.md).
+Current operation: [analysis workflows](ANALYSIS_WORKFLOWS.md), [imported identities](NATIVE_ANALYTICS.md#imported-measurement-identities), and [baseline comparison](BASELINE_COMPARISON.md).
 
 ## Messaging
 

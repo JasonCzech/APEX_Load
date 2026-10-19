@@ -96,3 +96,11 @@ Nineteen completed scoped review narratives were merged without dropping their f
 | [Browser reviews](qa-reviews/BROWSER_2026-10.md) | Availability, document evidence and HAR compatibility |
 | [Integration reviews](qa-reviews/INTEGRATION_2026-10.md) | Publication and composed qualification |
 | [Roadmap snapshot](ROADMAP_2026-10-19.md) | Complete pre-cleanup delivery narrative and design history; the [current roadmap](../ROADMAP.md) carries remaining gates |
+
+## Java validation history
+
+| Historical record | Current references |
+| --- | --- |
+| [September Java verification](JAVA_VALIDATION_2026-09.md) | Dated integration checks, foundation verification and local Linux evidence; current [scope and release gates](../JAVA_VUSER_POOLING_IMPLEMENTATION.md), [pilot operation](../JAVA_PILOT_OPERATIONS.md), [pooled contracts](../JAVA_POOLED_RUNTIME_CONTRACTS.md) and [dedicated contracts](../JAVA_DEDICATED_EXECUTION_CONTRACTS.md) |
+
+The October 19 analytics/Java pass moved technical sections intact. Review-derived Java constraints remain in the current pooled contract reference; only dated validation summaries were archived. Evidence artifacts remain at their original paths. Imported measurement identities are now part of [native analytics](../NATIVE_ANALYTICS.md#imported-measurement-identities).
