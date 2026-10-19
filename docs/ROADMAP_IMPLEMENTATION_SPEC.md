@@ -62,6 +62,8 @@ Do not assign calendar dates until the reference hosts, native runners, sanitize
 
 ### TEL-A — Durable windows and measured end-to-end age
 
+The [coordinated-start clock correction](qa/reviews/roadmap-coordinated-published-clock-2026-10-19/README.md) converts heartbeat-derived published-clock deadlines into generator wall time without moving the common barrier or re-anchoring active telemetry. Broader clock/population qualification below remains open.
+
 Persist bounded source observation windows and committed collection cursors under the existing run-incarnation/execution-generation fence. Record source epoch, collection/publication identity, exact window, policy/cadence revision, available counters and classification. Repeated or overlapping windows cannot add coverage or totals twice. Receipt-time windows and sampled history cannot reconstruct exact lost source windows after takeover. Preserve legacy recovery as unknown/lower-bound when its source ledger is absent.
 
 The [durable controller cursor slice](qa/reviews/roadmap-durable-cursors-2026-10-19/README.md) adds lease/incarnation-fenced atomic checkpoints, recovery of counted effects and bounded source-window provenance, and conservative legacy fallback. Receipt coverage remains v3 and source-window classification remains unknown. Qualified source-clock coverage, in-run policy segmentation and the end-to-end/reference gates below remain open.
@@ -154,7 +156,7 @@ Retire a seam only after all callers use its canonical owner and property parity
 
 ### NA-A — Deterministic import semantics
 
-The [native timestamp source-offset slice](qa/reviews/roadmap-analytics-timestamp-offsets-2026-10-19/README.md) refuses inferred offsets and verifies per-row DST conversion for unambiguous/offset-qualified inputs. Local-wall ambiguity, precision disclosure and other mapping requirements below remain open.
+The [native timestamp source-offset slice](qa/reviews/roadmap-analytics-timestamp-offsets-2026-10-19/README.md) refuses inferred offsets and verifies per-row DST conversion for unambiguous/offset-qualified inputs. The [local-wall-time slice](qa/reviews/roadmap-analytics-local-wall-times-2026-10-19/README.md) rejects ambiguous/nonexistent times with row provenance; precision disclosure and other mapping requirements below remain open.
 
 Resolve the remaining mapping ambiguities in the versioned mapping contract: partition column versus mapping constant precedence, per-file/column schema drift, DECIMAL precision loss and timestamps crossing a daylight-saving transition inside one file. Do not infer an entire file's time grid from its first window. Preview must disclose a lossy conversion and require the same explicit choice at commit; unsupported ambiguity fails with row/file provenance rather than silently changing units, precision or timezone.
 
@@ -293,6 +295,8 @@ Never reset an execution epoch, force an unfenced worker back into service or eq
 **Exit:** reviewed artifacts show the supported recovery action, proof boundaries, measured RTO/RPO, remaining incomplete evidence and operator runbook for each failure domain. Any required environment not exercised stays pending; product status must not promote local fault trials to HA certification.
 
 ## Integrated acceptance and release
+
+Environment status, 2026-10-19: separate reference hosts, Linux/Windows native runners, sanitized real TruClient exports and a disposable multi-host recovery environment are unavailable. Their qualification gates remain pending; local implementation and validation do not waive them.
 
 Use one non-Messaging integration scenario to connect the seams: author/import and revise a script through the shared session; execute HTTP plus qualified browser/gRPC/WebSocket cohorts; retain policy/source identities; run the admitted native reference query while telemetry is collected; compare a seeded browser regression; save/export a pinned panel and report; then exercise recovery with a separate explicitly eligible stateless-HTTP workload in its disposable fault environment. The mixed protocol/browser workload does not qualify missing-shard continuation. Java HTTP codec qualification has its own known-payload fixture. Do not force protocol-specific measurements into a fabricated common denominator.
 

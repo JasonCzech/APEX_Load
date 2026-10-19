@@ -14,6 +14,12 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 |  | `TestNativeTimestampUsesEachRowsTimezoneOffset` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
 |  | `TestNativeLocalTimestampRejectsShortOffsetText` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
 |  | `TestNativeAbsoluteTimestampRejectsNaiveTypedColumns` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
+|  | `TestResolveLocalTimestamp` (`pkg/analysis/local_timestamp_test.go`) | Default build |
+|  | `TestResolveLocalTimestampLimits` (`pkg/analysis/local_timestamp_test.go`) | Default build |
+|  | `TestResolveLocalTimestampBoundsTransitionTraversal` (`pkg/analysis/local_timestamp_test.go`) | Default build |
+|  | `TestNativeLocalWallTimeRejectsAmbiguityWithRowProvenance` (`pkg/analysis/duckdb/native_local_timestamp_test.go`) | DuckDB build |
+|  | `TestNativeLocalTimestampGuardCoversSummaryAndHistogram` (`pkg/analysis/duckdb/native_local_timestamp_test.go`) | DuckDB build |
+|  | `TestNativeLocalTimestampQualifierRequiresAgreementAndCancellation` (`pkg/analysis/duckdb/native_local_timestamp_test.go`) | DuckDB build |
 | Nulls | `TestNativeRejectionProvenanceAndNullBuckets` (`pkg/analysis/duckdb/native_test.go`) | DuckDB build |
 |  | `TestNativeSummaryPartialWindowsDuplicatesNullsAndMissingCounts` (`pkg/analysis/duckdb/native_summary_test.go`) | DuckDB build |
 | Malformed files and rows | `TestNativeHistogramRejectsMalformedRowsWithProvenance` (`pkg/analysis/duckdb/native_histogram_test.go`) | DuckDB build |

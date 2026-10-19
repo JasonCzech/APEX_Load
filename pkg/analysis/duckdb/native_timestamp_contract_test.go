@@ -88,6 +88,7 @@ func TestNativeTimestampUsesEachRowsTimezoneOffset(t *testing.T) {
 		{"spring local", "timestamp", `SELECT * FROM (VALUES (TIMESTAMP '2026-03-08 01:30:00',1),(TIMESTAMP '2026-03-08 03:30:00',2)) t(ts,value)`, []string{"2026-03-08T06:30:00Z", "2026-03-08T07:30:00Z"}},
 		{"fall local", "timestamp", `SELECT * FROM (VALUES (TIMESTAMP '2026-11-01 00:30:00',1),(TIMESTAMP '2026-11-01 02:30:00',2)) t(ts,value)`, []string{"2026-11-01T04:30:00Z", "2026-11-01T07:30:00Z"}},
 		{"typed absolute", "timestamp_offset", `SELECT TIMESTAMPTZ '2026-11-01 01:30:00-04' AS ts,1 AS value`, []string{"2026-11-01T05:30:00Z"}},
+		{"typed absolute local mapping", "timestamp", `SELECT TIMESTAMPTZ '2026-11-01 01:30:00-04' AS ts,1 AS value`, []string{"2026-11-01T05:30:00Z"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e, path := nativeFixture(t, tc.sql)

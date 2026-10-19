@@ -233,7 +233,10 @@ func timestampExpression(mapping Mapping) string {
 		// Offset-aware columns retain their absolute instant. Text with an
 		// explicit offset requires the corresponding mapping rather than
 		// silently dropping its offset during a TIMESTAMP cast.
-		return "CASE WHEN typeof(" + c + ")='TIMESTAMP WITH TIME ZONE' THEN try_cast(" + c + " AS TIMESTAMPTZ) WHEN " + offsetText + " THEN NULL ELSE try_cast(" + c + " AS TIMESTAMP) AT TIME ZONE " + literal(mapping.Timezone) + " END"
+		wall := "try_cast(" + c + " AS TIMESTAMP)"
+		instant := "(" + wall + " AT TIME ZONE " + literal(mapping.Timezone) + ")"
+		qualified := nativeLocalTimestampFunction + "(" + wall + "," + instant + ")"
+		return "CASE WHEN typeof(" + c + ")='TIMESTAMP WITH TIME ZONE' THEN try_cast(" + c + " AS TIMESTAMPTZ) WHEN " + offsetText + " THEN NULL WHEN " + qualified + " THEN " + instant + " ELSE NULL END"
 	}
 	scale := map[string]string{"unix_s": "1", "unix_ms": "1000", "unix_us": "1000000", "unix_ns": "1000000000"}[mapping.TimestampEncoding]
 	return "TRY(to_timestamp(try_cast(" + c + " AS DOUBLE)/" + scale + "))"
@@ -273,6 +276,9 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 		}
 	}()
 	err = e.withDB(ctx, func(ctx context.Context, db *sql.DB) error {
+		if err := registerNativeLocalTimestampQualifier(ctx, db, request.Mapping); err != nil {
+			return err
+		}
 		var cumulative []nativeCumulativeSlot
 		for i, path := range paths {
 			for j, measure := range request.Mapping.Measures {
