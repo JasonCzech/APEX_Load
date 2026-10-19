@@ -1,6 +1,8 @@
 # APEX Load live data tables revised implementation plan
 
-Status: Run-scoped native implementation and targeted qualification completed on October 12, 2026, including debugger isolation, live-status reconnects, durable PostgreSQL adoption, and retained run evidence. Both browser authentication profiles passed the affected workflows. The separately authorized extension below is also committed after clean cross-cutting reviews; full-suite findings were repaired and passed targeted rechecks. Final main integration is limited to affected tests per the user's instruction. The [extension plan](LIVE_DATA_TABLES_PROJECT_PLAN.md#final-qualification-and-integration) records qualification results and the user's limits on further testing. The [runtime guide](LIVE_DATA_TABLES_RUNTIME.md) records the delivered contract and limits.
+> Historical completed plan, archived 2026-10-19. Current behavior: [run-scoped live tables](../../LIVE_DATA_TABLES_RUNTIME.md), [project tables](../../PROJECT_LIVE_TABLES.md), [native services](../../NATIVE_SCRIPT_DATA_SERVICES.md), and [distributed rendezvous](../../DISTRIBUTED_RENDEZVOUS.md). Original implementation and qualification limits are retained below.
+
+Status: Run-scoped native implementation and targeted qualification completed on October 12, 2026, including debugger isolation, live-status reconnects, durable PostgreSQL adoption, and retained run evidence. Both browser authentication profiles passed the affected workflows. The separately authorized extension below is also committed after clean cross-cutting reviews; full-suite findings were repaired and passed targeted rechecks. Final main integration is limited to affected tests per the user's instruction. The [extension plan](LIVE_DATA_TABLES_PROJECT_PLAN.md#final-qualification-and-integration) records qualification results and the user's limits on further testing. The [runtime guide](../../LIVE_DATA_TABLES_RUNTIME.md) records the delivered contract and limits.
 
 Scope clarified by the user on October 12, 2026: this feature serves newly authored native APEX scripts and is independent of LoadRunner VTS. A VTS adapter, vendor parity, and vendor-server tests are not required. The earlier VTS discussion below is design background and an import safety boundary, not a delivery gate. The native work queue and independent shared-column model have their own explicit contracts; existing shared data pools remain unchanged by default.
 
@@ -171,7 +173,7 @@ Record table-operation latency separately from target protocol and transaction m
 
 ## Native delivery phases and import boundary
 
-Native queue and shared-column contracts are tested directly. Vendor adapters and parity certification are outside the user-approved scope. The separate [import compatibility matrix](LIVE_DATA_TABLES_VTS_COMPATIBILITY.md) remains a safety boundary: an unsupported imported call must be blocked rather than silently reinterpreted, and imported endpoints must never be contacted automatically. New native scripts require no VTS dependency.
+Native queue and shared-column contracts are tested directly. Vendor adapters and parity certification are outside the user-approved scope. The separate [import compatibility matrix](../../LIVE_DATA_TABLES_VTS_COMPATIBILITY.md) remains a safety boundary: an unsupported imported call must be blocked rather than silently reinterpreted, and imported endpoints must never be contacted automatically. New native scripts require no VTS dependency.
 
 | Phase | Deliverable | Exit gate |
 | --- | --- | --- |
@@ -217,14 +219,14 @@ Follow the repository's testing policy: affected Go packages during development;
 
 | Existing behavior | Source |
 | --- | --- |
-| Explicit read-only bindings and legacy normalization | [scenario.go](../pkg/api/scenario.go), `normalizeScenarioDataPoolBindings`, around line 644. |
-| Immutable revision seeds and active-row CSV construction | [testcreation.go](../pkg/api/testcreation.go), around lines 1387 and 3111. |
-| DataProvider is created per group and shares its counters with that group's VUsers | [group.go](../pkg/engine/group.go), around line 406; [data.go](../pkg/engine/data.go). This narrows the original's blanket fleet-wide exactly-once description of existing static pop. |
-| Adoption budgets and sequencing | [run_adoption.go](../pkg/api/run_adoption.go), constants around line 40; [distributed_execution_backend.go](../pkg/api/distributed_execution_backend.go), start sequence around line 1604. |
-| Full execution-term fence using database time | [sqlite_tests.go](../pkg/storage/sqlite_tests.go), `schedulerLeaseTermHeldInTransaction`, around line 1483. |
-| Distinct paging generation and bulk-replacement fingerprint | [sqlite_datapools.go](../pkg/storage/sqlite_datapools.go), around lines 579 and 640. |
-| Refusal of expired idempotency keys | [authoring_mutation_receipts.go](../pkg/storage/authoring_mutation_receipts.go), retention contract around line 55. |
-| Existing bidirectional RPC and assignment capabilities | [generator.proto](../api/proto/generator.proto), StreamMetrics and WorkAssignment. |
-| Current binding editor and scope of permission input | [ScenarioDataBindings.tsx](../dashboard/src/components/ScenarioDataBindings.tsx); [TestHub.tsx](../dashboard/src/components/TestHub.tsx), around line 4572. |
-| Export sensitivity and required audit | [handlers_data_pools.go](../pkg/api/handlers_data_pools.go), `handleExportDataPoolRows`, around line 1515. |
-| Managed secrets and imported literal credential policy | [Application user guide](APPLICATION_USER_GUIDE.md#secrets); [script types](../dashboard/src/types/scripts.ts), LogConfig. |
+| Explicit read-only bindings and legacy normalization | [scenario.go](../../../pkg/api/scenario.go), `normalizeScenarioDataPoolBindings`, around line 644. |
+| Immutable revision seeds and active-row CSV construction | [testcreation.go](../../../pkg/api/testcreation.go), around lines 1387 and 3111. |
+| DataProvider is created per group and shares its counters with that group's VUsers | [group.go](../../../pkg/engine/group.go), around line 406; [data.go](../../../pkg/engine/data.go). This narrows the original's blanket fleet-wide exactly-once description of existing static pop. |
+| Adoption budgets and sequencing | [run_adoption.go](../../../pkg/api/run_adoption.go), constants around line 40; [distributed_execution_backend.go](../../../pkg/api/distributed_execution_backend.go), start sequence around line 1604. |
+| Full execution-term fence using database time | [sqlite_tests.go](../../../pkg/storage/sqlite_tests.go), `schedulerLeaseTermHeldInTransaction`, around line 1483. |
+| Distinct paging generation and bulk-replacement fingerprint | [sqlite_datapools.go](../../../pkg/storage/sqlite_datapools.go), around lines 579 and 640. |
+| Refusal of expired idempotency keys | [authoring_mutation_receipts.go](../../../pkg/storage/authoring_mutation_receipts.go), retention contract around line 55. |
+| Existing bidirectional RPC and assignment capabilities | [generator.proto](../../../api/proto/generator.proto), StreamMetrics and WorkAssignment. |
+| Current binding editor and scope of permission input | [ScenarioDataBindings.tsx](../../../dashboard/src/components/ScenarioDataBindings.tsx); [TestHub.tsx](../../../dashboard/src/components/TestHub.tsx), around line 4572. |
+| Export sensitivity and required audit | [handlers_data_pools.go](../../../pkg/api/handlers_data_pools.go), `handleExportDataPoolRows`, around line 1515. |
+| Managed secrets and imported literal credential policy | [Application user guide](../../APPLICATION_USER_GUIDE.md#secrets); [script types](../../../dashboard/src/types/scripts.ts), LogConfig. |

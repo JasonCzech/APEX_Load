@@ -1,5 +1,7 @@
 # Native shared-data extension implementation plan
 
+> Historical completed plan, archived 2026-10-19. Current behavior: [run-scoped live tables](../../LIVE_DATA_TABLES_RUNTIME.md), [project tables](../../PROJECT_LIVE_TABLES.md), [native services](../../NATIVE_SCRIPT_DATA_SERVICES.md), and [distributed rendezvous](../../DISTRIBUTED_RENDEZVOUS.md). Original implementation and qualification limits are retained below.
+
 Status: implementation and qualification fixes completed on October 12, 2026 after the run-scoped native gates and extension cross-cutting reviews passed. The final integration with current main uses only tests within the integration fixes' blast radius, as requested by the user. This is the user-requested next tranche of the [revised live-table plan](LIVE_DATA_TABLES_REVISED_PLAN.md), not a change to existing snapshot data pools.
 
 The four deliverables are project-scoped tables, governed operator mutations, native Java/JavaScript adapters, and distributed rendezvous. They use native APEX contracts and require neither LoadRunner nor a VTS server. Existing snapshot bindings, run-scoped live tables, and local rendezvous remain the defaults.

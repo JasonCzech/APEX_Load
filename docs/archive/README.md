@@ -74,3 +74,25 @@ The June and July 2026 reviews below were fully remediated or superseded and wer
 ### Reviews moved out of `docs/reviews/`
 
 `docs/reviews/` was merged into [../qa/reviews/](../qa/reviews/README.md) on 2026-09-24: the Data Pools and LoadRunner runtime-settings evaluations are now in [../qa/reviews/evaluations-2026.md](../qa/reviews/evaluations-2026.md). Originals: `git show 587d279b8:docs/reviews/<file>`.
+
+## Completed live-table plans
+
+Archived 2026-10-19 after their October 12 completion statements. These preserve design rationale and exact qualification limits, including the restricted final integration checks; they are not new delivery gates or current operator instructions.
+
+| Historical plan | Current guidance |
+| --- | --- |
+| [Run-scoped live-table plan](plans/LIVE_DATA_TABLES_REVISED_PLAN.md) | [Runtime](../LIVE_DATA_TABLES_RUNTIME.md), [VTS import boundary](../LIVE_DATA_TABLES_VTS_COMPATIBILITY.md) |
+| [Native shared-data extension plan](plans/LIVE_DATA_TABLES_PROJECT_PLAN.md) | [Project tables](../PROJECT_LIVE_TABLES.md), [native services](../NATIVE_SCRIPT_DATA_SERVICES.md), [rendezvous](../DISTRIBUTED_RENDEZVOUS.md) |
+
+## October 2026 consolidation
+
+Nineteen completed scoped review narratives were merged without dropping their failed checks, residuals or acceptance limits. Their evidence folders remain under `docs/qa/reviews/` at the original paths; links in the reports resolve back to those files. Parent-feature qualification remains open wherever the records say so.
+
+| Historical record | Contents |
+| --- | --- |
+| [Messaging reviews](qa-reviews/MESSAGING_2026-10.md) | Eight provider and processor slices |
+| [Analytics reviews](qa-reviews/ANALYTICS_2026-10.md) | Four contract, partition and panel slices |
+| [Authoring reviews](qa-reviews/AUTHORING_2026-10.md) | Goals persistence and revision safety |
+| [Browser reviews](qa-reviews/BROWSER_2026-10.md) | Availability, document evidence and HAR compatibility |
+| [Integration reviews](qa-reviews/INTEGRATION_2026-10.md) | Publication and composed qualification |
+| [Roadmap snapshot](ROADMAP_2026-10-19.md) | Complete pre-cleanup delivery narrative and design history; the [current roadmap](../ROADMAP.md) carries remaining gates |
