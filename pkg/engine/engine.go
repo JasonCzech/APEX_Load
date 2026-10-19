@@ -5,7 +5,8 @@
 // zero-lock hot path using buffered channels.
 //
 // Key design:
-//   - 1 VUser = 1 goroutine (~2–4 KB stack); supports 10k+ VUsers per pod
+//   - 1 VUser = 1 goroutine, parked on an 8 KB stack between actions;
+//     designed for 10k+ VUsers per pod
 //   - Metrics use buffered channels (cap 10,000) to avoid lock contention
 //   - sync.Pool reuses request/response buffers to reduce GC pressure
 //   - T-digest for streaming percentile (p50/p95/p99) computation

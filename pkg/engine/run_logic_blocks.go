@@ -21,13 +21,10 @@ func (vu *VUser) iterationOrder() []int {
 	return order
 }
 
-// iterationAction returns the action at position in this iteration's order
-// (nil order: script.actions in order). Steps are not copied up front, so a
-// long run-logic order costs one index per step.
-func (vu *VUser) iterationAction(order []int, position int) dsl.Action {
-	return *vu.iterationActionRef(order, position)
-}
-
+// iterationActionRef returns the action at position in this iteration's
+// order (nil order: script.actions in order). Steps are not copied up front,
+// so a long run-logic order costs one index per step. The action belongs to
+// the shared script and must not be modified.
 func (vu *VUser) iterationActionRef(order []int, position int) *dsl.Action {
 	if order == nil {
 		return &vu.Script.Actions[position]
