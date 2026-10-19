@@ -1530,3 +1530,123 @@ func TestProtectNestedQueryPairs(t *testing.T) {
 		}
 	}
 }
+
+func TestValueURLKeepsAuraCacheKeysButNotLookalikeTokens(t *testing.T) {
+	const appKey = "4385_ZsFss-efN4RuL6razjopzA"
+	const defKey = "1229_KokTiAXXH-5Y5x61up38RA"
+	input := "https://b.static.lightning.force.com/x/auraCmpDef?_au=" + appKey + "&_uid=" + defKey + "&other=" + appKey
+	got := ValueURL(input, Policy{})
+	if !strings.Contains(got, "_au="+appKey) || !strings.Contains(got, "_uid="+defKey) {
+		t.Fatalf("Aura cache keys were redacted: %s", got)
+	}
+	if !strings.Contains(got, "other="+Redacted) {
+		t.Fatalf("the same token shape under another name must still be redacted: %s", got)
+	}
+}
+
+func TestHARKeepsAuraCacheKeyQueryValues(t *testing.T) {
+	const appKey = "4385_ZsFss-efN4RuL6razjopzA"
+	capture := []byte(`{"log":{"entries":[{"request":{"url":"https://b.static.lightning.force.com/auraCmpDef?_au=` + appKey + `","queryString":[{"name":"_au","value":"` + appKey + `"},{"name":"other","value":"` + appKey + `"}]}}]}}`)
+	scrubbed, err := HAR(capture, Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(scrubbed), `"name":"_au","value":"`+appKey+`"`) {
+		t.Fatalf("_au queryString value redacted: %s", scrubbed)
+	}
+	if !strings.Contains(string(scrubbed), `"name":"other","value":"`+Redacted+`"`) {
+		t.Fatalf("lookalike token under another name kept: %s", scrubbed)
+	}
+}
+
+func TestValueURLKeepsSiteRelativePathValues(t *testing.T) {
+	const workspace = "%2Flightning%2Fr%2FInteraction__c%2Fa1B8c00000ABCDeEAP%2Fview"
+	got := ValueURL("https://example.lightning.force.com/lightning/n/BuyFlow?ws="+workspace, Policy{})
+	if !strings.Contains(got, "ws="+workspace) {
+		t.Fatalf("site-relative workspace path was redacted: %s", got)
+	}
+	// Its own query values are still inspected, like a nested URL's.
+	nested := ValueURL("https://example.test/x?next=%2Fapp%2Fhome%3Fpassword%3Dhunter2", Policy{})
+	if strings.Contains(nested, "hunter2") {
+		t.Fatalf("credential inside a nested relative path leaked: %s", nested)
+	}
+	for _, token := range []string{
+		"%2F9j4KQx7bZp2LmN8vR3sT6wY1uE5iO0aB",    // base64 that happens to start with "/"
+		"%2Fsingle7Gq2LmN8vR3sT6wY1uE5iO0aBc",    // one segment only
+		"%2FUpper%2Fk3Jq9LmN8vR3sT6wY1uE5iO0aB",  // first segment not a lowercase word
+		"%2Fapi%2Fk3Jq9LmN8vR3sT6wY1uE5iO0aBxYz", // a segment that looks like a credential
+	} {
+		if got := ValueURL("https://example.test/x?v="+token, Policy{}); !strings.Contains(got, "v="+Redacted) {
+			t.Errorf("token-shaped value %s was kept: %s", token, got)
+		}
+	}
+}
+
+func TestValueKeepsSiteRelativePathsInText(t *testing.T) {
+	body := `{"context":{"url":"/lightning/r/Interaction__c/a1B8c00000ABCDeEAP/view"}}`
+	if got := Value(body, Policy{}); got != body {
+		t.Fatalf("site-relative path in a body was redacted: %s", got)
+	}
+	for _, text := range []string{
+		`{"t":"/9j4KQx7bZp2LmN8vR3sT6wY1uE5iO0aB"}`,       // base64 that starts with "/"
+		`{"u":"/api/k3Jq9LmN8vR3sT6wY1uE5iO0aBxYz/view"}`, // a credential-shaped segment
+		`{"t":"k3Jq9LmN8vR3sT6wY1uE5iO0aBxYz/abc/def"}`,   // not preceded by "/"
+	} {
+		if got := Value(text, Policy{}); !strings.Contains(got, Redacted) {
+			t.Errorf("token-shaped text kept: %s", got)
+		}
+	}
+}
+
+func TestValueURLKeepsSiteRelativePathWithBoundReference(t *testing.T) {
+	// Script projection swaps a bound {{var.*}} reference for a '~'-separated
+	// placeholder before scrubbing; inside a workspace path it must not read
+	// as a credential segment.
+	placeholder := "apexbinding~1a2b~3c4d~5e6f~7a8b~9c0d~1e2f~3a4b~5c6d~7e8f~9a0b~1c2d~3e4f~5a6b~7c8d~9e0f~1a2b~0Z"
+	input := "https://x.lightning.force.com/lightning/n/BuyFlow?ws=%2Flightning%2Fr%2FInteraction__c%2F" + placeholder + "%2Fview"
+	if got := ValueURL(input, Policy{}); got != input {
+		t.Fatalf("workspace path with a bound reference was redacted: %s", got)
+	}
+}
+
+func TestValueURLRedactsJWTInsideRelativePathSegment(t *testing.T) {
+	jwt := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV"
+	if got := ValueURL("https://x.test/a?next=%2Fapp%2F"+jwt+"%2Fview", Policy{}); strings.Contains(got, jwt) {
+		t.Fatalf("JWT in a relative path segment leaked: %s", got)
+	}
+}
+
+func TestPublicCacheKeyExemptsOnlyAuraShapedValues(t *testing.T) {
+	jwt := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV"
+	if got := ValueURL("https://x.test/a?_uid="+jwt, Policy{}); strings.Contains(got, jwt) {
+		t.Fatalf("a JWT under _uid was kept: %s", got)
+	}
+	capture := []byte(`{"log":{"entries":[{"request":{"url":"https://x.test/a?_uid=4385_ZsFss-efN4RuL6razjopzA","queryString":[{"name":"_uid","value":"4385_ZsFss-efN4RuL6razjopzA"},{"name":"_au","value":"jane@example.com"}]}}]}}`)
+	policy := Policy{ExtraPatterns: []Rule{{Pattern: `ZsFss|jane@example\.com`, Replacement: "[PII]"}}}
+	scrubbed, err := HAR(capture, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(scrubbed), "ZsFss") || strings.Contains(string(scrubbed), "jane@example.com") {
+		t.Fatalf("custom rules skipped for cache-key parameters: %s", scrubbed)
+	}
+}
+
+func TestSiteRelativePathKeepsOnlyRecognizedSegments(t *testing.T) {
+	for _, value := range []string{
+		"%2Freset%2FXk9mQ2pL7rT4vW8yZ1aB",                      // reset token in a return URL
+		"%2Fk9%2FXq2mN7pL4rT8vW1yZ3a%2FBc5dE6fG7hJ8kL9mN0p%3D", // base64 key split by '/'
+		"%2Fapp%2FXk9mQ2pL7rT4vW8yZ1%2Fview",                   // 18 characters, checksum does not hold
+		"%2Fapp%2F5f2b9c0e1d7a4b3c%2Fview",                     // lowercase hex token
+	} {
+		if got := ValueURL("https://x.test/a?returnUrl="+value, Policy{}); !strings.Contains(got, "returnUrl="+Redacted) {
+			t.Errorf("%s kept: %s", value, got)
+		}
+	}
+	if got := Value(`{"link":"/password/reset/Xk9mQ2pL7rT4vW8yZ1aB"}`, Policy{}); !strings.Contains(got, Redacted) {
+		t.Fatalf("reset token in body text kept: %s", got)
+	}
+	if !salesforceRecordID("a1B8c00000ABCDeEAP") || salesforceRecordID("a1B8c00000ABCDeEAF") {
+		t.Fatal("Salesforce id checksum")
+	}
+}

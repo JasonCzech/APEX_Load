@@ -288,7 +288,7 @@ test('JMeter review uses the shared six tabs and retains project scope during up
 })
 
 
-test('HAR picker accepts captures above 50 MiB and rejects files above 100 MiB', async ({ page }) => {
+test('HAR picker accepts captures above 50 MiB and rejects files above 300 MiB', async ({ page }) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const workspace = await createWorkspace(page.context().request)
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
@@ -306,7 +306,7 @@ test('HAR picker accepts captures above 50 MiB and rejects files above 100 MiB',
     bytes.write('{"log":{"entries":[]}}')
     await writeFile(capture, bytes)
     await writeFile(oversized, '{}')
-    await truncate(oversized, 100 * 1024 * 1024 + 1)
+    await truncate(oversized, 300 * 1024 * 1024 + 1)
     await inputs.nth(0).setInputFiles(capture)
     await expect(page.getByRole('group', { name: 'Selected file large-synthetic.har', exact: true })).toBeVisible()
     await expect(controls.getByRole('button', { name: 'Inspect & review', exact: true })).toBeEnabled()
@@ -314,9 +314,9 @@ test('HAR picker accepts captures above 50 MiB and rejects files above 100 MiB',
     await inputs.nth(1).setInputFiles(capture)
     await expect(page.getByRole('group', { name: 'Selected file large-synthetic.har', exact: true })).toHaveCount(2)
     await inputs.nth(1).setInputFiles(oversized)
-    await expect(page.locator('.sample-import-error[role=alert]')).toContainText('imports are limited to 100.0 MB')
+    await expect(page.locator('.sample-import-error[role=alert]')).toContainText('imports are limited to 300.0 MB')
     await inputs.nth(0).setInputFiles(oversized)
-    await expect(page.locator('.sample-import-error[role=alert]')).toContainText('imports are limited to 100.0 MB')
+    await expect(page.locator('.sample-import-error[role=alert]')).toContainText('imports are limited to 300.0 MB')
   } finally {
     await rm(directory, { recursive: true, force: true })
   }

@@ -80,9 +80,9 @@ const copy = {
   },
   har: {
     title: importSourceName('traffic_har'),
-    subtitle: 'Upload a Chrome DevTools HAR file and convert recorded HTTP entries into a reviewable APEX Load HTTP script. Salesforce traffic is auto-detected and can emit a native Salesforce draft.',
-    accept: '.har,application/json',
-    drop: 'Drop a .har file here',
+    subtitle: 'Upload a Chrome DevTools HAR file, or a .zip holding one, and convert recorded HTTP entries into a reviewable APEX Load HTTP script. Salesforce traffic is auto-detected and can emit a native Salesforce draft.',
+    accept: '.har,.zip,application/json,application/zip',
+    drop: 'Drop a .har or zipped .har file here',
     button: 'Convert HAR',
   },
   'recorder-export': {
@@ -158,7 +158,7 @@ const copy = {
 } satisfies Record<ImportKind, Record<string, string>>
 
 const IMPORT_FILE_MAX_BYTES = 50 * 1024 * 1024
-const HAR_FILE_MAX_BYTES = 100 * 1024 * 1024
+const HAR_FILE_MAX_BYTES = 300 * 1024 * 1024
 const POSTMAN_ENVIRONMENT_ACCEPT = '.postman_environment.json,.json,application/json'
 
 function formatBytes(bytes: number): string {

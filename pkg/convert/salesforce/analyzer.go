@@ -286,7 +286,10 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 		return review, nil
 	}
 
-	correlations, correlationWarnings, err := detectCorrelationsChecked(entries)
+	correlations, correlationWarnings, omission, err := detectCorrelationsWithEvidence(entries)
+	if note := omission.Note(); note != "" {
+		review.Warnings = append(review.Warnings, "Salesforce "+note)
+	}
 	if err != nil {
 		if !errors.Is(err, correlate.ErrCorrelationWorkLimit) {
 			return nil, fmt.Errorf("detect Salesforce correlations: %w", err)
@@ -2411,6 +2414,13 @@ func detectCorrelations(entries []harEntry) []correlate.Correlation {
 }
 
 func detectCorrelationsChecked(entries []harEntry) ([]correlate.Correlation, []string, error) {
+	correlations, warnings, _, err := detectCorrelationsWithEvidence(entries)
+	return correlations, warnings, err
+}
+
+// detectCorrelationsWithEvidence is detectCorrelationsChecked that also
+// reports the static-asset bodies left out to fit the evidence budget.
+func detectCorrelationsWithEvidence(entries []harEntry) ([]correlate.Correlation, []string, correlate.StaticEvidenceOmission, error) {
 	observations := make([]correlate.Observation, 0, len(entries))
 	for _, entry := range entries {
 		observations = append(observations, correlate.Observation{
@@ -2423,15 +2433,16 @@ func detectCorrelationsChecked(entries []harEntry) ([]correlate.Correlation, []s
 			ResponseHeaders:        entry.ResponseHeaders,
 		})
 	}
+	observations, omission := correlate.FitStaticAssetEvidence(observations)
 	genericCorrelations, warnings, err := correlate.DetectCheckedWithWarnings(observations)
 	if err != nil {
 		if !errors.Is(err, correlate.ErrCorrelationWorkLimit) {
-			return nil, nil, err
+			return nil, nil, omission, err
 		}
 		// Input pathological enough for the generic validator is not re-scanned
 		// by the Salesforce-shape passes either: degrade to no correlations with
 		// a note, keeping the surrounding review intact.
-		return nil, append(warnings, err.Error()), nil
+		return nil, append(warnings, err.Error()), omission, nil
 	}
 	seenValues := make(map[string]bool)
 	// Salesforce-shape-aware passes run first so their precise JMESPath extractors
@@ -2451,7 +2462,7 @@ func detectCorrelationsChecked(entries []harEntry) ([]correlate.Correlation, []s
 		correlations = append(correlations, phaseCorrelations...)
 		if phaseErr != nil {
 			if !errors.Is(phaseErr, correlate.ErrCorrelationWorkLimit) {
-				return nil, nil, phaseErr
+				return nil, nil, omission, phaseErr
 			}
 			// Budget exhaustion keeps every correlation found so far and stops
 			// the remaining shape passes instead of failing the analysis.
@@ -2495,7 +2506,7 @@ func detectCorrelationsChecked(entries []harEntry) ([]correlate.Correlation, []s
 		}
 		return correlations[i].FoundInID < correlations[j].FoundInID
 	})
-	return correlations, warnings, nil
+	return correlations, warnings, omission, nil
 }
 
 // detectCometdCorrelations finds the Bayeux clientId returned by a CometD
@@ -2863,14 +2874,9 @@ func salesforceCandidateReuses(observations []correlate.Observation, startIndex 
 	if strings.TrimSpace(value) == "" {
 		return nil, nil
 	}
-	exactUsed := make([]int, 0)
-	for later := startIndex + 1; later < len(observations); later++ {
-		if err := budget.chargeSearch(observations[later]); err != nil {
-			return nil, err
-		}
-		if budget.requestSearch(observations).Contains(later, value) {
-			exactUsed = append(exactUsed, observations[later].ID)
-		}
+	exactUsed, err := budget.requestSearch(observations).UsedAfter(startIndex, value, budget.chargeSearchBytes)
+	if err != nil {
+		return nil, err
 	}
 
 	out := make([]salesforceCandidateReuse, 0, 2)
@@ -2886,7 +2892,23 @@ func salesforceCandidateReuses(observations []correlate.Observation, startIndex 
 		return out, nil
 	}
 	truncatedUsed := make([]int, 0)
-	for later := startIndex + 1; later < len(observations); later++ {
+	// The index holds every surface the 15-character check reads (raw and
+	// query-decoded), so only observations it reports can match; the bounded
+	// check then runs on just those.
+	candidates, indexed, err := budget.requestSearch(observations).ObservationsContaining(id15, budget.chargeSearchBytes)
+	if err != nil {
+		return nil, err
+	}
+	if !indexed {
+		candidates = make([]int, 0, len(observations))
+		for later := 0; later < len(observations); later++ {
+			candidates = append(candidates, later)
+		}
+	}
+	for _, later := range candidates {
+		if later <= startIndex {
+			continue
+		}
 		if err := budget.chargeSearch(observations[later]); err != nil {
 			return nil, err
 		}
@@ -3011,14 +3033,9 @@ func detectBulkQueryLocatorCorrelations(observations []correlate.Observation, se
 		if err := budget.chargeCandidates(1); err != nil {
 			return correlations, err
 		}
-		usedIn := make([]int, 0)
-		for later := index + 1; later < len(observations); later++ {
-			if err := budget.chargeSearch(observations[later]); err != nil {
-				return correlations, err
-			}
-			if budget.requestSearch(observations).Contains(later, locator) {
-				usedIn = append(usedIn, observations[later].ID)
-			}
+		usedIn, err := budget.requestSearch(observations).UsedAfter(index, locator, budget.chargeSearchBytes)
+		if err != nil {
+			return correlations, err
 		}
 		if len(usedIn) == 0 {
 			continue

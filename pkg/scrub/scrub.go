@@ -214,6 +214,14 @@ func (cp compiledPolicy) value(value string) string {
 	return cp.valueWithBareTokenHeuristics(value, true)
 }
 
+// applyRules applies only the policy's custom rules to a value.
+func (cp compiledPolicy) applyRules(value string) string {
+	for _, rule := range cp.rules {
+		value = rule.pattern.ReplaceAllString(value, rule.replacement)
+	}
+	return value
+}
+
 func (cp compiledPolicy) valueLabel(value string) string {
 	return cp.valueWithBareTokenHeuristics(value, false)
 }
@@ -467,7 +475,9 @@ func redactURLParamsDepth(segment string, depth int) string {
 			part = key + "=" + Redacted
 		} else if nested, changed, nestedURL := sanitizeNestedHTTPURL(val, depth); changed {
 			part = key + "=" + nested
-		} else if !nestedURL && urlTokenLooksSensitive(val) {
+		} else if nested, changed, nestedPath := sanitizeNestedRelativePath(val, depth); changed {
+			part = key + "=" + nested
+		} else if !nestedURL && !nestedPath && !PublicCacheKey(key, val) && urlTokenLooksSensitive(val) {
 			part = key + "=" + Redacted
 		}
 		out.WriteString(part)
@@ -519,6 +529,126 @@ func sanitizeNestedHTTPURL(raw string, depth int) (sanitizedValue string, change
 		return url.QueryEscape(Redacted), true, true
 	}
 	return rewritten, true, true
+}
+
+// sanitizeNestedRelativePath treats a query value that is a site-relative
+// path (Salesforce Lightning's ws=/lightning/r/Account/<id>/view) as a nested
+// URL: its path is kept and its own query and fragment values are inspected,
+// as a nested HTTP(S) URL's are. Judged whole, the path reads as one
+// high-entropy token. nestedPath reports that the value is such a path.
+//
+// Only a path made entirely of recognizably non-secret segments qualifies
+// (see siteRelativePath); anything else is judged whole as before.
+func sanitizeNestedRelativePath(raw string, depth int) (sanitizedValue string, changed, nestedPath bool) {
+	decoded, spans, ok := queryUnescapeWithSpans(raw)
+	if !ok || !siteRelativePath(decoded) {
+		return raw, false, false
+	}
+	sanitized := Redacted
+	if depth < maxNestedURLSanitizeDepth {
+		sanitized = redactURLBuiltIns(decoded, depth+1)
+	}
+	if sanitized == decoded {
+		return raw, false, true
+	}
+	rewritten, ok := rewriteDecodedURLPreservingEscapes(raw, decoded, sanitized, spans)
+	if !ok {
+		return url.QueryEscape(Redacted), true, true
+	}
+	return rewritten, true, true
+}
+
+func siteRelativePath(value string) bool {
+	path, _, _ := strings.Cut(value, "?")
+	path, _, _ = strings.Cut(path, "#")
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return false
+	}
+	segments := strings.Split(strings.TrimSuffix(path[1:], "/"), "/")
+	if len(segments) < 2 || !lowercaseWord(segments[0]) {
+		return false
+	}
+	for _, segment := range segments {
+		if !safePathSegment(segment) {
+			return false
+		}
+	}
+	return true
+}
+
+// safePathSegment reports whether a path segment is recognizably not a
+// secret: a word or API name without digits (r, view, Interaction__c,
+// BuyFlow), a short lowercase name with digits (v58), a Salesforce
+// 18-character record id whose checksum holds, or a bound {{...}} reference
+// or the script projection's placeholder for one. Random tokens, even short
+// ones, are none of these.
+func safePathSegment(segment string) bool {
+	switch {
+	case segment == "":
+		return false
+	case wordSegment.MatchString(segment):
+		return true
+	case len(segment) <= 8 && lowercaseWord(segment):
+		return true
+	case salesforceRecordID(segment):
+		return true
+	case boundReferenceSegment.MatchString(segment), projectionPlaceholderSegment.MatchString(segment):
+		return true
+	default:
+		return false
+	}
+}
+
+var (
+	wordSegment = regexp.MustCompile(`^[A-Za-z][A-Za-z_-]*$`)
+	// boundReferenceSegment is one {{...}} template reference.
+	boundReferenceSegment = regexp.MustCompile(`^\{\{[A-Za-z0-9_.()\-]+\}\}$`)
+	// projectionPlaceholderSegment mirrors the placeholders the script
+	// projections swap a bound reference for before scrubbing:
+	// importreview.ScriptProjectionPlaceholderPrefix + index + "Z", and
+	// scriptdisclosure's uniquePlaceholder forms (apex~binding~<n>~safe and
+	// the template prefix apex~template~0~safe~ + index + "~safe").
+	projectionPlaceholderSegment = regexp.MustCompile(`^(?:apex[a-z]+(?:~[0-9a-f]{4}){16}~+[0-9]+Z|apex~[a-z]+~[0-9]+~safe(?:~+[0-9]+~safe)?~*)$`)
+)
+
+// salesforceRecordID reports whether value is an 18-character Salesforce id:
+// 15 alphanumerics and a 3-character suffix that encodes which of them are
+// upper case. A random 18-character string passes with odds of 1 in 32,768.
+func salesforceRecordID(value string) bool {
+	if len(value) != 18 {
+		return false
+	}
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+	for chunk := 0; chunk < 3; chunk++ {
+		flags := 0
+		for offset := 0; offset < 5; offset++ {
+			ch := value[chunk*5+offset]
+			switch {
+			case ch >= 'A' && ch <= 'Z':
+				flags |= 1 << offset
+			case ch >= 'a' && ch <= 'z', ch >= '0' && ch <= '9':
+			default:
+				return false
+			}
+		}
+		if value[15+chunk] != alphabet[flags] {
+			return false
+		}
+	}
+	return true
+}
+
+func lowercaseWord(value string) bool {
+	if value == "" || value[0] < 'a' || value[0] > 'z' {
+		return false
+	}
+	for index := 0; index < len(value); index++ {
+		ch := value[index]
+		if (ch < 'a' || ch > 'z') && (ch < '0' || ch > '9') && ch != '-' && ch != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 // rawBeginsHTTPURL recognizes a literal, encoded, or mixed-encoded HTTP(S)
@@ -1223,35 +1353,60 @@ func redactJWTs(value string) string {
 // inputs while still removing real tokens.
 func redactBareTokens(value string) string {
 	value = redactJWTs(value)
-	return highEntropyToken.ReplaceAllStringFunc(value, func(candidate string) string {
-		if canonicalUUID.MatchString(candidate) {
-			// A canonical UUID is an identifier, not a credential, and this
-			// package's whole point is that scrubbed artifacts stay usable as
-			// evidence. It only reaches this heuristic at all because '-' is in
-			// highEntropyToken's class, and it sits right at the threshold: a
-			// UUID's alphabet is 16 hex digits plus the hyphen, so its entropy
-			// cannot exceed log2(17) ~= 4.09 against a >= 4.0 cutoff. Measured
-			// over 200,000 random v4 UUIDs, 6 crossed the line - 0.003%. That is
-			// not protection, it is a dice roll: the same run id is preserved in
-			// one run and blanked in the next, which makes every UUID-carrying
-			// response unreliable as evidence and produces flakes that cannot be
-			// reproduced on demand.
-			//
-			// Nothing is unprotected by this. The platform's UUID-shaped handles
-			// (owner/claim/transition/attestation tokens) are redacted by NAME
-			// via SensitiveName, deterministically, and real secrets are
-			// registered as exact values by the engine. This exemption is scoped
-			// to the bare-token entropy heuristic: a UUID under a sensitive key,
-			// or one registered as an exact secret value, is still redacted, and
-			// a longer token that merely contains a UUID is not exempt because
-			// the whole match must be the UUID.
-			return candidate
+	matches := highEntropyToken.FindAllStringIndex(value, -1)
+	if len(matches) == 0 {
+		return value
+	}
+	var out strings.Builder
+	out.Grow(len(value))
+	last := 0
+	for _, match := range matches {
+		start, end := match[0], match[1]
+		out.WriteString(value[last:start])
+		candidate := value[start:end]
+		// The token class includes '/', so a site-relative path
+		// (/lightning/r/Account/<id>/view) matches whole and reads as one
+		// high-entropy run. A path that siteRelativePath accepts keeps its
+		// bytes; its segments were each checked for credential shape.
+		if start > 0 && value[start-1] == '/' && siteRelativePath("/"+candidate) {
+			out.WriteString(candidate)
+		} else {
+			out.WriteString(redactBareToken(candidate))
 		}
-		if looksSensitiveToken(candidate) {
-			return Redacted
-		}
+		last = end
+	}
+	out.WriteString(value[last:])
+	return out.String()
+}
+
+func redactBareToken(candidate string) string {
+	if canonicalUUID.MatchString(candidate) {
+		// A canonical UUID is an identifier, not a credential, and this
+		// package's whole point is that scrubbed artifacts stay usable as
+		// evidence. It only reaches this heuristic at all because '-' is in
+		// highEntropyToken's class, and it sits right at the threshold: a
+		// UUID's alphabet is 16 hex digits plus the hyphen, so its entropy
+		// cannot exceed log2(17) ~= 4.09 against a >= 4.0 cutoff. Measured
+		// over 200,000 random v4 UUIDs, 6 crossed the line - 0.003%. That is
+		// not protection, it is a dice roll: the same run id is preserved in
+		// one run and blanked in the next, which makes every UUID-carrying
+		// response unreliable as evidence and produces flakes that cannot be
+		// reproduced on demand.
+		//
+		// Nothing is unprotected by this. The platform's UUID-shaped handles
+		// (owner/claim/transition/attestation tokens) are redacted by NAME
+		// via SensitiveName, deterministically, and real secrets are
+		// registered as exact values by the engine. This exemption is scoped
+		// to the bare-token entropy heuristic: a UUID under a sensitive key,
+		// or one registered as an exact secret value, is still redacted, and
+		// a longer token that merely contains a UUID is not exempt because
+		// the whole match must be the UUID.
 		return candidate
-	})
+	}
+	if looksSensitiveToken(candidate) {
+		return Redacted
+	}
+	return candidate
 }
 
 // looksLikeJWT reports whether a three-segment dotted match is a real JWT rather
@@ -1826,6 +1981,10 @@ func (cp compiledPolicy) scrubNameValueList(parent map[string]any, key string) {
 		default: // queryString, params
 			if SensitiveName(name) {
 				item["value"] = Redacted
+			} else if key == "queryString" && PublicCacheKey(name, value) {
+				// A public cache key skips only the credential-shape
+				// heuristic; the policy's own rules still apply.
+				item["value"] = cp.applyRules(value)
 			} else {
 				item["value"] = cp.value(value)
 			}

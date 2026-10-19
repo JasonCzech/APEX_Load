@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -914,6 +915,13 @@ func ProjectScriptNode(value any, ctx ScriptProjectionContext) any {
 		if ctx.headerList {
 			return ProjectHeaderEntry(typed, ctx.TextMemo)
 		}
+		if ctx.metadata && ctx.key == "har.request.query_string" && publicCacheKeyPair(typed) {
+			// A recorded query parameter whose value is a public cache key
+			// (scrub.PublicCacheKey) is kept as is, as it is in the URL. The
+			// disclosure projection that follows still masks known credential
+			// values.
+			return map[string]any{"name": typed["name"], "value": typed["value"]}
+		}
 		credentialValue := ScriptMapHasCredentialValue(typed)
 		out := make(map[string]any, len(typed))
 		for key, child := range typed {
@@ -1238,6 +1246,17 @@ func IsCanonicalLowerHexDigest(value string, length int) bool {
 	return true
 }
 
+// publicCacheKeyPair reports whether a map is exactly a recorded
+// {name, value} query parameter whose value is a public cache key.
+func publicCacheKeyPair(value map[string]any) bool {
+	if len(value) != 2 {
+		return false
+	}
+	name, nameOK := value["name"].(string)
+	text, valueOK := value["value"].(string)
+	return nameOK && valueOK && scrub.PublicCacheKey(name, text)
+}
+
 func ScriptMapHasCredentialValue(value map[string]any) bool {
 	if _, hasType := value["type"]; !hasType {
 		return false
@@ -1340,6 +1359,13 @@ func ProjectScriptString(value string, ctx ScriptProjectionContext) string {
 	}
 	if ctx.label || credential.LabelField(ctx.key) {
 		return ctx.TextMemo.Scrubber().ValueLabel(value)
+	}
+	if NormalizeScriptFieldName(ctx.key) == "expression" {
+		if _, generated := correlate.GeneratedSetCookieExtractor(value); generated {
+			// The importer's own Set-Cookie extractor names a cookie and
+			// captures its value; the name is an identifier, not a credential.
+			return value
+		}
 	}
 	if ctx.opaqueMap || IsScriptFreeTextKey(ctx.key) {
 		return ctx.TextMemo.ScrubScriptText(value)

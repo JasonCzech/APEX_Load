@@ -1735,8 +1735,8 @@ func TestRequestBodyLimitsUseSmallDefaultAndExplicitImportEnvelopes(t *testing.T
 		path   string
 		want   int64
 	}{
-		{name: "HAR capture import", method: http.MethodPost, path: "/api/v1/scripts/import/har", want: 100 << 20},
-		{name: "Salesforce capture import", method: http.MethodPost, path: "/api/v1/scripts/import/salesforce", want: 100 << 20},
+		{name: "HAR capture import", method: http.MethodPost, path: "/api/v1/scripts/import/har", want: 300<<20 + 1<<20},
+		{name: "Salesforce capture import", method: http.MethodPost, path: "/api/v1/scripts/import/salesforce", want: 300<<20 + 1<<20},
 		{name: "import asset upload", method: http.MethodPost, path: "/api/v1/scripts/import/session/assets/upload", want: 50 << 20},
 		{name: "ordinary settings mutation", method: http.MethodPut, path: "/api/v1/system/settings", want: defaultMaxRequestBodyBytes},
 		{name: "library bundle import", method: http.MethodPost, path: "/api/v1/library/import", want: libraryBundleImportMaxBodyBytes},
