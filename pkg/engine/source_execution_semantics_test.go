@@ -710,11 +710,7 @@ func TestLoadThinkTimeAccountsActiveElapsed(t *testing.T) {
 		}},
 	}
 	vu.handleSourceTransactionAction(sourceTransactionAction("lr_start_transaction", ""))
-	completed := vu.applyActionThinkTime(context.Background(), dsl.Action{
-		Name:           "inside",
-		ThinkTime:      dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 500},
-		ThinkTimeAfter: true,
-	})
+	completed := vu.applyActionThinkTimeConfig(context.Background(), true, &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 500})
 	if completed {
 		t.Fatal("partially completed active think time reported completion")
 	}

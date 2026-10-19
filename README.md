@@ -27,7 +27,7 @@ The current controller can run in either local or distributed mode without chang
 
 ## Key Design Principles
 
-- **Goroutine-based VUsers**: 1 VUser = 1 goroutine (~2–4 KB stack) for extreme concurrency
+- **Goroutine-based VUsers**: 1 VUser = 1 goroutine, parked on an 8 KB stack between actions, for extreme concurrency
 - **Zero-lock metrics**: Buffered channels (cap 10,000) in hot path; metrics aggregated downstream
 - **Protocol plugins**: HTTP/1.1, HTTP/2, SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), Java Vuser sidecar bridge (governed and disabled unless runner config enables it), WebSocket, gRPC, JMS (Solace, IBM MQ; real Solace AMQP adapter via `-tags jms_solace_real`), Kafka (produce/consume/request-reply; in-memory mock broker by default, real franz-go adapter via `-tags kafka_real`), database (SQL), network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), browser (replay + canary diagnostics) — compiled-in, not runtime-loadable
 - **JSON DSL**: Human-readable test scripts with template variables and data sources
@@ -522,7 +522,7 @@ any target is cited as achieved.
 
 | Metric | Target | Notes |
 |--------|--------|-------|
-| VUsers per pod | 10,000 | Memory-limited (~2–4 KB per goroutine) |
+| VUsers per pod | 10,000 | Memory-limited; `pkg/perfevidence` measures idle per-VUser memory |
 | Throughput | 5,000–10,000 req/sec | Per pod; protocol/target dependent |
 | Latency overhead | < 50 μs | Harness overhead per transaction |
 | Metrics latency | < 2 sec | Collection to dashboard display |

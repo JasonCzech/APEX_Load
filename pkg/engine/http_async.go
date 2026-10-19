@@ -424,7 +424,7 @@ func (vu *VUser) applyAsyncResults(ctx context.Context, conversation *asyncConve
 	vu.inAsyncDispatch = true
 	defer func() { vu.inAsyncDispatch = outer }()
 	items, dropped := conversation.take()
-	cfg := vu.Script.Config
+	cfg := &vu.Script.Config
 	if dropped > 0 {
 		vu.makeLogger(cfg.Log).Warn("async conversation responses dropped between dispatches", "conversation", conversation.id, "dropped", dropped)
 	}
@@ -492,7 +492,7 @@ func (vu *VUser) runAsyncCallbacks(ctx context.Context, conversation *asyncConve
 	outer := vu.inAsyncDispatch
 	vu.inAsyncDispatch = true
 	defer func() { vu.inAsyncDispatch = outer }()
-	cfg := vu.Script.Config
+	cfg := &vu.Script.Config
 	vu.ensureVariables()
 	vu.Variables["async_conversation_id"] = conversation.id
 	return vu.runLifecycleActions(ctx, steps, "async "+branch, false, vu.makeLogger(cfg.Log), cfg.Log, cfg.ErrorHandling)
