@@ -104,3 +104,8 @@ Nineteen completed scoped review narratives were merged without dropping their f
 | [September Java verification](JAVA_VALIDATION_2026-09.md) | Dated integration checks, foundation verification and local Linux evidence; current [scope and release gates](../JAVA_VUSER_POOLING_IMPLEMENTATION.md), [pilot operation](../JAVA_PILOT_OPERATIONS.md), [pooled contracts](../JAVA_POOLED_RUNTIME_CONTRACTS.md) and [dedicated contracts](../JAVA_DEDICATED_EXECUTION_CONTRACTS.md) |
 
 The October 19 analytics/Java pass moved technical sections intact. Review-derived Java constraints remain in the current pooled contract reference; only dated validation summaries were archived. Evidence artifacts remain at their original paths. Imported measurement identities are now part of [native analytics](../NATIVE_ANALYTICS.md#imported-measurement-identities).
+
+## Delivery and continuity records (2026-10-19)
+
+- [Feature completion delivery snapshot](plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md): full dated requirements, delivery narratives, deviations and evidence; maintained requirements remain in [the specification](../FEATURE_COMPLETION_SPEC.md).
+- [HA continuity design and results](plans/HA_RUN_CONTINUITY_2026-10-19.md): original decisions, contracts and P0–P4 and later review evidence; current operations are in [the enterprise runbook](../ENTERPRISE_PLATFORM_RUNBOOK.md#ha-controller-behavior). Worker-loss qualification remains open.

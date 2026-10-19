@@ -698,207 +698,31 @@ same change so this scorecard never drifts from the endpoint.
 
 ## Migration and Import Reference
 
-The following sections carry functional tables referenced by `pkg/api/` evidence fields. Anchors are stable and load-bearing — do not rename headings.
+The following stable anchors are referenced by `pkg/api/` evidence fields. Detailed import contracts now live in the linked import and runtime guides; protocol-bundle coverage remains below. Preserve these headings for existing evidence links.
 
 ### Shared HTTP Import Safety Contract
 
-Postman, JMeter HTTP, OpenAPI, WSDL, the constrained k6 HTTP subset, and sample/HAR requests retain their source-specific parsers but share effective-request projection, structured credential handling, runtime capability checks, durable review gates, and final DSL validation.
-
-The shared result vocabulary is `executable_exact` (preserved supported behavior), `executable_bounded` (replay-safe runtime clamp plus diagnostic), `blocked_draft` (valid sanitized draft that cannot reach transport), and `rejected` (no valid disclosure-safe draft). These outcomes do not replace existing endpoint response fields or the broader `supported`/`partial`/`review_only` support labels. Full per-importer dispositions and archive-ingress rejection rules are documented in [Web/API Execution Support Matrix](PROTOCOL_SUPPORT.md#tested-adopter-dispositions).
-
----
+See [Shared HTTP Import Safety Contract](IMPORT_FIDELITY_AND_REPAIRS.md#shared-http-import-safety-contract) for the maintained contract and evidence.
 
 ### Enterprise Script Archive Routing
 
-APEX Load's Enterprise Script Archive importer is protocol-aware. It classifies ZIP archives containing C-based virtual-user scripts, runtime settings, parameter files, and protocol metadata before conversion using project metadata as the primary signal.
-
-**Import modes:**
-
-| Mode | Meaning |
-| --- | --- |
-| `executable` | APEX Load has a native converter/runtime path and returns a generated script. |
-| `review_only` | Asset can be classified and preserved, but promotion requires operator review or a different importer. |
-| `external_runner_required` | Protocol needs a non-APEX Load runner bridge before execution. |
-| `unsupported` | Protocol recognized or suspected; no current conversion path available. |
-
-**Current routing:**
-
-| Source protocol family | APEX Load route |
-| --- | --- |
-| Web HTTP/HTML | `http` executable import |
-| Web Services / SOAP | `soap` executable import (exclusive SOAP evidence); mixed SOAP/HTTP stays HTTP with warning |
-| Mobile browser-profile archives | `browser` executable import with browser replay gate |
-| Web 2.0 browser-profile archives | `browser` review path with required replay and selector evidence |
-| Database / ODBC SQL-style scripts | `database` executable import for SQL statements, binds, transactions, and DSN/runtime hints |
-| DNS, FTP, SMTP, POP3, IMAP, LDAP, Winsock | `network` executable import with subprotocol config and endpoint placeholders |
-| Oracle-Web / Siebel-Web | `http` executable import plus Oracle E-Business correlation review pack |
-| SAP GUI, Oracle NCA, Oracle 2-Tier | External-runner review artifact |
-| MAPI, Tuxedo, Template VUsers | Review artifact until runner/converter is approved |
-
-If `.usr` metadata and source content conflict, APEX Load returns a review artifact rather than claiming an executable import. The harmless exception: Web HTTP/HTML metadata with exclusive SOAP evidence routes to `soap`.
-
-**API surface:** `POST /api/v1/scripts/import/enterprise-script-archive` and `POST /api/v1/scripts/import/enterprise-script-archive/validate` return `detected_protocol`, `review_artifact`, `summary.import_mode`, confidence, signals, conflicts, and warnings.
-
----
+See [Enterprise Script Archive Routing](IMPORT_FIDELITY_AND_REPAIRS.md#enterprise-script-archive-routing) for the maintained contract and evidence.
 
 ### Enterprise Archive Runtime Settings Reference
 
-Maps Web HTTP/HTML source runtime settings from enterprise script archives to APEX Load fields and support status.
-
-Code-owned source of truth: `pkg/convert/enterprisearchive/rts_support.go`. Published through `GET /api/v1/runtime-settings/support-matrix` and `GET /api/v1/scripts/import/enterprise-script-archive/support-matrix`.
-
-**Status legend:** `Executed` — enforced at runtime. `Partial` — partial surface enforced. `Compatibility-only` — preserved/editable; no runtime semantics yet. `Non-applicable` — concept doesn't map to APEX Load architecture.
-
-| Runtime-setting area | Source concept | APEX Load field | Status |
-| --- | --- | --- | --- |
-| Run Logic | Iterations | `config.run_logic.iterations` | Executed |
-| Run Logic | Auto-transactions | `config.run_logic.auto_transactions` | Executed |
-| Run Logic | Block scheduling | `config.run_logic.block_scheduling` | Compatibility-only |
-| Run Logic | Blocks (sequential, random, percentage, nested, block iterations) | `config.run_logic.blocks` | Executed |
-| Run Logic | Action sequence | `config.run_logic.action_sequence` | Compatibility-only |
-| Pacing | Delay mode and bounds | `config.pacing.*` | Executed |
-| Think Time | Ignore, multiplier, limit | `config.think_time.*` | Executed |
-| Logging | Log level, error-only, extended options | `config.log.*` | Executed |
-| Misc | Continue on error | `config.error_handling.continue_on_error` | Executed |
-| Misc | Snapshot on error | `config.error_handling.snapshot_on_error` | Executed |
-| Browser Emulation | Cache enabled | `config.browser.cache_enabled` | Executed |
-| Browser Emulation | Cache URLs requiring content | `config.browser.cache_content_urls` | Executed |
-| Browser Emulation | Check for newer versions | `config.browser.check_newer_versions` | Executed |
-| Browser Emulation | New user each iteration | `config.browser.new_user_per_iteration` | Executed |
-| Browser Emulation | Download resources = all/none/recorded | `config.browser.download_resources` | Executed |
-| Browser Emulation | User agent | `config.browser.user_agent`, `config.http.user_agent` | Executed |
-| Browser Emulation | Accept-Language / Accept-Encoding | `config.http.accept_language`, `config.http.accept_encoding` | Executed |
-| Proxy | Proxy mode and custom proxy | `config.http.proxy_mode`, `config.http.proxy.*` | Executed |
-| Additional Attributes | Arbitrary RTS name/value metadata | `config.web_runtime.additional_attributes` | Compatibility-only |
-| Download Filters | Allow list / block list hosts | `config.web_runtime.download_filters.*` | Executed |
-| Content Check | Global required/forbidden text checks | `config.web_runtime.content_checks[]` | Executed |
-| Network Speed Simulation | Preset and custom bandwidth/latency | `config.web_runtime.network_simulation.*` | Executed |
-| Streaming | Adaptive vs fixed mode, buffer, bitrate, bandwidth estimation | `config.web_runtime.streaming.*` | Executed |
-| Data Formatting | Auto-detect DFEs, transform chain | `config.web_runtime.data_formatting.*` | Executed |
-| Replay engine mode | WinInet / process-vs-thread | N/A | Non-applicable |
-
-**Java runtime settings:** Java-over-HTTP transport settings map to `pkg/protocol/http` fields. For governed `java_vuser` scripts, JDK selection/home, exact JVM argument tokens, and script-controlled path references to operator-provisioned precompiled artifacts map to `config.java_vuser.*` and execute after generator-local preflight. Dedicated user-class loading is partial parity. The legacy Xboot checkbox is preserved as compatibility-only metadata and warning evidence on Java 17+; APEX Load does not emit an `-Xbootclasspath` flag. Runner enablement, harness, work directory, shared classpath, and process capacity remain operator-owned. Multithreading concepts are non-applicable to Go-native protocols — APEX Load uses goroutines — while each Java runner process is separately capacity-bounded.
-
-**Web Services (SOAP) RTS:** WSDL definitions map to `pkg/protocol/soap`. WS-Security configurations map to automated header management in the Go engine. Transport-level settings (proxy, HTTP version, keep-alive, timeouts, SOAP fault content check) map to standard HTTP protocol config.
-
-**Intentional caveats:**
-- `iterations` is subject to scenario-schedule authority: a duration-driven scenario ignores a script-only per-VUser cap (imported RTS iteration counts included) so no group retires before the schedule ends, exactly as LoadRunner Controller does. Set iterations on the scenario or group to pin a fixed count. See [ENTERPRISE_CONTRACTS.md](ENTERPRISE_CONTRACTS.md#schedule-authority-over-script-iteration-caps).
-- `download_resources = recorded` depends on recorded-resource URL metadata in the import/recording flow.
-- Streaming/media settings execute at HTTP response pacing level; no full browser media player.
-- DFE parity is bounded to APEX Load's supported HTTP response transform chain.
-- Logging parity is scoped to APEX Load's trace envelope, not byte-for-byte VuGen log formatting.
-
----
+See [Enterprise Archive Runtime Settings Reference](RUNTIME_SETTINGS_PARITY.md#enterprise-archive-runtime-settings-reference) for the maintained contract and evidence.
 
 ### Web 2.0 Browser Profile
 
-First-class APEX Load support for browser-driven Web 2.0 source profiles: import, authoring, replay, repair, and optional protocol-load conversion.
-
-**Scope:**
-
-| Area | Decision |
-| --- | --- |
-| TruClient 2.0 - Web import | In scope |
-| APEX Load Web 2.0 browser authoring profile | In scope |
-| Browser replay/debug evidence | In scope |
-| Browser-to-HTTP conversion for protocol-load density | In scope |
-| Legacy desktop/native application automation | Out of scope |
-| High-density real-browser load claims | Evidence-gated non-claim |
-| Byte-for-byte VuGen proprietary project compatibility | Out of scope |
-
-**Profile shape:**
-
-```json
-{
-  "protocol": "browser",
-  "metadata": {
-    "import": {
-      "source": "web2_browser_profile",
-      "preserved": {
-        "apexload_profile": "web2_browser_profile",
-        "source_script_type": "TruClient 2.0 - Web",
-        "trueclient2_promotion_review": {
-          "status": "replay_evidence_attached",
-          "replay_evidence": {
-            "session_id": "draft-browser-validation",
-            "screenshots": 1,
-            "network_entries": 12
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-**API surface:** `POST /api/v1/scripts/import/enterprise-script-archive` routes TruClient 2.0 - Web archives to a `browser` review path. `GET /api/v1/runtime-settings/support-matrix` includes Web 2.0 runtime settings rows. `POST /api/v1/scripts/browser-to-http/preview` supports optional protocol-load conversion preview.
-
-**Import detection:** `.usr` script-type detection distinguishes `TruClient 2.0 - Web`, `TruClient - Web`, `TruClient - Mobile Web`, and legacy desktop/native variants.
-
-**Implementation status:** Scope matrix, fixture contract, import detection, runtime settings rows, iframe/window replay evidence, replay preflight evidence gates, saved `trueclient2_promotion_review` artifacts, and browser-to-HTTP conversion preview are complete. Remaining: real TruClient If/Loop archive mapping and deeper selector repair fixture coverage.
-
----
+See [Web 2.0 Browser Profile](IMPORT_FIDELITY_AND_REPAIRS.md#web-20-browser-profile) for the maintained contract and evidence.
 
 ### JMeter Import
 
-APEX Load converts `.jmx` test plans into APEX Load JSON DSL scripts and optional scenario drafts.
-
-**Status:** Implemented. `POST /api/v1/scripts/import/jmeter`, `POST /api/v1/scripts/import/jmeter/validate`, `POST /api/v1/scripts/import/jmeter/save`, `GET /api/v1/scripts/import/jmeter/support-matrix`.
-
-**Supported constructs:**
-
-| Element | Status |
-| --- | --- |
-| Test Plan, Thread Group | Supported |
-| HTTP Request Defaults, HTTP Header Manager, HTTP Cookie Manager | Supported; ordered HeaderManager duplicates and casing are preserved |
-| HTTP Authorization Manager | Basic, bearer, and digest supported; Kerberos/NTLM/negotiate become blocked drafts |
-| User Defined Variables, CSV Data Set Config | Supported |
-| HTTP Request samplers | Supported |
-| Constant Timer, Uniform Random Timer | Supported |
-| Response Assertions | Supported |
-| Regex / JSONPath / JMESPath / CSS / XPath / XPath2 post-processors | Supported — map to APEX Load action extractors |
-| Boundary extractors | Supported for HTTP response body and headers |
-| Simple If / fixed Loop / Once Only / Transaction controllers | Supported for the tested deterministic subset |
-| Dynamic or complex controller behavior | Valid flattened draft with a durable review gate |
-| Basic variable substitution (`${variable}`) | Supported |
-
-**Review/adapter boundaries:** Fully recognized safe single-statement JSR223 patterns can translate, while residual JSR223 / BeanShell / Groovy and third-party plugin behavior becomes disclosure-safe review evidence and cannot execute. JDBC, JMS, FTP/TCP, and SOAP-shaped samplers retain their existing protocol/adapter routes and are not part of the shared JMeter HTTP request pipeline. JMeter listeners remain reporting metadata rather than replay actions.
-
-**Import report contract:** Every import returns `warnings[]`, `unsupported_elements[]`, `assumptions[]`, and metadata (`file name`, `thread group count`, `sampler count`, `variables discovered`, `CSV sources discovered`).
-
-**Thread group mapping:** Thread groups become separate reusable APEX Load scripts with an optional scenario draft (named workload components with VUser counts, ramp-up hints).
-
-**Result import:** k6, Gatling, and JMeter JSON-style summary payloads can be imported and trended via `/api/v1/results/import`.
-
----
+See [JMeter Import](IMPORT_FIDELITY_AND_REPAIRS.md#jmeter-import) for the maintained contract and evidence.
 
 ### DevWeb Import
 
-DevWeb is OpenText's JavaScript-based protocol-level HTTP testing engine. APEX Load's HTTP, WebSocket, and gRPC protocols cover DevWeb's core transport scenarios natively.
-
-**API surface:** `POST /api/v1/scripts/import/devweb`, `GET /api/v1/scripts/import/devweb/support-matrix`.
-
-**Coverage:**
-
-| DevWeb capability | APEX Load status |
-| --- | --- |
-| HTTP/1.1 and HTTP/2 requests | Supported (`pkg/protocol/http`) |
-| Request headers, body, cookies | Supported |
-| Response extraction (JSON, regex, XPath) | Supported |
-| Response assertions | Supported |
-| TLS/SSL configuration | Supported |
-| Proxy support | Supported |
-| Auth (Basic, Bearer) | Supported |
-| Data parameterization | Supported |
-| Think time / pacing | Supported |
-| WebSocket connect/send/receive/ping/close | Supported (`pkg/protocol/websocket`) |
-| gRPC unary, streaming, descriptor-set loading | Supported (`pkg/protocol/grpc`) |
-| DevWeb `.js` script import (static conversion) | Supported (`pkg/convert/devweb`) |
-| Full JavaScript runtime compatibility | Non-goal — dynamic JS execution is review-only |
-
-**Design principles:** One Go goroutine per VUser. WebSocket and gRPC reuse HTTP TLS/proxy/auth config. Protocols compose with the existing VUser loop, metrics, and pause control.
-
----
+See [DevWeb Import](IMPORT_FIDELITY_AND_REPAIRS.md#devweb-import) for the maintained contract and evidence.
 
 ### Protocol Bundle Coverage
 

@@ -180,4 +180,17 @@ describe('Help catalogue and content contracts', () => {
     expect(apiGuideToggleOptions({ includeAdminGuide: true })).toHaveLength(5)
     expect(apiGuideToggleOptions({ includeAdminGuide: false })).toHaveLength(4)
   })
+  it.each([
+    ['DYNATRACE.md#dynatrace-lifecycle-webhooks', 'dynatrace-monitoring', 'apexload.idempotency_key'],
+    ['ELASTIC.md#bucketed-elasticsearch-capture', 'elastic-monitoring', 'never reinterpreted as intervals'],
+    ['IMPORT_FIDELITY_AND_REPAIRS.md#shared-http-import-safety-contract', 'import-fidelity', 'executable_bounded'],
+  ])('resolves consolidated contracts and search destinations: %s', async (href, id, query) => {
+    const article = helpArticles.find(candidate => candidate.id === id)!
+    const source = await loadHelpSource(article)
+    expect(resolveHelpLink(href, first, '')).toContain(`article=${id}`)
+    const results = searchHelp([{ article, source }], query)
+    expect(results).toHaveLength(1)
+    expect(articleForSection(article.path, results[0].section!, source)?.id).toBe(id)
+  })
+
 })

@@ -79,9 +79,9 @@ kept for planning or audit context only.
 | [JAVA_BROKER_SERVICE.md](JAVA_BROKER_SERVICE.md) | Experimental dedicated Java broker command, operator profiles, host credentials and authenticated preparation API |
 | [ACCESS_SURFACES.md](ACCESS_SURFACES.md) | Supported hosted, desktop, and CLI access surfaces |
 | [AI_ASSISTED_WORKFLOWS.md](AI_ASSISTED_WORKFLOWS.md) | Governed assisted-authoring workflow and API contract |
-| [COMPETITIVE_COMPARISON.md](COMPETITIVE_COMPARISON.md) | Competitive positioning, evaluator trust pack, REST API comparison, and migration reference |
+| [COMPETITIVE_COMPARISON.md](COMPETITIVE_COMPARISON.md) | Competitive positioning, evaluator trust pack, REST API comparison, and stable links to maintained import contracts |
 | [ENTERPRISE_CONTRACTS.md](ENTERPRISE_CONTRACTS.md) | Enterprise authoring lifecycle, workload shape/load model, and project-first governance contracts |
-| [HA_RUN_CONTINUITY_PLAN.md](HA_RUN_CONTINUITY_PLAN.md) | Plan and P0 evidence for keeping in-flight distributed runs alive across HA controller failover |
+| [HA_RUN_CONTINUITY_PLAN.md](HA_RUN_CONTINUITY_PLAN.md) | Historical design and P0–P4/later review evidence; current continuity operations are in the enterprise runbook |
 | [NODE_STORAGE_RECOVERY.md](NODE_STORAGE_RECOVERY.md) | Worker state inventory, fencing, storage recovery, and qualification limits |
 | [ARCHIVE_SOURCE_RETENTION.md](ARCHIVE_SOURCE_RETENTION.md) | Opt-in confirmed-source retention, publication fences and recoverability limits |
 | [ANALYSIS_WORKFLOWS.md](ANALYSIS_WORKFLOWS.md) | Project/native-build enablement and navigation to monitoring, native analytics and RCA contracts |
@@ -108,7 +108,7 @@ not the source of truth for current API or DSL contracts.
 
 | Document | Status |
 | --- | --- |
-| [NODE_FAILURE_READINESS_PLAN.md](NODE_FAILURE_READINESS_PLAN.md) | Proposed implementation and qualification plan for worker recovery, KEDA capacity, liveness, storage, and archive issues found in September 2026 fault tests |
+| [NODE_FAILURE_READINESS_PLAN.md](NODE_FAILURE_READINESS_PLAN.md) | Open implementation and qualification ledger for worker recovery, KEDA capacity, liveness, storage, and archive issues found in September 2026 fault tests |
 | [HTTP3_IMPLEMENTATION.md](HTTP3_IMPLEMENTATION.md) | HTTP/3 delivery status, quic-go contract, test fixture, and transport decision records (timing, retries, socket ownership, defaults) |
 | [ROADMAP.md](ROADMAP.md) | Remaining engineering work and qualification gates; dated delivery history is archived |
 | [FEATURE_COMPLETION_SPEC.md](FEATURE_COMPLETION_SPEC.md) | Approved implementation and acceptance specification for Event Hubs/messaging, browser evidence/intelligence, telemetry reporting, native analytics and authoring cleanup |

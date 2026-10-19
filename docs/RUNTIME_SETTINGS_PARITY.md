@@ -169,3 +169,52 @@ Execution remains operator-gated. A specified JDK is resolved only on the select
   - Canonical Java VM import: `pkg/convert/enterprisearchive/java_runtime_config_test.go`
   - JDK/VM argument/command enforcement: `pkg/javarunner`
   - Assignment-time preflight: `pkg/distributed/generatorrpc/runtime_preflight_test.go`
+
+## Enterprise Archive Runtime Settings Reference
+
+Maps Web HTTP/HTML source runtime settings from enterprise script archives to APEX Load fields and support status.
+
+Code-owned source of truth: `pkg/convert/enterprisearchive/rts_support.go`. Published through `GET /api/v1/runtime-settings/support-matrix` and `GET /api/v1/scripts/import/enterprise-script-archive/support-matrix`.
+
+**Status legend:** `Executed` — enforced at runtime. `Partial` — partial surface enforced. `Compatibility-only` — preserved/editable; no runtime semantics yet. `Non-applicable` — concept doesn't map to APEX Load architecture.
+
+| Runtime-setting area | Source concept | APEX Load field | Status |
+| --- | --- | --- | --- |
+| Run Logic | Iterations | `config.run_logic.iterations` | Executed |
+| Run Logic | Auto-transactions | `config.run_logic.auto_transactions` | Executed |
+| Run Logic | Block scheduling | `config.run_logic.block_scheduling` | Compatibility-only |
+| Run Logic | Blocks (sequential, random, percentage, nested, block iterations) | `config.run_logic.blocks` | Executed |
+| Run Logic | Action sequence | `config.run_logic.action_sequence` | Compatibility-only |
+| Pacing | Delay mode and bounds | `config.pacing.*` | Executed |
+| Think Time | Ignore, multiplier, limit | `config.think_time.*` | Executed |
+| Logging | Log level, error-only, extended options | `config.log.*` | Executed |
+| Misc | Continue on error | `config.error_handling.continue_on_error` | Executed |
+| Misc | Snapshot on error | `config.error_handling.snapshot_on_error` | Executed |
+| Browser Emulation | Cache enabled | `config.browser.cache_enabled` | Executed |
+| Browser Emulation | Cache URLs requiring content | `config.browser.cache_content_urls` | Executed |
+| Browser Emulation | Check for newer versions | `config.browser.check_newer_versions` | Executed |
+| Browser Emulation | New user each iteration | `config.browser.new_user_per_iteration` | Executed |
+| Browser Emulation | Download resources = all/none/recorded | `config.browser.download_resources` | Executed |
+| Browser Emulation | User agent | `config.browser.user_agent`, `config.http.user_agent` | Executed |
+| Browser Emulation | Accept-Language / Accept-Encoding | `config.http.accept_language`, `config.http.accept_encoding` | Executed |
+| Proxy | Proxy mode and custom proxy | `config.http.proxy_mode`, `config.http.proxy.*` | Executed |
+| Additional Attributes | Arbitrary RTS name/value metadata | `config.web_runtime.additional_attributes` | Compatibility-only |
+| Download Filters | Allow list / block list hosts | `config.web_runtime.download_filters.*` | Executed |
+| Content Check | Global required/forbidden text checks | `config.web_runtime.content_checks[]` | Executed |
+| Network Speed Simulation | Preset and custom bandwidth/latency | `config.web_runtime.network_simulation.*` | Executed |
+| Streaming | Adaptive vs fixed mode, buffer, bitrate, bandwidth estimation | `config.web_runtime.streaming.*` | Executed |
+| Data Formatting | Auto-detect DFEs, transform chain | `config.web_runtime.data_formatting.*` | Executed |
+| Replay engine mode | WinInet / process-vs-thread | N/A | Non-applicable |
+
+**Java runtime settings:** Java-over-HTTP transport settings map to `pkg/protocol/http` fields. For governed `java_vuser` scripts, JDK selection/home, exact JVM argument tokens, and script-controlled path references to operator-provisioned precompiled artifacts map to `config.java_vuser.*` and execute after generator-local preflight. Dedicated user-class loading is partial parity. The legacy Xboot checkbox is preserved as compatibility-only metadata and warning evidence on Java 17+; APEX Load does not emit an `-Xbootclasspath` flag. Runner enablement, harness, work directory, shared classpath, and process capacity remain operator-owned. Multithreading concepts are non-applicable to Go-native protocols — APEX Load uses goroutines — while each Java runner process is separately capacity-bounded.
+
+**Web Services (SOAP) RTS:** WSDL definitions map to `pkg/protocol/soap`. WS-Security configurations map to automated header management in the Go engine. Transport-level settings (proxy, HTTP version, keep-alive, timeouts, SOAP fault content check) map to standard HTTP protocol config.
+
+**Intentional caveats:**
+- `iterations` is subject to scenario-schedule authority: a duration-driven scenario ignores a script-only per-VUser cap (imported RTS iteration counts included) so no group retires before the schedule ends, exactly as LoadRunner Controller does. Set iterations on the scenario or group to pin a fixed count. See [ENTERPRISE_CONTRACTS.md](ENTERPRISE_CONTRACTS.md#schedule-authority-over-script-iteration-caps).
+- `download_resources = recorded` depends on recorded-resource URL metadata in the import/recording flow.
+- Streaming/media settings execute at HTTP response pacing level; no full browser media player.
+- DFE parity is bounded to APEX Load's supported HTTP response transform chain.
+- Logging parity is scoped to APEX Load's trace envelope, not byte-for-byte VuGen log formatting.
+
+---

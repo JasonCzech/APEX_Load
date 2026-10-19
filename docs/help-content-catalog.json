@@ -684,5 +684,29 @@
       "Browser VUsers",
       "Troubleshooting"
     ]
+  },
+  {
+    "id": "dynatrace-monitoring",
+    "area": "user-guide",
+    "title": "Dynatrace monitoring and webhooks",
+    "path": "docs/DYNATRACE.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "elastic-monitoring",
+    "area": "user-guide",
+    "title": "Elastic monitoring and capture",
+    "path": "docs/ELASTIC.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "import-fidelity",
+    "area": "user-guide",
+    "title": "Import fidelity and repairs",
+    "path": "docs/IMPORT_FIDELITY_AND_REPAIRS.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
   }
 ]

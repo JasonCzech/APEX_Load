@@ -94,51 +94,7 @@ qualification succeeds, then regenerate the table with
 
 ### Bucketed Elasticsearch capture
 
-An `elastic-query` monitor source reads an existing ELK connection (its
-endpoint, index pattern, timestamp field, filters and API-key or basic
-credentials from project secrets, through the same outbound host allowlist)
-and collects interval buckets instead of the legacy capture's run totals:
-
-```json
-{"pack": "elastic-query", "executor_mode": "direct", "connection_id": "<elk connection>", "interval_seconds": 60,
- "elastic_query": {"project_id": "<project>", "bucket_seconds": 60, "terms_fields": ["http.method"], "terms_size": 10}}
-```
-
-- **Buckets:** each poll runs a `date_histogram` with a fixed interval of
-  30–300 seconds (default 60) aligned to UTC. Each bucket yields `logs.count`,
-  `logs.errors` (from the connection's error filter) and
-  `logs.terms.<field>.<value>` for the top `terms_size` values of each field.
-- **Truncation:** at most 16 terms fields are queried, each at most 128
-  bytes. Extra fields, values beyond the top ones, and values too long to name
-  a series within the 256-byte metric name are flagged as coverage warnings.
-  Values are named as the server displays them (`key_as_string`, or a
-  number's exact literal).
-- **Late data:** each poll re-reads from five minutes (`overlap_seconds`)
-  before the last watermark and upserts buckets by start, so a late document
-  updates its bucket. A bucket is marked settled once it falls behind the
-  overlap; ingestion rejects earlier settled claims.
-- **Execution:** sources run in the controller only (`executor_mode: direct`).
-  One poll reads at most 120 buckets, fewer when terms are heavy, so a search
-  stays under 10,000 aggregation buckets (`search.max_buckets` before
-  Elasticsearch 7.9). A selection whose overlap re-read plus one new bucket
-  does not fit one search is rejected, so every poll can advance.
-- **OpenSearch:** set `"profile": "opensearch"` in `elastic_query`. The
-  search is the same (`date_histogram` with `fixed_interval`, terms and
-  filters exist in OpenSearch 1.x and 2.x), and points record
-  `backend: opensearch`. OpenSearch has no Elasticsearch API keys, so the
-  connection must use basic authentication. Saving an OpenSearch source on an
-  API-key connection is refused, and a run whose connection has since switched
-  to an API key records `connection_source_mismatch` for that source. AWS
-  SigV4 signing is not supported; use fine-grained access control's internal
-  users. The ELK connection's default trace link is Kibana's legacy Discover
-  URL; newer OpenSearch Dashboards Discover pages use a different URL, so if
-  the default does not open the trace, save a trace template for your
-  version.
-
-The legacy ELK capture keeps running unchanged. Its status and the archive
-manifest label it `observation: cumulative` (`elk_observation`), and its run
-totals are never reinterpreted as intervals. Fixture-tested only; not yet
-qualified against a live cluster.
+See [Bucketed Elasticsearch capture](ELASTIC.md#bucketed-elasticsearch-capture) for the maintained contract and evidence.
 
 ## Confluence Cloud result publishing
 
@@ -702,7 +658,7 @@ Apply `Is Latest Publish = 1` as a report/page filter (equivalent measure on `tr
 
 Status: Current
 
-Source note: consolidated 2026-09-24 from the former `DYNATRACE_SAAS_MONITORING.md`, `DYNATRACE_WEBHOOKS.md` and `ELK_MONITORING.md`. Prometheus, OpenTelemetry and Power BI have their own references: [Prometheus metrics](OBSERVABILITY_INTEGRATIONS.md#prometheus-scrape-endpoint), [OpenTelemetry](OBSERVABILITY_INTEGRATIONS.md#opentelemetry-tracing), [Power BI](OBSERVABILITY_INTEGRATIONS.md).
+Source note: provider setup and compatibility details now live in [Dynatrace](DYNATRACE.md) and [Elastic](ELASTIC.md); the shared pipeline, notification overview and qualification table remain here. Originally consolidated 2026-09-24 from the former `DYNATRACE_SAAS_MONITORING.md`, `DYNATRACE_WEBHOOKS.md` and `ELK_MONITORING.md`. Prometheus, OpenTelemetry and Power BI have their own references: [Prometheus metrics](OBSERVABILITY_INTEGRATIONS.md#prometheus-scrape-endpoint), [OpenTelemetry](OBSERVABILITY_INTEGRATIONS.md#opentelemetry-tracing), [Power BI](OBSERVABILITY_INTEGRATIONS.md).
 
 | Integration | Direction | Scope |
 | --- | --- | --- |
@@ -718,47 +674,27 @@ Typed observations preserve source bucket times, dimensions, descriptor units an
 
 Follow [Dynatrace setup, permissions and troubleshooting](DYNATRACE.md) and [the native monitoring contract](DYNATRACE_SPEC.md). The generated [OpenAPI specification](swagger.yaml) defines connection/operation/source/binding/evidence interfaces. Qualification is fixture-first; real SaaS tenant, licensed Grail and Smartscape compatibility remains unqualified until exact environments are tested.
 
-Existing `dynatrace_capture` selection and archived scalar/evidence readers remain compatibility surfaces. Projects outside the run-monitoring gate keep legacy per-test capture; in gated projects, future legacy selections resolve to reviewed, verified native sources without automatic opt-in. Historical scalar reductions remain historical aggregates rather than fabricated bucket timelines. Outbound lifecycle notifications below remain separate from read-side monitoring.
+Existing `dynatrace_capture` selection and archived scalar/evidence readers remain compatibility surfaces. Projects outside the run-monitoring gate keep legacy per-test capture; in gated projects, future legacy selections resolve to reviewed, verified native sources without automatic opt-in. Historical scalar reductions remain historical aggregates rather than fabricated bucket timelines. Outbound lifecycle notifications in the provider guide remain separate from read-side monitoring.
 
 ### Dynatrace lifecycle webhooks
 
-APEX Load sends lifecycle and telemetry-health notifications to Dynatrace through the Dynatrace Events API v2. This is an event webhook integration, not an OTLP exporter.
+See [Dynatrace lifecycle webhooks](DYNATRACE.md#dynatrace-lifecycle-webhooks) for the maintained contract and evidence.
 
 #### Setup
 
-1. Create a Dynatrace API token with event-ingest permissions.
-2. In APEX Load settings, add a notification webhook with format `dynatrace`.
-3. Use the Dynatrace Events API endpoint, for example `https://<tenant>/api/v2/events/ingest`.
-4. Paste the API token once. The settings API stores it server-side and returns only `has_api_token: true`; the raw token is write-only.
-5. Optionally set `entity_selector` and `timeout_minutes`.
+See [Setup](DYNATRACE.md#setup).
 
 #### Delivery Behavior
 
-- APEX Load sends `Authorization: Api-Token <token>`.
-- Retryable delivery failures (`408`, `429`, `5xx`, or transport errors) are retried with bounded exponential backoff and `Retry-After` support.
-- Failed deliveries after retry increment `apexload_notification_delivery_failures_total`.
-- Dynatrace payloads include an `apexload.idempotency_key` property so downstream workflows can dedupe repeated attempts.
+See [Delivery Behavior](DYNATRACE.md#delivery-behavior).
 
 #### Events
 
-Dynatrace webhooks can subscribe to the same event names as Slack and Teams, including `test_started`, `test_complete`, `test_failed`, `telemetry_degraded`, `telemetry_breached`, `telemetry_recovered`, `telemetry_acceptance`, `rca_analysis_completed`, `run_validity`, `load_phase` and fleet alert events. `load_phase` events are sent as `CUSTOM_ANNOTATION` on the webhook's entity selector. A `telemetry_acceptance` event is an `ERROR_EVENT` when the verdict failed (severity `danger`) and a `CUSTOM_ALERT` when it was inconclusive (severity `warning`). A `run_validity` event is an `ERROR_EVENT` for an invalid run and a `CUSTOM_ALERT` for a suspect one; `rca_analysis_completed` is `CUSTOM_INFO`.
+See [Events](DYNATRACE.md#events).
 
 #### Root-cause events
 
-- `rca_analysis_completed`: a root-cause analysis completed for a project
-  that presents root cause, sent once per analysis. Status is the outcome
-  (`supported`, `no_supported_hypothesis`, `insufficient_evidence`); severity
-  is `danger` for an invalid run, `warning` for a suspect run or a supported
-  cause, otherwise `info`; the summary is the reports' one-line root cause;
-  conditions name the analysis, its origin, the run's validity, the report
-  route and up to three hypotheses.
-- `run_validity`: a run whose load generators or telemetry could not carry
-  the load it reports, sent once per run and verdict (`suspect` or
-  `invalid`) with its reasons, after the run's archive is attached. It is
-  sent whether or not the project presents root cause, because validity is
-  judged for every archived run.
-
-Webhooks set to *All events* receive both.
+See [Root-cause events](DYNATRACE.md#root-cause-events).
 
 ### Load-phase events and Grafana annotations
 
@@ -795,51 +731,20 @@ systems can tell a load step from an incident:
 
 ### Optional Elastic (ELK) in-flight monitoring
 
-APEX Load can poll an Elasticsearch-compatible search endpoint while a test is running. The integration is project-scoped, inactive by default, and runs in the controller rather than in virtual-user goroutines. It does not configure Kibana and does not write to Logstash.
+See [Optional Elastic (ELK) in-flight monitoring](ELASTIC.md#optional-elastic-elk-in-flight-monitoring) for the maintained contract and evidence.
 
 #### Compatibility and privileges
 
-The client uses the Elasticsearch 7/8-compatible JSON REST search API:
-
-- `POST /{index-pattern}/_search`
-- `track_total_hits: true`
-- a timestamp `range` filter and optional `query_string` filters
-- filter aggregations for error counts
-- `avg`, `min`, `max`, and `sum` numeric metric aggregations
-
-The Elasticsearch identity needs only read/search access to the configured index pattern and fields. Do not grant index administration, document write, cluster administration, or Kibana privileges.
+See [Compatibility and privileges](ELASTIC.md#compatibility-and-privileges).
 
 #### Setup
 
-1. Create the authentication material as project secrets. API-key authentication uses one secret whose value is the Elasticsearch REST API key. Basic authentication uses separate username and password secrets.
-2. Open **Settings → Connections → Elastic test capture**, or use **Manage Elastic connections** from Monitoring → Telemetry. Confirm the active project. **Save draft** needs only a name; the checklist identifies details to supply later.
-3. Enter an HTTPS Elasticsearch endpoint, index pattern, field mappings, authentication type, and project-secret references. Secret-reference names are accepted as write-only input and are not returned by the API.
-4. Use **Test saved connection** while it is disabled, then edit and select **Enable for new tests**. Configuration, enablement, and last-check status are separate. Only enabled, fully configured connections appear in the create-test selector. Blank replacement credential fields preserve existing secrets; saved values and reference names remain hidden.
-5. Opt a test into capture with **Elastic log capture**. Existing tests and new tests without a selection make no ELK requests.
-
-No environment-specific endpoint or credential belongs in source control.
+See [Setup](ELASTIC.md#setup).
 
 #### Field-mapping checklist
 
-- Timestamp field: required; usually `@timestamp`.
-- Level field: optional; for example `log.level`.
-- Message field: required for a ready connection; usually `message`.
-- Test ID field: optional. When configured, APEX Load adds an exact term filter for the current test ID.
-- Trace ID field: optional. When no test-ID field is configured, observed run trace IDs are used for correlation as they become available and are retained in evidence samples for cross-tool navigation.
-- Base filter: optional fixed Elasticsearch query-string expression applied to every poll.
-- Error filter: optional query-string expression used to calculate the cumulative error count.
-- Numeric aggregations: up to 16 named field aggregations using `avg`, `min`, `max`, or `sum`.
-
-When no test-ID mapping is supplied, APEX Load uses observed trace IDs if a trace field is mapped. Before any trace is observed—or when neither correlation field is mapped—capture falls back to the test start-to-current time window plus the base filter. This fallback is deliberately broad; use a test identifier or a sufficiently restrictive base filter when multiple workloads share an index.
+See [Field-mapping checklist](ELASTIC.md#field-mapping-checklist).
 
 #### Runtime and privacy behavior
 
-The controller polls at a bounded cadence and queries the cumulative window from test start through the current poll. Failures are fail-open: they update capture health but do not stop, pause, or otherwise affect the load test. Cumulative values are published as external resource metrics under `elk.<connection-id>.<metric>`, including `logs_total`, `errors_total`, and configured aggregation names.
-
-Polling runs in a cancellable background worker; live metric publication reads cached results without waiting for Elasticsearch. Timed-out searches, failed shards, early termination, and inexact hit counts are treated as incomplete capture rather than healthy results. Last-good values remain available with degraded health. Both local and distributed runs contribute observed trace IDs to the bounded correlation set.
-
-Search responses are size-bounded. Only mapped fields are requested. A run retains at most 50 deduplicated samples, and individual messages are capped at 4 KiB. Built-in credential/PII scrubbing runs before samples reach live state and again at the archive boundary. The archive stores only cumulative metrics and bounded scrubbed samples in `elk_evidence.jsonl`; it never stores raw Elasticsearch documents, authentication values, or secret-reference names.
-
-HTTPS is required. Requests are restricted by the outbound network policy to the one saved endpoint host, including for internal Elasticsearch deployments, and redirects cannot escape that exact origin. Credential-bearing, query-bearing, fragment-bearing, cleartext, and otherwise malformed endpoint URLs are rejected.
-
-Connection edits do not mutate an active or archived run: APEX Load snapshots the operational capture definition into durable private test state at creation. Public run provenance and the manifest retain only the immutable connection ID and safe display name.
+See [Runtime and privacy behavior](ELASTIC.md#runtime-and-privacy-behavior).

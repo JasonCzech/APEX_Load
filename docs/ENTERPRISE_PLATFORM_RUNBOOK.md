@@ -137,7 +137,9 @@ single-owner even though read/API traffic is multi-replica. With
 owner token, expiry, and monotonic generation. Execution-state writes verify the
 owner/generation in the same database transaction; a newly elected replica stays
 unadmitted until durable recovery finishes, and leadership loss synchronously
-closes admission and cancels process-local/generator work.
+closes admission. Local runs and default `fail` policy distributed runs stop;
+armed `continue` policy distributed runs can be handed off to a successor within
+the bounded adoption grace.
 
 The execution owner gates scenario and execution-plan materialization, queued-run
 promotion/reconciliation, provisioning recovery, usage-accounting cadence,
@@ -161,13 +163,44 @@ All reconciler loops must be idempotent:
 - Generator inventory reconciliation replaces observations rather than accumulating stale capacity.
 - Archive retention never rewrites completed manifests; it only updates retention metadata or removes eligible artifacts after policy checks.
 
+### Operating run continuity
+
+`assignment.failover_policy` defaults to `fail`. Opt-in `continue` requires a
+distributed run, HA execution fencing backed by shared PostgreSQL, and a key
+wrapper that every successor can use to open the persisted adoption credential.
+Check launch warnings and the run's public `continuity.armed` state; selecting
+`continue` alone does not establish recoverability. Local VUsers stop with their
+controller. Generator adoption capability and the exact persisted run lineage
+must be accepted by the successor.
+
+During bounded orphan grace, surviving generators continue load and retain local
+artifacts. A higher-generation claim adopts the existing work and rotates its
+supervision token; it does not replay the start. Expired grace or rejected
+adoption follows fail-closed cleanup. Preserve generator epoch high-water state,
+controller checkpoints, wrapping keys and retained archive sources across
+restarts; never erase a fence to make adoption succeed. A replacement pod cannot
+restore the old goroutines or protocol sessions from a volume.
+
+Inspect `/api/v1/system/execution-readiness` for recovery/admission state and the
+run's continuity history for adopted generations and observation gaps. Missing
+observations remain gaps, not zero load. Verify terminal archive completeness;
+partial or missing generator evidence cannot become a complete result merely
+because execution reached a terminal status.
+
+The [HA design and evidence record](HA_RUN_CONTINUITY_PLAN.md) preserves decisions,
+protocol details and measured controller-failover results. Follow the
+[node storage recovery procedure](NODE_STORAGE_RECOVERY.md) for state restoration.
+Combined controller/generator loss and production node-loss qualification remain
+open in the [node-failure readiness ledger](NODE_FAILURE_READINESS_PLAN.md);
+controller-only adoption and same-host trials do not close those gates.
+
 ### Restart Contracts
 
 | Condition | Expected behavior |
 | --- | --- |
 | Controller restarts with queued tests | Reload queued tests and continue capacity/start reconciliation |
 | Controller restarts during local run | The successor claims the new execution term and marks an unresolved in-process run failed; a committed terminal manifest can be recovered through the archive outbox |
-| Controller restarts during distributed run | Loss cleanup stops stale generator work; the successor marks the unresolved active row failed rather than replaying the start, and retained terminal artifacts remain eligible for archive recovery |
+| Controller restarts during distributed run | Default `fail` policy stops stale work and fails unresolved runs without replaying the start. An armed `continue` run can be adopted within its grace; failed adoption must reconcile stopped work. Retained terminal artifacts remain eligible for archive recovery |
 | Scheduler restarts | Evaluate persisted `next_run_at` values and materialize due schedules once |
 | Archive writer restarts mid-run | Preserve partial files for diagnosis; final manifest is written only after successful finalize |
 | Dashboard static assets missing | API remains available; readiness reports dashboard/static asset state once that check is added |
