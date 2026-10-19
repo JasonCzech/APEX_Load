@@ -2874,7 +2874,7 @@ func (tr *TestRunner) stopTestWithContextAndCIReasonAndActorModeAttempt(ctx cont
 			}
 		}
 	case "QUEUED", "PENDING", "RESERVED", "SCHEDULED", "SHAKEOUT", "SHAKEOUT_REVIEW", "INITIALIZING":
-		now := time.Now().UTC()
+		now := atMicrosecond(time.Now().UTC())
 		previousPendingSince := cloneTimePtr(test.PendingSince)
 		previousPendingReason := test.PendingReason
 		previousQueuePosition := test.QueuePosition
@@ -5902,7 +5902,8 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 		return ctx, nil, nil, false, fmt.Errorf("local runtime preflight: %w", err)
 	}
 
-	now := time.Now()
+	// The live start boundary must match the row read by another controller.
+	now := atMicrosecond(time.Now())
 	tr.mu.Lock()
 	if tr.shuttingDown || test.Status != "INITIALIZING" || ctx.Err() != nil || !tr.isExecutionLeader() {
 		tr.mu.Unlock()
@@ -5968,7 +5969,7 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 }
 
 func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) error {
-	now := time.Now()
+	now := atMicrosecond(time.Now())
 	tr.mu.Lock()
 	// Startup work runs asynchronously. A stop or leadership-loss cleanup may
 	// have won while a backend was compiling scripts, dialing generators, or
@@ -6046,6 +6047,8 @@ func (tr *TestRunner) completeTestRunUnderArchiveFence(test *ManagedTest, finalS
 }
 
 func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord, promotePending bool) error {
+	// Retain one exact terminal boundary for live views, annotations and history.
+	endTime = atMicrosecond(endTime)
 	if test != nil {
 		tr.finishLiveTables(test, finalStatus)
 	}

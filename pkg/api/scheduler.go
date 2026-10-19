@@ -1957,7 +1957,8 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		occurrence.ReasonCode = "started"
 		occurrence.TestID = test.ID
 		occurrence.ConflictSummary = ""
-		occurrence.MaterializedAt = &now
+		materializedAt := atMicrosecond(now)
+		occurrence.MaterializedAt = &materializedAt
 	}
 	occurrence.UpdatedAt = now
 	if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); err != nil {
@@ -2416,6 +2417,7 @@ func (tr *TestRunner) failScheduledTestBeforeLaunchIfStatusAndTermLocked(
 	operationToken := current.passiveOperationToken
 	executionFence := current.executionFence
 	executionGeneration := current.executionGeneration
+	now = atMicrosecond(now)
 	failedSnapshot := cloneManagedTestForReadLocked(current)
 	failedSnapshot.Status = "FAILED"
 	failedSnapshot.PendingSince = nil
@@ -2691,7 +2693,7 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 			existing.Status = "materialized"
 			existing.ReasonCode = "recovered"
 			if existing.MaterializedAt == nil {
-				materializedAt := now
+				materializedAt := atMicrosecond(now)
 				existing.MaterializedAt = &materializedAt
 			}
 			existing.UpdatedAt = now

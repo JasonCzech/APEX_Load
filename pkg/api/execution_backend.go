@@ -146,7 +146,7 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		return
 	}
 	if !started {
-		endTime := time.Now()
+		endTime := atMicrosecond(time.Now())
 		// Released with defer, not manually: artifacts.finalize and the commit
 		// below can panic, and the run-driver panic backstop terminalizes through
 		// completeTestRun, which needs this very fence. A manual unlock is skipped
@@ -172,7 +172,7 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 
 	result, err := mge.Run(ctx)
 	err = localExecutionRunError(ctx, err)
-	endTime := time.Now()
+	endTime := atMicrosecond(time.Now())
 	artifacts.stopMonitoring()
 
 	close(metricsDone)
@@ -259,7 +259,7 @@ func (tr *TestRunner) finalizeLocalBuildFailure(test *ManagedTest, artifacts *ru
 	unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
 	defer unlockArchiveCommit()
 
-	endTime := time.Now().UTC()
+	endTime := atMicrosecond(time.Now().UTC())
 	finalStatus := "FAILED"
 	finalError := buildErr.Error()
 	tr.mu.RLock()

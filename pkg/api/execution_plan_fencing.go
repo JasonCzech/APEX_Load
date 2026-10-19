@@ -364,7 +364,7 @@ func (tr *TestRunner) endExecutionPlanStagedTestWithTerm(testID, terminalStatus,
 	if expectedKey == "" {
 		return fmt.Errorf("%w: missing ownership marker for test %s", errExecutionPlanTestOwnership, testID)
 	}
-	now := time.Now().UTC()
+	now := atMicrosecond(time.Now().UTC())
 	var durable *storage.TestRecord
 	if tr.testStore != nil {
 		var result storage.TestStatusTransitionResult

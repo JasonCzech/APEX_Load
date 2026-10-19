@@ -997,7 +997,7 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 	previousQueuePosition := test.QueuePosition
 	previousEndedAt := cloneTimePtr(test.EndedAt)
 	previousError := test.Error
-	now := time.Now().UTC()
+	now := atMicrosecond(time.Now().UTC())
 	test.Status = "FAILED"
 	test.PendingSince = nil
 	test.PendingReason = ""

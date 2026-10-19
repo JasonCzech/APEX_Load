@@ -404,7 +404,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 	copy(entries, plan.Entries)
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Order < entries[j].Order })
 
-	now := time.Now().UTC()
+	now := atMicrosecond(time.Now().UTC())
 	runID := runIDOverride
 	applicationID, releaseID := executionPlanReleaseContext(plan, nil)
 	initialEntries := make([]storage.ExecutionPlanRunEntry, 0, len(entries))
@@ -552,7 +552,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 				persistErr = errors.Join(persistErr, fmt.Errorf("terminalize uncommitted plan test %s: %w", test.ID, cleanupErr))
 			}
 		}
-		failedAt := time.Now().UTC()
+		failedAt := atMicrosecond(time.Now().UTC())
 		failedEntries := append([]storage.ExecutionPlanRunEntry(nil), runEntries...)
 		for i := range failedEntries {
 			if failedEntries[i].Status == "created" {
@@ -701,7 +701,7 @@ func (tr *TestRunner) handoffParallelExecutionPlanTestsOnceWithTerm(run *storage
 		}
 	}
 	if changed {
-		now := time.Now().UTC()
+		now := atMicrosecond(time.Now().UTC())
 		reconciled.Status = "failed"
 		reconciled.UpdatedAt = now
 		reconciled.CompletedAt = &now

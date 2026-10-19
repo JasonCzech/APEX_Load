@@ -226,7 +226,7 @@ func (tr *TestRunner) failInterruptedParallelExecutionPlanRun(run *storage.Execu
 		}
 		tr.AttributeTestExecutionPlanApproval(test.ID, approval)
 	}
-	now := time.Now().UTC()
+	now := atMicrosecond(time.Now().UTC())
 	recovered.Status = "completed"
 	if failedCount > 0 {
 		recovered.Status = "failed"
@@ -429,7 +429,7 @@ func (tr *TestRunner) haltUnrecoverableSequentialExecutionPlanRun(run *storage.E
 		halted.Entries[0].Status = "failed"
 		halted.Entries[0].Detail = detail
 	}
-	now := time.Now().UTC()
+	now := atMicrosecond(time.Now().UTC())
 	halted.Status = "halted"
 	halted.UpdatedAt = now
 	halted.CompletedAt = &now

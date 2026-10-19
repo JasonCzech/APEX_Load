@@ -80,6 +80,7 @@ func (b *distributedExecutionBackend) prepareDistributedTestRun(tr *TestRunner, 
 // as a graceful stop is accepted, while this context intentionally remains live
 // until terminal metrics are consumed (or leadership/shutdown fences it).
 func (b *distributedExecutionBackend) prepareDistributedTestRunWithLifecycle(tr *TestRunner, test *ManagedTest, groupShards map[string][]GeneratorShardSummary, clientsByTarget map[string]generatorClient, streamsByTarget map[string]*generatorrpc.MetricsStream, lifecycleCtx context.Context, lifecycleCancel context.CancelFunc, now time.Time) (bool, func(), error) {
+	now = atMicrosecond(now)
 	if lifecycleCtx == nil {
 		lifecycleCtx = context.Background()
 	}
@@ -251,7 +252,7 @@ func persistFreshDistributedScheduledStart(tr *TestRunner, test *ManagedTest, rp
 	ackWindow := distributedCommitAckTimeout(rpcTimeout)
 	const maxBarrierPersistenceAttempts = 3
 	for attempt := 1; attempt <= maxBarrierPersistenceAttempts; attempt++ {
-		startAt := time.Now().Add(distributedCommitStartLead(rpcTimeout))
+		startAt := atMicrosecond(time.Now().Add(distributedCommitStartLead(rpcTimeout)))
 		tr.mu.Lock()
 		if tr.tests[test.ID] != test || test.Status != "RUNNING" || test.remoteFinalizing || test.executionCtx == nil || test.executionCtx.Err() != nil {
 			tr.mu.Unlock()
@@ -2104,7 +2105,7 @@ func distributedBatchErrorCount(batch generatorrpc.MetricsBatch) int64 {
 }
 
 func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner, test *ManagedTest, finalStatus string, finalError string) {
-	completedAt := time.Now()
+	completedAt := atMicrosecond(time.Now())
 	tr.mu.RLock()
 	elk, dynatrace := test.elkArtifacts, test.dynatraceArtifacts
 	tr.mu.RUnlock()

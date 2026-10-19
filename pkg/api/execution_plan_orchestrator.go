@@ -102,7 +102,7 @@ func (st *seqPlanRunState) toStorageRun() *storage.ExecutionPlanRun {
 		Entries:   append([]storage.ExecutionPlanRunEntry(nil), st.statuses...),
 		Revision:  st.revision,
 		CreatedAt: st.createdAt,
-		UpdatedAt: time.Now().UTC(),
+		UpdatedAt: atMicrosecond(time.Now().UTC()),
 	}
 	switch st.status {
 	case "completed", "halted", "failed":

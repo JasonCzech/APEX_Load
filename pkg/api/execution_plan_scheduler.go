@@ -1157,7 +1157,7 @@ func (tr *TestRunner) finalizeExecutionPlanScheduleOccurrence(schedule *storage.
 	occurrence.RunID = runID
 	occurrence.UpdatedAt = now
 	if status == "materialized" {
-		materializedAt := now.UTC()
+		materializedAt := atMicrosecond(now.UTC())
 		occurrence.MaterializedAt = &materializedAt
 	} else {
 		occurrence.MaterializedAt = nil
