@@ -157,7 +157,16 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 		}
 		prepared.Body = decoded
 	}
+	// Java HTTP owns the one base64 conversion. The shared HTTP runtime must
+	// receive opaque bytes, even when the action explicitly selected base64.
+	prepared.BodyEncoding = ""
 	result, err := j.http.Execute(ctx, &prepared)
+	if result != nil && result.CorrelationEvidence != nil && len(action.Body) > 0 {
+		// Replay repairs cannot address the decoded representation as if it
+		// were the original authored body. Preserve that boundary separately
+		// from the HTTP adapter's now-cleared encoding instruction.
+		result.CorrelationEvidence.RequestBodyTransformed = true
+	}
 	// Apply response mappings against the raw (pre-base64) response bytes. Java
 	// serialized streams embed their string fields as ASCII, so regex mappings can
 	// pull named values out of an otherwise-opaque payload and feed correlation —
