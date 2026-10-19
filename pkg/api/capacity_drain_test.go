@@ -188,3 +188,41 @@ func TestCapacityDrainScopesCleanupAndKeepsOperatorStateSeparate(t *testing.T) {
 		t.Fatal("expired owner installed a new placement exclusion")
 	}
 }
+
+func TestCapacityDrainObservesEpochLossBeforeContextCancellation(t *testing.T) {
+	b := newDistributedExecutionBackend([]string{"gen:9090"}, time.Second, nil)
+	b.recordGeneratorIdentity("gen:9090", "gen")
+	epoch, endEpoch := context.WithCancel(context.Background())
+	// Mirrors operationContext before its AfterFunc goroutine has run: the
+	// epoch has ended but the derived operation context is not cancelled yet.
+	ctx := context.WithValue(context.Background(), executionEpochContextKey{}, epoch)
+	b.setCapacityDrain(ctx, "request", "attempt", []string{"gen"})
+	if b.GeneratorDrainStateByID("gen") != "cordoned" {
+		t.Fatal("live epoch did not exclude placement")
+	}
+	endEpoch()
+	if ctx.Err() != nil {
+		t.Fatal("test setup: operation context must still look live")
+	}
+	if b.GeneratorDrainStateByID("gen") != "active" {
+		t.Fatal("ended epoch still excluded placement")
+	}
+	b.adoptCapacityDrain(ctx, "request", "late-attempt")
+	b.setCapacityDrain(ctx, "late-request", "late-attempt", []string{"gen"})
+	if b.GeneratorDrainStateByID("gen") != "active" {
+		t.Fatal("ended epoch installed a new placement exclusion")
+	}
+}
+
+func TestOperationContextExpiresSynchronouslyWithLeadership(t *testing.T) {
+	server, _, _, _, _ := newScaleDownCapacityFixture(t, true)
+	ctx, cancel := server.runner.executionOperationContext(context.Background())
+	defer cancel()
+	if executionContextExpired(ctx) {
+		t.Fatal("leader operation context started expired")
+	}
+	server.runner.leadership.relinquish()
+	if !executionContextExpired(ctx) {
+		t.Fatal("operation context outlived relinquish")
+	}
+}

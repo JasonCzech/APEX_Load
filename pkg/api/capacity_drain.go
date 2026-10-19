@@ -20,7 +20,7 @@ type capacityDrainBackend interface {
 func (b *distributedExecutionBackend) setCapacityDrain(ctx context.Context, requestID, attemptToken string, generatorIDs []string) {
 	b.drainMu.Lock()
 	defer b.drainMu.Unlock()
-	if ctx.Err() != nil {
+	if executionContextExpired(ctx) {
 		return
 	}
 	if b.capacityDrains == nil {
@@ -29,7 +29,7 @@ func (b *distributedExecutionBackend) setCapacityDrain(ctx context.Context, requ
 	// Expired epochs cannot exclude placement, even if their provider never
 	// returns. Reap their bookkeeping when another capacity operation starts.
 	for id, drain := range b.capacityDrains {
-		if drain.ctx.Err() != nil {
+		if executionContextExpired(drain.ctx) {
 			delete(b.capacityDrains, id)
 		}
 	}
@@ -43,7 +43,7 @@ func (b *distributedExecutionBackend) setCapacityDrain(ctx context.Context, requ
 func (b *distributedExecutionBackend) adoptCapacityDrain(ctx context.Context, requestID, attemptToken string) {
 	b.drainMu.Lock()
 	defer b.drainMu.Unlock()
-	if drain, ok := b.capacityDrains[requestID]; ok && ctx.Err() == nil {
+	if drain, ok := b.capacityDrains[requestID]; ok && !executionContextExpired(ctx) {
 		drain.ctx, drain.attemptToken = ctx, attemptToken
 		b.capacityDrains[requestID] = drain
 	}
@@ -57,11 +57,11 @@ func (b *distributedExecutionBackend) clearCapacityDrain(requestID, attemptToken
 	}
 }
 
-// Caller holds drainMu. Epoch cancellation is checked here so a blocked old
+// Caller holds drainMu. Epoch cancellation is checked here, synchronously, so a blocked old
 // worker cannot strand local exclusions after same-process lease reacquisition.
 func (b *distributedExecutionBackend) capacityCordonedLocked(generatorID string) bool {
 	for _, drain := range b.capacityDrains {
-		if _, present := drain.generatorIDs[generatorID]; present && drain.ctx.Err() == nil {
+		if _, present := drain.generatorIDs[generatorID]; present && !executionContextExpired(drain.ctx) {
 			return true
 		}
 	}

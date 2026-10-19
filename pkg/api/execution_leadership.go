@@ -563,11 +563,29 @@ func (l *executionLeadership) operationContext(parent context.Context) (context.
 		cancel()
 		return ctx, cancel
 	}
+	// AfterFunc cancels ctx on its own goroutine, so ctx.Err() can lag lease
+	// loss. Keep the epoch itself for state that must stop the moment the
+	// lease is lost; see executionContextExpired.
+	ctx = context.WithValue(ctx, executionEpochContextKey{}, epoch)
 	stop := context.AfterFunc(epoch, cancel)
 	return ctx, func() {
 		stop()
 		cancel()
 	}
+}
+
+type executionEpochContextKey struct{}
+
+// executionContextExpired reports whether ctx or the leadership epoch it was
+// bound to has ended. Unlike ctx.Err(), it observes lease loss synchronously:
+// relinquish cancels the epoch before returning, while ctx follows it from an
+// AfterFunc goroutine.
+func executionContextExpired(ctx context.Context) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	epoch, ok := ctx.Value(executionEpochContextKey{}).(context.Context)
+	return ok && epoch.Err() != nil
 }
 
 // triggerReconcile schedules the acquire-time reconcile, ensuring at most one
