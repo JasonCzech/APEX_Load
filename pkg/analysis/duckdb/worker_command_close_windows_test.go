@@ -88,3 +88,58 @@ func TestWorkerWindowsInheritedCommandCloseJoinsSynchronousReadWithoutParentEOF(
 	}
 	// Do not touch/reclose the inherited numeric handle: it may now be reused.
 }
+
+// Close cancels a pending synchronous read once. A reader that has taken its
+// lock but not yet entered ReadFile misses that cancel and waits for the parent,
+// which itself waits for the child's result. Closing right as the reader starts
+// lands in that window on some iterations; production's command close must
+// still join every reader without parent EOF.
+func TestWorkerWindowsCommandCloseJoinsReaderEnteringReadFile(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		original, writer, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var inherited windows.Handle
+		err = windows.DuplicateHandle(windows.CurrentProcess(), windows.Handle(original.Fd()), windows.CurrentProcess(), &inherited, 0, true, windows.DUPLICATE_SAME_ACCESS)
+		originalClose := original.Close()
+		if err != nil || originalClose != nil {
+			if inherited != 0 {
+				_ = windows.CloseHandle(inherited)
+			}
+			_ = writer.Close()
+			t.Fatal("exact inherited handle setup failed", err, originalClose)
+		}
+		input := os.NewFile(uintptr(inherited), "native-inherited-commands")
+		if input == nil {
+			_ = windows.CloseHandle(inherited)
+			_ = writer.Close()
+			t.Fatal("inherited handle wrapper refused")
+		}
+		readOutcome, closeOutcome := make(chan error, 1), make(chan error, 1)
+		go func() {
+			var b [1]byte
+			_, err := input.Read(b[:])
+			readOutcome <- err
+		}()
+		go func() { closeOutcome <- workerCloseCommandChannel(input) }()
+		select {
+		case err := <-closeOutcome:
+			if err != nil {
+				_ = writer.Close()
+				t.Fatal("command close failed", i, err)
+			}
+		case <-time.After(2 * time.Second):
+			_ = writer.Close()
+			<-closeOutcome
+			t.Fatal("command close waited for parent EOF on iteration", i)
+		}
+		if err := <-readOutcome; !errors.Is(err, os.ErrClosed) {
+			_ = writer.Close()
+			t.Fatal("command reader did not observe Close", i, err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

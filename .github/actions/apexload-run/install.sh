@@ -110,8 +110,6 @@ download_asset() {
 }
 
 download_asset "$release_url/SHA256SUMS" "$checksums" $((4 * 1024 * 1024))
-download_asset "$release_url/$asset" "$binary" $((512 * 1024 * 1024))
-download_asset "$release_url/release-manifest.json" "$manifest" $((16 * 1024 * 1024))
 
 signing_key=""
 if [[ -f "$GITHUB_ACTION_PATH/release-signing-key.pem" ]]; then
@@ -128,6 +126,14 @@ if [[ -n "$signing_key" ]]; then
 else
   die configuration_error "no trusted release signing key is bundled or configured"
 fi
+
+# The signed checksum list names every apexctl the release publishes. One it
+# does not name (Intel macOS in releases after that build was dropped) is a
+# configuration error, not a download failure.
+awk -v asset="$asset" '$2 == asset || $2 == "*" asset {found = 1} END {exit !found}' "$checksums" \
+  || die configuration_error "apexctl ${version_tag} is not published for ${os}/${arch}"
+download_asset "$release_url/$asset" "$binary" $((512 * 1024 * 1024))
+download_asset "$release_url/release-manifest.json" "$manifest" $((16 * 1024 * 1024))
 
 sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then

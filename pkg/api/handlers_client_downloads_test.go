@@ -212,6 +212,7 @@ func TestSanitizeDownloadPlatform(t *testing.T) {
 		{"darwin-arm64; rm -rf /", ""},
 		{strings.Repeat("a", 4096), ""},
 		{"freebsd-amd64", ""},
+		{"darwin-amd64", ""},
 	}
 	for _, tc := range cases {
 		if got := sanitizeDownloadPlatform(tc.in); got != tc.want {
@@ -232,9 +233,9 @@ func TestDownloadPlatformFromUserAgent(t *testing.T) {
 			want: "",
 		},
 		{
-			name: "intel mac explicit",
+			name: "intel mac has no package",
 			ua:   "APEXLoad/1.0 (Macintosh; Mac OS X 14.0; x86_64)",
-			want: "darwin-amd64",
+			want: "",
 		},
 		{
 			name: "apple silicon explicit",

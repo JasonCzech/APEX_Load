@@ -3811,6 +3811,30 @@ describe("RecordingStudio", () => {
     expect(command.startsWith(".\\apexload-record-agent.exe --addr")).toBe(true);
   });
 
+  it("tells an Intel Mac that the Recording Agent has no package for it", async () => {
+    Object.defineProperty(window.navigator, "userAgentData", {
+      value: {
+        platform: "macOS",
+        getHighEntropyValues: vi.fn().mockResolvedValue({ platform: "macOS", architecture: "x86", bitness: "64" }),
+      },
+      configurable: true,
+    });
+    try {
+      apiMock.getRecorderStatus.mockResolvedValue(unavailableBrowserStatus);
+      await act(async () => {
+        root.render(<RecordingStudio />);
+      });
+      await flushPromises();
+      expect(container.querySelector('[data-testid="recording-agent-intel-mac"]')?.textContent).toBe(
+        "Intel Macs are not supported. The macOS packages run on Apple Silicon only.",
+      );
+      const platform = container.querySelector('select[aria-label="Recording Agent platform"]') as HTMLSelectElement;
+      expect(platform.value).toBe("");
+    } finally {
+      Reflect.deleteProperty(window.navigator, "userAgentData");
+    }
+  });
+
   it("says when the paired agent is a different build from this controller", async () => {
     apiMock.browserRecorderBridge = { origin: "http://127.0.0.1:49152", token: "tok", session_id: "ws-1" };
     apiMock.getRecorderStatus.mockResolvedValue(unavailableBrowserStatus);

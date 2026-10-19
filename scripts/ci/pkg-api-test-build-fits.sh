@@ -15,7 +15,7 @@
 # pkg/api/store_overlay_doc_test.go. Hosted arm64 macOS runners have 7 GB in
 # all, shared with the system and the runner; there the old compile swapped for
 # hours until the job's timeout, and the new one is unproven. Those legs leave
-# pkg/api to the macOS Intel (14 GB), Linux and Windows (16 GB) legs.
+# pkg/api to the Linux and Windows (16 GB) legs.
 set -euo pipefail
 
 required=$((10 << 30))
@@ -26,6 +26,6 @@ case "$(uname -s)" in
   *) exit 0 ;;
 esac
 if ((total < required)); then
-  echo "::notice::Skipping pkg/api tests: compiling its test binary peaks near 6 GB, too much for this runner's $((total >> 30)) GB. The desktop workflow's macOS Intel, Linux and Windows legs run them."
+  echo "::notice::Skipping pkg/api tests: compiling its test binary peaks near 6 GB, too much for this runner's $((total >> 30)) GB. The desktop workflow's Linux and Windows legs run them."
   exit 3
 fi

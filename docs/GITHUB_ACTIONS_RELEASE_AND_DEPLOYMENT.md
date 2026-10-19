@@ -155,7 +155,7 @@ in the release PR; the release job will not rewrite source after tagging.
 metadata once from the tag commit time, and creates an empty draft Release. It
 then:
 
-1. Builds five standalone `apexctl` binaries with the asset names consumed by
+1. Builds four standalone `apexctl` binaries with the asset names consumed by
    the canonical action.
 2. Packages Linux controller-side tools, the App Service zip, Helm chart, and
    signed desktop clients.
@@ -535,8 +535,8 @@ choose an uploader for consumer repositories.
   non-PR security, integration, release, and deployment workflows:
   `SECURITY_RUNNER_LABELS`, `PROTOCOL_RUNNER_LABELS`,
   `RELEASE_LINUX_RUNNER_LABELS`, `RELEASE_LINUX_AMD64_RUNNER_LABELS`,
-  `RELEASE_LINUX_ARM64_RUNNER_LABELS`, `RELEASE_MACOS_AMD64_RUNNER_LABELS`,
-  `RELEASE_MACOS_ARM64_RUNNER_LABELS`, `RELEASE_WINDOWS_AMD64_RUNNER_LABELS`,
+  `RELEASE_LINUX_ARM64_RUNNER_LABELS`, `RELEASE_MACOS_ARM64_RUNNER_LABELS`,
+  `RELEASE_WINDOWS_AMD64_RUNNER_LABELS`,
   `AKS_RUNNER_LABELS`, `APPSERVICE_RUNNER_LABELS`, and
   `AZURE_INFRA_RUNNER_LABELS`. Example: `["self-hosted","linux","x64","trusted-ci"]`.
 - Set protected repository variable `APEXLOAD_USE_PREINSTALLED_TOOLS=true` on

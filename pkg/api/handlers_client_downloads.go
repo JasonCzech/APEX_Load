@@ -52,13 +52,11 @@ func downloadPlatform(r *http.Request) string {
 		}
 		return ""
 	case strings.Contains(ua, "macintosh"), strings.Contains(ua, "mac os x"):
+		// Apple Silicon browsers intentionally retain "Intel Mac OS X" in their
+		// compatibility UA, and Intel Macs have no package. Only an explicit
+		// Apple Silicon token is trustworthy.
 		if strings.Contains(ua, "arm64") || strings.Contains(ua, "aarch64") || strings.Contains(ua, "apple silicon") {
 			return "darwin-arm64"
-		}
-		// Apple Silicon browsers intentionally retain "Intel Mac OS X" in their
-		// compatibility UA. Only an explicit architecture token is trustworthy.
-		if strings.Contains(ua, "x86_64") || strings.Contains(ua, "amd64") {
-			return "darwin-amd64"
 		}
 		return ""
 	case strings.Contains(ua, "linux"):
@@ -92,7 +90,6 @@ func sanitizeDownloadPlatform(platform string) string {
 	platform = strings.ReplaceAll(platform, "/", "-")
 	allowed := map[string]struct{}{
 		"darwin-arm64":  {},
-		"darwin-amd64":  {},
 		"windows-amd64": {},
 		"linux-amd64":   {},
 		"linux-arm64":   {},

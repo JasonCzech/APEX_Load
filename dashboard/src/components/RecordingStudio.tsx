@@ -54,7 +54,8 @@ import DeviceCapturePanel from "./DeviceCapturePanel";
 import RecordingMarkerControls from "./RecordingMarkerControls";
 import {
   CLIENT_DOWNLOAD_PLATFORMS,
-  detectPlatformFromNavigator,
+  INTEL_MAC_UNSUPPORTED,
+  detectClientPlatform,
   platformLabel,
 } from "./clientDownloadPlatforms";
 import PageViewToggle from "./PageViewToggle";
@@ -772,6 +773,7 @@ export default function RecordingStudio({
   const [recordingAgentPlatform, setRecordingAgentPlatform] = useState("");
   const [recordingAgentPlatformDetecting, setRecordingAgentPlatformDetecting] =
     useState(true);
+  const [recordingAgentIntelMac, setRecordingAgentIntelMac] = useState(false);
   const [recordingAgentChecksum, setRecordingAgentChecksum] =
     useState<RecordingAgentChecksum | null>(null);
   const [recordingAgentChecksumStatus, setRecordingAgentChecksumStatus] =
@@ -960,10 +962,11 @@ export default function RecordingStudio({
   useEffect(() => {
     let cancelled = false;
     setRecordingAgentPlatformDetecting(true);
-    detectPlatformFromNavigator()
-      .then((platform) => {
+    detectClientPlatform()
+      .then((detected) => {
         if (cancelled) return;
-        setRecordingAgentPlatform(platform || "");
+        setRecordingAgentPlatform(detected.platform || "");
+        setRecordingAgentIntelMac(detected.intelMac);
         setRecordingAgentPlatformDetecting(false);
       })
       .catch(() => {
@@ -2972,6 +2975,14 @@ export default function RecordingStudio({
                               </option>
                             ))}
                           </select>
+                        </div>
+                      )}
+                      {agentDownload.managed && recordingAgentIntelMac && (
+                        <div
+                          className="rec-bridge-install-note"
+                          data-testid="recording-agent-intel-mac"
+                        >
+                          {INTEL_MAC_UNSUPPORTED}
                         </div>
                       )}
                       <div className="rec-bridge-install-note">

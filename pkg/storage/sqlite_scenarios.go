@@ -44,7 +44,7 @@ func prepareScenarioForSave(scenario *Scenario) ([]byte, []byte, []byte, []byte,
 	if scenario.CreatedAt.IsZero() {
 		scenario.CreatedAt = time.Now().UTC()
 	}
-	scenario.UpdatedAt = time.Now().UTC()
+	scenario.UpdatedAt = versionTimestamp()
 	assignmentJSON, err := json.Marshal(scenario.Assignment)
 	if err != nil {
 		return nil, nil, nil, nil, err

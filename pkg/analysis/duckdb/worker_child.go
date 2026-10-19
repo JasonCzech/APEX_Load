@@ -204,7 +204,7 @@ func runWorkerChild(bootstrap *os.File, directory *os.File, commands *os.File, o
 	}
 finished:
 	// Close unblocks the sole owned command reader; never leak it on success.
-	if commands.Close() != nil {
+	if workerCloseCommandChannel(commands) != nil {
 		return 78
 	}
 	if !commandJoined {

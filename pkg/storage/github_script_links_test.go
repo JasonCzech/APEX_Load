@@ -646,6 +646,53 @@ func TestCommitGitHubScriptImportIsAtomicFencedAndIdempotent(t *testing.T) {
 	}
 }
 
+// The importing caller stamps the version. The store keeps it at microseconds,
+// as PostgreSQL does, so the caller's copy stays equal to the stored row.
+func TestCommitGitHubScriptImportStoresVersionAtMicroseconds(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "github-script-import-precision.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	requireProjectFixtures(t, store, "github-project")
+	stamped := time.Date(2026, 10, 18, 12, 0, 0, 123456789, time.UTC)
+	script := &dsl.Script{
+		ID: "script-precise", RefKey: "S-PRECISE", Name: "Precise", Protocol: "http", Version: "1",
+		ProjectID: "github-project", CreatedAt: stamped, UpdatedAt: stamped,
+	}
+	link := func(blob string) *GitHubScriptLink {
+		return &GitHubScriptLink{
+			ScriptID: "script-precise", Owner: "octo", Repo: "scripts", Branch: "main", Path: "precise.json",
+			LastCommitSHA: blob, RemoteBlobSHA: blob, RemoteCommitSHA: "commit-" + blob, ContentHash: "hash-" + blob,
+		}
+	}
+	if outcome, err := store.CommitGitHubScriptImport(script, link("1"), time.Time{}); err != nil || outcome != GitHubScriptImportCreated {
+		t.Fatalf("github import create = %q, %v", outcome, err)
+	}
+	persisted, err := store.GetScript("script-precise")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := stamped.Truncate(time.Microsecond); !script.UpdatedAt.Equal(want) || !persisted.UpdatedAt.Equal(want) {
+		t.Fatalf("created version = %s (stored %s), want %s", script.UpdatedAt, persisted.UpdatedAt, want)
+	}
+
+	updated := *persisted
+	updated.Name = "Precise v2"
+	next := stamped.Add(time.Second + 789*time.Nanosecond)
+	updated.UpdatedAt = next
+	if outcome, err := store.CommitGitHubScriptImport(&updated, link("2"), persisted.UpdatedAt); err != nil || outcome != GitHubScriptImportUpdated {
+		t.Fatalf("github import update = %q, %v", outcome, err)
+	}
+	persisted, err = store.GetScript("script-precise")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := next.Truncate(time.Microsecond); !updated.UpdatedAt.Equal(want) || !persisted.UpdatedAt.Equal(want) {
+		t.Fatalf("updated version = %s (stored %s), want %s", updated.UpdatedAt, persisted.UpdatedAt, want)
+	}
+}
+
 func TestGitHubScriptSyncTargetTablesMigrateBackfillAndDeclareForeignKeys(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "github-script-sync-migration.db")
 	store, err := NewSQLiteStore(path)

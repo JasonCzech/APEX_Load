@@ -6,13 +6,13 @@ import { isDesktopSurface } from '../desktop/desktopBridge'
 import { canSaveApiResourceViaBridge, saveApiResourceViaBridge, startDesktopBrowserDownload } from '../desktop/desktopFiles'
 import { downloadBlob, downloadFilenameFromDisposition } from '../utils/fileUtils'
 import type { VersionResponse } from '../types'
-import { CLIENT_DOWNLOAD_PLATFORMS, detectPlatformFromNavigator, platformLabel } from './clientDownloadPlatforms'
+import { CLIENT_DOWNLOAD_PLATFORMS, INTEL_MAC_UNSUPPORTED, detectClientPlatform, platformLabel } from './clientDownloadPlatforms'
 import './ClientDownloadsMenu.css'
 
-// The five platforms the controller stages packages for (see
-// sanitizeDownloadPlatform in pkg/api). macOS auto-detection only selects a
-// package when the browser exposes an architecture hint; otherwise the picker
-// is safer than sending Intel Macs to the Apple Silicon archive.
+// The four platforms the controller stages packages for (see
+// sanitizeDownloadPlatform in pkg/api). macOS auto-detection only selects the
+// Apple Silicon package when the browser reports that architecture; Intel Macs
+// have no package, and the compatibility user agent cannot tell them apart.
 
 interface DownloadArtifact {
   key: string
@@ -87,11 +87,14 @@ export default function ClientDownloadsMenu() {
   }, [open])
 
   const [detectedPlatform, setDetectedPlatform] = useState<string | null>(null)
+  const [intelMac, setIntelMac] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    detectPlatformFromNavigator().then(platform => {
-      if (!cancelled) setDetectedPlatform(platform)
+    detectClientPlatform().then(detected => {
+      if (cancelled) return
+      setDetectedPlatform(detected.platform)
+      setIntelMac(detected.intelMac)
     })
     return () => {
       cancelled = true
@@ -177,6 +180,7 @@ export default function ClientDownloadsMenu() {
       {open && (
         <div className="client-downloads-panel" role="dialog" aria-label="Download client software">
           <div className="client-downloads-panel-header">Client software</div>
+          {intelMac && <div className="client-downloads-unsupported">{INTEL_MAC_UNSUPPORTED}</div>}
           {ARTIFACTS.map(artifact => {
             const expanded = expandedKey === artifact.key
             return (

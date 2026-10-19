@@ -659,7 +659,8 @@ func TestTrackerFilesExist(t *testing.T) {
 func TestGeneratedDashboardIsFresh(t *testing.T) {
 	command := exec.Command("python3", "../../scripts/qa-generate-dashboard.py",
 		"--root", "../..", "--status", "STATUS.md", "--matrix", "E2E_SUITES.md",
-		"--api-contract", "evidence/M1/api-contract-matrix.json", "--output", "DASHBOARD.md", "--check")
+		"--api-contract", "evidence/M1/api-contract-matrix.json", "--executions", "execution-status.json",
+		"--output", "DASHBOARD.md", "--check")
 	command.Dir = "."
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("QA dashboard freshness: %v\n%s", err, output)

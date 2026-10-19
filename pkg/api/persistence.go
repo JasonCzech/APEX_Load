@@ -844,7 +844,14 @@ func sameStoredTestIdentity(test *ManagedTest, record *storage.TestRecord) bool 
 	if test == nil || record == nil || test.ID != record.ID {
 		return false
 	}
-	if test.durableExecutionGeneration != record.ExecutionGeneration {
+	// Different execution generations are different execution terms (a
+	// successor's adoption advances the term of the same run), so they never
+	// share identity, except for a start whose commit has not returned yet: its
+	// passive operation is still in flight and its row already carries the
+	// generation the start stamped (executionGeneration), which it has not
+	// learned as durable yet.
+	if test.durableExecutionGeneration != record.ExecutionGeneration &&
+		(test.passiveOperationToken == "" || test.executionGeneration == 0 || test.executionGeneration != record.ExecutionGeneration) {
 		return false
 	}
 	// The immutable admission receipt distinguishes replacements even when

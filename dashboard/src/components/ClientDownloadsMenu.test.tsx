@@ -108,7 +108,7 @@ describe("ClientDownloadsMenu", () => {
           .fn()
           .mockResolvedValue({
             platform: "macOS",
-            architecture: "x86",
+            architecture: "arm",
             bitness: "64",
           }),
       },
@@ -156,7 +156,7 @@ describe("ClientDownloadsMenu", () => {
     expect(container.querySelector(".client-downloads-panel")).not.toBeNull();
     expect(container.textContent).toContain("Recording Agent");
     expect(container.textContent).toContain("Desktop App");
-    expect(container.textContent).toContain("Download for macOS (Intel)");
+    expect(container.textContent).toContain("Download for macOS (Apple Silicon)");
   });
 
   it("raises the topbar above the sticky sidebar while the menu is open", async () => {
@@ -193,7 +193,7 @@ describe("ClientDownloadsMenu", () => {
     await flush();
 
     expect(apiFetchMock).toHaveBeenCalledWith(
-      "/downloads/recording-agent/latest?platform=darwin-amd64",
+      "/downloads/recording-agent/latest?platform=darwin-arm64",
     );
     expect(downloadBlobMock).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("Recording Agent download started");
@@ -233,7 +233,7 @@ describe("ClientDownloadsMenu", () => {
     await flush();
 
     expect(startDesktopBrowserDownloadMock).toHaveBeenCalledWith(
-      "/api/v1/downloads/recording-agent/latest?platform=darwin-amd64",
+      "/api/v1/downloads/recording-agent/latest?platform=darwin-arm64",
       "apexload-recording-agent.tar.gz",
     );
     expect(apiFetchMock).not.toHaveBeenCalled();
@@ -247,7 +247,7 @@ describe("ClientDownloadsMenu", () => {
     saveApiResourceViaBridgeMock.mockResolvedValue('saved');
     apiFetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ filename: "apexload-desktop-0.1.0-darwin-amd64.tar.gz" }),
+      json: async () => ({ filename: "apexload-desktop-0.1.0-darwin-arm64.tar.gz" }),
     });
     await render();
     await openPanel();
@@ -261,11 +261,11 @@ describe("ClientDownloadsMenu", () => {
     await flush();
 
     expect(apiFetchMock).toHaveBeenCalledWith(
-      "/downloads/desktop/latest/checksum?platform=darwin-amd64",
+      "/downloads/desktop/latest/checksum?platform=darwin-arm64",
     );
     expect(saveApiResourceViaBridgeMock).toHaveBeenCalledWith(
-      "/api/v1/downloads/desktop/latest?platform=darwin-amd64",
-      "apexload-desktop-0.1.0-darwin-amd64.tar.gz",
+      "/api/v1/downloads/desktop/latest?platform=darwin-arm64",
+      "apexload-desktop-0.1.0-darwin-arm64.tar.gz",
     );
     expect(downloadBlobMock).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Desktop App saved");
@@ -277,7 +277,7 @@ describe("ClientDownloadsMenu", () => {
     saveApiResourceViaBridgeMock.mockResolvedValue('cancelled');
     apiFetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ filename: "apexload-desktop-0.1.0-darwin-amd64.tar.gz" }),
+      json: async () => ({ filename: "apexload-desktop-0.1.0-darwin-arm64.tar.gz" }),
     });
     await render();
     await openPanel();
@@ -302,7 +302,7 @@ describe("ClientDownloadsMenu", () => {
     saveApiResourceViaBridgeMock.mockRejectedValue(new Error('disk is full'));
     apiFetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ filename: "apexload-desktop-0.1.0-darwin-amd64.tar.gz" }),
+      json: async () => ({ filename: "apexload-desktop-0.1.0-darwin-arm64.tar.gz" }),
     });
     await render();
     await openPanel();
@@ -325,7 +325,7 @@ describe("ClientDownloadsMenu", () => {
       ok: false,
       headers: { get: () => null },
       json: async () => ({
-        error: "APEX Load Desktop package for darwin-amd64 is not staged.",
+        error: "APEX Load Desktop package for darwin-arm64 is not staged.",
       }),
     });
     await render();
@@ -357,10 +357,35 @@ describe("ClientDownloadsMenu", () => {
     expect(container.textContent).not.toContain(
       "Download for macOS (Apple Silicon)",
     );
-    expect(container.textContent).not.toContain("Download for macOS (Intel)");
     expect(container.textContent).toContain("Choose a platform:");
     expect(container.textContent).toContain("macOS (Apple Silicon)");
-    expect(container.textContent).toContain("macOS (Intel)");
+    expect(container.textContent).not.toContain("macOS (Intel)");
+    expect(container.querySelector(".client-downloads-unsupported")).toBeNull();
+  });
+
+  it("tells an Intel Mac that it has no package", async () => {
+    Object.defineProperty(window.navigator, "userAgentData", {
+      value: {
+        platform: "macOS",
+        getHighEntropyValues: vi.fn().mockResolvedValue({
+          platform: "macOS",
+          architecture: "x86",
+          bitness: "64",
+        }),
+      },
+      configurable: true,
+    });
+    getVersionMock.mockResolvedValue(deploymentVersion(true));
+    await render();
+    await openPanel();
+
+    expect(
+      container.querySelector(".client-downloads-unsupported")?.textContent,
+    ).toBe(
+      "Intel Macs are not supported. The macOS packages run on Apple Silicon only.",
+    );
+    expect(container.textContent).not.toContain("Download for macOS");
+    expect(container.textContent).toContain("Choose a platform:");
   });
 
   it("closes the panel on an outside click", async () => {
