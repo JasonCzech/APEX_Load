@@ -1431,7 +1431,13 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 	// The generator's own window, before a terminal batch takes on its last.
 	own := batch
 	tr.mu.Lock()
-	defer tr.mu.Unlock()
+	stored := false
+	defer func() {
+		tr.mu.Unlock()
+		if stored {
+			tr.persistTelemetryCheckpoint(test)
+		}
+	}()
 	terminal := isTerminalRemoteLifecycle(batch.LifecycleState)
 	if len(fences) > 0 && !distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fences[0], terminal) &&
 		(terminal || !distributedMetricsStoppingWindowLocked(tr, test, target, fences[0])) {
@@ -1524,6 +1530,7 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 	rebuildRemoteTransactionResponseTimeSLA(test)
 	test.remoteMetricsAcceptedRevision++
 	stageDistributedGoalErrorWindowLocked(tr, test, target, batch)
+	stored = true
 	return true
 }
 
@@ -1539,6 +1546,7 @@ func countDistributedWindowLocked(test *ManagedTest, target string, own generato
 	var window *runTotalsWindow
 	fresh := test.runTotals.newDistributedWindow(target, own)
 	if fresh {
+		retainTelemetryCollectionLocked(test, target, own)
 		counts := distributedWindowCounts(own, test.Groups)
 		window = &counts
 	}
@@ -2022,6 +2030,9 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 	}
 	observationValidUntil := distributedObservationValidUntilLocked(test, batches, time.Now())
 	tr.mu.Unlock()
+	if accepted && !alreadyStored {
+		tr.persistTelemetryCheckpoint(test)
+	}
 
 	// aggregateDistributedMetricsBatches only reads test.ID + the batches
 	// snapshot, so it is safe to run without the lock. Goal-controller mutation

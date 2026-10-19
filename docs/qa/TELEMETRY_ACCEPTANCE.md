@@ -38,6 +38,15 @@ Each fault in TEL-4's matrix names the tests that accept it. The Go tests run in
 |  | `TestCollectionWindowsWireCompatibilityBoundsAndValidation` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
 |  | `TestCollectionWindowsArchiveRetainsIdentityAndPrecision` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
 |  | `TestCollectionWindowsCoordinatedCohortAndUnmeasuredPublication` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
+| Durable controller cursors and source-window recovery | `TestTelemetryCheckpointRoundTripAndReplay` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointRejectsIncompatibleEvidence` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointDurableRestartAndAtomicFailure` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointRetentionAndArchiveCopies` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointArchiveRetainsRecoveredWindows` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointLegacyAndAmbiguousCommit` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointAdoptionDoesNotOverwriteNewerEffects` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointFencesAndOrdering` (`pkg/storage/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointMigrationAndRestart` (`pkg/storage/telemetry_checkpoint_test.go`) | Go |
 | Policy changes | `TestTelemetryPolicySegmentRejectsAnInvalidPolicy` (`pkg/api/telemetry_coverage_test.go`) | Go |
 |  | `TestProjectTelemetryPolicyUpdateChangesOnlyTheOptIn` (`pkg/api/telemetry_stages_test.go`) | Go |
 |  | telemetry policy remains immutable in live, archive and manifest views after settings change (`dashboard/e2e/workflow-telemetry-policy.spec.ts`) | End to end, both profiles |

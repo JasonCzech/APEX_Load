@@ -714,6 +714,8 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 			execution_plan_json TEXT,
 			initial_provenance_json TEXT,
 			timeslot_id TEXT,
+			telemetry_checkpoint_json TEXT,
+			telemetry_checkpoint_revision BIGINT NOT NULL DEFAULT 0,
 			continuity_checkpoint_json TEXT,
 			execution_generation BIGINT NOT NULL DEFAULT 0
 		)`,
@@ -1997,6 +1999,8 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		booleanColumnMigration("tests", "resource_baseline_enabled", false, false),
 		{name: "tests.start_delay", query: `ALTER TABLE tests ADD COLUMN start_delay TEXT`},
 		{name: "tests.initial_provenance_json", query: `ALTER TABLE tests ADD COLUMN initial_provenance_json TEXT`},
+		{name: "tests.telemetry_checkpoint_json", query: `ALTER TABLE tests ADD COLUMN telemetry_checkpoint_json TEXT`},
+		{name: "tests.telemetry_checkpoint_revision", query: `ALTER TABLE tests ADD COLUMN telemetry_checkpoint_revision BIGINT NOT NULL DEFAULT 0`},
 		{name: "tests.continuity_checkpoint_json", query: `ALTER TABLE tests ADD COLUMN continuity_checkpoint_json TEXT`},
 		{name: "tests.execution_generation", query: `ALTER TABLE tests ADD COLUMN execution_generation BIGINT NOT NULL DEFAULT 0`},
 		{name: "scenarios.assignment_json", query: `ALTER TABLE scenarios ADD COLUMN assignment_json TEXT`},

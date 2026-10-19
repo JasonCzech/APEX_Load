@@ -1,0 +1,8 @@
+Task cache usage before: 9952784 KiB
+go clean -cache -testcache: passed with the task GOCACHE.
+Removed task GOTMPDIR and worktree Vite caches.
+Total:	0B
+Task cache usage after: 8 KiB; reclaimed 9952776 KiB (9.49 GiB).
+No task-owned build, controller or durable-help process remained before cleanup.
+Disposable PostgreSQL container and its anonymous volume removed; four pre-existing service containers preserved.
+Browser CLI session durable-help closed. Dependencies, application data and tested dashboard output preserved.

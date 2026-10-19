@@ -250,14 +250,22 @@ func (l *telemetrySourceLedger) observeCoverage(source string, batch generatorrp
 	cursor := l.cursors[source]
 	if cursor != nil {
 		if cursor.key != key {
-			// Generation fencing precedes epoch start time. Within one
-			// generation use the same epoch ordering as the live receiver:
-			// an unorderable or older process cannot replace the current one.
+			// An earlier generation never replaces current evidence. Within
+			// a generation, preserve the live receiver's terminal and epoch
+			// ordering rules as well.
 			if key.generation < cursor.key.generation || key.generation == cursor.key.generation &&
 				(cursor.terminal || key.epoch == "" || cursor.key.epoch != "" && batch.SourceEpochStartedUnixMs <= cursor.epochStartedMs) {
 				return
 			}
-			cursor = nil
+			// Adoption changes the execution generation, not the generator's
+			// collection identity. Preserve deduplication but never bridge the
+			// unobserved takeover gap with a receipt-time window.
+			previous := cursor
+			cursor = &coverageCursor{key: key, epochStartedMs: batch.SourceEpochStartedUnixMs}
+			if previous.key.epoch == key.epoch && key.epoch != "" {
+				cursor.collection = previous.collection
+			}
+			l.cursors[source] = cursor
 		} else if cursor.terminal || cursor.sequence > 0 && batch.BatchSequence <= cursor.sequence {
 			return
 		}

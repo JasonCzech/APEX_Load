@@ -1,0 +1,9 @@
+2026/10/19 15:44:14 INFO execution leadership acquired owner=adoption-controller/6bc9cb61fd9e7812/1
+2026/10/19 15:44:14 WARN telemetry checkpoint not committed; recovery retains earlier evidence test_id=durable-run error="injected lost commit reply"
+2026/10/19 15:44:14 WARN telemetry checkpoint unavailable for recovery test_id=durable-run error="incompatible telemetry checkpoint"
+--- FAIL: TestTelemetryCoverageNewEpochRestartsCollectionIdentity (0.00s)
+    --- FAIL: TestTelemetryCoverageNewEpochRestartsCollectionIdentity/true (0.00s)
+        telemetry_coverage_replay_test.go:174: new epoch lost its windows or bridged the restart gap: {WindowStart:2027-01-15 08:00:00 +0000 UTC WindowEnd:2027-01-15 08:00:05 +0000 UTC WindowMs:5000 ObservedMs:1000 UnknownMs:4000 Sources:[{Source:gen-a ObservedMs:1000 RequiredMs:5000 UnknownMs:4000 Truncated:false}] Truncated:false ObserverLost: SourceRequirements:true}
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/api	1.955s
+FAIL

@@ -667,7 +667,8 @@ func (tr *TestRunner) installRunAdoptionHandlesLocked(b *distributedExecutionBac
 	return nil
 }
 
-// adoptedRunTotals starts a taken-over run's totals from its stored history,
+// adoptedRunTotals uses the atomic telemetry checkpoint when available.
+// Legacy recovery starts a taken-over run's totals from its stored history,
 // not from a copy this process kept: a standby may hold an early hydration of
 // the run, and a former owner its own count up to when it lost the run. The
 // stored windows carry no run totals, so the start is their sum, bounded and
@@ -675,6 +676,13 @@ func (tr *TestRunner) installRunAdoptionHandlesLocked(b *distributedExecutionBac
 // history the run holds, at its next window. It is read when the run resumes,
 // after its generators are secured and before any of its windows is counted.
 func (tr *TestRunner) adoptedRunTotals(test *ManagedTest) runTotalsAccumulator {
+	tr.mu.RLock()
+	if test.telemetryCheckpointRestored {
+		totals := test.runTotals
+		tr.mu.RUnlock()
+		return totals
+	}
+	tr.mu.RUnlock()
 	var totals runTotalsAccumulator
 	if tr.historyStore == nil {
 		return totals
@@ -691,8 +699,19 @@ func (tr *TestRunner) adoptedRunTotals(test *ManagedTest) runTotalsAccumulator {
 	return totals
 }
 
+// installAdoptedRunTotalsLocked never replaces restored live state with the
+// earlier copy captured before stream installation. A terminal collection may
+// have been counted while streams were opening; its cursor and effects must
+// remain together. Legacy history seeding retains its existing behavior.
+func installAdoptedRunTotalsLocked(test *ManagedTest, legacy runTotalsAccumulator) {
+	if !test.telemetryCheckpointRestored {
+		test.runTotals = legacy
+	}
+}
+
 func (tr *TestRunner) installAdoptedRun(b *distributedExecutionBackend, candidate *runAdoptionCandidate, adopted, completed, archives map[string]generatorClient, generation uint64, ownerID string) {
 	test := candidate.test
+	tr.restoreTelemetryCheckpoint(test, generation)
 	// cloneClientMap returns nil for an empty map, and a run whose generators
 	// all finished during the gap has no adopted clients.
 	all := make(map[string]generatorClient, len(adopted)+len(completed))
@@ -771,6 +790,7 @@ func (tr *TestRunner) failRunAdoption(b *distributedExecutionBackend, test *Mana
 // outcome Phase B applies. Only adopted generators are stopped; the others in
 // clients (already stopped or finished) serve the archive.
 func (tr *TestRunner) bindRunAdoptionOutcome(b *distributedExecutionBackend, test *ManagedTest, clients, adopted, completed, archives map[string]generatorClient, generation uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, targets []string, status, message string) {
+	tr.restoreTelemetryCheckpoint(test, generation)
 	tr.mu.Lock()
 	err := tr.installRunAdoptionHandlesLocked(b, test, clients, nil, token)
 	if err == nil {
@@ -1257,7 +1277,7 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 	test.remoteMetricsStream = streams[first]
 	test.remoteMetricsStreamsByTarget = cloneMetricsStreamMap(streams)
 	test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
-	test.runTotals = runTotals
+	installAdoptedRunTotalsLocked(test, runTotals)
 	stopping := test.Status == "STOPPING"
 	if !stopping {
 		test.remoteFinalizing = false

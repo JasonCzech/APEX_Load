@@ -531,6 +531,10 @@ func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
 }
 
 type ManagedTest struct {
+	telemetryCheckpointRevision int64
+	telemetryCheckpointRestored bool
+	telemetryCheckpointReadOnly bool
+
 	MonitorBindings *storage.MonitorBindings `json:"monitor_bindings,omitempty"`
 	TraceContext    *RunTraceContextSettings `json:"trace_context,omitempty"`
 	MonitorWarnings []string                 `json:"monitor_warnings,omitempty"`
