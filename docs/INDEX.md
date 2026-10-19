@@ -13,9 +13,7 @@ kept for planning or audit context only.
 | [HELP_CENTER.md](HELP_CENTER.md#build-and-run-your-first-test) | Current | In-app help: first test, capabilities, support, changes, and troubleshooting |
 | [README.md](../README.md) | Current | Project overview, quick start, and primary links |
 | [APPLICATION_USER_GUIDE.md](APPLICATION_USER_GUIDE.md) | Current | End-user guide to the dashboard application |
-| [Browser findings](guides/BROWSER_FINDINGS.md) | Current | Server findings, qualified scores and missing-evidence interpretation |
-| [Browser intelligence workflows](guides/BROWSER_INTELLIGENCE_WORKFLOWS.md) | Current | Report navigation, policies, saved panels, exports, CLI and MCP |
-| [Journey accounting](guides/JOURNEY_ACCOUNTING.md) | Current | Journey definitions, attempts, outcomes and interaction attribution |
+| [Browser intelligence workflows](guides/BROWSER_INTELLIGENCE_WORKFLOWS.md) | Current | Report workflows, finding/score contracts, journey accounting, gesture patterns, heatmaps, CLI and MCP |
 | [Browser document evidence](guides/BROWSER_DOCUMENT_EVIDENCE.md) | Current | Opt-in capture, lifecycle populations, bounded live/archive inspection and qualification limits |
 | [HTTP/3 and QUIC](guides/HTTP3_AND_QUIC.md) | Preview | Version policies, QUIC settings, import mapping, results, and operator enablement, egress and buffers |
 | [Retained resource inspection](guides/RETAINED_RESOURCE_INSPECTION.md) | Current | Authorized bounded archive resource pages, exact filters, native availability and CLI inspection |

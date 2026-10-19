@@ -150,6 +150,27 @@
     "owner": "APEX Load maintainers"
   },
   {
+    "id": "browser-intelligence",
+    "area": "user-guide",
+    "title": "Browser intelligence workflows",
+    "path": "docs/guides/BROWSER_INTELLIGENCE_WORKFLOWS.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "browser-interaction-evidence",
+    "area": "user-guide",
+    "title": "Browser interaction evidence",
+    "path": "docs/guides/BROWSER_INTERACTION_EVIDENCE.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "browser-har-ownership",
+    "area": "user-guide",
+    "title": "Native HAR working-file ownership",
+    "path": "docs/guides/BROWSER_HAR_WORKING_OWNERSHIP.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
     "id": "telemetry-policy-receipts",
     "area": "user-guide",
     "title": "Telemetry budget policy receipts",

@@ -6,6 +6,28 @@ import { apiGuideHashForToggle, apiGuideToggleOptions, helpAreaForPage } from '.
 
 const first = helpArticles.find(a => a.id === 'first-test')!
 describe('Help catalogue and content contracts', () => {
+  it('keeps consolidated browser interpretation searchable and links capture contracts in app', async () => {
+    const article = helpArticles.find(value => value.id === 'browser-intelligence')!
+    const source = await loadHelpSource(article)
+    expect(searchHelp([{ article, source }], 'weighted test-journey risk')).toHaveLength(1)
+    expect(source).not.toContain("run report's Diagnostics")
+    expect(resolveHelpLink('#the-browser-area-of-a-run-report', article, source)).toBe(helpArticleHash(article, 'the-browser-area-of-a-run-report'))
+    expect(source).toContain('remaining metrics are never renormalized')
+    expect(source).toContain('never revenue or conversion impact')
+    for (const section of ['score', 'journey-accounting', 'patterns-and-heatmaps']) {
+      expect(articleForSection(article.path, section, source)?.id).toBe(article.id)
+      expect(resolveHelpLink(`#${section}`, article, source)).toBe(helpArticleHash(article, section))
+    }
+    for (const id of ['browser-document-evidence', 'browser-interaction-evidence', 'browser-har-ownership', 'retained-resource-inspection']) {
+      const target = helpArticles.find(value => value.id === id)!
+      expect(await loadHelpSource(target)).not.toBe('')
+      expect(resolveHelpLink(target.path.split('/').pop()!, article, source)).toBe(helpArticleHash(target))
+    }
+    const capture = helpArticles.find(value => value.id === 'browser-interaction-evidence')!
+    const captureSource = await loadHelpSource(capture)
+    expect(captureSource).not.toContain('| `scripted_repetition` |')
+    expect(resolveHelpLink('BROWSER_INTELLIGENCE_WORKFLOWS.md#patterns-and-heatmaps', capture, captureSource)).toBe(helpArticleHash(article, 'patterns-and-heatmaps'))
+  })
   it('bundles retained resource inspection with searchable bounded-page guidance and honest coverage', async () => {
     const article = helpArticles.find(value => value.id === 'retained-resource-inspection')!
     expect(article.path).toBe('docs/guides/RETAINED_RESOURCE_INSPECTION.md')
