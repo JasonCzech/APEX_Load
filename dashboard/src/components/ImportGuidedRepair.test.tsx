@@ -8,6 +8,30 @@ const mock = vi.hoisted(() => ({ request: vi.fn() }))
 vi.mock('../hooks/apiClient', () => mock)
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+it.each([false, true])('points to the Content-Type header for an XML body in a JSON request (protected review: %s)', async protectedReview => {
+  const code = 'request_body_xml_json_content_type_mismatch'
+  const script = { name: 'SOAP draft', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [{
+    name: 'SOAP request', type: 'POST', target: '/', body: '<Envelope/>', headers: { 'Content-Type': 'application/json' },
+    metadata: { execution_blocker: code, source_file: 'Action.c', source_line: 7 },
+  }], metadata: { import: { preserved: protectedReview ? { server_import_attestation_v1: 'protected:xml-header' } : {} } } } as ScriptDefinition
+  const detail = "The request body is XML, but the Content-Type header declares JSON. Update this request's Content-Type header to the XML media type expected by the service, then re-import and validate."
+  if (protectedReview) mock.request.mockResolvedValue({ candidate_id: 'protected:xml-header', revision: 'protected:xml-header', script, before: script, findings: [{ code, action_path: 'actions[0]', source_ref: 'Action.c:7', detail, gate: 'execution' }], readiness: { replay_ready: false }, expires_at: '2099-09-19', fidelity_report: {} })
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container); const onViewSource = vi.fn()
+  try {
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={vi.fn()} onViewSource={onViewSource} />))
+    const issue = container.querySelector<HTMLButtonElement>('.lr-issue-row')!
+    expect(issue.textContent).toContain('Body is XML but Content-Type declares JSON — Action.c:7')
+    await act(async () => issue.click())
+    expect(container.querySelector('[aria-label="Problem and impact"]')?.textContent).toContain(detail)
+    expect(container.querySelector('[aria-label="Repair operation"]')).toBeNull()
+    const inspect = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Inspect Action.c:7')!
+    await act(async () => inspect.click())
+    expect(onViewSource).toHaveBeenCalledWith('actions[0]', expect.objectContaining({ code, source_ref: 'Action.c:7' }))
+    expect(script.actions[0].headers?.['Content-Type']).toBe('application/json')
+  } finally { await act(async () => root.unmount()); container.remove(); vi.clearAllMocks() }
+})
+
 it('requires a redacted preview before applying and retains the reviewed operation', async () => {
   const script = { name: 'Protected draft', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [], metadata: { import: { source: 'enterprise_script_archive', preserved: { server_import_attestation_v1: 'protected:one' } } } } as ScriptDefinition
   const result = { candidate_id: 'protected:one', revision: 'protected:one', script, before: script, findings: [{ code: 'restored_body_required', action_path: 'actions[0]', source_ref: 'Action.c:3', detail: 'Restore this body' }], readiness: { replay_ready: false, blocking_codes: ['restored_body_required'] }, expires_at: '2099-09-19', fidelity_report: {} }

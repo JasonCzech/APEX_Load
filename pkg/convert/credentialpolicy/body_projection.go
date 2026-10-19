@@ -2,8 +2,10 @@ package credentialpolicy
 
 import (
 	"bytes"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"strconv"
 	"strings"
@@ -81,6 +83,15 @@ func projectRequestBody(payload []byte, contentType string, options Options, spa
 	switch kind {
 	case "json":
 		projected, replaced, result, queries, err := projectJSONSpans(payload, options)
+		// Refine the diagnosis without changing the declared codec, retained
+		// bytes, credential disclosure handling, or execution disposition.
+		for index := range result.Findings {
+			if result.Findings[index].Code == "credential_json_malformed" &&
+				(mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")) &&
+				requestBodyIsXML(trimmed, options.Limits) {
+				result.Findings[index].Code = "request_body_xml_json_content_type_mismatch"
+			}
+		}
 		if err != nil || result.Disposition == Rejected || projected == nil {
 			return projected, result, err
 		}
@@ -142,6 +153,44 @@ func projectRequestBody(payload []byte, contentType string, options Options, spa
 			return []byte(credential.Redacted), exactResult(), nil
 		}
 		return append([]byte(nil), payload...), exactResult(), nil
+	}
+}
+
+// requestBodyIsXML only identifies complete XML documents within the existing
+// inspection limits. A leading '<' alone is not enough to diagnose a mismatch.
+func requestBodyIsXML(payload []byte, limits Limits) bool {
+	if len(payload) == 0 || payload[0] != '<' || len(payload) > limits.MaxBytes {
+		return false
+	}
+	decoder := xml.NewDecoder(bytes.NewReader(payload))
+	depth, values := 0, 0
+	seenRoot := false
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return seenRoot && depth == 0
+		}
+		if err != nil {
+			return false
+		}
+		switch token := token.(type) {
+		case xml.StartElement:
+			if depth == 0 && seenRoot {
+				return false
+			}
+			seenRoot = true
+			depth++
+			values += 1 + len(token.Attr)
+			if depth > limits.MaxDepth || values > limits.MaxValues {
+				return false
+			}
+		case xml.EndElement:
+			depth--
+		case xml.CharData:
+			if depth == 0 && len(bytes.TrimSpace(token)) > 0 {
+				return false
+			}
+		}
 	}
 }
 

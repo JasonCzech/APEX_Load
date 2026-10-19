@@ -652,6 +652,8 @@ func projectionFindingResolution(finding credentialpolicy.Finding) string {
 
 func projectionFindingDetail(finding credentialpolicy.Finding) string {
 	switch finding.Code {
+	case "request_body_xml_json_content_type_mismatch":
+		return importreview.XMLBodyJSONContentTypeDetail
 	case "import_credential_preserved":
 		return "the imported credential was retained in the runnable destination script and should be reviewed by the operator"
 	case "import_credential_review_incomplete":

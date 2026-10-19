@@ -22,6 +22,10 @@ const (
 	GateExecution GateScope = "execution"
 )
 
+// XMLBodyJSONContentTypeDetail is shared by initial conversion and findings
+// reconstructed from a persisted draft's execution gates.
+const XMLBodyJSONContentTypeDetail = "The request body is XML, but the Content-Type header declares JSON. Update this request's Content-Type header to the XML media type expected by the service, then re-import and validate."
+
 // Finding is one deterministic conversion or readiness decision.
 type Finding struct {
 	Code                    string        `json:"code"`
@@ -351,11 +355,15 @@ func FindingsFromScript(script *dsl.Script) ([]Finding, error) {
 			executionCodes = append(executionCodes, code)
 		}
 		for _, code := range uniqueSorted(executionCodes) {
+			detail := "imported behavior has an unresolved execution blocker"
+			if code == "request_body_xml_json_content_type_mismatch" {
+				detail = XMLBodyJSONContentTypeDetail
+			}
 			findings = append(findings, Finding{
 				Code:       code,
 				Severity:   diag.Blocker,
 				Element:    element,
-				Detail:     "imported behavior has an unresolved execution blocker",
+				Detail:     detail,
 				Location:   ref.Path,
 				ActionPath: ref.Path,
 				Source:     reviewSource,

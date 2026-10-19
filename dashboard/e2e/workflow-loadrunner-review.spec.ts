@@ -5,6 +5,45 @@ import path from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { test, expect, mutation, json, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
+import { storedZip } from './support/zip'
+
+test('LoadRunner validation identifies the JSON Content-Type header on an XML request', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const workspace = await createWorkspace(page.context().request)
+  const source = [
+    'Action()', '{', '', '    // Synthetic SOAP request.', '', '',
+    '    web_rest("SOAP request",',
+    '        "URL=https://example.invalid/service", "Method=POST",',
+    '        "Body=<Envelope><Body><Ping/></Body></Envelope>",',
+    '        HEADERS, "Name=Content-Type", "Value=application/json", ENDHEADER, LAST);',
+    '    return 0;', '}',
+  ].join('\n')
+  // Generate a synthetic archive without including the operator's source data.
+  const archive = storedZip([
+    { name: 'XMLHeader.usr', content: '[General]\nType=Web\n[Actions]\nAction1=Action.c\n' },
+    { name: 'Action.c', content: source },
+  ])
+  await page.goto(`/#/scripts?mode=import&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles({ name: 'xml-json-header.usz', mimeType: 'application/zip', buffer: archive })
+  const validated = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
+  await page.getByRole('button', { name: 'Validate Script', exact: true }).click()
+  const draft = canonicalImportDraft(await json(await validated))
+  expect(draft.actions[0].headers?.['Content-Type']).toBe('application/json')
+  const repair = page.getByRole('region', { name: 'Guided import repair' })
+  const issue = repair.getByRole('button', { name: /Body is XML but Content-Type declares JSON — Action\.c:7/ })
+  await expect(issue).toBeVisible()
+  await issue.click()
+  const impact = repair.getByRole('region', { name: 'Problem and impact' })
+  await expect(impact).toContainText(/body is XML.*Content-Type.*JSON/)
+  await expect(impact).toContainText(/(?:[Ff]ix|[Cc]hange|[Uu]pdate).*Content-Type header/)
+  await expect(repair.getByRole('combobox', { name: 'Repair operation' })).toHaveCount(0)
+  await expect(repair.getByRole('button', { name: /credential_json_malformed|json malformed/ })).toHaveCount(0)
+  await repair.screenshot({ path: testInfo.outputPath('xml-json-content-type-message.png') })
+  await repair.getByRole('button', { name: 'Inspect Action.c:7', exact: true }).click()
+  await expect(page.getByRole('tab', { name: 'Source Mapping', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('navigation', { name: 'Review mapping navigation' })).toBeVisible()
+})
 
 for (const scenario of [
   { file: 'transaction-labels.zip', text: 'Ready to save' },

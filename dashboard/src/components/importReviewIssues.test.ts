@@ -49,6 +49,20 @@ describe('import issue queue', () => {
     expect(issueRepairOptions('legacy_tls_replacement').map(o => o.value)).toEqual(['select_tls'])
     expect(issueRepairOptions('unknown_unsupported')).toEqual([])
   })
+  it('identifies the Content-Type header to fix without misclassifying malformed JSON', () => {
+    const s = { ...script, actions: [{ name: 'SOAP request', type: 'POST', target: '/', metadata: {
+      execution_blocker: 'request_body_xml_json_content_type_mismatch', source_file: 'Action.c', source_line: 7,
+    } }] } as ScriptDefinition
+    const findings = draftImportFindings(s)
+    expect(findings[0].detail).toContain('The request body is XML, but the Content-Type header declares JSON.')
+    expect(findings[0].detail).toContain("Update this request's Content-Type header")
+    expect(findings[0].detail).toContain('then re-import and validate')
+    expect(groupImportFindings(findings, s)[0]).toMatchObject({
+      title: 'Body is XML but Content-Type declares JSON — Action.c:7', category: 'review', blocking: true,
+    })
+    expect(issueRepairOptions(findings[0].code)).toEqual([])
+    expect(issueTitle('credential_json_malformed')).not.toContain('XML')
+  })
 })
 
 it('preserves warning details and only focuses an unambiguous source mapping', async () => {

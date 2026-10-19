@@ -34,7 +34,7 @@ export function draftImportFindings(script: ScriptDefinition): ImportFinding[] {
     const blockers = [...strings(meta.execution_blockers), ...(typeof meta.execution_blocker === 'string' ? [meta.execution_blocker] : [])]
     const reviews = strings(meta.review_reasons)
     if (!blockers.length && !reviews.length && (meta.review_required === true || meta.promotion_blocker === true)) reviews.push('import_review_required')
-    return [...blockers.map(code => ({ code, gate: 'execution' })), ...reviews.map(code => ({ code, gate: 'promotion' }))].map(f => ({ ...f, action_path: path, source_ref: meta.source_file ? `${meta.source_file}:${meta.source_line || ''}` : '', detail: '' }))
+    return [...blockers.map(code => ({ code, gate: 'execution' })), ...reviews.map(code => ({ code, gate: 'promotion' }))].map(f => ({ ...f, action_path: path, source_ref: meta.source_file ? `${meta.source_file}:${meta.source_line || ''}` : '', detail: f.code === 'request_body_xml_json_content_type_mismatch' ? "The request body is XML, but the Content-Type header declares JSON. Update this request's Content-Type header to the XML media type expected by the service, then re-import and validate." : '' }))
   })
 }
 export function findingCategory(code: string): IssueCategory {
@@ -51,6 +51,7 @@ const LOADRUNNER_PARITY_ISSUE_TITLES: Record<string, string> = {
   html_form_requires_page_context: 'Verify form submitted without its page',
   request_body_variant_unsupported: 'Rebuild unsupported request body',
   request_body_file_missing: 'Add the missing request body file',
+  request_body_xml_json_content_type_mismatch: 'Body is XML but Content-Type declares JSON',
   parameter_helper_unsupported: 'Review the parameter helper options',
   request_argument_unsupported: 'Review unsupported request attributes',
   request_argument_review: 'Review request side effects',
