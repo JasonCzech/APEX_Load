@@ -766,6 +766,9 @@ func (s *SQLiteStore) CommitGitHubScriptImport(script *dsl.Script, link *GitHubS
 		return GitHubScriptImportConflict, fmt.Errorf("github script import requires matching script and link ids")
 	}
 	script.ProjectID = normalizeProjectID(strings.TrimSpace(script.ProjectID))
+	// The caller stamps this import's version. Keep it at the precision
+	// versionTimestamp uses, so the caller's copy equals the stored row.
+	script.UpdatedAt = script.UpdatedAt.Truncate(time.Microsecond)
 	link.Owner = strings.TrimSpace(link.Owner)
 	link.Repo = strings.TrimSpace(link.Repo)
 	link.Branch = strings.TrimSpace(link.Branch)

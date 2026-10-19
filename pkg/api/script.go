@@ -329,7 +329,9 @@ func (tr *TestRunner) StoreGitHubScriptImportDurable(
 	if err != nil {
 		return nil, storage.GitHubScriptImportConflict, err
 	}
-	now := time.Now().UTC()
+	// Script versions are stored at microseconds, so a newer version must be
+	// at least a microsecond later.
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	var expectedUpdatedAt time.Time
 	if current == nil {
 		sequence, err := tr.nextScriptSeqLocked()
@@ -353,7 +355,7 @@ func (tr *TestRunner) StoreGitHubScriptImportDurable(
 			projected.UpdatedAt = current.UpdatedAt
 		} else {
 			if !now.After(current.UpdatedAt) {
-				now = current.UpdatedAt.Add(time.Nanosecond)
+				now = current.UpdatedAt.Truncate(time.Microsecond).Add(time.Microsecond)
 			}
 			projected.UpdatedAt = now
 		}

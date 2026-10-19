@@ -16,7 +16,7 @@ if [[ ! "$VERSION" =~ $SEMVER_RE ]]; then
 fi
 BI="github.com/jasonczech/apexload/pkg/buildinfo"
 DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist/recording-agent}"
-PLATFORMS="${PLATFORMS:-darwin/arm64 darwin/amd64 windows/amd64 linux/amd64 linux/arm64}"
+PLATFORMS="${PLATFORMS:-darwin/arm64 windows/amd64 linux/amd64 linux/arm64}"
 MACOS_CODESIGN_IDENTITY="${APEXLOAD_MACOS_CODESIGN_IDENTITY:-${MACOS_CODESIGN_IDENTITY:-}}"
 MACOS_NOTARIZE="${APEXLOAD_MACOS_NOTARIZE:-${MACOS_NOTARIZE:-0}}"
 MACOS_NOTARY_PROFILE="${APEXLOAD_MACOS_NOTARY_PROFILE:-${MACOS_NOTARY_PROFILE:-}}"
@@ -265,7 +265,7 @@ for platform in $PLATFORMS; do
   GOOS="${platform%/*}"
   GOARCH="${platform#*/}"
   case "$GOOS/$GOARCH" in
-    darwin/arm64|darwin/amd64|windows/amd64|linux/amd64|linux/arm64) ;;
+    darwin/arm64|windows/amd64|linux/amd64|linux/arm64) ;;
     *)
       echo "Unsupported recording-agent package platform '$GOOS/$GOARCH'." >&2
       exit 1

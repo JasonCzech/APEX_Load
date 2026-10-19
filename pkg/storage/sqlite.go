@@ -47,6 +47,14 @@ const (
 	storeDialectPostgres storeDialect = "postgres"
 )
 
+// versionTimestamp stamps a row's updated_at version at microseconds, the
+// precision PostgreSQL keeps, so the copy a writer holds after saving
+// compares equal to the stored value on every backend. Optimistic writes
+// compare that version exactly.
+func versionTimestamp() time.Time {
+	return time.Now().UTC().Truncate(time.Microsecond)
+}
+
 type storeDB struct {
 	db      *sql.DB
 	dialect storeDialect

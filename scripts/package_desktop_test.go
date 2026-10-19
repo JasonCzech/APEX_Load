@@ -263,7 +263,7 @@ func TestDesktopPackagePublishesFakeChecksumSignatureOnce(t *testing.T) {
 }
 
 func TestDesktopPackageVerifiesRetainedPlatformBeforeReissuingManifest(t *testing.T) {
-	const retainedName = "apexload-desktop-1.2.3-darwin-amd64.tar.gz"
+	const retainedName = "apexload-desktop-1.2.3-darwin-arm64.tar.gz"
 	retainedBytes := []byte("known prior platform package")
 	retainedHash := sha256.Sum256(retainedBytes)
 	result := runFakeLinuxDesktopPackageWithOptions(t, "shlibs:Depends=libc6 (>= 2.34)\n", fakeLinuxDesktopPackageOptions{

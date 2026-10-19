@@ -75,6 +75,9 @@ fi
   || die "manifest commit does not match the verified release tag commit"
 [[ "$(jq -r '.canonical_apexctl_version' "$manifest")" == "$expected_tag" ]] \
   || die "canonical apexctl version mismatch"
+# apexctl and the desktop client ship for the same platforms. Releases before
+# macOS Intel was dropped also carry darwin/amd64, and deployments still verify
+# them.
 jq -e '
   . as $root |
   (.commit | test("^[0-9a-f]{40}$")) and
@@ -98,10 +101,10 @@ jq -e '
     ($image_set == [["controller", "enterprise"], ["controller", "standard"], ["generator", "enterprise"], ["generator", "standard"]]) or
     ($image_set == [["controller", "enterprise"], ["controller", "standard"], ["generator", "enterprise"], ["generator", "standard"], ["java-vuser-runner", "standard"]]) or
     ($image_set == [["browser-generator", "standard"], ["controller", "enterprise"], ["controller", "standard"], ["generator", "enterprise"], ["generator", "standard"], ["java-vuser-runner", "standard"]])) and
-  (.binaries | length == 5) and
-  ([.binaries[] | [.os, .architecture]] | unique | length == 5) and
-  (.desktop_clients | length == 5) and
-  ([.desktop_clients[] | [.os, .architecture]] | unique | length == 5) and
+  (([.binaries[] | [.os, .architecture]] | sort) as $client_platforms |
+    (($client_platforms == [["darwin", "arm64"], ["linux", "amd64"], ["linux", "arm64"], ["windows", "amd64"]]) or
+     ($client_platforms == [["darwin", "amd64"], ["darwin", "arm64"], ["linux", "amd64"], ["linux", "arm64"], ["windows", "amd64"]])) and
+    ([.desktop_clients[] | [.os, .architecture]] | sort) == $client_platforms) and
   ((.schema_version == 1) or (
     (.schema_version == 2) and
     (.desktop_installers | length == 2) and

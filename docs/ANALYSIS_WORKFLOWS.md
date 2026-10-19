@@ -20,9 +20,9 @@ Native Parquet operations additionally require `CGO_ENABLED=1` and the
 `Dockerfile.controller`, and desktop packaging includes the tag. The ordinary
 Go build and `Dockerfile` preserve the CGO-free profile, whose capabilities
 response explicitly reports that native Parquet is unavailable. Generator and
-collector builds do not import DuckDB. Native build/test lanes cover Linux and
-macOS amd64/arm64 and Windows amd64; a CI lane is not evidence that its current
-run has passed.
+collector builds do not import DuckDB. Native build/test lanes cover Linux
+amd64/arm64, macOS arm64 and Windows amd64; a CI lane is not evidence that its
+current run has passed.
 
 DuckDB databases are process-local, disposable caches. SQLite/PostgreSQL owns
 metadata, revisions and publication state. The configured archive backend owns

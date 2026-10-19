@@ -705,7 +705,6 @@ func TestReleaseArtifactNormalizationSupportsActualGitHubArtifactLayouts(t *test
 				"release-core-assets",
 				"release-client-linux-amd64",
 				"release-client-linux-arm64",
-				"release-client-macos-amd64",
 				"release-client-macos-arm64",
 				"release-client-windows-amd64",
 				"release-image-controller-standard",
@@ -761,7 +760,6 @@ func TestReleaseInputDownloaderKeepsExactArtifactsSeparated(t *testing.T) {
 		"release-core-assets",
 		"release-client-linux-amd64",
 		"release-client-linux-arm64",
-		"release-client-macos-amd64",
 		"release-client-macos-arm64",
 		"release-client-windows-amd64",
 		"release-image-controller-standard",
@@ -786,7 +784,6 @@ func TestReleaseArtifactNormalizationRejectsDuplicateBasenames(t *testing.T) {
 		"release-core-assets",
 		"release-client-linux-amd64",
 		"release-client-linux-arm64",
-		"release-client-macos-amd64",
 		"release-client-macos-arm64",
 		"release-client-windows-amd64",
 		"release-image-controller-standard",
@@ -1002,4 +999,129 @@ func extractWorkflowRunStep(t *testing.T, workflow, stepName string) string {
 		t.Fatalf("workflow step %q has an empty run block", stepName)
 	}
 	return script.String()
+}
+
+// create-manifest.py and verify-release.sh each encode the release's client
+// platforms. A manifest the creator writes must verify, and so must a release
+// from before macOS Intel was dropped: deployments verify older tags.
+func TestCreatedReleaseManifestPassesVerification(t *testing.T) {
+	const tag = "v1.2.3"
+	commit := strings.Repeat("a", 40)
+	workingDir := t.TempDir()
+	assets := filepath.Join(workingDir, "assets")
+	metadata := filepath.Join(workingDir, "image-metadata")
+	writeAsset := func(name string) {
+		writeSupplyChainFile(t, assets, name, []byte(name+"\n"))
+	}
+	for _, name := range []string{
+		"apexctl_1.2.3_linux_amd64", "apexctl_1.2.3_linux_arm64", "apexctl_1.2.3_darwin_arm64", "apexctl_1.2.3_windows_amd64.exe",
+		"apexload-desktop-1.2.3-linux-amd64.tar.gz", "apexload-desktop-1.2.3-linux-arm64.tar.gz",
+		"apexload-desktop-1.2.3-darwin-arm64.tar.gz", "apexload-desktop-1.2.3-windows-amd64.tar.gz",
+		"apexload-desktop-1.2.3-linux-amd64.deb", "apexload-desktop-1.2.3-linux-arm64.deb",
+		"apexload-server_1.2.3_linux_amd64.tar.gz", "apexload-server_1.2.3_linux_arm64.tar.gz",
+		"apexload-1.2.3.tgz", "apexload-appservice_1.2.3_linux_amd64.zip",
+	} {
+		writeAsset(name)
+	}
+	digest := func(seed string) string {
+		sum := sha256.Sum256([]byte(seed))
+		return "sha256:" + hex.EncodeToString(sum[:])
+	}
+	for _, image := range [][2]string{
+		{"controller", "standard"}, {"controller", "enterprise"}, {"generator", "standard"},
+		{"generator", "enterprise"}, {"java-vuser-runner", "standard"}, {"browser-generator", "standard"},
+	} {
+		var platforms []map[string]string
+		for _, architecture := range []string{"amd64", "arm64"} {
+			sbom := "sbom-apexload-" + image[0] + "-" + image[1] + "-linux-" + architecture + ".spdx.json"
+			writeAsset(sbom)
+			sum := sha256.Sum256([]byte(sbom + "\n"))
+			platforms = append(platforms, map[string]string{
+				"os": "linux", "architecture": architecture, "digest": digest(sbom),
+				"sbom_asset": sbom, "sbom_sha256": hex.EncodeToString(sum[:]),
+			})
+		}
+		row, err := json.Marshal(map[string]any{
+			"component": image[0], "profile": image[1], "repository": "ghcr.io/example/apexload-" + image[0],
+			"digest": digest(image[0] + image[1]), "platforms": platforms,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeSupplyChainFile(t, metadata, image[0]+"-"+image[1]+".json", row)
+	}
+	manifestPath := filepath.Join(assets, "release-manifest.json")
+	if output, err := exec.Command("python3", "release/create-manifest.py", "--tag", tag, "--commit", commit,
+		"--build-time", "2026-10-18T00:00:00Z", "--assets", assets, "--image-metadata", metadata,
+		"--repository", "JasonCzech/APEX_Load", "--output", manifestPath).CombinedOutput(); err != nil {
+		t.Fatalf("create release manifest: %v\n%s", err, output)
+	}
+
+	privateKey := filepath.Join(workingDir, "private.pem")
+	publicKey := filepath.Join(workingDir, "public.pem")
+	if output, err := exec.Command("openssl", "genrsa", "-out", privateKey, "2048").CombinedOutput(); err != nil {
+		t.Fatalf("generate signing key: %v\n%s", err, output)
+	}
+	if output, err := exec.Command("openssl", "rsa", "-in", privateKey, "-pubout", "-out", publicKey).CombinedOutput(); err != nil {
+		t.Fatalf("derive verification key: %v\n%s", err, output)
+	}
+	signAndVerify := func() (string, error) {
+		t.Helper()
+		if output, err := runSupplyChainCommand(t, "release/sign-release.sh", []string{assets, privateKey, publicKey}, nil); err != nil {
+			t.Fatalf("sign release fixture: %v\n%s", err, output)
+		}
+		return runSupplyChainCommand(t, "release/verify-release.sh", []string{assets, tag, publicKey, commit}, nil)
+	}
+	if output, err := signAndVerify(); err != nil {
+		t.Fatalf("created four-platform manifest failed verification: %v\n%s", err, output)
+	}
+
+	var manifest map[string]any
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	writeManifest := func() {
+		t.Helper()
+		encoded, err := json.Marshal(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(manifestPath, encoded, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Add the darwin/amd64 apexctl and desktop client an older release carries.
+	for _, legacy := range []struct{ key, name, asset string }{
+		{"binaries", "apexctl", "apexctl_1.2.3_darwin_amd64"},
+		{"desktop_clients", "apexload-desktop", "apexload-desktop-1.2.3-darwin-amd64.tar.gz"},
+	} {
+		writeAsset(legacy.asset)
+		sum := sha256.Sum256([]byte(legacy.asset + "\n"))
+		manifest[legacy.key] = append(manifest[legacy.key].([]any), map[string]any{
+			"name": legacy.name, "os": "darwin", "architecture": "amd64", "asset": legacy.asset, "sha256": hex.EncodeToString(sum[:]),
+		})
+		manifest["assets"] = append(manifest["assets"].([]any), map[string]any{
+			"asset": legacy.asset, "sha256": hex.EncodeToString(sum[:]), "size": len(legacy.asset) + 1,
+		})
+	}
+	writeManifest()
+	if output, err := signAndVerify(); err != nil {
+		t.Fatalf("five-platform release from before macOS Intel was dropped failed verification: %v\n%s", err, output)
+	}
+
+	// Desktop clients must cover exactly the apexctl platforms.
+	clients := manifest["desktop_clients"].([]any)
+	manifest["desktop_clients"] = clients[:len(clients)-1]
+	writeManifest()
+	output, err := signAndVerify()
+	if err == nil {
+		t.Fatalf("release whose desktop clients miss an apexctl platform was accepted:\n%s", output)
+	}
+	if !strings.Contains(output, "manifest structure is invalid") {
+		t.Fatalf("platform mismatch failure was not the manifest structure check:\n%s", output)
+	}
 }

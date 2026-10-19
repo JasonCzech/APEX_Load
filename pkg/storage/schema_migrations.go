@@ -90,8 +90,9 @@ var schemaReleases = []schemaRelease{
 	{Version: 61, Name: "data-pool-column-order", Fingerprint: "9caa31d488e14bcf56f24c3f132115228103051f8686ec45de56f1806859a33b"},
 	{Version: 62, Name: "scenario-drafts", Fingerprint: "237838e015ad61c6e521a6af793e7cb5193528938640b54b1a0d63a17aba52cc"},
 	{Version: 63, Name: "run-execution-generation", Fingerprint: "0a2a6b72b8c7c8e16929b4cbe989d0dc8a572ae2651efc6ecc7a12d5f3c2f7a4"},
-	{Version: 64, Name: "audit-event-insertion-order", Fingerprint: "fec7a8de2eebeabca32564b9486d59915caa9879aa85be831b1d3c74fd72fbc3"},
-	{Version: 65, Name: "object-activity-insertion-order", Fingerprint: "acd96d0dbba6059750a45f64c020abb0ac3a24f87edcb5545ce7fb413aa50204"},
+	{Version: 64, Name: "object-activity-summary-index", Fingerprint: "c3c6c6508b2ffdc3942207a5419b82773cb4d2c8b880fd3665769f98014f6255"},
+	{Version: 65, Name: "audit-event-insertion-order", Fingerprint: "642a661c427abb0b78aeb6396a86d0e94ccd1cf5a33b2724314b8986aa8eadae"},
+	{Version: 66, Name: "object-activity-insertion-order", Fingerprint: "3e407f1ddff5f098166d724dfef728cee82a893eb38b52fc083681dc9b9af7e5"},
 }
 
 type SchemaMigrationRecord struct {
