@@ -162,6 +162,8 @@ Retire a seam only after all callers use its canonical owner and property parity
 
 ### NA-A — Deterministic import semantics
 
+The [partition-precedence qualification](qa/reviews/roadmap-partition-precedence-2026-10-20/README.md) verifies that existing v1/v2 physical-column and explicit-name mappings ignore conflicting directory labels and reject simultaneous constant/name-column selection. It preserves both mapping versions; precision disclosure and the other semantic gates below remain open.
+
 The [native timestamp source-offset slice](qa/reviews/roadmap-analytics-timestamp-offsets-2026-10-19/README.md) refuses inferred offsets and verifies per-row DST conversion for unambiguous/offset-qualified inputs. The [local-wall-time slice](qa/reviews/roadmap-analytics-local-wall-times-2026-10-19/README.md) rejects ambiguous/nonexistent times with row provenance; precision disclosure and other mapping requirements below remain open.
 
 Resolve the remaining mapping ambiguities in the versioned mapping contract: partition column versus mapping constant precedence, per-file/column schema drift, DECIMAL precision loss and timestamps crossing a daylight-saving transition inside one file. Do not infer an entire file's time grid from its first window. Preview must disclose a lossy conversion and require the same explicit choice at commit; unsupported ambiguity fails with row/file provenance rather than silently changing units, precision or timezone.

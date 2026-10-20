@@ -18,7 +18,7 @@ Imported Parquet, measurement identities, bounded queries, saved panels and reso
 
 Open **Monitoring → Analysis**. Editors upload files, inspect a bounded schema
 and redacted preview, map timestamps and measurements, then validate and import.
-Directory selection preserves relative partition paths. Long metric-name/value and wide measurement mappings are supported, including explicit nested scalar paths. Uploads use resumable 4 MiB chunks with content verification; resuming rechecks
+Directory selection preserves relative partition paths as source provenance. Hive-style `name=value` directories do not supply or override measurement columns, timestamps, metric names or identities: native preview and normalization disable implicit Hive partition inference. A measure selects either an explicit constant metric name or a physical name column; selecting both is rejected. Mapping versions 1 and 2 retain this contract. The [partition-precedence review](qa/reviews/roadmap-partition-precedence-2026-10-20/README.md) preserves native fixture and unchanged-source evidence. Long metric-name/value and wide measurement mappings are supported, including explicit nested scalar paths. Uploads use resumable 4 MiB chunks with content verification; resuming rechecks
 acknowledged chunks against the selected original. Multi-file imports preserve
 validated relative paths and byte-for-byte original files. Metadata publication
 is atomic after all normalized artifacts are durable. Cancel invalidates the

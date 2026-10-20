@@ -8,6 +8,7 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 | --- | --- | --- |
 | Long, wide and nested mappings | `TestNativeAcceptanceMappingLayoutsAgree` (`pkg/analysis/duckdb/native_acceptance_golden_test.go`) | DuckDB build |
 |  | `TestDecodeParquetMappingDefinitionRejectsUnsupportedAmbiguousAndMalformedFields` (`pkg/analysis/parquet_mapping_decode_test.go`) | Default build |
+| Directory labels cannot override physical columns or explicit mappings | `TestNativePartitionLabelsCannotOverridePhysicalColumnsOrMapping` (`pkg/analysis/duckdb/native_partition_precedence_test.go`) | DuckDB build |
 | Decimals | `TestNativeAcceptanceDecimalValues` (`pkg/analysis/duckdb/native_acceptance_golden_test.go`) | DuckDB build |
 | Timezones and DST | `TestNativeSummaryWallTimeWindowsAcrossDaylightSaving` (`pkg/analysis/duckdb/native_summary_test.go`) | DuckDB build |
 |  | `TestNativeAbsoluteTimestampRequiresSourceOffset` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
