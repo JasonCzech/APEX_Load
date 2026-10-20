@@ -27,11 +27,13 @@ import { useRunActionConfirmation } from './useRunActionConfirmation'
 import type { BrowserReplaySnapshot, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestGroupParametersUpdateResult, TestGroupRuntimeSettingsUpdateResult, TestStatus, TestSummary, TransactionEvent, TxMetrics, VUserRampStatus } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
-import type { ExecutionChartTimeRange, ExecutionChartZoomAnchor } from './testExecutionChartZoomModel'
-import { JOURNEY_RATE_WINDOW, mapArchiveSummarySamples, mapExecutionHistory, mapExecutionMetricToHistoryPoint, RECENT_AVERAGE_LABEL, RECENT_AVERAGE_WINDOW, recentGroupJourneyRates, recentMetricAverages, type RecentMetricAverages } from './testExecutionMetricsModel'
+import { executionChartMaxMinutesForSchedule, type ExecutionChartTimeRange, type ExecutionChartZoomAnchor } from './testExecutionChartZoomModel'
+import { buildQueuedScenarioPreview } from './testExecutionScenarioModel'
+import { JOURNEY_RATE_WINDOW, mapArchiveSummarySamples, mapExecutionMetricToHistoryPoint, RECENT_AVERAGE_LABEL, RECENT_AVERAGE_WINDOW, recentGroupJourneyRates, recentMetricAverages, type RecentMetricAverages } from './testExecutionMetricsModel'
 import { useExecutionArchiveSummaryHistory } from './useExecutionArchiveSummaryHistory'
 import { useExecutionChartModel } from './useExecutionChartModel'
-import { useExecutionMetricsStream } from './useExecutionMetricsStream'
+import { EXECUTION_STREAM_HISTORY_LIMIT, useExecutionMetricsStream } from './useExecutionMetricsStream'
+import { refreshScopedLiveHistory } from './commandCenterScopedHistory'
 import { usePrometheusGraphs } from './usePrometheusGraphs'
 import { useImportedDashboardGraphs } from './useImportedDashboardGraphs'
 import { EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS, EXECUTION_POLL_INTERVAL_MS } from './useExecutionTestPolling'
@@ -734,6 +736,16 @@ export default function CommandCenterPrototype({
   // Keyed by the group selection it was fetched for, so a previous
   // selection's series never show while the new one loads.
   const [backendScoped, setBackendScoped] = useState<{ signature: string; chartData: MetricsHistoryPoint[]; metrics?: LiveMetrics } | null>(null)
+  // A live run's selected-group history, kept like the stream keeps the whole
+  // run's, so each refresh asks only for the points since the last one.
+  const scopedLiveHistoryRef = useRef<{ key: string; honored: boolean; history: MetricsHistoryPoint[] } | null>(null)
+  // One request at a time per selection, so slow answers do not pile up; the
+  // answer is shown whenever its run and selection are still the ones on
+  // screen, even when a newer refresh skipped while it was in flight.
+  const scopedLiveFetchRef = useRef<{ key: string; sequence: number } | null>(null)
+  const scopedLiveShownKeyRef = useRef<string | null>(null)
+  // Requests are numbered so an older answer never replaces a newer one.
+  const scopedLiveSequenceRef = useRef({ started: 0, shown: 0 })
   const [showNotes, setShowNotes] = useState(false)
   const [showRuntimeAdjustment, setShowRuntimeAdjustment] = useState(false)
   const { pendingAction, pendingDetail, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
@@ -1235,6 +1247,15 @@ export default function CommandCenterPrototype({
     history: liveMode ? localMetricsHistory : [],
   }), [displayTest.live_metrics, liveMode, localMetricsHistory, metricPopulation, recentRunRate, throughputPopulation])
   const totalDurationSeconds = parseDurationToSeconds(displayTest.duration)
+  // The whole scheduled run: start delay, baselines, load and ramp-down. A run
+  // to its iterations, or one without a duration, has no schedule, whatever
+  // its delay and baselines add.
+  const scheduledRunSeconds = useMemo(
+    () => displayTest.termination_mode === 'iterations' || parseDurationToSeconds(displayTest.duration) <= 0
+      ? undefined
+      : buildQueuedScenarioPreview(displayTest).totalSeconds,
+    [displayTest],
+  )
   const remainingSeconds = liveMode
     ? computeRemainingSeconds(displayTest, runStatus)
     : 0
@@ -1263,9 +1284,13 @@ export default function CommandCenterPrototype({
 
   useEffect(() => {
     if (!liveMode || !testId || variant !== 'grafana' || allGraphWallGroupsVisible || noGraphWallGroupsVisible) {
+      scopedLiveShownKeyRef.current = null
       setBackendScoped(null)
       return undefined
     }
+    scopedLiveShownKeyRef.current = historicalRun && displayTest.archive?.interval_summary_count
+      ? null
+      : `${testId}\u0000${graphWallGroupSignature}`
 
     let cancelled = false
     const publishScoped = (chartData: MetricsHistoryPoint[], metrics?: LiveMetrics) => {
@@ -1333,13 +1358,30 @@ export default function CommandCenterPrototype({
           return
         }
 
-        const response = await api.getMetrics(testId, { groups: selectedGroupNames, limit: 300 })
-        if (cancelled) return
-        const mappedHistory = mapExecutionHistory((response.history || []) as LiveMetrics[])
-        if (responseHonorsGroupFilter(response.metrics)) {
-          publishScoped(mappedHistory, response.metrics)
+        const historyKey = `${testId}\u0000${graphWallGroupSignature}`
+        if (scopedLiveFetchRef.current?.key === historyKey) return
+        const sequence = ++scopedLiveSequenceRef.current.started
+        scopedLiveFetchRef.current = { key: historyKey, sequence }
+        let refreshed: Awaited<ReturnType<typeof refreshScopedLiveHistory>>
+        try {
+          refreshed = await refreshScopedLiveHistory(
+            () => scopedLiveHistoryRef.current?.key === historyKey ? scopedLiveHistoryRef.current : null,
+            since => api.getMetrics(testId, { groups: selectedGroupNames, limit: EXECUTION_STREAM_HISTORY_LIMIT, since }),
+            responseHonorsGroupFilter,
+          )
+        } finally {
+          if (scopedLiveFetchRef.current?.sequence === sequence) scopedLiveFetchRef.current = null
+        }
+        const { response, honored, history } = refreshed
+        // Kept even when a newer refresh superseded this one, so a slow first
+        // load still seeds the history the next refresh adds to.
+        scopedLiveHistoryRef.current = { key: historyKey, honored, history }
+        if (scopedLiveShownKeyRef.current !== historyKey || sequence < scopedLiveSequenceRef.current.shown) return
+        scopedLiveSequenceRef.current.shown = sequence
+        if (honored) {
+          publishScoped(history, response.metrics)
         } else {
-          publishScoped(selectedGroupLoadImpactData(mappedHistory, selectedGroupScopes))
+          publishScoped(selectedGroupLoadImpactData(history, selectedGroupScopes))
         }
       } catch {
         if (!cancelled) {
@@ -1888,6 +1930,7 @@ export default function CommandCenterPrototype({
           onVariantChange={changeVariant}
           groups={groups}
           chartGroups={graphWallGroups}
+          scheduledRunSeconds={scheduledRunSeconds}
           groupVisibility={graphWallGroupVisibility}
           onGroupVisibilityToggle={toggleGraphWallGroup}
           metrics={displayTest.live_metrics}
@@ -2362,6 +2405,8 @@ interface OpsCockpitViewProps {
 
 interface GrafanaWallViewProps extends CommonViewProps {
   chartGroups: CommandGroup[]
+  /** The run's scheduled length; the graphs' display window runs up to it. */
+  scheduledRunSeconds?: number
   groupScopedChartData: MetricsHistoryPoint[]
   groupScopedMetrics?: LiveMetrics
   groupVisibility: Record<string, boolean>
@@ -2675,6 +2720,7 @@ function GrafanaWallView({
   onVariantChange,
   groups,
   chartGroups,
+  scheduledRunSeconds,
   groupScopedChartData,
   groupScopedMetrics,
   groupVisibility,
@@ -2719,6 +2765,7 @@ function GrafanaWallView({
           variant="grafana"
           groups={chartGroups}
           multiGroupRun={groups.length > 1}
+          displayWindowMaxMinutes={executionChartMaxMinutesForSchedule(scheduledRunSeconds)}
           metrics={metrics}
           chartData={chartData}
           groupScopedChartData={groupScopedChartData}
@@ -4007,6 +4054,7 @@ interface CommandRuntimeGraphsProps {
   groups: CommandGroup[]
   /** The run has more than one group, so even one selected group draws its own line. */
   multiGroupRun?: boolean
+  displayWindowMaxMinutes?: number
   metrics?: LiveMetrics
   chartData: MetricsHistoryPoint[]
   groupScopedChartData?: MetricsHistoryPoint[]
@@ -4043,6 +4091,7 @@ function CommandRuntimeGraphs({
   variant,
   groups,
   multiGroupRun,
+  displayWindowMaxMinutes,
   metrics,
   chartData,
   groupScopedChartData,
@@ -4107,6 +4156,7 @@ function CommandRuntimeGraphs({
         refAreaEnd={refAreaEnd}
         timeRange={timeRange}
         onTimeRangeChange={onTimeRangeChange}
+        displayWindowMaxMinutes={displayWindowMaxMinutes}
         isMultiGroup={groups.length > 1 || (multiGroupRun === true && groups.length > 0)}
         groupNames={groupNames}
         groupColors={groupColors.length > 0 ? groupColors : ['var(--chart-1)']}

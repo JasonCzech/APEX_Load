@@ -154,6 +154,8 @@ interface Props {
   refAreaEnd: string | number
   timeRange: ExecutionChartTimeRange
   onTimeRangeChange: (value: ExecutionChartTimeRange) => void
+  /** The display window slider's longest minute value before "All"; an hour when unset. */
+  displayWindowMaxMinutes?: number
   isMultiGroup: boolean
   groupNames: string[]
   groupColors: string[]
@@ -227,17 +229,17 @@ const graphGroupTabs: Array<{ id: GraphGroupTabId; label: string }> = [
 ]
 
 const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'tx_network_phases', 'generator_impact', 'network_latency'])
-const displayWindowAllSliderValue = executionChartMaxMinuteRange + 1
 const displayWindowPresets = [
   { label: '1m', minutes: 1 },
   { label: '3m', minutes: 3 },
   { label: '5m', minutes: 5 },
+  { label: '10m', minutes: 10 },
   { label: '1h', minutes: 60 },
 ] as const
 
-function displayWindowSliderPercent(value: number) {
-  const clamped = Math.min(displayWindowAllSliderValue, Math.max(executionChartMinMinuteRange, value))
-  const percent = (clamped - executionChartMinMinuteRange) / (displayWindowAllSliderValue - executionChartMinMinuteRange) * 100
+function displayWindowSliderPercent(value: number, allSliderValue: number) {
+  const clamped = Math.min(allSliderValue, Math.max(executionChartMinMinuteRange, value))
+  const percent = (clamped - executionChartMinMinuteRange) / (allSliderValue - executionChartMinMinuteRange) * 100
   return `${Number(percent.toFixed(4))}%`
 }
 
@@ -520,6 +522,7 @@ export default function TestExecutionCharts({
   refAreaEnd,
   timeRange,
   onTimeRangeChange,
+  displayWindowMaxMinutes = executionChartMaxMinuteRange,
   isMultiGroup,
   groupNames,
   groupColors,
@@ -650,6 +653,14 @@ export default function TestExecutionCharts({
     }>
   >(new Map())
   const commandCenterSurface = surface === 'command-center'
+  // A window longer than the schedule would still trim a run that outlasts
+  // it while the slider reads All: make it All.
+  const timeRangeMinutes = executionChartMinuteRangeValue(timeRange)
+  const displayWindowPastSchedule = timeRangeMinutes !== null && Number.isFinite(displayWindowMaxMinutes)
+    && timeRangeMinutes > Math.max(executionChartMinMinuteRange, Math.round(displayWindowMaxMinutes))
+  useEffect(() => {
+    if (displayWindowPastSchedule) onTimeRangeChange('all')
+  }, [displayWindowPastSchedule, onTimeRangeChange])
   // Group names arrive as a fresh array on every parent render, so memoize on a
   // signature instead of identity — the load-impact model is rebuilt from the
   // whole history and must not recompute on unrelated renders.
@@ -1785,17 +1796,24 @@ export default function TestExecutionCharts({
   }
 
   const renderSectionSubtext = (text: string) => commandCenterSurface ? null : <span>{text}</span>
+  // The slider runs to the scheduled length, then "All"; a window past the
+  // schedule shows the whole run, so it sits at "All".
+  const displayWindowMaxValue = Number.isFinite(displayWindowMaxMinutes)
+    ? Math.max(executionChartMinMinuteRange, Math.round(displayWindowMaxMinutes))
+    : executionChartMaxMinuteRange
+  const displayWindowAllSliderValue = displayWindowMaxValue + 1
   const displayWindowMinuteValue = executionChartMinuteRangeValue(timeRange)
-  const displayWindowSliderValue = displayWindowMinuteValue ?? displayWindowAllSliderValue
+  const displayWindowSliderValue = Math.min(displayWindowMinuteValue ?? displayWindowAllSliderValue, displayWindowAllSliderValue)
+  const visibleDisplayWindowPresets = displayWindowPresets.filter(preset => preset.minutes <= displayWindowMaxValue)
   const displayWindowLabel = timeRange === 'custom'
     ? 'Custom'
     : displayWindowSliderValue >= displayWindowAllSliderValue
       ? 'All'
       : `${displayWindowSliderValue}m`
-  const displayWindowSliderPosition = displayWindowSliderPercent(displayWindowSliderValue)
+  const displayWindowSliderPosition = displayWindowSliderPercent(displayWindowSliderValue, displayWindowAllSliderValue)
   const setDisplayWindowFromSlider = (value: string) => {
     const nextValue = Number(value)
-    onTimeRangeChange(nextValue >= displayWindowAllSliderValue ? 'all' : executionChartTimeRangeForMinutes(nextValue))
+    onTimeRangeChange(nextValue >= displayWindowAllSliderValue ? 'all' : executionChartTimeRangeForMinutes(nextValue, displayWindowMaxValue))
   }
 
   const renderChartDisplayControlSections = () => (
@@ -1823,12 +1841,12 @@ export default function TestExecutionCharts({
             <span>{displayWindowLabel}</span>
           </div>
           <div className="chart-window-presets" role="group" aria-label="Graph display window presets">
-            {displayWindowPresets.map(preset => (
+            {visibleDisplayWindowPresets.map(preset => (
               <button
                 key={preset.label}
                 className={`btn-chip ${displayWindowMinuteValue === preset.minutes ? 'active' : ''}`}
                 type="button"
-                onClick={() => onTimeRangeChange(executionChartTimeRangeForMinutes(preset.minutes))}
+                onClick={() => onTimeRangeChange(executionChartTimeRangeForMinutes(preset.minutes, displayWindowMaxValue))}
                 aria-pressed={displayWindowMinuteValue === preset.minutes}
               >
                 {preset.label}

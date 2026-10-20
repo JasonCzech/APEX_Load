@@ -1928,11 +1928,83 @@ describe('TestExecutionCharts context menu', () => {
     expect(presetGroup?.textContent).toContain('1m')
     expect(presetGroup?.textContent).toContain('3m')
     expect(presetGroup?.textContent).toContain('5m')
+    expect(presetGroup?.textContent).toContain('10m')
     expect(presetGroup?.textContent).toContain('1h')
+    await act(async () => {
+      Array.from(presetGroup?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(button => button.textContent === '10m')?.click()
+    })
+    expect(onTimeRangeChange).toHaveBeenLastCalledWith('10m')
     await act(async () => {
       presetGroup?.querySelector<HTMLButtonElement>('button:last-child')?.click()
     })
     expect(onTimeRangeChange).toHaveBeenLastCalledWith('60m')
+  })
+
+  it('runs the display window slider to the scheduled run length', async () => {
+    const onTimeRangeChange = vi.fn()
+    const renderWindow = async (timeRange: '10m' | '40m' | 'all', displayWindowMaxMinutes: number) => {
+      await act(async () => {
+        root.render(
+          <TestExecutionCharts
+            filteredData={[
+              { time: '10:00:00', vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130 },
+              { time: '10:00:01', vusers: 4, tps: 2, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p99: 135 },
+            ]}
+            expandedChart={null}
+            onExpandedChartChange={vi.fn()}
+            onChartMouseDown={vi.fn()}
+            onChartMouseMove={vi.fn()}
+            onZoom={vi.fn()}
+            onResetZoom={vi.fn()}
+            showRefArea={false}
+            refAreaLeft=""
+            refAreaEnd=""
+            timeRange={timeRange}
+            onTimeRangeChange={onTimeRangeChange}
+            displayWindowMaxMinutes={displayWindowMaxMinutes}
+            isMultiGroup={false}
+            groupNames={[]}
+            groupColors={['#00a3ff']}
+          />,
+        )
+      })
+    }
+    await renderWindow('10m', 25)
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const slider = () => container.querySelector<HTMLInputElement>('input[aria-label="Graph display window"]')!
+    // A 25-minute schedule: minutes 1-25, then All.
+    expect(slider().max).toBe('26')
+    expect(slider().value).toBe('10')
+    const presets = () => Array.from(container.querySelectorAll('[aria-label="Graph display window presets"] button')).map(button => button.textContent)
+    expect(presets()).toEqual(['1m', '3m', '5m', '10m'])
+
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      valueSetter?.call(slider(), '25')
+      slider().dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onTimeRangeChange).toHaveBeenLastCalledWith('25m')
+    await act(async () => {
+      valueSetter?.call(slider(), '26')
+      slider().dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onTimeRangeChange).toHaveBeenLastCalledWith('all')
+
+    // A window longer than the schedule becomes All, so a run that outlasts
+    // its schedule is not trimmed while the slider reads All.
+    onTimeRangeChange.mockClear()
+    await renderWindow('40m', 25)
+    expect(onTimeRangeChange).toHaveBeenCalledWith('all')
+    expect(slider().value).toBe('26')
+    expect(slider().getAttribute('aria-valuetext')).toBe('All')
+
+    // A two-hour schedule reaches past the old one-hour limit.
+    await renderWindow('all', 120)
+    expect(slider().max).toBe('121')
+    expect(presets()).toEqual(['1m', '3m', '5m', '10m', '1h'])
   })
 
   it('applies seconds to the live response-time graph title and axis', async () => {

@@ -15,6 +15,8 @@ import { buildRunLoadPlan, loadPlanPhaseAt, observedVUsersSince, plannedVUsersAt
 import { buildTransactionRunRows, type CommandGroup } from './commandCenterScenarioRows'
 import { liveEvidenceCacheKey } from './commandCenterEvidenceModel'
 import { transactionChartSeriesKey } from './transactionChartSeries'
+import { mapExecutionMetricToHistoryPoint } from './testExecutionMetricsModel'
+import { refreshScopedLiveHistory, type ScopedLiveHistory } from './commandCenterScopedHistory'
 import { EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS } from './useExecutionTestPolling'
 import type { MetricsHistoryPoint, TestSummary, TransactionEvent, TxMetrics } from '../types'
 import { ApiContext } from '../hooks/apiContext'
@@ -1304,6 +1306,286 @@ describe('CommandCenterPrototype', () => {
     expect(tpsChart?.getAttribute('aria-label')).not.toContain('Transaction · Login')
     expect(tpsChart?.getAttribute('aria-label')).toContain('Transaction · Search')
     expect(tpsChart?.getAttribute('aria-label')).toContain('browse')
+  })
+
+  describe('refreshScopedLiveHistory', () => {
+    const startMs = Date.parse('2026-06-08T13:00:00Z')
+    const point = (second: number, groups: string[] = ['browse']) => ({
+      timestamp: new Date(startMs + second * 1000).toISOString(),
+      active_vusers: 3,
+      tps: 5,
+      avg_response_ms: 100,
+      error_pct: 0,
+      total_transactions: second,
+      total_errors: 0,
+      p50_ms: 90,
+      p90_ms: 110,
+      p95_ms: 115,
+      p99_ms: 120,
+      groups: Object.fromEntries(groups.map(name => [name, { name, vusers: 3, transactions: second, errors: 0, tps: 5, avg_response_ms: 100, p50_ms: 90, p90_ms: 110, p99_ms: 120 }])),
+    })
+    const answer = (seconds: number[], groups?: string[]) => ({ metrics: point(seconds[seconds.length - 1] ?? 0, groups), history: seconds.map(second => point(second, groups)) })
+    const honors = (metrics?: { groups?: Record<string, unknown> }) => Object.keys(metrics?.groups || {}).length > 0 && Object.keys(metrics?.groups || {}).every(name => name === 'browse')
+    const seconds = (state: ScopedLiveHistory) => state.history.map(entry => ((entry.timestampMs ?? 0) - startMs) / 1000)
+
+    it('loads the whole window first, then only the points since the last one', async () => {
+      let retained: ScopedLiveHistory | null = null
+      const fetchHistory = vi.fn(async (since?: string) => since
+        ? answer([2, 3, 4])
+        : answer([0, 1, 2]))
+
+      retained = await refreshScopedLiveHistory(() => retained, fetchHistory, honors)
+      expect(fetchHistory).toHaveBeenLastCalledWith(undefined)
+      expect(seconds(retained)).toEqual([0, 1, 2])
+
+      retained = await refreshScopedLiveHistory(() => retained, fetchHistory, honors)
+      expect(fetchHistory).toHaveBeenLastCalledWith(new Date(startMs + 2000).toISOString())
+      // The repeated last point is merged, not doubled.
+      expect(seconds(retained)).toEqual([0, 1, 2, 3, 4])
+      expect(retained.honored).toBe(true)
+    })
+
+    it('asks for the whole window again when the answer changes from unfiltered to filtered', async () => {
+      // Before the selected group reported, the server's answer named no groups.
+      let retained: ScopedLiveHistory | null = { honored: false, history: [0, 1, 2].map(second => mapExecutionMetricToHistoryPoint(point(second, []))) }
+      const fetchHistory = vi.fn(async (since?: string) => since ? answer([3]) : answer([0, 1, 2, 3]))
+
+      retained = await refreshScopedLiveHistory(() => retained, fetchHistory, honors)
+
+      expect(fetchHistory).toHaveBeenCalledTimes(2)
+      expect(fetchHistory).toHaveBeenLastCalledWith()
+      expect(retained.honored).toBe(true)
+      expect(seconds(retained)).toEqual([0, 1, 2, 3])
+    })
+
+    it('asks for the whole window again when the answer changes from filtered to unfiltered', async () => {
+      let retained: ScopedLiveHistory | null = { honored: true, history: [0, 1].map(second => mapExecutionMetricToHistoryPoint(point(second))) }
+      const fetchHistory = vi.fn(async (since?: string) => since ? answer([2], []) : answer([0, 1, 2], []))
+
+      retained = await refreshScopedLiveHistory(() => retained, fetchHistory, honors)
+
+      expect(fetchHistory).toHaveBeenCalledTimes(2)
+      expect(retained.honored).toBe(false)
+      expect(seconds(retained)).toEqual([0, 1, 2])
+    })
+
+    it('keeps the newest points within the limit', async () => {
+      let retained: ScopedLiveHistory | null = null
+      retained = await refreshScopedLiveHistory(() => retained, async () => answer([0, 1, 2, 3, 4]), honors, 3)
+      expect(seconds(retained)).toEqual([2, 3, 4])
+    })
+  })
+
+  it.each([
+    ['a run to its iterations', { duration: '', termination_mode: 'iterations', start_delay: '1m' }],
+    ['a run without a duration', { duration: '', start_delay: '2m' }],
+  ] as const)('keeps an hour-long display window for %s', async (_label, schedule) => {
+    const run: TestSummary = { ...buildLiveVuserTest(), ...schedule }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}))
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId={run.id} initialTest={run} history={[]} />)
+    })
+    await flush()
+    await click(buttonNamed('Graph Wall'))
+    await flush()
+
+    // Its start delay is no schedule: the window keeps the hour, then All.
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Graph display window"]')?.max).toBe('61')
+  })
+
+  it('shows a selected-group answer that lands after a newer refresh skipped', async () => {
+    const startedMs = Date.parse('2026-06-08T13:00:00Z')
+    const livePoint = (index: number, names: string[], vusers: number) => ({
+      timestamp: new Date(startedMs + index * 1000).toISOString(),
+      active_vusers: vusers,
+      tps: 10,
+      avg_response_ms: 100,
+      error_pct: 0,
+      total_transactions: index * 10,
+      total_errors: 0,
+      p50_ms: 90,
+      p90_ms: 110,
+      p95_ms: 115,
+      p99_ms: 120,
+      groups: Object.fromEntries(names.map(name => [name, { name, vusers: 3, transactions: index * 5, errors: 0, tps: 5, avg_response_ms: 100, p50_ms: 90, p90_ms: 110, p99_ms: 120 }])),
+    })
+    const allNames = ['smoke', 'browse']
+    const runAt = (index: number): TestSummary => ({
+      ...buildLiveVuserTest(),
+      id: 'slow-scoped-run',
+      duration: '30m',
+      started_at: '2026-06-08T13:00:00Z',
+      groups: allNames.map(name => ({ name, protocol: 'http', script_id: `script-${name}`, script_name: name, vusers: 3 })),
+      live_metrics: livePoint(index, allNames, 6),
+    })
+    const history = Array.from({ length: 10 }, (_, index) => mapExecutionMetricToHistoryPoint(livePoint(index, allNames, 6)))
+    let releaseScoped: (() => void) | undefined
+    let scopedRequests = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = new URL(requestUrl(input), 'http://localhost')
+      if (url.pathname === '/api/v1/tests/slow-scoped-run/metrics') {
+        scopedRequests += 1
+        // The server's answer for browse alone: 7 VUsers, where the page's own
+        // estimate from the group fields would be 3.
+        await new Promise<void>(resolve => { releaseScoped = resolve })
+        const points = Array.from({ length: 10 }, (_, index) => livePoint(index, ['browse'], 7))
+        return jsonResponse({ metrics: points[points.length - 1], history: points })
+      }
+      return jsonResponse({})
+    })
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="slow-scoped-run" initialTest={runAt(9)} history={history} />)
+    })
+    await flush()
+    await click(buttonNamed('Graph Wall'))
+    await flush()
+    await click(container.querySelector<HTMLButtonElement>('[aria-label="smoke graph visibility"]')!)
+    await flush()
+    expect(scopedRequests).toBe(1)
+
+    // A new live sample re-runs the refresh while the first answer is out: it
+    // skips, and the first answer must still reach the graphs.
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="slow-scoped-run" initialTest={runAt(10)} history={history} />)
+    })
+    await flush()
+    expect(scopedRequests).toBe(1)
+    await act(async () => { releaseScoped?.() })
+    await flush()
+
+    expect(container.querySelector('.command-runtime-graphs')?.getAttribute('data-load-impact-vuser-range')).toBe('7-7')
+  })
+
+  it('keeps the newer selected-group answer when an older one lands after it', async () => {
+    const startedMs = Date.parse('2026-06-08T13:00:00Z')
+    const livePoint = (index: number, names: string[], vusers: number) => ({
+      timestamp: new Date(startedMs + index * 1000).toISOString(),
+      active_vusers: vusers,
+      tps: 10,
+      avg_response_ms: 100,
+      error_pct: 0,
+      total_transactions: index * 10,
+      total_errors: 0,
+      p50_ms: 90,
+      p90_ms: 110,
+      p95_ms: 115,
+      p99_ms: 120,
+      groups: Object.fromEntries(names.map(name => [name, { name, vusers: 3, transactions: index * 5, errors: 0, tps: 5, avg_response_ms: 100, p50_ms: 90, p90_ms: 110, p99_ms: 120 }])),
+    })
+    const allNames = ['smoke', 'browse', 'checkout']
+    const run: TestSummary = {
+      ...buildLiveVuserTest(),
+      id: 'reordered-scoped-run',
+      duration: '30m',
+      started_at: '2026-06-08T13:00:00Z',
+      groups: allNames.map(name => ({ name, protocol: 'http', script_id: `script-${name}`, script_name: name, vusers: 3 })),
+      live_metrics: livePoint(9, allNames, 9),
+    }
+    const history = Array.from({ length: 10 }, (_, index) => mapExecutionMetricToHistoryPoint(livePoint(index, allNames, 9)))
+    const pending: Array<{ groups: string; release: (vusers: number) => void }> = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = new URL(requestUrl(input), 'http://localhost')
+      if (url.pathname === '/api/v1/tests/reordered-scoped-run/metrics') {
+        const groups = url.searchParams.get('groups') || ''
+        const answer = await new Promise<number>(resolve => { pending.push({ groups, release: resolve }) })
+        const points = Array.from({ length: 10 }, (_, index) => livePoint(index, groups.split(','), 9))
+        // Each answer's latest metrics say which answer it is.
+        return jsonResponse({ metrics: { ...points[points.length - 1], telemetry: { dropped_results: answer } }, history: points })
+      }
+      return jsonResponse({})
+    })
+    const visibility = (name: string) => container.querySelector<HTMLButtonElement>(`[aria-label="${name} graph visibility"]`)!
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId={run.id} initialTest={run} history={history} />)
+    })
+    await flush()
+    await click(buttonNamed('Graph Wall'))
+    await flush()
+    // Browse and checkout (first request), checkout alone, then browse and
+    // checkout again (second request) while the first is still out.
+    await click(visibility('smoke'))
+    await flush()
+    await click(visibility('browse'))
+    await flush()
+    await click(visibility('browse'))
+    await flush()
+    const browseAndCheckout = pending.filter(request => request.groups === 'browse,checkout')
+    expect(browseAndCheckout).toHaveLength(2)
+
+    await act(async () => { browseAndCheckout[1].release(8) })
+    await flush()
+    await act(async () => { browseAndCheckout[0].release(7) })
+    await flush()
+
+    expect(container.textContent).toContain('8 results dropped')
+    expect(container.textContent).not.toContain('7 results dropped')
+  })
+
+  it('graphs the whole retained live history for all and for selected groups', async () => {
+    const startedMs = Date.parse('2026-06-08T13:00:00Z')
+    // 400 one-second samples: past the old 300-point scoped fetch, and under the
+    // charts' 420-point downsampling target so the count is the retained one.
+    const livePoint = (index: number, names: string[]) => ({
+      timestamp: new Date(startedMs + index * 1000).toISOString(),
+      active_vusers: 6,
+      tps: 10,
+      avg_response_ms: 100,
+      error_pct: 0,
+      total_transactions: index * 10,
+      total_errors: 0,
+      p50_ms: 90,
+      p90_ms: 110,
+      p95_ms: 115,
+      p99_ms: 120,
+      groups: Object.fromEntries(names.map(name => [name, { name, vusers: 3, transactions: index * 5, errors: 0, tps: 5, avg_response_ms: 100, p50_ms: 90, p90_ms: 110, p99_ms: 120 }])),
+    })
+    const allNames = ['smoke', 'browse']
+    const liveRun: TestSummary = {
+      ...buildLiveVuserTest(),
+      id: 'long-live-run',
+      duration: '30m',
+      started_at: '2026-06-08T13:00:00Z',
+      groups: allNames.map(name => ({ name, protocol: 'http', script_id: `script-${name}`, script_name: name, vusers: 3 })),
+      live_metrics: livePoint(399, allNames),
+    }
+    const history = Array.from({ length: 400 }, (_, index) => mapExecutionMetricToHistoryPoint(livePoint(index, allNames)))
+    const metricsRequests: URL[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = new URL(requestUrl(input), 'http://localhost')
+      if (url.pathname === '/api/v1/tests/long-live-run/metrics') {
+        metricsRequests.push(url)
+        const selected = (url.searchParams.get('groups') || '').split(',').filter(Boolean)
+        const since = url.searchParams.get('since')
+        const limit = Number(url.searchParams.get('limit') || 3600)
+        const points = Array.from({ length: 400 }, (_, index) => livePoint(index, selected))
+          .filter(point => !since || Date.parse(point.timestamp) > Date.parse(since))
+          .slice(-limit)
+        return jsonResponse({ metrics: points[points.length - 1] ?? livePoint(399, selected), history: points })
+      }
+      return jsonResponse({})
+    })
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId={liveRun.id} initialTest={liveRun} history={history} />)
+    })
+    await flush()
+    await click(buttonNamed('Graph Wall'))
+    await flush()
+
+    const sampleCount = () => Number(/ (\d+) samples\./.exec(container.querySelector('[aria-label^="Transactions Per Second chart."]')?.getAttribute('aria-label') ?? '')?.[1] ?? 0)
+    expect(sampleCount()).toBe(400)
+    // The display window runs to the 30-minute schedule, then All.
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Graph display window"]')?.max).toBe('31')
+
+    await click(container.querySelector<HTMLButtonElement>('[aria-label="smoke graph visibility"]')!)
+    await flush(10)
+
+    expect(metricsRequests.length).toBeGreaterThan(0)
+    expect(metricsRequests[0].searchParams.get('limit')).toBe('5000')
+    expect(metricsRequests[0].searchParams.has('since')).toBe(false)
+    expect(sampleCount()).toBe(400)
   })
 
   it('defaults to operations and returns from analysis without changing the selected run', async () => {
