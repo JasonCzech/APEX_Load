@@ -314,8 +314,13 @@ function safeFileName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'graph'
 }
 
+// The readable part folds case and symbols (group names "Checkout" and
+// "checkout" read alike), so a hash of the exact key keeps each id unique.
 function chartGradientId(chart: ChartConfig, key: string, variant = 'fill') {
-  return `chart-gradient-${safeFileName(`${chart.id}-${key}-${variant}`)}`
+  const raw = `${chart.id}-${key}-${variant}`
+  let hash = 0x811c9dc5
+  for (let index = 0; index < raw.length; index++) hash = Math.imul(hash ^ raw.charCodeAt(index), 0x01000193)
+  return `chart-gradient-${safeFileName(raw)}-${(hash >>> 0).toString(36)}`
 }
 
 function chartGradientFill(chart: ChartConfig, key: string, variant = 'fill') {
@@ -2249,7 +2254,8 @@ export default function TestExecutionCharts({
     if (row.key === 'targetTps') return false
     if (row.key === routeLatencySuccessRateKey || row.key.startsWith('latency_success_rate_') || row.key.endsWith('_successRate')) return false
     if (isLoadImpactHeatmapChart(chart)) return false
-    if (isLoadImpactChart(chart) && row.key !== 'average') return false
+    // Under Load fills the average and each group's line, never the min/max envelope.
+    if (isLoadImpactChart(chart) && row.key !== 'average' && !isLoadImpactGroupSeriesKey(row.key)) return false
     return true
   }
 
