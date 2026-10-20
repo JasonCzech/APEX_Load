@@ -1787,6 +1787,7 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 			if len(record.Messaging) == 0 {
 				messagingIncomplete = true
 			}
+			protocol.MergeJavaHTTPActions(&aggregate.JavaHTTP, record.JavaHTTP)
 			for name, s := range protocol.CloneMessagingSummaries(record.Messaging) {
 				existing := aggregate.Messaging[name]
 				protocol.MergeMessagingSummary(&existing, s)
@@ -1850,6 +1851,14 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 		if aggregate.MessagingProgress != nil && (progressMissing || missingSourceCoverage) {
 			aggregate.MessagingProgress.Incomplete = true
 			aggregate.MessagingProgress.UnavailableReason = "source_missing"
+		}
+		if aggregate.JavaHTTP != nil {
+			for _, record := range windowRecords {
+				if record.JavaHTTP == nil {
+					aggregate.JavaHTTP.Incomplete = true
+				}
+			}
+			aggregate.JavaHTTP.Incomplete = aggregate.JavaHTTP.Incomplete || missingSourceCoverage
 		}
 		if messagingIncomplete {
 			for _, s := range aggregate.Messaging {

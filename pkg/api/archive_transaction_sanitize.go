@@ -160,6 +160,10 @@ func sanitizeArchivedTransaction(item *TransactionEvent) {
 		if !cloned.WebSocket.Valid() {
 			cloned.WebSocket = nil
 		}
+		cloned.JavaHTTP = cloned.JavaHTTP.Retained()
+		if item.BusinessTransaction || item.Population == "transaction" {
+			cloned.JavaHTTP = nil
+		}
 		cloned.GRPC = cloned.GRPC.Clone()
 		cloned.WebSocket = cloned.WebSocket.Clone()
 		if cloned.Messaging != nil && !cloned.Messaging.Valid() {

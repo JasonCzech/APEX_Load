@@ -203,6 +203,7 @@ type archiveResourceSample struct {
 }
 
 type archiveIntervalSummary struct {
+	JavaHTTP            *protocol.JavaHTTPActions                     `json:"java_http,omitempty"`
 	BrowserDocuments    *protocol.BrowserDocumentSummary              `json:"browser_documents,omitempty"`
 	MessagingProgress   *protocol.MessagingProgressSnapshot           `json:"messaging_progress,omitempty"`
 	Messaging           map[string]*protocol.MessagingSummary         `json:"messaging,omitempty"`
@@ -754,6 +755,7 @@ type parquetIntervalSummary struct {
 	GroupsJSON            string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BrowserDocumentsJSON  string  `parquet:"name=browser_documents_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	MessagingProgressJSON string  `parquet:"name=messaging_progress_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	JavaHTTPJSON          string  `parquet:"name=java_http_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	MessagingJSON         string  `parquet:"name=messaging_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	TransactionsJSON      string  `parquet:"name=transactions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	ByRegionJSON          string  `parquet:"name=by_region_json, type=BYTE_ARRAY, convertedtype=UTF8"`
@@ -1336,6 +1338,7 @@ func (w *archiveRecorder) RecordIntervalSummary(summary archiveIntervalSummary) 
 	if w.recordErr != nil {
 		return w.recordErr
 	}
+	summary.JavaHTTP = summary.JavaHTTP.Retained()
 	summary.BrowserDocuments = summary.BrowserDocuments.Clone()
 	summary.MessagingProgress = summary.MessagingProgress.Clone()
 	summary.TestID = w.manifest.TestID
@@ -1843,6 +1846,7 @@ func toParquetSummaries(items []archiveIntervalSummary) []parquetIntervalSummary
 			DurationDigestJSON:    mustJSON(item.DurationDigest),
 			DurationSketchJSON:    mustJSON(item.DurationSketch),
 			GroupsJSON:            mustJSON(item.Groups),
+			JavaHTTPJSON:          protocol.JavaHTTPActionsJSON(item.JavaHTTP),
 			MessagingJSON:         mustJSON(item.Messaging),
 			BrowserDocumentsJSON:  browserDocumentsJSON(item.BrowserDocuments),
 			MessagingProgressJSON: messagingProgressJSON(item.MessagingProgress),

@@ -1,0 +1,14 @@
+{
+  "removed": [
+    {
+      "path": "/private/tmp/apex-roadmap-prerequisite/go-cache/a1/a17418de24822f5da3796c47a906747970837d394f7c4217d87488ffa70a1e16-d",
+      "bytes": 497471408
+    },
+    {
+      "path": "/private/tmp/apex-roadmap-prerequisite/go-cache/e8/e893ca60a8dcb4ebd8cc8dcd9da3b711ba7938c7c86da60e29f49988bf42815e-d",
+      "bytes": 497534112
+    }
+  ],
+  "reclaimed_bytes": 995005520,
+  "scope": "Completed prior Java API test archives lacking current population regression; no open descriptors. Active dependency caches retained."
+}

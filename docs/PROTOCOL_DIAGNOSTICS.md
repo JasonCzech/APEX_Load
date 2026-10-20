@@ -108,3 +108,68 @@ Codec elapsed work divided by call wall time uses summed encode/decode measureme
 Saved baseline comparisons now retain whole-run telemetry health for each run alongside selected load-window analysis. The health table distinguishes retained, classified and metric-bearing intervals, shows classification coverage and breached classified-interval percentages, and links to each run's evidence. Missing classifications and sample-age measurements remain unavailable. Drop counters are cumulative observations: repeated publications retain the peak instead of summing the same counter repeatedly; decreases are qualified and exact loss totals are not inferred. Different sampling cadence and health policies prevent causal or acceptance claims; telemetry comparison never changes regression verdicts. HTML, CSV, DOCX and PDF exports retain the same evidence and qualifications.
 
 Browser archive diagnostics expose all of the bounded top-50 retained resources with action and failure filtering and per-resource page, capture-action timestamp, method and device context. Network failure classification survives into these rows. Resource rows are diagnostic samples; their capture-action timestamp does not supply an individual request start time or measured transport phases.
+
+## Java HTTP opaque representations
+
+The embedded adapter emits optional `server_telemetry.java_http` version 1
+in mode `embedded_opaque_bytes`. Load generators advertise
+`java_http_diagnostics_v1`; older peers and archives remain absent. This mode
+measures opaque byte representations and base64 work. It does not construct Java
+objects or measure JVM serialization, deserialization, shallow object size or
+reachable graphs. The operator-approved object measurement helper remains open
+work in the [implementation spec](ROADMAP_IMPLEMENTATION_SPEC.md#proto-a--finish-truthful-measurements-and-propagation).
+
+| Measurement | Meaning and availability |
+| --- | --- |
+| Runtime input representation | Actual input bytes presented to the embedded adapter after template evaluation. An invalid encoding can still have an observed input size. It is not a source-file size. |
+| Decoded request | Bytes after the supported base64 decode; failed or unsupported decoding remains unavailable. A supported empty input is measured zero. |
+| Prepared HTTP request body | The first prepared body after the HTTP adapter's transformations and optional compression, with `none`, `gzip` or `deflate` recorded. This is neither transport framing nor a sum across retries/authentication refreshes. A prepared body does not prove delivery. |
+| Retained response and response base64 | Retained response-representation bytes and the resulting base64 bytes, each with its own observation count. Complete, unavailable, collection-window and explicitly discarded responses remain distinct. |
+| Base64 decode/encode and enclosing action | Monotonic measured base64 work and an outer interval that includes it and the wrapped HTTP call. These optional timings preserve the existing legacy fields and their meanings. |
+| Paired ratios | Decoded/encoded, prepared/decoded and base64/retained ratios divide sums from the same samples. Base64 work/enclosing time uses paired timings. Missing pairs, zero denominators and exceeded exact-sum limits are unavailable. |
+
+Raw values are bounded to 1 TiB per byte measurement and 24 hours per elapsed
+measurement. Summaries retain fixed-size timing histograms and byte moments with
+independent counts. Integer byte sums stop being usable before exceeding JSON's
+exact integer range; invalid evidence and sample limits remain explicit.
+Prepared-body compression counts survive merges; mixed compression does not
+form one qualified comparison cohort. No body, header or credential is a label.
+
+A separate `java_http` action envelope carries live and interval-history evidence
+independently of business-transaction wrappers. It retains at most 128 actions
+and 1 MiB of JSON. Refusal records a fixed unavailable reason instead of retaining
+an arbitrary prefix. Selected group views omit unscoped Java evidence. Old SQL
+history rows migrate with a NULL field rather than invented zero measurements.
+Raw JSONL/Parquet, interval archives, archived reports and saved baseline
+measurements retain the versioned contract and action denominator. Archived report
+`actual_action_samples` excludes enclosing transactions and unclassified legacy
+records, even when they share an action name; the existing `transactions` total
+keeps its original meaning. An absent action denominator is unavailable.
+
+Saved native panels select population `java_http_action`, one exact action and
+one series, within 24 hours, 1,000 buckets and 100,000 selected raw observations.
+Byte and timing metrics support mean, min, max and nearest-rank P50/P90/P95/P99;
+the four paired metrics support only `ratio_of_sums`. They do not support generic
+scalar ratios, rates, grouping, overlays, SLA or correlation. Missing/unsupported
+measurements, incomplete source coverage and response collection windows leave
+unscored buckets. Distributed archives carrying source-coverage metadata also
+remain unscored in native queries and advisory baseline findings, even when every
+listed source was collected;
+source-window qualification is a separate open gate. Prepared-body queries require one compression identity;
+baselines must match it. Panels and CSV exports retain units, counts, missing
+reasons and compression. Raw transaction drill-down is unavailable for this
+measurement population. Older controllers reject these new saved contracts;
+there is no fallback to latency or whole-run totals.
+
+Baseline Java findings are advisory comparisons of fully observed action
+populations with at least 100 samples, compatible workload/window evidence and
+one matching compression identity. Every measurement must cover its own eligible
+population. Paired sums are never replaced by ratios of marginal means. Missing
+measurements and zero denominators remain unverified; baseline zero has no
+invented percent change. These findings do not add Java acceptance metrics or
+change the saved regression verdict. Live diagnostics, dedicated archived
+reports and baseline detail views retain each measurement's own denominator.
+
+The [measurement matrix](qa/PROTOCOL_TELEMETRY_MATRIX.md) records which paths have
+local evidence. It does not qualify every JVM, a separate-host performance lane
+or the still-unimplemented object-footprint helper.

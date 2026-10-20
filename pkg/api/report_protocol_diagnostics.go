@@ -12,7 +12,7 @@ import (
 
 // protocolReportNoSamples is the line a run without protocol diagnostics gets;
 // its section is then left out of the report.
-const protocolReportNoSamples = "No typed messaging, gRPC or WebSocket diagnostic samples were captured."
+const protocolReportNoSamples = "No typed messaging, Java-over-HTTP, gRPC or WebSocket diagnostic samples were captured."
 
 func protocolReportLines(report *RunArchiveReport) []string {
 	lines := []string{"Client-observed measurements; unavailable phases are not inferred. Histogram percentiles are approximate. Findings are advisory."}
@@ -73,6 +73,9 @@ func protocolReportLines(report *RunArchiveReport) []string {
 	}
 	for _, name := range keys {
 		a := report.ByAction[name]
+		if a.JavaHTTP != nil {
+			lines = append(lines, javaHTTPReportLines(name, a.JavaHTTP, a.ActualActionSamples)...)
+		}
 		if a.Messaging != nil {
 			if a.Messaging.Incomplete {
 				lines = append(lines, name+" · Messaging coverage incomplete; partition skew is unscored.")

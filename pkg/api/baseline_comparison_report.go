@@ -51,6 +51,7 @@ func (n comparisonNumber) Format(state fmt.State, _ rune) {
 
 var baselineComparisonTemplate = template.Must(template.New("baseline-comparison").Funcs(template.FuncMap{
 	"telemetryComparisonLine": baselineTelemetryComparisonLine,
+	"javaLines":               baselineJavaHTTPReportLines,
 	"tokenLabel":              reportTokenLabel,
 	"observed": func(v *float64) string {
 		if v == nil {
@@ -97,6 +98,7 @@ var baselineComparisonTemplate = template.Must(template.New("baseline-comparison
 	},
 }).Parse(`<h2>Baseline comparison</h2>
 {{if .Report.BaselineComparison}}{{$c := .Report.BaselineComparison}}<p>Advisory comparison {{$c.ID}} · rule {{$c.RuleVersion}} · {{$c.CreatedAt}}</p>
+{{range javaLines $c}}<p>{{.}}</p>{{end}}
 {{with $c.Verdict}}<p><strong>Regression verdict: {{tokenLabel .Status}}</strong> · {{.Evaluated}} evaluated · {{.Unavailable}} unavailable</p>{{range .Evidence}}<p>{{.Metric}}: {{tokenLabel .Status}} · row {{.RowID}} · baseline {{.BaselineID}} · current {{observed .Current}} / baseline {{observed .Baseline}} · {{.Reason}}</p>{{end}}{{end}}
 <p>Current run: {{$c.Current.Name}} · {{$c.Current.ReleaseName}}</p>
 {{range $c.Warnings}}<p>{{.}}</p>{{end}}
@@ -133,6 +135,7 @@ func baselineComparisonReportRenderer() reportSectionRenderer {
 			}
 			c := d.Report.BaselineComparison
 			*lines = append(*lines, "Snapshot "+c.ID+" / "+c.RuleVersion)
+			*lines = append(*lines, baselineJavaHTTPReportLines(c)...)
 			if c.Verdict != nil {
 				*lines = append(*lines, "Regression verdict: "+c.Verdict.Status)
 			}

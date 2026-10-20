@@ -1102,7 +1102,8 @@ func boundedServerTelemetrySummary(summary *ServerTelemetrySummary) *ServerTelem
 	}
 	retained := *summary
 	retained.WebSocket = nil
-	retained.GRPC = nil // Existing SLA peaks do not inspect RPC diagnostics.
+	retained.JavaHTTP = nil // Existing SLA peaks do not inspect opaque-representation diagnostics.
+	retained.GRPC = nil     // Existing SLA peaks do not inspect RPC diagnostics.
 	retained.RequestPayloadHistogram = nil
 	retained.ResponsePayloadHistogram = nil
 	retained.RequestSizeClasses = nil

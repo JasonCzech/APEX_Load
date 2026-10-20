@@ -177,6 +177,15 @@ The Web/API support endpoint also documents protocol-specific diagnostics:
 | JMS | destination, message ID, correlation ID, dead-letter reason, delivery count |
 | Browser | client metrics, screenshots, console/network evidence |
 
+Live and archived Java HTTP diagnostics expose **opaque representations**: runtime
+input, decoded request, prepared HTTP body, retained response and response base64
+bytes, each with its own observed count. Paired ratios divide sums from the same
+actions; missing measurements and zero denominators stay unavailable. Compression,
+conversion timing and response collection limits remain explicit. These values do
+not measure JVM object footprint or Java object serialization. Native panels and
+advisory baselines retain their own action populations; distributed source-window
+qualification remains open.
+
 ### Sample Projects
 
 W1 adds a first-party Web/API sample pack:

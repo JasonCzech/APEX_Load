@@ -24,6 +24,7 @@ export interface RunIdentity {
 export interface MeasurementWindow { start_seconds: number; end_seconds: number }
 export interface LoadWindow extends MeasurementWindow { load: number; total_load: number; group: string; direction: string; mix: Record<string, number> }
 export interface Measurement {
+  java_http?: import('../../types/javaHttp').JavaHTTPSummary
   mean_statistic?: 'evaluation_grid_mean'
   available_statistics?: string[]
   messaging?: MessagingSummary

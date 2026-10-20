@@ -54,6 +54,15 @@ type NativeEvidenceResponse struct {
 }
 
 func nativeMetricUnit(q storage.AnalyticsQuery) string {
+	if q.Population == analysis.PopulationJavaHTTPAction {
+		if metric, ok := analysis.LookupMetric(q.Metric); ok {
+			for _, population := range metric.Populations {
+				if population == q.Population {
+					return metric.NativeWireUnit
+				}
+			}
+		}
+	}
 	switch q.Metric {
 	case "observation_rate", "error_observation_rate", "success_observation_rate":
 		return "observations/s"

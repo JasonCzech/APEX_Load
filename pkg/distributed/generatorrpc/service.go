@@ -1760,6 +1760,9 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 		if normalized == "websocket" {
 			features = append(features, FeatureWebSocketDiagnosticsV1)
 		}
+		if normalized == "java_http" {
+			features = append(features, FeatureJavaHTTPDiagnosticsV1)
+		}
 		if normalized == "grpc" {
 			features = append(features, FeatureGRPCDiagnosticsV1)
 		}
@@ -2088,6 +2091,7 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 		avgResponse = totalDuration / float64(totalAttempts)
 	}
 	_ = writer.RecordIntervalSummary(archiveIntervalSummary{
+		JavaHTTP:            archiveJavaHTTPFromBatch(batch),
 		Messaging:           archiveMessagingFromBatch(batch),
 		BrowserDocuments:    browserDocumentsFromJSON(batch.GetBrowserDocumentSummaryJson(), batch.GetBrowserDocumentSummaryVersion()),
 		MessagingProgress:   messagingProgressFromJSON(batch.GetMessagingProgressJson(), batch.GetMessagingProgressVersion()),
@@ -2489,6 +2493,7 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 				AcknowledgementMs:           cloneMessagingAck(tx.ServerTelemetry.AcknowledgementMs),
 				MessagingDiagnosticsJson:    messagingDiagnosticsJSON(tx.ServerTelemetry.Messaging),
 				MessagingDiagnosticsVersion: messagingDiagnosticsVersion(tx.ServerTelemetry.Messaging),
+				JavaHttp:                    javaHTTPDiagnosticsToProto(tx.ServerTelemetry.JavaHTTP),
 				Grpc:                        grpcDiagnosticsToProto(tx.ServerTelemetry.GRPC),
 				Websocket:                   websocketDiagnosticsToProto(tx.ServerTelemetry.WebSocket),
 				ServerProcessingMs:          tx.ServerTelemetry.ServerProcessingMs,
@@ -3331,6 +3336,7 @@ func engineActionMetricsToAggregates(values map[string]*engine.ActionMetrics) []
 		out = append(out, MetricAggregate{
 			DurationDigest:   engine.CloneTDigestSnapshot(metrics.DurationDigest),
 			DurationSketch:   engine.CloneDurationSketchSnapshot(metrics.DurationSketch),
+			JavaHTTP:         javaHTTPSummaryForCount(engineJavaHTTPSummary(metrics.ServerTelemetry), metrics.Count),
 			Messaging:        engineMessagingSummary(metrics.ServerTelemetry),
 			MessagingVersion: messagingSummaryVersion(metrics.ServerTelemetry),
 			Name:             firstNonEmptyString(metrics.Name, name),
@@ -3595,6 +3601,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 		count := float64(value.Count)
 		out.Count += value.Count
 		out.Errors += value.Errors
+		protocol.MergeJavaHTTPSummary(&out.JavaHTTP, javaHTTPSummaryForCount(value.JavaHTTP, value.Count))
 		protocol.MergeMessagingSummary(&out.Messaging, value.Messaging)
 		weightedAvgMs += value.AvgMs * count
 		weightedDNSMs += value.AvgDNSMs * count
@@ -3609,6 +3616,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	if out.Count == 0 {
 		return nil
 	}
+	out.JavaHTTP = javaHTTPSummaryForCount(out.JavaHTTP, out.Count)
 	out.MessagingVersion = 1
 	for _, v := range values {
 		if v.Count > 0 && !supportedMessagingSummaryVersion(v.MessagingVersion) {

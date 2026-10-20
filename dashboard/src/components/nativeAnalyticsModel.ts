@@ -45,3 +45,19 @@ export const nativePopulationMetrics: Record<string, { label: string; aggregatio
  error_observation_rate: { label: 'Failed retained observations / second', aggregations: ['rate'], unit: 'observations/s' },
  success_observation_rate: { label: 'Successful retained observations / second', aggregations: ['rate'], unit: 'observations/s' },
 }
+
+// Each Java metric uses its own observed population and unit.
+export const nativeJavaHTTPMetrics: Record<string, { label: string; aggregations: string[]; unit: string }> = {
+  java_http_input_bytes: { label: 'Runtime input representation (bytes)', aggregations: ["avg", "min", "max", "p50", "p90", "p95", "p99"], unit: 'bytes' },
+  java_http_decoded_request_bytes: { label: 'Decoded request (bytes)', aggregations: ["avg", "min", "max", "p50", "p90", "p95", "p99"], unit: 'bytes' },
+  java_http_prepared_body_bytes: { label: 'Prepared request body (bytes)', aggregations: ["avg", "min", "max", "p50", "p90", "p95", "p99"], unit: 'bytes' },
+  java_http_retained_response_bytes: { label: 'Retained response (bytes)', aggregations: ["avg", "min", "max", "p50", "p90", "p95", "p99"], unit: 'bytes' },
+  java_http_response_base64_bytes: { label: 'Response base64 representation (bytes)', aggregations: ["avg", "min", "max", "p50", "p90", "p95", "p99"], unit: 'bytes' },
+  java_http_base64_decode_ms: { label: 'Base64 decode (ms)', aggregations: ["avg", "min", "max", "p50", "p90", "p95", "p99"], unit: 'ms' },
+  java_http_base64_encode_ms: { label: 'Base64 encode (ms)', aggregations: ["avg", "min", "max", "p50", "p90", "p95", "p99"], unit: 'ms' },
+  java_http_enclosing_ms: { label: 'Enclosing action (ms)', aggregations: ["avg", "min", "max", "p50", "p90", "p95", "p99"], unit: 'ms' },
+  java_http_decoded_per_encoded: { label: 'Decoded / encoded request (ratio)', aggregations: ["ratio_of_sums"], unit: 'ratio' },
+  java_http_prepared_per_decoded: { label: 'Prepared / decoded request (ratio)', aggregations: ["ratio_of_sums"], unit: 'ratio' },
+  java_http_base64_per_retained: { label: 'Base64 / retained response (ratio)', aggregations: ["ratio_of_sums"], unit: 'ratio' },
+  java_http_base64_work_share: { label: 'Base64 work / enclosing time (ratio)', aggregations: ["ratio_of_sums"], unit: 'ratio' },
+}

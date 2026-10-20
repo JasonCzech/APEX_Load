@@ -45,6 +45,9 @@ func eventPopulation(population string, businessTransaction bool, dependencyType
 }
 
 func (a *archivePopulationAccumulator) add(tx TransactionEvent) {
+	if archiveEventPopulation(tx) == "action" && !tx.BusinessTransaction {
+		a.stats.ActualActionSamples++
+	}
 	a.stats.Transactions++
 	if !tx.Success {
 		a.stats.Errors++

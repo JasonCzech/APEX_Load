@@ -460,6 +460,7 @@ type ResourceSample struct {
 }
 
 type IntervalSummaryRecord struct {
+	JavaHTTP                 *protocol.JavaHTTPActions             `json:"java_http,omitempty"`
 	BrowserDocuments         *protocol.BrowserDocumentSummary      `json:"browser_documents,omitempty"`
 	MessagingProgress        *protocol.MessagingProgressSnapshot   `json:"messaging_progress,omitempty"`
 	Messaging                map[string]*protocol.MessagingSummary `json:"messaging,omitempty"`
@@ -1023,23 +1024,26 @@ type RunArchiveTelemetrySummary struct {
 }
 
 type RunArchiveActionStats struct {
-	Messaging          *protocol.MessagingSummary   `json:"messaging,omitempty"`
-	GRPC               *protocol.GRPCSummary        `json:"grpc,omitempty"`
-	WebSocket          *protocol.WebSocketSummary   `json:"websocket,omitempty"`
-	DiagnosticFindings []protocol.DiagnosticFinding `json:"diagnostic_findings,omitempty"`
-	Transactions       int64                        `json:"transactions"`
-	Errors             int64                        `json:"errors"`
-	ErrorPct           float64                      `json:"error_pct"`
-	AvgResponseMs      float64                      `json:"avg_response_ms"`
-	MinResponseMs      float64                      `json:"min_response_ms"`
-	MaxResponseMs      float64                      `json:"max_response_ms"`
-	PeakTPS            float64                      `json:"peak_tps,omitempty"`
-	P50Ms              float64                      `json:"p50_ms,omitempty"`
-	P90Ms              float64                      `json:"p90_ms,omitempty"`
-	P95Ms              float64                      `json:"p95_ms,omitempty"`
-	P99Ms              float64                      `json:"p99_ms,omitempty"`
-	PercentileQuality  string                       `json:"percentile_quality,omitempty"`
-	durations          []float64
+	// ActualActionSamples excludes enclosing transactions and unclassified legacy records.
+	ActualActionSamples int64                        `json:"actual_action_samples,omitempty"`
+	Messaging           *protocol.MessagingSummary   `json:"messaging,omitempty"`
+	JavaHTTP            *protocol.JavaHTTPSummary    `json:"java_http,omitempty"`
+	GRPC                *protocol.GRPCSummary        `json:"grpc,omitempty"`
+	WebSocket           *protocol.WebSocketSummary   `json:"websocket,omitempty"`
+	DiagnosticFindings  []protocol.DiagnosticFinding `json:"diagnostic_findings,omitempty"`
+	Transactions        int64                        `json:"transactions"`
+	Errors              int64                        `json:"errors"`
+	ErrorPct            float64                      `json:"error_pct"`
+	AvgResponseMs       float64                      `json:"avg_response_ms"`
+	MinResponseMs       float64                      `json:"min_response_ms"`
+	MaxResponseMs       float64                      `json:"max_response_ms"`
+	PeakTPS             float64                      `json:"peak_tps,omitempty"`
+	P50Ms               float64                      `json:"p50_ms,omitempty"`
+	P90Ms               float64                      `json:"p90_ms,omitempty"`
+	P95Ms               float64                      `json:"p95_ms,omitempty"`
+	P99Ms               float64                      `json:"p99_ms,omitempty"`
+	PercentileQuality   string                       `json:"percentile_quality,omitempty"`
+	durations           []float64
 }
 
 type RunArchiveResourcePeaks struct {

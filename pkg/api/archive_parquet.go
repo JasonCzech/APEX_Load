@@ -146,6 +146,7 @@ type parquetIntervalSummary struct {
 	PercentileQuality      string  `parquet:"name=percentile_quality, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	GroupsJSON             string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	MessagingProgressJSON  string  `parquet:"name=messaging_progress_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	JavaHTTPJSON           string  `parquet:"name=java_http_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	MessagingJSON          string  `parquet:"name=messaging_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	TransactionsJSON       string  `parquet:"name=transactions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	ByRegionJSON           string  `parquet:"name=by_region_json, type=BYTE_ARRAY, convertedtype=UTF8"`
@@ -430,6 +431,7 @@ func toParquetSummaries(items []IntervalSummaryRecord) []parquetIntervalSummary 
 			PercentileQuality:      item.PercentileQuality,
 			GroupsJSON:             mustJSON(item.Groups),
 			MessagingProgressJSON:  mustJSON(item.MessagingProgress.Clone()),
+			JavaHTTPJSON:           protocol.JavaHTTPActionsJSON(item.JavaHTTP),
 			MessagingJSON:          mustJSON(item.Messaging),
 			TransactionsJSON:       mustJSON(item.Transactions),
 			ByRegionJSON:           mustJSON(item.ByRegion),

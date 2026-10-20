@@ -963,6 +963,7 @@ type RunLogicGoalSnapshot struct {
 }
 
 type LiveMetrics struct {
+	JavaHTTP            *protocol.JavaHTTPActions             `json:"java_http,omitempty"`
 	BrowserDocuments    *protocol.BrowserDocumentSummary      `json:"browser_documents,omitempty"`
 	MessagingProgress   *protocol.MessagingProgressSnapshot   `json:"messaging_progress,omitempty"`
 	Messaging           map[string]*protocol.MessagingSummary `json:"messaging,omitempty"`
@@ -1140,6 +1141,7 @@ type ServerTelemetrySummary struct {
 	DiagnosticFindings        []protocol.DiagnosticFinding `json:"diagnostic_findings,omitempty"`
 	FirstEventSamples         int64                        `json:"first_event_samples,omitempty"`
 	WebSocket                 *protocol.WebSocketSummary   `json:"websocket,omitempty"`
+	JavaHTTP                  *protocol.JavaHTTPSummary    `json:"java_http,omitempty"`
 	GRPC                      *protocol.GRPCSummary        `json:"grpc,omitempty"`
 	Samples                   int64                        `json:"samples"`
 	AvgServerProcessingMs     float64                      `json:"avg_server_processing_ms,omitempty"`

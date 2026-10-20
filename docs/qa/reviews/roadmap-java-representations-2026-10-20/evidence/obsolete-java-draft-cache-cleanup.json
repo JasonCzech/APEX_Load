@@ -1,0 +1,34 @@
+{
+  "removed": [
+    {
+      "path": "/private/tmp/apex-roadmap-prerequisite/go-cache/8f/8f276abb8204f957e309175048fff4257998fc96903f6a38aa4ca0227033c18b-d",
+      "bytes": 495713384,
+      "modified": "2026-10-20T06:19:41.890997",
+      "api_tests": true,
+      "new_report_test": false
+    },
+    {
+      "path": "/private/tmp/apex-roadmap-prerequisite/go-cache/26/2660b4da99326e4df6d321624ccbbb80431dc0cb35e78e99b0fa61dd5aededbf-d",
+      "bytes": 495812126,
+      "modified": "2026-10-20T06:26:08.769139",
+      "api_tests": true,
+      "new_report_test": false
+    },
+    {
+      "path": "/private/tmp/apex-roadmap-prerequisite/go-cache/d3/d37e7f110bb6ebc402bafd6a397afc58d9eda0530cf4c90e3ebd03c76ac7a650-d",
+      "bytes": 495711778,
+      "modified": "2026-10-20T06:16:58.707691",
+      "api_tests": true,
+      "new_report_test": false
+    },
+    {
+      "path": "/private/tmp/apex-roadmap-prerequisite/go-cache/23/231dde0ff6ba8e46aa15608952a23da7e19e5ef550c260d0a7f9002fe560761d-d",
+      "bytes": 495738670,
+      "modified": "2026-10-20T06:22:19.281163",
+      "api_tests": true,
+      "new_report_test": false
+    }
+  ],
+  "reclaimed_bytes": 1982975958,
+  "scope": "Completed pre-review Java API test archives only; all lack the newly added report regression symbol and have no open descriptors. Active final API and dependency caches retained."
+}

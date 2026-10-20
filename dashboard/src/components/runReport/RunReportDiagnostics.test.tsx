@@ -86,3 +86,17 @@ it('lists the HTTP/3 preflight checks and opens on a failure', () => {
   expect(container.textContent).toContain('3 more checks are not listed')
   act(() => root.unmount())
 })
+
+it('renders Java action diagnostics on the dedicated report and preserves older absence', async () => {
+  const { javaHTTPFixture } = await import('../../utils/javaHttpTestFixtures')
+  const container = document.createElement('div'), root = createRoot(container)
+  try {
+    act(() => root.render(<RunReportDiagnostics report={{ by_action: { request: { transactions: 3, actual_action_samples: 2, java_http: javaHTTPFixture() } } } as unknown as RunArchiveReport} />))
+    const evidence = container.querySelector('[aria-label="Java HTTP representation diagnostics"]')!
+    expect(evidence.textContent).toContain('Observed diagnostics: 1 of 2 action executions')
+    expect(evidence.textContent).toContain('Retained response: 0 bytes mean')
+    expect(evidence.textContent).toContain('Coverage incomplete')
+    act(() => root.render(<RunReportDiagnostics report={{ by_action: { request: { transactions: 2 } } } as unknown as RunArchiveReport} />))
+    expect(container.querySelector('[aria-label="Java HTTP representation diagnostics"]')).toBeNull()
+  } finally { act(() => root.unmount()) }
+})

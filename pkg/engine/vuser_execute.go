@@ -282,6 +282,11 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 		tx.Extractions = source.Extractions
 		tx.PropertyDimensions = source.PropertyDimensions
 		tx.ServerTelemetry = source.ServerTelemetry
+		if source.ServerTelemetry != nil && source.ServerTelemetry.JavaHTTP != nil {
+			telemetry := *source.ServerTelemetry
+			telemetry.JavaHTTP = nil // Keep versioned action diagnostics out of the wrapper population.
+			tx.ServerTelemetry = &telemetry
+		}
 		tx.SourceStepID = source.SourceStepID
 		tx.SourceStepIndex = source.SourceStepIndex
 		tx.SourceAction = source.SourceAction

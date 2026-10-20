@@ -803,6 +803,7 @@ message MetricAggregate {
   // The duration distribution as a sketch (version 2). A generator that
   // predates it leaves it unset, and the controller merges duration_digest.
   DurationSketchSnapshot duration_sketch = 22;
+  JavaHTTPSummary java_http = 23;
 }
 
 message TraceExemplar {
@@ -882,6 +883,84 @@ message ServerTelemetry {
   // Optional bounded typed per-operation evidence; unknown/invalid versions are incomplete.
   string messaging_diagnostics_json = 36;
   uint32 messaging_diagnostics_version = 37;
+  JavaHTTPDiagnostics java_http = 38;
+}
+
+// Versioned opaque representations and base64 work, never JVM object footprint.
+// Optional zeros remain distinct from unavailable observations.
+// Bounded action-population sufficient statistics; absent old peers are unavailable.
+message JavaHTTPSummary {
+  uint32 version = 1;
+  string mode = 2;
+  int64 samples = 3;
+  int64 invalid_samples = 4;
+  bool sample_limit_reached = 5;
+  bool incomplete = 6;
+  JavaHTTPByteMoments request_encoded = 7;
+  JavaHTTPByteMoments request_decoded = 8;
+  JavaHTTPByteMoments prepared_request_body = 9;
+  JavaHTTPByteMoments response_retained = 10;
+  JavaHTTPByteMoments response_base64 = 11;
+  JavaHTTPBytePair decoded_per_encoded = 12;
+  JavaHTTPBytePair prepared_per_decoded = 13;
+  JavaHTTPBytePair base64_per_retained = 14;
+  JavaHTTPDurationDistribution base64_decode_ms = 15;
+  JavaHTTPDurationDistribution base64_encode_ms = 16;
+  JavaHTTPDurationDistribution enclosing_ms = 17;
+  JavaHTTPWorkPair base64_work = 18;
+  int64 response_unavailable = 19;
+  int64 response_window = 20;
+  int64 response_discarded = 21;
+  string object_footprint = 22;
+  int64 request_compression_none = 23;
+  int64 request_compression_gzip = 24;
+  int64 request_compression_deflate = 25;
+}
+
+message JavaHTTPByteMoments {
+  int64 count = 1;
+  int64 sum_bytes = 2;
+  int64 min_bytes = 3;
+  int64 max_bytes = 4;
+  bool overflow = 5;
+}
+
+message JavaHTTPBytePair {
+  int64 samples = 1;
+  int64 numerator_bytes = 2;
+  int64 denominator_bytes = 3;
+  bool overflow = 4;
+}
+
+message JavaHTTPWorkPair {
+  int64 samples = 1;
+  double base64_ms = 2;
+  double enclosing_ms = 3;
+}
+
+message JavaHTTPDurationDistribution {
+  int64 count = 1;
+  double sum = 2;
+  double min = 3;
+  double max = 4;
+  repeated int64 buckets = 5;
+}
+
+message JavaHTTPDiagnostics {
+  uint32 version = 1;
+  string mode = 2;
+  string input_state = 3;
+  int64 request_encoded_bytes = 4;
+  optional int64 request_decoded_bytes = 5;
+  optional int64 prepared_request_body_bytes = 6;
+  string applied_request_compression = 7;
+  string response_state = 8;
+  optional int64 response_retained_bytes = 9;
+  optional int64 response_base64_bytes = 10;
+  optional double base64_decode_ms = 11;
+  optional double base64_encode_ms = 12;
+  double enclosing_ms = 13;
+  string object_footprint = 14;
 }
 
 message WebSocketDiagnostics {

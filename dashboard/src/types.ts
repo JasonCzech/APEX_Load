@@ -1465,6 +1465,7 @@ export interface ServerTelemetry {
 }
 
 export interface ServerTelemetrySummary {
+  java_http?: import('./types/javaHttp').JavaHTTPSummary
   messaging?: MessagingSummary
   consumer_lag_samples?: number
   consumer_offset_lag_samples?: number
@@ -1531,6 +1532,8 @@ export interface ArchivePage<T> {
 }
 
 export interface RunArchiveActionStats {
+  actual_action_samples?: number
+  java_http?: import('./types/javaHttp').JavaHTTPSummary
   messaging?: MessagingSummary
   transactions: number
   errors: number
@@ -2384,6 +2387,7 @@ export type TestStatus =
   | 'PAUSED'
 
 export interface LiveMetrics {
+  java_http?: import('./types/javaHttp').JavaHTTPActions
   /** Run-to-date HTTP version mix (cumulative, unlike the window fields). */
   http_versions?: RunArchiveHTTPVersionMix
   telemetry_policy?: import('./types/telemetryPolicy').TelemetryPolicyEvidence

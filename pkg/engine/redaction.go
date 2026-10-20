@@ -923,6 +923,7 @@ func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConf
 		result.ClientMetrics.BrowserEngine = scrubSensitiveTextWithConfig(result.ClientMetrics.BrowserEngine, config)
 	}
 	if result.ServerTelemetry != nil {
+		result.ServerTelemetry.JavaHTTP = result.ServerTelemetry.JavaHTTP.Retained()
 		result.ServerTelemetry.WebSocket = result.ServerTelemetry.WebSocket.Clone()
 		if result.ServerTelemetry.Messaging != nil && !result.ServerTelemetry.Messaging.Valid() {
 			result.ServerTelemetry.Messaging = &protocol.MessagingDiagnostics{}

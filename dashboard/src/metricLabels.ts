@@ -4,6 +4,13 @@
  * values carry it after the number ("1,006 ms", via formatMs).
  */
 export const METRIC_LABELS = {
+  javaAuthoredBase64: { label: 'Runtime input representation', unit: 'bytes' },
+  javaDecodedRequest: { label: 'Decoded request', unit: 'bytes' },
+  javaPreparedRequest: { label: 'Prepared request body', unit: 'bytes' },
+  javaRetainedResponse: { label: 'Retained response', unit: 'bytes' },
+  javaBase64Response: { label: 'Base64 response', unit: 'bytes' },
+  javaBase64Work: { label: 'Base64 work / enclosing time', unit: '%' },
+  javaEnclosing: { label: 'Enclosing wrapper', unit: 'ms' },
   tableOpMean: { label: 'Average table operation', unit: 'ms' },
   tableOpMax: { label: 'Maximum table operation', unit: 'ms' },
   avg: { label: 'Avg', unit: 'ms' },

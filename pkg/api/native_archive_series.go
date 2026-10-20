@@ -38,8 +38,9 @@ type NativeArchiveSeries struct {
 	// Excluded counts, by reason, the browser document measurements of the
 	// selection that are not final eligible values (unqualified_final,
 	// unavailable_final, provisional, censored); they never enter a value.
-	Excluded    map[string]int64 `json:"excluded,omitempty"`
-	Fingerprint string           `json:"-"`
+	Excluded            map[string]int64 `json:"excluded,omitempty"`
+	JavaHTTPCompression string           `json:"java_http_compression,omitempty"`
+	Fingerprint         string           `json:"-"`
 	// documentTuple is the browser document measurement tuple selected.
 	documentTuple *protocol.BrowserDocumentMetricSummary
 }
@@ -110,6 +111,10 @@ func (s *Server) handleNativeArchiveSeries(w http.ResponseWriter, r *http.Reques
 				response.Warnings = append(response.Warnings, "The runs measured different browser document tuples ("+reason+"); their values are not compared.")
 			}
 		}
+		if q.Population == analysis.PopulationJavaHTTPAction && series.JavaHTTPCompression != baseline.JavaHTTPCompression {
+			response.Comparable = false
+			response.Warnings = append(response.Warnings, "Java HTTP request compression differs between runs; representation measurements are not compared.")
+		}
 		if !response.Comparable {
 			response.Warnings = append(response.Warnings, "Workload/version compatibility or evidence completeness is not established; review both runs before interpreting differences.")
 		}
@@ -166,6 +171,9 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 			until = to
 		}
 		result.Buckets = append(result.Buckets, NativeArchiveBucket{From: at, To: until, OffsetSeconds: q.StartSeconds + i*q.BucketSeconds})
+	}
+	if q.Population == analysis.PopulationJavaHTTPAction {
+		return buildNativeJavaHTTPSeries(ctx, record, manifest, q, result, from, to)
 	}
 	if q.Population == analysis.PopulationMessage {
 		return buildNativeMessageSeries(ctx, record, manifest, q, result, from, to, n)

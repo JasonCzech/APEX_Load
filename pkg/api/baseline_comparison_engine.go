@@ -17,6 +17,7 @@ import (
 type baselineTransactionKey struct{ group, protocol, name string }
 type baselineTransactionAccumulator struct {
 	messaging       *protocolmetrics.MessagingSummary
+	javaHTTP        *protocolmetrics.JavaHTTPSummary
 	grpc            *protocolmetrics.GRPCSummary
 	websocket       *protocolmetrics.WebSocketSummary
 	count, errors   int64
@@ -208,6 +209,9 @@ func (s *Server) readBaselineComparisonRun(ctx context.Context, t *ManagedTest, 
 			a.count++
 			if tx.ServerTelemetry != nil {
 				if request.Population == "action" {
+					if !tx.BusinessTransaction && tx.Population != "transaction" {
+						protocolmetrics.MergeJavaHTTPDiagnostic(&a.javaHTTP, tx.ServerTelemetry.JavaHTTP)
+					}
 					protocolmetrics.MergeMessagingTelemetry(&a.messaging, tx.ServerTelemetry, tx.DependencyTarget, tx.DependencyType, tx.Group)
 				}
 				protocolmetrics.MergeGRPCDiagnostic(&a.grpc, tx.ServerTelemetry.GRPC)
@@ -257,6 +261,10 @@ func baselineTransactionMeasurement(r *baselineComparisonRun, k baselineTransact
 	seconds := w.EndSeconds - w.StartSeconds
 	m := &BaselineMeasurement{Samples: a.count, Successes: a.count - a.errors, Errors: a.errors, Throughput: float64(a.count) / seconds, SuccessfulThroughput: float64(a.count-a.errors) / seconds, ErrorPct: 100 * float64(a.errors) / float64(a.count), CoveragePct: 100, Instances: 1}
 	m.Messaging = a.messaging.Clone()
+	m.JavaHTTP = a.javaHTTP.RetainedForPopulation(m.Samples)
+	if m.JavaHTTP != nil && (r.incomplete || archiveCollectionIncomplete(r.manifest) || r.manifest != nil && r.manifest.SourceCoverage != nil) {
+		m.JavaHTTP.Incomplete = true
+	}
 	m.GRPC = a.grpc.Clone()
 	m.WebSocket = a.websocket.Clone()
 	if a.digest.Count() > 0 {
@@ -571,6 +579,7 @@ func buildBaselineFindings(out *BaselineComparisonSnapshot) {
 					}
 					add("time-weighted mean", a.Mean, v.Mean, out.Policy.ResourcePct, absolute, a.Samples >= 10 && v.Samples >= 10 && a.CoveragePct >= 80 && v.CoveragePct >= 80)
 				} else {
+					out.Findings = append(out.Findings, baselineJavaHTTPFindings(row, b.ID, cell)...)
 					enough := a.Successes >= 100 && v.Successes >= 100
 					compareDistribution := func(metric string, current, baseline protocolmetrics.DiagnosticDistribution) {
 						x, okX := current.Quantile(.95)

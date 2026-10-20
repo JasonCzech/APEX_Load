@@ -332,6 +332,7 @@ type GroupMetric struct {
 }
 
 type MetricAggregate struct {
+	JavaHTTP         *protocol.JavaHTTPSummary
 	Messaging        *protocol.MessagingSummary
 	MessagingVersion uint32
 	Name             string
@@ -389,6 +390,7 @@ type ServerTelemetry struct {
 	AcknowledgementMs         *float64
 	ConsumerLagObserved       bool
 	ConsumerOffsetLagObserved bool
+	JavaHTTP                  *protocol.JavaHTTPDiagnostics
 	GRPC                      *protocol.GRPCDiagnostics
 	WebSocket                 *protocol.WebSocketDiagnostics
 	ServerProcessingMs        float64
@@ -620,6 +622,9 @@ const FeatureMessageDetailCaptureV1 = "message_detail_capture_v1"
 
 // FeatureGRPCDiagnosticsV1 advertises typed client RPC evidence with optional measurements.
 const FeatureGRPCDiagnosticsV1 = "grpc_diagnostics_v1"
+
+// FeatureJavaHTTPDiagnosticsV1 advertises versioned opaque byte/base64 evidence.
+const FeatureJavaHTTPDiagnosticsV1 = "java_http_diagnostics_v1"
 
 const FeatureControlParallelV1 = "control_parallel_v1"
 
@@ -1700,6 +1705,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 				SubscriptionID:            tx.GetServerTelemetry().GetSubscriptionId(),
 				AcknowledgementMs:         cloneMessagingAck(tx.GetServerTelemetry().AcknowledgementMs),
 				Messaging:                 messagingDiagnosticsFromJSON(tx.GetServerTelemetry().GetMessagingDiagnosticsJson(), tx.GetServerTelemetry().GetMessagingDiagnosticsVersion()),
+				JavaHTTP:                  javaHTTPDiagnosticsFromProto(tx.GetServerTelemetry().GetJavaHttp()),
 				GRPC:                      grpcDiagnosticsFromProto(tx.GetServerTelemetry().GetGrpc()),
 				WebSocket:                 websocketDiagnosticsFromProto(tx.GetServerTelemetry().GetWebsocket()),
 				ServerProcessingMs:        tx.GetServerTelemetry().GetServerProcessingMs(),
@@ -2074,6 +2080,7 @@ func metricAggregateFromProto(value *pb.MetricAggregate) *MetricAggregate {
 		TPS:              value.GetTps(),
 		DurationDigest:   tdigestSnapshotFromProto(value.GetDurationDigest()),
 		DurationSketch:   durationSketchSnapshotFromProto(value.GetDurationSketch()),
+		JavaHTTP:         javaHTTPSummaryForCount(javaHTTPSummaryFromProto(value.GetJavaHttp()), value.GetCount()),
 		Messaging:        messagingSummaryFromJSON(value.GetMessagingSummaryJson(), value.GetMessagingVersion()),
 		MessagingVersion: value.GetMessagingVersion(),
 		Exemplars:        traceExemplarsFromProto(value.GetExemplars()),
@@ -2141,6 +2148,7 @@ func metricAggregateToProto(value *MetricAggregate) *pb.MetricAggregate {
 		Tps:                  value.TPS,
 		DurationDigest:       tdigestSnapshotToProto(value.DurationDigest),
 		DurationSketch:       durationSketchSnapshotToProto(value.DurationSketch),
+		JavaHttp:             javaHTTPSummaryToProto(javaHTTPSummaryForCount(value.JavaHTTP, value.Count)),
 		MessagingSummaryJson: messagingSummaryJSON(value.Messaging),
 		MessagingVersion:     value.MessagingVersion,
 		Exemplars:            traceExemplarsToProto(value.Exemplars),

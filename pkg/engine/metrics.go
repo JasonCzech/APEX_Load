@@ -204,6 +204,7 @@ type ServerTelemetrySummary struct {
 	ConsumerOffsetLagSamples  int64                      `json:"consumer_offset_lag_samples,omitempty"`
 	FirstEventSamples         int64                      `json:"first_event_samples,omitempty"`
 	WebSocket                 *protocol.WebSocketSummary `json:"websocket,omitempty"`
+	JavaHTTP                  *protocol.JavaHTTPSummary  `json:"java_http,omitempty"`
 	GRPC                      *protocol.GRPCSummary      `json:"grpc,omitempty"`
 	Samples                   int64                      `json:"samples"`
 	AvgServerProcessingMs     float64                    `json:"avg_server_processing_ms,omitempty"`
@@ -1218,7 +1219,13 @@ func mergeActionResult(metrics *ActionMetrics, result *protocol.Result) {
 		if metrics.ServerTelemetry == nil {
 			metrics.ServerTelemetry = &ServerTelemetrySummary{}
 		}
-		mergeServerTelemetrySummary(metrics.ServerTelemetry, result.ServerTelemetry, result.DependencyTarget, result.DependencyType, result.Group)
+		telemetry := result.ServerTelemetry
+		if result.BusinessTransaction && telemetry.JavaHTTP != nil {
+			copy := *telemetry
+			copy.JavaHTTP = nil // A synthetic business wrapper is not another Java action.
+			telemetry = &copy
+		}
+		mergeServerTelemetrySummary(metrics.ServerTelemetry, telemetry, result.DependencyTarget, result.DependencyType, result.Group)
 	}
 	metrics.BytesSent += result.BytesSent
 	metrics.BytesRecv += result.BytesReceived
@@ -1331,6 +1338,7 @@ func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *pro
 	} else {
 		protocol.MergeMessagingTelemetry(&summary.Messaging, telemetry, source)
 	}
+	protocol.MergeJavaHTTPDiagnostic(&summary.JavaHTTP, telemetry.JavaHTTP)
 	protocol.MergeGRPCDiagnostic(&summary.GRPC, telemetry.GRPC)
 	protocol.MergeWebSocketDiagnostic(&summary.WebSocket, telemetry.WebSocket)
 	// Reliability counters are run totals and accumulate for every record,

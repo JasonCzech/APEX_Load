@@ -24,7 +24,7 @@ func completeBoundedEvidenceModel(pkg, name string) bool {
 	}
 	if pkg == "protocol" {
 		switch name {
-		case "GRPCDiagnostics", "GRPCSummary", "WebSocketDiagnostics", "WebSocketSummary", "ServerTelemetry",
+		case "JavaHTTPActions", "JavaHTTPActionSummary", "JavaHTTPDiagnostics", "JavaHTTPSummary", "JavaHTTPByteMoments", "JavaHTTPBytePair", "JavaHTTPWorkPair", "GRPCDiagnostics", "GRPCSummary", "WebSocketDiagnostics", "WebSocketSummary", "ServerTelemetry",
 			"BrowserResourceEvidence", "BrowserResourcePhase", "BrowserResourceBytes",
 			"BrowserRuntimeCohort", "BrowserDocumentObservation", "BrowserDocumentEvidence",
 			"BrowserDocumentSummary", "BrowserDocumentMetricSummary", "BrowserMetricDistribution",
