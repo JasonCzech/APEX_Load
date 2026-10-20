@@ -54,20 +54,21 @@ var errBrowserResourceLimit = errors.New("browser resource limit")
 
 // BrowserEvidenceStats counts generator-wide evidence admission and overflow.
 type BrowserEvidenceStats struct {
-	HARWritersAdmitted      int64 `json:"har_writers_admitted"`
-	HARWritersRefused       int64 `json:"har_writers_refused"`
-	HARScratchRefusals      int64 `json:"har_scratch_refusals"`
-	HARScratchUnavailable   int64 `json:"har_scratch_unavailable"`
-	HAROverflowClosures     int64 `json:"har_overflow_closures"`
-	MemoryWatchdogClosures  int64 `json:"memory_watchdog_closures"`
-	ContextsRefusedByMemory int64 `json:"contexts_refused_by_memory"`
-	ContextsUnmeasured      int64 `json:"contexts_admitted_unmeasured"`
-	MemorySampleFailures    int64 `json:"memory_sample_failures"`
-	NetworkTasksDropped     int64 `json:"network_tasks_dropped"`
+	HARWritersAdmitted       int64 `json:"har_writers_admitted"`
+	HARWritersRefused        int64 `json:"har_writers_refused"`
+	HARScratchRefusals       int64 `json:"har_scratch_refusals"`
+	HARScratchUnavailable    int64 `json:"har_scratch_unavailable"`
+	HARFinalizationExhausted int64 `json:"har_finalization_exhausted"`
+	HAROverflowClosures      int64 `json:"har_overflow_closures"`
+	MemoryWatchdogClosures   int64 `json:"memory_watchdog_closures"`
+	ContextsRefusedByMemory  int64 `json:"contexts_refused_by_memory"`
+	ContextsUnmeasured       int64 `json:"contexts_admitted_unmeasured"`
+	MemorySampleFailures     int64 `json:"memory_sample_failures"`
+	NetworkTasksDropped      int64 `json:"network_tasks_dropped"`
 }
 
 type evidenceBudgetCounters struct {
-	harAdmitted, harRefused, harScratch, harScratchUnavailable, harOverflow, watchdog, contextsRefused, contextsUnmeasured, sampleFailures, networkDropped atomic.Int64
+	harFinalizationExhausted, harAdmitted, harRefused, harScratch, harScratchUnavailable, harOverflow, watchdog, contextsRefused, contextsUnmeasured, sampleFailures, networkDropped atomic.Int64
 }
 
 type evidenceBudget struct {
@@ -109,7 +110,7 @@ func newEvidenceBudget() *evidenceBudget {
 func BrowserEvidenceStatsSnapshot() BrowserEvidenceStats {
 	c := &browserEvidenceBudget.counters
 	return BrowserEvidenceStats{
-		HARWritersAdmitted: c.harAdmitted.Load(), HARWritersRefused: c.harRefused.Load(), HARScratchRefusals: c.harScratch.Load(),
+		HARFinalizationExhausted: c.harFinalizationExhausted.Load(), HARWritersAdmitted: c.harAdmitted.Load(), HARWritersRefused: c.harRefused.Load(), HARScratchRefusals: c.harScratch.Load(),
 		HARScratchUnavailable: c.harScratchUnavailable.Load(), HAROverflowClosures: c.harOverflow.Load(), MemoryWatchdogClosures: c.watchdog.Load(),
 		ContextsRefusedByMemory: c.contextsRefused.Load(), ContextsUnmeasured: c.contextsUnmeasured.Load(), MemorySampleFailures: c.sampleFailures.Load(),
 		NetworkTasksDropped: c.networkDropped.Load(),

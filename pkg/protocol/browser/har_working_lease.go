@@ -56,22 +56,26 @@ type harCaptureOwner struct {
 	closer                         func() error
 	// bound closes when the writer's closer is bound or the writer was
 	// abandoned, so a close requested while the context opens waits for it.
-	bound                 chan struct{}
-	boundOnce             sync.Once
-	closeOnce, finishOnce sync.Once
-	generationOnce        sync.Once
-	generationErr         error
-	descriptorOnce        sync.Once
-	descriptorErr         error
-	closeDone, finishDone chan struct{}
-	closeErr, finishErr   error
-	retired               bool
-	runtimeJoinOnce       sync.Once
-	runtimeDone           chan struct{}
-	runtimeErr            error
-	documentJoinOnce      sync.Once
-	documentDone          chan struct{}
-	documentErr           error
+	bound                                      chan struct{}
+	boundOnce                                  sync.Once
+	closeOnce, finishOnce                      sync.Once
+	generationOnce                             sync.Once
+	generationErr                              error
+	descriptorOnce                             sync.Once
+	descriptorErr                              error
+	closeDone, finishDone                      chan struct{}
+	closeErr, finishErr                        error
+	retired                                    bool
+	runtimeJoinOnce                            sync.Once
+	runtimeDone                                chan struct{}
+	runtimeErr                                 error
+	documentJoinOnce                           sync.Once
+	documentDone                               chan struct{}
+	documentErr                                error
+	finalizationOnce                           sync.Once
+	finalizationDeadline                       time.Time
+	finalizationTimer                          *time.Timer
+	finalizationReported, finalizationComplete bool
 }
 
 func reserveHAROwner() (*harCaptureOwner, error) {
@@ -331,6 +335,7 @@ func (o *harCaptureOwner) abandonWriter() {
 }
 
 func (o *harCaptureOwner) startClose() {
+	o.startFinalizationBudget()
 	o.closeOnce.Do(func() {
 		go func() {
 			var err error
@@ -380,6 +385,7 @@ func (o *harCaptureOwner) startClose() {
 }
 
 func (o *harCaptureOwner) startDocumentJoin(join func()) {
+	o.startFinalizationBudget()
 	o.documentJoinOnce.Do(func() {
 		o.mu.Lock()
 		o.documentDone = make(chan struct{})
@@ -428,6 +434,7 @@ func (o *harCaptureOwner) waitDocument(ctx context.Context) error {
 }
 
 func (o *harCaptureOwner) startRuntimeJoin(join func()) {
+	o.startFinalizationBudget()
 	o.runtimeJoinOnce.Do(func() {
 		o.mu.Lock()
 		o.runtimeDone = make(chan struct{})
@@ -457,6 +464,7 @@ func (o *harCaptureOwner) recordRuntimeError(err error) {
 }
 
 func (o *harCaptureOwner) startFinish(keep bool, redactor protocol.TextRedactor) {
+	o.startFinalizationBudget()
 	o.finishOnce.Do(func() {
 		o.startClose()
 		go func() {
@@ -470,6 +478,8 @@ func (o *harCaptureOwner) startFinish(keep bool, redactor protocol.TextRedactor)
 				if err == nil && !o.retiredSuccessfully() {
 					err = errHAROwnershipUnproven
 				}
+				err = errors.Join(err, o.finalizationBudgetError())
+				o.finishFinalizationBudget()
 				o.mu.Lock()
 				o.finishErr = err
 				o.mu.Unlock()
@@ -512,7 +522,7 @@ func (o *harCaptureOwner) waitFinish(ctx context.Context) (string, error) {
 		defer o.mu.Unlock()
 		return o.artifactPath, o.finishErr
 	case <-ctx.Done():
-		return "", errors.Join(errHAROwnershipUnproven, ctx.Err())
+		return "", errors.Join(errHAROwnershipUnproven, ctx.Err(), o.finalizationBudgetError())
 	}
 }
 
@@ -549,7 +559,11 @@ func (o *harCaptureOwner) finalizeJoined(keep bool, redactor protocol.TextRedact
 		harFinalizeCheckpoint("scrub")
 	}
 	var publicationErr error
-	if keep {
+	publicationCtx, publicationCancel := context.WithDeadline(context.Background(), o.startFinalizationBudget())
+	defer publicationCancel()
+	if keep && o.finalizationBudgetError() != nil {
+		publicationErr = errHARFinalizationBudget
+	} else if keep {
 		f, openErr := openHARRegular(o.root, "working.har", false)
 		if openErr != nil {
 			publicationErr = openErr
@@ -560,18 +574,27 @@ func (o *harCaptureOwner) finalizeJoined(keep bool, redactor protocol.TextRedact
 				readErr = fmt.Errorf("browser HAR exceeds size limit")
 			}
 			if readErr == nil {
-				data, readErr = scrub.HAR(data, scrub.Policy{})
+				readErr = o.finalizationBudgetError()
+				if readErr == nil {
+					data, readErr = scrub.HAR(data, scrub.Policy{})
+				}
 			}
 			if readErr == nil {
 				// Imports read the browser's protocol as a browser-run
 				// observation, never as proxy legs.
-				data, readErr = protocol.TagBrowserHARHTTPVersions(data, protocol.HARProvenanceBrowserRun)
+				readErr = o.finalizationBudgetError()
+				if readErr == nil {
+					data, readErr = protocol.TagBrowserHARHTTPVersions(data, protocol.HARProvenanceBrowserRun)
+				}
 			}
 			if readErr == nil && redactor != nil {
-				data, readErr = redactRuntimeHARText(data, redactor)
+				readErr = o.finalizationBudgetError()
+				if readErr == nil {
+					data, readErr = redactRuntimeHARText(data, redactor)
+				}
 			}
 			if readErr == nil {
-				readErr = o.publishScrubbed(ctx, n.root, data)
+				readErr = o.publishScrubbed(publicationCtx, n.root, data)
 			}
 			publicationErr = readErr
 		}
@@ -586,38 +609,78 @@ func (o *harCaptureOwner) finalizeJoined(keep bool, redactor protocol.TextRedact
 	return errors.Join(publicationErr, err)
 }
 
-func (o *harCaptureOwner) publishScrubbed(ctx context.Context, parent *os.Root, data []byte) error {
+func (o *harCaptureOwner) publishScrubbed(ctx context.Context, parent *os.Root, data []byte) (err error) {
+	if err := o.finalizationBudgetError(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := writeHARPrivateDurable(o.root, "scrubbed.part", data); err != nil {
+		return err
+	}
+	if err := o.finalizationBudgetError(); err != nil {
 		return err
 	}
 	name := "apexload_browser_" + o.generation + "_scrubbed.har"
 	private := filepath.Join(runtimeHARWorkingDirectory, o.generation, "scrubbed.part")
-	// Link is atomic and fails if the final name already exists. The closed,
-	// synced source is never copied into a visible partial final filename.
+	privateInfo, err := o.root.Lstat("scrubbed.part")
+	if err != nil {
+		return err
+	}
+	// Keep the private link until publication is qualified. A failed publication
+	// removes only the link to this exact inode, under the namespace lease.
 	if err := parent.Link(private, name); err != nil {
 		return err
 	}
+	defer func() {
+		if err == nil {
+			return
+		}
+		current, statErr := parent.Lstat(name)
+		if errors.Is(statErr, os.ErrNotExist) {
+			return
+		}
+		if statErr != nil || !os.SameFile(privateInfo, current) {
+			err = errors.Join(err, statErr, errHAROwnershipUnproven)
+			return
+		}
+		err = errors.Join(err, parent.Remove(name), syncHARRoot(parent))
+	}()
 	if err := syncHARRoot(parent); err != nil {
 		return err
 	}
 	if harFinalizeCheckpoint != nil {
 		harFinalizeCheckpoint("publish")
 	}
-	if err := o.root.Remove("scrubbed.part"); err != nil {
-		return err
-	}
-	if err := syncHARRoot(o.root); err != nil {
+	if err := o.finalizationBudgetError(); err != nil {
 		return err
 	}
 	if err := enforceRuntimeHARRetentionAtContext(ctx, parent, maxRetainedRuntimeHARArtifacts, maxRetainedRuntimeHARBytes); err != nil {
 		return err
 	}
 	info, err := parent.Lstat(name)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || !os.SameFile(privateInfo, info) {
 		return errors.Join(err, errHAROwnershipUnproven)
 	}
+	if err := o.finalizationBudgetError(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	o.mu.Lock()
+	if !time.Now().Before(o.finalizationDeadline) {
+		o.mu.Unlock()
+		return o.finalizationBudgetError()
+	}
 	o.artifactPath = filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(o.path))), name)
+	// All close/flush/scrub/publication work has completed. Joined raw retirement
+	// remains bounded separately and cannot retroactively expire this artifact.
+	o.finalizationComplete = true
+	if o.finalizationTimer != nil {
+		o.finalizationTimer.Stop()
+	}
 	o.mu.Unlock()
 	return nil
 }

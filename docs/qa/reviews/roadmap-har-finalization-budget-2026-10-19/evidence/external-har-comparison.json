@@ -1,0 +1,20 @@
+{
+  "baseline_commit": "609bf1b1a9417a7f1b99a9c476d6ef5d419e5864",
+  "baseline_go_paths_restored": 41,
+  "baseline_overlay_verified_against_git": true,
+  "current_base_commit": "0cea94070",
+  "current_changes": "HAR finalization budget; exact source and asset hashes retained",
+  "identical_aggregate_summaries": true,
+  "identical_script_after_generated_metadata_normalization": true,
+  "normalized_script_sha256": "e6738fa2970e771d8d2e6ee64de75a0df1d90cd90828a0004a19ebaeff3c143d",
+  "normalization": [
+    "script.id",
+    "script.created_at",
+    "script.metadata.import.preserved.server_import_attestation_v1"
+  ],
+  "initial_hash_mismatch_explanation": "Each import generates its own draft attestation capability; private structural comparison found this was the only remaining difference",
+  "original_archive_unchanged": true,
+  "recorded_target_replay": false,
+  "private_capture_and_script_committed": false,
+  "comparison": "actual HTTP multipart ZIP import; retained raw script SHA-256 ignores script ID and creation time; private structural equality also removes only the generated draft attestation token; fixed test project and import name"
+}

@@ -134,6 +134,22 @@ test('evidence guides are searchable, readable and retain their scope after relo
   }
 })
 
+test('HAR ownership help distinguishes caller waits from capture finalization and retains its limits', async ({ page }, testInfo) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('har_finalization_budget_exhausted')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Native HAR working-file ownership', exact: true }).click()
+  await expect(page).toHaveURL(/article=browser-har-ownership/)
+  const article = page.locator('.guide-markdown-article')
+  await expect(article).toContainText('30-second capture finalization deadline')
+  await expect(article).toContainText('two-second caller wait is separate')
+  await expect(article).toContainText('does not forcibly terminate a callback')
+  await expect(article).toContainText('separate 256 in-flight request admission limit')
+  await page.reload()
+  await expect(article).toContainText('har_finalization_exhausted')
+  await page.setViewportSize({ width: 760, height: 900 })
+  expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('har-finalization-budget-help.png'), animations: 'disabled' })
+})
+
 test('legacy URLs, generated API search and contextual guidance reach the right articles', async ({ page }) => {
   for (const [hash, title] of [['#/docs?guide=quick-start', 'Overview & first API calls'], ['#/docs?guide=mcp', 'MCP setup'], ['#/docs?guide=authentication', 'API authentication'], ['#/repository-guide', 'API workflows']]) {
     await page.goto(`/${hash}`)

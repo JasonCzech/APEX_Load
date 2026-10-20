@@ -36,6 +36,11 @@ Each BE-4 behavior names the tests that accept it. **Chromium and WebKit** tests
 | Metadata floods | `TestNetworkEntriesMetadataBudget` (`pkg/protocol/browser/network_buffer_bounding_test.go`) | Unit (no browser) |
 |  | `TestBoundBrowserNetworkHeadersLimitsEntriesAndBytes` (`pkg/protocol/browser/network_buffer_bounding_test.go`) | Unit (no browser) |
 |  | `TestNetworkEntriesRingAndByteBudget` (`pkg/protocol/browser/network_buffer_bounding_test.go`) | Unit (no browser) |
+| Shared native finalization deadline and physical ownership | `TestHARFinalizationUsesOneDeadlineAcrossPhases` (`pkg/protocol/browser/har_finalization_budget_test.go`) | Unit (no browser) |
+|  | `TestHARFinalizationExpiredJoinRetainsOwnershipUntilProof` (`pkg/protocol/browser/har_finalization_budget_test.go`) | Unit (no browser) |
+|  | `TestHARFinalizationExpiryDuringScrubRefusesPublication` (`pkg/protocol/browser/har_finalization_budget_test.go`) | Unit (no browser) |
+|  | `TestHARFinalizationExpiryAfterLinkRemovesOnlyOwnedPublication` (`pkg/protocol/browser/har_finalization_budget_test.go`) | Unit (no browser) |
+|  | `TestHARFinalizationReportsExhaustionOnceWhileWriterIsBlocked` (`pkg/protocol/browser/har_finalization_budget_test.go`) | Unit (no browser) |
 | Flush-time quota exhaustion | `TestHAROverflowFailsTheSessionExplicitly` (`pkg/protocol/browser/evidence_budget_test.go`) | Unit (no browser) |
 |  | `TestHARWritersReserveTheAggregateBudgetAndScratch` (`pkg/protocol/browser/evidence_budget_test.go`) | Unit (no browser) |
 | Recorder limits | `TestValidateRecorderOptionsRejectsResourceBounds` (`pkg/recorder/browser/resource_bounds_test.go`) | Unit (no browser) |

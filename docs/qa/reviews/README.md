@@ -1,5 +1,7 @@
 # QA Review Records
 
+- [Roadmap HAR finalization budget (2026-10-19)](roadmap-har-finalization-budget-2026-10-19/README.md) — shared publication deadline, explicit exhaustion and retained physical ownership.
+
 - [Roadmap browser baseline qualification guards (2026-10-19)](roadmap-browser-baseline-qualification-2026-10-19/README.md) — effect floors and known document-loss refusal.
 
 Status: Historical index (point-in-time UX/QA reviews and feature evaluations; not current product documentation). This is the single review index. Live status for the test program is in [../STATUS.md](../STATUS.md) and [../DEFECTS.md](../DEFECTS.md).

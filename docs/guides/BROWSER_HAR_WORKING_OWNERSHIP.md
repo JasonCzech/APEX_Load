@@ -49,6 +49,27 @@ join can finish the owned work. Filesystem/finalization errors remain visible
 and may leave a charged owner requiring reconciliation or process shutdown.
 A new context cannot reuse an unretired capture owner.
 
+The two-second caller wait is separate from the shared **30-second capture
+finalization deadline**. The first document join, runtime join or native close
+starts that deadline once; retries and later phases cannot renew it. Close,
+flush, scrubbing and durable publication must qualify within it. Expiration
+returns `browser HAR finalization budget exhausted`, emits the
+`har_finalization_budget_exhausted` reason and increments the generator-wide
+`har_finalization_exhausted` evidence counter once per capture, including when
+a native writer remains blocked. It does not forcibly terminate a callback or
+turn a timeout into writer-death proof. An in-progress read, scrub or native
+close keeps its owner until it actually returns.
+
+Expired capture output is not published. A deadline crossed after the final
+link is created removes only that owner's exact link; a foreign replacement
+is preserved and reported as unproven. Once every writer and worker has joined,
+raw retirement can still proceed under its separately bounded namespace wait,
+even when capture publication was refused. An artifact already qualified and
+published within the deadline stays valid during later retirement or retries.
+These guards have [local deterministic qualification](../qa/reviews/roadmap-har-finalization-budget-2026-10-19/README.md);
+they do not establish the separate 256 in-flight request admission limit or
+native Linux/Windows crash qualification.
+
 After successful join, scrubbed output is written and synced in private staging,
 then linked to a fresh flat apexload_browser_<generation>_scrubbed.har name
 without replacing an existing artifact. The final name never exposes an
