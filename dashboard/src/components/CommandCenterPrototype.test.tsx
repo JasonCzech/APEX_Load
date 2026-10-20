@@ -1028,7 +1028,7 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).not.toContain('Check again')
   })
 
-  it('restores every archived transaction series after a completed run reload', async () => {
+  it('restores every archived transaction series after a completed run reload and scopes them to the selected groups', async () => {
     const terminalRun: TestSummary = {
       id: 'completed-transactions',
       name: 'Completed transaction run',
@@ -1082,10 +1082,16 @@ describe('CommandCenterPrototype', () => {
             p90_ms: 12,
             p95_ms: 14,
             p99_ms: 16,
-            transactions: {
-              Login: { name: 'Login', tps: 12, count: 12, errors: 0, avg_ms: 8 },
-              Search: { name: 'Search', tps: 12, count: 12, errors: 0, avg_ms: 12 },
-            },
+            // The server scopes the series to the selected groups: smoke runs
+            // Login and browse runs Search.
+            groups: Object.fromEntries([
+              ['smoke', { vusers: 3, tps: 12, avg_response_ms: 8, transactions: 12, errors: 0 }],
+              ['browse', { vusers: 3, tps: 12, avg_response_ms: 12, transactions: 12, errors: 0 }],
+            ].filter(([name]) => selectedGroups.length === 0 || selectedGroups.includes(name as string))),
+            transactions: Object.fromEntries([
+              ['Login', { name: 'Login', tps: 12, count: 12, errors: 0, avg_ms: 8, groups: ['smoke'] }],
+              ['Search', { name: 'Search', tps: 12, count: 12, errors: 0, avg_ms: 12, groups: ['browse'] }],
+            ].filter(([, tx]) => selectedGroups.length === 0 || (tx as { groups: string[] }).groups.some(group => selectedGroups.includes(group)))),
           }],
         })
       }
@@ -1112,10 +1118,13 @@ describe('CommandCenterPrototype', () => {
     await click(smokeVisibility!)
     await flush()
 
+    // Only browse is selected: its transaction and its own group line stay.
     expect(responseTimeChart?.getAttribute('aria-label')).not.toContain('Transaction · Login')
-    expect(responseTimeChart?.getAttribute('aria-label')).not.toContain('Transaction · Search')
+    expect(responseTimeChart?.getAttribute('aria-label')).toContain('Transaction · Search')
     expect(tpsChart?.getAttribute('aria-label')).not.toContain('Transaction · Login')
-    expect(tpsChart?.getAttribute('aria-label')).not.toContain('Transaction · Search')
+    expect(tpsChart?.getAttribute('aria-label')).toContain('Transaction · Search')
+    expect(tpsChart?.getAttribute('aria-label')).toContain('browse')
+    expect(tpsChart?.getAttribute('aria-label')).not.toContain('smoke')
 
     await click(smokeVisibility!)
     await flush()
@@ -1128,6 +1137,81 @@ describe('CommandCenterPrototype', () => {
       const url = new URL(requestUrl(input), 'http://localhost')
       return url.pathname.endsWith('/archive/summaries') && url.searchParams.get('sample_limit') === '5000'
     })).toBe(true)
+  })
+
+  it('keeps hidden groups\' transactions off the graphs when the archive ignores the group filter', async () => {
+    const terminalRun: TestSummary = {
+      id: 'unfiltered-archive',
+      name: 'Unfiltered archive run',
+      status: 'COMPLETE',
+      total_vusers: 6,
+      duration: '25s',
+      created_at: '2026-06-08T13:00:00Z',
+      ended_at: '2026-06-08T13:00:25Z',
+      groups: [
+        { name: 'smoke', protocol: 'http', script_id: 'script-1', script_name: 'Login script', vusers: 3 },
+        { name: 'browse', protocol: 'http', script_id: 'script-2', script_name: 'Search script', vusers: 3 },
+      ],
+      archive: {
+        test_id: 'unfiltered-archive',
+        schema_version: 'apexload.archive.v2',
+        archive_path: '/archives/unfiltered-archive',
+        manifest_path: '/archives/unfiltered-archive/manifest.json',
+        transaction_count: 2,
+        resource_sample_count: 1,
+        interval_summary_count: 1,
+        created_at: '2026-06-08T13:00:00Z',
+        completed_at: '2026-06-08T13:00:25Z',
+      },
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = new URL(requestUrl(input), 'http://localhost')
+      if (url.pathname === '/api/v1/tests/unfiltered-archive/archive/summaries') {
+        // An older server: no filters echo and no per-group fields, so the
+        // view rebuilds the selected groups from raw transactions.
+        return jsonResponse({
+          summaries: [{
+            timestamp: '2026-06-08T13:00:24Z',
+            test_id: terminalRun.id,
+            test_name: terminalRun.name,
+            active_vusers: 6,
+            tps: 24,
+            avg_response_ms: 10,
+            error_pct: 0,
+            total_transactions: 24,
+            total_errors: 0,
+            transactions: {
+              Login: { name: 'Login', tps: 12, count: 12, errors: 0, avg_ms: 8 },
+              Search: { name: 'Search', tps: 12, count: 12, errors: 0, avg_ms: 12 },
+            },
+          }],
+        })
+      }
+      if (url.pathname === '/api/v1/tests/unfiltered-archive/archive/transactions') {
+        const group = url.searchParams.get('group')
+        const transactions = group === 'browse'
+          ? [{ timestamp: '2026-06-08T13:00:23Z', test_id: terminalRun.id, test_name: terminalRun.name, group: 'browse', action_name: 'Search', duration_ms: 12, success: true }]
+          : []
+        return jsonResponse({ transactions, total: transactions.length })
+      }
+      return jsonResponse({})
+    })
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId={terminalRun.id} initialTest={terminalRun} history={[]} />)
+    })
+    await flush()
+    await click(buttonNamed('Graph Wall'))
+    await flush()
+
+    const tpsChart = container.querySelector('[aria-label^="Transactions Per Second chart."]')
+    expect(tpsChart?.getAttribute('aria-label')).toContain('Transaction · Login')
+
+    await click(container.querySelector<HTMLButtonElement>('[aria-label="smoke graph visibility"]')!)
+    await flush()
+
+    expect(tpsChart?.getAttribute('aria-label')).not.toContain('Transaction · Login')
+    expect(tpsChart?.getAttribute('aria-label')).toContain('browse')
   })
 
   it('defaults to operations and returns from analysis without changing the selected run', async () => {

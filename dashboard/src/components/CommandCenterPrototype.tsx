@@ -731,8 +731,9 @@ export default function CommandCenterPrototype({
   const [archiveFinalizationTimedOut, setArchiveFinalizationTimedOut] = useState(false)
   const [archiveCheckPending, setArchiveCheckPending] = useState(false)
   const [archiveCheckError, setArchiveCheckError] = useState('')
-  const [backendScopedChartData, setBackendScopedChartData] = useState<MetricsHistoryPoint[] | null>(null)
-  const [backendScopedMetrics, setBackendScopedMetrics] = useState<LiveMetrics | undefined>()
+  // Keyed by the group selection it was fetched for, so a previous
+  // selection's series never show while the new one loads.
+  const [backendScoped, setBackendScoped] = useState<{ signature: string; chartData: MetricsHistoryPoint[]; metrics?: LiveMetrics } | null>(null)
   const [showNotes, setShowNotes] = useState(false)
   const [showRuntimeAdjustment, setShowRuntimeAdjustment] = useState(false)
   const { pendingAction, pendingDetail, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
@@ -1107,6 +1108,9 @@ export default function CommandCenterPrototype({
   )
   const graphWallGroupNames = useMemo(() => graphWallGroups.map(group => group.name), [graphWallGroups])
   const graphWallGroupSignature = graphWallGroupNames.join('\u001f')
+  const currentBackendScoped = backendScoped?.signature === graphWallGroupSignature ? backendScoped : null
+  const backendScopedChartData = currentBackendScoped?.chartData ?? null
+  const backendScopedMetrics = currentBackendScoped?.metrics
   const errorPatterns = useMemo(
     () => liveMode ? buildLiveErrorPatterns(displayTest.live_metrics) : hasLiveRoute || emptyMode ? [] : prototypeFixtures?.errorPatterns ?? [],
     [displayTest.live_metrics, emptyMode, hasLiveRoute, liveMode, prototypeFixtures],
@@ -1249,7 +1253,9 @@ export default function CommandCenterPrototype({
   const graphScopedChartData = useMemo(() => {
     if (noGraphWallGroupsVisible) return []
     if (allGraphWallGroupsVisible) return chartData
-    return (alignedBackendScopedChartData ?? clientScopedChartData).map(omitTransactionChartSeries)
+    // The backend scopes transaction series to the selected groups; every
+    // unscoped fallback strips them where it is chosen.
+    return alignedBackendScopedChartData ?? clientScopedChartData
   }, [alignedBackendScopedChartData, allGraphWallGroupsVisible, chartData, clientScopedChartData, noGraphWallGroupsVisible])
   const graphScopedMetrics = allGraphWallGroupsVisible || noGraphWallGroupsVisible
     ? displayTest.live_metrics
@@ -1257,18 +1263,22 @@ export default function CommandCenterPrototype({
 
   useEffect(() => {
     if (!liveMode || !testId || variant !== 'grafana' || allGraphWallGroupsVisible || noGraphWallGroupsVisible) {
-      setBackendScopedChartData(null)
-      setBackendScopedMetrics(undefined)
+      setBackendScoped(null)
       return undefined
     }
 
     let cancelled = false
+    const publishScoped = (chartData: MetricsHistoryPoint[], metrics?: LiveMetrics) => {
+      setBackendScoped({ signature: graphWallGroupSignature, chartData, metrics })
+    }
     const selectedGroupNames = graphWallGroupSignature ? graphWallGroupSignature.split('\u001f') : []
     const selectedGroupSet = new Set(selectedGroupNames)
     const selectedGroupScopes = selectedGroupNames.map(name => ({ name }) as CommandGroup)
-    const responseHonorsGroupFilter = (metrics?: LiveMetrics) => (
-      Object.keys(metrics?.groups || {}).every(name => selectedGroupSet.has(name))
-    )
+    // A response without group metrics proves nothing about the filter.
+    const responseHonorsGroupFilter = (metrics?: LiveMetrics) => {
+      const responseGroups = Object.keys(metrics?.groups || {})
+      return responseGroups.length > 0 && responseGroups.every(name => selectedGroupSet.has(name))
+    }
     const loadArchiveTransactionsForSelectedGroups = async () => {
       const transactions: TransactionEvent[] = []
       for (const groupName of selectedGroupNames) {
@@ -1302,22 +1312,23 @@ export default function CommandCenterPrototype({
           if (!cancelled) {
             const mappedHistory = mapArchiveSummarySamples(loaded)
             if (archiveFilterHonored) {
-              setBackendScopedChartData(mappedHistory)
+              publishScoped(mappedHistory)
             } else if (selectedGroupHistoryHasFields(mappedHistory, selectedGroupNames)) {
-              setBackendScopedChartData(selectedGroupLoadImpactData(mappedHistory, selectedGroupScopes))
+              publishScoped(selectedGroupLoadImpactData(mappedHistory, selectedGroupScopes))
             } else {
               try {
                 const transactions = await loadArchiveTransactionsForSelectedGroups()
                 if (cancelled) return
-                const transactionHistory = buildSelectedGroupChartHistoryFromTransactions(mappedHistory, transactions, graphWallGroups, groups)
-                setBackendScopedChartData(transactionHistory.length > 0 ? transactionHistory : mappedHistory)
+                // The unfiltered summaries carry every group's transactions.
+                const unscopedReference = mappedHistory.map(omitTransactionChartSeries)
+                const transactionHistory = buildSelectedGroupChartHistoryFromTransactions(unscopedReference, transactions, graphWallGroups, groups)
+                publishScoped(transactionHistory.length > 0 ? transactionHistory : unscopedReference)
               } catch {
                 if (!cancelled) {
-                  setBackendScopedChartData(mappedHistory)
+                  publishScoped(mappedHistory.map(omitTransactionChartSeries))
                 }
               }
             }
-            setBackendScopedMetrics(undefined)
           }
           return
         }
@@ -1325,16 +1336,14 @@ export default function CommandCenterPrototype({
         const response = await api.getMetrics(testId, { groups: selectedGroupNames, limit: 300 })
         if (cancelled) return
         const mappedHistory = mapExecutionHistory((response.history || []) as LiveMetrics[])
-        setBackendScopedChartData(responseHonorsGroupFilter(response.metrics)
-          ? mappedHistory
-          : selectedGroupLoadImpactData(mappedHistory, selectedGroupScopes))
-        setBackendScopedMetrics(responseHonorsGroupFilter(response.metrics)
-          ? response.metrics
-          : undefined)
+        if (responseHonorsGroupFilter(response.metrics)) {
+          publishScoped(mappedHistory, response.metrics)
+        } else {
+          publishScoped(selectedGroupLoadImpactData(mappedHistory, selectedGroupScopes))
+        }
       } catch {
         if (!cancelled) {
-          setBackendScopedChartData(null)
-          setBackendScopedMetrics(undefined)
+          setBackendScoped(null)
         }
       }
     }
@@ -2709,6 +2718,7 @@ function GrafanaWallView({
           runId={runId}
           variant="grafana"
           groups={chartGroups}
+          multiGroupRun={groups.length > 1}
           metrics={metrics}
           chartData={chartData}
           groupScopedChartData={groupScopedChartData}
@@ -3927,6 +3937,8 @@ interface CommandRuntimeGraphsProps {
   runId?: string
   variant: VariantId
   groups: CommandGroup[]
+  /** The run has more than one group, so even one selected group draws its own line. */
+  multiGroupRun?: boolean
   metrics?: LiveMetrics
   chartData: MetricsHistoryPoint[]
   groupScopedChartData?: MetricsHistoryPoint[]
@@ -3962,6 +3974,7 @@ function CommandRuntimeGraphs({
   runId,
   variant,
   groups,
+  multiGroupRun,
   metrics,
   chartData,
   groupScopedChartData,
@@ -4026,7 +4039,7 @@ function CommandRuntimeGraphs({
         refAreaEnd={refAreaEnd}
         timeRange={timeRange}
         onTimeRangeChange={onTimeRangeChange}
-        isMultiGroup={groups.length > 1}
+        isMultiGroup={groups.length > 1 || (multiGroupRun === true && groups.length > 0)}
         groupNames={groupNames}
         groupColors={groupColors.length > 0 ? groupColors : ['var(--chart-1)']}
         groupColorByName={groupColorByName}
