@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -140,7 +141,7 @@ func BenchmarkBrowserRSSPerChromiumDeviceProfile(b *testing.B) {
 		}
 		target := target
 		b.Run(target.name, func(b *testing.B) {
-			var totalRSS float64
+			var totalRSSBytes float64
 			for i := 0; i < b.N; i++ {
 				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 				br := &Browser{}
@@ -154,7 +155,13 @@ func BenchmarkBrowserRSSPerChromiumDeviceProfile(b *testing.B) {
 					cancel()
 					b.Fatalf("captureBrowserProcessSnapshot(%s): %v", target.name, err)
 				}
-				totalRSS += snapshot.MemoryMB
+				rssBytes, available := benchmarkRuntimeRSSBytes(snapshot)
+				if !available {
+					_ = br.Teardown(ctx)
+					cancel()
+					b.Fatalf("RSS attribution unavailable for %s", target.name)
+				}
+				totalRSSBytes += rssBytes
 				if err := br.Teardown(ctx); err != nil {
 					cancel()
 					b.Fatalf("Teardown(%s): %v", target.name, err)
@@ -162,10 +169,23 @@ func BenchmarkBrowserRSSPerChromiumDeviceProfile(b *testing.B) {
 				cancel()
 			}
 			if b.N > 0 {
-				b.ReportMetric(totalRSS/float64(b.N), "rss_mb/op")
+				// MemoryMB is the existing runtime snapshot's binary-unit field.
+				// Preserve its semantics and label new benchmark output explicitly.
+				b.ReportMetric(totalRSSBytes/float64(1<<20)/float64(b.N), "rss_mib/op")
+				b.ReportMetric(totalRSSBytes/float64(b.N), "rss_bytes/op")
 			}
 		})
 	}
+}
+
+// Convert the existing binary-unit snapshot without inventing more precision
+// than the platform RSS sampler supplies (for example, ps reports KiB).
+func benchmarkRuntimeRSSBytes(snapshot browserProcessSnapshot) (float64, bool) {
+	bytes := snapshot.MemoryMB * float64(1<<20)
+	if snapshot.CapturedAt.IsZero() || bytes <= 0 || math.IsNaN(bytes) || math.IsInf(bytes, 0) {
+		return 0, false
+	}
+	return bytes, true
 }
 
 func benchmarkBrowserConfig(profile string, clientMetrics bool) map[string]any {

@@ -47,6 +47,10 @@ type BrowserBenchmarkProfile struct {
 }
 
 type BrowserBenchmarkAcceptance struct {
+	MeasurementVersion string `json:"measurement_version"`
+	// The legacy MB target is decimal. Byte values remove ambiguity with old
+	// benchmark outputs which used MiB while labeling them MB.
+	RSSPerVUserTargetBytes   uint64 `json:"rss_per_vuser_target_bytes,omitempty"`
 	LaunchP50TargetMs        int    `json:"launch_p50_target_ms"`
 	ActionOverheadTargetMs   int    `json:"action_overhead_target_ms"`
 	RSSPerVUserTargetMB      int    `json:"rss_per_vuser_target_mb,omitempty"`
@@ -100,10 +104,12 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 			EvidenceLevel: "code+docs+release_artifact_required",
 			ArtifactPath:  browserBenchmarkArtifactEvidence + "#desktop-chromium-1080p",
 			Acceptance: BrowserBenchmarkAcceptance{
+				MeasurementVersion:       "apexload.browser_benchmark.v2",
 				LaunchP50TargetMs:        3000,
 				ActionOverheadTargetMs:   10,
 				RSSPerVUserTargetMB:      250,
-				RSSAttribution:           "chromium_cdp_process_snapshot",
+				RSSPerVUserTargetBytes:   250_000_000,
+				RSSAttribution:           "shared_playwright_driver_descendants_or_driver",
 				RequiredRawRunCount:      5,
 				RequiredBenchmarkCommand: benchmarkCommand,
 			},
@@ -128,10 +134,12 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 			EvidenceLevel: "code+docs+release_artifact_required",
 			ArtifactPath:  browserBenchmarkArtifactEvidence + "#mobile-chromium-pixel-8",
 			Acceptance: BrowserBenchmarkAcceptance{
+				MeasurementVersion:       "apexload.browser_benchmark.v2",
 				LaunchP50TargetMs:        3000,
 				ActionOverheadTargetMs:   10,
 				RSSPerVUserTargetMB:      250,
-				RSSAttribution:           "chromium_cdp_process_snapshot",
+				RSSPerVUserTargetBytes:   250_000_000,
+				RSSAttribution:           "shared_playwright_driver_descendants_or_driver",
 				RequiredRawRunCount:      5,
 				RequiredBenchmarkCommand: benchmarkCommand,
 			},
@@ -156,9 +164,10 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 			EvidenceLevel: "code+docs+release_artifact_required",
 			ArtifactPath:  browserBenchmarkArtifactEvidence + "#mobile-webkit-iphone-15-pro",
 			Acceptance: BrowserBenchmarkAcceptance{
+				MeasurementVersion:       "apexload.browser_benchmark.v2",
 				LaunchP50TargetMs:        3000,
 				ActionOverheadTargetMs:   10,
-				RSSAttribution:           "not_available_for_webkit; use launch/action latency plus host-level memory telemetry",
+				RSSAttribution:           "not_qualified_for_webkit; use launch/action latency plus host-level memory telemetry",
 				RequiredRawRunCount:      5,
 				RequiredBenchmarkCommand: benchmarkCommand,
 			},
@@ -170,7 +179,7 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 			Evidence:                []string{"pkg/protocol/browser/mobile_benchmark_test.go", browserBenchmarkArtifactEvidence},
 			ReleaseGate:             true,
 			HighDensityClaimAllowed: false,
-			Notes:                   []string{"WebKit RSS is not attributed through CDP; keep density bounded by host telemetry and replay reliability."},
+			Notes:                   []string{"WebKit RSS attribution is not qualified by this benchmark; keep density bounded by host telemetry and replay reliability."},
 		},
 	}
 

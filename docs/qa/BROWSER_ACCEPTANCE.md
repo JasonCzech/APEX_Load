@@ -56,6 +56,10 @@ Each BE-4 behavior names the tests that accept it. **Chromium and WebKit** tests
 | Old archives and synthetic fallback | `TestRunArchiveSyntheticHARLeavesNativeContextsOutAndScrubs` (`pkg/api/archive_synthetic_har_test.go`) | Unit (no browser) |
 |  | `TestRunArchiveSyntheticHARDropsLegacyParquetHeaders` (`pkg/api/archive_synthetic_har_test.go`) | Unit (no browser) |
 |  | `TestSyntheticHARNeverInventsTimingsOrContent` (`pkg/harsynth/writer_test.go`) | Unit (no browser) |
+| Benchmark units and missing samples | `TestBrowserBenchmarkRSSPreservesRawBytesAndMissingness` (`pkg/protocol/browser/browser_benchmark_units_test.go`) | Unit (no browser) |
+|  | `TestBrowserBenchmarkV2ArtifactKeepsRawMemoryPopulation` (`pkg/protocol/browser/browser_benchmark_units_test.go`) | Unit (no browser) |
+|  | `TestBrowserBenchmarkRSSSampleDenominatorIncludesUnavailable` (`pkg/protocol/browser/browser_benchmark_units_test.go`) | Unit (no browser) |
+|  | `TestBrowserBenchmarkRSSRuntimeConversionRequiresAvailableFiniteSnapshot` (`pkg/protocol/browser/browser_benchmark_units_test.go`) | Unit (no browser) |
 | Benchmark (opt-in) | `TestBrowserBenchmark` (`pkg/protocol/browser/browser_benchmark_test.go`) | Chromium and WebKit |
 
 ## End to end
@@ -77,7 +81,7 @@ These Playwright tests run in both authentication profiles (default and local-au
 - the host (OS and kernel version, CPU model and count, memory), the Playwright driver version and each browser's version;
 - cold launch (the engine's browser started from nothing) and session start against the pooled browser a generator keeps running;
 - navigation time, the overhead of document capture, and the throttled navigation's separation from the plain one;
-- peak RSS and CPU seconds of the Playwright driver and browser process tree;
+- largest observed RSS snapshot in bytes (nullable when unavailable), attempted/partial/unavailable snapshot counts, and CPU seconds of the observed test-process descendants including Playwright and browsers;
 - teardown time, and processes left once the browser closes;
 - failures.
 

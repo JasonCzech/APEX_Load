@@ -59,8 +59,12 @@ type BrowserBenchmarkResult struct {
 	CleanupMs            float64 `json:"cleanup_ms"`
 	// Peak RSS and CPU seconds of the test process's descendants: the
 	// Playwright driver and the browser it launched.
-	PeakRSSMB  float64 `json:"peak_rss_mb"`
-	CPUSeconds float64 `json:"cpu_seconds"`
+	PeakRSSBytes          *uint64 `json:"peak_rss_bytes"`
+	RSSPopulation         string  `json:"rss_population"`
+	RSSSamples            int     `json:"rss_samples"`
+	RSSUnavailableSamples int     `json:"rss_unavailable_samples"`
+	RSSPartialSamples     int     `json:"rss_partial_samples"`
+	CPUSeconds            float64 `json:"cpu_seconds"`
 	// LeftoverProcesses remain after every session is torn down and the
 	// browser is closed.
 	LeftoverProcesses int `json:"leftover_processes"`
@@ -88,7 +92,7 @@ func TestBrowserBenchmark(t *testing.T) {
 	for _, engine := range []string{"chromium", "webkit"} {
 		t.Run(engine, func(t *testing.T) {
 			for _, target := range benchmarkTargets(engine) {
-				result := BrowserBenchmarkResult{Engine: engine, Profile: target.label, Platform: runtime.GOOS + "-" + runtime.GOARCH, Iterations: iterations, ThrottleLatencyMs: latencyMs}
+				result := BrowserBenchmarkResult{Engine: engine, Profile: target.label, Platform: runtime.GOOS + "-" + runtime.GOARCH, Iterations: iterations, ThrottleLatencyMs: latencyMs, RSSPopulation: "observed_test_process_descendants"}
 				// Start from a closed browser, so the first session times the
 				// browser's launch.
 				baseline := benchmarkColdPool(t, engine)
@@ -144,7 +148,8 @@ func TestBrowserBenchmark(t *testing.T) {
 								throttled = append(throttled, benchmarkMs(elapsed))
 							}
 						}
-						result.PeakRSSMB = max(result.PeakRSSMB, benchmarkRSSMB())
+						sample, missing := benchmarkRSSBytes()
+						result.recordRSSSample(sample, missing)
 						cpu.sample()
 						closing := time.Now()
 						if err := b.Teardown(context.Background()); err != nil {
@@ -313,14 +318,61 @@ func browserDescendants() []*process.Process {
 	return out
 }
 
-func benchmarkRSSMB() float64 {
-	var rss float64
-	for _, p := range browserDescendants() {
-		if memory, err := p.MemoryInfo(); err == nil {
-			rss += float64(memory.RSS) / (1 << 20)
+// This observed descendant-tree snapshot includes the Playwright driver and
+// browser processes, not an independently attributed per-VUser population.
+// Missing reads remain explicit; no readable descendants is unavailable.
+func benchmarkRSSBytes() (*uint64, int) {
+	return benchmarkRSSFromProcesses(browserDescendants(), func(p *process.Process) (uint64, error) {
+		memory, err := p.MemoryInfo()
+		if err != nil {
+			return 0, err
 		}
+		return memory.RSS, nil
+	})
+}
+func benchmarkRSSFromProcesses(processes []*process.Process, read func(*process.Process) (uint64, error)) (*uint64, int) {
+	var total uint64
+	measured, missing := 0, 0
+	for _, p := range processes {
+		value, err := read(p)
+		if err != nil {
+			missing++
+			continue
+		}
+		if ^uint64(0)-total < value {
+			return nil, len(processes)
+		}
+		total += value
+		measured++
 	}
-	return rss
+	if measured == 0 {
+		return nil, missing
+	}
+	return &total, missing
+}
+
+// Count every attempted RSS snapshot, including unavailable ones. Partial and
+// unavailable counts cannot be interpreted without this denominator.
+func (result *BrowserBenchmarkResult) recordRSSSample(sample *uint64, missing int) {
+	result.RSSSamples++
+	if sample == nil {
+		result.RSSUnavailableSamples++
+		return
+	}
+	if result.PeakRSSBytes == nil || *sample > *result.PeakRSSBytes {
+		value := *sample
+		result.PeakRSSBytes = &value
+	}
+	if missing > 0 {
+		result.RSSPartialSamples++
+	}
+}
+
+func benchmarkRSSNote(result BrowserBenchmarkResult) string {
+	if result.PeakRSSBytes == nil {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.0f MiB", float64(*result.PeakRSSBytes)/(1<<20))
 }
 
 func benchmarkCPUByPID() map[int32]float64 {
@@ -369,7 +421,8 @@ func benchmarkHost() map[string]any {
 		info["cpu_model"] = cpus[0].ModelName
 	}
 	if memory, err := mem.VirtualMemory(); err == nil {
-		info["memory_mb"] = memory.Total >> 20
+		info["memory_bytes"] = memory.Total
+		info["memory_mib"] = float64(memory.Total) / (1 << 20)
 	}
 	if driver, err := playwright.NewDriver(); err == nil {
 		info["playwright_driver_version"] = driver.Version
@@ -381,7 +434,7 @@ func benchmarkHost() map[string]any {
 // request per engine and profile, naming the results' SHA-256.
 func writeBrowserBenchmark(t *testing.T, dir string, results []BrowserBenchmarkResult) {
 	t.Helper()
-	body, err := json.MarshalIndent(map[string]any{"schema": "apexload.browser_benchmark.v1", "generated_at": time.Now().UTC(), "host": benchmarkHost(), "results": results}, "", "  ")
+	body, err := json.MarshalIndent(map[string]any{"schema": "apexload.browser_benchmark.v2", "generated_at": time.Now().UTC(), "host": benchmarkHost(), "results": results}, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,8 +460,8 @@ func writeBrowserBenchmark(t *testing.T, dir string, results []BrowserBenchmarkR
 		if result.Failures > 0 || result.LeftoverProcesses > 0 || result.ThrottleSeparationMs < float64(result.ThrottleLatencyMs)/2 {
 			status = "failed"
 		}
-		notes := fmt.Sprintf("%s %s %s: cold %.0f ms, session %.0f ms, nav %.0f ms, capture %+.0f ms, throttle %+.0f/%d ms, RSS %.0f MB, CPU %.1f s, cleanup %.0f ms, leftover %d. Five-VUser ceiling stands.",
-			result.Engine, result.BrowserVersion, result.Profile, result.ColdLaunchMs, result.SessionStartMs, result.ActionMs, result.CaptureOverheadMs, result.ThrottleSeparationMs, result.ThrottleLatencyMs, result.PeakRSSMB, result.CPUSeconds, result.CleanupMs, result.LeftoverProcesses)
+		notes := fmt.Sprintf("%s %s %s: cold %.0f ms, session %.0f ms, nav %.0f ms, capture %+.0f ms, throttle %+.0f/%d ms, RSS %s, CPU %.1f s, cleanup %.0f ms, leftover %d. Five-VUser ceiling stands.",
+			result.Engine, result.BrowserVersion, result.Profile, result.ColdLaunchMs, result.SessionStartMs, result.ActionMs, result.CaptureOverheadMs, result.ThrottleSeparationMs, result.ThrottleLatencyMs, benchmarkRSSNote(result), result.CPUSeconds, result.CleanupMs, result.LeftoverProcesses)
 		if len(notes) > 256 {
 			t.Errorf("acceptance notes exceed the 256 bytes a record accepts: %q", notes)
 		}
@@ -435,7 +488,7 @@ func writeBrowserBenchmark(t *testing.T, dir string, results []BrowserBenchmarkR
 func TestBrowserBenchmarkRequestsArePendingOrFailed(t *testing.T) {
 	dir := t.TempDir()
 	stable := BrowserBenchmarkResult{Engine: "chromium", Profile: "desktop_1080p", Platform: "darwin-arm64", BrowserVersion: "149.0.7827.55", Iterations: 5, ThrottleLatencyMs: 200, ThrottleSeparationMs: 199,
-		ColdLaunchMs: 9999.9, SessionStartMs: 9999.9, ActionMs: 9999.9, CaptureOverheadMs: -9999.9, PeakRSSMB: 99999.9, CPUSeconds: 9999.9, CleanupMs: 9999.9}
+		ColdLaunchMs: 9999.9, SessionStartMs: 9999.9, ActionMs: 9999.9, CaptureOverheadMs: -9999.9, PeakRSSBytes: func() *uint64 { v := uint64(104857495142); return &v }(), RSSPopulation: "observed_test_process_descendants", CPUSeconds: 9999.9, CleanupMs: 9999.9}
 	unstable := stable
 	unstable.Engine, unstable.Profile, unstable.Failures = "webkit", "iphone_15_pro", 1
 	requests := filepath.Join(dir, "browser-benchmark-acceptance-requests.json")

@@ -337664,6 +337664,8 @@ paths:
                             launch_p50_target_ms:
                               type: integer
                               format: int64
+                            measurement_version:
+                              type: string
                             required_benchmark_command:
                               type: string
                             required_raw_run_count:
@@ -337671,12 +337673,16 @@ paths:
                               format: int64
                             rss_attribution:
                               type: string
+                            rss_per_vuser_target_bytes:
+                              type: integer
+                              format: int64
                             rss_per_vuser_target_mb:
                               type: integer
                               format: int64
                           required:
                             - action_overhead_target_ms
                             - launch_p50_target_ms
+                            - measurement_version
                             - required_benchmark_command
                             - required_raw_run_count
                             - rss_attribution
@@ -343187,6 +343193,8 @@ paths:
                             launch_p50_target_ms:
                               type: integer
                               format: int64
+                            measurement_version:
+                              type: string
                             required_benchmark_command:
                               type: string
                             required_raw_run_count:
@@ -343194,12 +343202,16 @@ paths:
                               format: int64
                             rss_attribution:
                               type: string
+                            rss_per_vuser_target_bytes:
+                              type: integer
+                              format: int64
                             rss_per_vuser_target_mb:
                               type: integer
                               format: int64
                           required:
                             - action_overhead_target_ms
                             - launch_p50_target_ms
+                            - measurement_version
                             - required_benchmark_command
                             - required_raw_run_count
                             - rss_attribution
