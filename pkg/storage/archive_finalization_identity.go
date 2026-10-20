@@ -23,6 +23,10 @@ type ArchiveFinalizationRunIdentity struct {
 }
 
 func (s *SQLiteStore) CompleteArchiveFinalizationForRun(testID, intentToken, refreshToken string, record *RunArchiveRecord, identity ArchiveFinalizationRunIdentity) (bool, error) {
+	return s.completeArchiveFinalizationForRunWithNotification(testID, intentToken, refreshToken, record, identity, nil)
+}
+
+func (s *SQLiteStore) completeArchiveFinalizationForRunWithNotification(testID, intentToken, refreshToken string, record *RunArchiveRecord, identity ArchiveFinalizationRunIdentity, notification *TelemetryNotificationPublication) (bool, error) {
 	if record == nil || identity.StartTime.IsZero() || identity.EndTime.IsZero() ||
 		(identity.Status != "COMPLETE" && identity.Status != "FAILED" && identity.Status != "ABORTED") ||
 		(identity.LeaseName == "") != (identity.LeaseOwner == "") {
@@ -38,7 +42,7 @@ func (s *SQLiteStore) CompleteArchiveFinalizationForRun(testID, intentToken, ref
 		return false, errors.New("archive completion time differs from terminal identity")
 	}
 	identity.ProjectID = normalizeProjectID(identity.ProjectID)
-	return s.completeArchiveFinalization(testID, intentToken, refreshToken, record, &identity)
+	return s.completeArchiveFinalization(testID, intentToken, refreshToken, record, &identity, notification)
 }
 
 // SQLite preserves the original timestamp's textual offset. Compare instants

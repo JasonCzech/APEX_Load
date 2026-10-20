@@ -476845,6 +476845,88 @@ paths:
       tags:
         - Tests
       x-handler: handleReportClientRender
+  /api/v1/tests/{id}/telemetry/notifications:
+    get:
+      summary: Telemetry Notification Status
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleTelemetryNotificationStatus
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available:
+                    type: boolean
+                  publication:
+                    type: object
+                    properties:
+                      decision:
+                        type: string
+                      deliveries:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
+                      event_id:
+                        type: string
+                      manifest_sha256:
+                        type: string
+                      suppressed_publications:
+                        type: integer
+                        format: int64
+                      updated_at:
+                        type: string
+                        format: date-time
+                    required:
+                      - decision
+                      - deliveries
+                      - manifest_sha256
+                      - suppressed_publications
+                      - updated_at
+                    nullable: true
+                  reason:
+                    type: string
+                required:
+                  - available
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleTelemetryNotificationStatus
   /api/v1/tests/{id}/transactions/live/{event_id}:
     get:
       summary: Get Live Transaction Detail

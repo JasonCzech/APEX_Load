@@ -1,0 +1,2081 @@
+{
+  "full-go-access-snapshot-stale": {
+    "counts": {
+      "skip_package": 10,
+      "pass_test": 17670,
+      "pass_package": 167,
+      "pass_subtest": 17350,
+      "skip_test": 33,
+      "skip_subtest": 5,
+      "fail_test": 1,
+      "fail_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/api/proto": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/apexbench": {
+        "result": "pass",
+        "elapsed": 0.56
+      },
+      "github.com/jasonczech/apexload/cmd/apexctl": {
+        "result": "pass",
+        "elapsed": 15.363
+      },
+      "github.com/jasonczech/apexload/cmd/apexctl/internal/ciclient": {
+        "result": "pass",
+        "elapsed": 0.11
+      },
+      "github.com/jasonczech/apexload/cmd/apexfault-target": {
+        "result": "pass",
+        "elapsed": 0.402
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-collector-agent": {
+        "result": "pass",
+        "elapsed": 0.163
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-host-broker": {
+        "result": "pass",
+        "elapsed": 0.2
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-host-facade": {
+        "result": "pass",
+        "elapsed": 0.182
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-host-supervisor": {
+        "result": "pass",
+        "elapsed": 0.179
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-vuser-runner": {
+        "result": "pass",
+        "elapsed": 0.18
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-record-agent": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/controller": {
+        "result": "pass",
+        "elapsed": 0.951
+      },
+      "github.com/jasonczech/apexload/cmd/dslschema": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/generator": {
+        "result": "pass",
+        "elapsed": 1.421
+      },
+      "github.com/jasonczech/apexload/cmd/openapits": {
+        "result": "pass",
+        "elapsed": 17.366
+      },
+      "github.com/jasonczech/apexload/cmd/storeoverlay": {
+        "result": "pass",
+        "elapsed": 0.122
+      },
+      "github.com/jasonczech/apexload/cmd/swaggergen": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/webcoverage": {
+        "result": "pass",
+        "elapsed": 0.378
+      },
+      "github.com/jasonczech/apexload/deployments/k8s": {
+        "result": "pass",
+        "elapsed": 5.228
+      },
+      "github.com/jasonczech/apexload/desktop": {
+        "result": "pass",
+        "elapsed": 3.3529999999999998
+      },
+      "github.com/jasonczech/apexload/docs/qa": {
+        "result": "pass",
+        "elapsed": 9.517
+      },
+      "github.com/jasonczech/apexload/pkg/analysis": {
+        "result": "pass",
+        "elapsed": 0.22
+      },
+      "github.com/jasonczech/apexload/pkg/analysis/duckdb": {
+        "result": "pass",
+        "elapsed": 44.918
+      },
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "fail",
+        "elapsed": 915.024
+      },
+      "github.com/jasonczech/apexload/pkg/api/testexec": {
+        "result": "pass",
+        "elapsed": 0.585
+      },
+      "github.com/jasonczech/apexload/pkg/archivecontract": {
+        "result": "pass",
+        "elapsed": 0.095
+      },
+      "github.com/jasonczech/apexload/pkg/browserresource": {
+        "result": "pass",
+        "elapsed": 0.132
+      },
+      "github.com/jasonczech/apexload/pkg/buildinfo": {
+        "result": "pass",
+        "elapsed": 0.1
+      },
+      "github.com/jasonczech/apexload/pkg/collectoragent": {
+        "result": "pass",
+        "elapsed": 42.751
+      },
+      "github.com/jasonczech/apexload/pkg/compute": {
+        "result": "pass",
+        "elapsed": 0.304
+      },
+      "github.com/jasonczech/apexload/pkg/compute/aws": {
+        "result": "pass",
+        "elapsed": 0.378
+      },
+      "github.com/jasonczech/apexload/pkg/compute/azure": {
+        "result": "pass",
+        "elapsed": 0.401
+      },
+      "github.com/jasonczech/apexload/pkg/config": {
+        "result": "pass",
+        "elapsed": 0.112
+      },
+      "github.com/jasonczech/apexload/pkg/contentmutation": {
+        "result": "pass",
+        "elapsed": 0.126
+      },
+      "github.com/jasonczech/apexload/pkg/controller": {
+        "result": "pass",
+        "elapsed": 0.192
+      },
+      "github.com/jasonczech/apexload/pkg/convert/agentforce": {
+        "result": "pass",
+        "elapsed": 0.207
+      },
+      "github.com/jasonczech/apexload/pkg/convert/asyncapi": {
+        "result": "pass",
+        "elapsed": 0.421
+      },
+      "github.com/jasonczech/apexload/pkg/convert/brokerconfig": {
+        "result": "pass",
+        "elapsed": 0.394
+      },
+      "github.com/jasonczech/apexload/pkg/convert/bruno": {
+        "result": "pass",
+        "elapsed": 0.901
+      },
+      "github.com/jasonczech/apexload/pkg/convert/clientids": {
+        "result": "pass",
+        "elapsed": 0.209
+      },
+      "github.com/jasonczech/apexload/pkg/convert/clienttimestamps": {
+        "result": "pass",
+        "elapsed": 0.186
+      },
+      "github.com/jasonczech/apexload/pkg/convert/cloudtest": {
+        "result": "pass",
+        "elapsed": 0.208
+      },
+      "github.com/jasonczech/apexload/pkg/convert/convertresult": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/pkg/convert/convertutil": {
+        "result": "pass",
+        "elapsed": 0.158
+      },
+      "github.com/jasonczech/apexload/pkg/convert/correlate": {
+        "result": "pass",
+        "elapsed": 1.308
+      },
+      "github.com/jasonczech/apexload/pkg/convert/credentialpolicy": {
+        "result": "pass",
+        "elapsed": 0.148
+      },
+      "github.com/jasonczech/apexload/pkg/convert/devweb": {
+        "result": "pass",
+        "elapsed": 0.519
+      },
+      "github.com/jasonczech/apexload/pkg/convert/diag": {
+        "result": "pass",
+        "elapsed": 0.113
+      },
+      "github.com/jasonczech/apexload/pkg/convert/enterprisearchive": {
+        "result": "pass",
+        "elapsed": 10.263
+      },
+      "github.com/jasonczech/apexload/pkg/convert/eventhubscapture": {
+        "result": "pass",
+        "elapsed": 0.406
+      },
+      "github.com/jasonczech/apexload/pkg/convert/grafana": {
+        "result": "pass",
+        "elapsed": 0.108
+      },
+      "github.com/jasonczech/apexload/pkg/convert/har": {
+        "result": "pass",
+        "elapsed": 0.426
+      },
+      "github.com/jasonczech/apexload/pkg/convert/importcontract": {
+        "result": "pass",
+        "elapsed": 0.61
+      },
+      "github.com/jasonczech/apexload/pkg/convert/importreview": {
+        "result": "pass",
+        "elapsed": 0.191
+      },
+      "github.com/jasonczech/apexload/pkg/convert/jmeter": {
+        "result": "pass",
+        "elapsed": 0.598
+      },
+      "github.com/jasonczech/apexload/pkg/convert/k6": {
+        "result": "pass",
+        "elapsed": 0.234
+      },
+      "github.com/jasonczech/apexload/pkg/convert/mulesoft": {
+        "result": "pass",
+        "elapsed": 0.188
+      },
+      "github.com/jasonczech/apexload/pkg/convert/openapi": {
+        "result": "pass",
+        "elapsed": 0.441
+      },
+      "github.com/jasonczech/apexload/pkg/convert/paramize": {
+        "result": "pass",
+        "elapsed": 1.429
+      },
+      "github.com/jasonczech/apexload/pkg/convert/postman": {
+        "result": "pass",
+        "elapsed": 0.45
+      },
+      "github.com/jasonczech/apexload/pkg/convert/raml": {
+        "result": "pass",
+        "elapsed": 0.208
+      },
+      "github.com/jasonczech/apexload/pkg/convert/recordedshape": {
+        "result": "pass",
+        "elapsed": 0.184
+      },
+      "github.com/jasonczech/apexload/pkg/convert/recorderjson": {
+        "result": "pass",
+        "elapsed": 0.19
+      },
+      "github.com/jasonczech/apexload/pkg/convert/requestimport": {
+        "result": "pass",
+        "elapsed": 0.42
+      },
+      "github.com/jasonczech/apexload/pkg/convert/salesforce": {
+        "result": "pass",
+        "elapsed": 3.643
+      },
+      "github.com/jasonczech/apexload/pkg/convert/sample": {
+        "result": "pass",
+        "elapsed": 0.651
+      },
+      "github.com/jasonczech/apexload/pkg/convert/sharedvalue": {
+        "result": "pass",
+        "elapsed": 0.223
+      },
+      "github.com/jasonczech/apexload/pkg/convert/sourceview": {
+        "result": "pass",
+        "elapsed": 0.117
+      },
+      "github.com/jasonczech/apexload/pkg/convert/srcparse": {
+        "result": "pass",
+        "elapsed": 0.117
+      },
+      "github.com/jasonczech/apexload/pkg/convert/tmpl": {
+        "result": "pass",
+        "elapsed": 0.112
+      },
+      "github.com/jasonczech/apexload/pkg/convert/trueclient": {
+        "result": "pass",
+        "elapsed": 0.232
+      },
+      "github.com/jasonczech/apexload/pkg/convert/uniquify": {
+        "result": "pass",
+        "elapsed": 0.18
+      },
+      "github.com/jasonczech/apexload/pkg/convert/wsdl": {
+        "result": "pass",
+        "elapsed": 0.327
+      },
+      "github.com/jasonczech/apexload/pkg/credential": {
+        "result": "pass",
+        "elapsed": 0.104
+      },
+      "github.com/jasonczech/apexload/pkg/debugserver": {
+        "result": "pass",
+        "elapsed": 0.152
+      },
+      "github.com/jasonczech/apexload/pkg/deeplink": {
+        "result": "pass",
+        "elapsed": 0.104
+      },
+      "github.com/jasonczech/apexload/pkg/distributed/generatorrpc": {
+        "result": "pass",
+        "elapsed": 45.903
+      },
+      "github.com/jasonczech/apexload/pkg/distributed/rendezvous": {
+        "result": "pass",
+        "elapsed": 0.431
+      },
+      "github.com/jasonczech/apexload/pkg/dsl": {
+        "result": "pass",
+        "elapsed": 0.493
+      },
+      "github.com/jasonczech/apexload/pkg/dsl/schemagen": {
+        "result": "pass",
+        "elapsed": 0.428
+      },
+      "github.com/jasonczech/apexload/pkg/dslwalk": {
+        "result": "pass",
+        "elapsed": 0.202
+      },
+      "github.com/jasonczech/apexload/pkg/dynatrace": {
+        "result": "pass",
+        "elapsed": 5.393
+      },
+      "github.com/jasonczech/apexload/pkg/elastic": {
+        "result": "pass",
+        "elapsed": 5.131
+      },
+      "github.com/jasonczech/apexload/pkg/engine": {
+        "result": "pass",
+        "elapsed": 80.902
+      },
+      "github.com/jasonczech/apexload/pkg/fileasset": {
+        "result": "pass",
+        "elapsed": 0.318
+      },
+      "github.com/jasonczech/apexload/pkg/harsynth": {
+        "result": "pass",
+        "elapsed": 2.373
+      },
+      "github.com/jasonczech/apexload/pkg/hostnet": {
+        "result": "pass",
+        "elapsed": 0.113
+      },
+      "github.com/jasonczech/apexload/pkg/identitypolicy": {
+        "result": "pass",
+        "elapsed": 0.115
+      },
+      "github.com/jasonczech/apexload/pkg/importartifact": {
+        "result": "pass",
+        "elapsed": 4.284
+      },
+      "github.com/jasonczech/apexload/pkg/importartifact/legacyresolver": {
+        "result": "pass",
+        "elapsed": 0.095
+      },
+      "github.com/jasonczech/apexload/pkg/importsession": {
+        "result": "pass",
+        "elapsed": 0.122
+      },
+      "github.com/jasonczech/apexload/pkg/internal/archiveingest": {
+        "result": "pass",
+        "elapsed": 0.127
+      },
+      "github.com/jasonczech/apexload/pkg/internal/archivequota": {
+        "result": "pass",
+        "elapsed": 7.781
+      },
+      "github.com/jasonczech/apexload/pkg/internal/aurafixture": {
+        "result": "pass",
+        "elapsed": 0.227
+      },
+      "github.com/jasonczech/apexload/pkg/internal/aurapayload": {
+        "result": "pass",
+        "elapsed": 0.12
+      },
+      "github.com/jasonczech/apexload/pkg/internal/bodyencoding": {
+        "result": "pass",
+        "elapsed": 0.086
+      },
+      "github.com/jasonczech/apexload/pkg/internal/boundedcache": {
+        "result": "pass",
+        "elapsed": 0.112
+      },
+      "github.com/jasonczech/apexload/pkg/internal/boundedtext": {
+        "result": "pass",
+        "elapsed": 0.092
+      },
+      "github.com/jasonczech/apexload/pkg/internal/contentcontract": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/pkg/internal/contentdecode": {
+        "result": "pass",
+        "elapsed": 0.263
+      },
+      "github.com/jasonczech/apexload/pkg/internal/diskspace": {
+        "result": "pass",
+        "elapsed": 0.098
+      },
+      "github.com/jasonczech/apexload/pkg/internal/extractiontest": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/pkg/internal/filelock": {
+        "result": "pass",
+        "elapsed": 0.306
+      },
+      "github.com/jasonczech/apexload/pkg/internal/grpcclient": {
+        "result": "pass",
+        "elapsed": 0.18
+      },
+      "github.com/jasonczech/apexload/pkg/internal/h3fixture": {
+        "result": "pass",
+        "elapsed": 2.116
+      },
+      "github.com/jasonczech/apexload/pkg/internal/hostpattern": {
+        "result": "pass",
+        "elapsed": 0.098
+      },
+      "github.com/jasonczech/apexload/pkg/internal/importreview": {
+        "result": "pass",
+        "elapsed": 0.565
+      },
+      "github.com/jasonczech/apexload/pkg/internal/jsonquery": {
+        "result": "pass",
+        "elapsed": 0.191
+      },
+      "github.com/jasonczech/apexload/pkg/internal/paritytest": {
+        "result": "pass",
+        "elapsed": 0.407
+      },
+      "github.com/jasonczech/apexload/pkg/internal/pwshutdown": {
+        "result": "pass",
+        "elapsed": 0.192
+      },
+      "github.com/jasonczech/apexload/pkg/internal/strftime": {
+        "result": "pass",
+        "elapsed": 0.091
+      },
+      "github.com/jasonczech/apexload/pkg/internal/subprocessguard": {
+        "result": "pass",
+        "elapsed": 0.09
+      },
+      "github.com/jasonczech/apexload/pkg/internal/templatedjson": {
+        "result": "pass",
+        "elapsed": 0.089
+      },
+      "github.com/jasonczech/apexload/pkg/internal/testlog": {
+        "result": "pass",
+        "elapsed": 0.097
+      },
+      "github.com/jasonczech/apexload/pkg/internal/winfs": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/pkg/internal/zipbounds": {
+        "result": "pass",
+        "elapsed": 0.11
+      },
+      "github.com/jasonczech/apexload/pkg/javarunner": {
+        "result": "pass",
+        "elapsed": 12.394
+      },
+      "github.com/jasonczech/apexload/pkg/javarunner/broker": {
+        "result": "pass",
+        "elapsed": 3.161
+      },
+      "github.com/jasonczech/apexload/pkg/javarunner/ipc": {
+        "result": "pass",
+        "elapsed": 0.107
+      },
+      "github.com/jasonczech/apexload/pkg/javasidecar": {
+        "result": "pass",
+        "elapsed": 30.126
+      },
+      "github.com/jasonczech/apexload/pkg/keywrap": {
+        "result": "pass",
+        "elapsed": 0.191
+      },
+      "github.com/jasonczech/apexload/pkg/kubeops": {
+        "result": "pass",
+        "elapsed": 0.348
+      },
+      "github.com/jasonczech/apexload/pkg/librarycontract": {
+        "result": "pass",
+        "elapsed": 0.112
+      },
+      "github.com/jasonczech/apexload/pkg/livetable": {
+        "result": "pass",
+        "elapsed": 0.711
+      },
+      "github.com/jasonczech/apexload/pkg/monitorcontract": {
+        "result": "pass",
+        "elapsed": 0.119
+      },
+      "github.com/jasonczech/apexload/pkg/monitorprovider": {
+        "result": "pass",
+        "elapsed": 1.5699999999999998
+      },
+      "github.com/jasonczech/apexload/pkg/netpolicy": {
+        "result": "pass",
+        "elapsed": 0.137
+      },
+      "github.com/jasonczech/apexload/pkg/perfevidence": {
+        "result": "pass",
+        "elapsed": 3.148
+      },
+      "github.com/jasonczech/apexload/pkg/prometheus": {
+        "result": "pass",
+        "elapsed": 0.198
+      },
+      "github.com/jasonczech/apexload/pkg/protocol": {
+        "result": "pass",
+        "elapsed": 0.681
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/appium": {
+        "result": "pass",
+        "elapsed": 3.761
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/aura": {
+        "result": "pass",
+        "elapsed": 0.161
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/browser": {
+        "result": "pass",
+        "elapsed": 81.056
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/browsercontract": {
+        "result": "pass",
+        "elapsed": 0.217
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/builtin": {
+        "result": "pass",
+        "elapsed": 0.329
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/database": {
+        "result": "pass",
+        "elapsed": 0.181
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/eventhubs": {
+        "result": "pass",
+        "elapsed": 0.226
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/grpc": {
+        "result": "pass",
+        "elapsed": 0.747
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/http": {
+        "result": "pass",
+        "elapsed": 22.421
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/http/internal/h3transport": {
+        "result": "pass",
+        "elapsed": 5.441
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/http/pagecontext": {
+        "result": "pass",
+        "elapsed": 0.073
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/httpcontract": {
+        "result": "pass",
+        "elapsed": 0.081
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/java_http": {
+        "result": "pass",
+        "elapsed": 0.211
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/java_vuser": {
+        "result": "pass",
+        "elapsed": 4.758
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/jms": {
+        "result": "pass",
+        "elapsed": 5.276
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/jsonextract": {
+        "result": "pass",
+        "elapsed": 0.108
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/jsonextract/jsonextracttest": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/kafka": {
+        "result": "pass",
+        "elapsed": 15.46
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/kafkacontract": {
+        "result": "pass",
+        "elapsed": 0.075
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/messaging": {
+        "result": "pass",
+        "elapsed": 0.067
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/network": {
+        "result": "pass",
+        "elapsed": 0.279
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/soap": {
+        "result": "pass",
+        "elapsed": 0.21
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/websocket": {
+        "result": "pass",
+        "elapsed": 0.22
+      },
+      "github.com/jasonczech/apexload/pkg/qrcode": {
+        "result": "pass",
+        "elapsed": 0.068
+      },
+      "github.com/jasonczech/apexload/pkg/rca": {
+        "result": "pass",
+        "elapsed": 0.154
+      },
+      "github.com/jasonczech/apexload/pkg/rca/signatures": {
+        "result": "pass",
+        "elapsed": 0.064
+      },
+      "github.com/jasonczech/apexload/pkg/recordagent": {
+        "result": "pass",
+        "elapsed": 0.448
+      },
+      "github.com/jasonczech/apexload/pkg/recordbridge": {
+        "result": "pass",
+        "elapsed": 1.275
+      },
+      "github.com/jasonczech/apexload/pkg/recorder": {
+        "result": "pass",
+        "elapsed": 4.49
+      },
+      "github.com/jasonczech/apexload/pkg/recorder/browser": {
+        "result": "pass",
+        "elapsed": 27.864
+      },
+      "github.com/jasonczech/apexload/pkg/recorder/marker": {
+        "result": "pass",
+        "elapsed": 0.082
+      },
+      "github.com/jasonczech/apexload/pkg/recordingprofile": {
+        "result": "pass",
+        "elapsed": 0.096
+      },
+      "github.com/jasonczech/apexload/pkg/refkey": {
+        "result": "pass",
+        "elapsed": 0.06
+      },
+      "github.com/jasonczech/apexload/pkg/runcontract": {
+        "result": "pass",
+        "elapsed": 0.094
+      },
+      "github.com/jasonczech/apexload/pkg/runtimetuning": {
+        "result": "pass",
+        "elapsed": 0.071
+      },
+      "github.com/jasonczech/apexload/pkg/scriptdisclosure": {
+        "result": "pass",
+        "elapsed": 2.898
+      },
+      "github.com/jasonczech/apexload/pkg/scrub": {
+        "result": "pass",
+        "elapsed": 0.416
+      },
+      "github.com/jasonczech/apexload/pkg/secretstore": {
+        "result": "pass",
+        "elapsed": 1.623
+      },
+      "github.com/jasonczech/apexload/pkg/selector": {
+        "result": "pass",
+        "elapsed": 0.089
+      },
+      "github.com/jasonczech/apexload/pkg/storage": {
+        "result": "pass",
+        "elapsed": 94.239
+      },
+      "github.com/jasonczech/apexload/pkg/telemetry": {
+        "result": "pass",
+        "elapsed": 0.313
+      },
+      "github.com/jasonczech/apexload/pkg/telemetrypolicy": {
+        "result": "pass",
+        "elapsed": 0.045
+      },
+      "github.com/jasonczech/apexload/pkg/trafficprofile": {
+        "result": "pass",
+        "elapsed": 0.189
+      },
+      "github.com/jasonczech/apexload/runners/java_vuser": {
+        "result": "pass",
+        "elapsed": 36.728
+      },
+      "github.com/jasonczech/apexload/scripts": {
+        "result": "pass",
+        "elapsed": 22.179
+      },
+      "github.com/jasonczech/apexload/scripts/fault_s3_probe": {
+        "result": "pass",
+        "elapsed": 0.175
+      },
+      "github.com/jasonczech/apexload/scripts/java-shared-jvm-bench": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/scripts/multiproject": {
+        "result": "pass",
+        "elapsed": 0.085
+      }
+    },
+    "failures": [
+      "TestAccessRequirementSnapshotStable",
+      "github.com/jasonczech/apexload/pkg/api"
+    ],
+    "superseded": true,
+    "sha256": "6136842f3a86623055d304fd3b9c59dd8daf15a7de88c641e9e846bf9eb949a0"
+  },
+  "full-go-catalog-fixture-stale": {
+    "counts": {
+      "skip_package": 4,
+      "pass_test": 4264,
+      "pass_package": 19,
+      "pass_subtest": 4879,
+      "skip_test": 8,
+      "skip_subtest": 2,
+      "fail_test": 1,
+      "fail_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/api/proto": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/apexbench": {
+        "result": "pass",
+        "elapsed": 0.577
+      },
+      "github.com/jasonczech/apexload/cmd/apexctl": {
+        "result": "pass",
+        "elapsed": 15.29
+      },
+      "github.com/jasonczech/apexload/cmd/apexctl/internal/ciclient": {
+        "result": "pass",
+        "elapsed": 0.139
+      },
+      "github.com/jasonczech/apexload/cmd/apexfault-target": {
+        "result": "pass",
+        "elapsed": 0.42
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-collector-agent": {
+        "result": "pass",
+        "elapsed": 0.173
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-host-broker": {
+        "result": "pass",
+        "elapsed": 0.219
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-host-facade": {
+        "result": "pass",
+        "elapsed": 0.202
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-host-supervisor": {
+        "result": "pass",
+        "elapsed": 0.203
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-vuser-runner": {
+        "result": "pass",
+        "elapsed": 0.171
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-record-agent": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/controller": {
+        "result": "pass",
+        "elapsed": 0.935
+      },
+      "github.com/jasonczech/apexload/cmd/dslschema": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/generator": {
+        "result": "pass",
+        "elapsed": 1.498
+      },
+      "github.com/jasonczech/apexload/cmd/openapits": {
+        "result": "pass",
+        "elapsed": 16.966
+      },
+      "github.com/jasonczech/apexload/cmd/storeoverlay": {
+        "result": "pass",
+        "elapsed": 0.129
+      },
+      "github.com/jasonczech/apexload/cmd/swaggergen": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/webcoverage": {
+        "result": "pass",
+        "elapsed": 0.373
+      },
+      "github.com/jasonczech/apexload/deployments/k8s": {
+        "result": "pass",
+        "elapsed": 5.192
+      },
+      "github.com/jasonczech/apexload/desktop": {
+        "result": "pass",
+        "elapsed": 3.257
+      },
+      "github.com/jasonczech/apexload/docs/qa": {
+        "result": "pass",
+        "elapsed": 9.841
+      },
+      "github.com/jasonczech/apexload/pkg/analysis": {
+        "result": "pass",
+        "elapsed": 0.221
+      },
+      "github.com/jasonczech/apexload/pkg/analysis/duckdb": {
+        "result": "pass",
+        "elapsed": 44.566
+      },
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "fail",
+        "elapsed": 453.732
+      }
+    },
+    "failures": [
+      "TestHandleDeleteTestWaitsForArchiveFinalizationFence",
+      "github.com/jasonczech/apexload/pkg/api"
+    ],
+    "superseded": true,
+    "sha256": "c0cc9b805c70cc52a8beebfa2005f8cee9bfb31e89909720fedaab7c0ccf55f4"
+  },
+  "applied-archive-fixtures-race": {
+    "counts": {
+      "pass_subtest": 20,
+      "pass_test": 10,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 44.47
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "3e966b29a92de5369accce63b289fdff9c70ea038dd135f162f50a366bcd6ea9"
+  },
+  "applied-archive-regressions": {
+    "counts": {
+      "pass_subtest": 346,
+      "pass_test": 221,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 62.788
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "ee876ff4c7662e964bcd334c74494371b917b472619c365f77fcc60aeddc6473"
+  },
+  "full-go-contract-inventory-stale": {
+    "counts": {
+      "skip_package": 4,
+      "pass_test": 2629,
+      "pass_package": 19,
+      "pass_subtest": 3951,
+      "skip_test": 6,
+      "skip_subtest": 2,
+      "fail_test": 1,
+      "fail_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/api/proto": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/apexbench": {
+        "result": "pass",
+        "elapsed": 0.567
+      },
+      "github.com/jasonczech/apexload/cmd/apexctl": {
+        "result": "pass",
+        "elapsed": 15.322
+      },
+      "github.com/jasonczech/apexload/cmd/apexctl/internal/ciclient": {
+        "result": "pass",
+        "elapsed": 0.145
+      },
+      "github.com/jasonczech/apexload/cmd/apexfault-target": {
+        "result": "pass",
+        "elapsed": 0.379
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-collector-agent": {
+        "result": "pass",
+        "elapsed": 0.173
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-host-broker": {
+        "result": "pass",
+        "elapsed": 0.213
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-host-facade": {
+        "result": "pass",
+        "elapsed": 0.198
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-host-supervisor": {
+        "result": "pass",
+        "elapsed": 0.196
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-vuser-runner": {
+        "result": "pass",
+        "elapsed": 0.168
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-record-agent": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/controller": {
+        "result": "pass",
+        "elapsed": 0.931
+      },
+      "github.com/jasonczech/apexload/cmd/dslschema": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/generator": {
+        "result": "pass",
+        "elapsed": 1.414
+      },
+      "github.com/jasonczech/apexload/cmd/openapits": {
+        "result": "pass",
+        "elapsed": 18.057
+      },
+      "github.com/jasonczech/apexload/cmd/storeoverlay": {
+        "result": "pass",
+        "elapsed": 0.09
+      },
+      "github.com/jasonczech/apexload/cmd/swaggergen": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/webcoverage": {
+        "result": "pass",
+        "elapsed": 0.347
+      },
+      "github.com/jasonczech/apexload/deployments/k8s": {
+        "result": "pass",
+        "elapsed": 5.413
+      },
+      "github.com/jasonczech/apexload/desktop": {
+        "result": "pass",
+        "elapsed": 3.402
+      },
+      "github.com/jasonczech/apexload/docs/qa": {
+        "result": "pass",
+        "elapsed": 9.518
+      },
+      "github.com/jasonczech/apexload/pkg/analysis": {
+        "result": "pass",
+        "elapsed": 0.233
+      },
+      "github.com/jasonczech/apexload/pkg/analysis/duckdb": {
+        "result": "pass",
+        "elapsed": 45.219
+      },
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "fail",
+        "elapsed": 252.563
+      }
+    },
+    "failures": [
+      "TestGeneratedAPIContractMatrixIsFresh",
+      "github.com/jasonczech/apexload/pkg/api"
+    ],
+    "superseded": true,
+    "sha256": "0387131f18acdc689fb038294906c63f15b5ab7e2364255ef196e43b8e640ad5"
+  },
+  "api-draft": {
+    "counts": {
+      "fail_test": 3,
+      "fail_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "fail",
+        "elapsed": 24.361
+      }
+    },
+    "failures": [
+      "TestTelemetryNotificationRuntimeScrubsAndPinsRecipients",
+      "TestTelemetryNotificationRuntimeRetriesOnlyFailedDestinations",
+      "TestTelemetryNotificationRuntimeSaturationAndShutdownRemainRetryable",
+      "github.com/jasonczech/apexload/pkg/api"
+    ],
+    "superseded": true,
+    "sha256": "bc9f1d07ae9022237d5af733a5b7bf17dfdf3908fe8b110cc78b282e94e86fbc"
+  },
+  "api-draft-2": {
+    "counts": {
+      "pass_test": 3,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 2.452
+      }
+    },
+    "failures": [],
+    "superseded": true,
+    "sha256": "248dca7edb424dd4d8dd6d5673386c34f04c07a13edb7e71928423b4f7781a36"
+  },
+  "api-draft-3": {
+    "counts": {
+      "pass_subtest": 4,
+      "pass_test": 5,
+      "fail_subtest": 1,
+      "fail_test": 1,
+      "fail_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "fail",
+        "elapsed": 3.255
+      }
+    },
+    "failures": [
+      "TestTelemetryNotificationStatusAuthorizesProjectAndResultScope/foreign_project",
+      "TestTelemetryNotificationStatusAuthorizesProjectAndResultScope",
+      "github.com/jasonczech/apexload/pkg/api"
+    ],
+    "superseded": true,
+    "sha256": "c8c1592108fd5c6b78db0773fed4fd2ef7d5ce7d662b7ed868f6d2e298a0f551"
+  },
+  "api-draft-4": {
+    "counts": {
+      "pass_test": 9,
+      "pass_subtest": 5,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 4.241
+      }
+    },
+    "failures": [],
+    "superseded": true,
+    "sha256": "772527d17ce6ed40fd5edd64148cde1810eeb20d89d96d7494622e153ad36c41"
+  },
+  "api-draft-5": {
+    "counts": {
+      "pass_test": 10,
+      "pass_subtest": 5,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 3.341
+      }
+    },
+    "failures": [],
+    "superseded": true,
+    "sha256": "807d7d0c1d653188dbd38887a387c4dfdcff762077b92d21c49ba1c71ea5205b"
+  },
+  "api-race": {
+    "counts": {
+      "pass_test": 10,
+      "pass_subtest": 5,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 33.187
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "6273381fa426b5c9e8d60410cea20620ef12984d29bb223e2e004f92be385067"
+  },
+  "api-worker-race": {
+    "counts": {
+      "pass_test": 13,
+      "pass_subtest": 10,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 39.278
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "77384985a7f62660221096bee5124e28e00356f01699ca0c177c431b89c5c9d5"
+  },
+  "storage-draft": {
+    "counts": {
+      "pass_subtest": 91,
+      "pass_test": 11,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/storage": {
+        "result": "pass",
+        "elapsed": 3.816
+      }
+    },
+    "failures": [],
+    "superseded": true,
+    "sha256": "bc072e5effb76710a33d51e712ce4ea871113568840e462b4b86c7766d27fa5a"
+  },
+  "storage-draft-2": {
+    "counts": {
+      "pass_subtest": 103,
+      "pass_test": 10,
+      "fail_subtest": 3,
+      "fail_test": 2,
+      "fail_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/storage": {
+        "result": "fail",
+        "elapsed": 6.358
+      }
+    },
+    "failures": [
+      "TestTelemetryNotificationDeliveryAdmissionRechecksLeaseAndIncarnation/incarnation",
+      "TestTelemetryNotificationDeliveryAdmissionRechecksLeaseAndIncarnation",
+      "TestPostgresTelemetryNotificationOutbox/delivery_admission/incarnation",
+      "TestPostgresTelemetryNotificationOutbox/delivery_admission",
+      "TestPostgresTelemetryNotificationOutbox",
+      "github.com/jasonczech/apexload/pkg/storage"
+    ],
+    "superseded": true,
+    "sha256": "ae35e7e239488144635dea29edee0c4c5834979c90965460c10ab60c9b805073"
+  },
+  "storage-draft-3": {
+    "counts": {
+      "pass_subtest": 106,
+      "pass_test": 12,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/storage": {
+        "result": "pass",
+        "elapsed": 4.812
+      }
+    },
+    "failures": [],
+    "superseded": true,
+    "sha256": "451c7f1eadf12aaf19c3b44c924b234d3d6a2efc6b432f3b06d059b6a17b9d1c"
+  },
+  "storage-schema-reviewed": {
+    "counts": {
+      "pass_test": 17,
+      "pass_subtest": 90,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/storage": {
+        "result": "pass",
+        "elapsed": 5.728
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "44e5c6e4752822ba6d8d7bf6012626f48956ed897b3d17e18f66894dbc554ab3"
+  },
+  "har-import": {
+    "counts": {
+      "pass_test": 1,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 77.599
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "a090d2a3c10746cbfc2ff42a5bd88bf6c6b6aa7f6f60318ea855c7fe343e5b24"
+  },
+  "applied-contract-matrix": {
+    "counts": {
+      "pass_test": 1,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 1.6909999999999998
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "34c04f34f2db5ad8b40e7326d487fbf05c74a9b9f21696d91ba2d7e52a490551"
+  },
+  "applied-docs-qa": {
+    "counts": {
+      "pass_test": 94,
+      "pass_subtest": 772,
+      "skip_test": 1,
+      "pass_package": 2
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 41.157
+      },
+      "github.com/jasonczech/apexload/docs/qa": {
+        "result": "pass",
+        "elapsed": 8.613
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "48ffea988fe1ab4e877e7b65c57d41e4e4da35c0cb5565ec64f1492de2597309"
+  },
+  "applied-docs-qa-full": {
+    "counts": {
+      "pass_test": 24,
+      "pass_subtest": 19,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/docs/qa": {
+        "result": "pass",
+        "elapsed": 10.32
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "c3e5d4c60ddf0e54bcf5e68563b769005074e870a9f7f999fb35905de49f93e4"
+  },
+  "applied-targeted": {
+    "counts": {
+      "pass_test": 23,
+      "pass_subtest": 10,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 11.047
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "0e5da979218dbcadea167b7e4be542de6a0529e30c68f946a5f135a82064bc97"
+  },
+  "applied-route-inventories": {
+    "counts": {
+      "pass_test": 118,
+      "pass_subtest": 304,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 27.513
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "b5975b6af00fb758829425708c879873aaea4e2c6253f495fb6200c17e18d48f"
+  },
+  "draft-route-inventories": {
+    "counts": {
+      "pass_test": 118,
+      "pass_subtest": 304,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 28.294
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "e18ff30c96cce17baff6845aee31bce56cb3489dd189f8ea2c8414a14c22a5ae"
+  },
+  "applied-storage": {
+    "counts": {
+      "pass_test": 17,
+      "pass_subtest": 90,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/storage": {
+        "result": "pass",
+        "elapsed": 3.715
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "bca14da543bb317fd4ef915c81d6645ed74128919dd72dddecb3d0ec2715eb8f"
+  },
+  "applied-inventory": {
+    "counts": {
+      "pass_test": 1,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/docs/qa": {
+        "result": "pass",
+        "elapsed": 6.121
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "2882ecd05f7c9e48485c39ed626823437e9f8081ee8c6e061ee0b3ec72aeafa3"
+  },
+  "applied-race": {
+    "counts": {
+      "pass_test": 14,
+      "pass_subtest": 10,
+      "pass_package": 1
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 53.915
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "cfa344711f896be8ef99d1e2cb0f94f7e4e5183fc2bf4b72b7766f0d253a28d7"
+  },
+  "full-go-applied": {
+    "counts": {
+      "skip_package": 10,
+      "pass_test": 17671,
+      "pass_package": 168,
+      "pass_subtest": 17350,
+      "skip_test": 33,
+      "skip_subtest": 5
+    },
+    "packages": {
+      "github.com/jasonczech/apexload/api/proto": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/apexbench": {
+        "result": "pass",
+        "elapsed": 0.562
+      },
+      "github.com/jasonczech/apexload/cmd/apexctl": {
+        "result": "pass",
+        "elapsed": 15.332
+      },
+      "github.com/jasonczech/apexload/cmd/apexctl/internal/ciclient": {
+        "result": "pass",
+        "elapsed": 0.141
+      },
+      "github.com/jasonczech/apexload/cmd/apexfault-target": {
+        "result": "pass",
+        "elapsed": 0.407
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-collector-agent": {
+        "result": "pass",
+        "elapsed": 0.173
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-host-broker": {
+        "result": "pass",
+        "elapsed": 0.216
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-host-facade": {
+        "result": "pass",
+        "elapsed": 0.207
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-host-supervisor": {
+        "result": "pass",
+        "elapsed": 0.193
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-java-vuser-runner": {
+        "result": "pass",
+        "elapsed": 0.174
+      },
+      "github.com/jasonczech/apexload/cmd/apexload-record-agent": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/controller": {
+        "result": "pass",
+        "elapsed": 0.949
+      },
+      "github.com/jasonczech/apexload/cmd/dslschema": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/generator": {
+        "result": "pass",
+        "elapsed": 1.448
+      },
+      "github.com/jasonczech/apexload/cmd/openapits": {
+        "result": "pass",
+        "elapsed": 17.169
+      },
+      "github.com/jasonczech/apexload/cmd/storeoverlay": {
+        "result": "pass",
+        "elapsed": 0.125
+      },
+      "github.com/jasonczech/apexload/cmd/swaggergen": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/cmd/webcoverage": {
+        "result": "pass",
+        "elapsed": 0.378
+      },
+      "github.com/jasonczech/apexload/deployments/k8s": {
+        "result": "pass",
+        "elapsed": 5.214
+      },
+      "github.com/jasonczech/apexload/desktop": {
+        "result": "pass",
+        "elapsed": 3.45
+      },
+      "github.com/jasonczech/apexload/docs/qa": {
+        "result": "pass",
+        "elapsed": 10.308
+      },
+      "github.com/jasonczech/apexload/pkg/analysis": {
+        "result": "pass",
+        "elapsed": 0.218
+      },
+      "github.com/jasonczech/apexload/pkg/analysis/duckdb": {
+        "result": "pass",
+        "elapsed": 44.837
+      },
+      "github.com/jasonczech/apexload/pkg/api": {
+        "result": "pass",
+        "elapsed": 946.931
+      },
+      "github.com/jasonczech/apexload/pkg/api/testexec": {
+        "result": "pass",
+        "elapsed": 0.559
+      },
+      "github.com/jasonczech/apexload/pkg/archivecontract": {
+        "result": "pass",
+        "elapsed": 0.084
+      },
+      "github.com/jasonczech/apexload/pkg/browserresource": {
+        "result": "pass",
+        "elapsed": 0.122
+      },
+      "github.com/jasonczech/apexload/pkg/buildinfo": {
+        "result": "pass",
+        "elapsed": 0.102
+      },
+      "github.com/jasonczech/apexload/pkg/collectoragent": {
+        "result": "pass",
+        "elapsed": 42.361
+      },
+      "github.com/jasonczech/apexload/pkg/compute": {
+        "result": "pass",
+        "elapsed": 0.29
+      },
+      "github.com/jasonczech/apexload/pkg/compute/aws": {
+        "result": "pass",
+        "elapsed": 0.373
+      },
+      "github.com/jasonczech/apexload/pkg/compute/azure": {
+        "result": "pass",
+        "elapsed": 0.37
+      },
+      "github.com/jasonczech/apexload/pkg/config": {
+        "result": "pass",
+        "elapsed": 0.083
+      },
+      "github.com/jasonczech/apexload/pkg/contentmutation": {
+        "result": "pass",
+        "elapsed": 0.119
+      },
+      "github.com/jasonczech/apexload/pkg/controller": {
+        "result": "pass",
+        "elapsed": 0.162
+      },
+      "github.com/jasonczech/apexload/pkg/convert/agentforce": {
+        "result": "pass",
+        "elapsed": 0.175
+      },
+      "github.com/jasonczech/apexload/pkg/convert/asyncapi": {
+        "result": "pass",
+        "elapsed": 0.377
+      },
+      "github.com/jasonczech/apexload/pkg/convert/brokerconfig": {
+        "result": "pass",
+        "elapsed": 0.374
+      },
+      "github.com/jasonczech/apexload/pkg/convert/bruno": {
+        "result": "pass",
+        "elapsed": 0.852
+      },
+      "github.com/jasonczech/apexload/pkg/convert/clientids": {
+        "result": "pass",
+        "elapsed": 0.175
+      },
+      "github.com/jasonczech/apexload/pkg/convert/clienttimestamps": {
+        "result": "pass",
+        "elapsed": 0.29
+      },
+      "github.com/jasonczech/apexload/pkg/convert/cloudtest": {
+        "result": "pass",
+        "elapsed": 0.174
+      },
+      "github.com/jasonczech/apexload/pkg/convert/convertresult": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/pkg/convert/convertutil": {
+        "result": "pass",
+        "elapsed": 0.076
+      },
+      "github.com/jasonczech/apexload/pkg/convert/correlate": {
+        "result": "pass",
+        "elapsed": 1.468
+      },
+      "github.com/jasonczech/apexload/pkg/convert/credentialpolicy": {
+        "result": "pass",
+        "elapsed": 0.118
+      },
+      "github.com/jasonczech/apexload/pkg/convert/devweb": {
+        "result": "pass",
+        "elapsed": 0.503
+      },
+      "github.com/jasonczech/apexload/pkg/convert/diag": {
+        "result": "pass",
+        "elapsed": 0.1
+      },
+      "github.com/jasonczech/apexload/pkg/convert/enterprisearchive": {
+        "result": "pass",
+        "elapsed": 10.874
+      },
+      "github.com/jasonczech/apexload/pkg/convert/eventhubscapture": {
+        "result": "pass",
+        "elapsed": 0.414
+      },
+      "github.com/jasonczech/apexload/pkg/convert/grafana": {
+        "result": "pass",
+        "elapsed": 0.116
+      },
+      "github.com/jasonczech/apexload/pkg/convert/har": {
+        "result": "pass",
+        "elapsed": 0.451
+      },
+      "github.com/jasonczech/apexload/pkg/convert/importcontract": {
+        "result": "pass",
+        "elapsed": 0.621
+      },
+      "github.com/jasonczech/apexload/pkg/convert/importreview": {
+        "result": "pass",
+        "elapsed": 0.181
+      },
+      "github.com/jasonczech/apexload/pkg/convert/jmeter": {
+        "result": "pass",
+        "elapsed": 0.604
+      },
+      "github.com/jasonczech/apexload/pkg/convert/k6": {
+        "result": "pass",
+        "elapsed": 0.244
+      },
+      "github.com/jasonczech/apexload/pkg/convert/mulesoft": {
+        "result": "pass",
+        "elapsed": 0.183
+      },
+      "github.com/jasonczech/apexload/pkg/convert/openapi": {
+        "result": "pass",
+        "elapsed": 0.462
+      },
+      "github.com/jasonczech/apexload/pkg/convert/paramize": {
+        "result": "pass",
+        "elapsed": 1.468
+      },
+      "github.com/jasonczech/apexload/pkg/convert/postman": {
+        "result": "pass",
+        "elapsed": 0.464
+      },
+      "github.com/jasonczech/apexload/pkg/convert/raml": {
+        "result": "pass",
+        "elapsed": 0.209
+      },
+      "github.com/jasonczech/apexload/pkg/convert/recordedshape": {
+        "result": "pass",
+        "elapsed": 0.196
+      },
+      "github.com/jasonczech/apexload/pkg/convert/recorderjson": {
+        "result": "pass",
+        "elapsed": 0.194
+      },
+      "github.com/jasonczech/apexload/pkg/convert/requestimport": {
+        "result": "pass",
+        "elapsed": 0.432
+      },
+      "github.com/jasonczech/apexload/pkg/convert/salesforce": {
+        "result": "pass",
+        "elapsed": 3.668
+      },
+      "github.com/jasonczech/apexload/pkg/convert/sample": {
+        "result": "pass",
+        "elapsed": 0.68
+      },
+      "github.com/jasonczech/apexload/pkg/convert/sharedvalue": {
+        "result": "pass",
+        "elapsed": 0.219
+      },
+      "github.com/jasonczech/apexload/pkg/convert/sourceview": {
+        "result": "pass",
+        "elapsed": 0.114
+      },
+      "github.com/jasonczech/apexload/pkg/convert/srcparse": {
+        "result": "pass",
+        "elapsed": 0.114
+      },
+      "github.com/jasonczech/apexload/pkg/convert/tmpl": {
+        "result": "pass",
+        "elapsed": 0.107
+      },
+      "github.com/jasonczech/apexload/pkg/convert/trueclient": {
+        "result": "pass",
+        "elapsed": 0.236
+      },
+      "github.com/jasonczech/apexload/pkg/convert/uniquify": {
+        "result": "pass",
+        "elapsed": 0.186
+      },
+      "github.com/jasonczech/apexload/pkg/convert/wsdl": {
+        "result": "pass",
+        "elapsed": 0.346
+      },
+      "github.com/jasonczech/apexload/pkg/credential": {
+        "result": "pass",
+        "elapsed": 0.106
+      },
+      "github.com/jasonczech/apexload/pkg/debugserver": {
+        "result": "pass",
+        "elapsed": 0.165
+      },
+      "github.com/jasonczech/apexload/pkg/deeplink": {
+        "result": "pass",
+        "elapsed": 0.101
+      },
+      "github.com/jasonczech/apexload/pkg/distributed/generatorrpc": {
+        "result": "pass",
+        "elapsed": 50.471
+      },
+      "github.com/jasonczech/apexload/pkg/distributed/rendezvous": {
+        "result": "pass",
+        "elapsed": 0.396
+      },
+      "github.com/jasonczech/apexload/pkg/dsl": {
+        "result": "pass",
+        "elapsed": 0.505
+      },
+      "github.com/jasonczech/apexload/pkg/dsl/schemagen": {
+        "result": "pass",
+        "elapsed": 0.384
+      },
+      "github.com/jasonczech/apexload/pkg/dslwalk": {
+        "result": "pass",
+        "elapsed": 0.19
+      },
+      "github.com/jasonczech/apexload/pkg/dynatrace": {
+        "result": "pass",
+        "elapsed": 5.38
+      },
+      "github.com/jasonczech/apexload/pkg/elastic": {
+        "result": "pass",
+        "elapsed": 5.136
+      },
+      "github.com/jasonczech/apexload/pkg/engine": {
+        "result": "pass",
+        "elapsed": 81.666
+      },
+      "github.com/jasonczech/apexload/pkg/fileasset": {
+        "result": "pass",
+        "elapsed": 0.077
+      },
+      "github.com/jasonczech/apexload/pkg/harsynth": {
+        "result": "pass",
+        "elapsed": 2.356
+      },
+      "github.com/jasonczech/apexload/pkg/hostnet": {
+        "result": "pass",
+        "elapsed": 0.111
+      },
+      "github.com/jasonczech/apexload/pkg/identitypolicy": {
+        "result": "pass",
+        "elapsed": 0.099
+      },
+      "github.com/jasonczech/apexload/pkg/importartifact": {
+        "result": "pass",
+        "elapsed": 4.924
+      },
+      "github.com/jasonczech/apexload/pkg/importartifact/legacyresolver": {
+        "result": "pass",
+        "elapsed": 0.107
+      },
+      "github.com/jasonczech/apexload/pkg/importsession": {
+        "result": "pass",
+        "elapsed": 0.115
+      },
+      "github.com/jasonczech/apexload/pkg/internal/archiveingest": {
+        "result": "pass",
+        "elapsed": 0.133
+      },
+      "github.com/jasonczech/apexload/pkg/internal/archivequota": {
+        "result": "pass",
+        "elapsed": 10.136
+      },
+      "github.com/jasonczech/apexload/pkg/internal/aurafixture": {
+        "result": "pass",
+        "elapsed": 0.221
+      },
+      "github.com/jasonczech/apexload/pkg/internal/aurapayload": {
+        "result": "pass",
+        "elapsed": 0.124
+      },
+      "github.com/jasonczech/apexload/pkg/internal/bodyencoding": {
+        "result": "pass",
+        "elapsed": 0.086
+      },
+      "github.com/jasonczech/apexload/pkg/internal/boundedcache": {
+        "result": "pass",
+        "elapsed": 0.095
+      },
+      "github.com/jasonczech/apexload/pkg/internal/boundedtext": {
+        "result": "pass",
+        "elapsed": 0.096
+      },
+      "github.com/jasonczech/apexload/pkg/internal/contentcontract": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/pkg/internal/contentdecode": {
+        "result": "pass",
+        "elapsed": 0.267
+      },
+      "github.com/jasonczech/apexload/pkg/internal/diskspace": {
+        "result": "pass",
+        "elapsed": 0.097
+      },
+      "github.com/jasonczech/apexload/pkg/internal/extractiontest": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/pkg/internal/filelock": {
+        "result": "pass",
+        "elapsed": 0.302
+      },
+      "github.com/jasonczech/apexload/pkg/internal/grpcclient": {
+        "result": "pass",
+        "elapsed": 0.177
+      },
+      "github.com/jasonczech/apexload/pkg/internal/h3fixture": {
+        "result": "pass",
+        "elapsed": 2.138
+      },
+      "github.com/jasonczech/apexload/pkg/internal/hostpattern": {
+        "result": "pass",
+        "elapsed": 0.096
+      },
+      "github.com/jasonczech/apexload/pkg/internal/importreview": {
+        "result": "pass",
+        "elapsed": 0.622
+      },
+      "github.com/jasonczech/apexload/pkg/internal/jsonquery": {
+        "result": "pass",
+        "elapsed": 0.186
+      },
+      "github.com/jasonczech/apexload/pkg/internal/paritytest": {
+        "result": "pass",
+        "elapsed": 0.407
+      },
+      "github.com/jasonczech/apexload/pkg/internal/pwshutdown": {
+        "result": "pass",
+        "elapsed": 0.202
+      },
+      "github.com/jasonczech/apexload/pkg/internal/strftime": {
+        "result": "pass",
+        "elapsed": 0.097
+      },
+      "github.com/jasonczech/apexload/pkg/internal/subprocessguard": {
+        "result": "pass",
+        "elapsed": 0.095
+      },
+      "github.com/jasonczech/apexload/pkg/internal/templatedjson": {
+        "result": "pass",
+        "elapsed": 0.091
+      },
+      "github.com/jasonczech/apexload/pkg/internal/testlog": {
+        "result": "pass",
+        "elapsed": 0.095
+      },
+      "github.com/jasonczech/apexload/pkg/internal/winfs": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/pkg/internal/zipbounds": {
+        "result": "pass",
+        "elapsed": 0.095
+      },
+      "github.com/jasonczech/apexload/pkg/javarunner": {
+        "result": "pass",
+        "elapsed": 12.669
+      },
+      "github.com/jasonczech/apexload/pkg/javarunner/broker": {
+        "result": "pass",
+        "elapsed": 3.209
+      },
+      "github.com/jasonczech/apexload/pkg/javarunner/ipc": {
+        "result": "pass",
+        "elapsed": 0.093
+      },
+      "github.com/jasonczech/apexload/pkg/javasidecar": {
+        "result": "pass",
+        "elapsed": 30.111
+      },
+      "github.com/jasonczech/apexload/pkg/keywrap": {
+        "result": "pass",
+        "elapsed": 0.19
+      },
+      "github.com/jasonczech/apexload/pkg/kubeops": {
+        "result": "pass",
+        "elapsed": 0.34
+      },
+      "github.com/jasonczech/apexload/pkg/librarycontract": {
+        "result": "pass",
+        "elapsed": 0.108
+      },
+      "github.com/jasonczech/apexload/pkg/livetable": {
+        "result": "pass",
+        "elapsed": 0.726
+      },
+      "github.com/jasonczech/apexload/pkg/monitorcontract": {
+        "result": "pass",
+        "elapsed": 0.111
+      },
+      "github.com/jasonczech/apexload/pkg/monitorprovider": {
+        "result": "pass",
+        "elapsed": 1.549
+      },
+      "github.com/jasonczech/apexload/pkg/netpolicy": {
+        "result": "pass",
+        "elapsed": 0.108
+      },
+      "github.com/jasonczech/apexload/pkg/perfevidence": {
+        "result": "pass",
+        "elapsed": 3.177
+      },
+      "github.com/jasonczech/apexload/pkg/prometheus": {
+        "result": "pass",
+        "elapsed": 0.205
+      },
+      "github.com/jasonczech/apexload/pkg/protocol": {
+        "result": "pass",
+        "elapsed": 0.699
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/appium": {
+        "result": "pass",
+        "elapsed": 3.774
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/aura": {
+        "result": "pass",
+        "elapsed": 0.152
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/browser": {
+        "result": "pass",
+        "elapsed": 81.583
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/browsercontract": {
+        "result": "pass",
+        "elapsed": 0.253
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/builtin": {
+        "result": "pass",
+        "elapsed": 0.347
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/database": {
+        "result": "pass",
+        "elapsed": 0.21
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/eventhubs": {
+        "result": "pass",
+        "elapsed": 0.249
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/grpc": {
+        "result": "pass",
+        "elapsed": 0.801
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/http": {
+        "result": "pass",
+        "elapsed": 22.34
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/http/internal/h3transport": {
+        "result": "pass",
+        "elapsed": 4.897
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/http/pagecontext": {
+        "result": "pass",
+        "elapsed": 0.095
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/httpcontract": {
+        "result": "pass",
+        "elapsed": 0.081
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/java_http": {
+        "result": "pass",
+        "elapsed": 0.243
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/java_vuser": {
+        "result": "pass",
+        "elapsed": 4.636
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/jms": {
+        "result": "pass",
+        "elapsed": 5.373
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/jsonextract": {
+        "result": "pass",
+        "elapsed": 0.195
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/jsonextract/jsonextracttest": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/kafka": {
+        "result": "pass",
+        "elapsed": 15.51
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/kafkacontract": {
+        "result": "pass",
+        "elapsed": 0.095
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/messaging": {
+        "result": "pass",
+        "elapsed": 0.072
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/network": {
+        "result": "pass",
+        "elapsed": 0.313
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/soap": {
+        "result": "pass",
+        "elapsed": 0.25
+      },
+      "github.com/jasonczech/apexload/pkg/protocol/websocket": {
+        "result": "pass",
+        "elapsed": 0.247
+      },
+      "github.com/jasonczech/apexload/pkg/qrcode": {
+        "result": "pass",
+        "elapsed": 0.087
+      },
+      "github.com/jasonczech/apexload/pkg/rca": {
+        "result": "pass",
+        "elapsed": 0.187
+      },
+      "github.com/jasonczech/apexload/pkg/rca/signatures": {
+        "result": "pass",
+        "elapsed": 0.089
+      },
+      "github.com/jasonczech/apexload/pkg/recordagent": {
+        "result": "pass",
+        "elapsed": 0.423
+      },
+      "github.com/jasonczech/apexload/pkg/recordbridge": {
+        "result": "pass",
+        "elapsed": 1.217
+      },
+      "github.com/jasonczech/apexload/pkg/recorder": {
+        "result": "pass",
+        "elapsed": 4.481
+      },
+      "github.com/jasonczech/apexload/pkg/recorder/browser": {
+        "result": "pass",
+        "elapsed": 27.652
+      },
+      "github.com/jasonczech/apexload/pkg/recorder/marker": {
+        "result": "pass",
+        "elapsed": 0.08
+      },
+      "github.com/jasonczech/apexload/pkg/recordingprofile": {
+        "result": "pass",
+        "elapsed": 0.101
+      },
+      "github.com/jasonczech/apexload/pkg/refkey": {
+        "result": "pass",
+        "elapsed": 0.07
+      },
+      "github.com/jasonczech/apexload/pkg/runcontract": {
+        "result": "pass",
+        "elapsed": 0.099
+      },
+      "github.com/jasonczech/apexload/pkg/runtimetuning": {
+        "result": "pass",
+        "elapsed": 0.076
+      },
+      "github.com/jasonczech/apexload/pkg/scriptdisclosure": {
+        "result": "pass",
+        "elapsed": 2.989
+      },
+      "github.com/jasonczech/apexload/pkg/scrub": {
+        "result": "pass",
+        "elapsed": 0.402
+      },
+      "github.com/jasonczech/apexload/pkg/secretstore": {
+        "result": "pass",
+        "elapsed": 1.619
+      },
+      "github.com/jasonczech/apexload/pkg/selector": {
+        "result": "pass",
+        "elapsed": 0.162
+      },
+      "github.com/jasonczech/apexload/pkg/storage": {
+        "result": "pass",
+        "elapsed": 93.141
+      },
+      "github.com/jasonczech/apexload/pkg/telemetry": {
+        "result": "pass",
+        "elapsed": 0.407
+      },
+      "github.com/jasonczech/apexload/pkg/telemetrypolicy": {
+        "result": "pass",
+        "elapsed": 0.091
+      },
+      "github.com/jasonczech/apexload/pkg/trafficprofile": {
+        "result": "pass",
+        "elapsed": 0.252
+      },
+      "github.com/jasonczech/apexload/runners/java_vuser": {
+        "result": "pass",
+        "elapsed": 36.558
+      },
+      "github.com/jasonczech/apexload/scripts": {
+        "result": "pass",
+        "elapsed": 26.033
+      },
+      "github.com/jasonczech/apexload/scripts/fault_s3_probe": {
+        "result": "pass",
+        "elapsed": 0.204
+      },
+      "github.com/jasonczech/apexload/scripts/java-shared-jvm-bench": {
+        "result": "skip",
+        "elapsed": 0
+      },
+      "github.com/jasonczech/apexload/scripts/multiproject": {
+        "result": "pass",
+        "elapsed": 0.137
+      }
+    },
+    "failures": [],
+    "superseded": false,
+    "sha256": "0f954a124e8e7e44086dd7c380fabb50a1e1f65f5c0ef52e60088d70723d7ad4"
+  }
+}

@@ -71,8 +71,71 @@ The run manifest now records its loss totals at finalize as `telemetry_loss`. Th
 - **Live:** while the run executes, the Telemetry observations card shows it as provisional (`telemetry.acceptance`). It updates as evidence arrives, and the breached-time criterion stays inconclusive until finalize. A finished run, or one whose live health was rebuilt from stored history (a restarted controller, a follower), shows no provisional verdict: its verdict is the archived one in the run report.
 - **Run report:** the **Telemetry Acceptance** section in HTML, PDF, DOCX and CSV. It lists the policy revisions, each criterion with its observed value, bound and denominator, exact or lower-bound loss counters, coverage by source, classified time, clock quality, stage distributions with their exclusions, and what the verdict does not count. The report JSON carries it as `telemetry_acceptance`.
 - **Saved baseline comparisons:** each run's verdict and dropped results, side by side. Each run was judged by its own pinned revision, so verdicts are shown, never compared.
-- **Webhooks:** a finalized run whose verdict failed or was inconclusive sends one `telemetry_acceptance` event per outcome. A durable claim, deleted with the run, keeps a later attach of the same archive (a refresh, a recovered publication, another leader) from announcing that outcome again; a verdict a refresh found changed is announced. A dispatch lost after its claim is not retried. The event's conditions name the run, the policy revision, the deciding criteria that did not pass (never advisory ones) and the sources with unknown time, and it is stamped with the run's completion time. A run in mode `unknown` is not announced.
+- **Webhooks:** a finalized run whose pinned verdict failed or was inconclusive publishes a bounded, scrubbed `telemetry_acceptance` event through the durable delivery path below. The event identifies the run, policy revision, deciding non-advisory criteria and sources with unknown time, stamped with the run's completion time. A run in mode `unknown` is not announced.
 
 `mode` is `advisory` by default: the verdict never changes a CI outcome. Under `fail_ci` it can fail an otherwise passed CI run; see [CI telemetry acceptance](../CICD_INTEGRATION.md#telemetry-acceptance-gate). A run that pinned a policy before definitions were frozen has an inconclusive verdict in mode `unknown`, which no gate enforces. Advisory telemetry never stops a run.
+
+
+## Durable acceptance notifications
+
+With the default SQLite or PostgreSQL store, archive catalog publication and the
+notification decision commit in one transaction against the exact verified final
+manifest. This includes recovery from an uploaded archive after its local source
+is lost. A crash before commit retains the archive intent; a crash after commit
+leaves delivery pending. Outcome identity binds the project, run incarnation,
+policy revision, assessment digest and verdict. Repeating that identity reuses
+its original payload and recipient set. A later assessment can publish a distinct
+outcome without rewriting the old event.
+
+The envelope is at most 64 KiB, including metadata, with at most 32 events per
+run and 64 configured destinations per event. Run/source text is scrubbed with
+the retained run rules and the shared credential scrubber, then bounded. URLs
+and tokens are not stored in the envelope: opaque keyed fingerprints pin the
+complete authorized webhook configuration. Identical configurations collapse
+into one destination; event-filter order does not matter. A changed, disabled or
+removed configuration revokes its pending delivery rather than redirecting it.
+A failed configuration read remains retryable. A no-recipient decision stays
+empty even if webhooks are enabled later.
+
+The execution leader polls once per second. Preparation and completion observers
+are limited to 16; sends reuse the existing 16 global and two-per-destination-stripe
+dispatcher slots. A claim lasts 60 seconds, with at most eight durable attempts
+and exponential backoff capped at one minute. Each admitted dispatch retains the
+existing HTTP retry policy, so an attempt is not necessarily one HTTP request.
+Saturation, transport failure and interrupted delivery remain retryable until the
+attempt budget is exhausted. Successful destinations are not retried with failed
+ones. Successful shutdown cancels and joins the storage-writing observers; a shutdown
+deadline error is not proof that all owned work has joined. Exact lease and
+run-incarnation checks reject stale or deleted work immediately before dispatch;
+a request already admitted to an external receiver cannot be recalled.
+
+The stable receiver idempotency key survives retries. Delivery is **at least once**:
+a receiver that does not honor the key can receive duplicates after an ambiguous
+HTTP completion. A lease timeout is never proof that the receiver did nothing.
+
+Inspect delivery state through the run's telemetry-notification operation in
+[Swagger](../swagger.yaml), `GET /api/v1/tests/{id}/telemetry/notifications`.
+It requires viewer access to that project (service accounts need `results:read`)
+and returns no payload, destination or credentials. The current publication
+summary includes the manifest digest, fixed decision, event identity when one
+was retained, and cumulative suppressed-publication count. Its delivery counts
+cover all retained outcomes for that run: `pending`, `leased`, `delivered`,
+`exhausted` and `revoked`. The decision `enqueued` describes publication, not the
+current delivery state. `no_recipients`, `not_applicable`, `projection_rejected`,
+`identity_unavailable`, `capacity_exhausted` and `legacy_claim` explain other
+outcomes. Capacity or unsafe-projection refusal is durably visible without
+blocking the archive forever. The bounded summary is not a history of every
+rejected payload. A legacy run with no retained decision reports `not_recorded`;
+unsupported custom storage reports unavailable.
+
+Old timestamp claims have unknown delivery results and are not blindly replayed.
+New events install a compatibility marker so older claim-based controllers do not
+announce that outcome again. Custom archive stores without the complete atomic
+capability keep the legacy claim-before-dispatch behavior, including its lost-send
+limitation. Test/project deletion removes notification state with the run.
+
+The [runtime review](../qa/reviews/roadmap-telemetry-notification-runtime-2026-10-20/README.md)
+retains local crash, SQL, authorization, sanitization, retry and shutdown evidence.
+It does not qualify external receiver exactly-once behavior or multi-host recovery.
 
 [Review and qualification](../qa/reviews/feature-completion-telemetry-policy-2026-10-05/README.md) separates actual SQL/client checks from remaining scope. Source epochs, clock qualification, wall-time coverage, exact/lower-bound loss and a single policy segment per run have since been implemented (Feature completion Waves 1 and 2) but not qualified; stage distributions, opt-in client render evidence and policy-compatible comparison with re-evaluation (Wave 3), and acceptance verdicts that are advisory or fail CI apart from the application verdict (Wave 4), are implemented as described above; qualified per-interval source-clock coverage and complete exports remain open. The under-two-second figure remains a design target pending declared hardware/workload acceptance.

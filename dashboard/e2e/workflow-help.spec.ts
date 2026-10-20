@@ -123,6 +123,11 @@ test('evidence guides are searchable, readable and retain their scope after relo
     if (guide.id === 'telemetry-policy-receipts') {
       await expect(page.locator('.guide-markdown-article')).toContainText('not proof that a frame was visibly presented')
       await expect(page.locator('.guide-markdown-article')).not.toContainText('to the first paint after it rendered')
+      await expect(page.locator('.guide-markdown-article')).toContainText('Durable acceptance notifications')
+      await expect(page.locator('.guide-markdown-article')).toContainText('capacity_exhausted')
+      await expect(page.locator('.guide-markdown-article')).toContainText('at least once')
+      await page.goto('/#/docs?guide=user-guide&article=telemetry-policy-receipts&section=durable-acceptance-notifications')
+      await expect(page.locator('#durable-acceptance-notifications')).toBeFocused()
     }
     await expect(page.locator('.guide-markdown-article')).toContainText('remain open')
     await page.reload()

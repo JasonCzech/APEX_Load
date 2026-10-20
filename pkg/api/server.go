@@ -241,6 +241,9 @@ type Server struct {
 	archiveFinalizationWake           chan struct{}
 	archiveOrphanWake                 chan struct{}
 	archiveFinalizationDone           chan struct{}
+	telemetryNotificationCancel       context.CancelFunc
+	telemetryNotificationSlotsOnce    sync.Once
+	telemetryNotificationSlots        chan struct{}
 	accessReviewNotifyCancel          context.CancelFunc
 	authAudit                         auditThrottle
 	fanoutCancel                      context.CancelFunc
@@ -779,6 +782,7 @@ func NewServer(cfg ServerConfig) *Server {
 	// telemetry acceptance verdict is announced (C7) when a run's finalized
 	// archive is attached.
 	runner.archiveAttachedHook = s.runArchiveAttached
+	runner.telemetryNotificationPublication = s.telemetryNotificationPublication
 
 	s.loadLibraryState()
 	s.routes(cfg.AllowedOrigins)
@@ -1746,6 +1750,7 @@ func (s *Server) Start() (startErr error) {
 	s.startRCAAnalysisWorker()
 	s.startEvaluationWorker()
 	s.startAccessReviewNotifierCadence()
+	s.startTelemetryNotificationWorker()
 	s.startCIGitHubCheckReconciliation()
 
 	if err := s.startMetricsListener(); err != nil {
@@ -2407,6 +2412,10 @@ func (s *Server) shutdown(ctx context.Context) error {
 		}
 	}
 	s.stopRemoteRunCleanupRetry(ctx)
+	if s.telemetryNotificationCancel != nil {
+		s.telemetryNotificationCancel()
+		s.telemetryNotificationCancel = nil
+	}
 	if s.accessReviewNotifyCancel != nil {
 		s.accessReviewNotifyCancel()
 		s.accessReviewNotifyCancel = nil

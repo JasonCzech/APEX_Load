@@ -46,6 +46,8 @@ func TestPostgresTelemetryNotificationOutbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer second.Close()
+	t.Run("delivery admission", func(t *testing.T) { checkTelemetryNotificationDeliveryAdmission(t, first.SQLiteStore) })
+	t.Run("atomic publication", func(t *testing.T) { checkTelemetryNotificationAtomicPublication(t, first.SQLiteStore) })
 	t.Run("contract", func(t *testing.T) { checkTelemetryNotificationOutboxContract(t, first.SQLiteStore) })
 	// Independent runs and tables share the same real schema. Remove the previous
 	// fixture's recreated event so each bounded scan has its stated population.

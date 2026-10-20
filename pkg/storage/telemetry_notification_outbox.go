@@ -140,6 +140,18 @@ func (s *SQLiteStore) EnqueueTelemetryNotification(ctx context.Context, in Telem
 		return "", "", err
 	}
 	defer tx.Rollback()
+	id, state, err := s.enqueueTelemetryNotificationTx(tx, in, id, raw, now)
+	if err != nil {
+		return id, state, err
+	}
+	return id, state, tx.Commit()
+}
+
+var errTelemetryNotificationCapacity = errors.New("telemetry notification run limit reached")
+
+// The archive completion path shares this transaction; it must not acknowledge
+// the catalog before the immutable notification decision is durable.
+func (s *SQLiteStore) enqueueTelemetryNotificationTx(tx *storeTx, in TelemetryNotification, id, raw string, now time.Time) (string, string, error) {
 	held, err := s.lockTelemetryNotificationRun(tx, in)
 	if err != nil || !held {
 		return id, "fenced", err
@@ -154,7 +166,7 @@ func (s *SQLiteStore) EnqueueTelemetryNotification(ctx context.Context, in Telem
 		if existing != raw {
 			return id, "", errors.New("telemetry notification immutable content conflict")
 		}
-		return id, "replayed", tx.Commit()
+		return id, "replayed", nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return id, "", err
@@ -168,14 +180,14 @@ func (s *SQLiteStore) EnqueueTelemetryNotification(ctx context.Context, in Telem
 		return id, "", err
 	}
 	if marker != telemetryNotificationLegacyMarker {
-		return id, "legacy_claim", tx.Commit()
+		return id, "legacy_claim", nil
 	}
 	var count int
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM telemetry_notification_events WHERE test_id=?`, in.TestID).Scan(&count); err != nil {
 		return id, "", err
 	}
 	if count >= MaxTelemetryNotificationsPerRun {
-		return id, "", errors.New("telemetry notification run limit reached")
+		return id, "", errTelemetryNotificationCapacity
 	}
 	if _, err := tx.Exec(`INSERT INTO telemetry_notification_events(id,test_id,project_id,format_version,envelope,created_at) VALUES(?,?,?,1,?,?)`, id, in.TestID, in.ProjectID, raw, now.UTC()); err != nil {
 		return id, "", err
@@ -185,7 +197,7 @@ func (s *SQLiteStore) EnqueueTelemetryNotification(ctx context.Context, in Telem
 			return id, "", err
 		}
 	}
-	return id, "enqueued", tx.Commit()
+	return id, "enqueued", nil
 }
 
 // GetTelemetryNotification is an internal read, not an authorization boundary.
@@ -349,4 +361,11 @@ func retireFencedTelemetryNotification(tx *storeTx, id string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// TelemetryNotificationID returns the versioned identity used by enqueue. It
+// validates the whole candidate so a malformed projection is never reused.
+func TelemetryNotificationID(in TelemetryNotification) (string, error) {
+	_, id, _, err := canonicalTelemetryNotification(in)
+	return id, err
 }

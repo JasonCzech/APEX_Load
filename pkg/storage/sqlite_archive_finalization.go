@@ -520,10 +520,10 @@ func (s *SQLiteStore) updateArchiveFinalizationRecordIfToken(testID string, inte
 // retention cancellation, or test deletion makes the operation a no-op instead
 // of allowing a stale worker to resurrect/overwrite archive metadata.
 func (s *SQLiteStore) CompleteArchiveFinalization(testID string, intentToken string, refreshToken string, record *RunArchiveRecord) (bool, error) {
-	return s.completeArchiveFinalization(testID, intentToken, refreshToken, record, nil)
+	return s.completeArchiveFinalization(testID, intentToken, refreshToken, record, nil, nil)
 }
 
-func (s *SQLiteStore) completeArchiveFinalization(testID string, intentToken string, refreshToken string, record *RunArchiveRecord, identity *ArchiveFinalizationRunIdentity) (bool, error) {
+func (s *SQLiteStore) completeArchiveFinalization(testID string, intentToken string, refreshToken string, record *RunArchiveRecord, identity *ArchiveFinalizationRunIdentity, notification *TelemetryNotificationPublication) (bool, error) {
 	testID = strings.TrimSpace(testID)
 	intentToken = strings.TrimSpace(intentToken)
 	if testID == "" || intentToken == "" || record == nil {
@@ -680,6 +680,11 @@ func (s *SQLiteStore) completeArchiveFinalization(testID string, intentToken str
 		}
 	} else if refreshToken = strings.TrimSpace(refreshToken); refreshToken != "" {
 		if _, err := tx.Exec(`DELETE FROM archive_refresh_jobs WHERE test_id = ? AND intent_token = ?`, testID, refreshToken); err != nil {
+			return false, err
+		}
+	}
+	if notification != nil {
+		if err := s.commitTelemetryNotificationPublicationTx(tx, testID, durableProjectID, record.ManifestSHA256, *notification); err != nil {
 			return false, err
 		}
 	}

@@ -47,13 +47,30 @@ Each fault in TEL-4's matrix names the tests that accept it. The Go tests run in
 |  | `TestTelemetryCheckpointAdoptionDoesNotOverwriteNewerEffects` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
 |  | `TestTelemetryCheckpointFencesAndOrdering` (`pkg/storage/telemetry_checkpoint_test.go`) | Go |
 |  | `TestTelemetryCheckpointMigrationAndRestart` (`pkg/storage/telemetry_checkpoint_test.go`) | Go |
-| Notification outbox storage: replay, leases, upgrade and deletion (runtime hookup pending) | `TestTelemetryNotificationOutboxContract` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
+| Notification outbox storage: replay, leases, upgrade and deletion | `TestTelemetryNotificationOutboxContract` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
 |  | `TestTelemetryNotificationOutboxAdmissionAndBounds` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
 |  | `TestTelemetryNotificationOutboxExhaustionAndRevocation` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
 |  | `TestTelemetryNotificationOutboxIndependentStores` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
 |  | `TestTelemetryNotificationOutboxObsoleteIncarnationCannotStarveQueue` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
 |  | `TestTelemetryNotificationOutboxPreservesFutureVersions` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
 |  | `TestTelemetryNotificationOutboxUpgradeReopenAndProjectDeletion` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
+| Atomic acceptance delivery: archive recovery, authorization, scrubbing, retry and shutdown | `TestTelemetryNotificationRuntimeScrubsAndPinsRecipients` (`pkg/api/telemetry_notification_runtime_test.go`) | Go |
+|  | `TestTelemetryNotificationRuntimeRetriesOnlyFailedDestinations` (`pkg/api/telemetry_notification_runtime_test.go`) | Go |
+|  | `TestTelemetryNotificationRuntimeSaturationAndShutdownRemainRetryable` (`pkg/api/telemetry_notification_runtime_test.go`) | Go |
+|  | `TestTelemetryNotificationArchiveCommitUsesFinalManifestAndRecoversSourceLoss` (`pkg/api/telemetry_notification_archive_integration_test.go`) | Go |
+|  | `TestTelemetryNotificationStatusAuthorizesProjectAndResultScope` (`pkg/api/telemetry_notification_status_test.go`) | Go |
+|  | `TestTelemetryNotificationStatusPreservesSafeDurableDecision` (`pkg/api/telemetry_notification_status_test.go`) | Go |
+|  | `TestTelemetryNotificationGeneratedStatusContract` (`pkg/api/telemetry_notification_status_test.go`) | Go |
+|  | `TestTelemetryNotificationDeletionBeforeSendRefusesOldLease` (`pkg/api/telemetry_notification_admission_api_test.go`) | Go |
+|  | `TestTelemetryNotificationDigestKeyCancellationAndConcurrentInitialization` (`pkg/api/telemetry_notification_admission_api_test.go`) | Go |
+|  | `TestTelemetryNotificationAtomicCapabilityRequiresTheArchiveStore` (`pkg/api/telemetry_notification_admission_api_test.go`) | Go |
+|  | `TestTelemetryNotificationPreparationIsBoundedBeforeDispatch` (`pkg/api/telemetry_notification_admission_api_test.go`) | Go |
+|  | `TestTelemetryNotificationFingerprintPinsConfigurationAndCanonicalFilters` (`pkg/api/telemetry_notification_worker_test.go`) | Go |
+|  | `TestTelemetryNotificationSettingsFailureRetriesWithoutRevocation` (`pkg/api/telemetry_notification_worker_test.go`) | Go |
+|  | `TestTelemetryNotificationWorkerWaitsForLeaderAndOwnsShutdown` (`pkg/api/telemetry_notification_worker_test.go`) | Go |
+|  | `TestTelemetryNotificationAtomicPublication` (`pkg/storage/telemetry_notification_publication_test.go`) | Go |
+|  | `TestTelemetryNotificationAtomicPublicationRejectsInvalidDecision` (`pkg/storage/telemetry_notification_publication_test.go`) | Go |
+|  | `TestTelemetryNotificationDeliveryAdmissionRechecksLeaseAndIncarnation` (`pkg/storage/telemetry_notification_admission_test.go`) | Go |
 | Policy changes | `TestTelemetryPolicySegmentRejectsAnInvalidPolicy` (`pkg/api/telemetry_coverage_test.go`) | Go |
 |  | `TestProjectTelemetryPolicyUpdateChangesOnlyTheOptIn` (`pkg/api/telemetry_stages_test.go`) | Go |
 |  | telemetry policy remains immutable in live, archive and manifest views after settings change (`dashboard/e2e/workflow-telemetry-policy.spec.ts`) | End to end, both profiles |

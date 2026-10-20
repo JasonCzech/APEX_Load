@@ -160757,6 +160757,55 @@ export interface operations {
       };
     };
   };
+  "handleTelemetryNotificationStatus": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "available": boolean;
+            "publication"?: ({
+              "decision": string;
+              "deliveries": Record<string, number>;
+              "event_id"?: string;
+              "manifest_sha256": string;
+              "suppressed_publications": number;
+              "updated_at": string;
+            }) | null;
+            "reason"?: string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleTestCloudConnection": {
     parameters: {
       "path": {
@@ -184421,6 +184470,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/telemetry/client-render": {
     "post": operations["handleReportClientRender"];
+  };
+  "/api/v1/tests/{id}/telemetry/notifications": {
+    "get": operations["handleTelemetryNotificationStatus"];
   };
   "/api/v1/tests/{id}/transactions/live/{event_id}": {
     "get": operations["handleGetLiveTransactionDetail"];

@@ -24,6 +24,15 @@ func schemaCreateTableStatements() []string {
 func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 	return append([]string{
 		schemaMigrationLedgerDDL,
+		`CREATE TABLE IF NOT EXISTS telemetry_notification_publications (
+            test_id TEXT PRIMARY KEY REFERENCES tests(id) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            manifest_sha256 TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            decision TEXT NOT NULL,
+            suppressed_publications INTEGER NOT NULL,
+            updated_at DATETIME NOT NULL
+        )`,
 		`CREATE TABLE IF NOT EXISTS telemetry_notification_events (
  id TEXT PRIMARY KEY,
  test_id TEXT NOT NULL REFERENCES tests(id) ON DELETE CASCADE,

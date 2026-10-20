@@ -7587,6 +7587,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/tests/{id}/telemetry/notifications",
+      "operationId": "handleTelemetryNotificationStatus",
+      "summary": "Telemetry Notification Status",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/tests/{id}/transactions/live/{event_id}",
       "operationId": "handleGetLiveTransactionDetail",
       "summary": "Get Live Transaction Detail",

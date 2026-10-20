@@ -109,66 +109,80 @@ func TestRetryArchiveCleanupJobsCompletesDeletionAfterMetadataCommit(t *testing.
 }
 
 func TestHandleDeleteTestWaitsForArchiveFinalizationFence(t *testing.T) {
-	archiveRoot := t.TempDir()
-	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveRoot)
-	sqliteStore, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer sqliteStore.Close()
-	store := &failingArchiveCatalogStore{SQLiteStore: sqliteStore, failCatalog: true}
-	testID := "delete-races-finalization"
-	test, record := createArchiveFinalizationTest(t, sqliteOverlay(store), testID, archiveRoot)
-	server := NewServer(ServerConfig{Store: sqliteOverlay(store), MaxConcurrent: 1})
+	for _, mode := range []string{"legacy", "atomic telemetry"} {
+		t.Run(mode, func(t *testing.T) {
+			archiveRoot := t.TempDir()
+			t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveRoot)
+			sqliteStore, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer sqliteStore.Close()
+			store := &failingArchiveCatalogStore{SQLiteStore: sqliteStore, failCatalog: true}
+			testID := "delete-races-finalization"
+			test, record := createArchiveFinalizationTest(t, sqliteOverlay(store), testID, archiveRoot)
+			server := NewServer(ServerConfig{Store: sqliteOverlay(store), MaxConcurrent: 1})
+			defer func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := server.Shutdown(ctx); err != nil {
+					t.Error(err)
+				}
+			}()
+			if mode == "legacy" {
+				server.runner.telemetryNotificationPublication = nil
+			}
 
-	// Simulate the producer's existing fence spanning local finalization and the
-	// terminal transition. The HTTP handler must wait rather than deleting the
-	// test between outbox creation and publication/catalog commit.
-	unlock := server.runner.lockArchiveCommitFence(testID)
-	requestStarted := make(chan struct{})
-	requestDone := make(chan *httptest.ResponseRecorder, 1)
-	go func() {
-		close(requestStarted)
-		req := httptest.NewRequest(http.MethodDelete, "/api/v1/tests/"+testID, nil)
-		resp := httptest.NewRecorder()
-		server.mux.ServeHTTP(resp, req)
-		requestDone <- resp
-	}()
-	<-requestStarted
-	select {
-	case resp := <-requestDone:
-		unlock()
-		t.Fatalf("delete bypassed archive finalization fence: status=%d body=%s", resp.Code, resp.Body.String())
-	case <-time.After(50 * time.Millisecond):
-	}
-	if err := server.runner.finalizeRunArchiveDurablyUnderFence(context.Background(), test, record, false); err == nil {
-		unlock()
-		t.Fatal("expected injected catalog failure")
-	}
-	unlock()
+			// Simulate the producer's existing fence spanning local finalization and the
+			// terminal transition. The HTTP handler must wait rather than deleting the
+			// test between outbox creation and publication/catalog commit.
+			unlock := server.runner.lockArchiveCommitFence(testID)
+			requestStarted := make(chan struct{})
+			requestDone := make(chan *httptest.ResponseRecorder, 1)
+			go func() {
+				close(requestStarted)
+				req := httptest.NewRequest(http.MethodDelete, "/api/v1/tests/"+testID, nil)
+				resp := httptest.NewRecorder()
+				server.mux.ServeHTTP(resp, req)
+				requestDone <- resp
+			}()
+			<-requestStarted
+			select {
+			case resp := <-requestDone:
+				unlock()
+				t.Fatalf("delete bypassed archive finalization fence: status=%d body=%s", resp.Code, resp.Body.String())
+			case <-time.After(50 * time.Millisecond):
+			}
+			if err := server.runner.finalizeRunArchiveDurablyUnderFence(context.Background(), test, record, false); err == nil {
+				unlock()
+				t.Fatal("expected injected catalog failure")
+			}
+			unlock()
 
-	var resp *httptest.ResponseRecorder
-	select {
-	case resp = <-requestDone:
-	case <-time.After(5 * time.Second):
-		t.Fatal("delete did not resume after archive finalization fence release")
-	}
-	if resp.Code != http.StatusOK {
-		t.Fatalf("delete status = %d, want 200 body=%s", resp.Code, resp.Body.String())
-	}
-	if _, err := store.SQLiteStore.GetTest(testID); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("test row remains after fenced delete: %v", err)
-	}
-	if _, err := store.SQLiteStore.GetArchiveFinalizationJob(testID); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("finalization job remains after fenced delete: %v", err)
-	}
-	if _, err := store.SQLiteStore.GetArchiveCleanupJob(testID); err != nil {
-		t.Fatalf("finalization job was not converted to durable cleanup: %v", err)
-	}
-	if err := server.retryArchiveCleanupJobs(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(record.ArchivePath); !os.IsNotExist(err) {
-		t.Fatalf("archive remains after durable cleanup: %v", err)
+			var resp *httptest.ResponseRecorder
+			select {
+			case resp = <-requestDone:
+			case <-time.After(5 * time.Second):
+				t.Fatal("delete did not resume after archive finalization fence release")
+			}
+			if resp.Code != http.StatusOK {
+				t.Fatalf("delete status = %d, want 200 body=%s", resp.Code, resp.Body.String())
+			}
+			if _, err := store.SQLiteStore.GetTest(testID); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("test row remains after fenced delete: %v", err)
+			}
+			if _, err := store.SQLiteStore.GetArchiveFinalizationJob(testID); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("finalization job remains after fenced delete: %v", err)
+			}
+			if _, err := store.SQLiteStore.GetArchiveCleanupJob(testID); err != nil {
+				t.Fatalf("finalization job was not converted to durable cleanup: %v", err)
+			}
+			if err := server.retryArchiveCleanupJobs(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(record.ArchivePath); !os.IsNotExist(err) {
+				t.Fatalf("archive remains after durable cleanup: %v", err)
+			}
+		})
 	}
 }

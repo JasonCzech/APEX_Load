@@ -20,6 +20,7 @@ type incarnationArchiveFinalizationStore interface {
 // CAS. Both values come from the same verified manifest, including prepared
 // recovery bytes and the catalog source used for an adjunct refresh.
 type archiveFinalizationInspection struct {
+	manifest             *RunArchiveManifest
 	identity             *storage.ArchiveFinalizationRunIdentity
 	executionCompletedAt time.Time
 }
@@ -128,6 +129,7 @@ func (tr *TestRunner) validateArchiveFinalizationSource(job *storage.ArchiveFina
 		return nil, errors.New("archive finalization source does not match the durable terminal incarnation")
 	}
 	return &archiveFinalizationInspection{
+		manifest:             manifest,
 		identity:             &storage.ArchiveFinalizationRunIdentity{RunIncarnation: incarnation, ExecutionGeneration: durable.ExecutionGeneration, ProjectID: normalizeProjectID(durable.ProjectID), StartTime: durable.StartTime, EndTime: *durable.EndTime, Status: durable.Status},
 		executionCompletedAt: archiveExecutionCompletedAt(manifest),
 	}, nil
@@ -159,11 +161,17 @@ func (tr *TestRunner) bindArchiveFinalizationLease(identity *storage.ArchiveFina
 
 // A false result may mean lease loss with this same intent still current. Only
 // an actually superseded token is eligible for version cleanup; never attach it.
-func (tr *TestRunner) commitArchiveFinalization(job *storage.ArchiveFinalizationJob, identity *storage.ArchiveFinalizationRunIdentity) (bool, error) {
+func (tr *TestRunner) commitArchiveFinalization(ctx context.Context, job *storage.ArchiveFinalizationJob, identity *storage.ArchiveFinalizationRunIdentity, manifest *RunArchiveManifest) (bool, error) {
 	outbox := tr.archiveFinalizationOutbox()
 	var committed bool
 	var err error
-	if identity != nil {
+	if atomic, ok := tr.archiveStore.(telemetryArchiveFinalizationStore); ok && identity != nil && tr.hasAtomicTelemetryNotifications() {
+		publication, buildErr := tr.telemetryNotificationPublication(ctx, job.TestID, manifest)
+		if buildErr != nil {
+			return false, errors.New("telemetry notification projection is temporarily unavailable")
+		}
+		committed, err = atomic.CompleteArchiveFinalizationWithTelemetry(job.TestID, job.IntentToken, job.RefreshToken, &job.ArchiveRecord, *identity, publication)
+	} else if identity != nil {
 		committed, err = tr.archiveStore.(incarnationArchiveFinalizationStore).CompleteArchiveFinalizationForRun(job.TestID, job.IntentToken, job.RefreshToken, &job.ArchiveRecord, *identity)
 	} else {
 		committed, err = outbox.CompleteArchiveFinalization(job.TestID, job.IntentToken, job.RefreshToken, &job.ArchiveRecord)

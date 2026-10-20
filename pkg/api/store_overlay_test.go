@@ -348,6 +348,15 @@ func (o *sqliteStoreOverlay) ArchiveRelease(a0 string) error {
 	return o.base().ArchiveRelease(a0)
 }
 
+func (o *sqliteStoreOverlay) AuthorizeTelemetryNotificationDelivery(a0 context.Context, a1 storage.TelemetryNotificationDelivery, a2 time.Time) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		AuthorizeTelemetryNotificationDelivery(context.Context, storage.TelemetryNotificationDelivery, time.Time) (bool, error)
+	}); ok {
+		return fake.AuthorizeTelemetryNotificationDelivery(a0, a1, a2)
+	}
+	return o.base().AuthorizeTelemetryNotificationDelivery(a0, a1, a2)
+}
+
 func (o *sqliteStoreOverlay) BackendInfo() storage.StoreBackendInfo {
 	if fake, ok := o.fake.(interface {
 		BackendInfo() storage.StoreBackendInfo
@@ -1037,6 +1046,15 @@ func (o *sqliteStoreOverlay) CompleteArchiveFinalizationForRun(a0 string, a1 str
 		return fake.CompleteArchiveFinalizationForRun(a0, a1, a2, a3, a4)
 	}
 	return o.base().CompleteArchiveFinalizationForRun(a0, a1, a2, a3, a4)
+}
+
+func (o *sqliteStoreOverlay) CompleteArchiveFinalizationWithTelemetry(a0 string, a1 string, a2 string, a3 *storage.RunArchiveRecord, a4 storage.ArchiveFinalizationRunIdentity, a5 storage.TelemetryNotificationPublication) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		CompleteArchiveFinalizationWithTelemetry(string, string, string, *storage.RunArchiveRecord, storage.ArchiveFinalizationRunIdentity, storage.TelemetryNotificationPublication) (bool, error)
+	}); ok {
+		return fake.CompleteArchiveFinalizationWithTelemetry(a0, a1, a2, a3, a4, a5)
+	}
+	return o.base().CompleteArchiveFinalizationWithTelemetry(a0, a1, a2, a3, a4, a5)
 }
 
 func (o *sqliteStoreOverlay) CompleteAuthoringMutationReceipt(a0 string, a1 string, a2 string, a3 time.Time) (bool, error) {
@@ -3821,6 +3839,15 @@ func (o *sqliteStoreOverlay) GetTelemetryNotification(a0 context.Context, a1 str
 		return fake.GetTelemetryNotification(a0, a1)
 	}
 	return o.base().GetTelemetryNotification(a0, a1)
+}
+
+func (o *sqliteStoreOverlay) GetTelemetryNotificationPublication(a0 context.Context, a1 string, a2 string) (*storage.TelemetryNotificationPublicationState, error) {
+	if fake, ok := o.fake.(interface {
+		GetTelemetryNotificationPublication(context.Context, string, string) (*storage.TelemetryNotificationPublicationState, error)
+	}); ok {
+		return fake.GetTelemetryNotificationPublication(a0, a1, a2)
+	}
+	return o.base().GetTelemetryNotificationPublication(a0, a1, a2)
 }
 
 func (o *sqliteStoreOverlay) GetTest(a0 string) (*storage.TestRecord, error) {
