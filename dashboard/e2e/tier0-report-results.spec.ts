@@ -186,13 +186,29 @@ test('[U16] every report lens renders the same run', async ({ request, page, see
         page.getByText(runName, { exact: false }).first(),
         `the ${lens} lens must identify the run it describes`,
       ).toBeVisible({ timeout: 30_000 })
-      const scorecard = page.locator('[aria-label="Run KPI scorecard"]')
-      await expect(scorecard, `the ${lens} lens must show shared headline metrics`).toBeVisible()
+      // The Summary's headline metrics are the results table's Whole-run row.
+      const wholeRun = page.locator('[aria-label="Results by group and transaction"] tr.run-report-group-breakdown-overall')
+      await expect(wholeRun, `the ${lens} lens must show shared headline metrics`).toBeVisible()
       await expect(
-        scorecard.locator('article strong'),
+        wholeRun.locator('td').first(),
         `the ${lens} lens must load the captured fixture metrics before comparing values`,
-      ).toHaveText([/^\d[\d,.]* ms$/, /^\d[\d,.]* ms$/, /^\d[\d,.]*%$/, /^\d[\d,.]*$/, /^\d[\d,.]*$/, /^\d[\d,.]*%$/])
-      scorecards.push((await scorecard.innerText()).replace(/\s+/g, ' ').trim())
+      ).toHaveText(/^[1-9][\d,]*$/)
+      // Count, errors, error rate and average response time.
+      await expect(wholeRun.locator('td').nth(1)).toHaveText(/^\d[\d,]*$/)
+      // A rate above zero but under 0.01% reads "<0.01%".
+      await expect(wholeRun.locator('td').nth(2)).toHaveText(/^<?\d[\d,.]*%/)
+      await expect(wholeRun.locator('td').nth(3)).toHaveText(/^\d[\d,.]*/)
+      // P95, read without its approximation mark, whose description has digits of its own.
+      const p95 = await wholeRun.locator('td').nth(5).evaluate(cell => {
+        const copy = cell.cloneNode(true) as HTMLElement
+        copy.querySelectorAll('.percentile-quality-mark').forEach(mark => mark.remove())
+        return (copy.textContent || '').trim()
+      })
+      expect(p95, `the ${lens} lens must show a measured P95`).toMatch(/^\d[\d,.]*/)
+      // Peak TPS (or goal attainment), peak VUsers and evidence coverage sit above the table.
+      const facts = page.locator('[aria-label="Results by group and transaction"] [aria-label="Run facts"] dd')
+      await expect(facts, `the ${lens} lens must show the run facts`).toHaveText([/^\d[\d,.]*%?/, /^\d[\d,]*/, /^<?\d[\d,.]*%/])
+      scorecards.push(`${(await wholeRun.innerText()).replace(/\s+/g, ' ').trim()} | ${(await facts.allInnerTexts()).join(' ')}`)
       expect(pageErrors, `the ${lens} lens threw: ${pageErrors.map(e => e.message).join('; ')}`).toEqual([])
     } finally {
       page.off('pageerror', onPageError)
