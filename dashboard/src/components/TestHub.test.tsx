@@ -87,6 +87,18 @@ vi.mock('../hooks/useProject', () => ({
   useProject: () => projectState,
 }))
 
+// Isolate the scenario's save-handoff decisions; real import/editor persistence
+// is covered by workflow-scenario-composition through the HTTP controller.
+vi.mock('./ScriptsPage', () => ({
+  default: ({ onScriptSaved, initialEditId }: { onScriptSaved: (script: StoredScript, handoff?: { keepAuthoringOpen: true }) => void; initialEditId?: string }) => {
+    const saved: StoredScript = { id: initialEditId || 'prerequisite-saved', name: 'Saved prerequisite', protocol: 'http', version: '1', created_at: '' }
+    return <section aria-label="Embedded script authoring">
+      <button onClick={() => onScriptSaved(saved, { keepAuthoringOpen: true })}>Save with retained work</button>
+      <button onClick={() => onScriptSaved(saved)}>Save finished work</button>
+    </section>
+  },
+}))
+
 vi.mock('recharts', () => {
   const Mock = ({ children }: { children?: ReactNode }) => <g>{children}</g>
   const MockChart = ({ children }: { children?: ReactNode }) => <svg data-testid="scenario-model-chart">{children}</svg>
@@ -1976,6 +1988,40 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Simple ramp is active for this group')
     await act(async () => setSelectValue(stageGroup, '1'))
     expect(container.querySelector('.scenario-stage-list')).not.toBeNull()
+  })
+
+  it.each([false, true])('retains prerequisite authoring only when the save owns more work: %s', async retained => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({ resources: [{ id: 'authoring', operations: [{ id: 'manage_tests', allowed: true }, { id: 'manage_scripts', allowed: true }] }] })
+    await act(async () => root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    await clickWizardStep('Start')
+    const choose = container.querySelector<HTMLButtonElement>('button[aria-label="Add script to Group 1"]')!
+    await act(async () => choose.click())
+    await clickButton('Create script')
+    await flushPromises()
+    expect(container.querySelector('[aria-label="Embedded script authoring"]')).not.toBeNull()
+    await clickButton(retained ? 'Save with retained work' : 'Save finished work')
+    expect(Boolean(container.querySelector('[aria-label="Embedded script authoring"]'))).toBe(retained)
+    if (retained) {
+      await clickButton('Save with retained work')
+      await clickButton('Back to scenario draft')
+    }
+    expect(container.querySelectorAll('.scenario-script-group-card')).toHaveLength(1)
+    expect(container.querySelector('.scenario-script-group-card strong')?.textContent).toBe('Saved prerequisite')
+  })
+
+  it('retains a scenario script review with later edits and returns after a finished save', async () => {
+    await act(async () => root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    await clickWizardStep('Start')
+    await chooseLibraryScriptForGroup()
+    await clickButton('Review script')
+    await flushPromises()
+    await clickButton('Save with retained work')
+    expect(container.querySelector('[aria-label="Embedded script authoring"]')).not.toBeNull()
+    await clickButton('Save finished work')
+    expect(container.querySelector('[aria-label="Embedded script authoring"]')).toBeNull()
+    expect(container.querySelector('.scenario-script-group-card strong')?.textContent).toBe('Saved prerequisite')
   })
 
   it('renumbers a generated group name before assigning its script after an earlier group is removed', async () => {

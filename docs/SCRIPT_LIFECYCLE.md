@@ -696,3 +696,17 @@ multiple generated lanes is retained while another lane still needs it.
 Protected imports continue to require saving before editing. The
 [handoff review](qa/reviews/roadmap-archive-approval-handoff-2026-10-19/README.md)
 records coverage and remaining lifecycle work.
+
+### Scenario prerequisite handoff
+
+The first script saved from the scenario prerequisite editor is assigned to the
+selected group. Later saves update that script without adding another group.
+If its editor returned to an import review, has later edits, or requested
+secret setup, the embedded authoring workflow stays open. **Back to scenario
+draft** returns explicitly and still checks unsaved import siblings and editor
+changes. An ordinary finished save keeps its existing automatic return.
+
+Saving an archive draft while editing continues opens the saved script with
+those later edits and keeps the source review mounted. The return to the
+converted script remains available after later saves and a failed canonical
+reload; sibling drafts and their protected source session stay with that review.

@@ -45,7 +45,7 @@ import { boundedAllSettled } from '../utils/boundedAllSettled'
 const GitHubSyncModal = lazy(() => import('./GitHubSyncModal'))
 
 interface Props {
-  onScriptSaved?: (script: StoredScript) => void
+  onScriptSaved?: (script: StoredScript, handoff?: { keepAuthoringOpen: true }) => void
   initialCreateWorkflow?: 'start-new' | 'source'
 
   applicationRepository?: ApplicationRepository | null
@@ -570,8 +570,12 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   }, [])
   const handleSavedScript = useCallback((...args: Parameters<typeof acceptSavedScript>) => {
     acceptSavedScript(...args)
-    onScriptSaved?.(args[0])
-  }, [acceptSavedScript, onScriptSaved])
+    const options = args[3]
+    const source = args[4] === undefined ? authoringState.draftReturnTarget : args[4]
+    const keepAuthoringOpen = options?.laterEdits || options?.configureSecrets || source?.subView === 'import'
+    if (keepAuthoringOpen) onScriptSaved?.(args[0], { keepAuthoringOpen: true })
+    else onScriptSaved?.(args[0])
+  }, [acceptSavedScript, authoringState.draftReturnTarget, onScriptSaved])
 
 
   useEffect(() => {
@@ -1037,7 +1041,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       // The editor went back to the archive review that opened it, which took
       // the save; a page embedding this one still hears of it.
       if (options.configureSecrets) queueSecretDialog(script)
-      onScriptSaved?.(script)
+      onScriptSaved?.(script, { keepAuthoringOpen: true })
       return
     }
     handleSavedScript(script, undefined, options?.retainedDraft, options)

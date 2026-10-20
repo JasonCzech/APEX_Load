@@ -1,0 +1,12 @@
+[
+  {
+    "profile": "dev-admin",
+    "sha256": "4ef25989cacfe38ddb0b791d0c220b1286320ef15d7d0a6c63aa26d559426e41",
+    "bytes": 232764162
+  },
+  {
+    "profile": "local-auth",
+    "sha256": "4ef25989cacfe38ddb0b791d0c220b1286320ef15d7d0a6c63aa26d559426e41",
+    "bytes": 232764162
+  }
+]

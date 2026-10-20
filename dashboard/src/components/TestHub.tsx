@@ -4906,15 +4906,17 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     )
   }
 
-  if (reviewScriptId) return <section aria-label="Review scenario script"><button className="btn btn-secondary" onClick={() => void runGuarded(() => { setReviewScriptId(null); void refresh() }, [scenarioBuilderGuard.id])}>Back to scenario draft</button><p>Your scenario draft is retained while you review this script.</p><NavigationGuardRunnerContext.Provider value={prerequisiteNavigationRunner}><ScriptsPage applicationRepository={applicationRepository} initialMode="edit" initialEditId={reviewScriptId} onScriptSaved={script => { setScripts(previous => previous.map(item => item.id === script.id ? script : item)); setReviewScriptId(null) }} /></NavigationGuardRunnerContext.Provider></section>
+  if (reviewScriptId) return <section aria-label="Review scenario script"><button className="btn btn-secondary" onClick={() => void runGuarded(() => { setReviewScriptId(null); void refresh() }, [scenarioBuilderGuard.id])}>Back to scenario draft</button><p>Your scenario draft is retained while you review this script.</p><NavigationGuardRunnerContext.Provider value={prerequisiteNavigationRunner}><ScriptsPage applicationRepository={applicationRepository} initialMode="edit" initialEditId={reviewScriptId} onScriptSaved={(script, handoff) => { setScripts(previous => previous.map(item => item.id === script.id ? script : item)); if (!handoff?.keepAuthoringOpen) setReviewScriptId(null) }} /></NavigationGuardRunnerContext.Provider></section>
 
   if (prerequisiteScript) return <section aria-label="Create prerequisite script">
     <button className="btn btn-secondary" onClick={() => void runGuarded(() => setPrerequisiteScript(null), [scenarioBuilderGuard.id])}>Back to scenario draft</button>
-    <p>Your scenario draft is retained. Saving a script returns it to the selected group.</p>
-    <NavigationGuardRunnerContext.Provider value={prerequisiteNavigationRunner}><ScriptsPage applicationRepository={applicationRepository} initialMode="create-options" initialCreateWorkflow={prerequisiteScript} onScriptSaved={script => {
+    <p>Your scenario draft is retained. Saving adds the script to the selected group. Import reviews, later edits and secret setup stay open until you return to the scenario.</p>
+    <NavigationGuardRunnerContext.Provider value={prerequisiteNavigationRunner}><ScriptsPage applicationRepository={applicationRepository} initialMode="create-options" initialCreateWorkflow={prerequisiteScript} onScriptSaved={(script, handoff) => {
       setScripts(previous => [...previous.filter(item => item.id !== script.id), script])
-      selectScriptFromLibrary(script)
-      setPrerequisiteScript(null)
+      // Only the first prerequisite save fills the chosen slot. Later saves
+      // update its library projection without appending another scenario group.
+      if (scriptSelectionTargetIndex !== null) selectScriptFromLibrary(script)
+      if (!handoff?.keepAuthoringOpen) setPrerequisiteScript(null)
     }} /></NavigationGuardRunnerContext.Provider>
   </section>
 

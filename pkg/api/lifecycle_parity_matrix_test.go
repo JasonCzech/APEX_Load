@@ -416,7 +416,7 @@ func lifecycleAuth2Rows() []lifecycleAuth2Row {
 			"workflow-script-session.spec.ts":      {"a validation that returns after an edit is ignored and the next one binds to the edited draft"},
 		}},
 		{Entry: "Scenario library wizard and compact modal", E2E: map[string][]string{
-			"workflow-scenario-composition.spec.ts": {"scenario rename and reopen retain Results, WebSocket, named shape and group timing intent"},
+			"workflow-scenario-composition.spec.ts": {"scenario rename and reopen retain Results, WebSocket, named shape and group timing intent", "scenario prerequisite saves retain archive siblings and later editor changes"},
 			"workflow-scenario-data.spec.ts":        nil,
 		}},
 		{Entry: "New run", E2E: map[string][]string{
