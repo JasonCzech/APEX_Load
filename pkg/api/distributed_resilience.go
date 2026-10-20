@@ -18,6 +18,10 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+const uncertainEvacuationReasonPrefix = "generator evacuation state is uncertain: "
+
+const uncertainEvacuationIntervention = "; the run stays STOPPING until every possible generator confirms its work stopped, or a system administrator attests that all such processes are stopped or fenced (POST /api/v1/tests/{id}/interrupted-stop/resolve)"
+
 type GeneratorEvacuationImpact struct {
 	TestID        string                  `json:"test_id"`
 	TestName      string                  `json:"test_name,omitempty"`
@@ -1607,7 +1611,7 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 	defer clear(runSupervisionToken)
 	if active {
 		test.Status = "STOPPING"
-		test.Error = "generator evacuation state is uncertain: " + uncertain.Error()
+		test.Error = uncertainEvacuationReasonPrefix + uncertain.Error() + uncertainEvacuationIntervention
 		test.remoteFinalizing = true
 		if test.remoteClientsByTarget == nil {
 			test.remoteClientsByTarget = make(map[string]generatorClient)
@@ -1653,15 +1657,39 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 		return uncertain
 	}
 
-	// Retain all clients in the STOPPING topology and keep retrying with fresh
-	// contexts. Generator epoch expiry is an additional fence, not a substitute
-	// for explicit cleanup acknowledgement.
+	// Retain all clients in the STOPPING topology and retry with fresh contexts.
+	// A canceled current-owner run with a durable journal has a bounded retry
+	// budget, then requires intervention. Timeout alone never proves termination.
 	if owned {
 		retryRunSupervisionToken := append([]byte(nil), runSupervisionToken...)
+		retryAttempts := 0
+		lastStopError := stopErr
 		tr.enqueueTerminalRetry("evacuation:"+test.ID, "uncertain evacuation cleanup", func() error {
 			unlock := tr.lockDistributedTopologyControl(test.ID)
+			tr.mu.RLock()
+			proven := tr.tests[test.ID] == test && interruptedEvacuationHasDurableFenceProof(test)
+			tr.mu.RUnlock()
+			if proven {
+				unlock()
+				clear(retryRunSupervisionToken)
+				retryRunSupervisionToken = nil
+				return nil
+			}
+			if retryAttempts >= maxSameLeaderEvacuationCleanupRetries {
+				held, holdErr := tr.holdSameLeaderEvacuationForIntervention(test, lastStopError)
+				if held || holdErr != nil {
+					unlock()
+					if held {
+						clear(retryRunSupervisionToken)
+						retryRunSupervisionToken = nil
+					}
+					return holdErr
+				}
+			}
 			retryErr, retryUnreachableErr := b.stopEvacuationParticipants(test.ID, test.executionGeneration, participants, unreachable, retryRunSupervisionToken)
 			if retryErr != nil {
+				retryAttempts++
+				lastStopError = retryErr
 				unlock()
 				return retryErr
 			}

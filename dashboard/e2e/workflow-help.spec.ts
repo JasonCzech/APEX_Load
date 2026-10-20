@@ -336,3 +336,33 @@ test('consolidated references select their owning help article and focus reposit
   await page.setViewportSize({ width: 760, height: 900 })
   expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
 })
+
+
+test('evacuation intervention help retains its proof requirements across reload and narrow layout', async ({ page }, testInfo) => {
+  await page.goto('/#/docs?guide=admin-guide&article=platform&section=resolving-an-unproven-generator-evacuation')
+  const reading = page.locator('.guide-markdown-article')
+  const heading = reading.locator('#resolving-an-unproven-generator-evacuation')
+  await expect(heading).toBeFocused()
+  await expect(reading).toContainText('automatic evacuation stop retries exhausted')
+  await expect(reading).toContainText('all-generator-processes-stopped')
+  await expect(reading).toContainText('A canceled controller context')
+  // Repository-only evidence references stay readable text in bundled Help.
+  await expect(reading).toContainText('same-leader intervention review records the local failure, persistence and authorization regressions')
+  await expect(reading.getByRole('link', { name: 'same-leader intervention review', exact: true })).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('evacuation-intervention-wide.png'), animations: 'disabled' })
+  let releaseAccess!: () => void
+  const accessReady = new Promise<void>(resolve => { releaseAccess = resolve })
+  const accessRoute = '**/api/v1/auth/effective-access**'
+  await page.route(accessRoute, async route => { await accessReady; await route.continue() })
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await expect(page.getByRole('status').filter({ hasText: 'Loading help access…' })).toBeVisible()
+    await expect(page).toHaveURL(/section=resolving-an-unproven-generator-evacuation/)
+    await expect(heading).toHaveCount(0)
+  } finally { releaseAccess() }
+  await expect(heading).toBeFocused()
+  await page.unroute(accessRoute)
+  await page.setViewportSize({ width: 760, height: 900 })
+  expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('evacuation-intervention-narrow.png'), animations: 'disabled' })
+})

@@ -280,6 +280,8 @@ Current successor adoption covers a narrow committed-replacement case. Add earli
 
 ### REC-B — Bound same-leader terminal cleanup without weakening fences
 
+The [same-leader intervention slice](qa/reviews/roadmap-same-leader-intervention-2026-10-19/README.md) bounds stop retries for the current canceled runtime with a durable evacuation journal, retains STOPPING quarantine on exhaustion and accepts the existing explicit administrator attestation. Unjournaled and stale-runtime cleanup contracts remain unchanged; deployed failure-domain qualification stays pending.
+
 Handle the currently stranded same-leader path when a replacement worker restarts, rejects the old generation and leaves the run stopping. Reuse all-participant process fences and durable termination proof; preserve the already fixed successor behavior that retains the failed state/error. Add bounded retries and extend/reuse the existing administrator-attestation/intervention path where the current contracts require one.
 
 A lease timeout, Kubernetes NotReady status or pod-name reuse is not death proof. Move to terminal failed/cleaned only when the required participant proof is durable; otherwise expose quarantined resources and the exact unresolved owner/action. Do not free reusable capacity, delete artifacts or claim successful cleanup solely to meet an elapsed-time target.

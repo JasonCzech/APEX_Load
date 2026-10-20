@@ -7,6 +7,7 @@ import type { DashboardAuthEffectiveAccessResource } from '../types'
 import { ApiGuideTopbarToggle } from './ApiGuideTopbarToggle'
 import GuideMarkdownArticle from './GuideMarkdownArticle'
 import HelpWorkspace from './HelpWorkspace'
+import LoadingState from './ux/LoadingState'
 import { useHelpHash } from '../hooks/useHelpHash'
 import { useApiGuideTopbarContribution } from './useApiGuideTopbarContribution'
 import dslSchemaURL from '../../../docs/dsl.schema.json?url'
@@ -30,9 +31,13 @@ export default function ApiGuidePage({ activePage = API_GUIDE_DEFAULT_PAGE, defa
   const isAdmin = effectiveAccessLoaded && !effectiveAccessError && ['manage_users', 'manage_user_bindings', 'view_user_activity', 'manage_service_accounts', 'manage_system'].some(operation => operations.has(operation))
   const requested = params.get('article') || (routedPage === 'mcp' ? 'mcp' : routedPage === 'authentication' ? 'authentication' : defaultArticle)
   const match = helpArticles.find(article => article.id === requested)
-  const denied = (match?.area || helpAreaForPage(routedPage)) === 'admin-guide' && !isAdmin
-  const area = denied ? 'getting-started' : match?.area || helpAreaForPage(routedPage)
-  const article = (!denied && match) || helpArticles.find(article => article.area === area)!
+  const requestsAdmin = (match?.area || helpAreaForPage(routedPage)) === 'admin-guide'
+  // Pending access is not a denial: preserve the deep link until its decision
+  // arrives, without loading or rendering protected article content.
+  const accessPending = requestsAdmin && !effectiveAccessLoaded && !effectiveAccessError
+  const denied = requestsAdmin && !accessPending && !isAdmin
+  const area = denied || accessPending ? 'getting-started' : match?.area || helpAreaForPage(routedPage)
+  const article = (!denied && !accessPending && match) || helpArticles.find(article => article.area === area)!
   // A denied admin article falls back to public help; the address says so too.
   // The notice stays while the address is that fallback, even after a later
   // hash read no longer sees the denied request.
@@ -52,7 +57,7 @@ export default function ApiGuidePage({ activePage = API_GUIDE_DEFAULT_PAGE, defa
     <HelpWorkspace area={area} activeArticle={article.id} isAdmin={isAdmin}>
       {showDeniedNotice && <p role="status">Administration requires administrative access. Start with the public help articles or contact your administrator.</p>}
       {requested && !match && <p role="status">That article is not in this build. Choose an article below.</p>}
-      <HelpArticleContent key={article.id} article={article} section={section} isAdmin={isAdmin} />
+      {accessPending ? <LoadingState what="help access" /> : <HelpArticleContent key={article.id} article={article} section={section} isAdmin={isAdmin} />}
       {article.id === 'administration' && <details><summary>CloudTest compatibility and delivery reference</summary><Suspense fallback={<p role="status">Loading compatibility reference…</p>}><CloudTestParityDashboard /></Suspense></details>}
       {article.id === 'authentication' && isAdmin && onNavigate && <button type="button" className="btn btn-secondary" onClick={() => onNavigate('access')}>Open Access</button>}
     </HelpWorkspace>
