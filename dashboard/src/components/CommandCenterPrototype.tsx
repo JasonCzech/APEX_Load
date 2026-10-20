@@ -36,7 +36,7 @@ import { usePrometheusGraphs } from './usePrometheusGraphs'
 import { useImportedDashboardGraphs } from './useImportedDashboardGraphs'
 import { EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS, EXECUTION_POLL_INTERVAL_MS } from './useExecutionTestPolling'
 import { ARCHIVE_CHART_MAX_SAMPLES } from './archiveHistorySampling'
-import { omitTransactionChartSeries } from './transactionChartSeries'
+import { MAX_TRANSACTION_CHART_SERIES, omitTransactionChartSeries, transactionChartSeriesKey } from './transactionChartSeries'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import ConfirmRunActionModal from './ConfirmRunActionModal'
@@ -731,8 +731,9 @@ export default function CommandCenterPrototype({
   const [archiveFinalizationTimedOut, setArchiveFinalizationTimedOut] = useState(false)
   const [archiveCheckPending, setArchiveCheckPending] = useState(false)
   const [archiveCheckError, setArchiveCheckError] = useState('')
-  const [backendScopedChartData, setBackendScopedChartData] = useState<MetricsHistoryPoint[] | null>(null)
-  const [backendScopedMetrics, setBackendScopedMetrics] = useState<LiveMetrics | undefined>()
+  // Keyed by the group selection it was fetched for, so a previous
+  // selection's series never show while the new one loads.
+  const [backendScoped, setBackendScoped] = useState<{ signature: string; chartData: MetricsHistoryPoint[]; metrics?: LiveMetrics } | null>(null)
   const [showNotes, setShowNotes] = useState(false)
   const [showRuntimeAdjustment, setShowRuntimeAdjustment] = useState(false)
   const { pendingAction, pendingDetail, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
@@ -1107,6 +1108,9 @@ export default function CommandCenterPrototype({
   )
   const graphWallGroupNames = useMemo(() => graphWallGroups.map(group => group.name), [graphWallGroups])
   const graphWallGroupSignature = graphWallGroupNames.join('\u001f')
+  const currentBackendScoped = backendScoped?.signature === graphWallGroupSignature ? backendScoped : null
+  const backendScopedChartData = currentBackendScoped?.chartData ?? null
+  const backendScopedMetrics = currentBackendScoped?.metrics
   const errorPatterns = useMemo(
     () => liveMode ? buildLiveErrorPatterns(displayTest.live_metrics) : hasLiveRoute || emptyMode ? [] : prototypeFixtures?.errorPatterns ?? [],
     [displayTest.live_metrics, emptyMode, hasLiveRoute, liveMode, prototypeFixtures],
@@ -1249,7 +1253,9 @@ export default function CommandCenterPrototype({
   const graphScopedChartData = useMemo(() => {
     if (noGraphWallGroupsVisible) return []
     if (allGraphWallGroupsVisible) return chartData
-    return (alignedBackendScopedChartData ?? clientScopedChartData).map(omitTransactionChartSeries)
+    // The backend scopes transaction series to the selected groups; every
+    // unscoped fallback strips them where it is chosen.
+    return alignedBackendScopedChartData ?? clientScopedChartData
   }, [alignedBackendScopedChartData, allGraphWallGroupsVisible, chartData, clientScopedChartData, noGraphWallGroupsVisible])
   const graphScopedMetrics = allGraphWallGroupsVisible || noGraphWallGroupsVisible
     ? displayTest.live_metrics
@@ -1257,18 +1263,22 @@ export default function CommandCenterPrototype({
 
   useEffect(() => {
     if (!liveMode || !testId || variant !== 'grafana' || allGraphWallGroupsVisible || noGraphWallGroupsVisible) {
-      setBackendScopedChartData(null)
-      setBackendScopedMetrics(undefined)
+      setBackendScoped(null)
       return undefined
     }
 
     let cancelled = false
+    const publishScoped = (chartData: MetricsHistoryPoint[], metrics?: LiveMetrics) => {
+      setBackendScoped({ signature: graphWallGroupSignature, chartData, metrics })
+    }
     const selectedGroupNames = graphWallGroupSignature ? graphWallGroupSignature.split('\u001f') : []
     const selectedGroupSet = new Set(selectedGroupNames)
     const selectedGroupScopes = selectedGroupNames.map(name => ({ name }) as CommandGroup)
-    const responseHonorsGroupFilter = (metrics?: LiveMetrics) => (
-      Object.keys(metrics?.groups || {}).every(name => selectedGroupSet.has(name))
-    )
+    // A response without group metrics proves nothing about the filter.
+    const responseHonorsGroupFilter = (metrics?: LiveMetrics) => {
+      const responseGroups = Object.keys(metrics?.groups || {})
+      return responseGroups.length > 0 && responseGroups.every(name => selectedGroupSet.has(name))
+    }
     const loadArchiveTransactionsForSelectedGroups = async () => {
       const transactions: TransactionEvent[] = []
       for (const groupName of selectedGroupNames) {
@@ -1302,22 +1312,23 @@ export default function CommandCenterPrototype({
           if (!cancelled) {
             const mappedHistory = mapArchiveSummarySamples(loaded)
             if (archiveFilterHonored) {
-              setBackendScopedChartData(mappedHistory)
+              publishScoped(mappedHistory)
             } else if (selectedGroupHistoryHasFields(mappedHistory, selectedGroupNames)) {
-              setBackendScopedChartData(selectedGroupLoadImpactData(mappedHistory, selectedGroupScopes))
+              publishScoped(selectedGroupLoadImpactData(mappedHistory, selectedGroupScopes))
             } else {
               try {
                 const transactions = await loadArchiveTransactionsForSelectedGroups()
                 if (cancelled) return
-                const transactionHistory = buildSelectedGroupChartHistoryFromTransactions(mappedHistory, transactions, graphWallGroups, groups)
-                setBackendScopedChartData(transactionHistory.length > 0 ? transactionHistory : mappedHistory)
+                // The unfiltered summaries carry every group's transactions.
+                const unscopedReference = mappedHistory.map(omitTransactionChartSeries)
+                const transactionHistory = buildSelectedGroupChartHistoryFromTransactions(unscopedReference, transactions, graphWallGroups, groups)
+                publishScoped(transactionHistory.length > 0 ? transactionHistory : unscopedReference)
               } catch {
                 if (!cancelled) {
-                  setBackendScopedChartData(mappedHistory)
+                  publishScoped(mappedHistory.map(omitTransactionChartSeries))
                 }
               }
             }
-            setBackendScopedMetrics(undefined)
           }
           return
         }
@@ -1325,16 +1336,14 @@ export default function CommandCenterPrototype({
         const response = await api.getMetrics(testId, { groups: selectedGroupNames, limit: 300 })
         if (cancelled) return
         const mappedHistory = mapExecutionHistory((response.history || []) as LiveMetrics[])
-        setBackendScopedChartData(responseHonorsGroupFilter(response.metrics)
-          ? mappedHistory
-          : selectedGroupLoadImpactData(mappedHistory, selectedGroupScopes))
-        setBackendScopedMetrics(responseHonorsGroupFilter(response.metrics)
-          ? response.metrics
-          : undefined)
+        if (responseHonorsGroupFilter(response.metrics)) {
+          publishScoped(mappedHistory, response.metrics)
+        } else {
+          publishScoped(selectedGroupLoadImpactData(mappedHistory, selectedGroupScopes))
+        }
       } catch {
         if (!cancelled) {
-          setBackendScopedChartData(null)
-          setBackendScopedMetrics(undefined)
+          setBackendScoped(null)
         }
       }
     }
@@ -2709,6 +2718,7 @@ function GrafanaWallView({
           runId={runId}
           variant="grafana"
           groups={chartGroups}
+          multiGroupRun={groups.length > 1}
           metrics={metrics}
           chartData={chartData}
           groupScopedChartData={groupScopedChartData}
@@ -3750,6 +3760,17 @@ interface ArchiveTransactionBucket {
   totalDurationMs: number
   durations: number[]
   byGroup: Record<string, ArchiveTransactionBucketStats>
+  // Per transaction name, as the server builds archive summaries: every
+  // event, and the business transactions alone.
+  // Maps, since an action may be named like an Object property ("constructor").
+  byTransaction: Map<string, ArchiveTransactionSeriesStats>
+  byBusinessTransaction: Map<string, ArchiveTransactionSeriesStats>
+}
+
+interface ArchiveTransactionSeriesStats {
+  count: number
+  errors: number
+  totalDurationMs: number
 }
 
 interface ArchiveTransactionBucketStats {
@@ -3766,7 +3787,56 @@ function emptyArchiveTransactionBucket(): ArchiveTransactionBucket {
     totalDurationMs: 0,
     durations: [],
     byGroup: {},
+    byTransaction: new Map(),
+    byBusinessTransaction: new Map(),
   }
+}
+
+function addArchiveTransactionSeries(series: Map<string, ArchiveTransactionSeriesStats>, name: string, durationMs: number, success: boolean) {
+  const stats = series.get(name) ?? { count: 0, errors: 0, totalDurationMs: 0 }
+  series.set(name, stats)
+  stats.count += 1
+  stats.totalDurationMs += durationMs
+  if (!success) stats.errors += 1
+}
+
+const ARCHIVE_TRANSACTION_OVERFLOW = '__other__'
+
+// Like the server's interval compaction: past the cap, the names after the
+// first ones in sorted order fold into one overflow series.
+function compactArchiveTransactionSeries(series: Map<string, ArchiveTransactionSeriesStats>) {
+  const names = Array.from(series.keys()).filter(name => name !== ARCHIVE_TRANSACTION_OVERFLOW).sort()
+  const overflow = series.get(ARCHIVE_TRANSACTION_OVERFLOW)
+  if (names.length + (overflow ? 1 : 0) <= MAX_TRANSACTION_CHART_SERIES) return series
+  const compacted = new Map<string, ArchiveTransactionSeriesStats>()
+  const folded = { count: 0, errors: 0, totalDurationMs: 0 }
+  names.forEach((name, index) => {
+    const stats = series.get(name)!
+    if (index < MAX_TRANSACTION_CHART_SERIES - 1) {
+      compacted.set(name, stats)
+      return
+    }
+    folded.count += stats.count
+    folded.errors += stats.errors
+    folded.totalDurationMs += stats.totalDurationMs
+  })
+  if (overflow) {
+    folded.count += overflow.count
+    folded.errors += overflow.errors
+    folded.totalDurationMs += overflow.totalDurationMs
+  }
+  compacted.set(ARCHIVE_TRANSACTION_OVERFLOW, folded)
+  return compacted
+}
+
+// The series the archive summaries would carry for these events: TPS counts
+// successes over the window, and summaries have no per-transaction percentiles.
+function applyArchiveTransactionSeries(point: MetricsHistoryPoint, series: Map<string, ArchiveTransactionSeriesStats>, seconds: number) {
+  compactArchiveTransactionSeries(series).forEach((stats, name) => {
+    point[transactionChartSeriesKey(name, 'tps')] = roundedTenth(Math.max(0, stats.count - stats.errors) / seconds)
+    point[transactionChartSeriesKey(name, 'avgMs')] = stats.count > 0 ? roundedTenth(stats.totalDurationMs / stats.count) : 0
+    point[transactionChartSeriesKey(name, 'errorPct')] = stats.count > 0 ? roundedHundredth(stats.errors / stats.count * 100) : 0
+  })
 }
 
 function emptyArchiveTransactionBucketStats(): ArchiveTransactionBucketStats {
@@ -3845,6 +3915,7 @@ export function buildSelectedGroupChartHistoryFromTransactions(
   if (usableReference.length === 0 || transactions.length === 0) return []
   const selectedGroupNames = new Set(selectedGroups.map(group => group.name))
   const buckets = usableReference.map(emptyArchiveTransactionBucket)
+  let hasBusinessTransactions = false
 
   transactions.forEach(transaction => {
     const groupName = transaction.group || ''
@@ -3868,6 +3939,12 @@ export function buildSelectedGroupChartHistoryFromTransactions(
       bucket.errors += 1
       groupStats.errors += 1
     }
+    const transactionName = transaction.action_name?.trim() || 'unnamed'
+    addArchiveTransactionSeries(bucket.byTransaction, transactionName, durationMs, success)
+    if (transaction.business_transaction) {
+      hasBusinessTransactions = true
+      addArchiveTransactionSeries(bucket.byBusinessTransaction, transactionName, durationMs, success)
+    }
   })
 
   let cumulativeTransactions = 0
@@ -3882,6 +3959,7 @@ export function buildSelectedGroupChartHistoryFromTransactions(
       vusers: estimatedGroupVusers(referencePoint.vusers, selectedGroups, allGroups),
     }
     applyBucketStats(point, bucket, seconds)
+    applyArchiveTransactionSeries(point, hasBusinessTransactions ? bucket.byBusinessTransaction : bucket.byTransaction, seconds)
     point.totalTransactions = cumulativeTransactions
     point.totalErrors = cumulativeErrors
     selectedGroups.forEach(group => {
@@ -3927,6 +4005,8 @@ interface CommandRuntimeGraphsProps {
   runId?: string
   variant: VariantId
   groups: CommandGroup[]
+  /** The run has more than one group, so even one selected group draws its own line. */
+  multiGroupRun?: boolean
   metrics?: LiveMetrics
   chartData: MetricsHistoryPoint[]
   groupScopedChartData?: MetricsHistoryPoint[]
@@ -3962,6 +4042,7 @@ function CommandRuntimeGraphs({
   runId,
   variant,
   groups,
+  multiGroupRun,
   metrics,
   chartData,
   groupScopedChartData,
@@ -4026,7 +4107,7 @@ function CommandRuntimeGraphs({
         refAreaEnd={refAreaEnd}
         timeRange={timeRange}
         onTimeRangeChange={onTimeRangeChange}
-        isMultiGroup={groups.length > 1}
+        isMultiGroup={groups.length > 1 || (multiGroupRun === true && groups.length > 0)}
         groupNames={groupNames}
         groupColors={groupColors.length > 0 ? groupColors : ['var(--chart-1)']}
         groupColorByName={groupColorByName}
