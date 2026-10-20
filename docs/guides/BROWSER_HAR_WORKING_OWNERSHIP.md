@@ -66,9 +66,30 @@ is preserved and reported as unproven. Once every writer and worker has joined,
 raw retirement can still proceed under its separately bounded namespace wait,
 even when capture publication was refused. An artifact already qualified and
 published within the deadline stays valid during later retirement or retries.
-These guards have [local deterministic qualification](../qa/reviews/roadmap-har-finalization-budget-2026-10-19/README.md);
-they do not establish the separate 256 in-flight request admission limit or
-native Linux/Windows crash qualification.
+These finalization guards have [local deterministic qualification](../qa/reviews/roadmap-har-finalization-budget-2026-10-19/README.md).
+Native Linux/Windows crash qualification remains pending.
+
+### Outstanding request limit
+
+An active native HAR capture allows **256 outstanding issued requests**. The
+synchronous native request callback counts issued work, including browser-queued
+requests, independently of the bounded diagnostics queue. Completion releases
+its count once. More than 256 outstanding requests signals the existing native
+close owner, records `har_in_flight` as a resource failure and marks unfinished
+document observations censored. Issued counts and incomplete evidence remain
+visible while closure joins the writer. This is overflow-triggered context
+closure; it does not schedule target requests or guarantee that no additional
+native callback arrives before closure completes.
+
+Completed sequential requests do not consume the concurrent budget. The
+512-entry request-identity inventory and 100,000-entry capture limit remain
+separate bounds. Sessions without active HAR capture retain their existing
+resource limits. No new request routing is installed and HTTP cache behavior
+is unchanged. Cancellation racing overflow uses the same exact close owner;
+a caller timeout retains the working file, lease and charge until physical join.
+The [outstanding-request review](../qa/reviews/roadmap-har-inflight-2026-10-20/README.md)
+retains local Chromium/WebKit flood, cancellation and import-compatibility
+results; it does not qualify other native platforms.
 
 After successful join, scrubbed output is written and synced in private staging,
 then linked to a fresh flat apexload_browser_<generation>_scrubbed.har name

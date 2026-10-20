@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	mapset "github.com/deckarep/golang-set/v2"
@@ -19,6 +20,7 @@ type frameImpl struct {
 	parentFrame Frame
 	childFrames []Frame
 	loadStates  mapset.Set[string]
+	loadStateMu sync.Mutex // Serializes native state changes with waiter registration.
 }
 
 func newFrame(parent *channelOwner, objectType string, guid string, initializer map[string]any) *frameImpl {
@@ -152,17 +154,23 @@ func (f *frameImpl) WaitForLoadState(options ...FrameWaitForLoadStateOptions) er
 }
 
 func (f *frameImpl) waitForLoadStateImpl(state string, timeout *float64, cb func() error) error {
+	// A native load event must not fall between the snapshot and subscription.
+	// Release the narrow registration lock before waiting or running user code.
+	f.loadStateMu.Lock()
 	if f.loadStates.ContainsOne(state) {
+		f.loadStateMu.Unlock()
 		return nil
 	}
 	waiter, err := f.setNavigationWaiter(timeout)
 	if err != nil {
+		f.loadStateMu.Unlock()
 		return err
 	}
 	waiter.WaitForEvent(f, "loadstate", func(payload any) bool {
 		gotState := payload.(string)
 		return gotState == state
 	})
+	f.loadStateMu.Unlock()
 	if cb == nil {
 		_, err := waiter.Wait()
 		return err
@@ -307,7 +315,9 @@ func (f *frameImpl) onFrameNavigated(ev map[string]any) {
 func (f *frameImpl) onLoadState(ev map[string]any) {
 	if ev["add"] != nil {
 		add := ev["add"].(string)
+		f.loadStateMu.Lock()
 		f.loadStates.Add(add)
+		f.loadStateMu.Unlock()
 		f.Emit("loadstate", add)
 		if f.parentFrame == nil && f.page != nil {
 			if add == "load" || add == "domcontentloaded" {
@@ -319,7 +329,9 @@ func (f *frameImpl) onLoadState(ev map[string]any) {
 		}
 	} else if ev["remove"] != nil {
 		remove := ev["remove"].(string)
+		f.loadStateMu.Lock()
 		f.loadStates.Remove(remove)
+		f.loadStateMu.Unlock()
 	}
 }
 

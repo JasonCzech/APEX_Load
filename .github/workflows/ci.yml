@@ -385,7 +385,7 @@ jobs:
 
       - name: Require owned HAR SDK completion contract
         if: matrix.lane == 'race'
-        run: go test -race -count=1 github.com/mxschmitt/playwright-go -run '^TestAPEXOwnedHAR'
+        run: go test -race -count=1 github.com/mxschmitt/playwright-go -run '^TestAPEX(OwnedHAR|LoadState)'
 
       # The race detector's larger frames leave some parked stacks at 16 KB,
       # so the 8 KB parked-stack bound is checked in a normal build.

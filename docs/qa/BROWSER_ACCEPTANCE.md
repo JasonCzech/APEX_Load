@@ -31,6 +31,10 @@ Each BE-4 behavior names the tests that accept it. **Chromium and WebKit** tests
 |  | `TestBrowserDocumentActualBlockedDrainClosesOwnedContext` (`pkg/protocol/browser/document_actual_integration_test.go`) | Chromium and WebKit |
 |  | `TestHAROwnershipReclaimsKilledGenerations` (`pkg/protocol/browser/har_crash_reclaim_test.go`) | Unit (no browser) |
 | Never-finishing requests | `TestNeverFinishingRequestFloodStaysBoundedAndCloses` (`pkg/protocol/browser/evidence_budget_integration_test.go`) | Chromium and WebKit |
+|  | `TestHARInFlightBudgetUsesOutstandingRequests` (`pkg/protocol/browser/har_inflight_budget_test.go`) | Unit (no browser) |
+|  | `TestHARInFlightBudgetDoesNotCapCompletedOrUnrecordedRequests` (`pkg/protocol/browser/har_inflight_budget_test.go`) | Unit (no browser) |
+|  | `TestHARInFlightOverflowClosesAndCensorsThroughMonitor` (`pkg/protocol/browser/har_inflight_budget_test.go`) | Unit (no browser) |
+|  | `TestHARInFlightOverflowCancellationRetainsExactWriter` (`pkg/protocol/browser/har_inflight_budget_test.go`) | Unit (no browser) |
 | Huge and chunked bodies | `TestNeverEndingChunkedBodyIsStoppedByTheMemoryWatchdog` (`pkg/protocol/browser/evidence_budget_integration_test.go`) | Chromium and WebKit |
 |  | `TestHARMonitorStopsOnActualFileSize` (`pkg/protocol/browser/har_limit_test.go`) | Unit (no browser) |
 | Metadata floods | `TestNetworkEntriesMetadataBudget` (`pkg/protocol/browser/network_buffer_bounding_test.go`) | Unit (no browser) |

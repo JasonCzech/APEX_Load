@@ -42,6 +42,7 @@ const (
 	envBrowserMemoryLimitMB   = "APEXLOAD_BROWSER_MEMORY_LIMIT_MB"
 
 	resourceLimitHARCapture    = "har_capture"
+	resourceLimitHARInFlight   = "har_in_flight"
 	resourceLimitBrowserMemory = "browser_memory"
 	// resourceLimitAdmission marks a session whose context was refused at
 	// open; every action of it fails as a resource-limit result.

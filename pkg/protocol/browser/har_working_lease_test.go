@@ -26,6 +26,9 @@ func fixtureHAROwner(t *testing.T, dir string) *harCaptureOwner {
 	t.Cleanup(func() {
 		// Fixtures have no native writer. Explicit fixture cleanup is not a
 		// production authorization to release a failed or unknown owner.
+		// Fixture disposal also retires its watchdog; it must not report
+		// synthetic exhaustion into a later test's evidence budget.
+		o.finishFinalizationBudget()
 		_ = o.closeDescriptors()
 		o.releaseReservation()
 	})
