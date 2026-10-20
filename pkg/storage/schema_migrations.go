@@ -94,6 +94,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 65, Name: "audit-event-insertion-order", Fingerprint: "642a661c427abb0b78aeb6396a86d0e94ccd1cf5a33b2724314b8986aa8eadae"},
 	{Version: 66, Name: "object-activity-insertion-order", Fingerprint: "3e407f1ddff5f098166d724dfef728cee82a893eb38b52fc083681dc9b9af7e5"},
 	{Version: 67, Name: "durable-telemetry-checkpoint", Fingerprint: "6e53190738516893c37874c83619953523d9cd18d05aba2bbf5a36aac3be3d32"},
+	{Version: 68, Name: "durable-telemetry-notification-outbox", Fingerprint: "be3b4004e8c8291b487a00536d736aa46e57759bcbbaf55daf74cb7e34d04869"},
 }
 
 type SchemaMigrationRecord struct {

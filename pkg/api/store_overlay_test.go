@@ -753,6 +753,15 @@ func (o *sqliteStoreOverlay) ClaimScenarioScheduleOccurrenceIfCurrentAndLeaseTer
 	return o.base().ClaimScenarioScheduleOccurrenceIfCurrentAndLeaseTermHeld(a0, a1, a2, a3)
 }
 
+func (o *sqliteStoreOverlay) ClaimTelemetryNotificationDelivery(a0 context.Context, a1 storage.TelemetryNotificationDelivery, a2 time.Time, a3 time.Duration) (*storage.TelemetryNotificationDelivery, error) {
+	if fake, ok := o.fake.(interface {
+		ClaimTelemetryNotificationDelivery(context.Context, storage.TelemetryNotificationDelivery, time.Time, time.Duration) (*storage.TelemetryNotificationDelivery, error)
+	}); ok {
+		return fake.ClaimTelemetryNotificationDelivery(a0, a1, a2, a3)
+	}
+	return o.base().ClaimTelemetryNotificationDelivery(a0, a1, a2, a3)
+}
+
 func (o *sqliteStoreOverlay) ClearCapacityReservationBinding(a0 string, a1 string, a2 time.Time) (bool, error) {
 	if fake, ok := o.fake.(interface {
 		ClearCapacityReservationBinding(string, string, time.Time) (bool, error)
@@ -2522,6 +2531,15 @@ func (o *sqliteStoreOverlay) ElasticCollectorPublicKey(a0 string, a1 string, a2 
 	return o.base().ElasticCollectorPublicKey(a0, a1, a2, a3)
 }
 
+func (o *sqliteStoreOverlay) EnqueueTelemetryNotification(a0 context.Context, a1 storage.TelemetryNotification, a2 time.Time) (string, string, error) {
+	if fake, ok := o.fake.(interface {
+		EnqueueTelemetryNotification(context.Context, storage.TelemetryNotification, time.Time) (string, string, error)
+	}); ok {
+		return fake.EnqueueTelemetryNotification(a0, a1, a2)
+	}
+	return o.base().EnqueueTelemetryNotification(a0, a1, a2)
+}
+
 func (o *sqliteStoreOverlay) EnsureAnalysisStorageIdentity(a0 string) error {
 	if fake, ok := o.fake.(interface{ EnsureAnalysisStorageIdentity(string) error }); ok {
 		return fake.EnsureAnalysisStorageIdentity(a0)
@@ -2688,6 +2706,15 @@ func (o *sqliteStoreOverlay) FinishConfluencePublication(a0 string, a1 string, a
 		return fake.FinishConfluencePublication(a0, a1, a2, a3, a4, a5)
 	}
 	return o.base().FinishConfluencePublication(a0, a1, a2, a3, a4, a5)
+}
+
+func (o *sqliteStoreOverlay) FinishTelemetryNotificationDelivery(a0 context.Context, a1 storage.TelemetryNotificationDelivery, a2 string, a3 time.Time) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		FinishTelemetryNotificationDelivery(context.Context, storage.TelemetryNotificationDelivery, string, time.Time) (bool, error)
+	}); ok {
+		return fake.FinishTelemetryNotificationDelivery(a0, a1, a2, a3)
+	}
+	return o.base().FinishTelemetryNotificationDelivery(a0, a1, a2, a3)
 }
 
 func (o *sqliteStoreOverlay) FleetPoolIDForGenerator(a0 string) (string, error) {
@@ -3787,6 +3814,15 @@ func (o *sqliteStoreOverlay) GetSettingContext(a0 context.Context, a1 string) (s
 	return o.base().GetSettingContext(a0, a1)
 }
 
+func (o *sqliteStoreOverlay) GetTelemetryNotification(a0 context.Context, a1 string) (*storage.TelemetryNotification, error) {
+	if fake, ok := o.fake.(interface {
+		GetTelemetryNotification(context.Context, string) (*storage.TelemetryNotification, error)
+	}); ok {
+		return fake.GetTelemetryNotification(a0, a1)
+	}
+	return o.base().GetTelemetryNotification(a0, a1)
+}
+
 func (o *sqliteStoreOverlay) GetTest(a0 string) (*storage.TestRecord, error) {
 	if fake, ok := o.fake.(interface {
 		GetTest(string) (*storage.TestRecord, error)
@@ -4310,6 +4346,15 @@ func (o *sqliteStoreOverlay) ListDomains() ([]*storage.Domain, error) {
 		return fake.ListDomains()
 	}
 	return o.base().ListDomains()
+}
+
+func (o *sqliteStoreOverlay) ListDueTelemetryNotificationDeliveries(a0 context.Context, a1 time.Time, a2 int) ([]storage.TelemetryNotificationDelivery, error) {
+	if fake, ok := o.fake.(interface {
+		ListDueTelemetryNotificationDeliveries(context.Context, time.Time, int) ([]storage.TelemetryNotificationDelivery, error)
+	}); ok {
+		return fake.ListDueTelemetryNotificationDeliveries(a0, a1, a2)
+	}
+	return o.base().ListDueTelemetryNotificationDeliveries(a0, a1, a2)
 }
 
 func (o *sqliteStoreOverlay) ListDynatraceConnections(a0 string) ([]*storage.DynatraceConnection, error) {
@@ -5228,6 +5273,15 @@ func (o *sqliteStoreOverlay) ListUsers(a0 storage.UserFilter) ([]*storage.User, 
 		return fake.ListUsers(a0)
 	}
 	return o.base().ListUsers(a0)
+}
+
+func (o *sqliteStoreOverlay) LoadTelemetryCheckpoint(a0 string, a1 string, a2 string, a3 time.Time) (string, int64, error) {
+	if fake, ok := o.fake.(interface {
+		LoadTelemetryCheckpoint(string, string, string, time.Time) (string, int64, error)
+	}); ok {
+		return fake.LoadTelemetryCheckpoint(a0, a1, a2, a3)
+	}
+	return o.base().LoadTelemetryCheckpoint(a0, a1, a2, a3)
 }
 
 func (o *sqliteStoreOverlay) MarkArchiveCleanupJobFailed(a0 string, a1 error, a2 time.Time) error {
@@ -6807,6 +6861,15 @@ func (o *sqliteStoreOverlay) SaveSetting(a0 string, a1 string) error {
 		return fake.SaveSetting(a0, a1)
 	}
 	return o.base().SaveSetting(a0, a1)
+}
+
+func (o *sqliteStoreOverlay) SaveTelemetryCheckpoint(a0 storage.TelemetryCheckpointWrite) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		SaveTelemetryCheckpoint(storage.TelemetryCheckpointWrite) (bool, error)
+	}); ok {
+		return fake.SaveTelemetryCheckpoint(a0)
+	}
+	return o.base().SaveTelemetryCheckpoint(a0)
 }
 
 func (o *sqliteStoreOverlay) SaveTest(a0 *storage.TestRecord) error {

@@ -24,6 +24,22 @@ func schemaCreateTableStatements() []string {
 func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 	return append([]string{
 		schemaMigrationLedgerDDL,
+		`CREATE TABLE IF NOT EXISTS telemetry_notification_events (
+ id TEXT PRIMARY KEY,
+ test_id TEXT NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
+ project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+ format_version INTEGER NOT NULL,
+ envelope TEXT NOT NULL,
+ created_at DATETIME NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS telemetry_notification_deliveries (
+ event_id TEXT NOT NULL REFERENCES telemetry_notification_events(id) ON DELETE CASCADE,
+ destination TEXT NOT NULL,
+ state TEXT NOT NULL,
+ attempts INTEGER NOT NULL,
+ owner_token TEXT NOT NULL,
+ next_attempt DATETIME NOT NULL,
+ PRIMARY KEY(event_id,destination))`,
+
 		`CREATE TABLE IF NOT EXISTS prometheus_connections (
  id TEXT PRIMARY KEY,
  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -2241,6 +2257,9 @@ var dataPoolRowsPageIndex = schemaIndex{
 // migrations. Unique indexes guard against duplicate reference keys; partial
 // indexes skip NULL/empty values so legacy rows awaiting backfill do not collide.
 var schemaIndexes = []schemaIndex{
+	{`CREATE INDEX IF NOT EXISTS idx_telemetry_notification_run ON telemetry_notification_events(test_id,id)`, "idx_telemetry_notification_run"},
+	{`CREATE INDEX IF NOT EXISTS idx_telemetry_notification_due ON telemetry_notification_deliveries(state,next_attempt,event_id,destination)`, "idx_telemetry_notification_due"},
+
 	{`CREATE INDEX IF NOT EXISTS idx_prometheus_connections_project ON prometheus_connections(project_id,name,id)`, "idx_prometheus_connections_project"},
 	{name: "idx_monitor_evidence_scope_time", query: `CREATE INDEX IF NOT EXISTS idx_monitor_evidence_scope_time ON run_monitor_observation_heads(job_id,diagnostic_kind,evidence_time,record_key) WHERE record_kind='diagnostic'`},
 	{name: "idx_monitor_evidence_trace", query: `CREATE INDEX IF NOT EXISTS idx_monitor_evidence_trace ON run_monitor_observation_heads(job_id,evidence_trace_id,record_key) WHERE record_kind='diagnostic'`},
