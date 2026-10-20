@@ -2316,6 +2316,25 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('Ramp 80 VUsers')
   })
 
+  it('lists each group, then its transactions, in the Transactions table', async () => {
+    await renderPrototype()
+    const tableWorkspace = container.querySelector('[aria-label="Command center run tables"]')!
+    await click(tabNamed('Transactions'))
+    const headings = () => [...tableWorkspace.querySelectorAll<HTMLButtonElement>('.command-table-section-toggle')]
+    const children = () => tableWorkspace.querySelectorAll('.command-table-child-row').length
+    expect(headings().length).toBeGreaterThan(0)
+    const before = children()
+    expect(before).toBeGreaterThan(0)
+    expect(headings()[0].getAttribute('aria-expanded')).toBe('true')
+    await click(headings()[0])
+    expect(headings()[0].getAttribute('aria-expanded')).toBe('false')
+    expect(children()).toBeLessThan(before)
+    // A filter shows every matching row, collapsed or not.
+    await changeTextInput(inputByLabel('Filter command center table rows'), 'POST /orders')
+    expect(headings().every(heading => heading.disabled && heading.getAttribute('aria-expanded') === 'true')).toBe(true)
+    expect(tableWorkspace.textContent).toContain('POST /orders')
+  })
+
   it('renders OPS tables while Graph Wall keeps configurable runtime graphs', async () => {
     await renderPrototype()
 

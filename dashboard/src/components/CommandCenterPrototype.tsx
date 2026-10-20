@@ -8,7 +8,7 @@ import LiveObservationNotice from './LiveObservationNotice'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { createContext, lazy, Suspense, useContext, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { createContext, Fragment, lazy, Suspense, useContext, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import type { CommandCenterRouteView } from '../appRouting'
 import { createPortal } from 'react-dom'
 
@@ -59,6 +59,7 @@ import {
   buildTransactionRunRows,
   isBrowserGroup,
   transactionRowGroups,
+  transactionTableSections,
   type CommandGroup,
   type GroupRunRow,
   type TransactionRunRow,
@@ -3058,7 +3059,7 @@ function CommandRunTables({
           <GroupRunTable rows={filteredGroupRows} hasBrowserGroups={groupRows.some(row => isBrowserGroup(row))} sort={activeSort} onSort={updateSort} emptyMessage={filter.trim() ? 'No groups match the current filter.' : 'No groups in this run.'} />
         )}
         {activeTab === 'transactions' && (
-          <TransactionRunTable rows={filteredTransactionRows} sort={activeSort} onSort={updateSort} emptyMessage={filter.trim() ? 'No transactions match the current filter.' : 'No transactions have completed yet.'} />
+          <TransactionRunTable rows={filteredTransactionRows} allRows={transactionRows} groupRows={groupRows} filtered={Boolean(filter.trim())} sort={activeSort} onSort={updateSort} emptyMessage={filter.trim() ? 'No transactions match the current filter.' : 'No transactions have completed yet.'} />
         )}
         {activeTab === 'errors' && (
           <ErrorDetailsTable
@@ -3103,6 +3104,16 @@ export function stabilizeErrorRowOrder(
   return stable
 }
 
+interface MetricTableSection<Row> {
+  id: string
+  label: string
+  /** What a row is, for the section's count ("transaction"). */
+  noun: string
+  /** The heading row's figures, drawn with the table's own columns. */
+  summary: Row
+  rows: Row[]
+}
+
 interface MetricColumn<Row> {
   label: string
   sortKey: string
@@ -3119,6 +3130,8 @@ function MetricColumnsTable<Row extends { id: string }>({
   essentialColumns,
   memoryKey,
   rows,
+  sections,
+  sectionsOpen = false,
   sort,
   onSort,
   emptyMessage,
@@ -3129,12 +3142,24 @@ function MetricColumnsTable<Row extends { id: string }>({
   essentialColumns: number[]
   memoryKey: string
   rows: Row[]
+  /** Rows nested under heading rows (a group and its transactions); replaces rows. */
+  sections?: MetricTableSection<Row>[]
+  /** Every section shows its rows, as while a filter is applied. */
+  sectionsOpen?: boolean
   sort: CommandSortState
   onSort: (key: string) => void
   emptyMessage: string
 }) {
   const [visible, setVisible] = useCommandViewState(memoryKey, essentialColumns)
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  const toggleSection = (id: string) => setCollapsed(previous => {
+    const next = new Set(previous)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
   const fullMetrics = visible.length === columns.length
+  const cellClass = (column: MetricColumn<Row>, row: Row) => [column.align === 'right' ? 'numeric' : '', column.className?.(row) ?? ''].filter(Boolean).join(' ') || undefined
   return (
     <div className="command-data-table-wrap" role="tabpanel" aria-label={label} tabIndex={0}>
       <p className="command-table-caption">{caption}</p>
@@ -3149,14 +3174,39 @@ function MetricColumnsTable<Row extends { id: string }>({
           </tr>
         </thead>
         <tbody>
-          {rows.map(row => (
+          {sections ? sections.map(section => {
+            const open = sectionsOpen || !collapsed.has(section.id)
+            return (
+              <Fragment key={section.id}>
+                <tr className="command-table-section-row">
+                  {columns.map((column, index) => (
+                    <td key={column.sortKey} hidden={!visible.includes(index)} className={cellClass(column, section.summary)}>
+                      {index === 0 ? (
+                        <button type="button" className="command-table-section-toggle" aria-expanded={open} disabled={sectionsOpen} onClick={() => toggleSection(section.id)}>
+                          <span aria-hidden="true">{open ? '▾' : '▸'}</span> <strong>{section.label}</strong>
+                          <span className="command-table-subtext">{section.rows.length.toLocaleString()} {section.rows.length === 1 ? section.noun : `${section.noun}s`}</span>
+                        </button>
+                      ) : column.render(section.summary)}
+                    </td>
+                  ))}
+                </tr>
+                {open && section.rows.map(row => (
+                  <tr key={row.id} className="command-table-child-row">
+                    {columns.map((column, index) => (
+                      <td key={column.sortKey} hidden={!visible.includes(index)} className={cellClass(column, row)}>{column.render(row)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </Fragment>
+            )
+          }) : rows.map(row => (
             <tr key={row.id}>
               {columns.map((column, index) => (
-                <td key={column.sortKey} hidden={!visible.includes(index)} className={[column.align === 'right' ? 'numeric' : '', column.className?.(row) ?? ''].filter(Boolean).join(' ') || undefined}>{column.render(row)}</td>
+                <td key={column.sortKey} hidden={!visible.includes(index)} className={cellClass(column, row)}>{column.render(row)}</td>
               ))}
             </tr>
           ))}
-          {rows.length === 0 && <EmptyTableRow colSpan={visible.length} message={emptyMessage} />}
+          {(sections ? sections.length === 0 : rows.length === 0) && <EmptyTableRow colSpan={visible.length} message={emptyMessage} />}
         </tbody>
       </table>
     </div>
@@ -3205,11 +3255,13 @@ function GroupRunTable({ rows, hasBrowserGroups, sort, onSort, emptyMessage }: {
   )
 }
 
-function TransactionRunTable({ rows, sort, onSort, emptyMessage }: { rows: TransactionRunRow[]; sort: CommandSortState; onSort: (key: string) => void; emptyMessage: string }) {
+// The Transactions table lists each group, then the transactions it ran:
+// rows are the filtered, sorted transaction rows; allRows (unfiltered) give
+// each group's heading its totals, so a filter never shrinks them.
+function TransactionRunTable({ rows, allRows, groupRows, filtered, sort, onSort, emptyMessage }: { rows: TransactionRunRow[]; allRows: TransactionRunRow[]; groupRows: GroupRunRow[]; filtered: boolean; sort: CommandSortState; onSort: (key: string) => void; emptyMessage: string }) {
   const basis = useContext(CommandMetricBasisContext)
   const columns: MetricColumn<TransactionRunRow>[] = [
-    { label: 'Transaction', sortKey: 'name', render: row => <strong>{row.name}</strong> },
-    { label: 'Group', sortKey: 'group', render: row => row.group ?? MISSING_VALUE },
+    { label: 'Group / transaction', sortKey: 'name', render: row => <strong>{row.name}</strong> },
     { label: 'Protocol', sortKey: 'protocol', render: row => row.protocol },
     { label: `TPS (${basis.rateWindow})`, sortKey: 'tps', align: 'right', render: row => formatOptionalNumber(row.tps, 1) },
     { label: 'Attempts (last sample)', sortKey: 'attempts', align: 'right', render: row => formatOptionalNumber(row.attempts) },
@@ -3221,15 +3273,19 @@ function TransactionRunTable({ rows, sort, onSort, emptyMessage }: { rows: Trans
     { label: 'P95', sortKey: 'p95', align: 'right', render: row => formatOptionalMs(row.p95) },
     { label: 'P99', sortKey: 'p99', align: 'right', render: row => formatOptionalMs(row.p99) },
   ]
+  const sections = useMemo(() => transactionTableSections(rows, allRows, groupRows, sort), [rows, allRows, groupRows, sort])
   return (
     <MetricColumnsTable
       label="Transactions"
-      caption={`TPS is ${rateWindowPhrase(basis)}; attempts, failures, error rates and response times are the last sample's. A transaction more than one group runs has a row for each group's share.`}
+      caption={`Each group, then the transactions it ran. TPS is ${rateWindowPhrase(basis)}; attempts, failures, error rates and response times are the last sample's. A group's TPS, attempts and failures add up its transactions', its ART averages theirs by attempts, and its percentiles are the group's own.`}
       columns={columns}
-      essentialColumns={[0, 1, 3, 4, 6, 10]}
-      // Group is a new second column: earlier remembered choices name other columns.
-      memoryKey="transactionColumnsByGroup"
+      essentialColumns={[0, 2, 3, 5, 9]}
+      // The Group column became each group's heading row: earlier remembered
+      // choices name other columns.
+      memoryKey="transactionColumnsGrouped"
       rows={rows}
+      sections={sections}
+      sectionsOpen={filtered}
       sort={sort}
       onSort={onSort}
       emptyMessage={emptyMessage}
