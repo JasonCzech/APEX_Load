@@ -1,0 +1,6 @@
+{
+  "pkg/protocol/grpc/roadmap_groundtruth_test.go": "91f83f88b934dc837c898724dcc1f8f39357e5f68359d6cc9262006c70febcbe",
+  "pkg/protocol/websocket/roadmap_pressure_test.go": "f424c5ec5c6c96671c794ba97bd55503cf17322548aa59e303d684a8d40668c9",
+  "docs/qa/PROTOCOL_TELEMETRY_MATRIX.md": "f841dc6013c9cf95baf2a536ba5e047e90765d9241be922bf5277537782a8b26",
+  "docs/ROADMAP_IMPLEMENTATION_SPEC.md": "23a5b111f6e2cccf6bb52a2251148d0ef2f4e8b2a1936df95ab4f343860cfb92"
+}
