@@ -454,6 +454,97 @@ describe('CommandCenterPrototype', () => {
       Wikipedia_transactions: 1,
       Wikipedia_errors: 0,
     }))
+    // The selected group's transactions, the way archive summaries carry them:
+    // TPS counts successes, and the hidden group's 1000 ms call is left out.
+    expect(scoped[0]).toEqual(expect.objectContaining({
+      [transactionChartSeriesKey('GET /', 'tps')]: 1,
+      [transactionChartSeriesKey('GET /', 'avgMs')]: 200,
+      [transactionChartSeriesKey('GET /', 'errorPct')]: 50,
+    }))
+    expect(scoped[1]).toEqual(expect.objectContaining({
+      [transactionChartSeriesKey('GET /', 'tps')]: 1,
+      [transactionChartSeriesKey('GET /', 'avgMs')]: 200,
+      [transactionChartSeriesKey('GET /', 'errorPct')]: 0,
+    }))
+  })
+
+  it('graphs only business transactions from archived events when the run declared any', () => {
+    const referenceData: MetricsHistoryPoint[] = [{
+      time: '12:00:01',
+      timestampMs: Date.parse('2026-06-08T12:00:01Z'),
+      vusers: 2,
+      tps: 2,
+      avgMs: 100,
+      errorPct: 0,
+      p50: 100,
+      p90: 100,
+      p99: 100,
+    }]
+    const allGroups = [commandGroup('Wikipedia', 10), commandGroup('BBC', 10)]
+    const transactions: TransactionEvent[] = [
+      { ...archiveTransaction('2026-06-08T12:00:00.300Z', 'Wikipedia', 100, true), action_name: ' Login ', business_transaction: true },
+      archiveTransaction('2026-06-08T12:00:00.400Z', 'Wikipedia', 50, true),
+    ]
+
+    const [point] = buildSelectedGroupChartHistoryFromTransactions(referenceData, transactions, [allGroups[0]], allGroups)
+
+    expect(point[transactionChartSeriesKey('Login', 'tps')]).toBe(1)
+    expect(point[transactionChartSeriesKey('Login', 'avgMs')]).toBe(100)
+    expect(point[transactionChartSeriesKey('GET /', 'tps')]).toBeUndefined()
+  })
+
+  it('graphs archived actions named like object properties', () => {
+    const referenceData: MetricsHistoryPoint[] = [{
+      time: '12:00:01',
+      timestampMs: Date.parse('2026-06-08T12:00:01Z'),
+      vusers: 1,
+      tps: 0,
+      avgMs: 0,
+      errorPct: 0,
+      p50: 0,
+      p90: 0,
+      p99: 0,
+    }]
+    const group = commandGroup('Wikipedia', 10)
+    const transactions: TransactionEvent[] = ['constructor', '__proto__'].map(name => ({
+      ...archiveTransaction('2026-06-08T12:00:00.500Z', 'Wikipedia', 40, true),
+      action_name: name,
+    }))
+
+    const [point] = buildSelectedGroupChartHistoryFromTransactions(referenceData, transactions, [group], [group])
+
+    expect(point[transactionChartSeriesKey('constructor', 'tps')]).toBe(1)
+    expect(point[transactionChartSeriesKey('constructor', 'avgMs')]).toBe(40)
+    expect(point[transactionChartSeriesKey('__proto__', 'avgMs')]).toBe(40)
+    expect(({} as Record<string, unknown>).count).toBeUndefined()
+  })
+
+  it('folds archived transaction names past the series cap into one overflow series', () => {
+    const referenceData: MetricsHistoryPoint[] = [{
+      time: '12:00:01',
+      timestampMs: Date.parse('2026-06-08T12:00:01Z'),
+      vusers: 1,
+      tps: 0,
+      avgMs: 0,
+      errorPct: 0,
+      p50: 0,
+      p90: 0,
+      p99: 0,
+    }]
+    const group = commandGroup('Wikipedia', 10)
+    // 513 names: the first 511 in sorted order stay, the last two fold.
+    const transactions: TransactionEvent[] = Array.from({ length: 513 }, (_, index) => ({
+      ...archiveTransaction('2026-06-08T12:00:00.500Z', 'Wikipedia', 10 * (index + 1), true),
+      action_name: `T${String(index).padStart(3, '0')}`,
+    }))
+
+    const [point] = buildSelectedGroupChartHistoryFromTransactions(referenceData, transactions, [group], [group])
+
+    expect(point[transactionChartSeriesKey('T510', 'tps')]).toBe(1)
+    expect(point[transactionChartSeriesKey('T511', 'tps')]).toBeUndefined()
+    expect(point[transactionChartSeriesKey('T512', 'tps')]).toBeUndefined()
+    expect(point[transactionChartSeriesKey('__other__', 'tps')]).toBe(2)
+    expect(point[transactionChartSeriesKey('__other__', 'avgMs')]).toBe(5125)
   })
 
   it.each([false, true])('keeps staged targets and dismisses confirmation when switching (remount: %s)', async (remount) => {
@@ -1211,6 +1302,7 @@ describe('CommandCenterPrototype', () => {
     await flush()
 
     expect(tpsChart?.getAttribute('aria-label')).not.toContain('Transaction · Login')
+    expect(tpsChart?.getAttribute('aria-label')).toContain('Transaction · Search')
     expect(tpsChart?.getAttribute('aria-label')).toContain('browse')
   })
 

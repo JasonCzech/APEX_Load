@@ -1341,6 +1341,8 @@ export interface TransactionEvent {
   bytes_received?: number
   status_code?: number
   success: boolean
+  /** A script-declared transaction rather than a request; graphs prefer these when a run has any. */
+  business_transaction?: boolean
   error_message?: string
   extractions?: Record<string, string>
   page_url?: string
