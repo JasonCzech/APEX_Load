@@ -135,6 +135,7 @@ type AnalysisCapabilitiesResponse struct {
 	NativeParquet                 bool                   `json:"native_parquet"`
 	PartitionManifestVersion      uint32                 `json:"partition_manifest_version"`
 	PartitionPruningAvailable     bool                   `json:"partition_pruning_available"`
+	PrecisionConsentVersion       uint32                 `json:"precision_consent_version"`
 	MappingAssociationVersion     uint32                 `json:"mapping_association_version"`
 	ImportedIdentityVersion       uint32                 `json:"imported_identity_version"`
 	Enabled                       bool                   `json:"enabled"`
@@ -160,7 +161,7 @@ func (s *Server) handleAnalysisCapabilities(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, 200, AnalysisCapabilitiesResponse{
 		MessagingManagementEnabled: messagingManagementEnabled(project), MessagingManagementVersion: analysis.MessagingManagementVersion, MessagingManagementPacks: collectoragent.ManagementPacks(),
 		DiagnosticsEnabled: diagnosticsProjectEnabled(project), MonitoringEnabled: runMonitoringEnabled(project), PreparationEnabled: preparationProjectEnabled(project),
-		NativeParquet: analytics.Available(), PartitionManifestVersion: analysis.PartitionManifestVersion, PartitionPruningAvailable: analytics.Available(), ImportedIdentityVersion: analysisImportedIdentityVersion, MappingAssociationVersion: analysisMappingAssociationVersion, Enabled: analysisProjectEnabled(project), ChunkBytes: analysisUploadChunk, MaxImportBytes: analysisImportMaxBytes,
+		NativeParquet: analytics.Available(), PartitionManifestVersion: analysis.PartitionManifestVersion, PartitionPruningAvailable: analytics.Available(), ImportedIdentityVersion: analysisImportedIdentityVersion, MappingAssociationVersion: analysisMappingAssociationVersion, PrecisionConsentVersion: analysisPrecisionConsentVersion, Enabled: analysisProjectEnabled(project), ChunkBytes: analysisUploadChunk, MaxImportBytes: analysisImportMaxBytes,
 		HeavyJobs: 1, Threads: 2, MemoryLimit: memory, SpillLimit: spill, ResourceConfigurationAccepted: accepted, MetricCatalog: analysis.Catalog(),
 		SummaryStatistics: slices.Clone(analysis.SummaryStatistics), HistogramBoundLimit: analysisHistogramBoundLimit(),
 	})
@@ -537,11 +538,13 @@ func (s *Server) handleAnalysisMapping(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
 	var req struct {
-		Revision        int64           `json:"revision"`
-		Mapping         json.RawMessage `json:"mapping"`
-		AllowRejected   bool            `json:"allow_rejected"`
-		MappingID       string          `json:"mapping_id"`
-		MappingRevision int64           `json:"mapping_revision"`
+		Revision                       int64           `json:"revision"`
+		Mapping                        json.RawMessage `json:"mapping"`
+		AllowRejected                  bool            `json:"allow_rejected"`
+		MappingID                      string          `json:"mapping_id"`
+		MappingRevision                int64           `json:"mapping_revision"`
+		PrecisionReviewSHA256          string          `json:"precision_review_sha256"`
+		PrecisionAcknowledgementSHA256 string          `json:"precision_acknowledgement_sha256"`
 	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -592,6 +595,15 @@ func (s *Server) handleAnalysisMapping(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "saved mapping does not match this revision")
 			return
 		}
+	}
+	in.PrecisionReviewSHA256, in.PrecisionAcknowledgementSHA256, in.PrecisionConsentRevision = "", "", 0
+	if req.PrecisionReviewSHA256 != "" || req.PrecisionAcknowledgementSHA256 != "" {
+		expected, err := analysisPrecisionAcknowledgement(in, mapping, req.PrecisionReviewSHA256)
+		if mapping.Version != 3 || err != nil || expected != req.PrecisionAcknowledgementSHA256 {
+			writeError(w, 409, "precision acknowledgement does not match the current import revision and mapping")
+			return
+		}
+		in.PrecisionReviewSHA256, in.PrecisionAcknowledgementSHA256, in.PrecisionConsentRevision = req.PrecisionReviewSHA256, expected, in.Revision
 	}
 	in.MappingID, in.MappingRevision = req.MappingID, req.MappingRevision
 	in.Mapping = &mapping

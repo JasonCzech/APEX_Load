@@ -1,0 +1,32 @@
+{
+  "removed": [
+    {
+      "path": "/private/tmp/apex-roadmap-prerequisite/go-cache/0b/0bff8305eb031c64fa30ad1c400c93b404ee10333a26514cd72feca66ba66540-d",
+      "bytes": 454254929,
+      "kind": "obsolete cached test dependency log; source/test evidence retained"
+    },
+    {
+      "path": "/private/tmp/apex-roadmap-prerequisite/go-cache/de/ded12e211d0b2d9eba9b7b2511c5e1a51edd1f858f204afa2859bd09c111b217-d",
+      "bytes": 451731168,
+      "kind": "obsolete cached test dependency log; source/test evidence retained"
+    },
+    {
+      "path": "/private/tmp/apex-roadmap-prerequisite/go-cache/f6/f62f30d0721cc5863b2a5ea9c6a66bc8e8eee55e53751219bbd7a2061bb0b1e8-d",
+      "bytes": 455969831,
+      "kind": "obsolete cached test dependency log; source/test evidence retained"
+    },
+    {
+      "path": "/private/tmp/apex-roadmap-prerequisite/go-cache/46/4651909b266fcfa91683e3f21b422be805ed7bd062fe9314d8544aa83b1d7c35-d",
+      "bytes": 442731122,
+      "kind": "obsolete cached test dependency log; source/test evidence retained"
+    },
+    {
+      "path": "/private/tmp/apex-roadmap-prerequisite/go-cache/15/15d0d477fb9cf6e5e0783408032f64af9ac4a78ad0e63dfd7f1c5066b1808978-d",
+      "bytes": 451272698,
+      "kind": "obsolete cached test dependency log; source/test evidence retained"
+    }
+  ],
+  "reclaimed_bytes": 2255959748,
+  "compiled_build_cache_preserved": true,
+  "shared_caches_untouched": true
+}

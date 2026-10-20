@@ -80,10 +80,10 @@ func snapshotAnalysisQueryDataset(in *storage.AnalysisImport) (*storage.Analysis
 		out.NormalizedSHA256[key] = in.NormalizedSHA256[key]
 	}
 	if in.Mapping != nil {
-		if in.Mapping.Version != 1 && in.Mapping.Version != 2 {
+		if in.Mapping.Version < 1 || in.Mapping.Version > 3 {
 			return nil, errors.New("dataset mapping identity version unavailable")
 		}
-		out.Mapping = &analysis.ParquetMapping{Version: in.Mapping.Version, Measures: make([]analysis.ParquetMeasure, len(in.Mapping.Measures))}
+		out.Mapping = &analysis.ParquetMapping{Version: in.Mapping.Version, PrecisionPolicy: in.Mapping.PrecisionPolicy, Measures: make([]analysis.ParquetMeasure, len(in.Mapping.Measures))}
 		for i, measure := range in.Mapping.Measures {
 			out.Mapping.Measures[i].Name = measure.Name
 		}

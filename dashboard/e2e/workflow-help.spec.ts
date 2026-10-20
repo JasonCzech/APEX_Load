@@ -109,6 +109,7 @@ test('DSL operators can discover the guide, validate its example, and follow ref
 
 test('evidence guides are searchable, readable and retain their scope after reload', async ({ page }, testInfo) => {
   const guides = [
+    { query: 'Decimal precision review', id: 'native-analytics', title: 'Native analytics', body: 'Original source bytes remain unchanged.' },
     { query: 'provisional history', id: 'browser-document-evidence', title: 'Browser document evidence', body: 'No-interaction INP is unavailable.' },
     { query: 'paint opportunity', id: 'telemetry-policy-receipts', title: 'Telemetry budget policy receipts', body: 'explicit zero disables a stage' },
     { query: 'sub-millisecond thresholds', id: 'authoring-scenario-fidelity', title: 'Scenario and queued-run authoring fidelity', body: 'A present empty section is a whole-section replacement.' },

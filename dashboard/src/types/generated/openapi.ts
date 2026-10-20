@@ -9665,6 +9665,7 @@ export interface operations {
                 "value": Array<string>;
                 "window_seconds"?: number;
               }>;
+              "precision_policy"?: string;
               "timestamp": Array<string>;
               "timestamp_encoding": string;
               "timezone": string;
@@ -9707,6 +9708,9 @@ export interface operations {
               "version": number;
             }) | null;
             "partition_manifest_version"?: number;
+            "precision_acknowledgement_sha256"?: string;
+            "precision_consent_revision"?: number;
+            "precision_review_sha256"?: string;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -9840,6 +9844,7 @@ export interface operations {
             "native_parquet": boolean;
             "partition_manifest_version": number;
             "partition_pruning_available": boolean;
+            "precision_consent_version": number;
             "preparation_enabled": boolean;
             "resource_configuration_accepted": boolean;
             "spill_limit": string;
@@ -9922,6 +9927,7 @@ export interface operations {
                 "value": Array<string>;
                 "window_seconds"?: number;
               }>;
+              "precision_policy"?: string;
               "timestamp": Array<string>;
               "timestamp_encoding": string;
               "timezone": string;
@@ -9964,6 +9970,9 @@ export interface operations {
               "version": number;
             }) | null;
             "partition_manifest_version"?: number;
+            "precision_acknowledgement_sha256"?: string;
+            "precision_consent_revision"?: number;
+            "precision_review_sha256"?: string;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -10033,6 +10042,7 @@ export interface operations {
                 "value": Array<string>;
                 "window_seconds"?: number;
               }>;
+              "precision_policy"?: string;
               "timestamp": Array<string>;
               "timestamp_encoding": string;
               "timezone": string;
@@ -10075,6 +10085,9 @@ export interface operations {
               "version": number;
             }) | null;
             "partition_manifest_version"?: number;
+            "precision_acknowledgement_sha256"?: string;
+            "precision_consent_revision"?: number;
+            "precision_review_sha256"?: string;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -10938,6 +10951,7 @@ export interface operations {
               "value"?: Array<string>;
               "window_seconds"?: number;
             }>;
+            "precision_policy"?: string;
             "timestamp"?: Array<string>;
             "timestamp_encoding"?: string;
             "timezone"?: string;
@@ -11216,6 +11230,7 @@ export interface operations {
               "value"?: Array<string>;
               "window_seconds"?: number;
             }>;
+            "precision_policy"?: string;
             "timestamp"?: Array<string>;
             "timestamp_encoding"?: string;
             "timezone"?: string;
@@ -12421,6 +12436,7 @@ export interface operations {
                 "value": Array<string>;
                 "window_seconds"?: number;
               }>;
+              "precision_policy"?: string;
               "timestamp": Array<string>;
               "timestamp_encoding": string;
               "timezone": string;
@@ -12463,6 +12479,9 @@ export interface operations {
               "version": number;
             }) | null;
             "partition_manifest_version"?: number;
+            "precision_acknowledgement_sha256"?: string;
+            "precision_consent_revision"?: number;
+            "precision_review_sha256"?: string;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -12573,6 +12592,7 @@ export interface operations {
                 "value": Array<string>;
                 "window_seconds"?: number;
               }>;
+              "precision_policy"?: string;
               "timestamp": Array<string>;
               "timestamp_encoding": string;
               "timezone": string;
@@ -12615,6 +12635,9 @@ export interface operations {
               "version": number;
             }) | null;
             "partition_manifest_version"?: number;
+            "precision_acknowledgement_sha256"?: string;
+            "precision_consent_revision"?: number;
+            "precision_review_sha256"?: string;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -12725,6 +12748,7 @@ export interface operations {
                 "value": Array<string>;
                 "window_seconds"?: number;
               }>;
+              "precision_policy"?: string;
               "timestamp": Array<string>;
               "timestamp_encoding": string;
               "timezone": string;
@@ -12767,6 +12791,9 @@ export interface operations {
               "version": number;
             }) | null;
             "partition_manifest_version"?: number;
+            "precision_acknowledgement_sha256"?: string;
+            "precision_consent_revision"?: number;
+            "precision_review_sha256"?: string;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -12967,6 +12994,7 @@ export interface operations {
               "value"?: Array<string>;
               "window_seconds"?: number;
             }>;
+            "precision_policy"?: string;
             "timestamp"?: Array<string>;
             "timestamp_encoding"?: string;
             "timezone"?: string;
@@ -12974,6 +13002,8 @@ export interface operations {
           };
           "mapping_id"?: string;
           "mapping_revision"?: number;
+          "precision_acknowledgement_sha256"?: string;
+          "precision_review_sha256"?: string;
           "revision"?: number;
         };
       };
@@ -13068,6 +13098,7 @@ export interface operations {
                   "value": Record<string, unknown>;
                   "window_seconds"?: number;
                 }>;
+                "precision_policy"?: string;
                 "timestamp": Array<string>;
                 "timestamp_encoding": string;
                 "timezone": string;
@@ -13095,6 +13126,9 @@ export interface operations {
                 "version": number;
               }) | null;
               "partition_manifest_version"?: number;
+              "precision_acknowledgement_sha256"?: string;
+              "precision_consent_revision"?: number;
+              "precision_review_sha256"?: string;
               "project_id": string;
               "rejected": number;
               "rejection_artifacts"?: Array<string>;
@@ -13135,6 +13169,120 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisPrecisionReview": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "mapping"?: {
+            "identity"?: {
+              "dimensions"?: Array<{
+                "name"?: string;
+                "value"?: Array<string>;
+              }>;
+              "host"?: Array<string>;
+              "service"?: Array<string>;
+              "source"?: Array<string>;
+            };
+            "measures"?: Array<{
+              "histogram"?: {
+                "bound_column"?: Array<string>;
+                "bounds"?: Array<string>;
+                "bucket_counts"?: string;
+                "count_columns"?: Array<Array<string>>;
+                "temporality"?: string;
+                "window_seconds"?: number;
+              };
+              "kind"?: string;
+              "name"?: string;
+              "name_column"?: Array<string>;
+              "sample_count_column"?: Array<string>;
+              "sample_sum_column"?: Array<string>;
+              "statistic"?: string;
+              "unit"?: string;
+              "value"?: Array<string>;
+              "window_seconds"?: number;
+            }>;
+            "precision_policy"?: string;
+            "timestamp"?: Array<string>;
+            "timestamp_encoding"?: string;
+            "timezone"?: string;
+            "version"?: number;
+          };
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "acknowledgement_sha256": string;
+            "import_id": string;
+            "review": ({
+              "conversion": string;
+              "mapping_sha256": string;
+              "risks": Array<{
+                "column": Array<string>;
+                "file_sha256": string;
+                "precision": number;
+                "reason": string;
+                "scale": number;
+              }>;
+              "sha256": string;
+              "source_count": number;
+              "source_set_sha256": string;
+              "version": number;
+            }) | null;
+            "revision": number;
+            "version": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -192272,6 +192420,9 @@ export interface paths {
   };
   "/api/v1/analysis/imports/{id}/mapping": {
     "put": operations["handleAnalysisMapping"];
+  };
+  "/api/v1/analysis/imports/{id}/precision-review": {
+    "post": operations["handleAnalysisPrecisionReview"];
   };
   "/api/v1/analysis/mappings": {
     "get": operations["handleAnalysisDefinitions_11"];

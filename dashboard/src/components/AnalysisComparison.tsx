@@ -8,7 +8,7 @@ import type { AnalysisImport, AnalysisPoint } from '../types/analysis'
 import AnalysisIdentityFilters from './AnalysisIdentityFilters'
 import CorrelationEvidence, { type CorrelationScore, type CorrelationSemantics } from './CorrelationEvidence'
 import { allAnalysisAggregations, analysisCommonWindow, analysisCommonWindowAnchor, analysisMetricAggregations, analysisWindowAlignedRange, analysisWindowAnchor, defaultAnalysisAggregations } from '../utils/analysisSummary'
-import { analysisIdentityFilterError, analysisMappingDisclosureError, analysisIdentityTextError, analysisImportedIdentityAvailable, analysisImportedSelectorsRequested, analysisMappingRequiresImportedIdentity, buildAnalysisIdentitySelection, emptyAnalysisIdentityFilters, restoreAnalysisIdentityFilters, restoreAnalysisImportedIdentityFilters } from '../utils/analysisIdentity'
+import { analysisMappingUsesIdentity2, analysisIdentityFilterError, analysisMappingDisclosureError, analysisIdentityTextError, analysisImportedIdentityAvailable, analysisImportedSelectorsRequested, analysisMappingRequiresImportedIdentity, buildAnalysisIdentitySelection, emptyAnalysisIdentityFilters, restoreAnalysisIdentityFilters, restoreAnalysisImportedIdentityFilters } from '../utils/analysisIdentity'
 
 interface Selection { dataset_id?: string; run_id?: string; source_id?: string; transaction?: string; host?: string; service?: string; dimensions?: Record<string, string>; protocol?: string; group?: string; metric: string; aggregation: string }
 interface Definition { left: Selection; right: Selection; from: string; to: string; bucket_seconds: number; max_lag_seconds: number; mode: string }
@@ -136,9 +136,9 @@ export default function AnalysisComparison({ projectId, dataset, datasets, canEd
       <legend>Evidence selection</legend>
       <label>Saved comparison<select defaultValue="" onChange={e => { const item = saved.find(x => x.id === e.target.value); if (item) { try { applySaved(item.definition); setError('') } catch (failure) { setError(String(failure)) } } }}><option value="">Choose a saved comparison…</option>{saved.map(item => <option key={item.id} value={item.id}>{item.name} · revision {item.revision}</option>)}</select></label>
       <label>Dataset metric<input value={leftMetric} onChange={e => setLeftMetric(e.target.value)} /></label>
-      {identityAvailable && dataset.mapping?.version === 2 && <AnalysisIdentityFilters label="Dataset identity filters" value={leftFilters} onChange={setLeftFilters} />}
+      {identityAvailable && analysisMappingUsesIdentity2(dataset.mapping) && <AnalysisIdentityFilters label="Dataset identity filters" value={leftFilters} onChange={setLeftFilters} />}
       <label>Compare with<select value={target} onChange={e => { setTarget(e.target.value); setResult(undefined); setRightFilters(emptyAnalysisIdentityFilters()) }}><option value="">Select evidence…</option>{datasets.filter(d => d.state === 'ready' && d.id !== dataset.id).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}<option value="run">Managed run</option></select></label>
-      {identityAvailable && target !== 'run' && datasets.find(item => item.id === target)?.mapping?.version === 2 && <AnalysisIdentityFilters label="Comparison identity filters" value={rightFilters} onChange={setRightFilters} />}
+      {identityAvailable && target !== 'run' && analysisMappingUsesIdentity2(datasets.find(item => item.id === target)?.mapping) && <AnalysisIdentityFilters label="Comparison identity filters" value={rightFilters} onChange={setRightFilters} />}
       {target === 'run' && <>
         {associationError && <p role="alert">{associationError} The stored mapping remains unchanged.</p>}
         <label>Run ID<input value={runId} onChange={e => setRunId(e.target.value)} /></label>

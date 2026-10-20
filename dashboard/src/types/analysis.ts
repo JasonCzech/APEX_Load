@@ -1,16 +1,17 @@
-export interface AnalysisCapabilities { mapping_association_version?: number; imported_identity_version?: number; diagnostics_enabled?: boolean; native_parquet: boolean; enabled: boolean; chunk_bytes: number; monitoring_enabled: boolean; preparation_enabled: boolean; summary_statistics?: string[]; histogram_bound_limit?: number }
+export interface AnalysisCapabilities { precision_consent_version?: number; mapping_association_version?: number; imported_identity_version?: number; diagnostics_enabled?: boolean; native_parquet: boolean; enabled: boolean; chunk_bytes: number; monitoring_enabled: boolean; preparation_enabled: boolean; summary_statistics?: string[]; histogram_bound_limit?: number }
 export interface AnalysisColumn { path: string; path_components: string[]; physical_type: string; repeated: boolean }
 export interface AnalysisPreview { schema: { rows: number; columns: AnalysisColumn[] }; samples: Record<string, unknown>[] }
 export interface AnalysisHistogram { bounds: string[]; bucket_counts: string; temporality: string; window_seconds?: number; bound_column?: string[]; count_columns?: string[][] }
 export interface AnalysisMeasure { value: string[]; name_column?: string[]; name: string; kind: string; unit: string; statistic?: string; window_seconds?: number; sample_count_column?: string[]; sample_sum_column?: string[]; histogram?: AnalysisHistogram }
 export interface AnalysisDimensionMapping { name: string; value: string[] }
 export interface AnalysisIdentityMapping { source?: string[]; host?: string[]; service?: string[]; dimensions?: AnalysisDimensionMapping[] }
-export interface AnalysisMapping { version: number; timestamp: string[]; timestamp_encoding: string; timezone: string; measures: AnalysisMeasure[]; identity?: AnalysisIdentityMapping }
+export interface AnalysisMapping { version: number; precision_policy?: 'reject_potential_loss' | 'allow_float64_rounding'; timestamp: string[]; timestamp_encoding: string; timezone: string; measures: AnalysisMeasure[]; identity?: AnalysisIdentityMapping }
 export interface AnalysisIdentityFilterRow { name: string; value: string }
 export interface AnalysisIdentityFilters { source_id: string; host: string; service: string; dimensions: AnalysisIdentityFilterRow[] }
 export interface AnalysisIdentitySelection { source_id?: string; host?: string; service?: string; dimensions?: Record<string, string> }
 export interface AnalysisImport {
   id: string; project_id: string; name: string; revision: number; state: string
+  precision_review_sha256?: string; precision_acknowledgement_sha256?: string; precision_consent_revision?: number
   files: { id: string; relative_path: string; size: number; uploaded: number }[]
   rejections?: { file: number; measure: number; count: number; rows: number[] }[]; rejection_artifacts?: string[];
   mapping?: AnalysisMapping; accepted: number; rejected: number; error?: string; run_id?: string
@@ -30,3 +31,9 @@ export interface Preparation { allocation?: import('./testConfiguration').Genera
 
 export interface PreparationCapacityPolicy { selection?: 'existing' | 'ephemeral'; spot?: 'off' | 'preferred' | 'required'; on_demand_floor?: number; spot_ceiling_percent?: number }
 export interface StatisticalFinding { metric_name: string; current: number; baseline_mean: number; baseline_stddev: number; baseline_buckets: number; z_score: number; threshold: number; timestamp: string; baseline_start: string; baseline_end: string; advisory: boolean }
+
+export interface AnalysisPrecisionRisk { file_sha256: string; column: string[]; precision: number; scale: number; reason: string }
+export interface AnalysisPrecisionReview {
+  version: number; import_id: string; revision: number; acknowledgement_sha256: string
+  review: { version: number; conversion: string; mapping_sha256: string; source_set_sha256: string; source_count: number; risks: AnalysisPrecisionRisk[]; sha256: string }
+}

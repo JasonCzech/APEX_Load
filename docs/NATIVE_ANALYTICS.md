@@ -5,6 +5,7 @@ Imported Parquet, measurement identities, bounded queries, saved panels and reso
 ## Contents
 
 - [Import and compare Parquet](#import-and-compare-parquet)
+- [Decimal precision review](#decimal-precision-review)
 - [Imported measurement identities](#imported-measurement-identities)
 - [Resource and acceptance limits](#resource-and-acceptance-limits)
 - [Business keys](#business-keys)
@@ -129,8 +130,8 @@ Histogram bounds that differ within a selection are refused, and a FLOAT bound
 column is matched at its own precision. Summary rows rejected only for their
 sample count or sum are recorded as `invalid_summary_sample`.
 
-Summary and histogram declarations are stored as fields of mapping versions 1
-and 2. Changing an associated run must retain those declarations and imported
+Summary and histogram declarations are stored as fields of mapping versions 1,
+2 and 3. Changing an associated run must retain those declarations and imported
 identity fields. The dashboard requires the exact controller capability
 `mapping_association_version: 1` for these mappings and sends contract version 1
 with the expected dataset revision to the negotiated PATCH association route.
@@ -248,6 +249,54 @@ apexctl analysis save-mapping --project PROJECT_ID --file saved-mapping.json
 apexctl analysis comparisons --project PROJECT_ID
 ```
 
+## Decimal precision review
+
+On controllers advertising `precision_consent_version: 1`, use **Review precision**
+after selecting the mapping. The review inspects every immutable uploaded file and
+names mapped DECIMAL columns that may round when converted to float64. Fractional
+DECIMAL columns and integer DECIMAL columns with more than 15 declared digits are
+conservatively flagged. This is a schema-level potential-loss disclosure, not a
+count of changed rows. It covers measurement values, summary counts/sums and
+histogram count/bound columns. Original source bytes remain unchanged.
+
+The default is **Reject potential rounding**. To proceed with flagged columns,
+choose **Allow rounding after review**, review again, and explicitly acknowledge
+the listed source files and mapping. A pending review becomes stale when its
+mapping, import revision or source changes. Accepted consent remains bound to
+that reviewed snapshot through normalization and later reassociation. Saved
+mappings retain the policy; they do not carry source-specific acknowledgement
+into another import.
+
+Mapping format 3 requires an explicit `precision_policy` of
+`reject_potential_loss` or `allow_float64_rounding`; it still uses imported identity
+schema 2. Formats 1/2 remain readable and can normalize risk-free inputs. New
+normalization of a flagged DECIMAL requires format 3, the allow policy, and an
+exact acknowledgement. Already normalized historical datasets are not rewritten.
+The worker independently re-derives the review from verified source hashes before
+creating normalized output. Duplicate source content, unsupported/conflicting
+metadata, absent columns and exceeded review limits fail the whole review.
+The API and worker inspect one source schema at a time, retaining only bounded
+risk records and source hashes. An incomplete or failed source cohort cannot
+publish a partial review.
+
+The API review is read-only, project-scoped and revision-bound. Its bounded receipt
+contains the canonical mapping digest, complete source-set digest, per-column
+risks and a review SHA-256. The acknowledgement additionally binds project,
+import and revision; it is an integrity binding, not an authorization token.
+The mapping write accepts `precision_review_sha256` and
+`precision_acknowledgement_sha256` together. Durable CAS, attempt input binding,
+publication and reassociation preserve them. A review covers at most 1,024 source
+files, 1,024 file/measure combinations, 64 affected file/column pairs and 64 KiB of review
+JSON. No partial prefix is accepted when a limit is exceeded.
+
+For CLI workflows, send a JSON object containing `revision` and `mapping` with
+`apexctl analysis precision-review --id <import> --file <review.json>`. Inspect its
+receipt, then provide the same mapping/revision and both receipt digests with
+`apexctl analysis map`; commit with `apexctl analysis commit`. The CLI and dashboard
+require explicit controller support before sending format-3 mutations. Keep the
+[rolling-upgrade barrier](#import-and-compare-parquet) in force; older
+writers cannot preserve fields they do not understand.
+
 ## Imported measurement identities
 
 Native analytics remains capability gated. These workflows require an enabled
@@ -276,7 +325,7 @@ commit, query and comparison are explicitly unavailable. Version-1 imports and
 queries remain usable. The client never retries an identity request with fields
 removed or a lower mapping version.
 
-Changing an identity control selects mapping version 2. Project and dataset
+Changing an identity control selects mapping version 2, or preserves version 3 and its precision policy when already selected. Project and dataset
 ownership come from the authorized import session. Row values cannot supply
 project, dataset or managed-run ownership. Without a mapped source column, the
 source defaults to the dataset identity. An omitted host or service has an empty

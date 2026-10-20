@@ -30,11 +30,13 @@ type Mapping = analysis.ParquetMapping
 func unitScale(unit string) (string, float64, error) { return analysis.NormalizeUnit(unit) }
 
 type NormalizeRequest struct {
-	ProjectID     string
-	DatasetID     string
-	Files         []string
-	Mapping       Mapping
-	AllowRejected bool
+	ProjectID                string
+	DatasetID                string
+	Files                    []string
+	Mapping                  Mapping
+	AllowRejected            bool
+	PrecisionAcknowledgement string
+	verifiedInputHashes      []string // child-only hashes verified against the immutable bootstrap
 }
 
 // NormalizedFilePartition binds a bounded producer summary to its physical output.

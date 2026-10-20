@@ -265,13 +265,13 @@ func NewNormalizedPartitionManifest(project, dataset string, mapping ParquetMapp
 	return m, nil
 }
 func (m *NormalizedPartitionManifest) Validate() error {
-	if m == nil || m.Version != PartitionManifestVersion || m.Producer != PartitionProducerVersion || !partitionText(m.ProjectID, 256, true) || !partitionText(m.DatasetID, 256, true) || !partitionHash(m.MappingSHA256) || !partitionHash(m.Digest) || m.MappingVersion < 1 || m.MappingVersion > 2 || len(m.Partitions) < 1 || len(m.Partitions) > MaxNormalizedPartitions {
+	if m == nil || m.Version != PartitionManifestVersion || m.Producer != PartitionProducerVersion || !partitionText(m.ProjectID, 256, true) || !partitionText(m.DatasetID, 256, true) || !partitionHash(m.MappingSHA256) || !partitionHash(m.Digest) || m.MappingVersion < 1 || m.MappingVersion > 3 || len(m.Partitions) < 1 || len(m.Partitions) > MaxNormalizedPartitions {
 		return ErrPartitionManifest
 	}
 	seen := map[string]bool{}
 	var rows, bytes int64
 	for _, p := range m.Partitions {
-		if !partitionText(p.ObjectKey, MaxPartitionObjectKeyBytes, true) || seen[p.ObjectKey] || !partitionHash(p.SHA256) || p.Bytes < 12 || p.Bytes > maxPartitionBytes || p.Stats.Validate() != nil || p.Stats.IdentityVersion != m.MappingVersion || p.Stats.AcceptedRows() > math.MaxInt64-rows || p.Bytes > (20<<30)-bytes {
+		if !partitionText(p.ObjectKey, MaxPartitionObjectKeyBytes, true) || seen[p.ObjectKey] || !partitionHash(p.SHA256) || p.Bytes < 12 || p.Bytes > maxPartitionBytes || p.Stats.Validate() != nil || p.Stats.IdentityVersion != (ParquetMapping{Version: m.MappingVersion}).IdentityVersion() || p.Stats.AcceptedRows() > math.MaxInt64-rows || p.Bytes > (20<<30)-bytes {
 			return ErrPartitionManifest
 		}
 		if p.Stats.IdentityVersion == 1 && p.Stats.Identity != nil && p.Stats.Identity.Source != m.DatasetID {
@@ -318,7 +318,7 @@ func (m *NormalizedPartitionManifest) MatchesArtifacts(project, dataset, mapping
 // Submicrosecond bounds disable time pruning; native literal casts remain the
 // authority and cannot be approximated with Go nanosecond comparisons.
 func (m *NormalizedPartitionManifest) Select(q PartitionSelection) ([]int, error) {
-	if m.Validate() != nil || !partitionText(q.Metric, 256, true) || q.IdentityVersion != m.MappingVersion || q.From.IsZero() || !q.To.After(q.From) || len(q.Dimensions) > 16 {
+	if m.Validate() != nil || !partitionText(q.Metric, 256, true) || q.IdentityVersion != (ParquetMapping{Version: m.MappingVersion}).IdentityVersion() || q.From.IsZero() || !q.To.After(q.From) || len(q.Dimensions) > 16 {
 		return nil, ErrPartitionManifest
 	}
 	for _, v := range []string{q.Source, q.Host, q.Service} {

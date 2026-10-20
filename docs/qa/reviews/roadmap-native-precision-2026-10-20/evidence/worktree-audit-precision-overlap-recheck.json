@@ -1,0 +1,163 @@
+{
+  "checked_at": "2026-10-20T16:16:44.015678+00:00",
+  "other_worktrees_checked": 30,
+  "read_only": true,
+  "patterns": [
+    "precision_consent_version",
+    "ParquetPrecisionReview",
+    "precision_acknowledgement_sha256",
+    "allow_float64_rounding"
+  ],
+  "results": [
+    {
+      "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner",
+      "head": "3b6f15dbc5a39b2fc02b4e3d5601301da35c9cc7",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/0ff9/Project_Stormrunner",
+      "head": "0a480cee9d80efd68c984e2cbc1627e25443b2fd",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/activity-summary-index/Project_Stormrunner",
+      "head": "46502b3f81b22c9b8a63b70ac2fccbe70f79c085",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner",
+      "head": "39c0db8a25cd027cfed4c24bf5e6ca06fdc43d55",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+      "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/controller-api-main-review/Project_Stormrunner",
+      "head": "690b0a0f01c40fc8ba5b4fb07c9242c3faee6196",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/debug-response-height/Project_Stormrunner",
+      "head": "576eeb0cb8852e42be8bb90577272a3f620f83bf",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/dynatrace-saas/Project_Stormrunner",
+      "head": "94c8d488ea515352626b3549b7499f9bc34f8fed",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+      "head": "891d0fb86ceed311dfa3b869d93dcb1739a55596",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/import-content-type-message/Project_Stormrunner",
+      "head": "c93803ad7f8ccc9f87ef1b077371094ab9a304b1",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/kafka-owned-seek/Project_Stormrunner",
+      "head": "be26392bda4ddec548e860bc7580ef7e7e7512a5",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/live-table-ux/Project_Stormrunner",
+      "head": "1c9575510d40e062cf02cc24847588fc32d1aa92",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+      "head": "6e2f1082efcc83054c79d74ccf89e43625b4a4b0",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/publish-backend-refactors/Project_Stormrunner",
+      "head": "cd1d4a10064c65644c7893dc5ee5e90cad888057",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner",
+      "head": "d8d6c1ca311d395e677a5ced3d5981c3685dc68a",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/run-timestamp-precision/Project_Stormrunner",
+      "head": "301cf3947ddd6cf2d8200fc4a2ebc42a59ce6330",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/.codex/worktrees/vugen-windows-upload/Project_Stormrunner",
+      "head": "be1eadc80c3f75a845b292165f7588697f8e8e4a",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/.claude/worktrees/agent-ae76528f67ea24e67",
+      "head": "783e6052a6c6488c6d00aa9c3679478232abe6ef",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/.claude/worktrees/exciting-morse-dac3ce",
+      "head": "a03edd45b36395c66c0a7072fa7b970614bced4a",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/.claude/worktrees/exciting-rosalind-7950ac",
+      "head": "9cc43e3055ba723c6ea3d05f8ae2077d08970874",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/.claude/worktrees/har-200mb",
+      "head": "40f2dd4989b10adac9f8b01752b93d073fc81c6d",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/.claude/worktrees/infallible-almeida-3a055b",
+      "head": "7ba5009418e5d5819fe43b454c8037c759497ce2",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/.claude/worktrees/lr-review-spec",
+      "head": "6349aacf1827f246aaf850ef0b03a6d07b94d8e6",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/.claude/worktrees/optimistic-diffie-ab96be",
+      "head": "9c1d48d110d739ea3c81391ae13a1d669ec74527",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/.claude/worktrees/pensive-bose-2343f1",
+      "head": "839bf33ce38ecdb27df801ae43a64f7893c7a80b",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/.claude/worktrees/pr254",
+      "head": "f831f94656db95c86630a09387d8b968abf454d7",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/.claude/worktrees/rca-dashboard",
+      "head": "c07ab7d45086e2d57c0497a942841439b573478d",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/.claude/worktrees/trusting-wu-d47968",
+      "head": "1b975a410da150d0e4dea91fd4101615f318ae63",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/.claude/worktrees/wizardly-cartwright-5db450",
+      "head": "4a1d26e19684913e68df7d8621ef834e95e46fd9",
+      "precision_contract_matches": []
+    },
+    {
+      "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/review-worktrees/elastic-reviewed-main",
+      "head": "fbbaa47667e77d5ee5451a9cd375ba2d67b379f7",
+      "precision_contract_matches": []
+    }
+  ]
+}

@@ -133,6 +133,13 @@
     ]
   },
   {
+    "id": "native-analytics",
+    "area": "user-guide",
+    "title": "Native analytics",
+    "path": "docs/NATIVE_ANALYTICS.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
     "id": "root-cause",
     "area": "user-guide",
     "title": "Root-cause analysis",

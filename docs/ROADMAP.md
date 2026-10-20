@@ -41,7 +41,7 @@ Current workflow: [script lifecycle](SCRIPT_LIFECYCLE.md) and [scenario fidelity
 
 ## PT Analysis native Parquet import
 
-Use NA-1–NA-6 and the [analytics acceptance inventory](qa/ANALYTICS_ACCEPTANCE.md) for remaining query/workflow, containment and release gates. Summary/histogram imports, partition manifests, identities and saved panel revisions have implementation records; distinguish their bounded supported contracts from broader analytical completeness.
+Use NA-1–NA-6 and the [analytics acceptance inventory](qa/ANALYTICS_ACCEPTANCE.md) for remaining query/workflow, containment and release gates. Summary/histogram imports, partition manifests, identities, source-bound decimal precision consent and saved panel revisions have implementation records; distinguish their bounded supported contracts from broader analytical completeness.
 
 Outstanding qualification includes the reproducible **1 GiB compressed-input** reference workload on the specified 4 vCPU/16 GiB host, all four native packaging lanes, controller restart/HA takeover and remote artifact-backend lifecycle. Correctness fixtures and local SQLite/PostgreSQL checks do not establish these outcomes. The **10 GB benchmark is waived, not passed**; that waiver does not waive the 1 GiB gate.
 

@@ -32,12 +32,12 @@ func TestNativeLocalWallTimeRejectsAmbiguityWithRowProvenance(t *testing.T) {
 			}
 			mapping := Mapping{Version: 2, Timestamp: Column{"ts"}, TimestampEncoding: "timestamp", Timezone: tc.zone, Measures: []Measure{{Name: "v", Value: Column{"value"}, Kind: analysis.KindGauge, Unit: "count"}}}
 			request := NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping}
-			refused, err := e.Normalize(t.Context(), request)
+			refused, err := normalizeConsentedNativeFixture(t, e, t.Context(), request)
 			if err == nil || len(refused.Files) != 0 {
 				t.Fatalf("ambiguous input published: %+v %v", refused, err)
 			}
 			request.AllowRejected = true
-			result, err := e.Normalize(t.Context(), request)
+			result, err := normalizeConsentedNativeFixture(t, e, t.Context(), request)
 			if err != nil || result.Accepted != 2 || result.Rejected != 1 || len(result.RejectionFiles) != 1 || len(result.Rejections) != 1 || !reflect.DeepEqual(result.Rejections[0].Rows, []int64{1}) {
 				t.Fatalf("row provenance: %+v %v", result, err)
 			}
@@ -99,7 +99,7 @@ func TestNativeLocalTimestampGuardCoversSummaryAndHistogram(t *testing.T) {
 				measure.Histogram = &analysis.ParquetHistogram{Bounds: []string{"100", "+Inf"}, BucketCounts: analysis.HistogramPerBin, Temporality: analysis.HistogramDelta, WindowSeconds: 60, CountColumns: []Column{{"fast"}}}
 			}
 			m := Mapping{Version: 2, Timestamp: Column{"ts"}, TimestampEncoding: "timestamp", Timezone: "America/New_York", Measures: []Measure{measure}}
-			result, err := e.Normalize(t.Context(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: m, AllowRejected: true})
+			result, err := normalizeConsentedNativeFixture(t, e, t.Context(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: m, AllowRejected: true})
 			if err != nil || result.Accepted != 2 || result.Rejected != 1 || len(result.Rejections) != 1 || !reflect.DeepEqual(result.Rejections[0].Rows, []int64{1}) {
 				t.Fatalf("%s provenance: %+v %v", kind, result, err)
 			}

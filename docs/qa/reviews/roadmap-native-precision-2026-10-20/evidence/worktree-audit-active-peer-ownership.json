@@ -1,0 +1,60 @@
+{
+  "peer_branch": "codex/completed-roadmap-slices",
+  "peer_head": "f831f94656db95c86630a09387d8b968abf454d7",
+  "peer_uncommitted_work_must_not_be_copied_or_overwritten": true,
+  "owned_scopes": {
+    "telemetry recovery/notifications": [
+      "pkg/api/telemetry_checkpoint.go",
+      "pkg/api/telemetry_checkpoint_test.go",
+      "pkg/api/telemetry_coverage.go",
+      "pkg/api/telemetry_notification_runtime.go",
+      "pkg/api/telemetry_notification_runtime_test.go",
+      "pkg/api/telemetry_sources.go",
+      "pkg/storage/telemetry_checkpoint.go",
+      "pkg/storage/telemetry_checkpoint_test.go"
+    ],
+    "Java representation evidence": [
+      "dashboard/src/types/javaHttp.ts",
+      "dashboard/src/utils/javaHttpDiagnostics.test.ts",
+      "dashboard/src/utils/javaHttpDiagnostics.ts",
+      "pkg/api/baseline_java_http.go",
+      "pkg/api/baseline_java_http_test.go",
+      "pkg/api/native_java_http.go",
+      "pkg/api/native_java_http_test.go",
+      "pkg/distributed/generatorrpc/java_http_summary.go",
+      "pkg/distributed/generatorrpc/java_http_summary_test.go",
+      "pkg/engine/metrics.go",
+      "pkg/protocol/java_http_actions.go",
+      "pkg/protocol/java_http_summary.go",
+      "pkg/protocol/java_http_summary_json.go",
+      "pkg/protocol/java_http_summary_merge.go",
+      "pkg/protocol/java_http_summary_merge_test.go"
+    ],
+    "HAR finalization/ownership": [
+      "pkg/protocol/browser/har_capture.go",
+      "pkg/protocol/browser/har_finalization_budget_test.go",
+      "pkg/protocol/browser/har_working_lease.go"
+    ],
+    "recovery evacuation": [
+      "pkg/api/run_adoption.go",
+      "pkg/api/run_evacuation_recovery.go"
+    ],
+    "authoring archive handoff": [
+      "dashboard/src/components/EnterpriseArchiveImport.test.tsx",
+      "dashboard/src/components/EnterpriseArchiveImport.tsx"
+    ],
+    "timestamp normalization": [
+      "pkg/analysis/duckdb/native.go",
+      "pkg/analysis/duckdb/native_timestamp_contract_test.go"
+    ]
+  },
+  "precision_overlap": [
+    "pkg/analysis/duckdb/native.go",
+    "docs/NATIVE_ANALYTICS.md",
+    "docs/swagger.yaml",
+    "pkg/api/apidocs/swagger.yaml",
+    "dashboard/src/types/generated/openapi.ts",
+    "pkg/api/route_catalog_characterization_test.go"
+  ],
+  "precision_distinction": "New source-bound decimal review/consent is absent from other worktrees. Timestamp changes occupy separate functions; generated contracts must be regenerated on eventual integration."
+}
