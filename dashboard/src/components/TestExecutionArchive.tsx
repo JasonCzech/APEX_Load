@@ -458,6 +458,46 @@ function formatCompactGroup(group: NonNullable<NonNullable<RunArchiveReport['man
   return `${group.name || group.script_name || group.script_id} · ${group.vusers} VUsers${group.initialization === 'at_once' ? ' · init once' : ''}`
 }
 
+// Each archived script ID's group script name, so the panels name scripts
+// rather than show their IDs. Different scripts that share a name keep their
+// short IDs so they stay apart.
+function archiveScriptNames(report: RunArchiveReport): Map<string, string> {
+  const names = new Map<string, string>()
+  for (const group of report.manifest.provenance?.groups || []) {
+    const id = group.script_id?.trim()
+    const name = group.script_name?.trim()
+    if (id && name && !names.has(id)) names.set(id, name)
+  }
+  const counts = new Map<string, number>()
+  names.forEach(name => counts.set(name, (counts.get(name) || 0) + 1))
+  names.forEach((name, id) => { if ((counts.get(name) || 0) > 1) names.set(id, `${name} (${id.slice(0, 8)})`) })
+  return names
+}
+
+// The run's project, application, release and scenario by name. An ID the
+// controller could not resolve (a deleted entity) is shown as recorded.
+function archiveScopeLabel(report: RunArchiveReport): string {
+  const provenance = report.manifest.provenance
+  const names = report.identity_names || {}
+  const project = !provenance?.project_id || provenance.project_id === 'unassigned' ? names.project || 'Unassigned' : names.project || provenance.project_id
+  return [
+    project,
+    names.application || provenance?.application_id,
+    names.release || provenance?.release_id,
+    names.scenario || provenance?.scenario_id,
+  ].filter(Boolean).join(' / ')
+}
+
+// A data revision lists "<script ID>:data" per script; name each script's data.
+function archiveDataLabel(revision: string | undefined, scripts: Map<string, string>): string | undefined {
+  if (!revision) return undefined
+  return revision.split(',').map(entry => {
+    const [id, kind] = entry.trim().split(/:(?=[^:]*$)/)
+    const name = scripts.get(id)
+    return name ? `${name} ${kind || 'data'}` : entry.trim()
+  }).sort((a, b) => a.localeCompare(b)).join(', ')
+}
+
 function buildArchiveCompactPanels(
   report: RunArchiveReport,
   test: TestSummary,
@@ -465,6 +505,7 @@ function buildArchiveCompactPanels(
 ): ArchiveCompactPanel[] {
   const telemetry = report.overview.telemetry
   const provenance = report.manifest.provenance
+  const scriptNames = archiveScriptNames(report)
   const telemetryStatus = telemetry?.status || 'not captured'
   const compatibilityStatus = report.compatibility?.status || 'not captured'
   const evidenceTiers = report.evidence_tiers || []
@@ -537,7 +578,7 @@ function buildArchiveCompactPanels(
       tone: provenance ? 'healthy' : 'warning',
       items: [
         { label: 'Execution Profile', value: provenance ? `${provenance.scenario_mode || 'vuser_driven'} · ${provenance.total_vusers || test.total_vusers} VUsers · ${provenance.duration || test.duration}` : MISSING_VALUE },
-        { label: 'Scope', value: provenance ? `${provenance.project_id || 'unassigned'}${provenance.release_id ? ` / ${provenance.release_id}` : ''}${provenance.scenario_id ? ` / ${provenance.scenario_id}` : ''}` : MISSING_VALUE },
+        { label: 'Scope', value: provenance ? archiveScopeLabel(report) : MISSING_VALUE },
         { label: 'Runtime Flags', value: provenance ? `Shakeout ${formatArchiveFlag(provenance.script_shakeout)} · Baseline ${formatArchiveFlag(provenance.resource_baseline)}` : MISSING_VALUE },
         { label: 'Browser Runtime', value: compactValue(runtimeBrowserSummary) },
         { label: 'Metrics Interval', value: provenance?.execution_settings?.general?.metrics_interval_seconds !== undefined ? `${provenance.execution_settings.general.metrics_interval_seconds}s` : MISSING_VALUE },
@@ -553,11 +594,11 @@ function buildArchiveCompactPanels(
       status: report.change_attribution ? 'captured' : 'not captured',
       tone: report.change_attribution ? 'healthy' : 'warning',
       items: [
-        { label: 'Scripts', value: compactList(report.change_attribution?.script_revisions || []) },
-        { label: 'Scenario', value: compactValue(report.change_attribution?.scenario_revision) },
+        { label: 'Scripts', value: compactList((report.change_attribution?.script_revisions || []).map(id => scriptNames.get(id) || id).sort((a, b) => a.localeCompare(b))) },
+        { label: 'Scenario', value: compactValue(report.change_attribution?.scenario_revision ? report.identity_names?.scenario || report.change_attribution.scenario_revision : undefined) },
         { label: 'Environment', value: compactValue(report.change_attribution?.environment) },
         { label: 'Generators', value: compactList(report.change_attribution?.generator_versions || []) },
-        { label: 'Data', value: compactValue(report.change_attribution?.data_revision) },
+        { label: 'Data', value: compactValue(archiveDataLabel(report.change_attribution?.data_revision, scriptNames)) },
         { label: 'Runtime Overrides', value: runtimeOverrides },
       ],
     },

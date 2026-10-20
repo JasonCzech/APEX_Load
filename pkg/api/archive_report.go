@@ -132,6 +132,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		"transaction": newArchiveGatePopulationAccumulator(gateQuantileBudget),
 		"unknown":     {},
 	}
+	groupBreakdown := newArchiveGroupBreakdownAccumulator(maxArchiveGroupBreakdownCells)
 	var totalDuration float64
 	transactionIndex := 0
 	validityResults := newValidityResultCounter(archiveValidityIntervals(manifest, summaries))
@@ -141,6 +142,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		normalizeArchiveTransactionSnapshot(&tx)
 		population := archiveEventPopulation(tx)
 		populations[population].add(tx)
+		groupBreakdown.add(population, tx)
 		if population == "unknown" {
 			if unknownRecords[tx.ActionName] == nil {
 				if len(unknownRecords) >= maxArchiveAnalysisDimensions {
@@ -627,6 +629,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		metrics.PeakTPS = archiveActionPeakTPSFromBuckets(summaries, actionSummaryBuckets[name+"\x00"])
 		report.MetricPopulations[name] = metrics
 	}
+	report.GroupBreakdown, report.GroupBreakdownTruncated = groupBreakdown.result(window)
 	goalOverview := report.Overview
 	goalOverview.Transactions = report.MetricPopulations["transaction"].Transactions
 	report.Overview.LoadModelGoals, report.Overview.GoalCompletion = buildRunArchiveGoalCompletion(manifest.Provenance, goalOverview)

@@ -856,7 +856,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			if err := write("run_context", "", "completeness_status", d.Report.Completeness.Status); err != nil {
 				return err
 			}
-			return writeChangeAttributionCSVRows(write, d.Report.ChangeAttribution)
+			return writeChangeAttributionCSVRows(write, d.Report.ChangeAttribution, d.Report.IdentityNames.Scenario)
 		}})
 
 	// --- Completeness ------------------------------------------------------
@@ -974,10 +974,14 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, reportSectionTitle("change_attribution"))
 			attribution := d.Report.ChangeAttribution
-			appendPDFValueLine(lines, "Scenario revision", attribution.ScenarioRevision)
+			if attribution.ScenarioRevision != "" {
+				appendPDFValueLine(lines, "Scenario", reportScenarioLabel(d.Report))
+			}
 			appendPDFValueLine(lines, "Environment", reportEnvironment(d.Report))
-			appendPDFValueLine(lines, "Data revision", attribution.DataRevision)
-			appendPDFValueLine(lines, "Script revisions", strings.Join(attribution.ScriptRevisions, ", "))
+			appendPDFValueLine(lines, "Data", reportDataLabel(d.Report))
+			if len(attribution.ScriptRevisions) > 0 {
+				appendPDFValueLine(lines, "Scripts", reportScriptLabels(d.Report))
+			}
 			appendPDFValueLine(lines, "Generator versions", strings.Join(attribution.GeneratorVersions, ", "))
 			if attribution.RuntimeOverrides {
 				appendPDFValueLine(lines, "Runtime overrides", strings.Join(attribution.RuntimeOverrideFields, ", "))
@@ -985,7 +989,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			*lines = append(*lines, "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
-			return writeChangeAttributionCSVRows(write, d.Report.ChangeAttribution)
+			return writeChangeAttributionCSVRows(write, d.Report.ChangeAttribution, d.Report.IdentityNames.Scenario)
 		}})
 
 	// --- Schema compatibility ---------------------------------------------
@@ -1434,8 +1438,12 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			pdfHeading(lines, reportSectionTitle("test_setup"))
 			attribution := d.Report.ChangeAttribution
 			appendPDFValueLine(lines, "Environment", reportEnvironment(d.Report))
-			appendPDFValueLine(lines, "Scenario revision", attribution.ScenarioRevision)
-			appendPDFValueLine(lines, "Scripts", strings.Join(attribution.ScriptRevisions, ", "))
+			if attribution.ScenarioRevision != "" {
+				appendPDFValueLine(lines, "Scenario", reportScenarioLabel(d.Report))
+			}
+			if len(attribution.ScriptRevisions) > 0 {
+				appendPDFValueLine(lines, "Scripts", reportScriptLabels(d.Report))
+			}
 			appendPDFValueLine(lines, "Generators", strings.Join(attribution.GeneratorVersions, ", "))
 			if d.Report.Manifest != nil {
 				appendLiveTableReportPDF(lines, d.Report.Manifest.Provenance.LiveTables)
@@ -1452,6 +1460,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			rows := [][2]string{
 				{"environment", attribution.Environment},
 				{"scenario_revision", attribution.ScenarioRevision},
+				{"scenario_name", d.Report.IdentityNames.Scenario},
 				{"scripts", strings.Join(attribution.ScriptRevisions, ";")},
 				{"generators", strings.Join(attribution.GeneratorVersions, ";")},
 			}

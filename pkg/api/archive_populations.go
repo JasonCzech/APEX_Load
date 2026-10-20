@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -10,6 +11,99 @@ import (
 type ArchiveMetricPopulation struct {
 	RunArchiveActionStats
 	AverageRate *float64 `json:"average_rate_per_second,omitempty"`
+}
+
+// RunArchiveGroupBreakdown is one group's share of a metric population: its
+// totals and each transaction (or request) recorded under it.
+type RunArchiveGroupBreakdown struct {
+	Totals ArchiveMetricPopulation            `json:"totals"`
+	Items  map[string]ArchiveMetricPopulation `json:"items"`
+}
+
+// maxArchiveGroupBreakdownCells bounds each population's group and name
+// pairs. Every pair holds a quantile accumulator, so the cap keeps one report
+// build's memory bounded; populations have separate budgets so a run's
+// requests cannot crowd out its transactions.
+const maxArchiveGroupBreakdownCells = 2_000
+
+// archiveGroupBreakdownAccumulator collects RunArchiveGroupBreakdown for
+// every population. Past its cell budget a population keeps the pairs it has
+// and is reported as truncated instead of failing the report; a group's
+// totals still count every event of that group.
+type archiveGroupBreakdownAccumulator struct {
+	totals    map[string]map[string]*archivePopulationAccumulator
+	items     map[string]map[string]map[string]*archivePopulationAccumulator
+	cells     map[string]int
+	maxCells  int
+	truncated map[string]bool
+}
+
+func newArchiveGroupBreakdownAccumulator(maxCells int) *archiveGroupBreakdownAccumulator {
+	return &archiveGroupBreakdownAccumulator{
+		totals:    map[string]map[string]*archivePopulationAccumulator{},
+		items:     map[string]map[string]map[string]*archivePopulationAccumulator{},
+		cells:     map[string]int{},
+		maxCells:  maxCells,
+		truncated: map[string]bool{},
+	}
+}
+
+func (a *archiveGroupBreakdownAccumulator) add(population string, tx TransactionEvent) {
+	groups := a.items[population]
+	if groups == nil {
+		groups = map[string]map[string]*archivePopulationAccumulator{}
+		a.items[population] = groups
+		a.totals[population] = map[string]*archivePopulationAccumulator{}
+	}
+	names := groups[tx.Group]
+	if names == nil {
+		// A new group needs its totals cell and a cell for its first name.
+		if a.cells[population]+2 > a.maxCells {
+			a.truncated[population] = true
+			return
+		}
+		a.cells[population]++
+		names = map[string]*archivePopulationAccumulator{}
+		groups[tx.Group] = names
+		a.totals[population][tx.Group] = &archivePopulationAccumulator{}
+	}
+	a.totals[population][tx.Group].add(tx)
+	item := names[tx.ActionName]
+	if item == nil {
+		if a.cells[population]+1 > a.maxCells {
+			a.truncated[population] = true
+			return
+		}
+		a.cells[population]++
+		item = &archivePopulationAccumulator{}
+		names[tx.ActionName] = item
+	}
+	item.add(tx)
+}
+
+// result returns the breakdowns and, sorted, the populations that were cut.
+func (a *archiveGroupBreakdownAccumulator) result(window time.Duration) (map[string]map[string]RunArchiveGroupBreakdown, []string) {
+	var truncated []string
+	for population := range a.truncated {
+		truncated = append(truncated, population)
+	}
+	sort.Strings(truncated)
+	if len(a.items) == 0 {
+		return nil, truncated
+	}
+	result := make(map[string]map[string]RunArchiveGroupBreakdown, len(a.items))
+	for population, groups := range a.items {
+		breakdowns := make(map[string]RunArchiveGroupBreakdown, len(groups))
+		for group, names := range groups {
+			items := make(map[string]ArchiveMetricPopulation, len(names))
+			for name, acc := range names {
+				items[name] = acc.finish(window)
+			}
+			breakdowns[group] = RunArchiveGroupBreakdown{Totals: a.totals[population][group].finish(window), Items: items}
+		}
+		result[population] = breakdowns
+	}
+	return result, truncated
 }
 
 type archivePopulationAccumulator struct {

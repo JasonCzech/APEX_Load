@@ -49,6 +49,7 @@ import RunReportLensSwitcher from './runReport/RunReportLensSwitcher'
 import { REPORT_LENS_LABELS } from './runReport/reportLensLabels'
 import RunArchiveCoverageNotice from './runReport/RunArchiveCoverageNotice'
 import RunArchiveAvailabilitySummary from './runReport/RunArchiveAvailabilitySummary'
+import RunReportGroupBreakdown from './runReport/RunReportGroupBreakdown'
 import RunReportVerdictBanner from './runReport/RunReportVerdictBanner'
 import SynchronizedTimeline, { type TimelineAnnotation } from './runReport/SynchronizedTimeline'
 import ReleaseReadinessSummary from './runReport/ReleaseReadinessSummary'
@@ -65,6 +66,13 @@ import {
   slaRowsForReport,
 } from './runReport/runReportModel'
 import './RunReportPage.css'
+
+type ReportArea = 'Summary' | 'Performance' | 'Load Impact' | 'Comparison' | 'Diagnostics' | 'Browser' | 'Evidence' | 'Execution'
+
+// The route names a section by its tab's label in kebab case.
+function reportSectionForArea(area: ReportArea): ReportSection {
+  return area.toLowerCase().replace(/ /g, '-') as ReportSection
+}
 
 interface Props {
   testId: string
@@ -130,7 +138,7 @@ export default function RunReportPage({
   const api = useApi()
   const { runGuarded } = useNavigationGuardRunner()
   const [activeLens, setActiveLens] = useState<ReportLens>(initialLens || 'executive')
-  const [area, setAreaState] = useState<'Summary' | 'Performance' | 'Comparison' | 'Diagnostics' | 'Browser' | 'Evidence' | 'Execution'>('Summary')
+  const [area, setAreaState] = useState<ReportArea>('Summary')
   const [showExport, setShowExport] = useState(false)
   const [showNotes, setShowNotes] = useState(false)
   const [showCompare, setShowCompare] = useState(Boolean(initialCompare))
@@ -251,7 +259,9 @@ export default function RunReportPage({
     if (stats?.[initialTransaction]) archiveModel.onSelectedArchiveActionChange(initialTransaction)
     appliedAnalysisSelection.current = stamp
   }, [testId, initialTransaction, initialPopulation, archiveModel])
-  useEffect(() => { setAreaState(({ summary: 'Summary', performance: 'Performance', comparison: 'Comparison', diagnostics: 'Diagnostics', browser: 'Browser', evidence: 'Evidence', execution: 'Execution' } as const)[initialSection ?? 'summary']) }, [testId, initialSection])
+  // Load impact had been part of Performance: a saved link to it there opens its own section.
+  const legacyLoadImpact = initialFocus === 'load-impact' && initialSection === 'performance'
+  useEffect(() => { setAreaState(legacyLoadImpact ? 'Load Impact' : ({ summary: 'Summary', performance: 'Performance', 'load-impact': 'Load Impact', comparison: 'Comparison', diagnostics: 'Diagnostics', browser: 'Browser', evidence: 'Evidence', execution: 'Execution' } as const)[initialSection ?? 'summary']) }, [testId, initialSection, legacyLoadImpact])
   const focusHandledRef = useRef('')
   useEffect(() => {
     pinCompareStamp.current += 1
@@ -345,7 +355,7 @@ export default function RunReportPage({
 
   const choosePopulation = (next: MetricPopulation) => {
     setPopulationChoice(next)
-    onNavigateReport({ section: area.toLowerCase() as ReportSection, lens: activeLens, compare: compareId || undefined, comparisonId: initialComparisonId, population: next })
+    onNavigateReport({ section: reportSectionForArea(area), lens: activeLens, compare: compareId || undefined, comparisonId: initialComparisonId, population: next })
   }
   const [linkCopied, setLinkCopied] = useState('')
   const [timelineAnnotations, setTimelineAnnotations] = useState<TimelineAnnotation[]>([])
@@ -362,7 +372,7 @@ export default function RunReportPage({
     if (lens === activeLens) return
     runGuarded(() => {
       setActiveLens(lens)
-      onNavigateReport({ section: area.toLowerCase() as ReportSection, lens, compare: compareId || undefined, comparisonId: initialComparisonId })
+      onNavigateReport({ section: reportSectionForArea(area), lens, compare: compareId || undefined, comparisonId: initialComparisonId })
     })
   }
 
@@ -372,7 +382,7 @@ export default function RunReportPage({
     if (normalized === testId) { setBaselineError('Choose a different run as the baseline.'); return }
     runGuarded(() => {
       setCompareId(normalized)
-      onNavigateReport({ section: area.toLowerCase() as ReportSection, lens: activeLens, compare: normalized || undefined })
+      onNavigateReport({ section: reportSectionForArea(area), lens: activeLens, compare: normalized || undefined })
     })
   }
 
@@ -509,7 +519,8 @@ export default function RunReportPage({
     focusHandledRef.current = key
     if (target instanceof HTMLDetailsElement) target.open = true
     target.scrollIntoView?.({ block: 'start' })
-    const heading = target.querySelector<HTMLElement>('summary, h2, h3')
+    // A section without a heading of its own takes the focus itself.
+    const heading = target.querySelector<HTMLElement>('summary, h2, h3') || target
     if (heading && heading.tagName !== 'SUMMARY' && !heading.hasAttribute('tabindex')) heading.tabIndex = -1
     heading?.focus()
   }, [area, initialFocus, initialRootCause?.analysis, focusAnalysis, focusReport, testId])
@@ -543,10 +554,10 @@ export default function RunReportPage({
     loadImpactData={timelineHistory} loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
     loadImpactError={archiveSummaryError || archiveResourceError}
   />
-  const setArea = (next: 'Summary' | 'Performance' | 'Comparison' | 'Diagnostics' | 'Browser' | 'Evidence' | 'Execution') => {
+  const setArea = (next: ReportArea) => {
     // The route changes only after the navigation guard accepts. Keep the
     // current section visible if the user cancels an unsaved-assessment prompt.
-    onNavigateReport({ lens: activeLens, compare: compareId || undefined, comparisonId: initialComparisonId, section: next.toLowerCase() as ReportSection })
+    onNavigateReport({ lens: activeLens, compare: compareId || undefined, comparisonId: initialComparisonId, section: reportSectionForArea(next) })
   }
   // Root-cause state lives in the route, so a shared link reopens the same
   // analysis, hypothesis and window.
@@ -628,12 +639,12 @@ export default function RunReportPage({
     },
   } : undefined
   const hasBrowserEvidence = runHasBrowserArea(test, report)
+  const hasArchive = Boolean(test.archive)
   // A Browser link keeps its tab (and so a focusable, selected tab) while
   // the report that decides it loads.
-  const areas = (['Summary', 'Performance', 'Comparison', 'Diagnostics', 'Browser', 'Evidence', 'Execution'] as const).filter(name => name !== 'Browser' || hasBrowserEvidence || (area === 'Browser' && !browserDecided))
+  const areas = (['Summary', 'Performance', 'Load Impact', 'Comparison', 'Diagnostics', 'Browser', 'Evidence', 'Execution'] as const).filter(name => (name !== 'Browser' || hasBrowserEvidence || (area === 'Browser' && !browserDecided)) && (name !== 'Load Impact' || hasArchive || area === 'Load Impact'))
   const facts = executionFacts(test, report, manifestModel.manifest)
   const failed = resolvedStatus === 'FAILED'
-  const hasArchive = Boolean(test.archive)
   return (
     <div className="page run-report-page">
       <div className="run-report-toolbar">
@@ -691,9 +702,9 @@ export default function RunReportPage({
       <MessagingProgressDiagnostics snapshot={report?.messaging_progress} />
       <MessagingDiagnostics series={Object.entries(report?.by_action || {}).map(([name, stats]) => ({ name, messaging: stats.messaging }))} />
       <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canPublishConfluence} onAnnotationsChange={setTimelineAnnotations} reloadKey={annotationReload} />
-      <TabList className="run-report-areas" role="tablist" aria-label="Result sections">{areas.map((name,index) => <button key={name} type="button" role="tab" id={`result-tab-${name}`} aria-controls={area === name ? `result-panel-${name}` : undefined} aria-selected={area === name} tabIndex={area === name ? 0 : -1}
-        onClick={() => setArea(name)} onKeyDown={e => { const next = e.key === 'ArrowRight' ? (index+1)%areas.length : e.key === 'ArrowLeft' ? (index+areas.length-1)%areas.length : e.key === 'Home' ? 0 : e.key === 'End' ? areas.length-1 : -1; if(next >= 0){e.preventDefault();setArea(areas[next]);document.getElementById(`result-tab-${areas[next]}`)?.focus()} }}>{name === 'Comparison' ? 'Baseline comparison' : name}</button>)}</TabList>
-      <section role="tabpanel" id={`result-panel-${area}`} aria-labelledby={`result-tab-${area}`} className="run-report-area-content">
+      <TabList className="run-report-areas" role="tablist" aria-label="Result sections">{areas.map((name,index) => <button key={name} type="button" role="tab" id={`result-tab-${reportSectionForArea(name)}`} aria-controls={area === name ? `result-panel-${reportSectionForArea(name)}` : undefined} aria-selected={area === name} tabIndex={area === name ? 0 : -1}
+        onClick={() => setArea(name)} onKeyDown={e => { const next = e.key === 'ArrowRight' ? (index+1)%areas.length : e.key === 'ArrowLeft' ? (index+areas.length-1)%areas.length : e.key === 'Home' ? 0 : e.key === 'End' ? areas.length-1 : -1; if(next >= 0){e.preventDefault();setArea(areas[next]);document.getElementById(`result-tab-${reportSectionForArea(areas[next])}`)?.focus()} }}>{name === 'Comparison' ? 'Baseline comparison' : name}</button>)}</TabList>
+      <section role="tabpanel" id={`result-panel-${reportSectionForArea(area)}`} aria-labelledby={`result-tab-${reportSectionForArea(area)}`} className="run-report-area-content">
         {archiveModel.archiveLoading && <p role="status">Loading archived results…</p>}
         {archiveModel.archiveError && <section className="run-report-panel" aria-label="Report unavailable">
           <h2>Report could not be loaded</h2><p role="alert" className="run-report-error">{archiveModel.archiveError}</p>
@@ -706,15 +717,15 @@ export default function RunReportPage({
         {area === 'Summary' && hasArchive && !archiveModel.archiveError && <>
           {report && <RunOutcomeSummary report={report} showPopulations={false} rootCauseSummary={liveRootCause} onRootCause={openRootCause} />}
           <ReleaseReadinessSummary report={report} findings={annotations?.findings} />
-          {/* KPI values wait for the report: "—" would read as a measured gap. */}
-          {report && <RunReportKpiScorecard kpis={kpis} />}
+          {/* Values wait for the report: "—" would read as a measured gap. */}
+          {report && <RunReportGroupBreakdown key={population} report={report} population={population} kpis={kpis} />}
           <section className="run-report-panel run-report-next-steps"><h2>Findings and next steps</h2>
             {/* Each finding is a line with its one action, styled alike. */}
             {report?.error_patterns?.length ? <p>{report.error_patterns.length === 1 ? 'One error pattern was' : `${report.error_patterns.length.toLocaleString()} error patterns were`} captured across all populations. <button type="button" className="btn btn-secondary btn-sm" onClick={() => setArea('Diagnostics')}>Investigate errors</button></p> : <p>{report ? 'No recurring error patterns were captured across all populations.' : 'Findings will appear when the report loads.'}</p>}
             {report?.completeness && report.completeness.score_pct < 100 && <p>Evidence coverage is {formatFixed(report.completeness.score_pct, 0)}%. <button type="button" className="btn btn-secondary btn-sm" onClick={() => setArea('Evidence')}>Review evidence gaps</button></p>}
           </section>
           {annotationsError && <p className="run-report-error" role="alert">{annotationsError}</p>}
-          <details><summary>Analyst assessment (shared by every report audience)</summary><RunReportVerdictBanner report={report} annotations={annotations} status={verdictDraft.status} explanation={verdictDraft.explanation} saving={savingAnnotations || annotationsLoading} disabled={!annotations} onStatusChange={updateVerdictStatus} onExplanationChange={updateVerdictExplanation} onSaveOverride={saveOverride} /></details>
+          <RunReportVerdictBanner report={report} annotations={annotations} status={verdictDraft.status} explanation={verdictDraft.explanation} saving={savingAnnotations || annotationsLoading} disabled={!annotations} onStatusChange={updateVerdictStatus} onExplanationChange={updateVerdictExplanation} onSaveOverride={saveOverride} />
         </>}
         {area === 'Performance' && hasArchive && <>
           {/* KPI values wait for the report: "—" would read as a measured gap. */}
@@ -740,8 +751,8 @@ export default function RunReportPage({
           )}
           <div data-report-focus="action-summary">{renderEvidence('action-summary')}</div>
           <JourneyRiskPanel testId={testId} />
-          <details data-report-focus="load-impact"><summary>Load impact</summary>{renderEvidence('load-impact')}</details>
         </>}
+        {area === 'Load Impact' && hasArchive && <div data-report-focus="load-impact">{renderEvidence('load-impact')}</div>}
         {area === 'Diagnostics' && hasArchive && <>
           <RootCausePanel testId={testId} model={rootCause} report={report} history={timelineHistory} historyLoading={archiveSummariesLoading || archiveResourcesLoading}
             canAnalyze={canPublishConfluence} baselineTestId={effectiveCompareId || undefined} baselineName={baselineTest?.name} route={initialRootCause || {}} onRouteChange={navigateRootCause}
@@ -777,6 +788,7 @@ export default function RunReportPage({
         </>}
         {!hasArchive && area === 'Comparison' && <p>Baseline comparison requires saved transaction and resource archives. Check archive availability above.</p>}
         {!hasArchive && area === 'Performance' && <RetainedRunMetrics test={test} />}
+        {!hasArchive && area === 'Load Impact' && <p>Load impact reads the run's archived intervals. Check archive availability above.</p>}
         {!hasArchive && area === 'Diagnostics' && <><RetainedRunDiagnostics test={test} /><RunExecutionDetails manifestModel={manifestModel} test={test} report={null} evidenceOnly /></>}
         {!hasArchive && area === 'Evidence' && <RunExecutionDetails manifestModel={manifestModel} test={test} report={null} evidenceOnly />}
       </section>

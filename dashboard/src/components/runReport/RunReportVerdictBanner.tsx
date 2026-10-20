@@ -62,11 +62,12 @@ export default function RunReportVerdictBanner({
     }
   }
 
-  // One panel inside the page's "Analyst assessment" disclosure. Computed
-  // acceptance is already the Summary's headline, so it is named once here.
+  // Computed acceptance is already the Summary's headline, so it is named
+  // once here.
   return (
     <section className={`run-report-verdict run-report-verdict-${verdictTone(verdict)}`} aria-label="Analyst assessment">
-      <p className="run-report-muted">
+      <h2>Analyst assessment</h2>
+      <p className="run-report-muted">Shared by every report audience.{' '}
         Recorded beside the computed acceptance <span className="run-report-verdict-badge">{verdict.status}</span>, never instead of it.
       </p>
       <div className="run-report-override run-report-override-grid">

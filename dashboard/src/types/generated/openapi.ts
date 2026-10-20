@@ -4227,6 +4227,11 @@ export interface operations {
               "severity"?: string;
               "title"?: string;
             }>;
+            "group_breakdown"?: Record<string, Record<string, {
+              "items"?: Record<string, Record<string, unknown>>;
+              "totals"?: Record<string, unknown>;
+            }>>;
+            "group_breakdown_truncated"?: Array<string>;
             "host_network"?: Array<{
               "open_files"?: {
                 "available"?: boolean;
@@ -80353,6 +80358,15 @@ export interface operations {
               "severity": string;
               "title": string;
             }>;
+            "group_breakdown"?: Record<string, Record<string, {
+              "items": Record<string, {
+                "average_rate_per_second"?: (number) | null;
+              }>;
+              "totals": {
+                "average_rate_per_second"?: (number) | null;
+              };
+            }>>;
+            "group_breakdown_truncated"?: Array<string>;
             "host_network"?: Array<{
               "open_files": {
                 "available": boolean;

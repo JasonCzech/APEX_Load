@@ -214,12 +214,14 @@ func writeReleaseTrendPointCSVRows(write reportCSVWriteFunc, key string, point R
 	return nil
 }
 
-func writeChangeAttributionCSVRows(write reportCSVWriteFunc, attribution RunArchiveChangeAttribution) error {
+// The CSV keeps the IDs for joining; scenario_name beside them names the scenario.
+func writeChangeAttributionCSVRows(write reportCSVWriteFunc, attribution RunArchiveChangeAttribution, scenarioName string) error {
 	rows := []struct {
 		metric string
 		value  string
 	}{
 		{"scenario_revision", attribution.ScenarioRevision},
+		{"scenario_name", scenarioName},
 		{"environment", attribution.Environment},
 		{"data_revision", attribution.DataRevision},
 		{"runtime_overrides", strconv.FormatBool(attribution.RuntimeOverrides)},

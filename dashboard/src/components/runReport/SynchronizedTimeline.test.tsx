@@ -20,8 +20,8 @@ vi.mock('recharts', () => {
     Area: ({ dataKey }: { dataKey?: string }) => <path data-testid="mock-area" data-key={dataKey || ''} />,
     CartesianGrid: Mock,
     ComposedChart: MockChart,
-    Line: ({ dataKey, strokeDasharray }: { dataKey?: string; strokeDasharray?: string }) => (
-      <path data-testid="mock-line" data-key={dataKey || ''} data-dash={strokeDasharray || ''} />
+    Line: ({ dataKey, strokeDasharray, connectNulls, dot }: { dataKey?: string; strokeDasharray?: string; connectNulls?: boolean; dot?: unknown }) => (
+      <path data-testid="mock-line" data-key={dataKey || ''} data-dash={strokeDasharray || ''} data-connect-nulls={String(Boolean(connectNulls))} data-dot={String(Boolean(dot))} />
     ),
     ReferenceArea: ({ x1, x2 }: { x1?: string; x2?: string }) => <path data-testid="mock-reference-area" data-x1={x1 || ''} data-x2={x2 || ''} />,
     ReferenceLine: ({ y }: { y?: number }) => <path data-testid="mock-reference-line" data-y={String(y ?? '')} />,
@@ -119,6 +119,57 @@ describe('SynchronizedTimeline', () => {
     expect(legend.textContent).toContain('Suspect run')
   })
 
+  it('draws continuous lines across resource-only samples', async () => {
+    // A resource sample between two intervals has no throughput or latency.
+    const resourceOnly = { ...samplePoint('01', Number.NaN, 0), avgMs: Number.NaN, p95: Number.NaN, errorPct: Number.NaN, resourceSampleOnly: 1 }
+    await act(async () => {
+      root.render(<SynchronizedTimeline data={[samplePoint('00', 100, 0), resourceOnly, samplePoint('02', 120, 0)]} />)
+    })
+    const lines = Array.from(container.querySelectorAll('[data-testid="mock-line"]'))
+    expect(lines.length).toBeGreaterThan(0)
+    expect(lines.every(line => line.getAttribute('data-connect-nulls') === 'true')).toBe(true)
+  })
+
+  it('breaks a line where its own samples stop for several intervals', async () => {
+    const points = Array.from({ length: 12 }, (_, i) => ({ ...samplePoint(String(i).padStart(2, '0'), 100, 0), tps: i <= 3 || i >= 10 ? 20 : Number.NaN }))
+    await act(async () => {
+      root.render(<SynchronizedTimeline data={points} />)
+    })
+    const throughput = Array.from(container.querySelectorAll('[data-lane="throughput"] [data-testid="mock-line"]')).map(line => line.getAttribute('data-key'))
+    expect(throughput.filter(key => key?.startsWith('tps'))).toEqual(['tps\u00010', 'tps\u00011'])
+  })
+
+  it('draws a lone sample between two gaps as a dot', async () => {
+    const points = Array.from({ length: 15 }, (_, i) => ({ ...samplePoint(String(i).padStart(2, '0'), 100, 0), tps: i <= 3 || i === 8 || i >= 13 ? 20 : Number.NaN }))
+    await act(async () => {
+      root.render(<SynchronizedTimeline data={points} />)
+    })
+    const lines = Array.from(container.querySelectorAll('[data-lane="throughput"] [data-testid="mock-line"]')).filter(line => line.getAttribute('data-key')?.startsWith('tps'))
+    expect(lines.map(line => line.getAttribute('data-dot'))).toEqual(['false', 'true', 'false'])
+  })
+
+  it('raises the start thumb where the thumbs meet in the right half', async () => {
+    await act(async () => {
+      root.render(<SynchronizedTimeline data={[0, 1, 2, 3, 4].map(i => samplePoint(String(i).padStart(2, '0'), 100, 0))} />)
+    })
+    const start = container.querySelector('[aria-label="Timeline window start"]') as HTMLInputElement
+    const end = container.querySelector('[aria-label="Timeline window end"]') as HTMLInputElement
+    for (const [input, value] of [[start, '3'], [end, '3']] as const) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    expect(start.hasAttribute('data-raised')).toBe(true)
+    for (const [input, value] of [[start, '1'], [end, '1']] as const) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    expect(start.hasAttribute('data-raised')).toBe(false)
+  })
+
   it('provides named bounded keyboard sliders and applies their window to every lane', async () => {
     await act(async () => {
       root.render(
@@ -140,7 +191,18 @@ describe('SynchronizedTimeline', () => {
       })
     }
     expect(start.getAttribute('aria-valuetext')).toBe('01')
-    expect(end.min).toBe('1')
+    // Both thumbs share one track; a thumb stops at the other.
+    expect(start.closest('.run-report-timeline-window-range')).toBe(end.closest('.run-report-timeline-window-range'))
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(start, '3')
+      start.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(start.value).toBe('2')
+    expect(end.value).toBe('2')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(start, '1')
+      start.dispatchEvent(new Event('input', { bubbles: true }))
+    })
 
     const charts = Array.from(container.querySelectorAll('[data-testid="mock-chart"]'))
     expect(charts.every(chart => chart.getAttribute('data-length') === '2')).toBe(true)
