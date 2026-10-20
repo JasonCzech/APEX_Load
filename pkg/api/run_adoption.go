@@ -254,7 +254,7 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 				return fmt.Errorf("access run adoption key material for %s: %w", test.ID, decodeErr)
 			}
 			if stopping {
-				tr.finishStoppingRunAdoption(b, test, nil, nil, nil, nil, generation, ownerID, candidate.newToken, nil, []string{fmt.Sprintf("adoption checkpoint unusable (%v)", decodeErr)})
+				tr.finishStoppingRunAdoption(b, test, nil, nil, nil, nil, generation, generation, ownerID, candidate.newToken, nil, []string{fmt.Sprintf("adoption checkpoint unusable (%v)", decodeErr)})
 				continue
 			}
 			tr.failRunAdoption(b, test, nil, generation, ownerID, candidate.newToken, fmt.Sprintf("controller failover: the run's adoption checkpoint is unusable (%v)", decodeErr))
@@ -356,7 +356,7 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			// Every reachable generator serves the final archive; any that
 			// never saw the stop was adopted above and is stopped now.
 			tr.isolateRunAdoption(b, candidate.test, generation, ownerID, func() {
-				tr.finishStoppingRunAdoption(b, candidate.test, reachable, adopted, completed, archives, generation, ownerID, candidate.newToken, candidate.targets, problems)
+				tr.finishStoppingRunAdoption(b, candidate.test, reachable, adopted, completed, archives, generation, candidate.checkpoint.ExecutionGeneration, ownerID, candidate.newToken, candidate.targets, problems)
 			})
 			continue
 		}
@@ -390,7 +390,7 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 				}
 				// Stop adopted assignments, but also retain completed participants
 				// for best-effort archive collection when another target was lost.
-				tr.bindRunAdoptionOutcome(b, candidate.test, reachable, adopted, completed, archives, generation, ownerID, candidate.newToken, candidate.targets, "FAILED", message)
+				tr.bindRunAdoptionOutcome(b, candidate.test, reachable, adopted, completed, archives, generation, candidate.checkpoint.ExecutionGeneration, ownerID, candidate.newToken, candidate.targets, "FAILED", message)
 				return
 			}
 			tr.installAdoptedRun(b, candidate, adopted, completed, archives, generation, ownerID)
@@ -711,7 +711,7 @@ func installAdoptedRunTotalsLocked(test *ManagedTest, legacy runTotalsAccumulato
 
 func (tr *TestRunner) installAdoptedRun(b *distributedExecutionBackend, candidate *runAdoptionCandidate, adopted, completed, archives map[string]generatorClient, generation uint64, ownerID string) {
 	test := candidate.test
-	tr.restoreTelemetryCheckpoint(test, generation)
+	tr.restoreTelemetryCheckpoint(test, generation, candidate.checkpoint.ExecutionGeneration)
 	// cloneClientMap returns nil for an empty map, and a run whose generators
 	// all finished during the gap has no adopted clients.
 	all := make(map[string]generatorClient, len(adopted)+len(completed))
@@ -751,7 +751,7 @@ func (tr *TestRunner) installAdoptedRun(b *distributedExecutionBackend, candidat
 		}
 		for target := range completed {
 			ledger.assign(target, adoptedAt)
-			ledger.retire(target, adoptedAt)
+			ledger.retireAtAdoption(target, adoptedAt)
 		}
 		test.adoptedResume = &adoptedRunResume{
 			generation: generation, ownerID: ownerID,
@@ -782,15 +782,17 @@ func (tr *TestRunner) installAdoptedRun(b *distributedExecutionBackend, candidat
 func (tr *TestRunner) failRunAdoption(b *distributedExecutionBackend, test *ManagedTest, adopted map[string]generatorClient, generation uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, message string) {
 	defer tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: ownerID, generation: generation})
 	slog.Warn("run adoption failed; the run will be marked FAILED", "test_id", test.ID, "execution_generation", generation, "reason", message)
-	tr.bindRunAdoptionOutcome(b, test, adopted, adopted, nil, nil, generation, ownerID, token, nil, "FAILED", message)
+	tr.bindRunAdoptionOutcome(b, test, adopted, adopted, nil, nil, generation, generation, ownerID, token, nil, "FAILED", message)
 }
 
 // bindRunAdoptionOutcome binds a run that will not resume to the new term, so
 // stop and archive collection work under the rotated token, and records the
 // outcome Phase B applies. Only adopted generators are stopped; the others in
 // clients (already stopped or finished) serve the archive.
-func (tr *TestRunner) bindRunAdoptionOutcome(b *distributedExecutionBackend, test *ManagedTest, clients, adopted, completed, archives map[string]generatorClient, generation uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, targets []string, status, message string) {
-	tr.restoreTelemetryCheckpoint(test, generation)
+// priorGeneration is the adopted continuity term; passing generation itself
+// means no snapshot is known to be current, so totals come from stored history.
+func (tr *TestRunner) bindRunAdoptionOutcome(b *distributedExecutionBackend, test *ManagedTest, clients, adopted, completed, archives map[string]generatorClient, generation, priorGeneration uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, targets []string, status, message string) {
+	tr.restoreTelemetryCheckpoint(test, generation, priorGeneration)
 	tr.mu.Lock()
 	err := tr.installRunAdoptionHandlesLocked(b, test, clients, nil, token)
 	if err == nil {
@@ -802,7 +804,7 @@ func (tr *TestRunner) bindRunAdoptionOutcome(b *distributedExecutionBackend, tes
 			test.remoteTargetStates[target] = "complete"
 			// Completed during the gap: never observed or required here.
 			ledger.assign(target, adoptedAt)
-			ledger.retire(target, adoptedAt)
+			ledger.retireAtAdoption(target, adoptedAt)
 		}
 		test.adoptedResume = &adoptedRunResume{generation: generation, ownerID: ownerID, completed: cloneClientMap(completed), adoptedAt: adoptedAt, finishStatus: status, finishMessage: message, finishTargets: append([]string(nil), targets...)}
 	}
@@ -822,18 +824,20 @@ func (tr *TestRunner) bindRunAdoptionOutcome(b *distributedExecutionBackend, tes
 // leader was lost. An operator stop remains ABORTED; a persisted fail-closed
 // control error remains FAILED. Generators still running the run under the
 // rotated token are stopped, and archives are collected where reachable.
-func (tr *TestRunner) finishStoppingRunAdoption(b *distributedExecutionBackend, test *ManagedTest, clients, adopted, completed, archives map[string]generatorClient, generation uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, targets []string, problems []string) {
+func (tr *TestRunner) finishStoppingRunAdoption(b *distributedExecutionBackend, test *ManagedTest, clients, adopted, completed, archives map[string]generatorClient, generation, priorGeneration uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, targets []string, problems []string) {
 	defer tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: ownerID, generation: generation})
 	if len(problems) > 0 {
 		slog.Warn("finishing a stopping run after controller failover with incomplete generator reach", "test_id", test.ID, "problems", strings.Join(problems, "; "))
 	}
 	slog.Info("finishing an in-flight stop after controller failover", "test_id", test.ID, "execution_generation", generation, "generators", len(clients), "still_running", len(adopted))
 	status, message := stoppingRunAdoptionOutcome(test.Error)
-	tr.bindRunAdoptionOutcome(b, test, clients, adopted, completed, archives, generation, ownerID, token, targets, status, message)
+	tr.bindRunAdoptionOutcome(b, test, clients, adopted, completed, archives, generation, priorGeneration, ownerID, token, targets, status, message)
 }
 
 func stoppingRunAdoptionOutcome(reason string) (status, message string) {
-	reason = strings.TrimSpace(reason)
+	// Adoption replaces the evacuation journal, so the resolve instruction
+	// recorded with an uncertain evacuation no longer applies.
+	reason = strings.TrimSpace(withoutEvacuationIntervention(reason))
 	if strings.HasPrefix(reason, "controller failover: pending ABORTED cleanup proof:") {
 		return "ABORTED", reason
 	}

@@ -3,6 +3,8 @@ import type { DiagnosticDistribution } from './protocolDiagnostics'
 export interface JavaHTTPByteMoments { count: number; sum_bytes: number; min_bytes: number; max_bytes: number; overflow?: boolean }
 export interface JavaHTTPBytePair { samples: number; numerator_bytes: number; denominator_bytes: number; overflow?: boolean }
 export interface JavaHTTPSummary {
+  /** Actual java_http action executions covered, with or without diagnostics. */
+  population?: number
   version: number
   mode: string
   samples: number

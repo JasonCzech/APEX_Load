@@ -193,7 +193,11 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (result
 	result, err = j.http.Execute(httpContext, &prepared)
 	if result != nil {
 		state, _ := result.ProtocolEvidence["response_content_state"].(string)
-		if state == "complete" || state == "collection_window" {
+		// The HTTP adapter discards a successful body before later checks can
+		// fail the action, so a failed action with discard requested and an
+		// empty body may have had either; it stays unavailable, not a 0.
+		lateFailureAfterDiscard := !result.Success && prepared.DiscardResponseBodyOnSuccess && result.ResponseBody == ""
+		if (state == "complete" || state == "collection_window") && !lateFailureAfterDiscard {
 			diagnostic.ResponseState = state
 			if result.Success && prepared.DiscardResponseBodyOnSuccess {
 				diagnostic.ResponseState = "discarded"

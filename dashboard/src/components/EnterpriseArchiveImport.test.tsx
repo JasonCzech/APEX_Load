@@ -6282,6 +6282,31 @@ describe('EnterpriseArchiveImport', () => {
     }), { targetSection: 'parameter-data', targetDataSource: 'users' }, expect.any(Function), expect.any(Function))
   })
 
+  it('explains instead of silently ignoring an editor jump after conversion options change', async () => {
+    const onEdit = vi.fn()
+    await act(async () => {
+      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
+    })
+    await flushPromises()
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['zip-content'], 'demo.zip', { type: 'application/zip' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to script library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))!
+    await act(async () => { convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushPromises()
+    const baseURL = container.querySelector<HTMLInputElement>('input[placeholder="Auto-detected from first URL"]')!
+    await act(async () => { Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(baseURL, 'https://changed.example'); baseURL.dispatchEvent(new Event('input', { bubbles: true })) })
+    const openFirstDataSourceButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open First Data Source In Editor'))!
+    expect(openFirstDataSourceButton.disabled).toBe(false)
+    await act(async () => { openFirstDataSourceButton.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushPromises()
+    expect(onEdit).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Conversion options changed after this review was generated. Validate the archive again before opening its draft in the Visual Editor.')
+  })
+
   it('opens the first generated data source summary jump in the visual editor with a data source focus hint', async () => {
     const onEdit = vi.fn()
 

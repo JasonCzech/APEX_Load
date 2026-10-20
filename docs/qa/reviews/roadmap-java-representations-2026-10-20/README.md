@@ -16,9 +16,10 @@ baseline comparisons, reports and dashboard exports retain those meanings.
 
 Native queries require one exact action and bounded raw evidence. Ratios divide
 paired sums; zero denominators and incomplete windows remain unscored. Baseline
-comparisons are advisory and require compatible complete action evidence. The new
-`actual_action_samples` archive field excludes same-name transaction wrappers;
-legacy records without that population remain unavailable. Existing transaction
+comparisons are advisory and require compatible complete action evidence. Each Java
+summary's `population` counts actual java_http actions only, excluding same-name
+transaction wrappers and other protocols' same-named actions; legacy records
+without that population remain unavailable. Existing transaction
 totals and schema migration fingerprints retain their earlier meanings.
 
 ## Validation and review

@@ -1,0 +1,7 @@
+{
+  "command": "docker ps --filter name=apex-roadmap-telemetry-outbox-20261019",
+  "exit_code": 1,
+  "stdout": "",
+  "stderr": "Error response from daemon: Docker Desktop is unable to start\n",
+  "result": "PostgreSQL integration rerun unavailable; retain prior precision-slice PostgreSQL evidence without claiming a new pass."
+}

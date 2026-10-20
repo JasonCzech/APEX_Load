@@ -1,0 +1,12 @@
+{
+  "cycle_log_created_utc": "2026-10-20T18:14:19Z",
+  "runner_last_modified_utc": "2026-10-20T18:19:40Z",
+  "first_controller_hash_recorded_utc": "2026-10-20T18:19:57Z",
+  "failure": "dev-admin invocation reported shell syntax error near unexpected token at line 147 after controller build and before discovery",
+  "interpretation": "The invocation overlapped runner edits. Current frozen file passes Bash syntax and runner behavioral tests; separate complete dev-admin repetition uses the same immutable controller binary. No application failure was observed in the failed launch.",
+  "acceptance": "Failed cycle is retained, not relabeled a pass. Final browser acceptance requires complete separately reconciled profile reports.",
+  "wrapper_last_modified_utc": "2026-10-20T18:19:40Z",
+  "wrapper_final_error": "line 21: ne: command not found",
+  "parent_cycle_exit_code": 127,
+  "frozen_wrapper_verification": "Two new behavioral regression cases run both default profiles with configured ports, return 0 on success and 1 after an initial profile failure, and verify that local-auth still runs. All 14 preflight/runner tests and final lint pass."
+}

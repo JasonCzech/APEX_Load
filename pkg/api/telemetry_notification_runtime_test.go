@@ -87,6 +87,57 @@ func awaitNotificationState(t *testing.T, store *storage.SQLiteStore, want map[s
 	state, err := store.GetTelemetryNotificationPublication(context.Background(), storage.DefaultProjectID, "notification-run")
 	t.Fatal("delivery state did not converge", state, err)
 }
+
+// Another replica (different environment or version) can store a route this
+// controller cannot validate. It must not block the archive commit, and the
+// valid recipients must still be pinned and delivered.
+func TestTelemetryNotificationRouteInvalidHereDoesNotSuppressOtherRecipients(t *testing.T) {
+	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
+	s, store, m := notificationRuntimeFixture(t)
+	var requests atomic.Int32
+	receiver := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); w.WriteHeader(202) }))
+	defer receiver.Close()
+	s.runner.notifier.Close()
+	s.runner.notifier = newNotificationDispatcher(receiver.Client())
+	valid := NotificationWebhookSettings{Name: "valid", Enabled: true, URL: receiver.URL, Format: notificationFormatSlack, Events: []string{"telemetry_acceptance"}}
+	cleartext := NotificationWebhookSettings{Name: "cleartext", Enabled: true, URL: "http://example.invalid/hook", Format: notificationFormatSlack, Events: []string{"telemetry_acceptance"}}
+	// Written by a peer, so this controller's whole-document validation and
+	// in-memory settings never see it.
+	settings := s.runner.GetSystemSettings()
+	settings.Notifications = NotificationsSettings{Webhooks: []NotificationWebhookSettings{valid, cleartext}}
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSetting(systemSettingsStoreKey, string(raw)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.runner.refreshSystemSettingsFromStoreContext(context.Background(), true); err == nil {
+		t.Fatal("fixture route unexpectedly validates on this controller")
+	}
+	id := commitNotificationRuntimeFixture(t, s, store, m)
+	event, err := store.GetTelemetryNotification(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := s.persistentDigestKeyContext(context.Background(), telemetryNotificationDigestKeySetting, "telemetry notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := telemetryDestinationFingerprint(key, valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(event.Destinations) != fmt.Sprint([]string{want}) {
+		t.Fatal("invalid route blocked or replaced the valid recipient", event.Destinations)
+	}
+	s.reconcileTelemetryNotifications(context.Background())
+	awaitNotificationState(t, store, map[string]int64{"delivered": 1})
+	if requests.Load() != 1 {
+		t.Fatal("valid recipient was not delivered once", requests.Load())
+	}
+}
+
 func TestTelemetryNotificationRuntimeScrubsAndPinsRecipients(t *testing.T) {
 	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
 	s, store, m := notificationRuntimeFixture(t)
@@ -127,7 +178,7 @@ func TestTelemetryNotificationRuntimeScrubsAndPinsRecipients(t *testing.T) {
 	if err != nil || repeated.Event == nil {
 		t.Fatal("repeat projection", repeated, err)
 	}
-	repeatID, _ := storage.TelemetryNotificationID(*repeated.Event)
+	repeatID, err := storage.TelemetryNotificationID(*repeated.Event)
 	if err != nil || repeatID != empty || len(repeated.Event.Destinations) != 0 {
 		t.Fatal("no-recipient decision changed", repeated, err)
 	}

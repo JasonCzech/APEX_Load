@@ -343,6 +343,63 @@ func checkTelemetryNotificationOutboxExhaustionAndRevocation(t *testing.T, s *SQ
 	}
 }
 
+// deferredOutboxCandidate takes the next candidate from the due scan, as the
+// delivery worker does.
+func deferredOutboxCandidate(t *testing.T, s *SQLiteStore, now time.Time, destination string) TelemetryNotificationDelivery {
+	t.Helper()
+	due, err := s.ListDueTelemetryNotificationDeliveries(context.Background(), now, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range due {
+		if d.Destination == destination {
+			return d
+		}
+	}
+	t.Fatal("deferred delivery was not due again")
+	return TelemetryNotificationDelivery{}
+}
+
+// A delivery the local dispatcher refused never sent a request, so deferring
+// it returns the claimed attempt instead of moving it toward exhaustion.
+func TestTelemetryNotificationOutboxDeferralDoesNotSpendAttempts(t *testing.T) {
+	s := newHAFencingStore(t)
+	ctx := context.Background()
+	in, now := telemetryOutboxFixture(t, s, "outbox-deferral")
+	id, state, err := s.EnqueueTelemetryNotification(ctx, in, now)
+	if err != nil || state != "enqueued" {
+		t.Fatal(err)
+	}
+	candidate := TelemetryNotificationDelivery{EventID: id, Destination: in.Destinations[0]}
+	for range 2 * MaxTelemetryNotificationAttempts {
+		claim, err := s.ClaimTelemetryNotificationDelivery(ctx, candidate, now, time.Minute)
+		if err != nil || claim == nil || claim.Attempts != 1 {
+			t.Fatalf("deferred claim=%+v %v", claim, err)
+		}
+		if ok, err := s.FinishTelemetryNotificationDelivery(ctx, *claim, "deferred", now); err != nil || !ok {
+			t.Fatal("deferral not persisted", err)
+		}
+		due, err := s.ListDueTelemetryNotificationDeliveries(ctx, now.Add(500*time.Millisecond), 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range due {
+			if d.Destination == candidate.Destination {
+				t.Fatal("deferral was due immediately", d)
+			}
+		}
+		now = now.Add(2 * time.Second)
+		candidate = deferredOutboxCandidate(t, s, now, candidate.Destination)
+	}
+	claim, err := s.ClaimTelemetryNotificationDelivery(ctx, candidate, now, time.Minute)
+	if err != nil || claim == nil || claim.Attempts != 1 {
+		t.Fatalf("delivery after deferrals=%+v %v", claim, err)
+	}
+	if ok, err := s.FinishTelemetryNotificationDelivery(ctx, *claim, "delivered", now); err != nil || !ok {
+		t.Fatal("delivery not persisted", err)
+	}
+}
+
 func TestTelemetryNotificationOutboxIndependentStores(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "outbox.db")
 	first, err := NewSQLiteStore(path)

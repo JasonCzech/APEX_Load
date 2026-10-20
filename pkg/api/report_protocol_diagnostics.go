@@ -74,7 +74,7 @@ func protocolReportLines(report *RunArchiveReport) []string {
 	for _, name := range keys {
 		a := report.ByAction[name]
 		if a.JavaHTTP != nil {
-			lines = append(lines, javaHTTPReportLines(name, a.JavaHTTP, a.ActualActionSamples)...)
+			lines = append(lines, javaHTTPReportLines(name, a.JavaHTTP, a.JavaHTTP.Population)...)
 		}
 		if a.Messaging != nil {
 			if a.Messaging.Incomplete {

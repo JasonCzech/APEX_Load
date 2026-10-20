@@ -25,14 +25,6 @@ type archiveFinalizationInspection struct {
 	executionCompletedAt time.Time
 }
 
-func (tr *TestRunner) inspectArchiveFinalizationIdentity(ctx context.Context, job *storage.ArchiveFinalizationJob, durable *storage.TestRecord, useRefreshCatalog bool) (*storage.ArchiveFinalizationRunIdentity, error) {
-	inspection, err := tr.inspectArchiveFinalizationSource(ctx, job, durable, useRefreshCatalog)
-	if err != nil || inspection == nil {
-		return nil, err
-	}
-	return inspection.identity, nil
-}
-
 // Inspect source identity before any adjunct mutation. On refresh, the verified
 // catalog is the source which will be copied; a previous private staging path may
 // no longer exist. Prepared bytes remain authoritative after interrupted writes.

@@ -915,6 +915,9 @@ message JavaHTTPSummary {
   int64 request_compression_none = 23;
   int64 request_compression_gzip = 24;
   int64 request_compression_deflate = 25;
+  // Actual java_http action executions covered, with or without diagnostics;
+  // zero means an older peer that did not count them.
+  int64 population = 26;
 }
 
 message JavaHTTPByteMoments {

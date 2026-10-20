@@ -152,3 +152,35 @@ func TestMessagingArchiveWriterPreservesMissingSourceCoverage(t *testing.T) {
 		})
 	}
 }
+
+// A known generator without a row in a window is unknown Java work, not zero.
+func TestJavaHTTPArchiveMergeRequiresEveryBundleInEachWindow(t *testing.T) {
+	base := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	javaRecord := func(at time.Time) IntervalSummaryRecord {
+		var summary *protocol.JavaHTTPSummary
+		protocol.ObserveJavaHTTPAction(&summary, javaAPIDiagnostic())
+		var actions *protocol.JavaHTTPActions
+		protocol.AddJavaHTTPAction(&actions, "call", 1, summary)
+		return IntervalSummaryRecord{Timestamp: at, TestID: "run", JavaHTTP: actions}
+	}
+	for _, tc := range []struct {
+		name       string
+		emptyPeer  bool
+		incomplete bool
+	}{{name: "aligned"}, {name: "empty known peer", emptyPeer: true, incomplete: true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			peer := messagingArchiveCoverageBundle(t, "b", javaRecord(base.Add(200*time.Millisecond)))
+			if tc.emptyPeer {
+				peer = messagingArchiveCoverageBundle(t, "b")
+			}
+			destination := filepath.Join(t.TempDir(), "merged.jsonl")
+			if _, err := mergeRemoteArchiveIntervalSummaries(destination, []remoteArchiveBundle{messagingArchiveCoverageBundle(t, "a", javaRecord(base)), peer}); err != nil {
+				t.Fatal(err)
+			}
+			records := readMergedSummaries(t, destination)
+			if len(records) != 1 || records[0].JavaHTTP == nil || records[0].JavaHTTP.Incomplete != tc.incomplete {
+				t.Fatalf("merged Java envelope: %+v", records)
+			}
+		})
+	}
+}

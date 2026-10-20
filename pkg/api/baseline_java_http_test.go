@@ -99,11 +99,64 @@ func TestJavaHTTPBaselineFindingsPreservePairedUnitsAndQualification(t *testing.
 		t.Run(name, func(t *testing.T) {
 			copy := row
 			change(&copy)
-			fs := baselineJavaHTTPFindings(copy, "b", copy.Baselines["b"])
+			fs := baselineJavaHTTPFindings(copy, "b", copy.Baselines["b"], defaultBaselineComparisonPolicy())
 			if len(fs) != 1 || fs[0].Status != "unverified" {
 				t.Fatal(fs)
 			}
 		})
+	}
+}
+
+// A discarded body's zero retained size is logging policy, not a response
+// representation; it leaves response values unavailable, request values intact.
+func TestJavaHTTPBaselineDiscardedResponsesAreNotResponseSizes(t *testing.T) {
+	m := baselineJavaFixture(4)
+	encoded, decoded, prepared, zero, decode, encode := int64(8), int64(4), int64(4), int64(0), 1.0, 2.0
+	protocol.MergeJavaHTTPDiagnostic(&m.JavaHTTP, &protocol.JavaHTTPDiagnostics{Version: 1, Mode: "embedded_opaque_bytes", InputState: "decoded", RequestEncodedBytes: encoded, RequestDecodedBytes: &decoded, PreparedRequestBodyBytes: &prepared, AppliedRequestCompression: "none", ResponseState: "discarded", ResponseRetainedBytes: &zero, ResponseBase64Bytes: &zero, Base64DecodeMs: &decode, Base64EncodeMs: &encode, EnclosingMs: 10, ObjectFootprint: "unavailable_embedded_opaque_bytes"})
+	m.Samples, m.Successes = 101, 101
+	if !m.JavaHTTP.Valid() || m.JavaHTTP.ResponseDiscarded != 1 || m.JavaHTTP.ResponseRetained.Count != 101 {
+		t.Fatal("fixture", m.JavaHTTP)
+	}
+	values, compression := baselineJavaHTTPValues(m)
+	if compression != "none" || len(values) == 0 {
+		t.Fatal("values", values, compression)
+	}
+	for _, v := range values {
+		response := strings.Contains(v.name, "esponse")
+		if response && v.available || !response && strings.HasPrefix(v.name, "Decoded request") && !v.available {
+			t.Fatalf("%s available=%v", v.name, v.available)
+		}
+	}
+}
+
+func TestJavaHTTPBaselineTimingFindingsUseTheLatencyPolicy(t *testing.T) {
+	fixture := func(decode float64) *BaselineMeasurement {
+		var s *protocol.JavaHTTPSummary
+		encoded, decoded, prepared, response, base64 := int64(8), int64(4), int64(4), int64(3), int64(4)
+		encode := 2.0
+		for range 100 {
+			protocol.MergeJavaHTTPDiagnostic(&s, &protocol.JavaHTTPDiagnostics{Version: 1, Mode: "embedded_opaque_bytes", InputState: "decoded", RequestEncodedBytes: encoded, RequestDecodedBytes: &decoded, PreparedRequestBodyBytes: &prepared, AppliedRequestCompression: "none", ResponseState: "complete", ResponseRetainedBytes: &response, ResponseBase64Bytes: &base64, Base64DecodeMs: &decode, Base64EncodeMs: &encode, EnclosingMs: 100, ObjectFootprint: "unavailable_embedded_opaque_bytes"})
+		}
+		return &BaselineMeasurement{Samples: 100, Successes: 100, JavaHTTP: s}
+	}
+	window := &BaselineLoadWindow{BaselineComparisonWindow: BaselineComparisonWindow{StartSeconds: 0, EndSeconds: 100}, Load: 10}
+	timing := func(current, baseline float64) []string {
+		t.Helper()
+		row := BaselineComparisonRow{ID: "java", Name: "request", Group: "group", Protocol: "java_http", Source: "action", Unit: "ms", Current: fixture(current), Window: window}
+		var metrics []string
+		for _, f := range baselineJavaHTTPFindings(row, "b", BaselineComparisonCell{Measurement: fixture(baseline), Window: window}, defaultBaselineComparisonPolicy()) {
+			if strings.Contains(f.Metric, "approximate P95") {
+				metrics = append(metrics, f.Metric)
+			}
+		}
+		return metrics
+	}
+	// Below the default 10 ms / 10% latency policy: jitter is not a finding.
+	if got := timing(1.05, 1); len(got) != 0 {
+		t.Fatal("timing jitter reported", got)
+	}
+	if got := timing(20, 1); len(got) != 1 || got[0] != "Java Base64 decode approximate P95" {
+		t.Fatal("material timing change not reported", got)
 	}
 }
 
@@ -126,7 +179,7 @@ func TestJavaHTTPBaselineReadsArchivedActionsWithoutBusinessWrapperDuplication(t
 			if missing && i == 99 {
 				d = nil
 			}
-			tx := TransactionEvent{Timestamp: manifest.Provenance.StartedAt.Add(31*time.Second + time.Duration(i)*500*time.Millisecond), ActionName: "request", Group: "checkout", Population: "action", Success: true, DurationMs: 10, ServerTelemetry: &protocol.ServerTelemetry{JavaHTTP: d}}
+			tx := TransactionEvent{Timestamp: manifest.Provenance.StartedAt.Add(31*time.Second + time.Duration(i)*500*time.Millisecond), ActionName: "request", Group: "checkout", Population: "action", DependencyType: "java_http", Success: true, DurationMs: 10, ServerTelemetry: &protocol.ServerTelemetry{JavaHTTP: d}}
 			if err := enc.Encode(tx); err != nil {
 				t.Fatal(err)
 			}
@@ -136,6 +189,11 @@ func TestJavaHTTPBaselineReadsArchivedActionsWithoutBusinessWrapperDuplication(t
 			if err := enc.Encode(tx); err != nil {
 				t.Fatal(err)
 			}
+		}
+		// A same-named action of another protocol is outside the Java population.
+		other := TransactionEvent{Timestamp: manifest.Provenance.StartedAt.Add(80 * time.Second), ActionName: "request", Group: "checkout", Population: "action", DependencyType: "http", Success: true, DurationMs: 10}
+		if err := enc.Encode(other); err != nil {
+			t.Fatal(err)
 		}
 		if err := f.Close(); err != nil {
 			t.Fatal(err)
@@ -157,7 +215,7 @@ func TestJavaHTTPBaselineReadsArchivedActionsWithoutBusinessWrapperDuplication(t
 				if missing {
 					want--
 				}
-				if m.Samples != 100 || m.JavaHTTP == nil || m.JavaHTTP.Samples != want || m.JavaHTTP.Incomplete != missing || m.JavaHTTP.PreparedRequestBody.SumBytes != 4*want {
+				if m.Samples != 101 || m.JavaHTTP == nil || m.JavaHTTP.Population != 100 || m.JavaHTTP.Samples != want || m.JavaHTTP.Incomplete != missing || m.JavaHTTP.PreparedRequestBody.SumBytes != 4*want {
 					t.Fatalf("archive population: %+v", m)
 				}
 			}

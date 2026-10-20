@@ -121,6 +121,160 @@ func checkTelemetryCheckpointFencesAndOrdering(t *testing.T, s *SQLiteStore) {
 	save(w, false)
 }
 
+// Controller-created runs keep a local zone and a monotonic reading, which
+// SQLite retains in the stored start_time text. Identity is the instant.
+func TestTelemetryCheckpointMatchesTheStoredStartInstant(t *testing.T) {
+	s, err := NewSQLiteStore(filepath.Join(t.TempDir(), "checkpoint.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for name, start := range map[string]time.Time{
+		"monotonic":  time.Now(),
+		"local zone": time.Now().In(time.FixedZone("EDT", -4*60*60)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			row := &TestRecord{ID: "zoned-" + strings.ReplaceAll(name, " ", "-"), Name: name, ProjectID: DefaultProjectID, Status: "RUNNING", StartTime: start, InitialProvenance: map[string]any{"run_incarnation": "zoned"}}
+			if err := s.SaveTest(row); err != nil {
+				t.Fatal(err)
+			}
+			w := TelemetryCheckpointWrite{ID: row.ID, ProjectID: row.ProjectID, StartTime: start, RunIncarnation: "zoned", Revision: 1, Payload: `{"version":1}`}
+			if ok, err := s.SaveTelemetryCheckpoint(w); err != nil || !ok {
+				t.Fatalf("live start rejected %v %v", ok, err)
+			}
+			reloaded, err := s.GetTest(row.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, candidate := range []time.Time{start, start.UTC(), reloaded.StartTime} {
+				if raw, revision, err := s.LoadTelemetryCheckpoint(row.ID, "", row.ProjectID, candidate); err != nil || raw != w.Payload || revision != 1 {
+					t.Fatalf("start %v: %q %d %v", candidate, raw, revision, err)
+				}
+			}
+			w.StartTime, w.Revision = reloaded.StartTime, 2
+			if ok, err := s.SaveTelemetryCheckpoint(w); err != nil || !ok {
+				t.Fatalf("reloaded start rejected %v %v", ok, err)
+			}
+			if raw, _, err := s.LoadTelemetryCheckpoint(row.ID, "", row.ProjectID, start.Add(time.Microsecond)); err != nil || raw != "" {
+				t.Fatalf("different instant matched %q %v", raw, err)
+			}
+		})
+	}
+}
+
+// saveTerminalKeepingCheckpoint makes the row terminal through a whole-row save,
+// which (like an older controller's terminal write) leaves the payload, so the
+// clear under test is the only one that can remove it.
+func saveTerminalKeepingCheckpoint(t *testing.T, s *SQLiteStore, row *TestRecord, end *time.Time, start time.Time) {
+	t.Helper()
+	row.Status, row.EndTime = "FAILED", end
+	if err := s.SaveTest(row); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _, err := s.LoadTelemetryCheckpoint(row.ID, "", row.ProjectID, start); err != nil || raw == "" {
+		t.Fatalf("fixture lost its payload before the clear under test %q %v", raw, err)
+	}
+}
+
+func TestTelemetryCheckpointIsDroppedWithTheTerminalArchiveCommit(t *testing.T) {
+	s, err := NewSQLiteStore(filepath.Join(t.TempDir(), "checkpoint.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	start := time.Now().Add(-time.Minute)
+	row := &TestRecord{ID: "archived-checkpoint", Name: "archived", ProjectID: DefaultProjectID, Status: "RUNNING", StartTime: start, InitialProvenance: map[string]any{"run_incarnation": "archived"}}
+	if err := s.SaveTest(row); err != nil {
+		t.Fatal(err)
+	}
+	w := TelemetryCheckpointWrite{ID: row.ID, ProjectID: row.ProjectID, StartTime: start, RunIncarnation: "archived", Revision: 3, Payload: `{"version":1}`}
+	if ok, err := s.SaveTelemetryCheckpoint(w); err != nil || !ok {
+		t.Fatalf("save %v %v", ok, err)
+	}
+	end := time.Now()
+	saveTerminalKeepingCheckpoint(t, s, row, &end, start)
+	record := RunArchiveRecord{TestID: row.ID, ArchivePath: "/archive/run", ManifestPath: "/archive/run/manifest.json", CreatedAt: start, CompletedAt: end}
+	job := &ArchiveFinalizationJob{TestID: row.ID, ProjectID: row.ProjectID, ArchiveRecord: record}
+	if err := s.SaveArchiveFinalizationJob(job); err != nil {
+		t.Fatal(err)
+	}
+	if done, err := s.CompleteArchiveFinalization(row.ID, job.IntentToken, "", &record); err != nil || !done {
+		t.Fatalf("complete %v %v", done, err)
+	}
+	// The revision survives, so no older writer can later reinstate a payload.
+	if raw, revision, err := s.LoadTelemetryCheckpoint(row.ID, "", row.ProjectID, start); err != nil || raw != "" || revision != 3 {
+		t.Fatalf("terminal payload retained %q %d %v", raw, revision, err)
+	}
+	w.Revision = 4
+	if ok, err := s.SaveTelemetryCheckpoint(w); err != nil || ok {
+		t.Fatalf("terminal run accepted a checkpoint %v %v", ok, err)
+	}
+}
+
+// Terminality itself drops the payload, before any archive outcome; every
+// terminal status write shares that lifecycle transaction.
+func TestTelemetryCheckpointIsDroppedAtTerminality(t *testing.T) {
+	s, err := NewSQLiteStore(filepath.Join(t.TempDir(), "checkpoint.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for i, terminal := range []func(id string, end *time.Time) error{
+		func(id string, end *time.Time) error {
+			_, err := s.UpdateTestStatusIfActive(id, "ABORTED", end, "stopped")
+			return err
+		},
+		func(id string, end *time.Time) error { return s.UpdateTestStatus(id, "COMPLETE", end, "") },
+	} {
+		start := time.Now().Add(-time.Minute)
+		id := fmt.Sprintf("terminal-checkpoint-%d", i)
+		if err := s.SaveTest(&TestRecord{ID: id, Name: id, ProjectID: DefaultProjectID, Status: "RUNNING", StartTime: start, InitialProvenance: map[string]any{"run_incarnation": id}}); err != nil {
+			t.Fatal(err)
+		}
+		if ok, err := s.SaveTelemetryCheckpoint(TelemetryCheckpointWrite{ID: id, ProjectID: DefaultProjectID, StartTime: start, RunIncarnation: id, Revision: 5, Payload: `{"version":1}`}); err != nil || !ok {
+			t.Fatalf("save %v %v", ok, err)
+		}
+		end := time.Now()
+		if err := terminal(id, &end); err != nil {
+			t.Fatal(err)
+		}
+		if raw, revision, err := s.LoadTelemetryCheckpoint(id, "", DefaultProjectID, start); err != nil || raw != "" || revision != 5 {
+			t.Fatalf("%s: terminal payload retained %q %d %v", id, raw, revision, err)
+		}
+	}
+}
+
+// A terminal run whose archive never commits drops its payload when the
+// definitive archive failure is recorded.
+func TestTelemetryCheckpointIsDroppedWithADefinitiveArchiveFailure(t *testing.T) {
+	s, err := NewSQLiteStore(filepath.Join(t.TempDir(), "checkpoint.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	start := time.Now().Add(-time.Minute)
+	row := &TestRecord{ID: "failed-archive-checkpoint", Name: "failed", ProjectID: DefaultProjectID, Status: "RUNNING", StartTime: start, InitialProvenance: map[string]any{"run_incarnation": "failed"}}
+	if err := s.SaveTest(row); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := s.SaveTelemetryCheckpoint(TelemetryCheckpointWrite{ID: row.ID, ProjectID: row.ProjectID, StartTime: start, RunIncarnation: "failed", Revision: 2, Payload: `{"version":1}`}); err != nil || !ok {
+		t.Fatalf("save %v %v", ok, err)
+	}
+	end := time.Now()
+	saveTerminalKeepingCheckpoint(t, s, row, &end, start)
+	stored, err := s.GetTest(row.ID)
+	if err != nil || stored.EndTime == nil {
+		t.Fatalf("terminal row %+v %v", stored, err)
+	}
+	failure := &RunArchiveFailure{TestID: row.ID, ProjectID: row.ProjectID, StartTime: stored.StartTime, EndTime: *stored.EndTime, Status: "FAILED", Reason: RunArchiveFailureRemoteUnavailable}
+	if saved, err := s.SaveRunArchiveFailure(failure, "", ""); err != nil || !saved {
+		t.Fatalf("failure %v %v", saved, err)
+	}
+	if raw, revision, err := s.LoadTelemetryCheckpoint(row.ID, "", row.ProjectID, start); err != nil || raw != "" || revision != 2 {
+		t.Fatalf("terminal payload retained %q %d %v", raw, revision, err)
+	}
+}
+
 func TestTelemetryCheckpointMigrationAndRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "checkpoint.db")
 	s, err := NewSQLiteStore(path)

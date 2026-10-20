@@ -50,8 +50,10 @@ and may leave a charged owner requiring reconciliation or process shutdown.
 A new context cannot reuse an unretired capture owner.
 
 The two-second caller wait is separate from the shared **30-second capture
-finalization deadline**. The first document join, runtime join or native close
-starts that deadline once; retries and later phases cannot renew it. Close,
+finalization deadline**. The first teardown document join, runtime join or
+finish starts that deadline once; retries and later phases cannot renew it. A
+mid-session resource-limit close does not start it, so a VUser that keeps
+running after an overflow still has the full budget at teardown. Close,
 flush, scrubbing and durable publication must qualify within it. Expiration
 returns `browser HAR finalization budget exhausted`, emits the
 `har_finalization_budget_exhausted` reason and increments the generator-wide
@@ -71,10 +73,10 @@ Native Linux/Windows crash qualification remains pending.
 
 ### Outstanding request limit
 
-An active native HAR capture allows **256 outstanding issued requests**. The
+An active native HAR capture allows **1,024 outstanding issued requests**. The
 synchronous native request callback counts issued work, including browser-queued
 requests, independently of the bounded diagnostics queue. Completion releases
-its count once. More than 256 outstanding requests signals the existing native
+its count once. More than 1,024 outstanding requests signals the existing native
 close owner, records `har_in_flight` as a resource failure and marks unfinished
 document observations censored. Issued counts and incomplete evidence remain
 visible while closure joins the writer. This is overflow-triggered context
@@ -83,7 +85,9 @@ native callback arrives before closure completes.
 
 Completed sequential requests do not consume the concurrent budget. The
 512-entry request-identity inventory and 100,000-entry capture limit remain
-separate bounds. Sessions without active HAR capture retain their existing
+separate bounds; a page with more than 512 outstanding requests loses
+per-request identities, and its evidence is marked incomplete, before the
+outstanding-request limit closes the context. Sessions without active HAR capture retain their existing
 resource limits. No new request routing is installed and HTTP cache behavior
 is unchanged. Cancellation racing overflow uses the same exact close owner;
 a caller timeout retains the working file, lease and charge until physical join.

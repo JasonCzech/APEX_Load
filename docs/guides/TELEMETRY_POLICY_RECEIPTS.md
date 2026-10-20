@@ -60,7 +60,7 @@ New coverage records use `telemetry_coverage.v3`. Duplicate or late publication 
 
 Generators also retain bounded, per-group result-buffer drain intervals on their published clock, independently of the effective or clamped `WindowMs` rate denominator. Nanosecond boundaries travel in `MetricsBatch.collection_windows` and are retained with source epoch, execution generation and collection sequence in generator archive telemetry JSON (including Parquet’s `telemetry_json`). Lifecycle replays keep the same collection intervals; only groups actually collected contribute new intervals. Missing, malformed or bounded-out intervals leave `collection_windows_complete` false. This means completeness of the reported drain cohort, not qualified cross-host coverage, request start/end times, or proof of controller delivery. The receipt-time coverage calculation stays at v3.
 
-Controllers checkpoint accepted collection identities, cumulative run totals, source publication/counter ledgers, receipt-time coverage and bounded source windows together. The checkpoint belongs to the run incarnation and execution generation; execution-lease fencing and increasing revisions reject stale writers. During HA adoption, compatible checkpoints restore cursors and their counted effects together instead of rebuilding totals from sampled history. A replay of a retained collection cannot add totals or move coverage into the takeover gap. Stored collection evidence is not proof of dashboard delivery.
+Controllers checkpoint accepted collection identities, cumulative run totals, source publication/counter ledgers, receipt-time coverage and bounded source windows together. The checkpoint belongs to the run incarnation and execution generation; execution-lease fencing and increasing revisions reject stale writers. During HA adoption, compatible checkpoints restore cursors and their counted effects together instead of rebuilding totals from sampled history. A replay of a retained collection cannot add totals or move coverage into the takeover gap. Stored collection evidence is not proof of dashboard delivery. Only runs whose failover policy is `continue` (the runs HA adoption can resume) write checkpoints. A terminal run is never adopted again: the terminal status write removes its checkpoint payload in the same transaction, and the revision is kept so no stale writer can restore it.
 
 The controller retains the latest 1,024 identified collections, with at most 4,096 group intervals across them. Eviction is explicit. The checkpoint has an 8 MiB limit; a failed or oversized write leaves the prior durable snapshot intact. Retained windows, policy hashes and available cumulative loss-counter readings also appear in the source-epoch archive sidecar. Its byte allowance trims optional window detail before existing source/counter records and marks that detail incomplete. Original generator archive evidence remains unchanged.
 
@@ -94,7 +94,11 @@ and tokens are not stored in the envelope: opaque keyed fingerprints pin the
 complete authorized webhook configuration. Identical configurations collapse
 into one destination; event-filter order does not matter. A changed, disabled or
 removed configuration revokes its pending delivery rather than redirecting it.
-A failed configuration read remains retryable. A no-recipient decision stays
+Recipients are read from the durable settings at publication and again before
+each send. A webhook whose stored configuration does not validate on this
+controller (for example one saved by a peer with a different outbound or
+cleartext policy) is skipped; it neither blocks the archive commit nor
+suppresses the other recipients. A failed configuration read remains retryable. A no-recipient decision stays
 empty even if webhooks are enabled later.
 
 The execution leader polls once per second. Preparation and completion observers
@@ -102,8 +106,9 @@ are limited to 16; sends reuse the existing 16 global and two-per-destination-st
 dispatcher slots. A claim lasts 60 seconds, with at most eight durable attempts
 and exponential backoff capped at one minute. Each admitted dispatch retains the
 existing HTTP retry policy, so an attempt is not necessarily one HTTP request.
-Saturation, transport failure and interrupted delivery remain retryable until the
-attempt budget is exhausted. Successful destinations are not retried with failed
+Dispatcher saturation sends nothing, so it returns the claimed attempt and retries
+about a second later. Transport failure and interrupted delivery remain retryable
+until the attempt budget is exhausted. Successful destinations are not retried with failed
 ones. Successful shutdown cancels and joins the storage-writing observers; a shutdown
 deadline error is not proof that all owned work has joined. Exact lease and
 run-incarnation checks reject stale or deleted work immediately before dispatch;

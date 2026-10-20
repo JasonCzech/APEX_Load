@@ -52,17 +52,23 @@ func telemetryDestinationFingerprint(key []byte, webhook NotificationWebhookSett
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
+// telemetryNotificationDestinations derives the enabled telemetry_acceptance
+// destinations from the durable settings, so revocations are honored before any
+// send. Each webhook is validated on its own: whole-document validity depends on
+// this process's environment and unrelated sections, so a route this controller
+// cannot deliver must not block the archive commit or suppress other recipients.
 func (s *Server) telemetryNotificationDestinations(ctx context.Context, key []byte) (map[string]NotificationWebhookSettings, error) {
-	if err := s.runner.refreshSystemSettingsFromStoreContext(ctx, true); err != nil {
-		return nil, err
-	}
-	settings := s.runner.currentNotificationSettings()
-	if err := validateNotificationsSettings(settings); err != nil {
+	webhooks, err := s.durableNotificationWebhooks(ctx)
+	if err != nil {
 		return nil, err
 	}
 	out := map[string]NotificationWebhookSettings{}
-	for _, webhook := range settings.Webhooks {
+	for index, webhook := range webhooks {
 		if !webhook.Enabled || !notificationWebhookMatchesEvent(webhook, "telemetry_acceptance") {
+			continue
+		}
+		if validateNotificationsSettings(NotificationsSettings{Webhooks: []NotificationWebhookSettings{webhook}}) != nil {
+			slog.Warn("telemetry notification webhook skipped: its stored configuration does not validate on this controller", "webhook_index", index)
 			continue
 		}
 		id, err := telemetryDestinationFingerprint(key, webhook)
@@ -72,6 +78,34 @@ func (s *Server) telemetryNotificationDestinations(ctx context.Context, key []by
 		out[id] = webhook
 	}
 	return out, nil
+}
+
+// durableNotificationWebhooks reads the stored routes without requiring the
+// whole settings document to validate here. A failed read remains retryable.
+func (s *Server) durableNotificationWebhooks(ctx context.Context) ([]NotificationWebhookSettings, error) {
+	if s.runner.settingsStore == nil {
+		return s.runner.currentNotificationSettings().Webhooks, nil
+	}
+	var raw string
+	var err error
+	if store, ok := s.runner.settingsStore.(contextualSettingsPersistence); ok {
+		raw, err = store.GetSettingContext(ctx, systemSettingsStoreKey)
+	} else if err = ctx.Err(); err == nil {
+		raw, err = s.runner.settingsStore.GetSetting(systemSettingsStoreKey)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var stored struct {
+		Notifications NotificationsSettings `json:"notifications"`
+	}
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+		return nil, err
+	}
+	return cloneNotificationsSettings(stored.Notifications).Webhooks, nil
 }
 
 func (s *Server) telemetryNotificationPublication(ctx context.Context, testID string, manifest *RunArchiveManifest) (storage.TelemetryNotificationPublication, error) {
@@ -330,6 +364,8 @@ func (s *Server) deliverTelemetryNotification(ctx context.Context, store telemet
 		default:
 		}
 	}) {
+		// No request was sent: refused admission does not spend an attempt.
+		outcome = "deferred"
 		return
 	}
 	select {

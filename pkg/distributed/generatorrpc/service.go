@@ -3589,10 +3589,12 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	out := MetricAggregate{}
 	durations := engine.NewDurationDistributionMerge()
 	var weightedAvgMs, weightedDNSMs, weightedConnectMs, weightedTLSMs, weightedTTFBMs float64
+	javaUncounted := false
 	for _, value := range values {
 		if value.Count == 0 {
 			continue
 		}
+		javaUncounted = javaUncounted || protocol.JavaHTTPPeerUncounted(value.JavaHTTP, value.Count, value.DependencyType)
 		if out.Name == "" {
 			out.Name = value.Name
 		}
@@ -3615,6 +3617,9 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	}
 	if out.Count == 0 {
 		return nil
+	}
+	if javaUncounted {
+		out.JavaHTTP.ForgetPopulation()
 	}
 	out.JavaHTTP = javaHTTPSummaryForCount(out.JavaHTTP, out.Count)
 	out.MessagingVersion = 1

@@ -662,6 +662,11 @@ func (s *SQLiteStore) completeArchiveFinalization(testID string, intentToken str
 	if _, err := tx.Exec(`DELETE FROM run_archive_failures WHERE test_id = ?`, testID); err != nil {
 		return false, err
 	}
+	// A terminal run is never adopted again: drop its controller recovery
+	// payload with the archive commit instead of retaining it in the row.
+	if _, err := tx.Exec(`UPDATE tests SET telemetry_checkpoint_json = NULL WHERE id = ? AND telemetry_checkpoint_json IS NOT NULL AND status IN ('COMPLETE', 'FAILED', 'ABORTED')`, testID); err != nil {
+		return false, err
+	}
 	// The archive now durably holds the evidence its accepted receipts
 	// claim: they are published with it, in the same transaction, so a crash
 	// after the commit cannot leave them accepted forever.

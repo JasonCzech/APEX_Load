@@ -2119,6 +2119,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       }
       return
     }
+    // The editor's save and approval receipts are recorded against the reviewed
+    // options, so a review those options no longer describe cannot open.
+    if (!reviewMatchesCurrentOptions) {
+      setError('Conversion options changed after this review was generated. Validate the archive again before opening its draft in the Visual Editor.')
+      return
+    }
     const sourceItemId = selectedItem?.id || ''
     const sourceScriptIndex = activeResultScriptIndex
     void (async () => {
@@ -2126,7 +2132,6 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       if (currentScript) {
         const prepared = latestPreparedReviewRef.current
         const item = importItemsRef.current.find(candidate => candidate.id === sourceItemId)
-        if (!item || prepared.itemId !== sourceItemId || prepared.scriptIndex !== sourceScriptIndex) return
         const generation = prepared.generation
         const project = prepared.projectId || ''
         const destination = folderId || null
@@ -2135,7 +2140,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           && (destinationFolderIdRef.current || null) === destination
           && importOptionsIdentity(optionsRef.current) === optionsIdentity
           && importItemsRef.current.find(candidate => candidate.id === sourceItemId)?.reviewGeneration === generation
-        if (!contextMatches()) return
+        if (!item || prepared.itemId !== sourceItemId || prepared.scriptIndex !== sourceScriptIndex || !contextMatches()) {
+          setError('The import review changed while its draft was being prepared. Review the current draft, then open it in the Visual Editor again.')
+          return
+        }
         if (getEnterpriseArchiveResultScripts(item.result).every((_script, index) => index === sourceScriptIndex || enterpriseArchiveResultScriptIsHandled(item, index))) {
           void discardQueuedSourceSecretSessions(importItemsRef.current, [sourceItemId])
         }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -180,7 +181,13 @@ func telemetryCheckpointWithinBounds(cp *telemetryCheckpoint) bool {
 	return true
 }
 
-func decodeTelemetryCheckpoint(raw string, revision int64, test *ManagedTest) (*telemetrySourceLedger, runTotalsAccumulator, error) {
+// errTelemetryCheckpointSuperseded marks a compatible snapshot written before the
+// last term that armed run continuity. That term may have counted windows the
+// snapshot lacks, so recovery uses stored history and may replace the payload.
+var errTelemetryCheckpointSuperseded = errors.New("telemetry checkpoint predates the adopted execution term")
+
+// minGeneration is the execution term of the continuity checkpoint being adopted.
+func decodeTelemetryCheckpoint(raw string, revision int64, test *ManagedTest, minGeneration uint64) (*telemetrySourceLedger, runTotalsAccumulator, error) {
 	var cp telemetryCheckpoint
 	var a runTotalsAccumulator
 	if len(raw) == 0 || len(raw) > storage.MaxTelemetryCheckpointBytes {
@@ -214,6 +221,9 @@ func decodeTelemetryCheckpoint(raw string, revision int64, test *ManagedTest) (*
 		cp.Windows == nil || cp.Groups == nil || cp.Coverage == nil || cp.Requirements == nil ||
 		!telemetryCheckpointWithinBounds(&cp) {
 		return nil, a, fmt.Errorf("incompatible telemetry checkpoint")
+	}
+	if cp.Generation < minGeneration {
+		return nil, a, errTelemetryCheckpointSuperseded
 	}
 	l := newTelemetrySourceLedger()
 	l.truncated, l.adopted = cp.Truncated, cp.Adopted
@@ -322,7 +332,10 @@ func (tr *TestRunner) persistTelemetryCheckpoint(test *ManagedTest) {
 		return
 	}
 	tr.mu.Lock()
-	if managedTestRunIncarnation(test) == "" || tr.tests[test.ID] != test || !tr.holdsExecutionLeadership() || !test.runTotals.initialized || test.telemetryCheckpointReadOnly {
+	// Only a continue-policy run arms continuity and can be adopted, which is
+	// the sole reader of this snapshot. Other runs skip the per-batch copy and write.
+	if managedTestRunIncarnation(test) == "" || tr.tests[test.ID] != test || !tr.holdsExecutionLeadership() || !test.runTotals.initialized || test.telemetryCheckpointReadOnly ||
+		effectiveFailoverPolicy(test.Assignment) != failoverPolicyContinue {
 		tr.mu.Unlock()
 		return
 	}
@@ -348,7 +361,7 @@ func (tr *TestRunner) persistTelemetryCheckpoint(test *ManagedTest) {
 
 // Called only after the successor has secured the generators, before streams
 // resume. Never combine a restored cursor with totals reconstructed from history.
-func (tr *TestRunner) restoreTelemetryCheckpoint(test *ManagedTest, generation uint64) {
+func (tr *TestRunner) restoreTelemetryCheckpoint(test *ManagedTest, generation, priorGeneration uint64) {
 	store, ok := tr.historyStore.(telemetryCheckpointStore)
 	if !ok {
 		return
@@ -361,7 +374,7 @@ func (tr *TestRunner) restoreTelemetryCheckpoint(test *ManagedTest, generation u
 	if loadErr != nil {
 		slog.Warn("telemetry checkpoint read failed", "test_id", identity.ID, "error", loadErr)
 	}
-	ledger, totals, err := decodeTelemetryCheckpoint(raw, revision, &identity)
+	ledger, totals, err := decodeTelemetryCheckpoint(raw, revision, &identity, priorGeneration)
 	if loadErr != nil {
 		err = loadErr
 	}
@@ -380,6 +393,10 @@ func (tr *TestRunner) restoreTelemetryCheckpoint(test *ManagedTest, generation u
 	// Even an unknown future payload must not be overwritten by an older writer.
 	if revision > test.telemetryCheckpointRevision {
 		test.telemetryCheckpointRevision = revision
+	}
+	if errors.Is(err, errTelemetryCheckpointSuperseded) {
+		slog.Info("telemetry checkpoint predates the adopted execution term; recovering from stored history", "test_id", test.ID)
+		return
 	}
 	if err != nil {
 		test.telemetryCheckpointReadOnly = true

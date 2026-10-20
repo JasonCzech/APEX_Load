@@ -16,7 +16,7 @@ git merge-base --is-ancestor origin/main HEAD
 export APEXLOAD_BROWSER_TESTS=require
 APEXLOAD_HAR_COMPAT_FILE='/Users/jasonczech/Downloads/AIA attone--perfhyper2 (2).zip' \
 APEXLOAD_HAR_COMPAT_SHA256=7469ebdef88a576cd3cfa5891318a4aa5afb4efe97fccb410df339fc609ddef7 \
-APEXLOAD_HAR_COMPAT_PRIVATE_SCRIPT= \
+APEXLOAD_HAR_COMPAT_PRIVATE_SCRIPT='' \
 APEXLOAD_HAR_COMPAT_SUMMARY="$out/har-import-applied-summary.json" \
 go test -overlay=/private/tmp/apex-roadmap-mapping-capability/applied-har-overlay.json -timeout=20m -json ./... > "$out/full-go-applied.jsonl" 2>&1
 python3 scripts/check-docs.py > "$out/applied-docs-final.log" 2>&1

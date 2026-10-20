@@ -1,0 +1,34 @@
+{
+  "integrated-full-go": {
+    "passed_packages": 168,
+    "top_pass": 17789,
+    "nested_pass": 17722,
+    "top_skip": 33,
+    "nested_skip": 5,
+    "failures": []
+  },
+  "integrated-native-worker": {
+    "passed_packages": 1,
+    "top_pass": 165,
+    "nested_pass": 310,
+    "top_skip": 0,
+    "nested_skip": 0,
+    "failures": []
+  },
+  "integrated-native-api": {
+    "passed_packages": 1,
+    "top_pass": 3,
+    "nested_pass": 16,
+    "top_skip": 0,
+    "nested_skip": 0,
+    "failures": []
+  },
+  "integrated-postgres-consent": {
+    "passed_packages": 1,
+    "top_pass": 1,
+    "nested_pass": 9,
+    "top_skip": 0,
+    "nested_skip": 0,
+    "failures": []
+  }
+}

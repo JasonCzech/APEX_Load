@@ -82,6 +82,11 @@ func buildNativeJavaHTTPSeries(ctx context.Context, record *storage.RunArchiveRe
 		if tx.Timestamp.Before(from) || !tx.Timestamp.Before(to) || tx.ActionName != q.Filters["action"] || tx.BusinessTransaction {
 			return nil
 		}
+		// A same-named action of another protocol is outside the Java
+		// population; it neither qualifies nor refuses a Java bucket.
+		if tx.DependencyType != "java_http" && (tx.ServerTelemetry == nil || tx.ServerTelemetry.JavaHTTP == nil) {
+			return nil
+		}
 		population := archiveEventPopulation(*tx)
 		if population == "transaction" {
 			return nil
@@ -105,9 +110,10 @@ func buildNativeJavaHTTPSeries(ctx context.Context, record *storage.RunArchiveRe
 			return nil
 		}
 		// A collection-window response is truthful retained evidence in reports,
-		// but cannot qualify a complete native response comparison.
-		if d.ResponseState == "collection_window" && (q.Metric == "java_http_retained_response_bytes" || q.Metric == "java_http_response_base64_bytes" || q.Metric == "java_http_base64_per_retained") {
-			refuse("response_collection_window")
+		// but cannot qualify a complete native response comparison. A discarded
+		// body's zero retained size is the logging policy, not a response size.
+		if (d.ResponseState == "collection_window" || d.ResponseState == "discarded") && (q.Metric == "java_http_retained_response_bytes" || q.Metric == "java_http_response_base64_bytes" || q.Metric == "java_http_base64_per_retained") {
+			refuse("response_" + d.ResponseState)
 			return nil
 		}
 		n, den, ok := nativeJavaHTTPValue(d, q.Metric)

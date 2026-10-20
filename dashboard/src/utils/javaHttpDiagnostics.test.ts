@@ -32,11 +32,19 @@ it('labels counts, coverage and unavailable object footprint without legacy fiel
 
 it('retains archive action populations and keeps old archives absent', () => {
   expect(javaHTTPActionsFromArchive({ legacy: { transactions: 10 } })).toBeUndefined()
-  const summary = javaHTTPFixture()
-  expect(javaHTTPActionsFromArchive({ request: { transactions: 3, actual_action_samples: 2, java_http: summary }, legacy: { transactions: 10 } })?.actions).toEqual({ request: { population: 2, diagnostics: summary } })
+  const summary = { ...javaHTTPFixture(), population: 2 }
+  expect(javaHTTPActionsFromArchive({ request: { transactions: 3, java_http: summary }, legacy: { transactions: 10 } })?.actions).toEqual({ request: { population: 2, diagnostics: summary } })
 })
 
 it('does not infer an absent actual-action population from mixed transaction totals', () => {
   const summary = javaHTTPFixture()
   expect(javaHTTPActionsFromArchive({ request: { transactions: 9, java_http: summary } })).toEqual({ version: 1, incomplete: true, unavailable_reason: 'malformed' })
+})
+
+it('keeps every archived action; the 128-action bound is the live envelope only', () => {
+  const summary = { ...javaHTTPFixture(), population: 1 }
+  const actions = Object.fromEntries(Array.from({ length: 129 }, (_, i) => [`action-${i}`, { transactions: 1, java_http: summary }]))
+  const evidence = javaHTTPActionsFromArchive(actions)
+  expect(evidence?.unavailable_reason).toBeUndefined()
+  expect(Object.keys(evidence?.actions ?? {})).toHaveLength(129)
 })

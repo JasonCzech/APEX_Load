@@ -189,6 +189,37 @@ func TestLegacyInterruptedRunMarkerIsUpgradedAndResolved(t *testing.T) {
 	}
 }
 
+// A journal-less uncertain evacuation that a restart reconciles keeps one
+// STOPPING instruction (the interrupted-stop guidance), and its terminal error
+// keeps neither.
+func TestInterruptedUncertainEvacuationDropsItsResolveInstruction(t *testing.T) {
+	runner, store, leadership := newAdoptionTestRunner(t)
+	interruptedRunBackend(runner, map[string]bool{"gen-a:9091": true})
+	owner, generation := leadership.executionLeaseTerm()
+	started := time.Now().UTC().Add(-time.Minute)
+	cause := uncertainEvacuationReasonPrefix + "replacement commit response was lost"
+	if err := store.SaveTest(&storage.TestRecord{ID: "interrupted-evacuation", Name: "interrupted-evacuation", Status: "STOPPING", Error: cause + uncertainEvacuationIntervention, ProjectID: storage.DefaultProjectID, StartTime: started, StartedAt: &started, Groups: []any{}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, saved, err := store.PrepareRunArchiveCollection("interrupted-evacuation", storage.DefaultProjectID, started, map[string]string{"gen-a:9091": strings.Repeat("a", 64)}, executionLeaseName, owner); err != nil || !saved {
+		t.Fatalf("prepare participant journal = (%v, %v)", saved, err)
+	}
+	if err := runner.reloadStoredTests(); err != nil {
+		t.Fatal(err)
+	}
+	record := storedStatus(t, store, "interrupted-evacuation")
+	if record.Status != "STOPPING" || record.Error != cause+"; "+interruptedDistributedStopReason {
+		t.Fatalf("reconciled evacuation row = %s %q", record.Status, record.Error)
+	}
+	if pending := runner.resolveInterruptedDistributedRuns(context.Background(), generation, nil); pending != 0 {
+		t.Fatalf("pending interrupted runs = %d, want 0", pending)
+	}
+	record = storedStatus(t, store, "interrupted-evacuation")
+	if record.Status != "FAILED" || !strings.HasPrefix(record.Error, cause+"; ") || strings.Contains(record.Error, "interrupted-stop/resolve") || strings.Contains(record.Error, "stays STOPPING") {
+		t.Fatalf("resolved evacuation run = %s %q", record.Status, record.Error)
+	}
+}
+
 func TestInterruptedRunMarkerStripsEitherForm(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{interruptedDistributedStopReason, ""},

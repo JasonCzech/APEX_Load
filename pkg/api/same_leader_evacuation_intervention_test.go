@@ -155,7 +155,7 @@ func testSameLeaderEvacuationAttestation(t *testing.T, exhausted bool) {
 		t.Fatalf("same-leader resolution=%d %s", rec.Code, rec.Body.String())
 	}
 	record, err = store.GetTest(test.ID)
-	if err != nil || record.Status != "FAILED" || record.EndTime == nil || !strings.HasPrefix(record.Error, sameLeaderEvacuationAttestedProof) || !strings.Contains(record.Error, "replacement generation rejected after restart") {
+	if err != nil || record.Status != "FAILED" || record.EndTime == nil || !strings.HasPrefix(record.Error, sameLeaderEvacuationAttestedProof) || !strings.Contains(record.Error, "replacement generation rejected after restart") || strings.Contains(record.Error, uncertainEvacuationIntervention) {
 		t.Fatalf("terminal proof=%+v err=%v", record, err)
 	}
 	if currentOwner, currentGeneration := tr.leadership.executionLeaseTerm(); currentOwner != owner || currentGeneration != generation {

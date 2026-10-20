@@ -789,14 +789,24 @@ func (tr *TestRunner) persistTelemetrySourceArchive(ctx context.Context, test *M
 	var count int64
 	err = writeArchiveArtifactDurableWithWriter(record.ArchivePath, telemetrySourcesFileName, nil, 0600, func(file *os.File, _ []byte) (int, error) {
 		out := &archiveOutputFile{file: file, budget: budget}
-		for _, epoch := range epochs {
+		// Preserve every epoch's pre-existing source/counter record before any
+		// optional source windows: reserve each later record's window-free size.
+		reserve := make([]int, len(epochs)+1)
+		for i := len(epochs) - 1; i >= 0; i-- {
+			base := epochs[i]
+			base.CollectionWindows, base.CollectionWindowsTruncated = nil, true
+			line, err := json.Marshal(base)
+			if err != nil {
+				return 0, err
+			}
+			reserve[i] = reserve[i+1] + len(line) + 1
+		}
+		for i, epoch := range epochs {
 			line, err := json.Marshal(epoch)
 			if err != nil {
 				return 0, err
 			}
-			// Preserve pre-existing source/counter evidence if optional source
-			// windows would exhaust this sidecar's configured allowance.
-			for !budget.admits(len(line)+1) && len(epoch.CollectionWindows) > 0 {
+			for !budget.admits(len(line)+1+reserve[i+1]) && len(epoch.CollectionWindows) > 0 {
 				epoch.CollectionWindows = epoch.CollectionWindows[:len(epoch.CollectionWindows)/2]
 				epoch.CollectionWindowsTruncated = true
 				truncated = true

@@ -1,0 +1,170 @@
+[
+  {
+    "chunk_group": "NATIVE_ANALYTICS.js",
+    "main_bytes": 0,
+    "current_bytes": 24664,
+    "delta_bytes": 24664
+  },
+  {
+    "chunk_group": "MonitoringPage.js",
+    "main_bytes": 50750,
+    "current_bytes": 52137,
+    "delta_bytes": 1387
+  },
+  {
+    "chunk_group": "useApiGuideTopbarContribution.js",
+    "main_bytes": 8865,
+    "current_bytes": 8910,
+    "delta_bytes": 45
+  },
+  {
+    "chunk_group": "SampleScriptImport.js",
+    "main_bytes": 11307,
+    "current_bytes": 11303,
+    "delta_bytes": -4
+  },
+  {
+    "chunk_group": "TestHub.js",
+    "main_bytes": 96585,
+    "current_bytes": 96581,
+    "delta_bytes": -4
+  },
+  {
+    "chunk_group": "ProtocolAssetImport.js",
+    "main_bytes": 19857,
+    "current_bytes": 19853,
+    "delta_bytes": -4
+  },
+  {
+    "chunk_group": "EnterpriseArchiveImport.js",
+    "main_bytes": 48964,
+    "current_bytes": 48960,
+    "delta_bytes": -4
+  },
+  {
+    "chunk_group": "index.js",
+    "main_bytes": 60064,
+    "current_bytes": 60067,
+    "delta_bytes": 3
+  },
+  {
+    "chunk_group": "ScriptsAuthoringSurface.js",
+    "main_bytes": 6579,
+    "current_bytes": 6581,
+    "delta_bytes": 2
+  },
+  {
+    "chunk_group": "ImportDropzone.js",
+    "main_bytes": 1471,
+    "current_bytes": 1470,
+    "delta_bytes": -1
+  },
+  {
+    "chunk_group": "OracleEBusinessReviewImport.js",
+    "main_bytes": 3045,
+    "current_bytes": 3044,
+    "delta_bytes": -1
+  },
+  {
+    "chunk_group": "CommandCenterPrototype.js",
+    "main_bytes": 44772,
+    "current_bytes": 44771,
+    "delta_bytes": -1
+  },
+  {
+    "chunk_group": "UserSettingsPage.js",
+    "main_bytes": 1168,
+    "current_bytes": 1169,
+    "delta_bytes": 1
+  },
+  {
+    "chunk_group": "BrunoImport.js",
+    "main_bytes": 25236,
+    "current_bytes": 25235,
+    "delta_bytes": -1
+  },
+  {
+    "chunk_group": "YAMLImportChooser.js",
+    "main_bytes": 954,
+    "current_bytes": 955,
+    "delta_bytes": 1
+  },
+  {
+    "chunk_group": "SourceMappingReview.js",
+    "main_bytes": 22417,
+    "current_bytes": 22416,
+    "delta_bytes": -1
+  },
+  {
+    "chunk_group": "SettingsPage.js",
+    "main_bytes": 96522,
+    "current_bytes": 96521,
+    "delta_bytes": -1
+  },
+  {
+    "chunk_group": "DashboardPage.js",
+    "main_bytes": 29649,
+    "current_bytes": 29648,
+    "delta_bytes": -1
+  },
+  {
+    "chunk_group": "ApiGuidePage.js",
+    "main_bytes": 3634,
+    "current_bytes": 3633,
+    "delta_bytes": -1
+  },
+  {
+    "chunk_group": "AccessPage.js",
+    "main_bytes": 20533,
+    "current_bytes": 20532,
+    "delta_bytes": -1
+  },
+  {
+    "chunk_group": "importReimport.js",
+    "main_bytes": 25432,
+    "current_bytes": 25433,
+    "delta_bytes": 1
+  },
+  {
+    "chunk_group": "CreateTestModal.js",
+    "main_bytes": 7593,
+    "current_bytes": 7592,
+    "delta_bytes": -1
+  },
+  {
+    "chunk_group": "GitHubSyncModal.js",
+    "main_bytes": 4428,
+    "current_bytes": 4429,
+    "delta_bytes": 1
+  },
+  {
+    "chunk_group": "ImportWorkflowGuide.js",
+    "main_bytes": 524,
+    "current_bytes": 523,
+    "delta_bytes": -1
+  },
+  {
+    "chunk_group": "ScriptEditor.js",
+    "main_bytes": 229135,
+    "current_bytes": 229136,
+    "delta_bytes": 1
+  },
+  {
+    "chunk_group": "ResultsPage.js",
+    "main_bytes": 14902,
+    "current_bytes": 14901,
+    "delta_bytes": -1
+  },
+  {
+    "chunk_group": "ImportInputSupply.js",
+    "main_bytes": 3381,
+    "current_bytes": 3380,
+    "delta_bytes": -1
+  },
+  {
+    "chunk_group": "ScriptsPage.js",
+    "main_bytes": 39076,
+    "current_bytes": 39077,
+    "delta_bytes": 1
+  }
+]

@@ -319,8 +319,14 @@ func (s *SQLiteStore) FinishTelemetryNotificationDelivery(ctx context.Context, c
 	}
 	state := outcome
 	due := now.UTC()
+	refund := 0
 	switch outcome {
 	case "delivered", "revoked":
+	case "deferred":
+		// The local dispatcher refused admission before any request was sent,
+		// so the claim's attempt is returned and the delivery is retried soon.
+		state, refund = "pending", 1
+		due = now.Add(time.Second).UTC()
 	case "retry":
 		if claim.Attempts >= MaxTelemetryNotificationAttempts {
 			state = "exhausted"
@@ -343,7 +349,7 @@ func (s *SQLiteStore) FinishTelemetryNotificationDelivery(ctx context.Context, c
 	if !held {
 		return false, retireFencedTelemetryNotification(tx, claim.EventID)
 	}
-	result, err := tx.Exec(`UPDATE telemetry_notification_deliveries SET state=?,owner_token='',next_attempt=? WHERE event_id=? AND destination=? AND state='leased' AND owner_token=? AND attempts=? AND next_attempt>?`, state, due, claim.EventID, claim.Destination, claim.OwnerToken, claim.Attempts, now.UTC())
+	result, err := tx.Exec(`UPDATE telemetry_notification_deliveries SET state=?,owner_token='',next_attempt=?,attempts=attempts-? WHERE event_id=? AND destination=? AND state='leased' AND owner_token=? AND attempts=? AND next_attempt>?`, state, due, refund, claim.EventID, claim.Destination, claim.OwnerToken, claim.Attempts, now.UTC())
 	if err != nil {
 		return false, err
 	}

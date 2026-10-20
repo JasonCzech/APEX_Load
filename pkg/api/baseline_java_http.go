@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -15,12 +16,21 @@ type baselineJavaValue struct {
 	available  bool
 }
 
+// baselineJavaHTTPPopulation is the summary's own java_http action count, or
+// the measurement's samples for a summary saved before it was counted.
+func baselineJavaHTTPPopulation(m *BaselineMeasurement) int64 {
+	if m.JavaHTTP != nil && m.JavaHTTP.Population > 0 {
+		return m.JavaHTTP.Population
+	}
+	return m.Samples
+}
+
 func baselineJavaHTTPValues(m *BaselineMeasurement) ([]baselineJavaValue, string) {
 	if m == nil || m.JavaHTTP == nil {
 		return nil, "unavailable"
 	}
 	s := m.JavaHTTP
-	if !s.Valid() || s.Incomplete || s.SampleLimitReached || s.InvalidSamples != 0 || s.Samples != m.Samples || s.Samples < 100 {
+	if !s.Valid() || s.Incomplete || s.SampleLimitReached || s.InvalidSamples != 0 || s.Samples != baselineJavaHTTPPopulation(m) || s.Samples < 100 {
 		return nil, "incomplete or insufficient action evidence"
 	}
 	compression := ""
@@ -33,6 +43,9 @@ func baselineJavaHTTPValues(m *BaselineMeasurement) ([]baselineJavaValue, string
 		return nil, "mixed or unavailable request compression"
 	}
 	var values []baselineJavaValue
+	// Collection-window and discarded responses do not retain a complete
+	// response representation; a discarded body's zero size is logging policy.
+	completeResponses := s.ResponseWindow == 0 && s.ResponseDiscarded == 0
 	for _, item := range []struct {
 		name     string
 		m        protocol.JavaHTTPByteMoments
@@ -41,7 +54,7 @@ func baselineJavaHTTPValues(m *BaselineMeasurement) ([]baselineJavaValue, string
 		{"Runtime input representation", s.RequestEncoded, false}, {"Decoded request", s.RequestDecoded, false}, {"Prepared request body", s.PreparedRequestBody, false}, {"Retained response", s.ResponseRetained, true}, {"Response base64 representation", s.ResponseBase64, true},
 	} {
 		value, ok := item.m.MeanBytes()
-		ok = ok && item.m.Count == s.Samples && (!item.response || s.ResponseWindow == 0)
+		ok = ok && item.m.Count == s.Samples && (!item.response || completeResponses)
 		values = append(values, baselineJavaValue{item.name + " mean", "bytes", value, ok})
 	}
 	for _, item := range []struct {
@@ -52,7 +65,7 @@ func baselineJavaHTTPValues(m *BaselineMeasurement) ([]baselineJavaValue, string
 		{"Decoded / encoded request", s.DecodedPerEncoded, false}, {"Prepared / decoded request", s.PreparedPerDecoded, false}, {"Base64 / retained response", s.Base64PerRetained, true},
 	} {
 		value, ok := item.p.Ratio()
-		ok = ok && item.p.Samples == s.Samples && (!item.response || s.ResponseWindow == 0)
+		ok = ok && item.p.Samples == s.Samples && (!item.response || completeResponses)
 		values = append(values, baselineJavaValue{item.name, "ratio", value, ok})
 	}
 	value, ok := s.Base64Work.Share()
@@ -66,7 +79,7 @@ func baselineJavaHTTPValues(m *BaselineMeasurement) ([]baselineJavaValue, string
 	}
 	return values, compression
 }
-func baselineJavaHTTPFindings(row BaselineComparisonRow, baselineID string, cell BaselineComparisonCell) []BaselineComparisonFinding {
+func baselineJavaHTTPFindings(row BaselineComparisonRow, baselineID string, cell BaselineComparisonCell, policy BaselineComparisonPolicy) []BaselineComparisonFinding {
 	if row.Current == nil || cell.Measurement == nil || row.Current.JavaHTTP == nil && cell.Measurement.JavaHTTP == nil {
 		return nil
 	}
@@ -89,11 +102,16 @@ func baselineJavaHTTPFindings(row BaselineComparisonRow, baselineID string, cell
 			continue
 		}
 		delta, pct := baselineDelta(a.value, b.value)
+		// Timing jitter is reviewed under the comparison's latency policy, as
+		// other protocol timings are. Byte representations and ratios are not.
+		if a.unit == "ms" && !(math.Abs(*delta) >= policy.LatencyMs && (pct != nil && math.Abs(*pct) >= policy.LatencyPct || pct == nil && policy.LatencyMs > 0)) {
+			continue
+		}
 		change := "percentage unavailable: baseline zero"
 		if pct != nil {
 			change = fmt.Sprintf("%+.3f%%", *pct)
 		}
-		message := fmt.Sprintf("%s / %s: %s %.6g vs %.6g %s (%+.6g %s; %s); %d/%d observed actions; request compression %s. Advisory evidence only; no acceptance threshold or causal claim.", row.Group, row.Name, a.name, a.value, b.value, a.unit, *delta, a.unit, change, row.Current.Samples, cell.Measurement.Samples, identity)
+		message := fmt.Sprintf("%s / %s: %s %.6g vs %.6g %s (%+.6g %s; %s); %d/%d observed actions; request compression %s. Advisory evidence only; no acceptance threshold or causal claim.", row.Group, row.Name, a.name, a.value, b.value, a.unit, *delta, a.unit, change, baselineJavaHTTPPopulation(row.Current), baselineJavaHTTPPopulation(cell.Measurement), identity)
 		findings = append(findings, BaselineComparisonFinding{BaselineID: baselineID, RowID: row.ID, Category: "transaction", Metric: "Java " + a.name, Message: message, Status: "review"})
 	}
 	return findings
@@ -121,7 +139,7 @@ func baselineJavaHTTPReportLines(c *BaselineComparisonSnapshot) []string {
 			if entry.m == nil || entry.m.JavaHTTP == nil {
 				continue
 			}
-			next := javaHTTPReportLines(entry.id+" / "+row.Group+" / "+row.Name, entry.m.JavaHTTP, entry.m.Samples)
+			next := javaHTTPReportLines(entry.id+" / "+row.Group+" / "+row.Name, entry.m.JavaHTTP, baselineJavaHTTPPopulation(entry.m))
 			if len(lines)+len(next) > 200 {
 				return append(lines, "Additional Java representation evidence remains available in the structured comparison and CSV export.")
 			}

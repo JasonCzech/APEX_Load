@@ -20,7 +20,7 @@ test('Java representations retain their own live action population and archived 
     const response = await route.fetch(), record = await response.json()
     return route.fulfill({ response, json: { ...record, status: archived ? 'COMPLETE' : 'RUNNING', ...(archived ? { archive: { transaction_count: 2 }, started_at: '2026-10-01T00:00:00Z', ended_at: '2026-10-01T00:00:02Z' } : {}), live_metrics: { total_transactions: 999, total_errors: 0, active_vusers: 1, transactions: {}, ...(available ? { java_http: { version: 1, actions: { 'Read object': { population: 2, diagnostics } } } } : {}) } } })
   })
-  await page.route(`**/api/v1/tests/${id}/archive/report*`, route => route.fulfill({ json: { manifest: { test_id: id, test_name: 'Java representations', status: 'COMPLETE', provenance: { started_at: '2026-10-01T00:00:00Z', duration: '2s', total_vusers: 1 } }, overview: { transactions: 999 }, by_action: { 'Read object': { transactions: 3, actual_action_samples: 2, java_http: diagnostics } } } }))
+  await page.route(`**/api/v1/tests/${id}/archive/report*`, route => route.fulfill({ json: { manifest: { test_id: id, test_name: 'Java representations', status: 'COMPLETE', provenance: { started_at: '2026-10-01T00:00:00Z', duration: '2s', total_vusers: 1 } }, overview: { transactions: 999 }, by_action: { 'Read object': { transactions: 3, java_http: { ...diagnostics, population: 2 } } } } }))
   await page.goto(`/#/test/${id}?tab=diagnostics&${scopeQuery(workspace)}`); await page.reload()
   const panel = page.getByRole('region', { name: 'Java HTTP representation diagnostics', exact: true })
   await expect(page.getByText('Create project analytics panel', { exact: true })).toBeVisible()

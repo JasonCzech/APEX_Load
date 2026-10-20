@@ -48,14 +48,14 @@ func TestArchiveFinalizationRejectsChangedIdentityBeforeMutation(t *testing.T) {
 				row.Status = "FAILED"
 			case "record ID":
 				job.ArchiveRecord.TestID = "different-test"
-				if _, err := NewTestRunner(1, NewHub(), store).inspectArchiveFinalizationIdentity(context.Background(), job, row, false); err == nil {
+				if _, err := NewTestRunner(1, NewHub(), store).inspectArchiveFinalizationSource(context.Background(), job, row, false); err == nil {
 					t.Fatal("wrong record ID accepted")
 				}
 				return
 			case "project":
 				// Keep the durable test's project immutable; a stale job must be rejected.
 				job.ProjectID = "wrong-project"
-				if _, err := NewTestRunner(1, NewHub(), store).inspectArchiveFinalizationIdentity(context.Background(), job, row, false); err == nil {
+				if _, err := NewTestRunner(1, NewHub(), store).inspectArchiveFinalizationSource(context.Background(), job, row, false); err == nil {
 					t.Fatal("wrong project accepted")
 				}
 				return
@@ -66,7 +66,7 @@ func TestArchiveFinalizationRejectsChangedIdentityBeforeMutation(t *testing.T) {
 				}
 				if mode == "prepared hash" {
 					job.PreparedManifestJSON = string(prepared)
-					if _, err := NewTestRunner(1, NewHub(), store).inspectArchiveFinalizationIdentity(context.Background(), job, row, false); err == nil {
+					if _, err := NewTestRunner(1, NewHub(), store).inspectArchiveFinalizationSource(context.Background(), job, row, false); err == nil {
 						t.Fatal("untrusted prepared bytes accepted")
 					}
 					return

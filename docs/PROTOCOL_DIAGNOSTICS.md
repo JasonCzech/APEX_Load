@@ -141,17 +141,24 @@ and 1 MiB of JSON. Refusal records a fixed unavailable reason instead of retaini
 an arbitrary prefix. Selected group views omit unscoped Java evidence. Old SQL
 history rows migrate with a NULL field rather than invented zero measurements.
 Raw JSONL/Parquet, interval archives, archived reports and saved baseline
-measurements retain the versioned contract and action denominator. Archived report
-`actual_action_samples` excludes enclosing transactions and unclassified legacy
-records, even when they share an action name; the existing `transactions` total
-keeps its original meaning. An absent action denominator is unavailable.
+measurements retain the versioned contract and action denominator. Each Java
+summary carries its own `population`: actual java_http action executions, with or
+without diagnostics. It excludes enclosing transactions, unclassified legacy
+records and other protocols' actions, even when they share an action name; the
+existing `transactions` total keeps its original meaning. Summaries from older
+generators carry no population, so the action count remains their denominator.
+When a peer that may have run uncounted java_http actions merges with a counted
+one, the population becomes unknown and coverage stays incomplete. An absent
+archived population is unavailable.
 
 Saved native panels select population `java_http_action`, one exact action and
 one series, within 24 hours, 1,000 buckets and 100,000 selected raw observations.
-Byte and timing metrics support mean, min, max and nearest-rank P50/P90/P95/P99;
-the four paired metrics support only `ratio_of_sums`. They do not support generic
+Another protocol's same-named actions are outside that population. Byte and
+timing metrics support mean, min, max and nearest-rank P50/P90/P95/P99; the four
+paired metrics support only `ratio_of_sums`. They do not support generic
 scalar ratios, rates, grouping, overlays, SLA or correlation. Missing/unsupported
-measurements, incomplete source coverage and response collection windows leave
+measurements, incomplete source coverage, response collection windows and
+discarded response bodies (whose zero retained size is the logging policy) leave
 unscored buckets. Distributed archives carrying source-coverage metadata also
 remain unscored in native queries and advisory baseline findings, even when every
 listed source was collected;
@@ -166,7 +173,11 @@ populations with at least 100 samples, compatible workload/window evidence and
 one matching compression identity. Every measurement must cover its own eligible
 population. Paired sums are never replaced by ratios of marginal means. Missing
 measurements and zero denominators remain unverified; baseline zero has no
-invented percent change. These findings do not add Java acceptance metrics or
+invented percent change. Response measurements require every action to retain a
+complete response, so collection-window and discarded responses leave them
+unverified. Timing measurements are reported only when their change
+exceeds the comparison's latency thresholds; representation bytes and paired
+ratios are reported on any change. These findings do not add Java acceptance metrics or
 change the saved regression verdict. Live diagnostics, dedicated archived
 reports and baseline detail views retain each measurement's own denominator.
 

@@ -10,6 +10,9 @@ func (s *JavaHTTPSummary) Valid() bool {
 	if s == nil || s.Version != 1 || s.Mode != "embedded_opaque_bytes" || s.ObjectFootprint != "unavailable_embedded_opaque_bytes" || s.Samples < 0 || s.InvalidSamples < 0 || s.Samples > javaHTTPMaxSamples || s.InvalidSamples > javaHTTPMaxSamples-s.Samples {
 		return false
 	}
+	if s.Population < 0 || s.Population > javaHTTPMaxSamples || s.Population > 0 && s.Population < s.Samples+s.InvalidSamples {
+		return false
+	}
 	for _, n := range []int64{s.RequestCompressionNone, s.RequestCompressionGzip, s.RequestCompressionDeflate} {
 		if n < 0 || n > s.Samples {
 			return false
@@ -59,7 +62,8 @@ func (s *JavaHTTPSummary) Valid() bool {
 		}
 	}
 	w := s.Base64Work
-	if w.Samples < 0 || w.Samples > min(s.Base64Decode.Count, s.Base64Encode.Count) || !javaHTTPFinite(w.Base64Ms) || !javaHTTPFinite(w.EnclosingMs) || w.Base64Ms < 0 || w.EnclosingMs < 0 || w.Base64Ms > w.EnclosingMs*(1+1e-12) || w.EnclosingMs > s.Enclosing.Sum*(1+1e-12) || w.Base64Ms > (s.Base64Decode.Sum+s.Base64Encode.Sum)*(1+1e-12) {
+	tolerance := javaHTTPSumTolerance(s.Samples)
+	if w.Samples < 0 || w.Samples > min(s.Base64Decode.Count, s.Base64Encode.Count) || !javaHTTPFinite(w.Base64Ms) || !javaHTTPFinite(w.EnclosingMs) || w.Base64Ms < 0 || w.EnclosingMs < 0 || w.Base64Ms > w.EnclosingMs*(1+tolerance) || w.EnclosingMs > s.Enclosing.Sum*(1+tolerance) || w.Base64Ms > (s.Base64Decode.Sum+s.Base64Encode.Sum)*(1+tolerance) {
 		return false
 	}
 	if w.Samples == 0 && (w.Base64Ms != 0 || w.EnclosingMs != 0) || w.Samples > 0 && w.EnclosingMs <= 0 {
@@ -74,6 +78,13 @@ func (s *JavaHTTPSummary) Valid() bool {
 }
 
 func javaHTTPFinite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
+
+// javaHTTPSumTolerance bounds the relative rounding of a float sum built from
+// count additions, so near-constant samples accumulated in a different order
+// than their bounds are not mistaken for inconsistent evidence.
+func javaHTTPSumTolerance(count int64) float64 {
+	return max(1e-12, float64(count)*0x1p-52)
+}
 
 func javaHTTPDurationSummaryValid(d DiagnosticDistribution, samples int64) bool {
 	if d.Count < 0 || d.Count > samples || !javaHTTPFinite(d.Sum) || !javaHTTPFinite(d.Min) || !javaHTTPFinite(d.Max) || d.Min < 0 || d.Min > d.Max || d.Max > 24*60*60*1000 || d.Sum < 0 {
@@ -92,7 +103,8 @@ func javaHTTPDurationSummaryValid(d DiagnosticDistribution, samples int64) bool 
 	if d.Count == 0 {
 		return d.Sum == 0 && d.Min == 0 && d.Max == 0
 	}
-	return d.Sum >= d.Min*float64(d.Count)*(1-1e-12) && d.Sum <= d.Max*float64(d.Count)*(1+1e-12)
+	tolerance := javaHTTPSumTolerance(d.Count)
+	return d.Sum >= d.Min*float64(d.Count)*(1-tolerance) && d.Sum <= d.Max*float64(d.Count)*(1+tolerance)
 }
 
 func (s *JavaHTTPSummary) Retained() *JavaHTTPSummary {
@@ -114,6 +126,11 @@ func (s *JavaHTTPSummary) RetainedForPopulation(count int64) *JavaHTTPSummary {
 		return nil
 	}
 	s = s.Retained()
+	// A summary that counted its own java_http population supersedes the
+	// caller's action count, which can include another protocol's actions.
+	if s.Population > 0 {
+		count = s.Population
+	}
 	if count < 0 || s.Samples+s.InvalidSamples > count {
 		s = javaHTTPEmptySummary()
 		s.Incomplete = true
@@ -136,15 +153,26 @@ func MergeJavaHTTPSummary(dst **JavaHTTPSummary, src *JavaHTTPSummary) {
 		*dst = javaHTTPEmptySummary()
 	}
 	d := *dst
+	// A refused source's actions are uncounted, so the merged population is
+	// unknown and callers fall back to their own action count.
 	if !src.Valid() {
 		d.Incomplete = true
+		d.Population = 0
 		return
 	}
 	if src.Samples+src.InvalidSamples > javaHTTPMaxSamples-d.Samples-d.InvalidSamples {
 		d.SampleLimitReached = true
 		d.Incomplete = true
+		d.Population = 0
 		return
 	}
+	// A population merges only when both sides counted theirs; otherwise the
+	// caller's action count remains the denominator.
+	population := int64(0)
+	if d.populationKnown() && src.populationKnown() && src.Population <= javaHTTPMaxSamples-d.Population {
+		population = d.Population + src.Population
+	}
+	d.Population = population
 	d.Samples += src.Samples
 	d.InvalidSamples += src.InvalidSamples
 	d.Incomplete = d.Incomplete || src.Incomplete

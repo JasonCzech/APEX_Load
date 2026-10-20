@@ -5839,9 +5839,6 @@ paths:
                       additionalProperties:
                         type: object
                         properties:
-                          actual_action_samples:
-                            type: integer
-                            format: int64
                           avg_response_ms:
                             type: number
                             format: double
@@ -6110,6 +6107,9 @@ paths:
                                 type: string
                               object_footprint:
                                 type: string
+                              population:
+                                type: integer
+                                format: int64
                               prepared_per_decoded:
                                 type: object
                                 properties:
@@ -6476,9 +6476,6 @@ paths:
                       additionalProperties:
                         type: object
                         properties:
-                          actual_action_samples:
-                            type: integer
-                            format: int64
                           avg_response_ms:
                             type: number
                             format: double
@@ -6747,6 +6744,9 @@ paths:
                                 type: string
                               object_footprint:
                                 type: string
+                              population:
+                                type: integer
+                                format: int64
                               prepared_per_decoded:
                                 type: object
                                 properties:
@@ -7113,9 +7113,6 @@ paths:
                       additionalProperties:
                         type: object
                         properties:
-                          actual_action_samples:
-                            type: integer
-                            format: int64
                           avg_response_ms:
                             type: number
                             format: double
@@ -7384,6 +7381,9 @@ paths:
                                 type: string
                               object_footprint:
                                 type: string
+                              population:
+                                type: integer
+                                format: int64
                               prepared_per_decoded:
                                 type: object
                                 properties:
@@ -7750,9 +7750,6 @@ paths:
                       additionalProperties:
                         type: object
                         properties:
-                          actual_action_samples:
-                            type: integer
-                            format: int64
                           avg_response_ms:
                             type: number
                             format: double
@@ -8021,6 +8018,9 @@ paths:
                                 type: string
                               object_footprint:
                                 type: string
+                              population:
+                                type: integer
+                                format: int64
                               prepared_per_decoded:
                                 type: object
                                 properties:
@@ -8387,9 +8387,6 @@ paths:
                       additionalProperties:
                         type: object
                         properties:
-                          actual_action_samples:
-                            type: integer
-                            format: int64
                           avg_response_ms:
                             type: number
                             format: double
@@ -8658,6 +8655,9 @@ paths:
                                 type: string
                               object_footprint:
                                 type: string
+                              population:
+                                type: integer
+                                format: int64
                               prepared_per_decoded:
                                 type: object
                                 properties:
@@ -9024,9 +9024,6 @@ paths:
                       additionalProperties:
                         type: object
                         properties:
-                          actual_action_samples:
-                            type: integer
-                            format: int64
                           avg_response_ms:
                             type: number
                             format: double
@@ -9295,6 +9292,9 @@ paths:
                                 type: string
                               object_footprint:
                                 type: string
+                              population:
+                                type: integer
+                                format: int64
                               prepared_per_decoded:
                                 type: object
                                 properties:
@@ -9671,9 +9671,6 @@ paths:
                       additionalProperties:
                         type: object
                         properties:
-                          actual_action_samples:
-                            type: integer
-                            format: int64
                           avg_response_ms:
                             type: number
                             format: double
@@ -9942,6 +9939,9 @@ paths:
                                 type: string
                               object_footprint:
                                 type: string
+                              population:
+                                type: integer
+                                format: int64
                               prepared_per_decoded:
                                 type: object
                                 properties:
@@ -10308,9 +10308,6 @@ paths:
                       additionalProperties:
                         type: object
                         properties:
-                          actual_action_samples:
-                            type: integer
-                            format: int64
                           avg_response_ms:
                             type: number
                             format: double
@@ -10579,6 +10576,9 @@ paths:
                                 type: string
                               object_footprint:
                                 type: string
+                              population:
+                                type: integer
+                                format: int64
                               prepared_per_decoded:
                                 type: object
                                 properties:
@@ -10945,9 +10945,6 @@ paths:
                       additionalProperties:
                         type: object
                         properties:
-                          actual_action_samples:
-                            type: integer
-                            format: int64
                           avg_response_ms:
                             type: number
                             format: double
@@ -11216,6 +11213,9 @@ paths:
                                 type: string
                               object_footprint:
                                 type: string
+                              population:
+                                type: integer
+                                format: int64
                               prepared_per_decoded:
                                 type: object
                                 properties:
@@ -13736,9 +13736,6 @@ paths:
                       additionalProperties:
                         type: object
                         properties:
-                          actual_action_samples:
-                            type: integer
-                            format: int64
                           average_rate_per_second:
                             type: number
                             format: double
@@ -14011,6 +14008,9 @@ paths:
                                 type: string
                               object_footprint:
                                 type: string
+                              population:
+                                type: integer
+                                format: int64
                               prepared_per_decoded:
                                 type: object
                                 properties:
@@ -95853,6 +95853,9 @@ paths:
                                             type: string
                                           object_footprint:
                                             type: string
+                                          population:
+                                            type: integer
+                                            format: int64
                                           prepared_per_decoded:
                                             type: object
                                             properties:
@@ -98120,6 +98123,9 @@ paths:
                                           type: string
                                         object_footprint:
                                           type: string
+                                        population:
+                                          type: integer
+                                          format: int64
                                         prepared_per_decoded:
                                           type: object
                                           properties:
@@ -103190,6 +103196,9 @@ paths:
                                             type: string
                                           object_footprint:
                                             type: string
+                                          population:
+                                            type: integer
+                                            format: int64
                                           prepared_per_decoded:
                                             type: object
                                             properties:
@@ -105457,6 +105466,9 @@ paths:
                                           type: string
                                         object_footprint:
                                           type: string
+                                        population:
+                                          type: integer
+                                          format: int64
                                         prepared_per_decoded:
                                           type: object
                                           properties:
@@ -110528,6 +110540,9 @@ paths:
                                             type: string
                                           object_footprint:
                                             type: string
+                                          population:
+                                            type: integer
+                                            format: int64
                                           prepared_per_decoded:
                                             type: object
                                             properties:
@@ -112795,6 +112810,9 @@ paths:
                                           type: string
                                         object_footprint:
                                           type: string
+                                        population:
+                                          type: integer
+                                          format: int64
                                         prepared_per_decoded:
                                           type: object
                                           properties:
@@ -117878,6 +117896,9 @@ paths:
                                             type: string
                                           object_footprint:
                                             type: string
+                                          population:
+                                            type: integer
+                                            format: int64
                                           prepared_per_decoded:
                                             type: object
                                             properties:
@@ -120145,6 +120166,9 @@ paths:
                                           type: string
                                         object_footprint:
                                           type: string
+                                        population:
+                                          type: integer
+                                          format: int64
                                         prepared_per_decoded:
                                           type: object
                                           properties:
@@ -125228,6 +125252,9 @@ paths:
                                             type: string
                                           object_footprint:
                                             type: string
+                                          population:
+                                            type: integer
+                                            format: int64
                                           prepared_per_decoded:
                                             type: object
                                             properties:
@@ -127495,6 +127522,9 @@ paths:
                                           type: string
                                         object_footprint:
                                           type: string
+                                        population:
+                                          type: integer
+                                          format: int64
                                         prepared_per_decoded:
                                           type: object
                                           properties:
@@ -132578,6 +132608,9 @@ paths:
                                             type: string
                                           object_footprint:
                                             type: string
+                                          population:
+                                            type: integer
+                                            format: int64
                                           prepared_per_decoded:
                                             type: object
                                             properties:
@@ -134845,6 +134878,9 @@ paths:
                                           type: string
                                         object_footprint:
                                           type: string
+                                        population:
+                                          type: integer
+                                          format: int64
                                         prepared_per_decoded:
                                           type: object
                                           properties:
@@ -139928,6 +139964,9 @@ paths:
                                             type: string
                                           object_footprint:
                                             type: string
+                                          population:
+                                            type: integer
+                                            format: int64
                                           prepared_per_decoded:
                                             type: object
                                             properties:
@@ -142195,6 +142234,9 @@ paths:
                                           type: string
                                         object_footprint:
                                           type: string
+                                        population:
+                                          type: integer
+                                          format: int64
                                         prepared_per_decoded:
                                           type: object
                                           properties:
@@ -357564,6 +357606,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -358591,6 +358636,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -361717,6 +361765,9 @@ paths:
                                         type: string
                                       object_footprint:
                                         type: string
+                                      population:
+                                        type: integer
+                                        format: int64
                                       prepared_per_decoded:
                                         type: object
                                         properties:
@@ -364048,6 +364099,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -365130,6 +365184,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -366645,6 +366702,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -367716,6 +367776,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -368757,6 +368820,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -369961,6 +370027,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -371617,6 +371686,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -374736,6 +374808,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -375763,6 +375838,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -378889,6 +378967,9 @@ paths:
                                         type: string
                                       object_footprint:
                                         type: string
+                                      population:
+                                        type: integer
+                                        format: int64
                                       prepared_per_decoded:
                                         type: object
                                         properties:
@@ -381220,6 +381301,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -382302,6 +382386,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -383817,6 +383904,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -384888,6 +384978,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -385929,6 +386022,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -387133,6 +387229,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -388789,6 +388888,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -401512,6 +401614,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -403130,6 +403235,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -404526,9 +404634,6 @@ paths:
                     additionalProperties:
                       type: object
                       properties:
-                        actual_action_samples:
-                          type: integer
-                          format: int64
                         avg_response_ms:
                           type: number
                           format: double
@@ -404895,6 +405000,9 @@ paths:
                               type: string
                             object_footprint:
                               type: string
+                            population:
+                              type: integer
+                              format: int64
                             prepared_per_decoded:
                               type: object
                               properties:
@@ -405390,9 +405498,6 @@ paths:
                     additionalProperties:
                       type: object
                       properties:
-                        actual_action_samples:
-                          type: integer
-                          format: int64
                         avg_response_ms:
                           type: number
                           format: double
@@ -405759,6 +405864,9 @@ paths:
                               type: string
                             object_footprint:
                               type: string
+                            population:
+                              type: integer
+                              format: int64
                             prepared_per_decoded:
                               type: object
                               properties:
@@ -406254,9 +406362,6 @@ paths:
                     additionalProperties:
                       type: object
                       properties:
-                        actual_action_samples:
-                          type: integer
-                          format: int64
                         avg_response_ms:
                           type: number
                           format: double
@@ -406623,6 +406728,9 @@ paths:
                               type: string
                             object_footprint:
                               type: string
+                            population:
+                              type: integer
+                              format: int64
                             prepared_per_decoded:
                               type: object
                               properties:
@@ -407118,9 +407226,6 @@ paths:
                     additionalProperties:
                       type: object
                       properties:
-                        actual_action_samples:
-                          type: integer
-                          format: int64
                         avg_response_ms:
                           type: number
                           format: double
@@ -407487,6 +407592,9 @@ paths:
                               type: string
                             object_footprint:
                               type: string
+                            population:
+                              type: integer
+                              format: int64
                             prepared_per_decoded:
                               type: object
                               properties:
@@ -407982,9 +408090,6 @@ paths:
                     additionalProperties:
                       type: object
                       properties:
-                        actual_action_samples:
-                          type: integer
-                          format: int64
                         avg_response_ms:
                           type: number
                           format: double
@@ -408351,6 +408456,9 @@ paths:
                               type: string
                             object_footprint:
                               type: string
+                            population:
+                              type: integer
+                              format: int64
                             prepared_per_decoded:
                               type: object
                               properties:
@@ -408846,9 +408954,6 @@ paths:
                     additionalProperties:
                       type: object
                       properties:
-                        actual_action_samples:
-                          type: integer
-                          format: int64
                         avg_response_ms:
                           type: number
                           format: double
@@ -409215,6 +409320,9 @@ paths:
                               type: string
                             object_footprint:
                               type: string
+                            population:
+                              type: integer
+                              format: int64
                             prepared_per_decoded:
                               type: object
                               properties:
@@ -409720,9 +409828,6 @@ paths:
                     additionalProperties:
                       type: object
                       properties:
-                        actual_action_samples:
-                          type: integer
-                          format: int64
                         avg_response_ms:
                           type: number
                           format: double
@@ -410089,6 +410194,9 @@ paths:
                               type: string
                             object_footprint:
                               type: string
+                            population:
+                              type: integer
+                              format: int64
                             prepared_per_decoded:
                               type: object
                               properties:
@@ -410584,9 +410692,6 @@ paths:
                     additionalProperties:
                       type: object
                       properties:
-                        actual_action_samples:
-                          type: integer
-                          format: int64
                         avg_response_ms:
                           type: number
                           format: double
@@ -410953,6 +411058,9 @@ paths:
                               type: string
                             object_footprint:
                               type: string
+                            population:
+                              type: integer
+                              format: int64
                             prepared_per_decoded:
                               type: object
                               properties:
@@ -411448,9 +411556,6 @@ paths:
                     additionalProperties:
                       type: object
                       properties:
-                        actual_action_samples:
-                          type: integer
-                          format: int64
                         avg_response_ms:
                           type: number
                           format: double
@@ -411817,6 +411922,9 @@ paths:
                               type: string
                             object_footprint:
                               type: string
+                            population:
+                              type: integer
+                              format: int64
                             prepared_per_decoded:
                               type: object
                               properties:
@@ -416901,9 +417009,6 @@ paths:
                     additionalProperties:
                       type: object
                       properties:
-                        actual_action_samples:
-                          type: integer
-                          format: int64
                         average_rate_per_second:
                           type: number
                           format: double
@@ -417250,6 +417355,9 @@ paths:
                               type: string
                             object_footprint:
                               type: string
+                            population:
+                              type: integer
+                              format: int64
                             prepared_per_decoded:
                               type: object
                               properties:
@@ -422512,6 +422620,9 @@ paths:
                                   type: string
                                 object_footprint:
                                   type: string
+                                population:
+                                  type: integer
+                                  format: int64
                                 prepared_per_decoded:
                                   type: object
                                   properties:
@@ -424171,6 +424282,9 @@ paths:
                                   type: string
                                 object_footprint:
                                   type: string
+                                population:
+                                  type: integer
+                                  format: int64
                                 prepared_per_decoded:
                                   type: object
                                   properties:
@@ -425686,6 +425800,9 @@ paths:
                                   type: string
                                 object_footprint:
                                   type: string
+                                population:
+                                  type: integer
+                                  format: int64
                                 prepared_per_decoded:
                                   type: object
                                   properties:
@@ -427345,6 +427462,9 @@ paths:
                                   type: string
                                 object_footprint:
                                   type: string
+                                population:
+                                  type: integer
+                                  format: int64
                                 prepared_per_decoded:
                                   type: object
                                   properties:
@@ -429091,6 +429211,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -430118,6 +430241,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -433244,6 +433370,9 @@ paths:
                                         type: string
                                       object_footprint:
                                         type: string
+                                      population:
+                                        type: integer
+                                        format: int64
                                       prepared_per_decoded:
                                         type: object
                                         properties:
@@ -435575,6 +435704,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -436657,6 +436789,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -438172,6 +438307,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -439243,6 +439381,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -440284,6 +440425,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -441488,6 +441632,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -443144,6 +443291,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -446207,6 +446357,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -447234,6 +447387,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -450360,6 +450516,9 @@ paths:
                                         type: string
                                       object_footprint:
                                         type: string
+                                      population:
+                                        type: integer
+                                        format: int64
                                       prepared_per_decoded:
                                         type: object
                                         properties:
@@ -452691,6 +452850,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -453773,6 +453935,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -455288,6 +455453,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -456359,6 +456527,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -457400,6 +457571,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -458604,6 +458778,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -460260,6 +460437,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -469387,6 +469567,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -470414,6 +470597,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -473540,6 +473726,9 @@ paths:
                                         type: string
                                       object_footprint:
                                         type: string
+                                      population:
+                                        type: integer
+                                        format: int64
                                       prepared_per_decoded:
                                         type: object
                                         properties:
@@ -475871,6 +476060,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -476953,6 +477145,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -478468,6 +478663,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -479539,6 +479737,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -480580,6 +480781,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -481784,6 +481988,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -483440,6 +483647,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -492058,6 +492268,9 @@ paths:
                                         type: string
                                       object_footprint:
                                         type: string
+                                      population:
+                                        type: integer
+                                        format: int64
                                       prepared_per_decoded:
                                         type: object
                                         properties:
@@ -494377,6 +494590,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -495459,6 +495675,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -496974,6 +497193,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -498045,6 +498267,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -499086,6 +499311,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -500290,6 +500518,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:
@@ -501946,6 +502177,9 @@ paths:
                                       type: string
                                     object_footprint:
                                       type: string
+                                    population:
+                                      type: integer
+                                      format: int64
                                     prepared_per_decoded:
                                       type: object
                                       properties:

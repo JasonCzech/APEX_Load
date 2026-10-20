@@ -230,9 +230,9 @@ func TestOrphanRecoveryExplicitRunIncarnation(t *testing.T) {
 						t.Fatalf("pending legacy record: %+v %v", job, err)
 					}
 				}
-				proof, err := runner.inspectArchiveFinalizationIdentity(context.Background(), job, current, false)
-				if err != nil || proof.RunIncarnation != token || proof.ExecutionGeneration != generation {
-					t.Fatalf("finalization lost identity: %+v %v", proof, err)
+				inspection, err := runner.inspectArchiveFinalizationSource(context.Background(), job, current, false)
+				if err != nil || inspection == nil || inspection.identity.RunIncarnation != token || inspection.identity.ExecutionGeneration != generation {
+					t.Fatalf("finalization lost identity: %+v %v", inspection, err)
 				}
 				if err := (&Server{runner: runner, store: store}).retryArchiveFinalizationJobs(context.Background()); err != nil {
 					t.Fatal(err)
