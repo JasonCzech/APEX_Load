@@ -92,6 +92,11 @@ func (s *SQLiteStore) SaveRunArchiveFailure(failure *RunArchiveFailure, leaseNam
 	if err != nil {
 		return false, err
 	}
+	// The run is terminal and never adopted again. Without an archive commit to
+	// drop its recovery checkpoint, drop it here; the revision is retained.
+	if _, err := tx.Exec(`UPDATE tests SET telemetry_checkpoint_json = NULL WHERE id = ? AND telemetry_checkpoint_json IS NOT NULL`, failure.TestID); err != nil {
+		return false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
@@ -124,9 +129,14 @@ func (s *SQLiteStore) GetRunArchiveFailure(testID string) (*RunArchiveFailure, e
 // takes precedence.
 // Identity comes from the locked/updated database row, including its native time
 // precision. This is deliberately not a collection retry or proof of data loss.
+// The same transaction drops the run's telemetry recovery checkpoint: a terminal
+// run is never adopted again, whether or not its archive ever commits.
 func recordUnconfirmedTerminalArchive(tx *storeTx, id, status string) error {
 	if status != "COMPLETE" && status != "FAILED" && status != "ABORTED" {
 		return nil
+	}
+	if _, err := tx.Exec(`UPDATE tests SET telemetry_checkpoint_json = NULL WHERE id = ? AND status = ? AND telemetry_checkpoint_json IS NOT NULL`, id, status); err != nil {
+		return err
 	}
 	_, err := tx.Exec(`INSERT INTO run_archive_failures (test_id, project_id, test_start_time, test_end_time, test_status, reason, recorded_at)
  SELECT id, COALESCE(NULLIF(project_id, ''), 'unassigned'), start_time, end_time, status, ?, ? FROM tests

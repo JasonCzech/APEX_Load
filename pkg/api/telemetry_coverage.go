@@ -342,6 +342,21 @@ func (l *telemetrySourceLedger) retire(source string, at time.Time) {
 	l.retireLocked(source, at)
 }
 
+// retireAtAdoption retires a source that completed during a takeover gap. A
+// retirement restored from the checkpoint is an observed terminal publication
+// and keeps its earlier boundary instead of extending to the adoption.
+func (l *telemetrySourceLedger) retireAtAdoption(source string, at time.Time) {
+	if l == nil || source == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	requirement := l.requirementLocked(source)
+	if requirement.retiredAtMs == 0 {
+		requirement.retiredAtMs = at.UnixMilli()
+	}
+}
+
 func (l *telemetrySourceLedger) retireLocked(source string, at time.Time) {
 	requirement := l.requirementLocked(source)
 	if requirement.retiredAtMs == 0 || at.UnixMilli() > requirement.retiredAtMs {

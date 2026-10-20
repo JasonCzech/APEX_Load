@@ -44,11 +44,15 @@ Mappings distinguish gauges, counters, raw transaction observations and summary
 values. Timestamp mappings require an explicit timezone and encoding. Offset
 text requires `timestamp_offset`; local wall timestamps use `timestamp`.
 The absolute-time mapping accepts a timezone-aware Parquet timestamp or text
-with an explicit `Z`/numeric offset (`±HH`, `±HHMM` or `±HH:MM`) after its
-clock component. Offset-free text, DATE and naive TIMESTAMP columns are
-rejected rather than assigned the worker's timezone. Use a local-wall mapping
-with the source timezone for those values. Local-wall mappings refuse offset
-text, including short offsets, rather than discard its offset. Conversion uses
+with an explicit `Z`/numeric offset (`±HH`, `±HHMM` or `±HH:MM`) or a spaced
+`UTC` suffix after its clock component; clock and offset-hour fields may have
+any number of digits (offset hours one or two), the seconds may end in a bare
+fraction point, and any whitespace may separate date and clock or follow the
+offset, as the parser accepts. Offset-free text, DATE and naive
+TIMESTAMP columns are rejected rather than assigned the worker's timezone. Use
+a local-wall mapping with the source timezone for those values. Local-wall
+mappings refuse offset text, including short offsets, one-digit clock fields
+and a `UTC` suffix, rather than discard its offset. Conversion uses
 each row's source instant; one file may cross a daylight-saving transition.
 This tightening applies to new normalization; retained canonical artifacts
 and historical query results are not rewritten. Local-wall inputs must resolve
@@ -519,7 +523,7 @@ Joint evidence v4 measures configured intersections. Set `joint_evidence` when c
 
 Invalid distribution copies remain bounded before retention: duration sketches over 4,096 bins and t-digests over 1,024 centroids are refused rather than trimmed into a valid distribution. Counts and compatible fallback evidence retain their existing interpretation; absence is not a measured zero or a qualified percentile. The [distribution and queue review](qa/reviews/roadmap-joint-bounds-2026-10-20/README.md) covers these bounds. Received joint protobuf publications are checked before retained copies: at most 512 canonical unique tuple keys, an admitted projection, bounded distribution arrays, nonnegative counts and finite scalar durations, and a 64 MiB encoded joint-field envelope including protobuf framing. Malformed joint evidence is explicitly unavailable while unrelated action evidence survives. Omitted tuples remain incomplete. This preflight does not replace transport admission, property-category allowlisting or entry-point/recovery qualification.
 
-Limits: the projection is set only when creating a run through the test API (`POST /api/v1/tests`); scenario runs, schedules, CI runs and execution plans do not carry it, and no dashboard control sets it. Any syntactically valid `property:<category>` is accepted, not only promoted categories. Labels are capped at 256 bytes and keys at 1 KiB, but a publication's joint payload has no byte cap of its own, and digests are validated when queried rather than at ingest.
+Limits: the projection is set only when creating a run through the test API (`POST /api/v1/tests`); scenario runs, schedules, CI runs and execution plans do not carry it, and no dashboard control sets it. Any syntactically valid `property:<category>` is accepted, not only promoted categories. Labels are capped at 256 bytes and keys at 1 KiB. Received joint publications are bounded and validated at ingest as described above; digests are validated again when queried.
 
 Journey accounting counts how a finished run's declared journeys turned out under its pinned `journey_policy` (or a named revision): completed, failed, aborted, skipped and censored attempts per journey, step failures separately, and the weighted failure index, which is test-journey risk and never revenue. Every archived row carries its VUser and iteration; a failure recorded once its VUser was stopping (the run's stop or end, a ramp-down or scale-down, a goal boundary), or caused by the generator's own resource limit, is marked `interrupted` and censors the attempts it cut instead of failing them. Read it from the run report's Journey risk panel, `GET /api/v1/tests/{id}/archive/journeys` or `apexctl analysis journeys`; see the [journey accounting guide](guides/BROWSER_INTELLIGENCE_WORKFLOWS.md#journey-accounting).
 

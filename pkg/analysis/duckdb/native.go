@@ -222,8 +222,14 @@ func timestampExpression(mapping Mapping) string {
 	c := column(mapping.Timestamp)
 	// A suffix alone can mistake a date's -DD for an hour offset. Require
 	// a clock component followed by Z or an explicit ISO numeric offset.
-	// The cast still validates dates, ranges and the actual offset value.
-	offsetText := "regexp_matches(trim(try_cast(" + c + " AS VARCHAR)), '[Tt ][0-9]{2}:[0-9]{2}(:[0-9]{2}([.][0-9]+)?)?[[:space:]]*([zZ]|[+-][0-9]{2}(:?[0-9]{2})?)$')"
+	// DuckDB accepts clock fields of any digit count, an empty fraction after
+	// the seconds, one- or two-digit offset hours, any
+	// whitespace between date and clock and after the offset, a dangling
+	// colon after the offset hours, and (in its TIMESTAMP cast too) a spaced
+	// UTC suffix in any case. trim() strips only spaces, so trailing tabs and
+	// line breaks are removed here. The cast still validates dates, ranges and
+	// the actual offset value.
+	offsetText := "regexp_matches(regexp_replace(try_cast(" + c + " AS VARCHAR), '[[:space:]]+$', ''), '[Tt[:space:]][0-9]+:[0-9]+(:[0-9]+([.][0-9]*)?)?([[:space:]]*([zZ]|[+-][0-9]{1,2}(:?[0-9]{2}){0,2}:?)|[[:space:]]+[Uu][Tt][Cc])$')"
 	if mapping.TimestampEncoding == "timestamp_offset" {
 		// DuckDB otherwise supplies the session timezone to offset-free
 		// text, DATE and TIMESTAMP values, inventing an absolute instant.

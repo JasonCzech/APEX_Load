@@ -47,12 +47,12 @@ export function javaHTTPSummaryLines(s: JavaHTTPSummary, population: number): st
   return lines
 }
 
-// Historical observations retain their own actual-action denominator; absent
-// older fields are not reconstructed from generic payload/timing counters.
-export function javaHTTPActionsFromArchive(actions?: Record<string, { transactions: number; actual_action_samples?: number; java_http?: JavaHTTPSummary }>): JavaHTTPActions | undefined {
-  const measured = Object.entries(actions ?? {}).filter(([, action]) => action.java_http)
+// Historical observations retain their own java_http action denominator, which
+// excludes wrappers and other protocols' same-named actions; absent older fields
+// are not reconstructed from generic transaction counters.
+export function javaHTTPActionsFromArchive(actions?: Record<string, { transactions: number; java_http?: JavaHTTPSummary }>): JavaHTTPActions | undefined {
+  const measured = Object.entries(actions ?? {}).flatMap(([name, action]) => action.java_http ? [[name, action.java_http] as const] : [])
   if (!measured.length) return
-  if (measured.length > 128) return { version: 1, incomplete: true, unavailable_reason: 'action_limit' }
-  if (measured.some(([, action]) => action.actual_action_samples === undefined || !count(action.actual_action_samples))) return { version: 1, incomplete: true, unavailable_reason: 'malformed' }
-  return { version: 1, actions: Object.fromEntries(measured.map(([name, action]) => [name, { population: action.actual_action_samples!, diagnostics: action.java_http! }])) }
+  if (measured.some(([, summary]) => summary.population === undefined || !count(summary.population))) return { version: 1, incomplete: true, unavailable_reason: 'malformed' }
+  return { version: 1, actions: Object.fromEntries(measured.map(([name, summary]) => [name, { population: summary.population!, diagnostics: summary }])) }
 }

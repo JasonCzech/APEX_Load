@@ -45,5 +45,5 @@ func TestHTTPBodyObservationRetainsOnlyInitialPreparation(t *testing.T) {
 	if count.Load() != 1 {
 		t.Fatal("nested/concurrent preparations replaced the initial body", count.Load())
 	}
-	ObserveHTTPBody(nil, 1, "none")
+	ObserveHTTPBody(nil, 1, "none") //nolint:staticcheck // the nil context is the input under test
 }

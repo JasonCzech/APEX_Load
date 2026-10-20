@@ -127,8 +127,61 @@ func TestNativeTimestampUsesEachRowsTimezoneOffset(t *testing.T) {
 	}
 }
 
+// One-digit clock fields and a UTC suffix are explicit source offsets the
+// pinned parser accepts; an offset mapping admits each at its stated instant.
+func TestNativeAbsoluteTimestampAcceptsShortClockFieldsAndUTCSuffix(t *testing.T) {
+	e, path := nativeFixture(t, `SELECT * FROM (VALUES
+ ('2026-03-10T9:30:00Z',1),
+ ('2026-03-10 9:30:00-04:00',2),
+ ('2026-03-10 09:5:7+0530',3),
+ ('2026-03-10 09:30:00 utc',4),
+ ('2026-03-10T09:30:00+05:00' || chr(13),5),
+ ('2026-03-10' || chr(9) || '09:30:00+05:00',6),
+ ('2026-03-10 09:30:00+05:',7),
+ ('2026-03-10 09:30:00 UTC' || chr(10),8),
+ ('2026-03-10T009:30:00Z',9),
+ ('2026-03-10 09:30:00.+05:00',10)) t(ts,value)`)
+	mapping := Mapping{Version: 2, Timestamp: Column{"ts"}, TimestampEncoding: "timestamp_offset", Timezone: "America/Los_Angeles", Measures: []Measure{{Name: "v", Value: Column{"value"}, Kind: analysis.KindGauge, Unit: "count"}}}
+	result, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping})
+	if err != nil || result.Accepted != 10 {
+		t.Fatalf("explicit offsets refused: %+v %v", result, err)
+	}
+	result = retainNativeFixtureOutputs(t, e, result)
+	err = e.withDB(context.Background(), func(ctx context.Context, db *sql.DB) error {
+		rows, err := db.QueryContext(ctx, "SELECT timestamp_utc FROM read_parquet("+literal(result.Files[0])+") ORDER BY value")
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		want := []string{"2026-03-10T09:30:00Z", "2026-03-10T13:30:00Z", "2026-03-10T03:35:07Z", "2026-03-10T09:30:00Z", "2026-03-10T04:30:00Z", "2026-03-10T04:30:00Z", "2026-03-10T04:30:00Z", "2026-03-10T09:30:00Z", "2026-03-10T09:30:00Z", "2026-03-10T04:30:00Z"}
+		i := 0
+		for rows.Next() {
+			var got time.Time
+			if err := rows.Scan(&got); err != nil {
+				return err
+			}
+			if i >= len(want) || got.UTC().Format(time.RFC3339) != want[i] {
+				t.Errorf("row %d time %s", i, got)
+			}
+			i++
+		}
+		if i != len(want) {
+			t.Errorf("got %d rows", i)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNativeLocalTimestampRejectsShortOffsetText(t *testing.T) {
-	for _, text := range []string{"2026-11-01 01:30:00-04", "2026-11-01 01:30:00 -04:00"} {
+	// DuckDB also accepts one-digit clock fields before an offset.
+	// Trailing tabs and line breaks, a tab separator and a dangling colon after
+	// the offset hours are offsets too, not offset-free wall text.
+	for _, text := range []string{"2026-11-01 01:30:00-04", "2026-11-01 01:30:00 -04:00", "2026-03-10T9:30:00Z", "2026-03-10 9:30:00-04:00", "2026-03-10T9:30Z", "2026-03-10 09:5:7+0530", "2026-03-10T09:30:00.5+5", "2026-03-10 09:30:00+05:30:00", "2026-03-10 09:30:00 UTC", "2026-03-10 09:30:00z",
+		"2026-03-10T09:30:00+05:00\t", "2026-03-10T09:30:00+05:00\r", "2026-03-10T09:30:00+05:00\n", "2026-03-10\t09:30:00+05:00", "2026-03-10 09:30:00+05:", "2026-03-10 09:30:00 UTC\r",
+		"2026-03-10T009:30:00Z", "2026-03-10 09:30:00.+05:00", "2026-03-10 09:30:00. UTC"} {
 		t.Run(text, func(t *testing.T) {
 			e, path := nativeFixture(t, "SELECT "+literal(text)+" AS ts,1 AS value")
 			m := Mapping{Version: 1, Timestamp: Column{"ts"}, TimestampEncoding: "timestamp", Timezone: "UTC", Measures: []Measure{{Name: "v", Value: Column{"value"}, Kind: analysis.KindGauge, Unit: "count"}}}

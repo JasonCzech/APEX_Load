@@ -1220,12 +1220,24 @@ func mergeActionResult(metrics *ActionMetrics, result *protocol.Result) {
 			metrics.ServerTelemetry = &ServerTelemetrySummary{}
 		}
 		telemetry := result.ServerTelemetry
-		if result.BusinessTransaction && telemetry.JavaHTTP != nil {
+		if telemetry.JavaHTTP != nil {
 			copy := *telemetry
-			copy.JavaHTTP = nil // A synthetic business wrapper is not another Java action.
+			copy.JavaHTTP = nil // Java diagnostics merge below with their own population.
 			telemetry = &copy
 		}
 		mergeServerTelemetrySummary(metrics.ServerTelemetry, telemetry, result.DependencyTarget, result.DependencyType, result.Group)
+	}
+	// Only an actual java_http action enters the Java population. A synthetic
+	// business wrapper, or another protocol's action sharing the name, does not.
+	if !result.BusinessTransaction && (result.DependencyType == "java_http" || result.ServerTelemetry != nil && result.ServerTelemetry.JavaHTTP != nil) {
+		if metrics.ServerTelemetry == nil {
+			metrics.ServerTelemetry = &ServerTelemetrySummary{}
+		}
+		var diagnostic *protocol.JavaHTTPDiagnostics
+		if result.ServerTelemetry != nil {
+			diagnostic = result.ServerTelemetry.JavaHTTP
+		}
+		protocol.ObserveJavaHTTPAction(&metrics.ServerTelemetry.JavaHTTP, diagnostic)
 	}
 	metrics.BytesSent += result.BytesSent
 	metrics.BytesRecv += result.BytesReceived

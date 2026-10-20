@@ -5866,8 +5866,11 @@ type JavaHTTPSummary struct {
 	RequestCompressionNone    int64                         `protobuf:"varint,23,opt,name=request_compression_none,json=requestCompressionNone,proto3" json:"request_compression_none,omitempty"`
 	RequestCompressionGzip    int64                         `protobuf:"varint,24,opt,name=request_compression_gzip,json=requestCompressionGzip,proto3" json:"request_compression_gzip,omitempty"`
 	RequestCompressionDeflate int64                         `protobuf:"varint,25,opt,name=request_compression_deflate,json=requestCompressionDeflate,proto3" json:"request_compression_deflate,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	// Actual java_http action executions covered, with or without diagnostics;
+	// zero means an older peer that did not count them.
+	Population    int64 `protobuf:"varint,26,opt,name=population,proto3" json:"population,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *JavaHTTPSummary) Reset() {
@@ -6071,6 +6074,13 @@ func (x *JavaHTTPSummary) GetRequestCompressionGzip() int64 {
 func (x *JavaHTTPSummary) GetRequestCompressionDeflate() int64 {
 	if x != nil {
 		return x.RequestCompressionDeflate
+	}
+	return 0
+}
+
+func (x *JavaHTTPSummary) GetPopulation() int64 {
+	if x != nil {
+		return x.Population
 	}
 	return 0
 }
@@ -9711,7 +9721,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x1amessaging_diagnostics_json\x18$ \x01(\tR\x18messagingDiagnosticsJson\x12B\n" +
 	"\x1dmessaging_diagnostics_version\x18% \x01(\rR\x1bmessagingDiagnosticsVersion\x12=\n" +
 	"\tjava_http\x18& \x01(\v2 .apexload.v1.JavaHTTPDiagnosticsR\bjavaHttpB\x15\n" +
-	"\x13_acknowledgement_ms\"\xeb\v\n" +
+	"\x13_acknowledgement_ms\"\x8b\f\n" +
 	"\x0fJavaHTTPSummary\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\tR\x04mode\x12\x18\n" +
@@ -9741,7 +9751,10 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x10object_footprint\x18\x16 \x01(\tR\x0fobjectFootprint\x128\n" +
 	"\x18request_compression_none\x18\x17 \x01(\x03R\x16requestCompressionNone\x128\n" +
 	"\x18request_compression_gzip\x18\x18 \x01(\x03R\x16requestCompressionGzip\x12>\n" +
-	"\x1brequest_compression_deflate\x18\x19 \x01(\x03R\x19requestCompressionDeflate\"\x9e\x01\n" +
+	"\x1brequest_compression_deflate\x18\x19 \x01(\x03R\x19requestCompressionDeflate\x12\x1e\n" +
+	"\n" +
+	"population\x18\x1a \x01(\x03R\n" +
+	"population\"\x9e\x01\n" +
 	"\x13JavaHTTPByteMoments\x12\x14\n" +
 	"\x05count\x18\x01 \x01(\x03R\x05count\x12\x1b\n" +
 	"\tsum_bytes\x18\x02 \x01(\x03R\bsumBytes\x12\x1b\n" +

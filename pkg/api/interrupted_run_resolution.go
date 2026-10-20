@@ -238,7 +238,7 @@ func (tr *TestRunner) finalizeInterruptedDistributedRun(ctx context.Context, tes
 		return errInterruptedRunNotEligible
 	}
 	fenceErr := tr.claimTestExecutionFence(test)
-	prior := withoutInterruptedDistributedStopReason(test.Error)
+	prior := withoutInterruptedDistributedStopReason(withoutEvacuationIntervention(test.Error))
 	tr.mu.Unlock()
 	if fenceErr != nil {
 		return fenceErr
@@ -274,7 +274,7 @@ func (tr *TestRunner) finalizeAttestedInterruptedEvacuation(ctx context.Context,
 		return errInterruptedRunNotEligible
 	}
 	fenceErr := tr.claimTestExecutionFence(test)
-	prior := strings.TrimSpace(test.Error)
+	prior := strings.TrimSpace(withoutEvacuationIntervention(test.Error))
 	tr.mu.Unlock()
 	if fenceErr != nil {
 		return fenceErr

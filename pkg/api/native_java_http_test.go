@@ -16,14 +16,22 @@ import (
 
 func nativeJavaFixture(t *testing.T, values ...*protocol.JavaHTTPDiagnostics) *storage.RunArchiveRecord {
 	t.Helper()
+	events := make([]TransactionEvent, len(values))
+	for i, d := range values {
+		events[i] = TransactionEvent{DependencyType: "java_http", ServerTelemetry: &protocol.ServerTelemetry{JavaHTTP: d}}
+	}
+	return nativeJavaEventsFixture(t, events...)
+}
+func nativeJavaEventsFixture(t *testing.T, events ...TransactionEvent) *storage.RunArchiveRecord {
+	t.Helper()
 	record, start := nativeSeriesFixture(t)
 	f, err := os.Create(filepath.Join(record.ArchivePath, "transactions.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	for i, d := range values {
-		tx := TransactionEvent{Timestamp: start.Add(time.Duration(i) * time.Second), ActionName: "request", Population: "action", Success: true, ServerTelemetry: &protocol.ServerTelemetry{JavaHTTP: d}}
+	for i, tx := range events {
+		tx.Timestamp, tx.ActionName, tx.Population, tx.Success = start.Add(time.Duration(i)*time.Second), "request", "action", true
 		if err = json.NewEncoder(f).Encode(tx); err != nil {
 			t.Fatal(err)
 		}
@@ -84,6 +92,23 @@ func TestJavaHTTPNativeArchiveValuesPairsMissingAndLegacy(t *testing.T) {
 		t.Fatal("cancel ignored")
 	}
 }
+
+// A same-named action of another protocol is outside the Java population, so
+// it neither dilutes nor refuses the Java bucket.
+func TestJavaHTTPNativeArchiveIgnoresSameNamedOtherProtocolActions(t *testing.T) {
+	q := storage.AnalyticsQuery{Population: analysis.PopulationJavaHTTPAction, Metric: "java_http_decoded_per_encoded", Aggregation: "ratio_of_sums", EndSeconds: 20, BucketSeconds: 10, Filters: map[string]string{"action": "request"}}
+	java := TransactionEvent{DependencyType: "java_http", ServerTelemetry: &protocol.ServerTelemetry{JavaHTTP: nativeJavaDiagnostic(8, 4)}}
+	for _, other := range []TransactionEvent{{DependencyType: "http"}, {DependencyType: "http", ServerTelemetry: &protocol.ServerTelemetry{}}} {
+		series, err := buildNativeArchiveSeries(context.Background(), nativeJavaEventsFixture(t, java, other), q)
+		if err != nil || series.Buckets[0].Value == nil || *series.Buckets[0].Value != 0.5 || series.Buckets[0].Count != 1 || len(series.Excluded) != 0 {
+			t.Fatal("another protocol's action entered the Java population", series, err)
+		}
+	}
+	series, err := buildNativeArchiveSeries(context.Background(), nativeJavaEventsFixture(t, java, TransactionEvent{DependencyType: "java_http"}), q)
+	if err != nil || series.Buckets[0].Value != nil || series.Buckets[0].Reason != "incomplete_representation_evidence" {
+		t.Fatal("a Java action without diagnostics qualified the bucket", series, err)
+	}
+}
 func TestJavaHTTPNativeArchiveMeasurementAvailability(t *testing.T) {
 	d := javaAPIDiagnostic()
 	for _, metric := range []string{"java_http_decoded_request_bytes", "java_http_prepared_body_bytes", "java_http_retained_response_bytes", "java_http_response_base64_bytes", "java_http_base64_encode_ms"} {
@@ -103,6 +128,19 @@ func TestJavaHTTPNativeArchiveMeasurementAvailability(t *testing.T) {
 	series, err := buildNativeArchiveSeries(context.Background(), nativeJavaFixture(t, d), q)
 	if err != nil || series.Buckets[0].Value != nil || series.Excluded["response_collection_window"] != 1 {
 		t.Fatal("collection-window response qualified", series, err)
+	}
+	// A discarded body's zero retained size is logging policy, not a measurement.
+	d.ResponseState = "discarded"
+	for _, metric := range []string{"java_http_retained_response_bytes", "java_http_response_base64_bytes"} {
+		q.Metric = metric
+		series, err = buildNativeArchiveSeries(context.Background(), nativeJavaFixture(t, d), q)
+		if err != nil || series.Buckets[0].Value != nil || series.Excluded["response_discarded"] != 1 {
+			t.Fatal("discarded response became a measured zero", metric, series, err)
+		}
+	}
+	q.Metric = "java_http_decoded_request_bytes"
+	if series, err = buildNativeArchiveSeries(context.Background(), nativeJavaFixture(t, d), q); err != nil || series.Buckets[0].Value == nil {
+		t.Fatal("discarded response refused request evidence", series, err)
 	}
 }
 

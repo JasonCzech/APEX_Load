@@ -22,6 +22,13 @@ const uncertainEvacuationReasonPrefix = "generator evacuation state is uncertain
 
 const uncertainEvacuationIntervention = "; the run stays STOPPING until every possible generator confirms its work stopped, or a system administrator attests that all such processes are stopped or fenced (POST /api/v1/tests/{id}/interrupted-stop/resolve)"
 
+// withoutEvacuationIntervention drops the STOPPING-only instruction from a
+// reason that becomes a terminal error: the run it described has ended and the
+// resolve endpoint no longer accepts it.
+func withoutEvacuationIntervention(reason string) string {
+	return strings.Replace(reason, uncertainEvacuationIntervention, "", 1)
+}
+
 type GeneratorEvacuationImpact struct {
 	TestID        string                  `json:"test_id"`
 	TestName      string                  `json:"test_name,omitempty"`
@@ -1611,7 +1618,12 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 	defer clear(runSupervisionToken)
 	if active {
 		test.Status = "STOPPING"
-		test.Error = uncertainEvacuationReasonPrefix + uncertain.Error() + uncertainEvacuationIntervention
+		test.Error = uncertainEvacuationReasonPrefix + uncertain.Error()
+		if interruptedRunEvacuation(test.continuityCheckpoint) {
+			// Only a journaled evacuation can be resolved by attestation; a
+			// journal-less run is held until a restart marks it interrupted.
+			test.Error += uncertainEvacuationIntervention
+		}
 		test.remoteFinalizing = true
 		if test.remoteClientsByTarget == nil {
 			test.remoteClientsByTarget = make(map[string]generatorClient)

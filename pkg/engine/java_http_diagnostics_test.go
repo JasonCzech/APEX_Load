@@ -78,3 +78,24 @@ func TestJavaHTTPInlineSummaryParticipatesInSnapshotBudget(t *testing.T) {
 		t.Fatalf("summary %d bytes not counted in retention delta %d", size, got-without)
 	}
 }
+
+// The Java population counts actual java_http actions, including those without
+// diagnostics, never a business wrapper or another protocol's same-named action.
+func TestJavaHTTPActionPopulationExcludesOtherProtocols(t *testing.T) {
+	action := &ActionMetrics{}
+	for _, r := range []*protocol.Result{
+		{ActionName: "same", Success: true, DependencyType: "java_http", ServerTelemetry: &protocol.ServerTelemetry{JavaHTTP: javaEngineDiagnostic()}},
+		{ActionName: "same", DependencyType: "java_http", ServerTelemetry: &protocol.ServerTelemetry{}},
+		{ActionName: "same", Success: true, DependencyType: "http", ServerTelemetry: &protocol.ServerTelemetry{RequestPayloadKB: 1}},
+		{ActionName: "same", Success: true, DependencyType: "java_http", BusinessTransaction: true, ServerTelemetry: &protocol.ServerTelemetry{JavaHTTP: javaEngineDiagnostic()}},
+	} {
+		mergeActionResult(action, compactMetricsResult(r))
+	}
+	j := action.ServerTelemetry.JavaHTTP
+	if action.Count != 4 || j == nil || !j.Valid() || j.Population != 2 || j.Samples != 1 {
+		t.Fatalf("java_http population: count %d summary %+v", action.Count, j)
+	}
+	if r := j.RetainedForPopulation(action.Count); r.Samples != 1 || !r.Incomplete {
+		t.Fatal("the uninstrumented java_http action stopped marking coverage incomplete", r)
+	}
+}

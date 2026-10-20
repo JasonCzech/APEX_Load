@@ -256,7 +256,9 @@ const maxRuntimeHAREntries = 100_000
 
 // Outstanding issued requests include browser-queued work; the limit protects
 // native HAR buffering before completion or file growth can reveal its size.
-const maxRuntimeHARInFlightRequests = 256
+// It exceeds the 512-entry request-identity inventory, so heavy pages lose
+// per-request identities (marked incomplete) before the context is closed.
+const maxRuntimeHARInFlightRequests = 1024
 
 func (b *Browser) noteHARRequest(request playwright.Request, expectedGeneration ...string) {
 	b.mu.Lock()

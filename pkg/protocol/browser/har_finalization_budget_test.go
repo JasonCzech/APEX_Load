@@ -47,6 +47,30 @@ func TestHARFinalizationUsesOneDeadlineAcrossPhases(t *testing.T) {
 	}
 }
 
+// An overflow or memory-watchdog close happens mid-session; the VUser keeps
+// running until teardown, which alone starts the finalization deadline.
+func TestHARFinalizationBudgetStartsAtTeardownNotAtAResourceLimitClose(t *testing.T) {
+	o := fixtureHAROwner(t, t.TempDir())
+	t.Cleanup(o.finishFinalizationBudget)
+	writeOwnedHARFixture(t, o)
+	o.startClose()
+	<-o.closeDone
+	o.mu.Lock()
+	started := !o.finalizationDeadline.IsZero()
+	o.mu.Unlock()
+	if started {
+		t.Fatal("mid-session close started the finalization budget")
+	}
+	before := time.Now()
+	o.startFinish(true, nil)
+	if deadline := o.startFinalizationBudget(); deadline.Before(before.Add(runtimeHARFinalizationBudget)) {
+		t.Fatalf("teardown deadline %s predates finalization", deadline)
+	}
+	if artifact, err := o.waitFinish(context.Background()); err != nil || artifact == "" {
+		t.Fatalf("finalization after an earlier close: %q %v", artifact, err)
+	}
+}
+
 func TestHARFinalizationExpiredJoinRetainsOwnershipUntilProof(t *testing.T) {
 	for _, phase := range []string{"writer", "document", "runtime"} {
 		t.Run(phase, func(t *testing.T) {

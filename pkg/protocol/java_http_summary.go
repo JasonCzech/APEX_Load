@@ -82,10 +82,12 @@ func (m JavaHTTPByteMoments) MeanBytes() (float64, bool) {
 
 // JavaHTTPSummary describes observed java_http action diagnostics only. Absent
 // peers are not inferred from unrelated telemetry; invalid/unknown diagnostics
-// remain separate from measured samples. Callers must
-// compare Samples to their selected action population before claiming coverage.
-// It cannot establish Java object footprint or network delivery.
+// remain separate from measured samples. Population, when set, is the number of
+// java_http action executions the summary covers, with or without diagnostics;
+// zero means a legacy peer that did not count it, and callers fall back to their
+// own action count. It cannot establish Java object footprint or network delivery.
 type JavaHTTPSummary struct {
+	Population                int64                  `json:"population,omitempty"`
 	RequestCompressionNone    int64                  `json:"request_compression_none"`
 	RequestCompressionGzip    int64                  `json:"request_compression_gzip"`
 	RequestCompressionDeflate int64                  `json:"request_compression_deflate"`
@@ -111,6 +113,62 @@ type JavaHTTPSummary struct {
 	ResponseWindow            int64                  `json:"response_window"`
 	ResponseDiscarded         int64                  `json:"response_discarded"`
 	ObjectFootprint           string                 `json:"object_footprint"`
+}
+
+// ObserveJavaHTTPAction counts one actual java_http action execution in the
+// summary's own population and merges its diagnostics when present, so a
+// same-named action of another protocol never enters the Java denominator.
+func ObserveJavaHTTPAction(summary **JavaHTTPSummary, d *JavaHTTPDiagnostics) {
+	if summary == nil {
+		return
+	}
+	if *summary == nil {
+		*summary = &JavaHTTPSummary{Version: 1, Mode: "embedded_opaque_bytes", ObjectFootprint: "unavailable_embedded_opaque_bytes"}
+	}
+	s := *summary
+	if s.populationKnown() {
+		if s.Population < javaHTTPMaxSamples {
+			s.Population++
+		} else {
+			s.SampleLimitReached = true
+		}
+	}
+	MergeJavaHTTPDiagnostic(summary, d)
+}
+
+// SetPopulation records a caller-counted java_http action population,
+// saturating at the sample limit like ObserveJavaHTTPAction.
+func (s *JavaHTTPSummary) SetPopulation(n int64) {
+	if s == nil {
+		return
+	}
+	if n > javaHTTPMaxSamples {
+		n, s.SampleLimitReached = javaHTTPMaxSamples, true
+	}
+	s.Population = max(n, 0)
+}
+
+// ForgetPopulation marks the java_http population unknown, so callers fall
+// back to their own action count and coverage stays incomplete.
+func (s *JavaHTTPSummary) ForgetPopulation() {
+	if s != nil {
+		s.Population, s.Incomplete = 0, true
+	}
+}
+
+// JavaHTTPPeerUncounted reports whether a peer that sent no Java summary for
+// count executions of an action may still have run java_http actions: an older
+// generator's uninstrumented ones, unless its dependency type names another
+// protocol.
+func JavaHTTPPeerUncounted(s *JavaHTTPSummary, count int64, dependencyType string) bool {
+	return s == nil && count > 0 && (dependencyType == "" || dependencyType == "java_http" || dependencyType == "multiple")
+}
+
+// populationKnown is false for a legacy summary that observed samples without
+// counting its java_http action population, and for a refused or forgotten one;
+// only a fresh, complete empty summary is a known zero.
+func (s *JavaHTTPSummary) populationKnown() bool {
+	return s.Population > 0 || s.Samples+s.InvalidSamples == 0 && !s.Incomplete
 }
 
 func MergeJavaHTTPDiagnostic(summary **JavaHTTPSummary, d *JavaHTTPDiagnostics) {

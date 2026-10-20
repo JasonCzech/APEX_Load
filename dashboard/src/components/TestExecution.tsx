@@ -1160,7 +1160,7 @@ export default function TestExecution({
       <NativeProjectPanels testId={testId} key={`project-panels-${testId}`} definitions={projectDashboardDefinitions} history={filteredData} />
       {test.data_pools?.some(binding => binding.access_mode === 'live') && <LiveTablesPanel key={`live-${testId}`} testId={testId} projectId={test.project_id} />}
       <RunMonitorTimeline key={`monitor-${testId}`} projectId={test.project_id} testId={testId} history={filteredData} />
-      <JavaHTTPDiagnostics evidence={archiveReport ? javaHTTPActionsFromArchive(archiveReport.by_action) : test.live_metrics?.java_http} />
+      <JavaHTTPDiagnostics evidence={archiveReport ? javaHTTPActionsFromArchive(archiveReport.by_action) : test.live_metrics?.java_http} archived={!!archiveReport} />
       <MessagingProgressDiagnostics snapshot={test.live_metrics?.messaging_progress} />
       <MessagingDiagnostics series={Object.entries(test.live_metrics?.messaging || {}).map(([name, messaging]) => ({ name, messaging }))} />
       <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canManageTests} />

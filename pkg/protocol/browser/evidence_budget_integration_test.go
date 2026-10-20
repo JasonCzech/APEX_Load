@@ -167,7 +167,7 @@ func testNeverFinishingRequestFlood(t *testing.T, engine string) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintf(w, `<!doctype html><html><body><p id="ready">ok</p><script>function flood(){for (let i = 0; i < %d; i++) fetch('/hang/' + i).catch(() => {})}</script></body></html>`, browserRequestIdentityLimit+200)
+		_, _ = fmt.Fprintf(w, `<!doctype html><html><body><p id="ready">ok</p><script>function flood(){for (let i = 0; i < %d; i++) fetch('/hang/' + i).catch(() => {})}</script></body></html>`, maxRuntimeHARInFlightRequests+200)
 	}))
 	defer server.Close()
 	defer close(release)

@@ -1024,26 +1024,27 @@ type RunArchiveTelemetrySummary struct {
 }
 
 type RunArchiveActionStats struct {
-	// ActualActionSamples excludes enclosing transactions and unclassified legacy records.
-	ActualActionSamples int64                        `json:"actual_action_samples,omitempty"`
-	Messaging           *protocol.MessagingSummary   `json:"messaging,omitempty"`
-	JavaHTTP            *protocol.JavaHTTPSummary    `json:"java_http,omitempty"`
-	GRPC                *protocol.GRPCSummary        `json:"grpc,omitempty"`
-	WebSocket           *protocol.WebSocketSummary   `json:"websocket,omitempty"`
-	DiagnosticFindings  []protocol.DiagnosticFinding `json:"diagnostic_findings,omitempty"`
-	Transactions        int64                        `json:"transactions"`
-	Errors              int64                        `json:"errors"`
-	ErrorPct            float64                      `json:"error_pct"`
-	AvgResponseMs       float64                      `json:"avg_response_ms"`
-	MinResponseMs       float64                      `json:"min_response_ms"`
-	MaxResponseMs       float64                      `json:"max_response_ms"`
-	PeakTPS             float64                      `json:"peak_tps,omitempty"`
-	P50Ms               float64                      `json:"p50_ms,omitempty"`
-	P90Ms               float64                      `json:"p90_ms,omitempty"`
-	P95Ms               float64                      `json:"p95_ms,omitempty"`
-	P99Ms               float64                      `json:"p99_ms,omitempty"`
-	PercentileQuality   string                       `json:"percentile_quality,omitempty"`
-	durations           []float64
+	Messaging          *protocol.MessagingSummary   `json:"messaging,omitempty"`
+	JavaHTTP           *protocol.JavaHTTPSummary    `json:"java_http,omitempty"`
+	GRPC               *protocol.GRPCSummary        `json:"grpc,omitempty"`
+	WebSocket          *protocol.WebSocketSummary   `json:"websocket,omitempty"`
+	DiagnosticFindings []protocol.DiagnosticFinding `json:"diagnostic_findings,omitempty"`
+	Transactions       int64                        `json:"transactions"`
+	Errors             int64                        `json:"errors"`
+	ErrorPct           float64                      `json:"error_pct"`
+	AvgResponseMs      float64                      `json:"avg_response_ms"`
+	MinResponseMs      float64                      `json:"min_response_ms"`
+	MaxResponseMs      float64                      `json:"max_response_ms"`
+	PeakTPS            float64                      `json:"peak_tps,omitempty"`
+	P50Ms              float64                      `json:"p50_ms,omitempty"`
+	P90Ms              float64                      `json:"p90_ms,omitempty"`
+	P95Ms              float64                      `json:"p95_ms,omitempty"`
+	P99Ms              float64                      `json:"p99_ms,omitempty"`
+	PercentileQuality  string                       `json:"percentile_quality,omitempty"`
+	durations          []float64
+	// javaHTTPActions counts actual java_http actions, which JavaHTTP.Population
+	// reports; enclosing transactions and other protocols' actions are excluded.
+	javaHTTPActions int64
 }
 
 type RunArchiveResourcePeaks struct {

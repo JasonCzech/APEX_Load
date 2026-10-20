@@ -70,9 +70,14 @@ func (s *JavaHTTPActions) Retained() *JavaHTTPActions {
 
 // AddJavaHTTPAction merges populations for the same action. The caller marks
 // envelopes incomplete when source coverage is unknown; absence is not zero.
+// population is the caller's action count; a summary that counted its own
+// java_http population replaces it, excluding same-named actions of other protocols.
 func AddJavaHTTPAction(dst **JavaHTTPActions, name string, population int64, s *JavaHTTPSummary) {
 	if dst == nil || s == nil {
 		return
+	}
+	if s.Population > 0 && s.Valid() {
+		population = s.Population
 	}
 	if *dst == nil {
 		*dst = &JavaHTTPActions{Version: 1, Actions: map[string]JavaHTTPActionSummary{}}

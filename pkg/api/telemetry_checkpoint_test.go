@@ -15,7 +15,7 @@ import (
 )
 
 func checkpointTestRun() *ManagedTest {
-	return &ManagedTest{ID: "durable-run", RefKey: "RUN-durable", ProjectID: storage.DefaultProjectID, Status: "RUNNING", Groups: []TestGroup{{Name: "checkout"}}, CreatedAt: time.Unix(1800000000, 0).UTC(), executionGeneration: 7, initialArchiveProvenance: &RunArchiveProvenance{RunIncarnation: "incarnation-1"}}
+	return &ManagedTest{ID: "durable-run", RefKey: "RUN-durable", ProjectID: storage.DefaultProjectID, Status: "RUNNING", Groups: []TestGroup{{Name: "checkout"}}, Assignment: &GeneratorAssignmentSettings{FailoverPolicy: failoverPolicyContinue}, CreatedAt: time.Unix(1800000000, 0).UTC(), executionGeneration: 7, initialArchiveProvenance: &RunArchiveProvenance{RunIncarnation: "incarnation-1"}}
 }
 func checkpointBatch(test *ManagedTest, collection uint64) generatorrpc.MetricsBatch {
 	start := test.CreatedAt.Add(time.Duration(collection-1) * time.Second)
@@ -43,7 +43,7 @@ func TestTelemetryCheckpointRoundTripAndReplay(t *testing.T) {
 	}
 	successor := checkpointTestRun()
 	successor.executionGeneration++
-	restored, totals, err := decodeTelemetryCheckpoint(string(raw), cp.Revision, successor)
+	restored, totals, err := decodeTelemetryCheckpoint(string(raw), cp.Revision, successor, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestTelemetryCheckpointRejectsIncompatibleEvidence(t *testing.T) {
 			}
 			mutate(&cp)
 			raw, _ = json.Marshal(cp)
-			if _, _, err := decodeTelemetryCheckpoint(string(raw), original.Revision, test); err == nil {
+			if _, _, err := decodeTelemetryCheckpoint(string(raw), original.Revision, test, 0); err == nil {
 				t.Fatal("invalid checkpoint accepted")
 			}
 		})
@@ -150,14 +150,159 @@ func TestTelemetryCheckpointRejectsIncompatibleEvidence(t *testing.T) {
 		}
 		delete(fields, field)
 		raw, _ = json.Marshal(fields)
-		if _, _, err := decodeTelemetryCheckpoint(string(raw), original.Revision, test); err == nil {
+		if _, _, err := decodeTelemetryCheckpoint(string(raw), original.Revision, test, 0); err == nil {
 			t.Fatalf("missing %s inferred zero or completeness", field)
 		}
 	}
 	for _, raw := range []string{"", "null", "{", `{"Version":99}`} {
-		if _, _, err := decodeTelemetryCheckpoint(raw, 1, test); err == nil {
+		if _, _, err := decodeTelemetryCheckpoint(raw, 1, test, 0); err == nil {
 			t.Fatalf("accepted %q", raw)
 		}
+	}
+}
+
+func TestTelemetryCheckpointPersistsOnlyAdoptableRuns(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "controller.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	test := checkpointTestRun()
+	test.executionGeneration = 0
+	if err := store.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.ID, RefKey: test.RefKey, ProjectID: test.ProjectID, StartTime: test.CreatedAt, Status: "RUNNING", InitialProvenance: test.initialArchiveProvenance}); err != nil {
+		t.Fatal(err)
+	}
+	durable, err := store.GetTest(test.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	test.RefKey = durable.RefKey
+	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}, historyStore: store}
+	acceptCheckpointBatch(test, checkpointBatch(test, 1), test.CreatedAt.Add(time.Second))
+	load := func() string {
+		t.Helper()
+		raw, _, err := store.LoadTelemetryCheckpoint(test.ID, test.RefKey, test.ProjectID, test.CreatedAt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	for _, assignment := range []*GeneratorAssignmentSettings{nil, {FailoverPolicy: failoverPolicyFail}} {
+		test.Assignment = assignment
+		runner.persistTelemetryCheckpoint(test)
+		if raw := load(); raw != "" {
+			t.Fatalf("non-adoptable run %+v persisted %q", assignment, raw)
+		}
+	}
+	test.Assignment = &GeneratorAssignmentSettings{FailoverPolicy: failoverPolicyContinue}
+	runner.persistTelemetryCheckpoint(test)
+	if load() == "" {
+		t.Fatal("continue-policy run did not persist its checkpoint")
+	}
+}
+
+// A snapshot from before the last term that armed continuity cannot contain
+// that term's counted windows: recovery falls back to history and the new
+// owner may replace the payload.
+func TestTelemetryCheckpointFromAnEarlierTermIsSuperseded(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "controller.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	test := checkpointTestRun()
+	test.executionGeneration = 0
+	if err := store.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.ID, RefKey: test.RefKey, ProjectID: test.ProjectID, StartTime: test.CreatedAt, Status: "RUNNING", InitialProvenance: test.initialArchiveProvenance}); err != nil {
+		t.Fatal(err)
+	}
+	durable, err := store.GetTest(test.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	test.RefKey = durable.RefKey
+	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}, historyStore: store}
+	acceptCheckpointBatch(test, checkpointBatch(test, 1), test.CreatedAt.Add(time.Second))
+	runner.persistTelemetryCheckpoint(test)
+	_, revision, err := store.LoadTelemetryCheckpoint(test.ID, test.RefKey, test.ProjectID, test.CreatedAt)
+	if err != nil || revision == 0 {
+		t.Fatal("fixture checkpoint", revision, err)
+	}
+	successor := checkpointTestRun()
+	successor.RefKey, successor.executionGeneration = durable.RefKey, 0
+	next := &TestRunner{tests: map[string]*ManagedTest{test.ID: successor}, historyStore: store}
+	// Term 1 armed continuity after this snapshot; term 2 adopts.
+	next.restoreTelemetryCheckpoint(successor, 2, 1)
+	if successor.telemetryCheckpointRestored || successor.telemetryCheckpointReadOnly || successor.telemetrySources != nil || successor.runTotals.initialized || successor.telemetryCheckpointRevision != revision {
+		t.Fatalf("superseded snapshot restored=%v readOnly=%v revision=%d", successor.telemetryCheckpointRestored, successor.telemetryCheckpointReadOnly, successor.telemetryCheckpointRevision)
+	}
+	next.restoreTelemetryCheckpoint(successor, 2, 0)
+	if !successor.telemetryCheckpointRestored || successor.runTotals.total.tx != 8 {
+		t.Fatal("snapshot from the adopted term was refused")
+	}
+}
+
+func TestTelemetryAdoptionKeepsARestoredTerminalRetirement(t *testing.T) {
+	test := checkpointTestRun()
+	ledger := telemetrySourceLedgerLocked(test)
+	ledger.assign("generator", test.CreatedAt)
+	terminal := checkpointBatch(test, 1)
+	terminal.LifecycleState = "COMPLETE"
+	acceptCheckpointBatch(test, terminal, test.CreatedAt.Add(time.Second))
+	retired := ledger.requirements["generator"].retiredAtMs
+	if retired == 0 {
+		t.Fatal("terminal publication did not retire the source")
+	}
+	adoptedAt := test.CreatedAt.Add(time.Hour)
+	ledger.retireAtAdoption("generator", adoptedAt)
+	if got := ledger.requirements["generator"].retiredAtMs; got != retired {
+		t.Fatalf("adoption moved an observed retirement from %d to %d", retired, got)
+	}
+	ledger.assign("gap-only", adoptedAt)
+	ledger.retireAtAdoption("gap-only", adoptedAt)
+	if got := ledger.requirements["gap-only"].retiredAtMs; got != adoptedAt.UnixMilli() {
+		t.Fatal("a source completed during the gap was not retired at the adoption", got)
+	}
+}
+
+// A tight allowance trims optional windows on every epoch before it drops any
+// later epoch's source/counter record.
+func TestTelemetrySourceSidecarReservesEveryEpochBeforeWindows(t *testing.T) {
+	test := checkpointTestRun()
+	ledger := telemetrySourceLedgerLocked(test)
+	const sources = 6
+	for s := 0; s < sources; s++ {
+		source := fmt.Sprintf("generator-%d", s)
+		for i := uint64(1); i <= 20; i++ {
+			batch := checkpointBatch(test, i)
+			batch.SourceEpoch = "epoch-" + source
+			ledger.observe(source, batch, time.UnixMilli(batch.TimestampUnixMs))
+			accepted := batch
+			countDistributedWindowLocked(test, source, batch, &accepted)
+		}
+	}
+	base, _ := ledger.snapshotRecords(false)
+	if len(base) != sources {
+		t.Fatalf("fixture epochs %d", len(base))
+	}
+	natural := 0
+	for _, epoch := range base {
+		epoch.CollectionWindowsTruncated = true
+		line, err := json.Marshal(epoch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		natural += len(line) + 1
+	}
+	t.Setenv(envArchiveTelemetrySourcesMaxBytes, fmt.Sprint(natural+512))
+	record := &storage.RunArchiveRecord{TestID: test.ID, ArchivePath: t.TempDir()}
+	record.ManifestPath = filepath.Join(record.ArchivePath, "manifest.json")
+	admitArchiveForTest(t, record)
+	manifest := &RunArchiveManifest{}
+	if err := (&TestRunner{}).persistTelemetrySourceArchive(context.Background(), test, record, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.TelemetrySourceEpochCount != sources || !manifest.TelemetrySourcesTruncated {
+		t.Fatalf("epochs written %d of %d (truncated=%v)", manifest.TelemetrySourceEpochCount, sources, manifest.TelemetrySourcesTruncated)
 	}
 }
 
@@ -211,7 +356,7 @@ func TestTelemetryCheckpointDurableRestartAndAtomicFailure(t *testing.T) {
 	successor.RefKey = durable.RefKey
 	successor.executionGeneration = 0
 	nextRunner := &TestRunner{tests: map[string]*ManagedTest{test.ID: successor}, historyStore: store}
-	nextRunner.restoreTelemetryCheckpoint(successor, 1)
+	nextRunner.restoreTelemetryCheckpoint(successor, 1, 0)
 	if !successor.telemetryCheckpointRestored || successor.runTotals.total.tx != 8 || successor.runTotals.windows["generator"].collection != 1 || len(successor.telemetrySources.collections) != 1 {
 		t.Fatalf("cursor/effects split on restart: %+v", successor.runTotals)
 	}
@@ -252,7 +397,7 @@ func TestTelemetryCheckpointRetentionAndArchiveCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	restored, _, err := decodeTelemetryCheckpoint(string(raw), cp.Revision, test)
+	restored, _, err := decodeTelemetryCheckpoint(string(raw), cp.Revision, test, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +428,7 @@ func TestTelemetryCheckpointArchiveRetainsRecoveredWindows(t *testing.T) {
 	acceptCheckpointBatch(test, batch, test.CreatedAt.Add(time.Second))
 	cp := captureTelemetryCheckpointLocked(test)
 	raw, _ := json.Marshal(cp)
-	ledger, totals, err := decodeTelemetryCheckpoint(string(raw), cp.Revision, test)
+	ledger, totals, err := decodeTelemetryCheckpoint(string(raw), cp.Revision, test, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +503,7 @@ func TestTelemetryCheckpointLegacyAndAmbiguousCommit(t *testing.T) {
 	}
 	test.RefKey = row.RefKey
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}, historyStore: checkpointReplyFailureStore{store}}
-	runner.restoreTelemetryCheckpoint(test, 0)
+	runner.restoreTelemetryCheckpoint(test, 0, 0)
 	if test.telemetryCheckpointRestored || test.telemetrySources != nil || test.runTotals.initialized {
 		t.Fatal("legacy absence acquired durable evidence")
 	}
@@ -375,7 +520,7 @@ func TestTelemetryCheckpointLegacyAndAmbiguousCommit(t *testing.T) {
 		t.Fatal("accepted window rejected")
 	}
 	// The real acceptance seam commits cursor and totals despite a lost reply.
-	runner.restoreTelemetryCheckpoint(test, 0)
+	runner.restoreTelemetryCheckpoint(test, 0, 0)
 	if !test.telemetryCheckpointRestored || test.runTotals.total.tx != 8 || test.runTotals.windows["generator"].collection != 1 {
 		t.Fatal("ambiguous successful commit lost cursor or effects")
 	}
@@ -393,7 +538,7 @@ func TestTelemetryCheckpointLegacyAndAmbiguousCommit(t *testing.T) {
 	if ok, err := store.SaveTelemetryCheckpoint(storage.TelemetryCheckpointWrite{ID: test.ID, RefKey: test.RefKey, ProjectID: test.ProjectID, StartTime: test.CreatedAt, RunIncarnation: managedTestRunIncarnation(test), Revision: cp.Revision, Payload: string(future)}); err != nil || !ok {
 		t.Fatalf("future fixture %v %v", ok, err)
 	}
-	runner.restoreTelemetryCheckpoint(test, 0)
+	runner.restoreTelemetryCheckpoint(test, 0, 0)
 	if test.telemetryCheckpointRestored || !test.telemetryCheckpointReadOnly || test.telemetrySources != nil {
 		t.Fatal("future schema accepted or writable")
 	}
@@ -410,7 +555,7 @@ func TestTelemetryCheckpointAdoptionDoesNotOverwriteNewerEffects(t *testing.T) {
 	acceptCheckpointBatch(test, checkpointBatch(test, 1), test.CreatedAt.Add(time.Second))
 	cp := captureTelemetryCheckpointLocked(test)
 	raw, _ := json.Marshal(cp)
-	ledger, totals, err := decodeTelemetryCheckpoint(string(raw), cp.Revision, test)
+	ledger, totals, err := decodeTelemetryCheckpoint(string(raw), cp.Revision, test, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

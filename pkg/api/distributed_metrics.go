@@ -1687,10 +1687,12 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	out := generatorrpc.MetricAggregate{}
 	durations := engine.NewDurationDistributionMerge()
 	var avgMsSum, dnsSum, connectSum, tlsSum, ttfbSum float64
+	javaUncounted := false
 	for _, value := range values {
 		if value.Count == 0 {
 			continue
 		}
+		javaUncounted = javaUncounted || protocol.JavaHTTPPeerUncounted(value.JavaHTTP, value.Count, value.DependencyType)
 		if out.Name == "" {
 			out.Name = value.Name
 		}
@@ -1714,6 +1716,9 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	}
 	if out.Count == 0 {
 		return nil
+	}
+	if javaUncounted {
+		out.JavaHTTP.ForgetPopulation()
 	}
 	out.JavaHTTP = out.JavaHTTP.RetainedForPopulation(out.Count)
 	out.MessagingVersion = 1

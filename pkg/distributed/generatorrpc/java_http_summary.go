@@ -14,6 +14,7 @@ func javaHTTPSummaryToProto(s *protocol.JavaHTTPSummary) *pb.JavaHTTPSummary {
 		return &pb.JavaHTTPSummary{}
 	}
 	return &pb.JavaHTTPSummary{
+		Population:             s.Population,
 		RequestCompressionNone: s.RequestCompressionNone, RequestCompressionGzip: s.RequestCompressionGzip, RequestCompressionDeflate: s.RequestCompressionDeflate,
 		Version:             uint32(s.Version),
 		Mode:                s.Mode,
@@ -53,6 +54,7 @@ func javaHTTPSummaryFromProto(p *pb.JavaHTTPSummary) *protocol.JavaHTTPSummary {
 		return refusedJavaHTTPSummary()
 	}
 	s := &protocol.JavaHTTPSummary{
+		Population:             p.Population,
 		RequestCompressionNone: p.RequestCompressionNone, RequestCompressionGzip: p.RequestCompressionGzip, RequestCompressionDeflate: p.RequestCompressionDeflate,
 		Version:             int(p.Version),
 		Mode:                p.Mode,

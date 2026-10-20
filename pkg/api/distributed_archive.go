@@ -1858,7 +1858,8 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 					aggregate.JavaHTTP.Incomplete = true
 				}
 			}
-			aggregate.JavaHTTP.Incomplete = aggregate.JavaHTTP.Incomplete || missingSourceCoverage
+			// A known generator with no row in this window is unknown work, not zero.
+			aggregate.JavaHTTP.Incomplete = aggregate.JavaHTTP.Incomplete || missingSourceCoverage || len(windowRecords) < len(bundles)
 		}
 		if messagingIncomplete {
 			for _, s := range aggregate.Messaging {

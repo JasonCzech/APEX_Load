@@ -28,7 +28,7 @@ func TestJavaHTTPActionSummarySurvivesActualEngineAndMetricsStream(t *testing.T)
 			action = &values[i]
 		}
 	}
-	if action == nil || action.JavaHTTP == nil || action.JavaHTTP.Samples != 1 || action.JavaHTTP.Incomplete {
+	if action == nil || action.JavaHTTP == nil || action.JavaHTTP.Samples != 1 || action.JavaHTTP.Population != 1 || action.JavaHTTP.Incomplete {
 		t.Fatal("actual Java action summary missing", values)
 	}
 	for _, value := range engineActionMetricsToAggregates(snapshot.ByTransaction) {
@@ -111,5 +111,32 @@ func TestJavaHTTPGeneratorIntervalArchiveProjection(t *testing.T) {
 	}
 	if archiveJavaHTTPFromBatch(&pb.MetricsBatch{}) != nil {
 		t.Fatal("old peer invented diagnostics")
+	}
+}
+
+// A peer that sent no Java summary is another protocol's same-named action
+// when its dependency type says so; otherwise it may be an older generator's
+// uncounted java_http actions, and the merged population becomes unknown.
+func TestJavaHTTPActionSummaryUncountedPeersForgetThePopulation(t *testing.T) {
+	var counted *protocol.JavaHTTPSummary
+	protocol.ObserveJavaHTTPAction(&counted, javaWireDiagnostic())
+	for _, tc := range []struct {
+		dependency string
+		known      bool
+	}{{"http", true}, {"java_http", false}, {"", false}, {"multiple", false}} {
+		for _, reverse := range []bool{false, true} {
+			values := []MetricAggregate{{Name: "call", Count: 1, DependencyType: "java_http", JavaHTTP: counted}, {Name: "call", Count: 2, DependencyType: tc.dependency}}
+			if reverse {
+				values[0], values[1] = values[1], values[0]
+			}
+			merged := mergeMetricAggregates(values)
+			got := merged.JavaHTTP
+			if got == nil || got.Samples != 1 || got.Incomplete == tc.known || (got.Population == 1) != tc.known || tc.known != !got.RetainedForPopulation(merged.Count).Incomplete {
+				t.Fatalf("peer %q reverse %v: %+v", tc.dependency, reverse, got)
+			}
+		}
+	}
+	if merged := mergeMetricAggregates([]MetricAggregate{{Name: "call", Count: 2, DependencyType: "browser"}, {Name: "call", Count: 1}}); merged.JavaHTTP != nil {
+		t.Fatal("an action without Java peers gained a Java summary", merged.JavaHTTP)
 	}
 }

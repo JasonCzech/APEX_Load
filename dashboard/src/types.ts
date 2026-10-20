@@ -1532,7 +1532,6 @@ export interface ArchivePage<T> {
 }
 
 export interface RunArchiveActionStats {
-  actual_action_samples?: number
   java_http?: import('./types/javaHttp').JavaHTTPSummary
   messaging?: MessagingSummary
   transactions: number

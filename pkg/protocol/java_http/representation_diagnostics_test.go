@@ -20,7 +20,7 @@ func TestJavaHTTPVersionedRepresentationObservations(t *testing.T) {
 		name, input, encoding, compression, state, responseState string
 		decoded                                                  int64
 		status, responseLimit                                    int
-		discard, compressResponse, reachesTarget                 bool
+		discard, compressResponse, reachesTarget, lateFailure    bool
 	}{
 		{name: "binary", input: "AP8BAg==", state: "decoded", decoded: 4, responseState: "complete", reachesTarget: true},
 		{name: "empty", state: "empty", responseState: "complete", reachesTarget: true},
@@ -30,6 +30,8 @@ func TestJavaHTTPVersionedRepresentationObservations(t *testing.T) {
 		{name: "HTTP failure retains representation", input: "YQ==", state: "decoded", decoded: 1, status: 500, responseState: "complete", reachesTarget: true},
 		{name: "response cap is unavailable", input: "YQ==", state: "decoded", decoded: 1, responseLimit: 2, responseState: "unavailable", reachesTarget: true},
 		{name: "discarded response is explicit", input: "YQ==", state: "decoded", decoded: 1, discard: true, responseState: "discarded", reachesTarget: true},
+		// A text check fails the action after the adapter discarded the body.
+		{name: "late failure after discard is unavailable", input: "YQ==", state: "decoded", decoded: 1, discard: true, lateFailure: true, responseState: "unavailable", reachesTarget: true},
 		{name: "truncated base64", input: "YWJ", state: "decode_failed", responseState: "unavailable"},
 		{name: "unsupported encoding", input: "YQ==", encoding: "utf8", state: "unsupported_encoding", responseState: "unavailable"},
 		{name: "unsupported empty encoding", encoding: "utf8", state: "unsupported_encoding", responseState: "unavailable"},
@@ -68,6 +70,11 @@ func TestJavaHTTPVersionedRepresentationObservations(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer j.Teardown(context.Background())
+			if tc.lateFailure {
+				if err := j.http.ConfigureVerification(protocol.Verification{Operation: "register", ID: "absent", Text: "never-present-marker", Scope: "body"}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			action := &protocol.Action{Name: "opaque", Method: "POST", Target: server.URL, Body: []byte(tc.input), BodyEncoding: tc.encoding, DiscardResponseBodyOnSuccess: tc.discard, Params: map[string]any{}}
 			if tc.compression != "" {
 				action.Params["content_encoding"] = tc.compression
@@ -80,6 +87,9 @@ func TestJavaHTTPVersionedRepresentationObservations(t *testing.T) {
 				t.Fatal("missing versioned observation", result, err)
 			}
 			d := result.ServerTelemetry.JavaHTTP
+			if tc.lateFailure && result.Success {
+				t.Fatal("verification did not fail the action")
+			}
 			if !d.Valid() || d.InputState != tc.state || d.RequestEncodedBytes != int64(len(tc.input)) || d.ResponseState != tc.responseState || d.ObjectFootprint != "unavailable_embedded_opaque_bytes" {
 				t.Fatalf("wrong observation %+v", d)
 			}

@@ -147,7 +147,7 @@ test('HAR ownership help distinguishes caller waits from capture finalization an
   await expect(article).toContainText('30-second capture finalization deadline')
   await expect(article).toContainText('two-second caller wait is separate')
   await expect(article).toContainText('does not forcibly terminate a callback')
-  await expect(article).toContainText('256 outstanding issued requests')
+  await expect(article).toContainText('1,024 outstanding issued requests')
   await expect(article).toContainText('har_in_flight')
   await expect(article).toContainText('document observations censored')
   await page.goto('/#/docs?guide=user-guide&article=browser-har-ownership&section=outstanding-request-limit')

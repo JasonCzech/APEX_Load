@@ -334,8 +334,10 @@ func (o *harCaptureOwner) abandonWriter() {
 	o.boundOnce.Do(func() { close(o.bound) })
 }
 
+// startClose does not start the finalization budget: a resource-limit close can
+// happen mid-session, while finalization begins only at teardown (the runtime
+// and document joins and startFinish start the one shared deadline).
 func (o *harCaptureOwner) startClose() {
-	o.startFinalizationBudget()
 	o.closeOnce.Do(func() {
 		go func() {
 			var err error

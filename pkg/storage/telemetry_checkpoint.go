@@ -45,25 +45,31 @@ func (s *SQLiteStore) SaveTelemetryCheckpoint(w TelemetryCheckpointWrite) (bool,
 		}
 	}
 	var provenance string
-	query := `SELECT COALESCE(initial_provenance_json, '') FROM tests WHERE id = ?`
+	var start time.Time
+	query := `SELECT start_time, COALESCE(initial_provenance_json, '') FROM tests WHERE id = ?`
 	if s.db.dialect == storeDialectPostgres {
 		query += ` FOR UPDATE`
 	}
-	if err := tx.QueryRow(query, w.ID).Scan(&provenance); err != nil {
+	if err := tx.QueryRow(query, w.ID).Scan(&start, &provenance); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
 		return false, err
+	}
+	// SQLite keeps each writer's textual zone and monotonic suffix, so compare
+	// the start instant here rather than with SQL text equality.
+	if !archiveIdentityTimestampEqual(s.db.dialect, start, w.StartTime) {
+		return false, nil
 	}
 	incarnation, err := TestRunIncarnation(json.RawMessage(provenance))
 	if err != nil || incarnation != w.RunIncarnation {
 		return false, nil
 	}
 	result, err := tx.Exec(`UPDATE tests SET telemetry_checkpoint_json = ?, telemetry_checkpoint_revision = ?
- WHERE id = ? AND COALESCE(ref_key, '') = ? AND COALESCE(project_id, '') = ? AND start_time = ?
+ WHERE id = ? AND COALESCE(ref_key, '') = ? AND COALESCE(project_id, '') = ?
  AND execution_generation = ? AND telemetry_checkpoint_revision < ? AND COALESCE(initial_provenance_json, '') = ?
  AND status IN ('INITIALIZING', 'STARTING', 'RUNNING', 'PAUSED', 'STOPPING')`,
-		w.Payload, w.Revision, w.ID, w.RefKey, w.ProjectID, w.StartTime.UTC(), int64(w.Generation), w.Revision, provenance)
+		w.Payload, w.Revision, w.ID, w.RefKey, w.ProjectID, int64(w.Generation), w.Revision, provenance)
 	if err != nil {
 		return false, err
 	}
@@ -83,13 +89,20 @@ func (s *SQLiteStore) SaveTelemetryCheckpoint(w TelemetryCheckpointWrite) (bool,
 func (s *SQLiteStore) LoadTelemetryCheckpoint(id, refKey, projectID string, start time.Time) (string, int64, error) {
 	var raw string
 	var revision int64
-	err := s.db.QueryRow(`SELECT COALESCE(telemetry_checkpoint_json, ''), telemetry_checkpoint_revision FROM tests
- WHERE id = ? AND COALESCE(ref_key, '') = ? AND COALESCE(project_id, '') = ? AND start_time = ?`, id, refKey, projectID, start.UTC()).Scan(&raw, &revision)
+	var stored time.Time
+	err := s.db.QueryRow(`SELECT start_time, COALESCE(telemetry_checkpoint_json, ''), telemetry_checkpoint_revision FROM tests
+ WHERE id = ? AND COALESCE(ref_key, '') = ? AND COALESCE(project_id, '') = ?`, id, refKey, projectID).Scan(&stored, &raw, &revision)
 	if errors.Is(err, sql.ErrNoRows) {
+		return "", 0, nil
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	if !archiveIdentityTimestampEqual(s.db.dialect, stored, start) {
 		return "", 0, nil
 	}
 	if len(raw) > MaxTelemetryCheckpointBytes {
 		return "", 0, fmt.Errorf("telemetry checkpoint exceeds limit")
 	}
-	return raw, revision, err
+	return raw, revision, nil
 }

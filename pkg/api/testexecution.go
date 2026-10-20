@@ -6049,6 +6049,8 @@ func (tr *TestRunner) completeTestRunUnderArchiveFence(test *ManagedTest, finalS
 func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord, promotePending bool) error {
 	// Retain one exact terminal boundary for live views, annotations and history.
 	endTime = atMicrosecond(endTime)
+	// A STOPPING-only operator instruction never survives into a terminal error.
+	finalError = withoutEvacuationIntervention(finalError)
 	if test != nil {
 		tr.finishLiveTables(test, finalStatus)
 	}

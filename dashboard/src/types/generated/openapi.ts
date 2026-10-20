@@ -2012,7 +2012,6 @@ export interface operations {
               "source"?: string;
             }>;
             "by_action"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms"?: number;
               "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
@@ -2110,6 +2109,7 @@ export interface operations {
                 "invalid_samples"?: number;
                 "mode"?: string;
                 "object_footprint"?: string;
+                "population"?: number;
                 "prepared_per_decoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -2245,7 +2245,6 @@ export interface operations {
               }) | null;
             }>;
             "by_group"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms"?: number;
               "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
@@ -2343,6 +2342,7 @@ export interface operations {
                 "invalid_samples"?: number;
                 "mode"?: string;
                 "object_footprint"?: string;
+                "population"?: number;
                 "prepared_per_decoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -2478,7 +2478,6 @@ export interface operations {
               }) | null;
             }>;
             "by_network_profile"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms"?: number;
               "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
@@ -2576,6 +2575,7 @@ export interface operations {
                 "invalid_samples"?: number;
                 "mode"?: string;
                 "object_footprint"?: string;
+                "population"?: number;
                 "prepared_per_decoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -2711,7 +2711,6 @@ export interface operations {
               }) | null;
             }>;
             "by_property"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms"?: number;
               "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
@@ -2809,6 +2808,7 @@ export interface operations {
                 "invalid_samples"?: number;
                 "mode"?: string;
                 "object_footprint"?: string;
+                "population"?: number;
                 "prepared_per_decoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -2944,7 +2944,6 @@ export interface operations {
               }) | null;
             }>;
             "by_region"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms"?: number;
               "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
@@ -3042,6 +3041,7 @@ export interface operations {
                 "invalid_samples"?: number;
                 "mode"?: string;
                 "object_footprint"?: string;
+                "population"?: number;
                 "prepared_per_decoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -3177,7 +3177,6 @@ export interface operations {
               }) | null;
             }>;
             "by_request"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms"?: number;
               "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
@@ -3275,6 +3274,7 @@ export interface operations {
                 "invalid_samples"?: number;
                 "mode"?: string;
                 "object_footprint"?: string;
+                "population"?: number;
                 "prepared_per_decoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -3412,7 +3412,6 @@ export interface operations {
             "by_soap_fault_category"?: Record<string, number>;
             "by_soap_fault_code"?: Record<string, number>;
             "by_soap_operation"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms"?: number;
               "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
@@ -3510,6 +3509,7 @@ export interface operations {
                 "invalid_samples"?: number;
                 "mode"?: string;
                 "object_footprint"?: string;
+                "population"?: number;
                 "prepared_per_decoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -3645,7 +3645,6 @@ export interface operations {
               }) | null;
             }>;
             "by_transaction"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms"?: number;
               "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
@@ -3743,6 +3742,7 @@ export interface operations {
                 "invalid_samples"?: number;
                 "mode"?: string;
                 "object_footprint"?: string;
+                "population"?: number;
                 "prepared_per_decoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -3878,7 +3878,6 @@ export interface operations {
               }) | null;
             }>;
             "by_unknown"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms"?: number;
               "diagnostic_findings"?: Array<Record<string, unknown>>;
               "error_pct"?: number;
@@ -3976,6 +3975,7 @@ export interface operations {
                 "invalid_samples"?: number;
                 "mode"?: string;
                 "object_footprint"?: string;
+                "population"?: number;
                 "prepared_per_decoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -4950,7 +4950,6 @@ export interface operations {
               "version"?: number;
             }) | null;
             "metric_populations"?: Record<string, {
-              "actual_action_samples"?: number;
               "average_rate_per_second"?: (number) | null;
               "avg_response_ms"?: number;
               "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -5049,6 +5048,7 @@ export interface operations {
                 "invalid_samples"?: number;
                 "mode"?: string;
                 "object_footprint"?: string;
+                "population"?: number;
                 "prepared_per_decoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -32931,6 +32931,7 @@ export interface operations {
                   "invalid_samples": number;
                   "mode": string;
                   "object_footprint": string;
+                  "population"?: number;
                   "prepared_per_decoded": {
                     "denominator_bytes": number;
                     "numerator_bytes": number;
@@ -33426,6 +33427,7 @@ export interface operations {
                   "invalid_samples": number;
                   "mode": string;
                   "object_footprint": string;
+                  "population"?: number;
                   "prepared_per_decoded": {
                     "denominator_bytes": number;
                     "numerator_bytes": number;
@@ -38857,6 +38859,7 @@ export interface operations {
                       "invalid_samples": number;
                       "mode": string;
                       "object_footprint": string;
+                      "population"?: number;
                       "prepared_per_decoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -39541,6 +39544,7 @@ export interface operations {
                       "invalid_samples": number;
                       "mode": string;
                       "object_footprint": string;
+                      "population"?: number;
                       "prepared_per_decoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -46311,6 +46315,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -46602,6 +46607,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -47583,6 +47589,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -48287,6 +48294,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -48594,6 +48602,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -49052,6 +49061,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -49367,6 +49377,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -49662,6 +49673,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -50006,6 +50018,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -50498,6 +50511,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -62773,6 +62787,7 @@ export interface operations {
                   "invalid_samples": number;
                   "mode": string;
                   "object_footprint": string;
+                  "population"?: number;
                   "prepared_per_decoded": {
                     "denominator_bytes": number;
                     "numerator_bytes": number;
@@ -63268,6 +63283,7 @@ export interface operations {
                   "invalid_samples": number;
                   "mode": string;
                   "object_footprint": string;
+                  "population"?: number;
                   "prepared_per_decoded": {
                     "denominator_bytes": number;
                     "numerator_bytes": number;
@@ -66887,6 +66903,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -67587,6 +67604,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -67894,6 +67912,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -68352,6 +68371,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -68667,6 +68687,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -68962,6 +68983,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -69306,6 +69328,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -69798,6 +69821,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -72133,6 +72157,7 @@ export interface operations {
                       "invalid_samples": number;
                       "mode": string;
                       "object_footprint": string;
+                      "population"?: number;
                       "prepared_per_decoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -72817,6 +72842,7 @@ export interface operations {
                       "invalid_samples": number;
                       "mode": string;
                       "object_footprint": string;
+                      "population"?: number;
                       "prepared_per_decoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -77136,6 +77162,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -77619,6 +77646,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -78034,7 +78062,6 @@ export interface operations {
               "source": string;
             }>;
             "by_action": Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms": number;
               "diagnostic_findings"?: Array<{
                 "advisory": boolean;
@@ -78140,6 +78167,7 @@ export interface operations {
                 "invalid_samples": number;
                 "mode": string;
                 "object_footprint": string;
+                "population"?: number;
                 "prepared_per_decoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -78275,7 +78303,6 @@ export interface operations {
               }) | null;
             }>;
             "by_group"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms": number;
               "diagnostic_findings"?: Array<{
                 "advisory": boolean;
@@ -78381,6 +78408,7 @@ export interface operations {
                 "invalid_samples": number;
                 "mode": string;
                 "object_footprint": string;
+                "population"?: number;
                 "prepared_per_decoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -78516,7 +78544,6 @@ export interface operations {
               }) | null;
             }>;
             "by_network_profile"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms": number;
               "diagnostic_findings"?: Array<{
                 "advisory": boolean;
@@ -78622,6 +78649,7 @@ export interface operations {
                 "invalid_samples": number;
                 "mode": string;
                 "object_footprint": string;
+                "population"?: number;
                 "prepared_per_decoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -78757,7 +78785,6 @@ export interface operations {
               }) | null;
             }>;
             "by_property"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms": number;
               "diagnostic_findings"?: Array<{
                 "advisory": boolean;
@@ -78863,6 +78890,7 @@ export interface operations {
                 "invalid_samples": number;
                 "mode": string;
                 "object_footprint": string;
+                "population"?: number;
                 "prepared_per_decoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -78998,7 +79026,6 @@ export interface operations {
               }) | null;
             }>;
             "by_region"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms": number;
               "diagnostic_findings"?: Array<{
                 "advisory": boolean;
@@ -79104,6 +79131,7 @@ export interface operations {
                 "invalid_samples": number;
                 "mode": string;
                 "object_footprint": string;
+                "population"?: number;
                 "prepared_per_decoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -79239,7 +79267,6 @@ export interface operations {
               }) | null;
             }>;
             "by_request"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms": number;
               "diagnostic_findings"?: Array<{
                 "advisory": boolean;
@@ -79345,6 +79372,7 @@ export interface operations {
                 "invalid_samples": number;
                 "mode": string;
                 "object_footprint": string;
+                "population"?: number;
                 "prepared_per_decoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -79482,7 +79510,6 @@ export interface operations {
             "by_soap_fault_category"?: Record<string, number>;
             "by_soap_fault_code"?: Record<string, number>;
             "by_soap_operation"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms": number;
               "diagnostic_findings"?: Array<{
                 "advisory": boolean;
@@ -79588,6 +79615,7 @@ export interface operations {
                 "invalid_samples": number;
                 "mode": string;
                 "object_footprint": string;
+                "population"?: number;
                 "prepared_per_decoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -79723,7 +79751,6 @@ export interface operations {
               }) | null;
             }>;
             "by_transaction"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms": number;
               "diagnostic_findings"?: Array<{
                 "advisory": boolean;
@@ -79829,6 +79856,7 @@ export interface operations {
                 "invalid_samples": number;
                 "mode": string;
                 "object_footprint": string;
+                "population"?: number;
                 "prepared_per_decoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -79964,7 +79992,6 @@ export interface operations {
               }) | null;
             }>;
             "by_unknown"?: Record<string, {
-              "actual_action_samples"?: number;
               "avg_response_ms": number;
               "diagnostic_findings"?: Array<{
                 "advisory": boolean;
@@ -80070,6 +80097,7 @@ export interface operations {
                 "invalid_samples": number;
                 "mode": string;
                 "object_footprint": string;
+                "population"?: number;
                 "prepared_per_decoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -81682,7 +81710,6 @@ export interface operations {
               "version": number;
             }) | null;
             "metric_populations"?: Record<string, {
-              "actual_action_samples"?: number;
               "average_rate_per_second"?: (number) | null;
               "avg_response_ms": number;
               "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -81781,6 +81808,7 @@ export interface operations {
                 "invalid_samples": number;
                 "mode": string;
                 "object_footprint": string;
+                "population"?: number;
                 "prepared_per_decoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -88817,6 +88845,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -89108,6 +89137,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -90089,6 +90119,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -90793,6 +90824,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -91100,6 +91132,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -91558,6 +91591,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -91873,6 +91907,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -92168,6 +92203,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -92512,6 +92548,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -93004,6 +93041,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -111727,6 +111765,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -112018,6 +112057,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -112999,6 +113039,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -113703,6 +113744,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -114010,6 +114052,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -114468,6 +114511,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -114783,6 +114827,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -115078,6 +115123,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -115422,6 +115468,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -115914,6 +115961,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -130189,6 +130237,7 @@ export interface operations {
                       "invalid_samples": number;
                       "mode": string;
                       "object_footprint": string;
+                      "population"?: number;
                       "prepared_per_decoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -130873,6 +130922,7 @@ export interface operations {
                       "invalid_samples": number;
                       "mode": string;
                       "object_footprint": string;
+                      "population"?: number;
                       "prepared_per_decoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -132531,6 +132581,7 @@ export interface operations {
                       "invalid_samples": number;
                       "mode": string;
                       "object_footprint": string;
+                      "population"?: number;
                       "prepared_per_decoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -133215,6 +133266,7 @@ export interface operations {
                       "invalid_samples": number;
                       "mode": string;
                       "object_footprint": string;
+                      "population"?: number;
                       "prepared_per_decoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -134873,6 +134925,7 @@ export interface operations {
                       "invalid_samples": number;
                       "mode": string;
                       "object_footprint": string;
+                      "population"?: number;
                       "prepared_per_decoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -135557,6 +135610,7 @@ export interface operations {
                       "invalid_samples": number;
                       "mode": string;
                       "object_footprint": string;
+                      "population"?: number;
                       "prepared_per_decoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -137215,6 +137269,7 @@ export interface operations {
                       "invalid_samples": number;
                       "mode": string;
                       "object_footprint": string;
+                      "population"?: number;
                       "prepared_per_decoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -137899,6 +137954,7 @@ export interface operations {
                       "invalid_samples": number;
                       "mode": string;
                       "object_footprint": string;
+                      "population"?: number;
                       "prepared_per_decoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -139557,6 +139613,7 @@ export interface operations {
                       "invalid_samples": number;
                       "mode": string;
                       "object_footprint": string;
+                      "population"?: number;
                       "prepared_per_decoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -140241,6 +140298,7 @@ export interface operations {
                       "invalid_samples": number;
                       "mode": string;
                       "object_footprint": string;
+                      "population"?: number;
                       "prepared_per_decoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -143320,6 +143378,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -143611,6 +143670,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -144592,6 +144652,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -145296,6 +145357,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -145603,6 +145665,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -146061,6 +146124,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -146376,6 +146440,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -146671,6 +146736,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -147015,6 +147081,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -147507,6 +147574,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -170458,6 +170526,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -170749,6 +170818,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -171730,6 +171800,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -172434,6 +172505,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -172741,6 +172813,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -173199,6 +173272,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -173514,6 +173588,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -173809,6 +173884,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -174153,6 +174229,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -174645,6 +174722,7 @@ export interface operations {
                     "invalid_samples": number;
                     "mode": string;
                     "object_footprint": string;
+                    "population"?: number;
                     "prepared_per_decoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;

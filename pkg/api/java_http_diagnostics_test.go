@@ -176,6 +176,19 @@ func TestJavaHTTPControllerMergePreservesActionPopulation(t *testing.T) {
 	if got := mergeGeneratorMetricAggregates([]generatorrpc.MetricAggregate{invalid, current}); got.JavaHTTP == nil || !got.JavaHTTP.Incomplete || got.JavaHTTP.Samples != 1 {
 		t.Fatal("invalid peer", got)
 	}
+	// A counted population survives another protocol's same-named peer, but an
+	// older generator's uncounted java_http peer makes it unknown.
+	var counted *protocol.JavaHTTPSummary
+	protocol.ObserveJavaHTTPAction(&counted, javaAPIDiagnostic())
+	java := generatorrpc.MetricAggregate{Name: "java", Count: 1, DependencyType: "java_http", JavaHTTP: counted}
+	for dependency, known := range map[string]bool{"http": true, "java_http": false} {
+		peer := generatorrpc.MetricAggregate{Name: "java", Count: 2, DependencyType: dependency}
+		for _, values := range [][]generatorrpc.MetricAggregate{{java, peer}, {peer, java}} {
+			if got := mergeGeneratorMetricAggregates(values).JavaHTTP; got == nil || got.Samples != 1 || got.Incomplete == known || (got.Population == 1) != known {
+				t.Fatal("peer without a Java summary", dependency, got)
+			}
+		}
+	}
 }
 func javaHTTPAPIInt(v int64) *int64 { return &v }
 
@@ -288,11 +301,14 @@ func TestJavaHTTPTextReportsPreserveResponseAvailabilityAndTiming(t *testing.T) 
 	}
 }
 
+// Neither a same-name wrapper nor a same-named action of another protocol
+// enters the Java denominator.
 func TestJavaHTTPArchiveSameNameWrapperDoesNotInflatePopulation(t *testing.T) {
 	for _, reverse := range []bool{false, true} {
 		events := []TransactionEvent{
-			{ActionName: "same", Population: "action", ServerTelemetry: &protocol.ServerTelemetry{JavaHTTP: javaAPIDiagnostic()}},
-			{ActionName: "same", Population: "action"},
+			{ActionName: "same", Population: "action", DependencyType: "java_http", ServerTelemetry: &protocol.ServerTelemetry{JavaHTTP: javaAPIDiagnostic()}},
+			{ActionName: "same", Population: "action", DependencyType: "java_http"},
+			{ActionName: "same", Population: "action", DependencyType: "http"},
 			{ActionName: "same", Population: "transaction", BusinessTransaction: true, ServerTelemetry: &protocol.ServerTelemetry{JavaHTTP: javaAPIDiagnostic()}},
 			{ActionName: "same", ServerTelemetry: &protocol.ServerTelemetry{JavaHTTP: javaAPIDiagnostic()}},
 		}
@@ -306,7 +322,7 @@ func TestJavaHTTPArchiveSameNameWrapperDoesNotInflatePopulation(t *testing.T) {
 		for _, e := range events {
 			stats = mergeRunArchiveActionStats(stats, &q, e)
 		}
-		if stats.Transactions != 4 || stats.ActualActionSamples != 2 || stats.JavaHTTP == nil || stats.JavaHTTP.Samples != 1 {
+		if stats.Transactions != 5 || stats.JavaHTTP == nil || stats.JavaHTTP.Population != 2 || stats.JavaHTTP.Samples != 1 {
 			t.Fatalf("mixed action population: %+v", stats)
 		}
 		lines := strings.Join(protocolReportLines(&RunArchiveReport{ByAction: map[string]RunArchiveActionStats{"same": stats}}), "\n")
