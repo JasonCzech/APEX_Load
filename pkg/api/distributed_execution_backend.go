@@ -1308,6 +1308,13 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		podClaims, err = tr.reservePodPlacement(executionCtx, test, loadByTarget, peakGroupShards, clientsByTarget, executionGeneration, executionLeaseOwnerID)
 		if err != nil {
 			cleanup(false)
+			// A preparation reserves capacity at once: a prepare-only run fails
+			// with its preparation instead of parking in PENDING with a binding
+			// nothing would release.
+			if tr.failBoundPreparation(test) {
+				tr.failTestBeforeRunAndLog(test, "preparation could not reserve peak pod capacity: "+err.Error())
+				return
+			}
 			if pendingErr := tr.requeueBeforePodWork(test, "waiting for peak pod capacity: "+err.Error(), executionGeneration, executionLeaseOwnerID); pendingErr != nil {
 				tr.failTestBeforeRunAndLog(test, pendingErr.Error())
 			}

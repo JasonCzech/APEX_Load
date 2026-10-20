@@ -841,6 +841,36 @@ func (tr *TestRunner) createTest(req CreateTestRequest, broadcast bool) (*Manage
 
 const managedTestCreateBuildAttempts = 5
 
+// errTestIDOwnedByAnotherProject refuses a requested ID that a deleted test of
+// another project used. Authorization, archives and live streams address a run
+// by its ID, so an ID never moves between projects.
+var errTestIDOwnedByAnotherProject = errors.New("requested_test_id belonged to a deleted test in another project")
+
+type deletedTestIdentityStore interface {
+	DeletedTestProject(id string) (string, bool, error)
+}
+
+func (tr *TestRunner) ensureTestIDStaysInProject(id, projectID string) error {
+	store, ok := tr.testStore.(deletedTestIdentityStore)
+	if !ok {
+		return nil
+	}
+	var owner string
+	var deleted bool
+	err := tr.trackDurableWrite(func() error {
+		var lookupErr error
+		owner, deleted, lookupErr = store.DeletedTestProject(id)
+		return lookupErr
+	})
+	if err != nil {
+		return fmt.Errorf("check deleted test identity: %w", err)
+	}
+	if deleted && normalizeProjectID(owner) != normalizeProjectID(projectID) {
+		return errTestIDOwnedByAnotherProject
+	}
+	return nil
+}
+
 var errManagedTestBuildFenceStale = errors.New("managed test build fence is stale")
 
 // managedTestRunReferenceReservation retains the one externally visible
@@ -1384,6 +1414,9 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	}
 	projectID, err := tr.resolveCreateTestProjectID(req.ProjectID, groups, revisionSource)
 	if err != nil {
+		return nil, err
+	}
+	if err := tr.ensureTestIDStaysInProject(id, projectID); err != nil {
 		return nil, err
 	}
 	if scenarioProjectID != "" && scenarioProjectID != projectID {

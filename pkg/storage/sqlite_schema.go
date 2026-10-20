@@ -905,6 +905,14 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
             FOREIGN KEY(test_id) REFERENCES tests(id) ON DELETE CASCADE,
             FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
         )`,
+		// A deleted test's ID keeps its project, so a later create cannot move the
+		// ID to another project. No foreign keys: the record outlives the test and
+		// its project.
+		`CREATE TABLE IF NOT EXISTS deleted_test_identities (
+			test_id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			deleted_at DATETIME NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS run_archive_failures (
 			test_id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL,

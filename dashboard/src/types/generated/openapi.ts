@@ -51367,6 +51367,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];

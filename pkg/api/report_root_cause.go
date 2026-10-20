@@ -521,7 +521,11 @@ func rcaEffectText(a rca.Anomaly) string {
 	} else if magnitude > 0 && magnitude < 1 {
 		digits = min(int(math.Ceil(-math.Log10(magnitude)))+1, 6)
 	}
-	amount := strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.*f", digits, magnitude), "0"), ".")
+	amount := fmt.Sprintf("%.*f", digits, magnitude)
+	// Trim only fractional zeros: an integer amount such as 100 keeps its own.
+	if strings.Contains(amount, ".") {
+		amount = strings.TrimRight(strings.TrimRight(amount, "0"), ".")
+	}
 	switch a.Unit {
 	case "ms":
 		return sign + amount + " ms"
