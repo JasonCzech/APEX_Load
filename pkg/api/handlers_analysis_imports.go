@@ -135,6 +135,7 @@ type AnalysisCapabilitiesResponse struct {
 	NativeParquet                 bool                   `json:"native_parquet"`
 	PartitionManifestVersion      uint32                 `json:"partition_manifest_version"`
 	PartitionPruningAvailable     bool                   `json:"partition_pruning_available"`
+	MappingAssociationVersion     uint32                 `json:"mapping_association_version"`
 	ImportedIdentityVersion       uint32                 `json:"imported_identity_version"`
 	Enabled                       bool                   `json:"enabled"`
 	ChunkBytes                    int64                  `json:"chunk_bytes"`
@@ -159,7 +160,7 @@ func (s *Server) handleAnalysisCapabilities(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, 200, AnalysisCapabilitiesResponse{
 		MessagingManagementEnabled: messagingManagementEnabled(project), MessagingManagementVersion: analysis.MessagingManagementVersion, MessagingManagementPacks: collectoragent.ManagementPacks(),
 		DiagnosticsEnabled: diagnosticsProjectEnabled(project), MonitoringEnabled: runMonitoringEnabled(project), PreparationEnabled: preparationProjectEnabled(project),
-		NativeParquet: analytics.Available(), PartitionManifestVersion: analysis.PartitionManifestVersion, PartitionPruningAvailable: analytics.Available(), ImportedIdentityVersion: analysisImportedIdentityVersion, Enabled: analysisProjectEnabled(project), ChunkBytes: analysisUploadChunk, MaxImportBytes: analysisImportMaxBytes,
+		NativeParquet: analytics.Available(), PartitionManifestVersion: analysis.PartitionManifestVersion, PartitionPruningAvailable: analytics.Available(), ImportedIdentityVersion: analysisImportedIdentityVersion, MappingAssociationVersion: analysisMappingAssociationVersion, Enabled: analysisProjectEnabled(project), ChunkBytes: analysisUploadChunk, MaxImportBytes: analysisImportMaxBytes,
 		HeavyJobs: 1, Threads: 2, MemoryLimit: memory, SpillLimit: spill, ResourceConfigurationAccepted: accepted, MetricCatalog: analysis.Catalog(),
 		SummaryStatistics: slices.Clone(analysis.SummaryStatistics), HistogramBoundLimit: analysisHistogramBoundLimit(),
 	})

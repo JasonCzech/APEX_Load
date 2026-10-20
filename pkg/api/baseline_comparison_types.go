@@ -106,6 +106,7 @@ type BaselineMeasurement struct {
 	MeanStatistic        string                             `json:"mean_statistic,omitempty"`
 	AvailableStatistics  []string                           `json:"available_statistics,omitempty"`
 	Messaging            *protocol.MessagingSummary         `json:"messaging,omitempty"`
+	JavaHTTP             *protocol.JavaHTTPSummary          `json:"java_http,omitempty"`
 	GRPC                 *protocol.GRPCSummary              `json:"grpc,omitempty"`
 	WebSocket            *protocol.WebSocketSummary         `json:"websocket,omitempty"`
 	Samples              int64                              `json:"samples"`

@@ -1,4 +1,4 @@
-import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
+import type { ScriptApprovalQueued, ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
 import ObjectHistory from './ObjectHistory'
 import type { ObjectActivitySummary } from '../types/objectActivity'
 import { lazy, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
@@ -195,7 +195,9 @@ function ScriptsAuthoringContent({
   }
   // The archive review's record of a draft it opened in the editor.
   const archiveDraftSavedRef = useRef<((saved: StoredScript) => void) | null>(null)
-  const openEnterpriseArchiveDraftInEditor = (script: ScriptDefinition, focus?: DraftEditorFocus, onDraftSaved?: (saved: StoredScript) => void) => {
+  const archiveDraftQueuedRef = useRef<((approval: ScriptApprovalQueued) => boolean) | null>(null)
+  const openEnterpriseArchiveDraftInEditor = (script: ScriptDefinition, focus?: DraftEditorFocus, onDraftSaved?: (saved: StoredScript) => void, onDraftQueued?: (approval: ScriptApprovalQueued) => boolean) => {
+    archiveDraftQueuedRef.current = onDraftQueued || null
     archiveDraftSavedRef.current = onDraftSaved || null
     onEditDraft(script, focus, enterpriseArchiveEditReturnTarget)
   }
@@ -208,6 +210,7 @@ function ScriptsAuthoringContent({
   const saveArchiveDraft = (saved: StoredScript, options?: ScriptSaveOptions) => {
     const recordSave = archiveDraftSavedRef.current
     archiveDraftSavedRef.current = null
+    archiveDraftQueuedRef.current = null
     recordSave?.(saved)
     if (!recordSave || options?.laterEdits) {
       onSaved(saved, options)
@@ -215,6 +218,15 @@ function ScriptsAuthoringContent({
     }
     onReturnToDraftSource()
     onSaved(saved, { returnedToSource: true, ...(options?.configureSecrets ? { configureSecrets: true } : {}) })
+  }
+  const queueArchiveDraft = (approval: ScriptApprovalQueued, options: { laterEdits: boolean }) => {
+    const accepted = archiveDraftQueuedRef.current?.(approval) === true
+    // Refresh the session list without changing the active editor or its draft.
+    onImported({ scripts: [], stayInImportReview: true })
+    if (!accepted || options.laterEdits) return
+    archiveDraftSavedRef.current = null
+    archiveDraftQueuedRef.current = null
+    onReturnToDraftSource()
   }
   const renderEnterpriseArchiveImportSurface = (hidden = false) => createOptionsSurface(
     <EnterpriseArchiveImport initialFiles={importFiles || undefined} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={openEnterpriseArchiveDraftInEditor} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
@@ -233,15 +245,19 @@ function ScriptsAuthoringContent({
             {renderEnterpriseArchiveImportSurface(true)}
             <div className="page">
               {authoringNotice && <div className="settings-notice">{authoringNotice}</div>}
-              <ScriptEditor returnTarget={{ label: draftReturnTarget.label, description: draftReturnTarget.description, retainedGuardIds: draftReturnTarget.retainedGuardIds, onReturn: onReturnToDraftSource }} initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={saveArchiveDraft} onClose={closeCreateEditor} />
+              <ScriptEditor returnTarget={{ label: draftReturnTarget.label, description: draftReturnTarget.description, retainedGuardIds: draftReturnTarget.retainedGuardIds, onReturn: onReturnToDraftSource }} initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={saveArchiveDraft} onApprovalQueued={queueArchiveDraft} onClose={closeCreateEditor} />
             </div>
           </div>
         )
       }
       return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={closeCreateEditor} /></div>
-    case 'edit':
+    case 'edit': {
       // History opens from the editor's More menu; an archived script has no editor, so it keeps the panel.
-      return <div className="page">{editingId && editingScript?.archived_at && <ObjectHistory key={editingId} projectId={projectId} resourceType="script" resourceId={editingId} activity={editingActivity} />}{editingScript?.archived_at ? <section aria-label="Archived script"><h2>{editingScript.name} — Archived</h2><p>Restore this script from the library before editing or executing it.</p><button className="btn btn-secondary" onClick={onOpenLibrary}>Back to library</button><pre className="object-archive-content">{JSON.stringify(editingScript, null, 2)}</pre></section> : <>{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} initialAuthoring={editingAuthoring} initialRetainedDraft={editingRetainedDraft} initialRetainedNeedsReview={editingRetainedNeedsReview} initialRetainedJsonText={editingRetainedJsonText} initialRetainedCreatedSecretNames={editingRetainedCreatedSecretNames} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={draftReturnTarget ? onReturnToDraftSource : onOpenLibrary} activity={editingActivity} initialWorkspace={editingWorkspace} /></>}</div>
+      const editor = <div className="page">{editingId && editingScript?.archived_at && <ObjectHistory key={editingId} projectId={projectId} resourceType="script" resourceId={editingId} activity={editingActivity} />}{editingScript?.archived_at ? <section aria-label="Archived script"><h2>{editingScript.name} — Archived</h2><p>Restore this script from the library before editing or executing it.</p><button className="btn btn-secondary" onClick={onOpenLibrary}>Back to library</button><pre className="object-archive-content">{JSON.stringify(editingScript, null, 2)}</pre></section> : <>{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor returnTarget={draftReturnTarget?.subView === 'import' ? { label: draftReturnTarget.label, description: draftReturnTarget.description, retainedGuardIds: draftReturnTarget.retainedGuardIds, onReturn: onReturnToDraftSource } : undefined} scriptId={editingId} initialScript={editingScript} initialAuthoring={editingAuthoring} initialRetainedDraft={editingRetainedDraft} initialRetainedNeedsReview={editingRetainedNeedsReview} initialRetainedJsonText={editingRetainedJsonText} initialRetainedCreatedSecretNames={editingRetainedCreatedSecretNames} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={draftReturnTarget ? onReturnToDraftSource : onOpenLibrary} activity={editingActivity} initialWorkspace={editingWorkspace} /></>}</div>
+      return draftReturnTarget?.subView === 'import'
+        ? <div className="scripts-authoring-stack">{renderEnterpriseArchiveImportSurface(true)}{editor}</div>
+        : editor
+    }
     case 'import':
       return (
         <div className="scripts-authoring-stack">

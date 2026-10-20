@@ -49,6 +49,52 @@ join can finish the owned work. Filesystem/finalization errors remain visible
 and may leave a charged owner requiring reconciliation or process shutdown.
 A new context cannot reuse an unretired capture owner.
 
+The two-second caller wait is separate from the shared **30-second capture
+finalization deadline**. The first teardown document join, runtime join or
+finish starts that deadline once; retries and later phases cannot renew it. A
+mid-session resource-limit close does not start it, so a VUser that keeps
+running after an overflow still has the full budget at teardown. Close,
+flush, scrubbing and durable publication must qualify within it. Expiration
+returns `browser HAR finalization budget exhausted`, emits the
+`har_finalization_budget_exhausted` reason and increments the generator-wide
+`har_finalization_exhausted` evidence counter once per capture, including when
+a native writer remains blocked. It does not forcibly terminate a callback or
+turn a timeout into writer-death proof. An in-progress read, scrub or native
+close keeps its owner until it actually returns.
+
+Expired capture output is not published. A deadline crossed after the final
+link is created removes only that owner's exact link; a foreign replacement
+is preserved and reported as unproven. Once every writer and worker has joined,
+raw retirement can still proceed under its separately bounded namespace wait,
+even when capture publication was refused. An artifact already qualified and
+published within the deadline stays valid during later retirement or retries.
+These finalization guards have [local deterministic qualification](../qa/reviews/roadmap-har-finalization-budget-2026-10-19/README.md).
+Native Linux/Windows crash qualification remains pending.
+
+### Outstanding request limit
+
+An active native HAR capture allows **1,024 outstanding issued requests**. The
+synchronous native request callback counts issued work, including browser-queued
+requests, independently of the bounded diagnostics queue. Completion releases
+its count once. More than 1,024 outstanding requests signals the existing native
+close owner, records `har_in_flight` as a resource failure and marks unfinished
+document observations censored. Issued counts and incomplete evidence remain
+visible while closure joins the writer. This is overflow-triggered context
+closure; it does not schedule target requests or guarantee that no additional
+native callback arrives before closure completes.
+
+Completed sequential requests do not consume the concurrent budget. The
+512-entry request-identity inventory and 100,000-entry capture limit remain
+separate bounds; a page with more than 512 outstanding requests loses
+per-request identities, and its evidence is marked incomplete, before the
+outstanding-request limit closes the context. Sessions without active HAR capture retain their existing
+resource limits. No new request routing is installed and HTTP cache behavior
+is unchanged. Cancellation racing overflow uses the same exact close owner;
+a caller timeout retains the working file, lease and charge until physical join.
+The [outstanding-request review](../qa/reviews/roadmap-har-inflight-2026-10-20/README.md)
+retains local Chromium/WebKit flood, cancellation and import-compatibility
+results; it does not qualify other native platforms.
+
 After successful join, scrubbed output is written and synced in private staging,
 then linked to a fresh flat apexload_browser_<generation>_scrubbed.har name
 without replacing an existing artifact. The final name never exposes an

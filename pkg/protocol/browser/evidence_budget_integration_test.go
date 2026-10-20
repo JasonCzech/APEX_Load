@@ -144,8 +144,8 @@ func testNeverEndingChunkedBody(t *testing.T, engine string) {
 }
 
 // A flood of requests that never finish keeps request evidence within the
-// request identity bound, and the recording session still closes and
-// releases its HAR reservation. Memory admission is disabled here (limit 0).
+// request identity bound. Native HAR overflow closes the affected context,
+// censors its unfinished document and releases its reservation after the writer joins. Memory admission is disabled here (limit 0).
 func TestNeverFinishingRequestFloodStaysBoundedAndCloses(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping browser integration test in -short mode")
@@ -158,10 +158,8 @@ func TestNeverFinishingRequestFloodStaysBoundedAndCloses(t *testing.T) {
 
 func testNeverFinishingRequestFlood(t *testing.T, engine string) {
 	release := make(chan struct{})
-	var held atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/hang/") {
-			held.Add(1)
 			select {
 			case <-release:
 			case <-r.Context().Done():
@@ -169,24 +167,51 @@ func testNeverFinishingRequestFlood(t *testing.T, engine string) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintf(w, `<!doctype html><html><body><p id="ready">ok</p><script>for (let i = 0; i < %d; i++) fetch('/hang/' + i).catch(() => {})</script></body></html>`, browserRequestIdentityLimit+200)
+		_, _ = fmt.Fprintf(w, `<!doctype html><html><body><p id="ready">ok</p><script>function flood(){for (let i = 0; i < %d; i++) fetch('/hang/' + i).catch(() => {})}</script></body></html>`, maxRuntimeHARInFlightRequests+200)
 	}))
 	defer server.Close()
 	defer close(release)
 	budget := useTestEvidenceBudget(t, 64<<30, noUsage, 0)
-	b := startRecordingSession(t, engine, server)
+	b := &Browser{}
+	if err := b.Init(context.Background(), map[string]any{"base_url": server.URL, "browser_engine": engine, "browser_headless": true, "browser_har_capture": HARCaptureAlways, "browser_har_dir": t.TempDir(), "browser_capture_document_metrics": true}); err != nil {
+		requireBrowserRuntime(t, engine, err)
+	}
+	t.Cleanup(func() { _ = b.Teardown(context.Background()) })
 	result, err := b.Execute(context.Background(), &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"})
-	if err != nil || result.ErrorMessage != "" {
-		t.Fatalf("navigate: %v %s", err, result.ErrorMessage)
+	if err != nil || !result.Success {
+		t.Fatalf("fixture navigation=%+v %v", result, err)
 	}
-	for deadline := time.Now().Add(5 * time.Second); held.Load() == 0 && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+	// Start after the document exists so censoring can be observed independently
+	// of the load/overflow race. Native close may interrupt Evaluate's response.
+	_, _ = b.currentPage().Evaluate("() => flood()")
+	deadline := time.Now().Add(5 * time.Second)
+	for b.resourceLimitReason() == "" && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
 	}
-	time.Sleep(500 * time.Millisecond)
+	if b.resourceLimitReason() != resourceLimitHARInFlight {
+		t.Fatal("request flood did not close the recording context", b.resourceLimitReason())
+	}
 	b.mu.Lock()
-	tracked, inFlight := len(b.evidence.requests), b.evidence.inFlight
+	tracked, issued, incomplete := len(b.evidence.requests), b.evidence.issued, b.evidence.incomplete
 	b.mu.Unlock()
-	if tracked > browserRequestIdentityLimit || inFlight == 0 {
-		t.Fatalf("request evidence tracked=%d in flight=%d", tracked, inFlight)
+	if tracked > browserRequestIdentityLimit || issued <= maxRuntimeHARInFlightRequests || !incomplete {
+		t.Fatalf("overflow evidence tracked=%d issued=%d incomplete=%v", tracked, issued, incomplete)
+	}
+	result, _ = b.Execute(context.Background(), &protocol.Action{Name: "after overflow", Type: "browser_wait"})
+	if result == nil || result.Success || !strings.Contains(result.ErrorMessage, resourceLimitHARInFlight) {
+		t.Fatalf("overflow became an unaffected action=%+v", result)
+	}
+	observations := b.BrowserDocumentEvidence()
+	censored := false
+	if observations != nil {
+		for _, observation := range observations.Observations {
+			if observation.State == "censored" && observation.Boundary == "resource_limit" {
+				censored = true
+			}
+		}
+	}
+	if !censored {
+		t.Fatalf("unfinished document not censored: %+v", observations)
 	}
 	start := time.Now()
 	_ = b.Teardown(context.Background())
@@ -196,8 +221,8 @@ func testNeverFinishingRequestFlood(t *testing.T, engine string) {
 	budget.mu.Lock()
 	writers := len(budget.writers)
 	budget.mu.Unlock()
-	if writers != 0 {
-		t.Fatalf("hung requests kept %d HAR reservations", writers)
+	if writers != 0 || budget.counters.harOverflow.Load() != 1 {
+		t.Fatalf("overflow cleanup writers=%d closures=%d", writers, budget.counters.harOverflow.Load())
 	}
 }
 

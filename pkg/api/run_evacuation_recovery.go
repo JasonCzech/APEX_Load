@@ -25,9 +25,13 @@ const interruptedEvacuationFenceProof = "controller ownership was interrupted du
 // interrupted-run override that every possible generator process is stopped.
 const interruptedEvacuationAttestedProof = "controller ownership was interrupted during generator evacuation; a system administrator attested that every generator process that could run it is stopped"
 
+// Same-leader intervention retains its own proof wording; historical successor
+// proofs remain readable without pretending leadership changed.
+const sameLeaderEvacuationAttestedProof = "generator evacuation cleanup was unproven; a system administrator attested that every generator process that could run it is stopped"
+
 func interruptedEvacuationHasDurableFenceProof(test *ManagedTest) bool {
 	return test != nil && test.Status == "FAILED" && test.EndedAt != nil &&
-		(strings.HasPrefix(test.Error, interruptedEvacuationFenceProof) || strings.HasPrefix(test.Error, interruptedEvacuationAttestedProof))
+		(strings.HasPrefix(test.Error, interruptedEvacuationFenceProof) || strings.HasPrefix(test.Error, interruptedEvacuationAttestedProof) || strings.HasPrefix(test.Error, sameLeaderEvacuationAttestedProof))
 }
 
 func targetShardAssignmentChanged(before, next map[string][]GeneratorShardSummary, target string) bool {
@@ -283,7 +287,7 @@ func (tr *TestRunner) recoverInterruptedRunEvacuation(test *ManagedTest) error {
 		tr.mu.Unlock()
 		return errNotExecutionLeader
 	}
-	status, failureReason := test.Status, test.Error
+	status, failureReason := test.Status, withoutEvacuationIntervention(test.Error)
 	tr.mu.Unlock()
 	confirmedReason := interruptedEvacuationFenceProof
 	if failureReason != "" {
@@ -323,22 +327,12 @@ func (tr *TestRunner) recoverInterruptedRunEvacuation(test *ManagedTest) error {
 // need to finish archive and capacity cleanup. Requiring vanished generators
 // to acknowledge another epoch would strand otherwise safe post-terminal work.
 func (tr *TestRunner) reconcileFencedInterruptedEvacuationTerminal(b *distributedExecutionBackend, test *ManagedTest, raw string) error {
-	_, owner, _, err := tr.generatorExecutionClaim()
+	archiveErr, err := tr.reconcileFencedInterruptedEvacuationArchive(b, test, raw)
 	if err != nil {
 		return err
 	}
-	tr.mu.Lock()
-	current := tr.tests[test.ID] == test && test.continuityCheckpoint == raw && interruptedEvacuationHasDurableFenceProof(test)
-	if !current {
-		tr.mu.Unlock()
-		return errNotExecutionLeader
-	}
-	if err := tr.claimTestExecutionFence(test); err != nil || test.executionFence != owner {
-		tr.mu.Unlock()
-		return errNotExecutionLeader
-	}
-	tr.mu.Unlock()
-	archiveErr := tr.recordInterruptedEvacuationArchiveFailure(test)
+	// Pod-capacity release dials generators; it runs outside the archive
+	// commit fence so deletes and archive commits for this run do not wait on it.
 	store, ok := tr.testStore.(podCapacityStore)
 	if !ok {
 		return errors.Join(archiveErr, errors.New("terminal evacuation cleanup requires a durable pod-capacity ledger"))
@@ -359,6 +353,40 @@ func (tr *TestRunner) reconcileFencedInterruptedEvacuationTerminal(b *distribute
 		tr.releasePodClaimsWithDial(b, owned)
 	}
 	return archiveErr
+}
+
+// reconcileFencedInterruptedEvacuationArchive retires the canceled runtime's
+// transports and held evidence and records the archive outcome under the
+// archive commit fence, so no archive collection uses those transports meanwhile.
+// ownershipErr stops all cleanup; archiveErr is reported after capacity release.
+func (tr *TestRunner) reconcileFencedInterruptedEvacuationArchive(b *distributedExecutionBackend, test *ManagedTest, raw string) (archiveErr, ownershipErr error) {
+	unlockArchive := tr.lockArchiveCommitFence(test.ID)
+	defer unlockArchive()
+	_, owner, _, err := tr.generatorExecutionClaim()
+	if err != nil {
+		return nil, err
+	}
+	tr.mu.Lock()
+	current := tr.tests[test.ID] == test && test.continuityCheckpoint == raw && interruptedEvacuationHasDurableFenceProof(test)
+	if !current {
+		tr.mu.Unlock()
+		return nil, errNotExecutionLeader
+	}
+	if err := tr.claimTestExecutionFence(test); err != nil || test.executionFence != owner {
+		tr.mu.Unlock()
+		return nil, errNotExecutionLeader
+	}
+	tr.mu.Unlock()
+	// Same-leader attestation can retain transports from the canceled runtime.
+	// Close them only after the terminal proof and its ownership fence are durable.
+	b.closeRemoteResources(tr, test)
+	// Collection recovery hydrates a detached durable snapshot; no writer in
+	// this canceled runtime can carry these held batches into another point.
+	// Retire them with the normal explicit dropped-evidence accounting.
+	tr.mu.Lock()
+	releaseHeldJointPublicationsLocked(test)
+	tr.mu.Unlock()
+	return tr.recordInterruptedEvacuationArchiveFailure(test), nil
 }
 
 func (tr *TestRunner) resumeInterruptedRunEvacuations() {

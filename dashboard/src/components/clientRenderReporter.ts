@@ -2,12 +2,12 @@ import { useEffect, useRef } from 'react'
 
 import { ApiError, request } from '../hooks/apiClient'
 import type { LiveMetrics } from '../types'
+import { clientTelemetryReceiptVisible, getClientTelemetryReceipt, type ClientTelemetryReceipt } from './clientTelemetryReceipt'
 
-// Client render evidence (C5). While a run's project opts in, a dashboard tab
-// viewing the live run measures each publication from receipt to the first
-// paint after it rendered, and reports batches of those samples. The
-// controller counts only a visible tab's renders toward the run's advisory
-// browser_render stage; nothing here ever affects the run.
+// Client render evidence (C5). A visible tab reports its monotonic interval
+// from local receipt to a post-commit animation-frame/timer callback. That is
+// an advisory paint opportunity, not proof of visible presentation or an
+// end-to-end SLA. The wire report and existing advisory stage stay compatible.
 
 export const CLIENT_RENDER_FLUSH_MS = 3000
 export const CLIENT_RENDER_MAX_SAMPLES = 64
@@ -18,14 +18,18 @@ export interface ClientRenderSample {
   observed_at: string
 }
 
-// renderSample is one measured publication: receivedAtMs is when the tab
-// received it (wall clock), renderedAtMs when it painted.
-export function renderSample(receivedAtMs: number, renderedAtMs: number, visible: boolean): ClientRenderSample | null {
-  if (!Number.isFinite(receivedAtMs) || !Number.isFinite(renderedAtMs)) return null
+// Wall time labels the observation only; it never measures the interval.
+// Invalid/regressed monotonic readings remain unavailable, not measured zero.
+export function renderSample(receivedMonotonicMs: number, callbackMonotonicMs: number, visible: boolean, observedAtMs: number): ClientRenderSample | null {
+  if (!Number.isFinite(receivedMonotonicMs) || !Number.isFinite(callbackMonotonicMs)
+    || receivedMonotonicMs < 0 || callbackMonotonicMs < receivedMonotonicMs
+    || !Number.isFinite(new Date(observedAtMs).getTime())) return null
+  const elapsedMs = Math.round((callbackMonotonicMs - receivedMonotonicMs) * 1000) / 1000
+  if (!Number.isFinite(elapsedMs)) return null
   return {
-    receive_to_render_ms: Math.max(0, Math.round((renderedAtMs - receivedAtMs) * 1000) / 1000),
+    receive_to_render_ms: elapsedMs,
     state: visible ? 'visible' : 'background',
-    observed_at: new Date(renderedAtMs).toISOString(),
+    observed_at: new Date(observedAtMs).toISOString(),
   }
 }
 
@@ -45,20 +49,6 @@ function newClientID(): string {
   return `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-function tabVisible(): boolean {
-  return typeof document === 'undefined' || document.visibilityState === 'visible'
-}
-
-// visibleThroughout says whether a tab stayed visible from receiving a
-// publication until it painted it. A hidden tab does not run animation
-// frames, so a frame pending when the tab was hidden runs only once it is
-// visible again: the tab is visible then, but the measured time includes the
-// hidden interval. lastHiddenAtMs is the wall-clock time the tab was last
-// hidden (0 if never).
-export function visibleThroughout(receivedAtMs: number, lastHiddenAtMs: number, visibleNow: boolean): boolean {
-  return visibleNow && !(lastHiddenAtMs > 0 && lastHiddenAtMs >= receivedAtMs)
-}
-
 export function postClientRenderReport(testId: string, clientID: string, samples: ClientRenderSample[]) {
   return request<{ accepted: number; excluded?: Record<string, number> }>(
     `/tests/${encodeURIComponent(testId)}/telemetry/client-render`,
@@ -66,69 +56,63 @@ export function postClientRenderReport(testId: string, clientID: string, samples
   )
 }
 
-// useClientRenderReporter measures and reports receive-to-render for each
-// live publication of testId while enabled. A publication received while the
-// tab was hidden is not measured (a hidden tab does not paint); one whose tab
-// was hidden at any point before it painted is reported as background, which
-// the controller excludes. A 409 (the project turned the setting off, or the
-// run ended) stops reporting for this run.
+// Only a locally observed receipt for this run can be sampled. Hidden
+// receipts, superseded callbacks and failed reports remain best-effort gaps;
+// this reporter does not establish the complete eligible-publication population.
 export function useClientRenderReporter(testId: string, enabled: boolean, latestMetrics?: LiveMetrics) {
   const clientIDRef = useRef<string>('')
   const queueRef = useRef<ClientRenderSample[]>([])
   const stoppedForRef = useRef<string | null>(null)
-  const lastHiddenAtRef = useRef(0)
+  const sampledReceiptsRef = useRef(new WeakSet<ClientTelemetryReceipt>())
   const active = enabled && Boolean(testId) && stoppedForRef.current !== testId
 
   useEffect(() => {
-    if (!active || typeof document === 'undefined') return
-    const onVisibility = () => {
-      if (!tabVisible()) lastHiddenAtRef.current = Date.now()
-    }
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => document.removeEventListener('visibilitychange', onVisibility)
-  }, [active])
-
-  useEffect(() => {
     queueRef.current = []
-  }, [testId])
+  }, [testId, active])
 
-  const receivedAt = latestMetrics?.telemetry?.client_received_at
+  const receipt = getClientTelemetryReceipt(latestMetrics?.telemetry)
   useEffect(() => {
-    if (!active || !receivedAt || !tabVisible()) return
-    const receivedAtMs = Date.parse(receivedAt)
+    if (!active || !receipt || receipt.testId !== testId || !clientTelemetryReceiptVisible(receipt) || sampledReceiptsRef.current.has(receipt)) return
     let timer: number | undefined
     const frame = requestAnimationFrame(() => {
-      // The frame that rendered this publication paints after this callback;
-      // a zero-delay task runs once it has.
+      // A timer after the frame is a paint opportunity only; browsers do
+      // not guarantee that a visible frame was presented at this boundary.
       timer = window.setTimeout(() => {
-        const sample = renderSample(receivedAtMs, Date.now(), visibleThroughout(receivedAtMs, lastHiddenAtRef.current, tabVisible()))
-        if (sample) queueRef.current = enqueueRenderSample(queueRef.current, sample)
+        const sample = renderSample(receipt.monotonicMs, performance.now(), clientTelemetryReceiptVisible(receipt), Date.now())
+        if (sample) {
+          sampledReceiptsRef.current.add(receipt)
+          queueRef.current = enqueueRenderSample(queueRef.current, sample)
+        }
       }, 0)
     })
     return () => {
       cancelAnimationFrame(frame)
       if (timer !== undefined) window.clearTimeout(timer)
     }
-  }, [active, receivedAt])
+  }, [active, receipt, testId])
 
   useEffect(() => {
     if (!active) return
     if (!clientIDRef.current) clientIDRef.current = newClientID()
     let inFlight = false
+    let cancelled = false
     const interval = window.setInterval(() => {
-      if (inFlight || queueRef.current.length === 0) return
+      if (inFlight || stoppedForRef.current === testId || queueRef.current.length === 0) return
       const samples = queueRef.current
       queueRef.current = []
       inFlight = true
       postClientRenderReport(testId, clientIDRef.current, samples)
         .catch((error: unknown) => {
-          if (error instanceof ApiError && error.status === 409) stoppedForRef.current = testId
+          if (!cancelled && error instanceof ApiError && error.status === 409) stoppedForRef.current = testId
           // Other failures drop the batch: render evidence is best-effort.
         })
         .finally(() => {
           inFlight = false
         })
     }, CLIENT_RENDER_FLUSH_MS)
-    return () => window.clearInterval(interval)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
   }, [active, testId])
 }

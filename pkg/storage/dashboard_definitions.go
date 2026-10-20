@@ -486,6 +486,9 @@ func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
 	if q.EvidenceMode != "" || q.OverlaySelection != nil || q.LiveBucketMode != "" {
 		return errors.New("use the native evidence query for live/grouped overlays")
 	}
+	if q.Population == analysis.PopulationJavaHTTPAction {
+		return validateNativeJavaHTTPQuery(q)
+	}
 	if q.Population == analysis.PopulationMessage {
 		return validateNativeMessageQuery(q)
 	}

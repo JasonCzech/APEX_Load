@@ -24,6 +24,31 @@ func schemaCreateTableStatements() []string {
 func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 	return append([]string{
 		schemaMigrationLedgerDDL,
+		`CREATE TABLE IF NOT EXISTS telemetry_notification_publications (
+            test_id TEXT PRIMARY KEY REFERENCES tests(id) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            manifest_sha256 TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            decision TEXT NOT NULL,
+            suppressed_publications INTEGER NOT NULL,
+            updated_at DATETIME NOT NULL
+        )`,
+		`CREATE TABLE IF NOT EXISTS telemetry_notification_events (
+ id TEXT PRIMARY KEY,
+ test_id TEXT NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
+ project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+ format_version INTEGER NOT NULL,
+ envelope TEXT NOT NULL,
+ created_at DATETIME NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS telemetry_notification_deliveries (
+ event_id TEXT NOT NULL REFERENCES telemetry_notification_events(id) ON DELETE CASCADE,
+ destination TEXT NOT NULL,
+ state TEXT NOT NULL,
+ attempts INTEGER NOT NULL,
+ owner_token TEXT NOT NULL,
+ next_attempt DATETIME NOT NULL,
+ PRIMARY KEY(event_id,destination))`,
+
 		`CREATE TABLE IF NOT EXISTS prometheus_connections (
  id TEXT PRIMARY KEY,
  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -714,6 +739,8 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 			execution_plan_json TEXT,
 			initial_provenance_json TEXT,
 			timeslot_id TEXT,
+			telemetry_checkpoint_json TEXT,
+			telemetry_checkpoint_revision BIGINT NOT NULL DEFAULT 0,
 			continuity_checkpoint_json TEXT,
 			execution_generation BIGINT NOT NULL DEFAULT 0
 		)`,
@@ -748,6 +775,7 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 			p95_ms REAL,
 			p99_ms REAL,
 			native_evidence_json TEXT,
+			java_http_json TEXT,
 			messaging_json TEXT,
 			messaging_progress_json TEXT,
 			transactions_json TEXT,
@@ -1997,6 +2025,8 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		booleanColumnMigration("tests", "resource_baseline_enabled", false, false),
 		{name: "tests.start_delay", query: `ALTER TABLE tests ADD COLUMN start_delay TEXT`},
 		{name: "tests.initial_provenance_json", query: `ALTER TABLE tests ADD COLUMN initial_provenance_json TEXT`},
+		{name: "tests.telemetry_checkpoint_json", query: `ALTER TABLE tests ADD COLUMN telemetry_checkpoint_json TEXT`},
+		{name: "tests.telemetry_checkpoint_revision", query: `ALTER TABLE tests ADD COLUMN telemetry_checkpoint_revision BIGINT NOT NULL DEFAULT 0`},
 		{name: "tests.continuity_checkpoint_json", query: `ALTER TABLE tests ADD COLUMN continuity_checkpoint_json TEXT`},
 		{name: "tests.execution_generation", query: `ALTER TABLE tests ADD COLUMN execution_generation BIGINT NOT NULL DEFAULT 0`},
 		{name: "scenarios.assignment_json", query: `ALTER TABLE scenarios ADD COLUMN assignment_json TEXT`},
@@ -2060,6 +2090,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "test_interval_summaries.generator_processing_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN generator_processing_lag_ms REAL`},
 		{name: "test_interval_summaries.transport_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN transport_lag_ms REAL`},
 		{name: "test_interval_summaries.controller_fanout_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN controller_fanout_lag_ms REAL`},
+		{name: "test_interval_summaries.java_http_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN java_http_json TEXT`},
 		{name: "test_interval_summaries.messaging_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN messaging_json TEXT`},
 		{name: "test_interval_summaries.messaging_progress_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN messaging_progress_json TEXT`},
 		{name: "test_interval_summaries.native_evidence_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN native_evidence_json TEXT`},
@@ -2237,6 +2268,9 @@ var dataPoolRowsPageIndex = schemaIndex{
 // migrations. Unique indexes guard against duplicate reference keys; partial
 // indexes skip NULL/empty values so legacy rows awaiting backfill do not collide.
 var schemaIndexes = []schemaIndex{
+	{`CREATE INDEX IF NOT EXISTS idx_telemetry_notification_run ON telemetry_notification_events(test_id,id)`, "idx_telemetry_notification_run"},
+	{`CREATE INDEX IF NOT EXISTS idx_telemetry_notification_due ON telemetry_notification_deliveries(state,next_attempt,event_id,destination)`, "idx_telemetry_notification_due"},
+
 	{`CREATE INDEX IF NOT EXISTS idx_prometheus_connections_project ON prometheus_connections(project_id,name,id)`, "idx_prometheus_connections_project"},
 	{name: "idx_monitor_evidence_scope_time", query: `CREATE INDEX IF NOT EXISTS idx_monitor_evidence_scope_time ON run_monitor_observation_heads(job_id,diagnostic_kind,evidence_time,record_key) WHERE record_kind='diagnostic'`},
 	{name: "idx_monitor_evidence_trace", query: `CREATE INDEX IF NOT EXISTS idx_monitor_evidence_trace ON run_monitor_observation_heads(job_id,evidence_trace_id,record_key) WHERE record_kind='diagnostic'`},

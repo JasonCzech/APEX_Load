@@ -196,10 +196,14 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		}
 	}
 
+	live.JavaHTTP = nil
 	live.Messaging = map[string]*protocol.MessagingSummary{}
 	actions := map[string]*TxMetrics{}
 	for name, am := range snap.ByAction {
 		actions[name] = buildTxMetricsFromAction(name, am, snap.Window)
+		if am != nil && am.ServerTelemetry != nil {
+			protocol.AddJavaHTTPAction(&live.JavaHTTP, name, am.Count, am.ServerTelemetry.JavaHTTP)
+		}
 		if am != nil && am.ServerTelemetry != nil && am.ServerTelemetry.Messaging != nil {
 			live.Messaging[name] = am.ServerTelemetry.Messaging.Clone()
 		}

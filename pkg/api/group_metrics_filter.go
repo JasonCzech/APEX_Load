@@ -111,6 +111,7 @@ func filterLiveMetricsForGroups(live *LiveMetrics, filter groupFilterQuery) *Liv
 	// dimension: omit them rather than return metrics from groups the caller
 	// explicitly hid. Transactions keep what is attributable to the selected
 	// groups (transactionsForGroups).
+	out.JavaHTTP = nil // Action diagnostics have no retained group intersection.
 	out.Messaging = nil
 	out.NativeEvidence = nil
 	// The version mix is run-wide too.
@@ -413,6 +414,7 @@ func cloneGroupLiveMetrics(metrics *GroupLiveMetrics) *GroupLiveMetrics {
 
 func clearLivePerformanceMetrics(live *LiveMetrics) {
 	live.MessagingProgress = nil
+	live.JavaHTTP = nil
 	live.Messaging = nil
 	live.NativeEvidence = nil
 	live.Transactions = nil

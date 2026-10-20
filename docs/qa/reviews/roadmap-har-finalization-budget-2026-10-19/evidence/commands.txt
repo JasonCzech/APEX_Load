@@ -1,0 +1,15 @@
+Integrated origin/main: 609bf1b1a9417a7f1b99a9c476d6ef5d419e5864.
+Go 1.26.9 darwin/arm64; Node 22.23.3.
+Go environment: GOCACHE=/private/tmp/apex-roadmap-remainder/cache GOTMPDIR=/private/tmp/apex-roadmap-remainder/tmp GOMAXPROCS=2 GOGC=30 GOFLAGS=-p=1.
+go test ./pkg/protocol/browser -count=1 -timeout=10m
+go test -race ./pkg/protocol/browser -run '^TestHAR' -count=1 -timeout=10m
+go test ./docs/qa -run Browser -count=1
+cd dashboard: npm run typecheck; npm run lint; npm test -- src/helpContent.test.ts; npm run build
+Both dev-admin and local-auth: scripts/run-e2e.sh with workflow-help.spec.ts workflow-browser-har.spec.ts (ports 18661/18662; sequential, after dashboard build).
+go test -json -timeout=20m ./...
+python3 scripts/check-docs.py
+node /private/tmp/help-ownership-review.mjs
+git diff --check
+External HAR comparison: overlay the retained external-har-attachment_test.go.txt at pkg/api/har_attachment_compatibility_test.go. Set APEXLOAD_HAR_COMPAT_FILE to the privately held ZIP, APEXLOAD_HAR_COMPAT_SHA256 to the retained archive hash and APEXLOAD_HAR_COMPAT_SUMMARY to a private output file. GOMEMLIMIT=2GiB in addition to the Go environment above.
+go test -overlay=<overlay.json> ./pkg/api -run '^TestExternalHARImportCompatibility$' -count=1 -timeout=10m -v
+Repeat against origin/main by restoring its differing Go files through the baseline overlay (41 paths checked byte-for-byte against git; added paths omitted). Compare aggregate summaries and private script JSON; clear only script ID, creation time and the generated draft attestation token. The retained pre-normalization digests differ because each import has its own capability. No recorded application traffic is sent. This harness is specific to the 803-request attachment; its private input is not a repository fixture.

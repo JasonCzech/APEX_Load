@@ -110,7 +110,7 @@ test('DSL operators can discover the guide, validate its example, and follow ref
 test('evidence guides are searchable, readable and retain their scope after reload', async ({ page }, testInfo) => {
   const guides = [
     { query: 'provisional history', id: 'browser-document-evidence', title: 'Browser document evidence', body: 'No-interaction INP is unavailable.' },
-    { query: 'semantic SHA-256', id: 'telemetry-policy-receipts', title: 'Telemetry budget policy receipts', body: 'explicit zero disables a stage' },
+    { query: 'paint opportunity', id: 'telemetry-policy-receipts', title: 'Telemetry budget policy receipts', body: 'explicit zero disables a stage' },
     { query: 'sub-millisecond thresholds', id: 'authoring-scenario-fidelity', title: 'Scenario and queued-run authoring fidelity', body: 'A present empty section is a whole-section replacement.' },
   ]
   for (const guide of guides) {
@@ -120,6 +120,15 @@ test('evidence guides are searchable, readable and retain their scope after relo
     await expect(page.getByRole('heading', { name: guide.title, exact: true })).toBeVisible()
     await expect(page.locator('.guide-markdown-article')).toBeVisible()
     await expect(page.locator('.guide-markdown-article')).toContainText(guide.body)
+    if (guide.id === 'telemetry-policy-receipts') {
+      await expect(page.locator('.guide-markdown-article')).toContainText('not proof that a frame was visibly presented')
+      await expect(page.locator('.guide-markdown-article')).not.toContainText('to the first paint after it rendered')
+      await expect(page.locator('.guide-markdown-article')).toContainText('Durable acceptance notifications')
+      await expect(page.locator('.guide-markdown-article')).toContainText('capacity_exhausted')
+      await expect(page.locator('.guide-markdown-article')).toContainText('at least once')
+      await page.goto('/#/docs?guide=user-guide&article=telemetry-policy-receipts&section=durable-acceptance-notifications')
+      await expect(page.locator('#durable-acceptance-notifications')).toBeFocused()
+    }
     await expect(page.locator('.guide-markdown-article')).toContainText('remain open')
     await page.reload()
     await expect(page.locator('.guide-markdown-article')).toContainText(guide.body)
@@ -128,6 +137,26 @@ test('evidence guides are searchable, readable and retain their scope after relo
     expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`${guide.id}-narrow.png`), animations: 'disabled' })
   }
+})
+
+test('HAR ownership help distinguishes caller waits from capture finalization and retains its limits', async ({ page }, testInfo) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('har_finalization_budget_exhausted')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Native HAR working-file ownership', exact: true }).click()
+  await expect(page).toHaveURL(/article=browser-har-ownership/)
+  const article = page.locator('.guide-markdown-article')
+  await expect(article).toContainText('30-second capture finalization deadline')
+  await expect(article).toContainText('two-second caller wait is separate')
+  await expect(article).toContainText('does not forcibly terminate a callback')
+  await expect(article).toContainText('1,024 outstanding issued requests')
+  await expect(article).toContainText('har_in_flight')
+  await expect(article).toContainText('document observations censored')
+  await page.goto('/#/docs?guide=user-guide&article=browser-har-ownership&section=outstanding-request-limit')
+  await expect(article.locator('#outstanding-request-limit')).toBeFocused()
+  await page.reload()
+  await expect(article).toContainText('har_finalization_exhausted')
+  await page.setViewportSize({ width: 760, height: 900 })
+  expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('har-finalization-budget-help.png'), animations: 'disabled' })
 })
 
 test('legacy URLs, generated API search and contextual guidance reach the right articles', async ({ page }) => {
@@ -315,4 +344,34 @@ test('consolidated references select their owning help article and focus reposit
   await expect(reading).toContainText('Provider qualification')
   await page.setViewportSize({ width: 760, height: 900 })
   expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+})
+
+
+test('evacuation intervention help retains its proof requirements across reload and narrow layout', async ({ page }, testInfo) => {
+  await page.goto('/#/docs?guide=admin-guide&article=platform&section=resolving-an-unproven-generator-evacuation')
+  const reading = page.locator('.guide-markdown-article')
+  const heading = reading.locator('#resolving-an-unproven-generator-evacuation')
+  await expect(heading).toBeFocused()
+  await expect(reading).toContainText('automatic evacuation stop retries exhausted')
+  await expect(reading).toContainText('all-generator-processes-stopped')
+  await expect(reading).toContainText('A canceled controller context')
+  // Repository-only evidence references stay readable text in bundled Help.
+  await expect(reading).toContainText('same-leader intervention review records the local failure, persistence and authorization regressions')
+  await expect(reading.getByRole('link', { name: 'same-leader intervention review', exact: true })).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('evacuation-intervention-wide.png'), animations: 'disabled' })
+  let releaseAccess!: () => void
+  const accessReady = new Promise<void>(resolve => { releaseAccess = resolve })
+  const accessRoute = '**/api/v1/auth/effective-access**'
+  await page.route(accessRoute, async route => { await accessReady; await route.continue() })
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await expect(page.getByRole('status').filter({ hasText: 'Loading help access…' })).toBeVisible()
+    await expect(page).toHaveURL(/section=resolving-an-unproven-generator-evacuation/)
+    await expect(heading).toHaveCount(0)
+  } finally { releaseAccess() }
+  await expect(heading).toBeFocused()
+  await page.unroute(accessRoute)
+  await page.setViewportSize({ width: 760, height: 900 })
+  expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('evacuation-intervention-narrow.png'), animations: 'disabled' })
 })

@@ -5,8 +5,9 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import ArchivedNativePanel from './ArchivedNativePanel'
 import type { DashboardDefinitionPanel } from '../hooks/api/useDashboardDefinitionsApi'
 const request = vi.hoisted(() => vi.fn())
+const exportProps = vi.hoisted(() => vi.fn())
 vi.mock('../hooks/apiClient', () => ({ request }))
-vi.mock('./ExportableChart', () => ({ default: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }))
+vi.mock('./ExportableChart', () => ({ default: (props: { children: React.ReactNode }) => { exportProps(props); return <div>{props.children}</div> } }))
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 let container: HTMLElement; let root: Root
 const panel: DashboardDefinitionPanel = { id: 'p', title: 'Paid', kind: 'table', x: 0, y: 0, w: 24, h: 8, query: { metric: 'response_time', aggregation: 'p95', population: 'action', property_name: 'kind', property_value: 'paid', filters: { action: 'Checkout' }, end_seconds: 20, bucket_seconds: 10 } }
@@ -77,4 +78,32 @@ it('frames a message panel as received messages without the transaction inspecto
   expect(container.textContent).toContain('received messages · message_count')
   expect(container.textContent).not.toContain('nearest-rank')
   expect([...container.querySelectorAll('button')].some(node => node.textContent?.startsWith('Inspect current bucket'))).toBe(false)
+})
+
+it('keeps Java measured zero, missing reason and compression without a latency inspector', async () => {
+  const javaPanel: DashboardDefinitionPanel = { ...panel, query: { metric: 'java_http_prepared_body_bytes', aggregation: 'avg', population: 'java_http_action', filters: { action: 'Read object' }, end_seconds: 20, bucket_seconds: 10 } }
+  request.mockResolvedValue({ ...response, current: { ...response.current, unit: 'bytes', java_http_compression: 'gzip', buckets: [{ ...response.current.buckets[0], value: 0 }, { ...response.current.buckets[1] }] } })
+  await act(async () => root.render(<ArchivedNativePanel panel={javaPanel} testId="run" />))
+  expect(container.textContent).toContain('Java action representations')
+  expect(container.textContent).toContain('Prepared-body compression: current gzip')
+  expect(container.textContent).toContain('Missing (measurement unavailable)')
+  expect(container.textContent).toContain('Measured observations')
+  expect(container.textContent).toContain('Raw transaction drill-down is unavailable')
+  expect(container.textContent).not.toContain('Latency percentiles')
+  const cells = [...container.querySelectorAll('tbody tr:first-child td')].map(n => n.textContent)
+  expect(cells).toEqual(['0', '0', '3'])
+  expect([...container.querySelectorAll('button')].some(node => node.textContent?.startsWith('Inspect current bucket'))).toBe(false)
+  expect(request).toHaveBeenCalledTimes(1)
+})
+
+it('exports each Java comparison population and missing reason independently', async () => {
+  const javaPanel: DashboardDefinitionPanel = { ...panel, query: { metric: 'java_http_prepared_body_bytes', aggregation: 'avg', population: 'java_http_action', filters: { action: 'Read object' }, comparison_run_id: 'baseline', end_seconds: 20, bucket_seconds: 10 } }
+  request.mockResolvedValue({ ...response, current: { ...response.current, unit: 'bytes', java_http_compression: 'gzip' }, baseline: { ...response.current, run_id: 'baseline', java_http_compression: 'gzip', buckets: [{ ...response.current.buckets[0], count: 7, value: 0 }, { ...response.current.buckets[1], count: 2, reason: 'incomplete_representation_evidence' }] } })
+  await act(async () => root.render(<ArchivedNativePanel panel={javaPanel} testId="run" />))
+  const props = exportProps.mock.lastCall![0] as { rows: Record<string, unknown>[]; columns: { key: string; value: (row: Record<string, unknown>) => unknown }[] }
+  const values = props.rows.map(row => Object.fromEntries(props.columns.map(column => [column.key, column.value(row)])))
+  expect(values[0]).toMatchObject({ value: 30, count: 3, baseline: 0, baselineCount: 7, baselineReason: 'measured' })
+  expect(values[1]).toMatchObject({ value: '', reason: 'measurement_unavailable', baseline: '', baselineCount: 2, baselineReason: 'incomplete_representation_evidence' })
+  expect(container.textContent).toContain('Missing (incomplete representation evidence)')
+  expect([...container.querySelectorAll('tbody tr:first-child td')].map(n => n.textContent)).toEqual(['0', '30', '0', '3', '7'])
 })

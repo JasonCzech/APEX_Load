@@ -4,7 +4,7 @@ import { createWorkspace, scopeQuery } from './support/workspace'
 type StageDistribution = { stage: string; samples: number; availability: string; advisory?: boolean }
 
 // A real live run watched by a real browser tab: the tab measures its own
-// receive-to-render times and reports them once the project opts in, and the
+// monotonic receive-to-callback intervals and reports them once the project opts in, and the
 // run's live snapshot carries them as the advisory browser render stage.
 test('an opted-in project collects visible render evidence as an advisory stage', async ({ page, target, trackRun }) => {
   test.setTimeout(150_000)
@@ -36,6 +36,24 @@ test('an opted-in project collects visible render evidence as an advisory stage'
   expect(result.accepted, 'the visible tab measured its own renders').toBeGreaterThan(0)
   const body = JSON.parse(response.request().postData() || '{}') as { samples: Array<{ state: string; receive_to_render_ms: number }> }
   expect(body.samples.every(item => item.state === 'visible' && item.receive_to_render_ms >= 0 && item.receive_to_render_ms < 60_000)).toBe(true)
+
+  // Inject callback wall-clock drift without changing performance.now().
+  // This is a clock-regression fixture, not proof of visible presentation.
+  const shiftedAfter = Date.now() + 60_000
+  const shiftedReport = page.waitForResponse(response => {
+    if (!response.url().includes(`/api/v1/tests/${id}/telemetry/client-render`) || response.request().method() !== 'POST') return false
+    const payload = response.request().postDataJSON() as { samples?: Array<{ observed_at: string }> }
+    return Boolean(payload.samples?.some(item => Date.parse(item.observed_at) > shiftedAfter))
+  }, { timeout: 30_000 })
+  await page.evaluate(() => {
+    const actualNow = Date.now.bind(Date)
+    Date.now = () => actualNow() + 120_000
+  })
+  const shifted = await shiftedReport
+  expect(shifted.status()).toBe(202)
+  expect((await shifted.json() as { accepted: number }).accepted).toBeGreaterThan(0)
+  const shiftedBody = shifted.request().postDataJSON() as { samples: Array<{ receive_to_render_ms: number }> }
+  expect(shiftedBody.samples.every(item => item.receive_to_render_ms >= 0 && item.receive_to_render_ms < 60_000)).toBe(true)
 
   const stage = async (name: string) => {
     const run = await json(await request.get(`/api/v1/tests/${id}`)) as { live_metrics?: { telemetry?: { stage_distributions?: StageDistribution[] } } }

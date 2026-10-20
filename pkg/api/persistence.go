@@ -971,7 +971,9 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 		// After admission, runInterruptedRunResolution finalizes the run once
 		// every generator in its participant journal proves the load is gone.
 		const reason = interruptedDistributedStopReason
-		newError := strings.ReplaceAll(test.Error, legacyInterruptedDistributedStopReason, reason)
+		// The interrupted-stop guidance supersedes an uncertain evacuation's;
+		// drop that before truncation can leave a fragment of it.
+		newError := strings.ReplaceAll(withoutEvacuationIntervention(test.Error), legacyInterruptedDistributedStopReason, reason)
 		if !strings.Contains(newError, reason) {
 			if newError == "" {
 				newError = reason
@@ -1645,6 +1647,7 @@ func mapToLiveMetrics(m map[string]any) *LiveMetrics {
 
 func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *LiveMetrics {
 	live := &LiveMetrics{
+		JavaHTTP:            record.JavaHTTP.Retained(),
 		MessagingProgress:   record.MessagingProgress.Clone(),
 		Messaging:           protocol.CloneMessagingSummaries(record.Messaging),
 		NativeEvidence:      storage.CloneNativeIntervalEvidence(record.NativeEvidence),

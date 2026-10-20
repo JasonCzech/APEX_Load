@@ -226,6 +226,39 @@ The default browser envelope remains:
 
 #### Profiles
 
+##### Memory units and measured population
+
+The published Chromium target of **less than 250 MB** means **less than
+250,000,000 bytes**, not 250 MiB (262,144,000 bytes). The benchmark acceptance API
+retains the decimal `rss_per_vuser_target_mb` field and adds the authoritative
+`rss_per_vuser_target_bytes` with measurement version
+`apexload.browser_benchmark.v2`. The target and five-repetition/density requirements
+are unchanged.
+
+Historical `apexload.browser_benchmark.v1` artifacts calculated `peak_rss_mb` and
+host `memory_mb` in binary MiB despite those field names. Keep those files and
+their hashes intact; interpret their recorded values using 1 MiB = 1,048,576
+bytes. New v2 artifacts retain `peak_rss_bytes`, or null when no process could be
+read, and host `memory_bytes` plus an explicit `memory_mib` display. They count
+all attempted RSS snapshots, including partial and unavailable samples and name the observed process population.
+New Go benchmark output uses `rss_bytes/op` and `rss_mib/op`; it refuses an
+unavailable or non-finite process snapshot instead of reporting a measured zero.
+Its byte display preserves the platform sampler's resolution (for example,
+KiB from `ps`); converting units does not add measurement precision.
+
+`TestBrowserBenchmark` samples the test process's observed descendants, including
+the Playwright driver and browser. Its maximum is the largest observed snapshot,
+not a continuously measured peak or independent per-VUser attribution. Process
+creation/exit and enumeration can omit work; partial or unavailable samples cannot
+establish an upper memory bound. The separate Chromium Go RSS benchmark observes
+the shared Playwright driver's descendant process tree (or the driver if no
+children are observed). Concurrent sessions and shared process costs must be
+isolated or accounted for before claiming per-VUser density. These values cannot substitute
+for a qualified per-VUser reference measurement. WebKit RSS benchmark qualification
+stays unavailable. Acceptance requests remain pending review or failed, never
+passed automatically. See the [units review](qa/reviews/roadmap-browser-benchmark-units-2026-10-20/README.md)
+for local contract tests; reference-host qualification remains pending.
+
 ##### Desktop Chromium 1080p
 
 | Field | Value |
@@ -234,7 +267,7 @@ The default browser envelope remains:
 | Browser engine | Chromium |
 | Device profile | `desktop_1080p` |
 | Acceptance | Launch p50 < 3000 ms, action overhead < 10 ms, Chromium RSS < 250 MB per browser VUser |
-| RSS attribution | Chromium CDP process snapshot |
+| RSS attribution | Observed shared Playwright driver descendants, with driver fallback; not per-VUser attribution |
 | Evidence level | Code + docs + release artifact required |
 
 ##### Mobile Chromium Pixel 8
@@ -245,7 +278,7 @@ The default browser envelope remains:
 | Browser engine | Chromium |
 | Device profile | `pixel_8` |
 | Acceptance | Launch p50 < 3000 ms, touch overhead < 10 ms, Chromium RSS < 250 MB per browser VUser |
-| RSS attribution | Chromium CDP process snapshot |
+| RSS attribution | Observed shared Playwright driver descendants, with driver fallback; not per-VUser attribution |
 | Evidence level | Code + docs + release artifact required |
 
 ##### Mobile WebKit iPhone 15 Pro
@@ -256,7 +289,7 @@ The default browser envelope remains:
 | Browser engine | WebKit |
 | Device profile | `iphone_15_pro` |
 | Acceptance | Launch p50 < 3000 ms, touch overhead < 10 ms |
-| RSS attribution | Not available through CDP; use host-level memory telemetry |
+| RSS attribution | Not qualified by this benchmark; use host-level memory telemetry |
 | Evidence level | Code + docs + release artifact required |
 
 #### Environment Matrix
@@ -281,7 +314,7 @@ The benchmark suite covers:
 - touch or click action latency against a local HTML fixture
 - Chromium browser-process RSS per device profile when `browser.client_metrics` is enabled
 
-WebKit profiles are included for launch and action-latency coverage. RSS attribution is currently Chromium-only because APEX Load collects browser-process metrics through CDP process information.
+WebKit profiles are included for launch and action-latency coverage. This RSS benchmark runs only for the declared Chromium profiles and reads the OS process tree rooted at the shared Playwright driver; it is not a CDP or per-VUser memory measurement. WebKit RSS qualification remains pending.
 
 ### Prerequisites
 

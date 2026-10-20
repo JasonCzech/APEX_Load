@@ -1,0 +1,1192 @@
+{
+  "applied-api.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 14,
+    "passed_subtests": 6,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "applied-contract-matrix.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 1,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "applied-docs-qa.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 25,
+    "passed_subtests": 22,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "applied-inventory.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 1,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "applied-json-bound.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 4,
+    "passed_subtests": 4,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "applied-postgres.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 1,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "applied-race.jsonl": {
+    "passed_packages": 7,
+    "passed_top_level_tests": 58,
+    "passed_subtests": 75,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "before-population-draft-summary.jsonl": {
+    "passed_packages": 3,
+    "passed_top_level_tests": 15,
+    "passed_subtests": 41,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "before-summary-draft-java.jsonl": {
+    "passed_packages": 3,
+    "passed_top_level_tests": 12,
+    "passed_subtests": 41,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-acquisition-before-native-refresh.jsonl": {
+    "passed_packages": 2,
+    "passed_top_level_tests": 4,
+    "passed_subtests": 6,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-acquisition-before-nested.jsonl": {
+    "passed_packages": 2,
+    "passed_top_level_tests": 3,
+    "passed_subtests": 6,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-acquisition.jsonl": {
+    "passed_packages": 3,
+    "passed_top_level_tests": 15,
+    "passed_subtests": 15,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-actions.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 11,
+    "passed_subtests": 21,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-aggregate-fixture-compile-failed.jsonl": {
+    "passed_packages": 2,
+    "passed_top_level_tests": 12,
+    "passed_subtests": 17,
+    "skipped_top_level_tests": 0,
+    "failures": [
+      {
+        "package": "github.com/jasonczech/apexload/pkg/distributed/generatorrpc [github.com/jasonczech/apexload/pkg/distributed/generatorrpc.test]",
+        "test": null,
+        "action": "build-fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/distributed/generatorrpc",
+        "test": null,
+        "action": "fail"
+      }
+    ]
+  },
+  "draft-aggregate-reviewed.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 4,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-aggregate.jsonl": {
+    "passed_packages": 2,
+    "passed_top_level_tests": 12,
+    "passed_subtests": 17,
+    "skipped_top_level_tests": 0,
+    "failures": [
+      {
+        "package": "github.com/jasonczech/apexload/pkg/distributed/generatorrpc [github.com/jasonczech/apexload/pkg/distributed/generatorrpc.test]",
+        "test": null,
+        "action": "build-fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/distributed/generatorrpc",
+        "test": null,
+        "action": "fail"
+      }
+    ]
+  },
+  "draft-analysis-storage-reviewed.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 1168,
+    "passed_subtests": 1378,
+    "skipped_top_level_tests": 0,
+    "failures": [
+      {
+        "package": "github.com/jasonczech/apexload/pkg/analysis",
+        "test": "TestCatalogOperationsHaveExecutableTypedEntryPoint/ratio_of_sums",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/analysis",
+        "test": "TestCatalogOperationsHaveExecutableTypedEntryPoint",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/analysis",
+        "test": null,
+        "action": "fail"
+      }
+    ]
+  },
+  "draft-analysis-storage.jsonl": {
+    "passed_packages": 0,
+    "passed_top_level_tests": 1166,
+    "passed_subtests": 1319,
+    "skipped_top_level_tests": 0,
+    "failures": [
+      {
+        "package": "github.com/jasonczech/apexload/pkg/analysis",
+        "test": "TestRatioCatalogMatchesExecutableContracts",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/analysis",
+        "test": null,
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_input_bytes/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_input_bytes/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_input_bytes/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_input_bytes/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_input_bytes/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_input_bytes/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_input_bytes/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_decoded_request_bytes/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_decoded_request_bytes/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_decoded_request_bytes/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_decoded_request_bytes/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_decoded_request_bytes/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_decoded_request_bytes/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_decoded_request_bytes/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_prepared_body_bytes/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_prepared_body_bytes/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_prepared_body_bytes/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_prepared_body_bytes/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_prepared_body_bytes/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_prepared_body_bytes/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_prepared_body_bytes/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_retained_response_bytes/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_retained_response_bytes/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_retained_response_bytes/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_retained_response_bytes/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_retained_response_bytes/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_retained_response_bytes/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_retained_response_bytes/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_response_base64_bytes/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_response_base64_bytes/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_response_base64_bytes/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_response_base64_bytes/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_response_base64_bytes/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_response_base64_bytes/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_response_base64_bytes/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_decode_ms/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_decode_ms/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_decode_ms/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_decode_ms/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_decode_ms/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_decode_ms/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_decode_ms/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_encode_ms/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_encode_ms/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_encode_ms/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_encode_ms/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_encode_ms/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_encode_ms/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_encode_ms/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_enclosing_ms/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_enclosing_ms/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_enclosing_ms/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_enclosing_ms/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_enclosing_ms/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_enclosing_ms/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_enclosing_ms/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_decoded_per_encoded/java_http_action/ratio_of_sums",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_prepared_per_decoded/java_http_action/ratio_of_sums",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_per_retained/java_http_action/ratio_of_sums",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog/java_http_base64_work_share/java_http_action/ratio_of_sums",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestNativeQueryUsesCanonicalMetricCatalog",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": null,
+        "action": "fail"
+      }
+    ]
+  },
+  "draft-api.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 2,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-baseline-api-reviewed.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 10,
+    "passed_subtests": 6,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-baseline-api.jsonl": {
+    "passed_packages": 0,
+    "passed_top_level_tests": 0,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": [
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestJavaHTTPBaselineAccumulatorOwnsAndQualifiesActionSummary",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": null,
+        "action": "fail"
+      }
+    ]
+  },
+  "draft-baseline-archive.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 3,
+    "passed_subtests": 6,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-baseline-export.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 4,
+    "passed_subtests": 6,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-compression-postgres.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 1,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-consumer-race.jsonl": {
+    "passed_packages": 5,
+    "passed_top_level_tests": 53,
+    "passed_subtests": 65,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-engine-wire.jsonl": {
+    "passed_packages": 2,
+    "passed_top_level_tests": 5,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-history-json.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 12,
+    "passed_subtests": 21,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-history-postgres.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 1,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-history-reviewed.jsonl": {
+    "passed_packages": 2,
+    "passed_top_level_tests": 15,
+    "passed_subtests": 21,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-history-schema-before-envelope-fix.jsonl": {
+    "passed_packages": 0,
+    "passed_top_level_tests": 2,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": [
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestJavaHTTPHistorySQLiteMigrationRestartAndRoundtrip",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": null,
+        "action": "fail"
+      }
+    ]
+  },
+  "draft-history-schema.jsonl": {
+    "passed_packages": 0,
+    "passed_top_level_tests": 2,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": [
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": "TestJavaHTTPHistorySQLiteMigrationRestartAndRoundtrip",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": null,
+        "action": "fail"
+      }
+    ]
+  },
+  "draft-java-before-relations.jsonl": {
+    "passed_packages": 3,
+    "passed_top_level_tests": 11,
+    "passed_subtests": 39,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-java-before-timing-resolution.jsonl": {
+    "passed_packages": 3,
+    "passed_top_level_tests": 11,
+    "passed_subtests": 41,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-java.jsonl": {
+    "passed_packages": 3,
+    "passed_top_level_tests": 12,
+    "passed_subtests": 41,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-live-api.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 5,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-live-wire.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 5,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-native-api.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 7,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-native-compression.jsonl": {
+    "passed_packages": 4,
+    "passed_top_level_tests": 22,
+    "passed_subtests": 21,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-paired-analysis.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 155,
+    "passed_subtests": 503,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-summary-merge.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 9,
+    "passed_subtests": 17,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-summary-reviewed.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 6,
+    "passed_subtests": 17,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-summary.jsonl": {
+    "passed_packages": 3,
+    "passed_top_level_tests": 15,
+    "passed_subtests": 41,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "draft-wire.jsonl": {
+    "passed_packages": 2,
+    "passed_top_level_tests": 8,
+    "passed_subtests": 17,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "final-clean-full-go.jsonl": {
+    "passed_packages": 168,
+    "passed_top_level_tests": 17736,
+    "passed_subtests": 17622,
+    "skipped_top_level_tests": 33,
+    "failures": []
+  },
+  "final-full-go.jsonl": {
+    "passed_packages": 167,
+    "passed_top_level_tests": 17735,
+    "passed_subtests": 17622,
+    "skipped_top_level_tests": 33,
+    "failures": [
+      {
+        "package": "github.com/jasonczech/apexload/docs/qa",
+        "test": "TestGeneratedDashboardIsFresh",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/docs/qa",
+        "test": null,
+        "action": "fail"
+      }
+    ]
+  },
+  "full-go-applied.jsonl": {
+    "passed_packages": 166,
+    "passed_top_level_tests": 17729,
+    "passed_subtests": 17502,
+    "skipped_top_level_tests": 33,
+    "failures": [
+      {
+        "package": "github.com/jasonczech/apexload/cmd/openapits",
+        "test": "TestDashboardDomainTypesDoNotImportCompatibilityBarrel",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/cmd/openapits",
+        "test": null,
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_input_bytes/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_input_bytes/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_input_bytes/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_input_bytes/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_input_bytes/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_input_bytes/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_input_bytes/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_decoded_request_bytes/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_decoded_request_bytes/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_decoded_request_bytes/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_decoded_request_bytes/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_decoded_request_bytes/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_decoded_request_bytes/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_decoded_request_bytes/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_prepared_body_bytes/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_prepared_body_bytes/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_prepared_body_bytes/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_prepared_body_bytes/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_prepared_body_bytes/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_prepared_body_bytes/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_prepared_body_bytes/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_retained_response_bytes/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_retained_response_bytes/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_retained_response_bytes/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_retained_response_bytes/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_retained_response_bytes/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_retained_response_bytes/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_retained_response_bytes/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_response_base64_bytes/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_response_base64_bytes/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_response_base64_bytes/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_response_base64_bytes/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_response_base64_bytes/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_response_base64_bytes/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_response_base64_bytes/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_decode_ms/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_decode_ms/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_decode_ms/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_decode_ms/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_decode_ms/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_decode_ms/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_decode_ms/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_encode_ms/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_encode_ms/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_encode_ms/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_encode_ms/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_encode_ms/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_encode_ms/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_encode_ms/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_enclosing_ms/java_http_action/avg",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_enclosing_ms/java_http_action/min",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_enclosing_ms/java_http_action/max",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_enclosing_ms/java_http_action/p50",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_enclosing_ms/java_http_action/p90",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_enclosing_ms/java_http_action/p95",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_enclosing_ms/java_http_action/p99",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_decoded_per_encoded/java_http_action/ratio_of_sums",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_prepared_per_decoded/java_http_action/ratio_of_sums",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_per_retained/java_http_action/ratio_of_sums",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries/java_http_base64_work_share/java_http_action/ratio_of_sums",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestCatalogNativeWireUnitsMatchExecutedQueries",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": null,
+        "action": "fail"
+      }
+    ]
+  },
+  "reviewed-api-race-repeat.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 16,
+    "passed_subtests": 66,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "reviewed-api.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 25,
+    "passed_subtests": 182,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "reviewed-contract-matrix.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 1,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "reviewed-docs-qa.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 25,
+    "passed_subtests": 22,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "reviewed-domain-contracts.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 7,
+    "passed_subtests": 15,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "reviewed-full-go.jsonl": {
+    "passed_packages": 167,
+    "passed_top_level_tests": 17735,
+    "passed_subtests": 17620,
+    "skipped_top_level_tests": 33,
+    "failures": [
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestArchiveQueryEndpoints/safe_transaction_jsonl_download",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestArchiveQueryEndpoints/browser_diagnostics_download",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": "TestArchiveQueryEndpoints",
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": null,
+        "action": "fail"
+      }
+    ]
+  },
+  "reviewed-inventory.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 1,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "reviewed-postgres.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 1,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "reviewed-race.jsonl": {
+    "passed_packages": 6,
+    "passed_top_level_tests": 57,
+    "passed_subtests": 75,
+    "skipped_top_level_tests": 0,
+    "failures": [
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage.test",
+        "test": null,
+        "action": "build-fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": null,
+        "action": "fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api.test",
+        "test": null,
+        "action": "build-fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/api",
+        "test": null,
+        "action": "fail"
+      }
+    ]
+  },
+  "reviewed-storage-race-repeat.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 2,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "schema-fingerprint-probe-build-failed.jsonl": {
+    "passed_packages": 0,
+    "passed_top_level_tests": 0,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": [
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage [github.com/jasonczech/apexload/pkg/storage.test]",
+        "test": null,
+        "action": "build-fail"
+      },
+      {
+        "package": "github.com/jasonczech/apexload/pkg/storage",
+        "test": null,
+        "action": "fail"
+      }
+    ]
+  },
+  "schema-fingerprint-probe.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 1,
+    "passed_subtests": 0,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  },
+  "staged-docs-qa.jsonl": {
+    "passed_packages": 1,
+    "passed_top_level_tests": 25,
+    "passed_subtests": 22,
+    "skipped_top_level_tests": 0,
+    "failures": []
+  }
+}

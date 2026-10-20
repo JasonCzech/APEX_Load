@@ -203,6 +203,7 @@ type archiveResourceSample struct {
 }
 
 type archiveIntervalSummary struct {
+	JavaHTTP            *protocol.JavaHTTPActions                     `json:"java_http,omitempty"`
 	BrowserDocuments    *protocol.BrowserDocumentSummary              `json:"browser_documents,omitempty"`
 	MessagingProgress   *protocol.MessagingProgressSnapshot           `json:"messaging_progress,omitempty"`
 	Messaging           map[string]*protocol.MessagingSummary         `json:"messaging,omitempty"`
@@ -386,15 +387,16 @@ type archiveBrowserDeviceMetric struct {
 }
 
 type archiveTelemetryHealth struct {
-	DroppedResultsAvailable  bool      `json:"dropped_results_available,omitempty"`
-	DroppedResults           int64     `json:"dropped_results,omitempty"`
-	SheddedArrivals          int64     `json:"shedded_arrivals,omitempty"`
-	DroppedSubscriberBatches int64     `json:"dropped_subscriber_batches,omitempty"`
-	GeneratorPublishedAt     time.Time `json:"generator_published_at,omitempty"`
-	CollectedAt              time.Time `json:"collected_at,omitempty"`
-	GeneratorProcessingLagMs float64   `json:"generator_processing_lag_ms,omitempty"`
-	TransportLagMs           float64   `json:"transport_lag_ms,omitempty"`
-	SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
+	CollectionWindows        *archiveCollectionWindows `json:"collection_windows,omitempty"`
+	DroppedResultsAvailable  bool                      `json:"dropped_results_available,omitempty"`
+	DroppedResults           int64                     `json:"dropped_results,omitempty"`
+	SheddedArrivals          int64                     `json:"shedded_arrivals,omitempty"`
+	DroppedSubscriberBatches int64                     `json:"dropped_subscriber_batches,omitempty"`
+	GeneratorPublishedAt     time.Time                 `json:"generator_published_at,omitempty"`
+	CollectedAt              time.Time                 `json:"collected_at,omitempty"`
+	GeneratorProcessingLagMs float64                   `json:"generator_processing_lag_ms,omitempty"`
+	TransportLagMs           float64                   `json:"transport_lag_ms,omitempty"`
+	SampleAgeMs              float64                   `json:"sample_age_ms,omitempty"`
 }
 
 type archiveRecorder struct {
@@ -753,6 +755,7 @@ type parquetIntervalSummary struct {
 	GroupsJSON            string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BrowserDocumentsJSON  string  `parquet:"name=browser_documents_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	MessagingProgressJSON string  `parquet:"name=messaging_progress_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	JavaHTTPJSON          string  `parquet:"name=java_http_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	MessagingJSON         string  `parquet:"name=messaging_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	TransactionsJSON      string  `parquet:"name=transactions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	ByRegionJSON          string  `parquet:"name=by_region_json, type=BYTE_ARRAY, convertedtype=UTF8"`
@@ -1335,6 +1338,7 @@ func (w *archiveRecorder) RecordIntervalSummary(summary archiveIntervalSummary) 
 	if w.recordErr != nil {
 		return w.recordErr
 	}
+	summary.JavaHTTP = summary.JavaHTTP.Retained()
 	summary.BrowserDocuments = summary.BrowserDocuments.Clone()
 	summary.MessagingProgress = summary.MessagingProgress.Clone()
 	summary.TestID = w.manifest.TestID
@@ -1842,6 +1846,7 @@ func toParquetSummaries(items []archiveIntervalSummary) []parquetIntervalSummary
 			DurationDigestJSON:    mustJSON(item.DurationDigest),
 			DurationSketchJSON:    mustJSON(item.DurationSketch),
 			GroupsJSON:            mustJSON(item.Groups),
+			JavaHTTPJSON:          protocol.JavaHTTPActionsJSON(item.JavaHTTP),
 			MessagingJSON:         mustJSON(item.Messaging),
 			BrowserDocumentsJSON:  browserDocumentsJSON(item.BrowserDocuments),
 			MessagingProgressJSON: messagingProgressJSON(item.MessagingProgress),

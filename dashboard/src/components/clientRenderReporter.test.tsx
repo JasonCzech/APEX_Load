@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { LiveMetrics } from '../types'
+import { recordClientTelemetryReceipt } from './clientTelemetryReceipt'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -18,32 +19,31 @@ class ApiError extends Error {
 }
 vi.mock('../hooks/apiClient', () => ({ request, ApiError }))
 
-const { CLIENT_RENDER_FLUSH_MS, CLIENT_RENDER_MAX_SAMPLES, enqueueRenderSample, renderSample, useClientRenderReporter, visibleThroughout } = await import('./clientRenderReporter')
+const { CLIENT_RENDER_FLUSH_MS, CLIENT_RENDER_MAX_SAMPLES, enqueueRenderSample, renderSample, useClientRenderReporter } = await import('./clientRenderReporter')
 
 function Harness({ testId, enabled, metrics }: { testId: string; enabled: boolean; metrics?: LiveMetrics }) {
   useClientRenderReporter(testId, enabled, metrics)
   return null
 }
 
-function metricsReceivedAt(at: number): LiveMetrics {
-  return { telemetry: { client_received_at: new Date(at).toISOString() } } as LiveMetrics
+function metricsReceivedAt(at: number, testId = 'run-1'): LiveMetrics {
+  const telemetry = { client_received_at: new Date(at).toISOString() }
+  recordClientTelemetryReceipt(telemetry, testId)
+  return { telemetry } as LiveMetrics
 }
 
 describe('client render samples', () => {
   it('measures receive to render and marks a hidden tab as background', () => {
     const received = Date.parse('2026-10-07T12:00:00.000Z')
-    expect(renderSample(received, received + 16.4, true)).toEqual({ receive_to_render_ms: 16.4, state: 'visible', observed_at: '2026-10-07T12:00:00.016Z' })
-    expect(renderSample(received, received + 40, false)?.state).toBe('background')
-    expect(renderSample(received, received - 5, true)?.receive_to_render_ms).toBe(0)
-    expect(renderSample(Number.NaN, received, true)).toBeNull()
-  })
-
-  it('counts a render as visible only if the tab stayed visible since receipt', () => {
-    expect(visibleThroughout(1000, 0, true)).toBe(true)
-    expect(visibleThroughout(1000, 999, true)).toBe(true)
-    expect(visibleThroughout(1000, 1000, true)).toBe(false)
-    expect(visibleThroughout(1000, 1500, true)).toBe(false)
-    expect(visibleThroughout(1000, 0, false)).toBe(false)
+    expect(renderSample(100, 116.4, true, received + 16)).toEqual({ receive_to_render_ms: 16.4, state: 'visible', observed_at: '2026-10-07T12:00:00.016Z' })
+    expect(renderSample(100, 140, false, received)?.state).toBe('background')
+    expect(renderSample(100, 95, true, received)).toBeNull()
+    expect(renderSample(Number.NaN, 100, true, received)).toBeNull()
+    expect(renderSample(100, Number.POSITIVE_INFINITY, true, received)).toBeNull()
+    expect(renderSample(0, Number.MAX_VALUE, true, received)).toBeNull()
+    expect(renderSample(100, 120, true, Number.NaN)).toBeNull()
+    expect(renderSample(-1, 120, true, received)).toBeNull()
+    expect(renderSample(0, 0, true, received)?.receive_to_render_ms).toBe(0)
   })
 
   it('keeps at most one report of the newest samples', () => {
@@ -73,11 +73,12 @@ describe('useClientRenderReporter', () => {
     act(() => root.unmount())
     vi.unstubAllGlobals()
     vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   async function publish(testId: string, enabled: boolean, at: number) {
     await act(async () => {
-      root.render(<Harness testId={testId} enabled={enabled} metrics={metricsReceivedAt(at)} />)
+      root.render(<Harness testId={testId} enabled={enabled} metrics={metricsReceivedAt(at, testId)} />)
     })
     await act(async () => {
       vi.advanceTimersByTime(5)
@@ -126,11 +127,11 @@ describe('useClientRenderReporter', () => {
     const state = { value: 'visible' as DocumentVisibilityState }
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => state.value)
     await act(async () => {
-      root.render(<Harness testId="run-4" enabled metrics={metricsReceivedAt(Date.now())} />)
+      root.render(<Harness testId="run-4" enabled metrics={metricsReceivedAt(Date.now(), "run-4")} />)
     })
     // Hidden before the pending frame runs (a hidden tab runs no frames),
-    // and visible again by the time it does: the frame and the paint it
-    // measures both run while the tab is visible.
+    // and visible again by the time it does: both callbacks execute while
+    // visible, but the receipt still includes a hidden interval.
     await act(async () => {
       state.value = 'hidden'
       document.dispatchEvent(new Event('visibilitychange'))
@@ -155,4 +156,96 @@ describe('useClientRenderReporter', () => {
     expect(request).not.toHaveBeenCalled()
     visibility.mockRestore()
   })
+
+  it('uses monotonic elapsed time across forward and backward wall-clock steps', async () => {
+    request.mockResolvedValue({ accepted: 1 })
+    let monotonic = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonic)
+    for (const step of [-120_000, 120_000]) {
+      request.mockClear()
+      monotonic += 100
+      await act(async () => { root.render(<Harness testId="run-1" enabled metrics={metricsReceivedAt(Date.now())} />) })
+      vi.setSystemTime(Date.now() + step)
+      monotonic += 25
+      await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+      expect(JSON.parse(request.mock.calls[0][1].body).samples[0].receive_to_render_ms).toBe(25)
+    }
+  })
+
+  it('requires a local receipt bound to this run, not a wire timestamp', async () => {
+    const wire = { telemetry: { client_received_at: new Date().toISOString() } } as LiveMetrics
+    await act(async () => { root.render(<Harness testId="run-1" enabled metrics={wire} />) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    await act(async () => { root.render(<Harness testId="run-2" enabled metrics={metricsReceivedAt(Date.now(), 'run-1')} />) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('distinguishes receipts sharing a wall timestamp without resampling a latency update', async () => {
+    request.mockResolvedValue({ accepted: 2 })
+    const wall = Date.now()
+    await publish('run-1', true, wall)
+    const metrics = metricsReceivedAt(wall)
+    await act(async () => { root.render(<Harness testId="run-1" enabled metrics={metrics} />) })
+    await act(async () => { vi.advanceTimersByTime(5) })
+    await act(async () => { root.render(<Harness testId="run-1" enabled metrics={{ ...metrics }} />) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(JSON.parse(request.mock.calls[0][1].body).samples).toHaveLength(2)
+  })
+
+  it('clears disabled samples and cannot sample the same receipt twice', async () => {
+    request.mockResolvedValue({ accepted: 1 })
+    const metrics = metricsReceivedAt(Date.now())
+    const render = async (enabled: boolean) => {
+      await act(async () => { root.render(<Harness testId="run-1" enabled={enabled} metrics={metrics} />) })
+      await act(async () => { vi.advanceTimersByTime(5) })
+    }
+    await render(true)
+    await render(false)
+    await render(true)
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(request).not.toHaveBeenCalled()
+    await publish('run-1', true, Date.now())
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(JSON.parse(request.mock.calls[0][1].body).samples).toHaveLength(1)
+  })
+
+  it('ignores a late refusal from a disabled reporting session', async () => {
+    let reject!: (error: Error) => void
+    request.mockReturnValueOnce(new Promise((_resolve, fail) => { reject = fail })).mockResolvedValue({ accepted: 1 })
+    await publish('run-1', true, Date.now())
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    await publish('run-1', false, Date.now())
+    await publish('run-1', true, Date.now())
+    await act(async () => { reject(new ApiError('old session', 409)) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+
+  it('excludes a hidden receipt even when visible before React processes it', async () => {
+    const state = { value: 'hidden' as DocumentVisibilityState }
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => state.value)
+    const metrics = metricsReceivedAt(Date.now())
+    state.value = 'visible'
+    await act(async () => { root.render(<Harness testId="run-1" enabled metrics={metrics} />) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(request).not.toHaveBeenCalled()
+  })
+
+
+  it('remembers a hidden interval before the reporter is enabled', async () => {
+    const state = { value: 'visible' as DocumentVisibilityState }
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => state.value)
+    vi.spyOn(performance, 'now').mockReturnValue(0)
+    const metrics = metricsReceivedAt(Date.now())
+    await act(async () => { root.render(<Harness testId="run-1" enabled={false} metrics={metrics} />) })
+    state.value = 'hidden'
+    document.dispatchEvent(new Event('visibilitychange'))
+    state.value = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
+    await act(async () => { root.render(<Harness testId="run-1" enabled metrics={metrics} />) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(request).not.toHaveBeenCalled()
+  })
+
 })

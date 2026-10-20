@@ -291,6 +291,7 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 	}
 
 	var finalizationIdentity *storage.ArchiveFinalizationRunIdentity
+	var finalManifest *RunArchiveManifest
 	snapshotCompletedAt := job.ArchiveRecord.CompletedAt
 	if _, fenced := tr.archiveStore.(incarnationArchiveFinalizationStore); fenced && outbox != nil && durableTest != nil {
 		inspection, err := tr.inspectArchiveFinalizationSource(ctx, job, durableTest, true)
@@ -382,9 +383,11 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 		}
 	}
 	if finalizationIdentity != nil {
-		if _, err := tr.inspectArchiveFinalizationIdentity(ctx, job, durableTest, false); err != nil {
+		inspection, err := tr.inspectArchiveFinalizationSource(ctx, job, durableTest, false)
+		if err != nil {
 			return err
 		}
+		finalManifest = inspection.manifest
 	}
 	if outbox != nil {
 		tr.populateRunArchiveTrendPoint(record)
@@ -414,7 +417,7 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 		}
 	}
 	if outbox != nil {
-		committed, err := tr.commitArchiveFinalization(job, finalizationIdentity)
+		committed, err := tr.commitArchiveFinalization(ctx, job, finalizationIdentity, finalManifest)
 		if err != nil || !committed {
 			return err
 		}

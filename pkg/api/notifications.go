@@ -85,15 +85,17 @@ type NotificationWebhookSettings struct {
 }
 
 type NotificationEvent struct {
-	Type       string    `json:"type"`
-	TestID     string    `json:"test_id"`
-	ProjectID  string    `json:"project_id,omitempty"`
-	TestName   string    `json:"test_name"`
-	Status     string    `json:"status"`
-	Severity   string    `json:"severity,omitempty"`
-	Summary    string    `json:"summary,omitempty"`
-	Conditions []string  `json:"conditions,omitempty"`
-	Timestamp  time.Time `json:"timestamp"`
+	// Durable identities distinguish assessment revisions while leaving old keys unchanged.
+	durableIdentity string
+	Type            string    `json:"type"`
+	TestID          string    `json:"test_id"`
+	ProjectID       string    `json:"project_id,omitempty"`
+	TestName        string    `json:"test_name"`
+	Status          string    `json:"status"`
+	Severity        string    `json:"severity,omitempty"`
+	Summary         string    `json:"summary,omitempty"`
+	Conditions      []string  `json:"conditions,omitempty"`
+	Timestamp       time.Time `json:"timestamp"`
 }
 
 type notificationDispatcher struct {
@@ -512,6 +514,9 @@ func notificationDedupeKey(webhook NotificationWebhookSettings, event Notificati
 		strings.TrimSpace(event.Status),
 		strings.TrimSpace(event.Summary),
 		event.Timestamp.UTC().Format(time.RFC3339Nano),
+	}
+	if event.durableIdentity != "" {
+		parts = append(parts, event.durableIdentity)
 	}
 	// The key is sent as an HTTP header and a Dynatrace property. Hash the
 	// canonical identity so user-influenced names/summaries cannot inject

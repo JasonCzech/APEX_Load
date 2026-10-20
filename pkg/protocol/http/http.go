@@ -422,6 +422,11 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		return result, nil
 	}
 	requestBytes := int64(len(wireBody))
+	appliedCompression := "none"
+	if contentEncoding != "" && len(requestBody) > 0 {
+		appliedCompression = contentEncoding
+	}
+	protocol.ObserveHTTPBody(ctx, requestBytes, appliedCompression)
 	connectionReused := false
 	redirectCount := 0
 	responseSet := newResponseSetCollector(action.Extractors)

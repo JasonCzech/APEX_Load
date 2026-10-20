@@ -228,6 +228,11 @@ func TestCatalogOperationsHaveExecutableTypedEntryPoint(t *testing.T) {
 						t.Fatalf("p75 has no native document query for %s", name)
 					}
 				}
+			case "ratio_of_sums":
+				got, err := EvaluateJavaHTTPPairedSums("java_http_prepared_per_decoded", JavaHTTPPairedSums{Version: 1, Eligible: 2, Samples: 2, Numerator: 7, Denominator: 12, Complete: true})
+				if err != nil || got.Value == nil || *got.Value != 7.0/12 {
+					t.Fatalf("paired sum entrypoint: %+v err=%v", got, err)
+				}
 			case "rate", "delta":
 				before, after := qualifiedPoint(start, 2), qualifiedPoint(start.Add(time.Second), 4)
 				before.Kind, after.Kind, before.Unit, after.Unit = KindCounter, KindCounter, "count", "count"

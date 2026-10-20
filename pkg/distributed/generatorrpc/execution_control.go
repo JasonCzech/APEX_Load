@@ -620,7 +620,12 @@ func translateCoordinatedStartRequest(ctx context.Context, request *pb.WorkCommi
 	controllerBarrier := time.Unix(0, request.GetStartAtUnixNano())
 	localBarrier := receivedAt.Add(controllerBarrier.Sub(controllerSentAt))
 	if clockEstimatePresent {
-		localBarrier = controllerBarrier.Add(clockOffset)
+		// Heartbeat offsets map to the published monotonic clock, not the
+		// generator wall clock used by the execution barrier. Translate the
+		// remaining interval once at receipt without moving the shared deadline
+		// later by RPC transit or re-anchoring an active run's telemetry.
+		publishedBarrier := controllerBarrier.Add(clockOffset)
+		localBarrier = receivedAt.Add(publishedBarrier.Sub(generatorPublishedClock.at(receivedAt)))
 	}
 	translated := proto.Clone(request).(*pb.WorkCommitRequest)
 	translated.StartAtUnixNano = localBarrier.UnixNano()

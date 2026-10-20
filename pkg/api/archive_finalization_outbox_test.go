@@ -44,6 +44,13 @@ func (s *failingArchiveCatalogStore) CompleteArchiveFinalizationForRun(id, token
 	return s.SQLiteStore.CompleteArchiveFinalizationForRun(id, token, refresh, record, identity)
 }
 
+func (s *failingArchiveCatalogStore) CompleteArchiveFinalizationWithTelemetry(id, token, refresh string, record *storage.RunArchiveRecord, identity storage.ArchiveFinalizationRunIdentity, publication storage.TelemetryNotificationPublication) (bool, error) {
+	if s.failCatalog {
+		return false, errors.New("injected archive catalog failure")
+	}
+	return s.SQLiteStore.CompleteArchiveFinalizationWithTelemetry(id, token, refresh, record, identity, publication)
+}
+
 type archiveIntentOrderStore struct {
 	SQLiteStore *storage.SQLiteStore
 	adjunctPath string

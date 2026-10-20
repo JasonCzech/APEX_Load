@@ -55,10 +55,11 @@ func (tr *TestRunner) recoverUploadedArchiveWithoutSource(ctx context.Context, j
 	if err != nil {
 		return true, fmt.Errorf("pending archive source unavailable; read immutable commit marker: %w", err)
 	}
-	identity, err := tr.validateArchiveFinalizationIdentity(job, record, durable, data)
+	inspection, err := tr.validateArchiveFinalizationSource(job, record, durable, data)
 	if err != nil {
 		return true, err
 	}
+	identity := inspection.identity
 	if err := tr.bindArchiveFinalizationLease(identity); err != nil {
 		return true, err
 	}
@@ -72,7 +73,7 @@ func (tr *TestRunner) recoverUploadedArchiveWithoutSource(ctx context.Context, j
 	if !tr.isExecutionLeader() {
 		return true, errNotExecutionLeader
 	}
-	committed, err := tr.commitArchiveFinalization(job, identity)
+	committed, err := tr.commitArchiveFinalization(ctx, job, identity, inspection.manifest)
 	if err != nil {
 		return true, err
 	}

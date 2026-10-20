@@ -1,5 +1,9 @@
 # QA Review Records
 
+- [Roadmap HAR finalization budget (2026-10-19)](roadmap-har-finalization-budget-2026-10-19/README.md) — shared publication deadline, explicit exhaustion and retained physical ownership.
+
+- [Roadmap browser baseline qualification guards (2026-10-19)](roadmap-browser-baseline-qualification-2026-10-19/README.md) — effect floors and known document-loss refusal.
+
 Status: Historical index (point-in-time UX/QA reviews and feature evaluations; not current product documentation). This is the single review index. Live status for the test program is in [../STATUS.md](../STATUS.md) and [../DEFECTS.md](../DEFECTS.md).
 
 This directory holds dated reviews that still carry open items or are still cited, together with their captured evidence (screenshots, logs, JSON) in the sibling folders. Completed reviews are collected in the themed reports below and [September audits](../../archive/qa-reviews/AUDITS_2026-09.md); see [../../archive/README.md](../../archive/README.md) for everything else that was archived or removed (including how to restore deleted files from git). The whole-application review of 2026-08-02 was removed on 2026-09-24; its 11 tracked defects are in [../DEFECTS.md](../DEFECTS.md).
@@ -28,6 +32,22 @@ The themed reports preserve the original narrative of each consolidated review, 
 ## Completed implementation reviews
 
 Completion here applies only to the reviewed slice. Outstanding provider, platform, scale and parent-feature gates are retained inside each report and linked from the [roadmap](../../ROADMAP.md). Consolidation does not mark those gates passed. Evidence directories and non-Markdown artifacts remain unchanged.
+
+[Coordinated starts and published clocks — 2026-10-19](roadmap-coordinated-published-clock-2026-10-19/README.md) retains the full-suite failure, clock-domain correction and generator execution regressions.
+
+[Local-wall timestamp qualification — 2026-10-19](roadmap-analytics-local-wall-times-2026-10-19/README.md) records unique-instant refusal, non-hour transitions and retained row provenance.
+
+[Native timestamp source offsets — 2026-10-19](roadmap-analytics-timestamp-offsets-2026-10-19/README.md) records explicit source-offset validation, per-row DST fixtures, rejection provenance and source non-mutation.
+
+[Java HTTP body conversion — 2026-10-19](roadmap-java-body-conversion-2026-10-19/README.md) records single conversion, independent endpoint bytes, compression and replay-provenance regression evidence.
+
+[Monotonic browser timing — 2026-10-19](roadmap-monotonic-browser-timing-2026-10-19/README.md) records local receipt identity, monotonic callback timing and visibility/session regression evidence; visible-presentation qualification remains open.
+
+[Durable controller cursors — 2026-10-19](roadmap-durable-cursors-2026-10-19/README.md) records atomic cursor/effects persistence, bounded source-window recovery, fencing, migration and replay evidence.
+
+[Source collection windows — 2026-10-19](roadmap-source-windows-2026-10-19/README.md) records the next bounded TEL-A prerequisite: source drain-window provenance on the wire and in generator archives; controller recovery follows in the slice above.
+
+[Replay-safe telemetry coverage — 2026-10-19](roadmap-telemetry-coverage-2026-10-19/README.md) records the first bounded TEL-A implementation slice, regression evidence and remaining gates.
 
 | Themed report | Scope |
 | --- | --- |

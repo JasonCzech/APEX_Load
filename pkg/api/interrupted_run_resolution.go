@@ -112,13 +112,19 @@ func interruptedDistributedRunLocked(test *ManagedTest) bool {
 		hasInterruptedDistributedStopReason(test.Error) && !interruptedRunEvacuation(test.continuityCheckpoint)
 }
 
-// interruptedEvacuationAwaitingProofLocked reports a run held STOPPING because
-// leadership changed during a generator evacuation. Evacuation recovery fences
-// it automatically while every possible participant is reachable; the operator
-// override covers the rest.
+// interruptedEvacuationAwaitingProofLocked includes a successor with no local
+// runtime and a same-leader fail-closed evacuation whose runtime was canceled.
+// Cancellation establishes eligibility for an explicit administrator attestation;
+// it is never proof that remote generators stopped.
 func interruptedEvacuationAwaitingProofLocked(test *ManagedTest) bool {
-	return test != nil && test.Status == "STOPPING" && test.cancel == nil && test.executionCtx == nil &&
-		interruptedRunEvacuation(test.continuityCheckpoint)
+	if test == nil || test.Status != "STOPPING" || !interruptedRunEvacuation(test.continuityCheckpoint) {
+		return false
+	}
+	if test.cancel == nil && test.executionCtx == nil {
+		return true
+	}
+	return test.remoteFinalizing && test.executionCtx != nil && test.executionCtx.Err() != nil &&
+		strings.HasPrefix(test.Error, uncertainEvacuationReasonPrefix)
 }
 
 // interruptedRunProofs records, per run, the targets that already proved the
@@ -232,7 +238,7 @@ func (tr *TestRunner) finalizeInterruptedDistributedRun(ctx context.Context, tes
 		return errInterruptedRunNotEligible
 	}
 	fenceErr := tr.claimTestExecutionFence(test)
-	prior := withoutInterruptedDistributedStopReason(test.Error)
+	prior := withoutInterruptedDistributedStopReason(withoutEvacuationIntervention(test.Error))
 	tr.mu.Unlock()
 	if fenceErr != nil {
 		return fenceErr
@@ -254,7 +260,7 @@ func (tr *TestRunner) finalizeInterruptedDistributedRun(ctx context.Context, tes
 
 // finalizeAttestedInterruptedEvacuation records an administrator's attestation
 // as the evacuation's fence proof. The run ends FAILED with
-// interruptedEvacuationAttestedProof, and evacuation recovery then performs
+// its same-leader or successor attestation proof, and recovery then performs
 // only its post-terminal archive and pod-capacity cleanup.
 func (tr *TestRunner) finalizeAttestedInterruptedEvacuation(ctx context.Context, test *ManagedTest, message string) error {
 	unlock, err := tr.lockTestLifecycleControl(ctx, test.ID)
@@ -268,7 +274,7 @@ func (tr *TestRunner) finalizeAttestedInterruptedEvacuation(ctx context.Context,
 		return errInterruptedRunNotEligible
 	}
 	fenceErr := tr.claimTestExecutionFence(test)
-	prior := strings.TrimSpace(test.Error)
+	prior := strings.TrimSpace(withoutEvacuationIntervention(test.Error))
 	tr.mu.Unlock()
 	if fenceErr != nil {
 		return fenceErr
@@ -321,6 +327,7 @@ func (s *Server) handleResolveInterruptedRun(w http.ResponseWriter, r *http.Requ
 	id = s.runner.resolveRefKeyLocked(id)
 	test := s.runner.tests[id]
 	evacuation := interruptedEvacuationAwaitingProofLocked(test)
+	sameLeaderEvacuation := evacuation && (test.cancel != nil || test.executionCtx != nil)
 	eligible := evacuation || interruptedDistributedRunLocked(test)
 	projectID := ""
 	if test != nil {
@@ -343,7 +350,11 @@ func (s *Server) handleResolveInterruptedRun(w http.ResponseWriter, r *http.Requ
 	}
 	var err error
 	if evacuation {
-		err = s.runner.finalizeAttestedInterruptedEvacuation(r.Context(), test, interruptedEvacuationAttestedProof+"; resolved by "+actor+note)
+		proof := interruptedEvacuationAttestedProof
+		if sameLeaderEvacuation {
+			proof = sameLeaderEvacuationAttestedProof
+		}
+		err = s.runner.finalizeAttestedInterruptedEvacuation(r.Context(), test, proof+"; resolved by "+actor+note)
 	} else {
 		err = s.runner.finalizeInterruptedDistributedRun(r.Context(), test, "controller execution ownership was interrupted before the run completed; resolved by "+actor+", who attested that every generator process that could run it is stopped"+note)
 	}

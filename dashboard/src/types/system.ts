@@ -255,6 +255,8 @@ export interface CloudTestCapability {
 }
 
 export interface BrowserBenchmarkAcceptance {
+  measurement_version?: string
+  rss_per_vuser_target_bytes?: number
   launch_p50_target_ms: number
   action_overhead_target_ms: number
   rss_per_vuser_target_mb?: number

@@ -1,0 +1,12 @@
+Working checkout: codex/roadmap-durable-cursors; main integrated through 5a9355e16 before builds.
+Go 1.26.9 darwin/arm64; GOMAXPROCS=2 GOGC=30 GOFLAGS=-p=1
+GOCACHE=/private/tmp/apex-roadmap-prerequisite/go-cache
+GOTMPDIR=/private/tmp/apex-roadmap-prerequisite/go-tmp
+
+Before reproduction used a Go overlay with original java_http.go and the new regression test:
+go test -trimpath -overlay=<before-stable overlay> -count=1 ./pkg/protocol/java_http -run TestJavaHTTPUnsupportedEncodingNeverReachesTarget
+After overlay: go test -trimpath -overlay=<after overlay> -count=1 ./pkg/protocol/java_http
+Protocol overlay: go test -json -trimpath -overlay=<after overlay> -count=1 ./pkg/protocol/java_http ./pkg/protocol/grpc ./pkg/protocol/websocket
+Applied-source confirmation: go test -work -json -trimpath -count=1 ./pkg/protocol/java_http ./pkg/protocol/grpc ./pkg/protocol/websocket
+Propagation:
+go test -json -trimpath -count=1 -timeout=5m ./pkg/distributed/generatorrpc ./pkg/api -run 'TestGRPCDiagnostics|TestGRPCMissingResponseDoesNotDiluteDistributedFirstEventAverage|TestWebSocketDiagnosticsWirePreservesOptionalEvidence|TestCloneServerTelemetryPreservesWebSocket'

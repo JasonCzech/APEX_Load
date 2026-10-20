@@ -10,8 +10,8 @@ import (
 // runTotalsAccumulator derives run-to-date transaction, request and error
 // counters. A local run counts the per-window live samples it publishes
 // (apply); a distributed run counts each generator's accepted windows
-// (countWindow), and a controller that takes it over starts from the stored
-// history (adoptedRunTotals).
+// (countWindow), and a controller that takes it over restores an atomic
+// telemetry checkpoint or falls back to stored history (adoptedRunTotals).
 //
 // Every window contributes exactly once. For a local run, a sample carrying
 // the latest timestamp again replaces that window's earlier contribution
@@ -50,9 +50,11 @@ type runTotalsAccumulator struct {
 }
 
 type distributedWindowMark struct {
-	epoch       string
-	collection  uint64
-	publishedAt int64
+	generation     uint64
+	epochStartedMs int64
+	epoch          string
+	collection     uint64
+	publishedAt    int64
 	// Preserve the first accepted envelope for native evidence identity when a
 	// later lifecycle envelope re-sends this collection.
 	batchSequence  uint64
@@ -62,7 +64,7 @@ type distributedWindowMark struct {
 // distributedCollectionMark retains the identity of the collection, not the
 // later lifecycle envelope carrying it. Unknown legacy identity is not proof.
 func distributedCollectionMark(batch generatorrpc.MetricsBatch) (distributedWindowMark, bool) {
-	mark := distributedWindowMark{epoch: batch.SourceEpoch, batchSequence: batch.BatchSequence, batchTimestamp: batch.TimestampUnixMs}
+	mark := distributedWindowMark{generation: batch.ExecutionGeneration, epochStartedMs: batch.SourceEpochStartedUnixMs, epoch: batch.SourceEpoch, batchSequence: batch.BatchSequence, batchTimestamp: batch.TimestampUnixMs}
 	if batch.Telemetry != nil {
 		mark.collection, mark.publishedAt = batch.Telemetry.CollectionSequence, batch.Telemetry.PublishedAtUnixMs
 	}
@@ -97,6 +99,12 @@ func (a *runTotalsAccumulator) newDistributedWindow(target string, batch generat
 	}
 	if a.windows == nil {
 		a.windows = map[string]distributedWindowMark{}
+	}
+	if last, seen := a.windows[target]; seen && (mark.generation < last.generation || mark.generation == last.generation && last.epoch != "" && mark.epoch != "" && last.epoch != mark.epoch && last.epochStartedMs > 0 && mark.epochStartedMs <= last.epochStartedMs) {
+		// The receiver's live-batch cache is empty after takeover. Its durable
+		// collection cursor must still reject an older or unorderable process
+		// within a term. A newer term wins over another process's clock.
+		return false
 	}
 	if last, seen := a.windows[target]; seen && last.epoch == batch.SourceEpoch {
 		if collection > 0 && collection <= last.collection || collection == 0 && published <= last.publishedAt {

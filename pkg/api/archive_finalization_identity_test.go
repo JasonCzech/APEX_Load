@@ -48,14 +48,14 @@ func TestArchiveFinalizationRejectsChangedIdentityBeforeMutation(t *testing.T) {
 				row.Status = "FAILED"
 			case "record ID":
 				job.ArchiveRecord.TestID = "different-test"
-				if _, err := NewTestRunner(1, NewHub(), store).inspectArchiveFinalizationIdentity(context.Background(), job, row, false); err == nil {
+				if _, err := NewTestRunner(1, NewHub(), store).inspectArchiveFinalizationSource(context.Background(), job, row, false); err == nil {
 					t.Fatal("wrong record ID accepted")
 				}
 				return
 			case "project":
 				// Keep the durable test's project immutable; a stale job must be rejected.
 				job.ProjectID = "wrong-project"
-				if _, err := NewTestRunner(1, NewHub(), store).inspectArchiveFinalizationIdentity(context.Background(), job, row, false); err == nil {
+				if _, err := NewTestRunner(1, NewHub(), store).inspectArchiveFinalizationSource(context.Background(), job, row, false); err == nil {
 					t.Fatal("wrong project accepted")
 				}
 				return
@@ -66,7 +66,7 @@ func TestArchiveFinalizationRejectsChangedIdentityBeforeMutation(t *testing.T) {
 				}
 				if mode == "prepared hash" {
 					job.PreparedManifestJSON = string(prepared)
-					if _, err := NewTestRunner(1, NewHub(), store).inspectArchiveFinalizationIdentity(context.Background(), job, row, false); err == nil {
+					if _, err := NewTestRunner(1, NewHub(), store).inspectArchiveFinalizationSource(context.Background(), job, row, false); err == nil {
 						t.Fatal("untrusted prepared bytes accepted")
 					}
 					return
@@ -110,39 +110,56 @@ func (s *revokeCompletionLeaseStore) CompleteArchiveFinalizationForRun(id, token
 	return s.SQLiteStore.CompleteArchiveFinalizationForRun(id, token, refresh, record, identity)
 }
 
+func (s *revokeCompletionLeaseStore) CompleteArchiveFinalizationWithTelemetry(id, token, refresh string, record *storage.RunArchiveRecord, identity storage.ArchiveFinalizationRunIdentity, publication storage.TelemetryNotificationPublication) (bool, error) {
+	if err := s.SQLiteStore.ReleaseSchedulerLease(identity.LeaseName, identity.LeaseOwner); err != nil {
+		return false, err
+	}
+	return s.SQLiteStore.CompleteArchiveFinalizationWithTelemetry(id, token, refresh, record, identity, publication)
+}
+
 func TestArchiveFinalizationLostLeasePreservesCurrentSource(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
-	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
-	sqlite, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer sqlite.Close()
-	store := &revokeCompletionLeaseStore{sqlite}
-	test, record := createArchiveFinalizationTest(t, sqliteOverlay(store), "lease-expired-publication", root)
-	runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
-	leader := newExecutionLeadership(sqliteOverlay(store), "publication-fence")
-	leader.tick()
-	defer leader.relinquish()
-	runner.leadership = leader
-	runner.durableExecutionFence = true
-	err = runner.finalizeRunArchiveDurably(context.Background(), test, record, true)
-	if err == nil || !strings.Contains(err.Error(), "current publication preserved") {
-		t.Fatalf("completion error=%v", err)
-	}
-	if _, err := store.SQLiteStore.GetArchiveFinalizationJob(test.ID); err != nil {
-		t.Fatal("pending intent lost", err)
-	}
-	if _, err := store.SQLiteStore.GetRunArchive(test.ID); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatal("lost lease published", err)
-	}
-	jobs, err := store.SQLiteStore.ListArchiveVersionCleanupJobs(10)
-	if err != nil || len(jobs) != 0 {
-		t.Fatal("current source queued for deletion", err)
-	}
-	if _, err := os.Stat(record.ManifestPath); err != nil {
-		t.Fatal("source lost", err)
+	for _, mode := range []string{"legacy", "atomic telemetry"} {
+		t.Run(mode, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
+			t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
+			sqlite, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer sqlite.Close()
+			store := &revokeCompletionLeaseStore{sqlite}
+			test, record := createArchiveFinalizationTest(t, sqliteOverlay(store), "lease-expired-publication", root)
+			runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
+			if mode == "atomic telemetry" {
+				runner.telemetryNotificationPublication = func(context.Context, string, *RunArchiveManifest) (storage.TelemetryNotificationPublication, error) {
+					return storage.TelemetryNotificationPublication{Decision: "not_applicable"}, nil
+				}
+			}
+
+			leader := newExecutionLeadership(sqliteOverlay(store), "publication-fence")
+			leader.tick()
+			defer leader.relinquish()
+			runner.leadership = leader
+			runner.durableExecutionFence = true
+			err = runner.finalizeRunArchiveDurably(context.Background(), test, record, true)
+			if err == nil || !strings.Contains(err.Error(), "current publication preserved") {
+				t.Fatalf("completion error=%v", err)
+			}
+			if _, err := store.SQLiteStore.GetArchiveFinalizationJob(test.ID); err != nil {
+				t.Fatal("pending intent lost", err)
+			}
+			if _, err := store.SQLiteStore.GetRunArchive(test.ID); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatal("lost lease published", err)
+			}
+			jobs, err := store.SQLiteStore.ListArchiveVersionCleanupJobs(10)
+			if err != nil || len(jobs) != 0 {
+				t.Fatal("current source queued for deletion", err)
+			}
+			if _, err := os.Stat(record.ManifestPath); err != nil {
+				t.Fatal("source lost", err)
+			}
+		})
 	}
 }
 

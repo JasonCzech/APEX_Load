@@ -204,6 +204,7 @@ type ServerTelemetrySummary struct {
 	ConsumerOffsetLagSamples  int64                      `json:"consumer_offset_lag_samples,omitempty"`
 	FirstEventSamples         int64                      `json:"first_event_samples,omitempty"`
 	WebSocket                 *protocol.WebSocketSummary `json:"websocket,omitempty"`
+	JavaHTTP                  *protocol.JavaHTTPSummary  `json:"java_http,omitempty"`
 	GRPC                      *protocol.GRPCSummary      `json:"grpc,omitempty"`
 	Samples                   int64                      `json:"samples"`
 	AvgServerProcessingMs     float64                    `json:"avg_server_processing_ms,omitempty"`
@@ -1218,7 +1219,25 @@ func mergeActionResult(metrics *ActionMetrics, result *protocol.Result) {
 		if metrics.ServerTelemetry == nil {
 			metrics.ServerTelemetry = &ServerTelemetrySummary{}
 		}
-		mergeServerTelemetrySummary(metrics.ServerTelemetry, result.ServerTelemetry, result.DependencyTarget, result.DependencyType, result.Group)
+		telemetry := result.ServerTelemetry
+		if telemetry.JavaHTTP != nil {
+			copy := *telemetry
+			copy.JavaHTTP = nil // Java diagnostics merge below with their own population.
+			telemetry = &copy
+		}
+		mergeServerTelemetrySummary(metrics.ServerTelemetry, telemetry, result.DependencyTarget, result.DependencyType, result.Group)
+	}
+	// Only an actual java_http action enters the Java population. A synthetic
+	// business wrapper, or another protocol's action sharing the name, does not.
+	if !result.BusinessTransaction && (result.DependencyType == "java_http" || result.ServerTelemetry != nil && result.ServerTelemetry.JavaHTTP != nil) {
+		if metrics.ServerTelemetry == nil {
+			metrics.ServerTelemetry = &ServerTelemetrySummary{}
+		}
+		var diagnostic *protocol.JavaHTTPDiagnostics
+		if result.ServerTelemetry != nil {
+			diagnostic = result.ServerTelemetry.JavaHTTP
+		}
+		protocol.ObserveJavaHTTPAction(&metrics.ServerTelemetry.JavaHTTP, diagnostic)
 	}
 	metrics.BytesSent += result.BytesSent
 	metrics.BytesRecv += result.BytesReceived
@@ -1331,6 +1350,7 @@ func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *pro
 	} else {
 		protocol.MergeMessagingTelemetry(&summary.Messaging, telemetry, source)
 	}
+	protocol.MergeJavaHTTPDiagnostic(&summary.JavaHTTP, telemetry.JavaHTTP)
 	protocol.MergeGRPCDiagnostic(&summary.GRPC, telemetry.GRPC)
 	protocol.MergeWebSocketDiagnostic(&summary.WebSocket, telemetry.WebSocket)
 	// Reliability counters are run totals and accumulate for every record,

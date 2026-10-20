@@ -1,0 +1,16 @@
+{
+  "head": "66c31ba1f02a6dedd37028a2c8343f607e023421",
+  "main": "745d85a0578e1501570d3fe27204494d2fcb3636",
+  "files": {
+    "pkg/storage/telemetry_notification_outbox.go": "13aba0fbeaac59fac2c7bc73132873d48d6abc76700247a74e0ec3f57852cc6d",
+    "pkg/storage/telemetry_notification_outbox_test.go": "853586a244b0683b47190394e358ce5d5640803bb9933ca146eb43038baba286",
+    "pkg/storage/telemetry_notification_outbox_postgres_test.go": "a27aff8dfbfe7a0ae9d891896f1a093ea43f0eff929ebbad5f5f5065ab365e90",
+    "pkg/storage/sqlite_schema.go": "64501702295e0ea4a9e663f8339ec5e89787815a6ce8e71e74a00a879d4b3141",
+    "pkg/api/run_evacuation_intervention.go": "b19e3e56c919ce9794dcabd3595a16038976f42c8a822f7db1bcac6732025678",
+    "pkg/api/distributed_resilience.go": "39e5377df05146117b4e8589f7600687b7c16f2d1621b0fe19748e3b288623d1",
+    "pkg/api/interrupted_run_resolution.go": "dfd4f67d9bc569faf0bf1cb5615a80cb99a61767697c673c392713fed84359d8",
+    "pkg/api/run_evacuation_recovery.go": "22a71c4194b199a833358d4ba50625e4ac966c497d90b2dcb7ee95b2a241b972",
+    "pkg/api/same_leader_evacuation_intervention_test.go": "6014dc96747ad95a7ea441e2648a189f99ec8fef598d0b2718873c7529c72773",
+    "pkg/api/static/index.html": "99d08648968684b0261cf29631b66017ee4dc4de8f45e6245ad9af4f79f849ed"
+  }
+}

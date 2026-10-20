@@ -1,0 +1,9 @@
+{
+  "pkg/protocol/browser/har_working_lease.go": "2ed6fc8919309d0850b6d3468f7039564dac4dcd2b5f7bcbf52ef45821d7016b",
+  "pkg/protocol/browser/har_finalization_budget.go": "45ee7f3a869aca15e4eeefe52e3c7016dd47a95d4a72139f3831c366487704cb",
+  "pkg/protocol/browser/har_finalization_budget_test.go": "dc0992e18e99158348e3a5f0727fc065284058913c05262a027cd653b01d272c",
+  "pkg/protocol/browser/evidence_budget.go": "622675ebc489d6122cb41e15da5969f69f780fe273eb7073e5b6c6212bc6bf3e",
+  "docs/qa/browser_acceptance_test.go": "f154b4a84a6644aed68b529e8ea853e1860b072b526365b23bcd88e41d1d9290",
+  "dashboard/e2e/workflow-help.spec.ts": "30d5c92b54eaf6633acabe40b89b7f8143ab012909a9e529b60b5d1d19466114",
+  "docs/guides/BROWSER_HAR_WORKING_OWNERSHIP.md": "4fbb38cc623ff77cd9c3462174654bb9d7328ba0041f50e13c3a2490d9868360"
+}

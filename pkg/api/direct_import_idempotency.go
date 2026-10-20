@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -254,7 +255,31 @@ func (s *Server) directImportDigestKey() ([]byte, error) {
 // in a durable setting. Every replica adopts the first key written, so keyed
 // digests compare across replicas and restarts.
 func (s *Server) persistentDigestKey(setting, purpose string) ([]byte, error) {
-	raw, err := s.store.GetSetting(setting)
+	compare := func(key, expected, value string) (bool, error) {
+		cas, ok := s.store.(settingsCompareAndSwapper)
+		if !ok {
+			return false, fmt.Errorf("durable %s receipts require atomic digest-key initialization", purpose)
+		}
+		return cas.CompareAndSwapSetting(key, expected, value)
+	}
+	return initializePersistentDigestKey(s.store.GetSetting, compare, setting, purpose)
+}
+
+func (s *Server) persistentDigestKeyContext(ctx context.Context, setting, purpose string) ([]byte, error) {
+	store, ok := s.store.(interface {
+		GetSettingContext(context.Context, string) (string, error)
+		CompareAndSwapSettingContext(context.Context, string, string, string) (bool, error)
+	})
+	if !ok {
+		return nil, errors.New("cancellable digest-key persistence unavailable")
+	}
+	return initializePersistentDigestKey(func(key string) (string, error) { return store.GetSettingContext(ctx, key) }, func(key, expected, value string) (bool, error) {
+		return store.CompareAndSwapSettingContext(ctx, key, expected, value)
+	}, setting, purpose)
+}
+
+func initializePersistentDigestKey(get func(string) (string, error), compare func(string, string, string) (bool, error), setting, purpose string) ([]byte, error) {
+	raw, err := get(setting)
 	if err != nil {
 		return nil, fmt.Errorf("load %s digest key: %w", purpose, err)
 	}
@@ -264,18 +289,15 @@ func (s *Server) persistentDigestKey(setting, purpose string) ([]byte, error) {
 			return nil, fmt.Errorf("generate %s digest key: %w", purpose, err)
 		}
 		encoded := base64.RawURLEncoding.EncodeToString(generated)
-		cas, ok := s.store.(settingsCompareAndSwapper)
-		if !ok {
-			return nil, fmt.Errorf("durable %s receipts require atomic digest-key initialization", purpose)
-		}
-		won, err := cas.CompareAndSwapSetting(setting, "", encoded)
+
+		won, err := compare(setting, "", encoded)
 		if err != nil {
 			return nil, fmt.Errorf("initialize %s digest key: %w", purpose, err)
 		}
 		if won {
 			return generated, nil
 		}
-		raw, err = s.store.GetSetting(setting)
+		raw, err = get(setting)
 		if err != nil {
 			return nil, fmt.Errorf("reload %s digest key: %w", purpose, err)
 		}

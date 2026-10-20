@@ -220,14 +220,29 @@ func (e *Engine) childNativePreview(ctx context.Context, path string) (Preview, 
 
 func timestampExpression(mapping Mapping) string {
 	c := column(mapping.Timestamp)
+	// A suffix alone can mistake a date's -DD for an hour offset. Require
+	// a clock component followed by Z or an explicit ISO numeric offset.
+	// DuckDB accepts clock fields of any digit count, an empty fraction after
+	// the seconds, one- or two-digit offset hours, any
+	// whitespace between date and clock and after the offset, a dangling
+	// colon after the offset hours, and (in its TIMESTAMP cast too) a spaced
+	// UTC suffix in any case. trim() strips only spaces, so trailing tabs and
+	// line breaks are removed here. The cast still validates dates, ranges and
+	// the actual offset value.
+	offsetText := "regexp_matches(regexp_replace(try_cast(" + c + " AS VARCHAR), '[[:space:]]+$', ''), '[Tt[:space:]][0-9]+:[0-9]+(:[0-9]+([.][0-9]*)?)?([[:space:]]*([zZ]|[+-][0-9]{1,2}(:?[0-9]{2}){0,2}:?)|[[:space:]]+[Uu][Tt][Cc])$')"
 	if mapping.TimestampEncoding == "timestamp_offset" {
-		return "try_cast(" + c + " AS TIMESTAMPTZ)"
+		// DuckDB otherwise supplies the session timezone to offset-free
+		// text, DATE and TIMESTAMP values, inventing an absolute instant.
+		return "CASE WHEN typeof(" + c + ")='TIMESTAMP WITH TIME ZONE' OR " + offsetText + " THEN try_cast(" + c + " AS TIMESTAMPTZ) ELSE NULL END"
 	}
 	if mapping.TimestampEncoding == "timestamp" {
 		// Offset-aware columns retain their absolute instant. Text with an
 		// explicit offset requires the corresponding mapping rather than
 		// silently dropping its offset during a TIMESTAMP cast.
-		return "CASE WHEN typeof(" + c + ")='TIMESTAMP WITH TIME ZONE' THEN try_cast(" + c + " AS TIMESTAMPTZ) WHEN regexp_matches(try_cast(" + c + " AS VARCHAR), '(Z|[+-][0-9]{2}:?[0-9]{2})$') THEN NULL ELSE try_cast(" + c + " AS TIMESTAMP) AT TIME ZONE " + literal(mapping.Timezone) + " END"
+		wall := "try_cast(" + c + " AS TIMESTAMP)"
+		instant := "(" + wall + " AT TIME ZONE " + literal(mapping.Timezone) + ")"
+		qualified := nativeLocalTimestampFunction + "(" + wall + "," + instant + ")"
+		return "CASE WHEN typeof(" + c + ")='TIMESTAMP WITH TIME ZONE' THEN try_cast(" + c + " AS TIMESTAMPTZ) WHEN " + offsetText + " THEN NULL WHEN " + qualified + " THEN " + instant + " ELSE NULL END"
 	}
 	scale := map[string]string{"unix_s": "1", "unix_ms": "1000", "unix_us": "1000000", "unix_ns": "1000000000"}[mapping.TimestampEncoding]
 	return "TRY(to_timestamp(try_cast(" + c + " AS DOUBLE)/" + scale + "))"
@@ -267,6 +282,9 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 		}
 	}()
 	err = e.withDB(ctx, func(ctx context.Context, db *sql.DB) error {
+		if err := registerNativeLocalTimestampQualifier(ctx, db, request.Mapping); err != nil {
+			return err
+		}
 		var cumulative []nativeCumulativeSlot
 		for i, path := range paths {
 			for j, measure := range request.Mapping.Measures {

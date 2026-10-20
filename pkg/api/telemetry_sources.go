@@ -36,6 +36,9 @@ const (
 // record stands for an execution generation this controller never saw, such
 // as the generations before an HA adoption.
 type TelemetrySourceEpoch struct {
+	CollectionWindows          []TelemetryCollectionEvidence `json:"collection_windows,omitempty"`
+	CollectionWindowsTruncated bool                          `json:"collection_windows_truncated,omitempty"`
+
 	Schema              string     `json:"schema"`
 	Source              string     `json:"source"`
 	ExecutionGeneration uint64     `json:"execution_generation"`
@@ -279,17 +282,19 @@ type telemetrySourceKey struct {
 }
 
 type telemetrySourceLedger struct {
-	mu        sync.Mutex
-	epochs    map[telemetrySourceKey]*TelemetrySourceEpoch
-	truncated bool
+	collections          []TelemetryCollectionEvidence
+	collectionsTruncated bool
+	mu                   sync.Mutex
+	epochs               map[telemetrySourceKey]*TelemetrySourceEpoch
+	truncated            bool
 	// coverage is each source's observed wall time, requirements when each
 	// had to be observed and cursors its last sequenced publication (see
 	// telemetry_coverage.go).
 	coverage     map[string]*coverageSpans
 	requirements map[string]*telemetrySourceRequirement
 	cursors      map[string]*coverageCursor
-	// adopted says this controller adopted the run, so it observed the run
-	// only from the adoption: time before it counts as unknown here.
+	// adopted records a controller discontinuity. Committed earlier spans
+	// may survive recovery, but the unobserved takeover gap remains unknown.
 	adopted bool
 }
 
@@ -325,7 +330,6 @@ func (l *telemetrySourceLedger) observe(source string, batch generatorrpc.Metric
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.observeCoverage(source, batch, at)
 	key := telemetrySourceKey{source: source, generation: batch.ExecutionGeneration, epoch: batch.SourceEpoch}
 	record := l.epochs[key]
 	if record == nil {
@@ -346,6 +350,7 @@ func (l *telemetrySourceLedger) observe(source string, batch generatorrpc.Metric
 	if sequence == 0 {
 		record.Unsequenced++
 		record.observeCounters(batch)
+		l.observeCoverage(source, batch, at)
 		return
 	}
 	if isTerminalRemoteLifecycle(batch.LifecycleState) && sequence > record.TerminalSequence {
@@ -367,6 +372,7 @@ func (l *telemetrySourceLedger) observe(source string, batch generatorrpc.Metric
 	}
 	record.add(sequence)
 	record.observeCounters(batch)
+	l.observeCoverage(source, batch, at)
 }
 
 func (r *TelemetrySourceEpoch) covers(sequence uint64) bool {
@@ -459,6 +465,10 @@ func (r *TelemetrySourceEpoch) settleLoss() {
 // observation, plus an unobserved record for every earlier execution
 // generation (from the run's failovers) that this ledger never saw.
 func (l *telemetrySourceLedger) snapshot(failovers ...RunFailover) ([]TelemetrySourceEpoch, bool) {
+	return l.snapshotRecords(false, failovers...)
+}
+
+func (l *telemetrySourceLedger) snapshotRecords(includeWindows bool, failovers ...RunFailover) ([]TelemetrySourceEpoch, bool) {
 	if l == nil {
 		return unobservedTelemetryGenerations(nil, failovers), false
 	}
@@ -467,6 +477,14 @@ func (l *telemetrySourceLedger) snapshot(failovers ...RunFailover) ([]TelemetryS
 	out := make([]TelemetrySourceEpoch, 0, len(l.epochs)+len(failovers))
 	for _, record := range l.epochs {
 		copied := *record
+		copied.CollectionWindowsTruncated = l.collectionsTruncated
+		if includeWindows {
+			for _, c := range l.collections {
+				if c.Source == record.Source && c.Generation == record.ExecutionGeneration && c.Epoch == record.Epoch {
+					copied.CollectionWindows = append(copied.CollectionWindows, cloneTelemetryCollections([]TelemetryCollectionEvidence{c})[0])
+				}
+			}
+		}
 		copied.ranges = append([][2]uint64(nil), record.ranges...)
 		// settle reads the live counter tracks under the ledger lock; the
 		// copy keeps only their settled totals.
@@ -736,7 +754,7 @@ func observeTelemetryPublicationLocked(tr *TestRunner, test *ManagedTest, target
 }
 
 // telemetrySourceSummaryLocked is the run's live source summary; generations
-// adopted from a failed-over controller count as unobserved.
+// absent from its retained ledger count as unobserved.
 func telemetrySourceSummaryLocked(test *ManagedTest) *TelemetrySourceSummary {
 	return test.telemetrySources.summary(test.continuityFailovers...)
 }
@@ -759,7 +777,7 @@ func (tr *TestRunner) persistTelemetrySourceArchive(ctx context.Context, test *M
 	tr.mu.RLock()
 	ledger, failovers := test.telemetrySources, append([]RunFailover(nil), test.continuityFailovers...)
 	tr.mu.RUnlock()
-	epochs, truncated := ledger.snapshot(failovers...)
+	epochs, truncated := ledger.snapshotRecords(true, failovers...)
 	if len(epochs) == 0 {
 		return nil
 	}
@@ -771,10 +789,31 @@ func (tr *TestRunner) persistTelemetrySourceArchive(ctx context.Context, test *M
 	var count int64
 	err = writeArchiveArtifactDurableWithWriter(record.ArchivePath, telemetrySourcesFileName, nil, 0600, func(file *os.File, _ []byte) (int, error) {
 		out := &archiveOutputFile{file: file, budget: budget}
-		for _, epoch := range epochs {
+		// Preserve every epoch's pre-existing source/counter record before any
+		// optional source windows: reserve each later record's window-free size.
+		reserve := make([]int, len(epochs)+1)
+		for i := len(epochs) - 1; i >= 0; i-- {
+			base := epochs[i]
+			base.CollectionWindows, base.CollectionWindowsTruncated = nil, true
+			line, err := json.Marshal(base)
+			if err != nil {
+				return 0, err
+			}
+			reserve[i] = reserve[i+1] + len(line) + 1
+		}
+		for i, epoch := range epochs {
 			line, err := json.Marshal(epoch)
 			if err != nil {
 				return 0, err
+			}
+			for !budget.admits(len(line)+1+reserve[i+1]) && len(epoch.CollectionWindows) > 0 {
+				epoch.CollectionWindows = epoch.CollectionWindows[:len(epoch.CollectionWindows)/2]
+				epoch.CollectionWindowsTruncated = true
+				truncated = true
+				line, err = json.Marshal(epoch)
+				if err != nil {
+					return 0, err
+				}
 			}
 			line = append(line, '\n')
 			if !budget.admits(len(line)) {

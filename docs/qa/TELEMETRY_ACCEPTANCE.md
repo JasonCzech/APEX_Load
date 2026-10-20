@@ -20,9 +20,57 @@ Each fault in TEL-4's matrix names the tests that accept it. The Go tests run in
 |  | `TestDistributedPublicationRetryKeepsHeldJointBatches` (`pkg/api/distributed_publication_visibility_test.go`) | Go |
 |  | `TestDistributedMetricsSequenceGapIsRetainedInTelemetry` (`pkg/api/distributed_stream_freshness_test.go`) | Go |
 |  | `TestTelemetryCoverageBridgesJitterButNotLoss` (`pkg/api/telemetry_coverage_test.go`) | Go |
+|  | `TestTelemetryCoverageDoesNotRetimeReplayedWindows` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+|  | `TestTelemetryCoverageLegacyAndMissingCollectionIdentity` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+|  | `TestTelemetryCoverageReplayCannotBridgeTheNextFreshWindow` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+|  | `TestTelemetryCoverageLateSequenceDoesNotMoveCursor` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+|  | `TestTelemetryCoverageTerminalReplayRetiresWithoutNewWindow` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
 | Ownership and source epochs | `TestMetricsBrokerStampsTheProcessSourceEpoch` (`pkg/distributed/generatorrpc/metrics_broker_test.go`) | Go |
 |  | `TestMissingMetricWindowsAreCountedWithinOneSourceEpoch` (`pkg/api/telemetry_sources_test.go`) | Go |
 |  | `TestGeneratorEpochKeeperWaitsForAdoptionReconcile` (`pkg/api/run_adoption_test.go`) | Go |
+|  | `TestTelemetryCoverageOlderEpochCannotRetireCurrentSource` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+|  | `TestTelemetryCoverageNewEpochRestartsCollectionIdentity` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+|  | `TestTelemetryCoverageEpochLimitDoesNotCreateUntrackedWindows` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+|  | `TestTelemetryCoverageAlgorithmKeepsLegacyComparisonSeparate` (`pkg/api/telemetry_coverage_replay_test.go`) | Go |
+| Source collection windows and rate denominators | `TestCollectionWindowsDrainBoundariesAndConcurrency` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
+|  | `TestCollectionWindowsRemainIndependentOfRateWindow` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
+|  | `TestCollectionWindowsLifecycleReplayAndStopCohort` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
+|  | `TestCollectionWindowsWireCompatibilityBoundsAndValidation` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
+|  | `TestCollectionWindowsArchiveRetainsIdentityAndPrecision` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
+|  | `TestCollectionWindowsCoordinatedCohortAndUnmeasuredPublication` (`pkg/distributed/generatorrpc/collection_window_test.go`) | Go |
+| Durable controller cursors and source-window recovery | `TestTelemetryCheckpointRoundTripAndReplay` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointRejectsIncompatibleEvidence` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointDurableRestartAndAtomicFailure` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointRetentionAndArchiveCopies` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointArchiveRetainsRecoveredWindows` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointLegacyAndAmbiguousCommit` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointAdoptionDoesNotOverwriteNewerEffects` (`pkg/api/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointFencesAndOrdering` (`pkg/storage/telemetry_checkpoint_test.go`) | Go |
+|  | `TestTelemetryCheckpointMigrationAndRestart` (`pkg/storage/telemetry_checkpoint_test.go`) | Go |
+| Notification outbox storage: replay, leases, upgrade and deletion | `TestTelemetryNotificationOutboxContract` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
+|  | `TestTelemetryNotificationOutboxAdmissionAndBounds` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
+|  | `TestTelemetryNotificationOutboxExhaustionAndRevocation` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
+|  | `TestTelemetryNotificationOutboxIndependentStores` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
+|  | `TestTelemetryNotificationOutboxObsoleteIncarnationCannotStarveQueue` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
+|  | `TestTelemetryNotificationOutboxPreservesFutureVersions` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
+|  | `TestTelemetryNotificationOutboxUpgradeReopenAndProjectDeletion` (`pkg/storage/telemetry_notification_outbox_test.go`) | Go |
+| Atomic acceptance delivery: archive recovery, authorization, scrubbing, retry and shutdown | `TestTelemetryNotificationRuntimeScrubsAndPinsRecipients` (`pkg/api/telemetry_notification_runtime_test.go`) | Go |
+|  | `TestTelemetryNotificationRuntimeRetriesOnlyFailedDestinations` (`pkg/api/telemetry_notification_runtime_test.go`) | Go |
+|  | `TestTelemetryNotificationRuntimeSaturationAndShutdownRemainRetryable` (`pkg/api/telemetry_notification_runtime_test.go`) | Go |
+|  | `TestTelemetryNotificationArchiveCommitUsesFinalManifestAndRecoversSourceLoss` (`pkg/api/telemetry_notification_archive_integration_test.go`) | Go |
+|  | `TestTelemetryNotificationStatusAuthorizesProjectAndResultScope` (`pkg/api/telemetry_notification_status_test.go`) | Go |
+|  | `TestTelemetryNotificationStatusPreservesSafeDurableDecision` (`pkg/api/telemetry_notification_status_test.go`) | Go |
+|  | `TestTelemetryNotificationGeneratedStatusContract` (`pkg/api/telemetry_notification_status_test.go`) | Go |
+|  | `TestTelemetryNotificationDeletionBeforeSendRefusesOldLease` (`pkg/api/telemetry_notification_admission_api_test.go`) | Go |
+|  | `TestTelemetryNotificationDigestKeyCancellationAndConcurrentInitialization` (`pkg/api/telemetry_notification_admission_api_test.go`) | Go |
+|  | `TestTelemetryNotificationAtomicCapabilityRequiresTheArchiveStore` (`pkg/api/telemetry_notification_admission_api_test.go`) | Go |
+|  | `TestTelemetryNotificationPreparationIsBoundedBeforeDispatch` (`pkg/api/telemetry_notification_admission_api_test.go`) | Go |
+|  | `TestTelemetryNotificationFingerprintPinsConfigurationAndCanonicalFilters` (`pkg/api/telemetry_notification_worker_test.go`) | Go |
+|  | `TestTelemetryNotificationSettingsFailureRetriesWithoutRevocation` (`pkg/api/telemetry_notification_worker_test.go`) | Go |
+|  | `TestTelemetryNotificationWorkerWaitsForLeaderAndOwnsShutdown` (`pkg/api/telemetry_notification_worker_test.go`) | Go |
+|  | `TestTelemetryNotificationAtomicPublication` (`pkg/storage/telemetry_notification_publication_test.go`) | Go |
+|  | `TestTelemetryNotificationAtomicPublicationRejectsInvalidDecision` (`pkg/storage/telemetry_notification_publication_test.go`) | Go |
+|  | `TestTelemetryNotificationDeliveryAdmissionRechecksLeaseAndIncarnation` (`pkg/storage/telemetry_notification_admission_test.go`) | Go |
 | Policy changes | `TestTelemetryPolicySegmentRejectsAnInvalidPolicy` (`pkg/api/telemetry_coverage_test.go`) | Go |
 |  | `TestProjectTelemetryPolicyUpdateChangesOnlyTheOptIn` (`pkg/api/telemetry_stages_test.go`) | Go |
 |  | telemetry policy remains immutable in live, archive and manifest views after settings change (`dashboard/e2e/workflow-telemetry-policy.spec.ts`) | End to end, both profiles |
@@ -31,11 +79,20 @@ Each fault in TEL-4's matrix names the tests that accept it. The Go tests run in
 |  | `TestClockCalibrationStepBetweenProbes` (`pkg/api/clock_qualification_test.go`) | Go |
 |  | `TestClockPipelineUnscoredIsNotHealthy` (`pkg/api/clock_qualification_pipeline_test.go`) | Go |
 |  | `TestClockStepToleranceBelowTheTransportBudget` (`pkg/api/clock_qualification_pipeline_test.go`) | Go |
+|  | `TestCoordinatedStartTranslatesPublishedClockToLocalWallDeadline` (`pkg/distributed/generatorrpc/coordinated_published_clock_test.go`) | Go |
+|  | `TestCoordinatedStartExecutesAtWallDeadlineAfterPublishedClockDrift` (`pkg/distributed/generatorrpc/coordinated_published_clock_test.go`) | Go |
 | Browser background tabs, render stalls and reconnects | `TestClientRenderSamplesCountOnlyVisibleRenders` (`pkg/api/telemetry_stages_test.go`) | Go |
 |  | `TestClientRenderReportsRotatingTabsShareTheViewerBudget` (`pkg/api/telemetry_stages_test.go`) | Go |
 |  | `TestClientRenderReportRefusedOnAFollower` (`pkg/api/telemetry_stages_test.go`) | Go |
 |  | measures receive to render and marks a hidden tab as background (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
-|  | counts a render as visible only if the tab stayed visible since receipt (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | remembers a hidden interval before the reporter is enabled (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | excludes a hidden receipt even when visible before React processes it (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | uses monotonic elapsed time across forward and backward wall-clock steps (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | requires a local receipt bound to this run, not a wire timestamp (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | distinguishes receipts sharing a wall timestamp without resampling a latency update (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | clears disabled samples and cannot sample the same receipt twice (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | ignores a late refusal from a disabled reporting session (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | keeps local receipt identity outside serialized telemetry and history (`dashboard/src/components/clientTelemetryReceipt.test.ts`) | Dashboard |
 |  | reports a render whose tab was hidden before it painted as background (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
 |  | does not measure a publication received while the tab is hidden (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
 |  | seeds history on first open and backfills only the missed window on reconnect (`dashboard/src/components/useExecutionMetricsStream.test.tsx`) | Dashboard |

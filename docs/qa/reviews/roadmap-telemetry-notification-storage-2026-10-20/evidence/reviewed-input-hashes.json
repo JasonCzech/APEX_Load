@@ -1,0 +1,7 @@
+{
+  "pkg/storage/telemetry_notification_outbox.go": "13aba0fbeaac59fac2c7bc73132873d48d6abc76700247a74e0ec3f57852cc6d",
+  "pkg/storage/telemetry_notification_outbox_test.go": "853586a244b0683b47190394e358ce5d5640803bb9933ca146eb43038baba286",
+  "pkg/storage/telemetry_notification_outbox_postgres_test.go": "a27aff8dfbfe7a0ae9d891896f1a093ea43f0eff929ebbad5f5f5065ab365e90",
+  "pkg/storage/sqlite_schema.go": "64501702295e0ea4a9e663f8339ec5e89787815a6ce8e71e74a00a879d4b3141",
+  "pkg/api/store_overlay_test.go": "89667f5d319022a09f585f3165c6066118723b18ac8a0badcbc78b489512584e"
+}

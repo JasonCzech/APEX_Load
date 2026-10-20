@@ -380,9 +380,11 @@ func (d *durationDistribution) snapshots() (*TDigestSnapshot, *DurationSketchSna
 	return &digest, &sketch
 }
 
-// CloneDurationSketchSnapshot returns an independent copy, or nil.
+// CloneDurationSketchSnapshot returns an independent bounded copy, or nil.
+// Oversized snapshots are already invalid; refuse them before allocating a
+// retained copy, just as CloneTDigestSnapshot does for oversized digests.
 func CloneDurationSketchSnapshot(in *DurationSketchSnapshot) *DurationSketchSnapshot {
-	if in == nil {
+	if in == nil || len(in.Bins) > DurationSketchMaxBuckets {
 		return nil
 	}
 	out := *in

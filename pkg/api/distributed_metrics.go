@@ -988,8 +988,10 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 }
 
 func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batch generatorrpc.MetricsBatch, fleetTPS float64, groupTPS map[string]float64) bool {
+	live.JavaHTTP = nil
 	live.Messaging = map[string]*protocol.MessagingSummary{}
 	for _, a := range batch.ActionMetrics {
+		protocol.AddJavaHTTPAction(&live.JavaHTTP, a.Name, a.Count, a.JavaHTTP)
 		if a.Messaging != nil {
 			live.Messaging[a.Name] = a.Messaging.Clone()
 		}
@@ -1204,7 +1206,7 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 		DurationSketch:     engine.CloneDurationSketchSnapshot(aggregate.DurationSketch),
 		PercentileQuality:  aggregate.PercentileQuality,
 		messagingAggregate: aggregate.MessagingVersion == 1 || aggregate.MessagingVersion == 2 || aggregate.Messaging != nil,
-		ServerTelemetry:    apiMessagingSummary(aggregate.Messaging),
+		ServerTelemetry:    apiAggregateProtocolSummary(aggregate),
 		Name:               aggregate.Name,
 		TPS:                aggregate.TPS,
 		DependencyType:     aggregate.DependencyType,
@@ -1335,6 +1337,7 @@ func cloneEngineServerTelemetrySummary(summary *engine.ServerTelemetrySummary) *
 		ConsumerOffsetLagSamples:  summary.ConsumerOffsetLagSamples,
 		DiagnosticFindings:        protocol.ProtocolDiagnosticFindings(summary.GRPC, summary.WebSocket),
 		FirstEventSamples:         summary.FirstEventSamples,
+		JavaHTTP:                  summary.JavaHTTP.Clone(),
 		GRPC:                      summary.GRPC.Clone(),
 		WebSocket:                 summary.WebSocket.Clone(),
 		Samples:                   summary.Samples,
@@ -1671,6 +1674,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	}
 	if len(values) == 1 && values[0].Count > 0 {
 		copy := values[0]
+		copy.JavaHTTP = copy.JavaHTTP.RetainedForPopulation(copy.Count)
 		copy.Messaging = copy.Messaging.Clone()
 		copy.Exemplars = append([]engine.TraceExemplar(nil), copy.Exemplars...)
 		if copy.PercentileQuality == "" && copy.DurationSketch == nil && copy.DurationDigest != nil {
@@ -1683,10 +1687,12 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	out := generatorrpc.MetricAggregate{}
 	durations := engine.NewDurationDistributionMerge()
 	var avgMsSum, dnsSum, connectSum, tlsSum, ttfbSum float64
+	javaUncounted := false
 	for _, value := range values {
 		if value.Count == 0 {
 			continue
 		}
+		javaUncounted = javaUncounted || protocol.JavaHTTPPeerUncounted(value.JavaHTTP, value.Count, value.DependencyType)
 		if out.Name == "" {
 			out.Name = value.Name
 		}
@@ -1695,6 +1701,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		count := float64(value.Count)
 		out.Count += value.Count
 		out.Errors += value.Errors
+		protocol.MergeJavaHTTPSummary(&out.JavaHTTP, value.JavaHTTP.RetainedForPopulation(value.Count))
 		protocol.MergeMessagingSummary(&out.Messaging, value.Messaging)
 		avgMsSum += value.AvgMs * count
 		dnsSum += value.AvgDNSMs * count
@@ -1710,6 +1717,10 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	if out.Count == 0 {
 		return nil
 	}
+	if javaUncounted {
+		out.JavaHTTP.ForgetPopulation()
+	}
+	out.JavaHTTP = out.JavaHTTP.RetainedForPopulation(out.Count)
 	out.MessagingVersion = 1
 	for _, v := range values {
 		if v.Count > 0 && (v.MessagingVersion != 1 && v.MessagingVersion != 2) {

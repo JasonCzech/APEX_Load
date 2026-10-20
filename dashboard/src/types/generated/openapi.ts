@@ -2066,6 +2066,101 @@ export interface operations {
                 "status_counts"?: Array<number>;
                 "unavailable_status"?: number;
               }) | null;
+              "java_http"?: ({
+                "base64_decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_per_retained"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "base64_work"?: {
+                  "base64_ms"?: number;
+                  "enclosing_ms"?: number;
+                  "samples"?: number;
+                };
+                "decoded_per_encoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "enclosing_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples"?: number;
+                "mode"?: string;
+                "object_footprint"?: string;
+                "population"?: number;
+                "prepared_per_decoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "prepared_request_body"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_compression_deflate"?: number;
+                "request_compression_gzip"?: number;
+                "request_compression_none"?: number;
+                "request_decoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_encoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_base64"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_discarded"?: number;
+                "response_retained"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_unavailable"?: number;
+                "response_window"?: number;
+                "sample_limit_reached"?: boolean;
+                "samples"?: number;
+                "version"?: number;
+              }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
                 "dimensions"?: Array<Record<string, unknown>>;
@@ -2203,6 +2298,101 @@ export interface operations {
                 "samples"?: number;
                 "status_counts"?: Array<number>;
                 "unavailable_status"?: number;
+              }) | null;
+              "java_http"?: ({
+                "base64_decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_per_retained"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "base64_work"?: {
+                  "base64_ms"?: number;
+                  "enclosing_ms"?: number;
+                  "samples"?: number;
+                };
+                "decoded_per_encoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "enclosing_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples"?: number;
+                "mode"?: string;
+                "object_footprint"?: string;
+                "population"?: number;
+                "prepared_per_decoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "prepared_request_body"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_compression_deflate"?: number;
+                "request_compression_gzip"?: number;
+                "request_compression_none"?: number;
+                "request_decoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_encoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_base64"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_discarded"?: number;
+                "response_retained"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_unavailable"?: number;
+                "response_window"?: number;
+                "sample_limit_reached"?: boolean;
+                "samples"?: number;
+                "version"?: number;
               }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
@@ -2342,6 +2532,101 @@ export interface operations {
                 "status_counts"?: Array<number>;
                 "unavailable_status"?: number;
               }) | null;
+              "java_http"?: ({
+                "base64_decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_per_retained"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "base64_work"?: {
+                  "base64_ms"?: number;
+                  "enclosing_ms"?: number;
+                  "samples"?: number;
+                };
+                "decoded_per_encoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "enclosing_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples"?: number;
+                "mode"?: string;
+                "object_footprint"?: string;
+                "population"?: number;
+                "prepared_per_decoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "prepared_request_body"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_compression_deflate"?: number;
+                "request_compression_gzip"?: number;
+                "request_compression_none"?: number;
+                "request_decoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_encoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_base64"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_discarded"?: number;
+                "response_retained"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_unavailable"?: number;
+                "response_window"?: number;
+                "sample_limit_reached"?: boolean;
+                "samples"?: number;
+                "version"?: number;
+              }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
                 "dimensions"?: Array<Record<string, unknown>>;
@@ -2479,6 +2764,101 @@ export interface operations {
                 "samples"?: number;
                 "status_counts"?: Array<number>;
                 "unavailable_status"?: number;
+              }) | null;
+              "java_http"?: ({
+                "base64_decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_per_retained"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "base64_work"?: {
+                  "base64_ms"?: number;
+                  "enclosing_ms"?: number;
+                  "samples"?: number;
+                };
+                "decoded_per_encoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "enclosing_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples"?: number;
+                "mode"?: string;
+                "object_footprint"?: string;
+                "population"?: number;
+                "prepared_per_decoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "prepared_request_body"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_compression_deflate"?: number;
+                "request_compression_gzip"?: number;
+                "request_compression_none"?: number;
+                "request_decoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_encoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_base64"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_discarded"?: number;
+                "response_retained"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_unavailable"?: number;
+                "response_window"?: number;
+                "sample_limit_reached"?: boolean;
+                "samples"?: number;
+                "version"?: number;
               }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
@@ -2618,6 +2998,101 @@ export interface operations {
                 "status_counts"?: Array<number>;
                 "unavailable_status"?: number;
               }) | null;
+              "java_http"?: ({
+                "base64_decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_per_retained"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "base64_work"?: {
+                  "base64_ms"?: number;
+                  "enclosing_ms"?: number;
+                  "samples"?: number;
+                };
+                "decoded_per_encoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "enclosing_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples"?: number;
+                "mode"?: string;
+                "object_footprint"?: string;
+                "population"?: number;
+                "prepared_per_decoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "prepared_request_body"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_compression_deflate"?: number;
+                "request_compression_gzip"?: number;
+                "request_compression_none"?: number;
+                "request_decoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_encoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_base64"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_discarded"?: number;
+                "response_retained"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_unavailable"?: number;
+                "response_window"?: number;
+                "sample_limit_reached"?: boolean;
+                "samples"?: number;
+                "version"?: number;
+              }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
                 "dimensions"?: Array<Record<string, unknown>>;
@@ -2755,6 +3230,101 @@ export interface operations {
                 "samples"?: number;
                 "status_counts"?: Array<number>;
                 "unavailable_status"?: number;
+              }) | null;
+              "java_http"?: ({
+                "base64_decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_per_retained"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "base64_work"?: {
+                  "base64_ms"?: number;
+                  "enclosing_ms"?: number;
+                  "samples"?: number;
+                };
+                "decoded_per_encoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "enclosing_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples"?: number;
+                "mode"?: string;
+                "object_footprint"?: string;
+                "population"?: number;
+                "prepared_per_decoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "prepared_request_body"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_compression_deflate"?: number;
+                "request_compression_gzip"?: number;
+                "request_compression_none"?: number;
+                "request_decoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_encoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_base64"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_discarded"?: number;
+                "response_retained"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_unavailable"?: number;
+                "response_window"?: number;
+                "sample_limit_reached"?: boolean;
+                "samples"?: number;
+                "version"?: number;
               }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
@@ -2896,6 +3466,101 @@ export interface operations {
                 "status_counts"?: Array<number>;
                 "unavailable_status"?: number;
               }) | null;
+              "java_http"?: ({
+                "base64_decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_per_retained"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "base64_work"?: {
+                  "base64_ms"?: number;
+                  "enclosing_ms"?: number;
+                  "samples"?: number;
+                };
+                "decoded_per_encoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "enclosing_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples"?: number;
+                "mode"?: string;
+                "object_footprint"?: string;
+                "population"?: number;
+                "prepared_per_decoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "prepared_request_body"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_compression_deflate"?: number;
+                "request_compression_gzip"?: number;
+                "request_compression_none"?: number;
+                "request_decoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_encoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_base64"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_discarded"?: number;
+                "response_retained"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_unavailable"?: number;
+                "response_window"?: number;
+                "sample_limit_reached"?: boolean;
+                "samples"?: number;
+                "version"?: number;
+              }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
                 "dimensions"?: Array<Record<string, unknown>>;
@@ -3034,6 +3699,101 @@ export interface operations {
                 "status_counts"?: Array<number>;
                 "unavailable_status"?: number;
               }) | null;
+              "java_http"?: ({
+                "base64_decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_per_retained"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "base64_work"?: {
+                  "base64_ms"?: number;
+                  "enclosing_ms"?: number;
+                  "samples"?: number;
+                };
+                "decoded_per_encoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "enclosing_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples"?: number;
+                "mode"?: string;
+                "object_footprint"?: string;
+                "population"?: number;
+                "prepared_per_decoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "prepared_request_body"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_compression_deflate"?: number;
+                "request_compression_gzip"?: number;
+                "request_compression_none"?: number;
+                "request_decoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_encoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_base64"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_discarded"?: number;
+                "response_retained"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_unavailable"?: number;
+                "response_window"?: number;
+                "sample_limit_reached"?: boolean;
+                "samples"?: number;
+                "version"?: number;
+              }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
                 "dimensions"?: Array<Record<string, unknown>>;
@@ -3171,6 +3931,101 @@ export interface operations {
                 "samples"?: number;
                 "status_counts"?: Array<number>;
                 "unavailable_status"?: number;
+              }) | null;
+              "java_http"?: ({
+                "base64_decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_per_retained"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "base64_work"?: {
+                  "base64_ms"?: number;
+                  "enclosing_ms"?: number;
+                  "samples"?: number;
+                };
+                "decoded_per_encoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "enclosing_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples"?: number;
+                "mode"?: string;
+                "object_footprint"?: string;
+                "population"?: number;
+                "prepared_per_decoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "prepared_request_body"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_compression_deflate"?: number;
+                "request_compression_gzip"?: number;
+                "request_compression_none"?: number;
+                "request_decoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_encoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_base64"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_discarded"?: number;
+                "response_retained"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_unavailable"?: number;
+                "response_window"?: number;
+                "sample_limit_reached"?: boolean;
+                "samples"?: number;
+                "version"?: number;
               }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
@@ -4149,6 +5004,101 @@ export interface operations {
                 "samples"?: number;
                 "status_counts"?: Array<number>;
                 "unavailable_status"?: number;
+              }) | null;
+              "java_http"?: ({
+                "base64_decode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_encode_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "base64_per_retained"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "base64_work"?: {
+                  "base64_ms"?: number;
+                  "enclosing_ms"?: number;
+                  "samples"?: number;
+                };
+                "decoded_per_encoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "enclosing_ms"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples"?: number;
+                "mode"?: string;
+                "object_footprint"?: string;
+                "population"?: number;
+                "prepared_per_decoded"?: {
+                  "denominator_bytes"?: number;
+                  "numerator_bytes"?: number;
+                  "overflow"?: boolean;
+                  "samples"?: number;
+                };
+                "prepared_request_body"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_compression_deflate"?: number;
+                "request_compression_gzip"?: number;
+                "request_compression_none"?: number;
+                "request_decoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "request_encoded"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_base64"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_discarded"?: number;
+                "response_retained"?: {
+                  "count"?: number;
+                  "max_bytes"?: number;
+                  "min_bytes"?: number;
+                  "overflow"?: boolean;
+                  "sum_bytes"?: number;
+                };
+                "response_unavailable"?: number;
+                "response_window"?: number;
+                "sample_limit_reached"?: boolean;
+                "samples"?: number;
+                "version"?: number;
               }) | null;
               "max_response_ms"?: number;
               "messaging"?: (Record<string, unknown>) | null;
@@ -8666,7 +9616,113 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "accepted": number;
+            "allow_rejected": boolean;
+            "artifact_sha256"?: string;
+            "created_at": string;
+            "error"?: string;
+            "files": Array<{
+              "chunks"?: Array<{
+                "object_key"?: string;
+                "offset": number;
+                "sha256": string;
+                "size": number;
+              }>;
+              "id": string;
+              "relative_path": string;
+              "sha256"?: string;
+              "size": number;
+              "uploaded": number;
+            }>;
+            "id": string;
+            "mapping"?: ({
+              "identity"?: ({
+                "dimensions"?: Array<{
+                  "name": string;
+                  "value": Record<string, unknown>;
+                }>;
+                "host"?: Array<string>;
+                "service"?: Array<string>;
+                "source"?: Array<string>;
+              }) | null;
+              "measures": Array<{
+                "histogram"?: ({
+                  "bound_column"?: Record<string, unknown>;
+                  "bounds": Array<string>;
+                  "bucket_counts": string;
+                  "count_columns"?: Array<Record<string, unknown>>;
+                  "temporality": string;
+                  "window_seconds"?: number;
+                }) | null;
+                "kind": string;
+                "name"?: string;
+                "name_column"?: Array<string>;
+                "sample_count_column"?: Array<string>;
+                "sample_sum_column"?: Array<string>;
+                "statistic"?: string;
+                "unit": string;
+                "value": Array<string>;
+                "window_seconds"?: number;
+              }>;
+              "timestamp": Array<string>;
+              "timestamp_encoding": string;
+              "timezone": string;
+              "version": number;
+            }) | null;
+            "mapping_id"?: string;
+            "mapping_revision"?: number;
+            "name": string;
+            "normalized"?: Array<string>;
+            "normalized_sha256"?: Record<string, string>;
+            "obsolete_objects"?: Array<string>;
+            "partition_manifest"?: ({
+              "dataset_id": string;
+              "digest": string;
+              "mapping_sha256": string;
+              "mapping_version": number;
+              "partitions": Array<{
+                "bytes": number;
+                "object_key": string;
+                "sha256": string;
+                "stats": {
+                  "identity"?: (Record<string, unknown>) | null;
+                  "identity_version": number;
+                  "kind": string;
+                  "max_time"?: (string) | null;
+                  "max_window_end"?: (string) | null;
+                  "metric"?: (string) | null;
+                  "min_time"?: (string) | null;
+                  "missing": number;
+                  "rows": number;
+                  "schema_version": string;
+                  "source_rows"?: number;
+                  "unit": string;
+                  "valid": number;
+                  "version": number;
+                };
+              }>;
+              "producer": string;
+              "project_id": string;
+              "version": number;
+            }) | null;
+            "partition_manifest_version"?: number;
+            "project_id": string;
+            "rejected": number;
+            "rejection_artifacts"?: Array<string>;
+            "rejection_sha256"?: Record<string, string>;
+            "rejections"?: Array<{
+              "count": number;
+              "file": number;
+              "measure": number;
+              "rows": Array<number>;
+            }>;
+            "revision": number;
+            "run_id"?: string;
+            "state": string;
+            "updated_at": string;
+            "upload_writer_version"?: number;
+          }) | null;
         };
       };
       "400": {
@@ -8680,11 +9736,6 @@ export interface operations {
         };
       };
       "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -8721,6 +9772,7 @@ export interface operations {
             "heavy_jobs": number;
             "histogram_bound_limit"?: number;
             "imported_identity_version": number;
+            "mapping_association_version": number;
             "max_import_bytes": number;
             "memory_limit": string;
             "messaging_management_enabled": boolean;
@@ -11930,6 +12982,136 @@ export interface operations {
       "200": {
         content: {
           "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisMappingAssociation": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "contract_version"?: number;
+          "revision"?: number;
+          "run_id"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "contract_version": number;
+            "import": ({
+              "accepted": number;
+              "allow_rejected": boolean;
+              "artifact_sha256"?: string;
+              "created_at": string;
+              "error"?: string;
+              "files": Array<{
+                "chunks"?: Array<Record<string, unknown>>;
+                "id": string;
+                "relative_path": string;
+                "sha256"?: string;
+                "size": number;
+                "uploaded": number;
+              }>;
+              "id": string;
+              "mapping"?: ({
+                "identity"?: ({
+                  "dimensions"?: Array<Record<string, unknown>>;
+                  "host"?: Array<string>;
+                  "service"?: Array<string>;
+                  "source"?: Array<string>;
+                }) | null;
+                "measures": Array<{
+                  "histogram"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "name_column"?: Record<string, unknown>;
+                  "sample_count_column"?: Record<string, unknown>;
+                  "sample_sum_column"?: Record<string, unknown>;
+                  "statistic"?: string;
+                  "unit": string;
+                  "value": Record<string, unknown>;
+                  "window_seconds"?: number;
+                }>;
+                "timestamp": Array<string>;
+                "timestamp_encoding": string;
+                "timezone": string;
+                "version": number;
+              }) | null;
+              "mapping_id"?: string;
+              "mapping_revision"?: number;
+              "name": string;
+              "normalized"?: Array<string>;
+              "normalized_sha256"?: Record<string, string>;
+              "obsolete_objects"?: Array<string>;
+              "partition_manifest"?: ({
+                "dataset_id": string;
+                "digest": string;
+                "mapping_sha256": string;
+                "mapping_version": number;
+                "partitions": Array<{
+                  "bytes": number;
+                  "object_key": string;
+                  "sha256": string;
+                  "stats": Record<string, unknown>;
+                }>;
+                "producer": string;
+                "project_id": string;
+                "version": number;
+              }) | null;
+              "partition_manifest_version"?: number;
+              "project_id": string;
+              "rejected": number;
+              "rejection_artifacts"?: Array<string>;
+              "rejection_sha256"?: Record<string, string>;
+              "rejections"?: Array<{
+                "count": number;
+                "file": number;
+                "measure": number;
+                "rows": Array<number>;
+              }>;
+              "revision": number;
+              "run_id"?: string;
+              "state": string;
+              "updated_at": string;
+              "upload_writer_version"?: number;
+            }) | null;
+          };
         };
       };
       "400": {
@@ -31706,6 +32888,101 @@ export interface operations {
                   "unavailable_status": number;
                 }) | null;
                 "instances": number;
+                "java_http"?: ({
+                  "base64_decode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "base64_encode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "base64_per_retained": {
+                    "denominator_bytes": number;
+                    "numerator_bytes": number;
+                    "overflow"?: boolean;
+                    "samples": number;
+                  };
+                  "base64_work": {
+                    "base64_ms": number;
+                    "enclosing_ms": number;
+                    "samples": number;
+                  };
+                  "decoded_per_encoded": {
+                    "denominator_bytes": number;
+                    "numerator_bytes": number;
+                    "overflow"?: boolean;
+                    "samples": number;
+                  };
+                  "enclosing_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "incomplete"?: boolean;
+                  "invalid_samples": number;
+                  "mode": string;
+                  "object_footprint": string;
+                  "population"?: number;
+                  "prepared_per_decoded": {
+                    "denominator_bytes": number;
+                    "numerator_bytes": number;
+                    "overflow"?: boolean;
+                    "samples": number;
+                  };
+                  "prepared_request_body": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "request_compression_deflate": number;
+                  "request_compression_gzip": number;
+                  "request_compression_none": number;
+                  "request_decoded": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "request_encoded": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "response_base64": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "response_discarded": number;
+                  "response_retained": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "response_unavailable": number;
+                  "response_window": number;
+                  "sample_limit_reached"?: boolean;
+                  "samples": number;
+                  "version": number;
+                }) | null;
                 "max": number;
                 "mean": number;
                 "mean_statistic"?: string;
@@ -32107,6 +33384,101 @@ export interface operations {
                   "unavailable_status": number;
                 }) | null;
                 "instances": number;
+                "java_http"?: ({
+                  "base64_decode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "base64_encode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "base64_per_retained": {
+                    "denominator_bytes": number;
+                    "numerator_bytes": number;
+                    "overflow"?: boolean;
+                    "samples": number;
+                  };
+                  "base64_work": {
+                    "base64_ms": number;
+                    "enclosing_ms": number;
+                    "samples": number;
+                  };
+                  "decoded_per_encoded": {
+                    "denominator_bytes": number;
+                    "numerator_bytes": number;
+                    "overflow"?: boolean;
+                    "samples": number;
+                  };
+                  "enclosing_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "incomplete"?: boolean;
+                  "invalid_samples": number;
+                  "mode": string;
+                  "object_footprint": string;
+                  "population"?: number;
+                  "prepared_per_decoded": {
+                    "denominator_bytes": number;
+                    "numerator_bytes": number;
+                    "overflow"?: boolean;
+                    "samples": number;
+                  };
+                  "prepared_request_body": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "request_compression_deflate": number;
+                  "request_compression_gzip": number;
+                  "request_compression_none": number;
+                  "request_decoded": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "request_encoded": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "response_base64": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "response_discarded": number;
+                  "response_retained": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "response_unavailable": number;
+                  "response_window": number;
+                  "sample_limit_reached"?: boolean;
+                  "samples": number;
+                  "version": number;
+                }) | null;
                 "max": number;
                 "mean": number;
                 "mean_statistic"?: string;
@@ -37442,6 +38814,109 @@ export interface operations {
                   };
                   "upgrade_eligible"?: number;
                 }) | null;
+                "java_http"?: ({
+                  "actions"?: Record<string, {
+                    "diagnostics": ({
+                      "base64_decode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_encode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_per_retained": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "base64_work": {
+                        "base64_ms": number;
+                        "enclosing_ms": number;
+                        "samples": number;
+                      };
+                      "decoded_per_encoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "enclosing_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "incomplete"?: boolean;
+                      "invalid_samples": number;
+                      "mode": string;
+                      "object_footprint": string;
+                      "population"?: number;
+                      "prepared_per_decoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "prepared_request_body": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_compression_deflate": number;
+                      "request_compression_gzip": number;
+                      "request_compression_none": number;
+                      "request_decoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_encoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_base64": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_discarded": number;
+                      "response_retained": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_unavailable": number;
+                      "response_window": number;
+                      "sample_limit_reached"?: boolean;
+                      "samples": number;
+                      "version": number;
+                    }) | null;
+                    "population": number;
+                  }>;
+                  "incomplete"?: boolean;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -38023,6 +39498,109 @@ export interface operations {
                     "value": number;
                   };
                   "upgrade_eligible"?: number;
+                }) | null;
+                "java_http"?: ({
+                  "actions"?: Record<string, {
+                    "diagnostics": ({
+                      "base64_decode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_encode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_per_retained": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "base64_work": {
+                        "base64_ms": number;
+                        "enclosing_ms": number;
+                        "samples": number;
+                      };
+                      "decoded_per_encoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "enclosing_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "incomplete"?: boolean;
+                      "invalid_samples": number;
+                      "mode": string;
+                      "object_footprint": string;
+                      "population"?: number;
+                      "prepared_per_decoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "prepared_request_body": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_compression_deflate": number;
+                      "request_compression_gzip": number;
+                      "request_compression_none": number;
+                      "request_decoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_encoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_base64": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_discarded": number;
+                      "response_retained": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_unavailable": number;
+                      "response_window": number;
+                      "sample_limit_reached"?: boolean;
+                      "samples": number;
+                      "version": number;
+                    }) | null;
+                    "population": number;
+                  }>;
+                  "incomplete"?: boolean;
+                  "unavailable_reason"?: string;
+                  "version": number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -44694,6 +46272,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -44890,6 +46563,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -45776,6 +47544,109 @@ export interface operations {
                 };
                 "upgrade_eligible"?: number;
               }) | null;
+              "java_http"?: ({
+                "actions"?: Record<string, {
+                  "diagnostics": ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
+                  "population": number;
+                }>;
+                "incomplete"?: boolean;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
@@ -46380,6 +48251,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -46592,6 +48558,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -46955,6 +49016,109 @@ export interface operations {
                 };
                 "upgrade_eligible"?: number;
               }) | null;
+              "java_http"?: ({
+                "actions"?: Record<string, {
+                  "diagnostics": ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
+                  "population": number;
+                }>;
+                "incomplete"?: boolean;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<{
                   "connect_ms"?: number;
@@ -47170,6 +49334,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -47370,6 +49629,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -47620,6 +49974,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -48018,6 +50467,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -60200,6 +62744,101 @@ export interface operations {
                   "unavailable_status": number;
                 }) | null;
                 "instances": number;
+                "java_http"?: ({
+                  "base64_decode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "base64_encode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "base64_per_retained": {
+                    "denominator_bytes": number;
+                    "numerator_bytes": number;
+                    "overflow"?: boolean;
+                    "samples": number;
+                  };
+                  "base64_work": {
+                    "base64_ms": number;
+                    "enclosing_ms": number;
+                    "samples": number;
+                  };
+                  "decoded_per_encoded": {
+                    "denominator_bytes": number;
+                    "numerator_bytes": number;
+                    "overflow"?: boolean;
+                    "samples": number;
+                  };
+                  "enclosing_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "incomplete"?: boolean;
+                  "invalid_samples": number;
+                  "mode": string;
+                  "object_footprint": string;
+                  "population"?: number;
+                  "prepared_per_decoded": {
+                    "denominator_bytes": number;
+                    "numerator_bytes": number;
+                    "overflow"?: boolean;
+                    "samples": number;
+                  };
+                  "prepared_request_body": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "request_compression_deflate": number;
+                  "request_compression_gzip": number;
+                  "request_compression_none": number;
+                  "request_decoded": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "request_encoded": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "response_base64": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "response_discarded": number;
+                  "response_retained": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "response_unavailable": number;
+                  "response_window": number;
+                  "sample_limit_reached"?: boolean;
+                  "samples": number;
+                  "version": number;
+                }) | null;
                 "max": number;
                 "mean": number;
                 "mean_statistic"?: string;
@@ -60601,6 +63240,101 @@ export interface operations {
                   "unavailable_status": number;
                 }) | null;
                 "instances": number;
+                "java_http"?: ({
+                  "base64_decode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "base64_encode_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "base64_per_retained": {
+                    "denominator_bytes": number;
+                    "numerator_bytes": number;
+                    "overflow"?: boolean;
+                    "samples": number;
+                  };
+                  "base64_work": {
+                    "base64_ms": number;
+                    "enclosing_ms": number;
+                    "samples": number;
+                  };
+                  "decoded_per_encoded": {
+                    "denominator_bytes": number;
+                    "numerator_bytes": number;
+                    "overflow"?: boolean;
+                    "samples": number;
+                  };
+                  "enclosing_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "incomplete"?: boolean;
+                  "invalid_samples": number;
+                  "mode": string;
+                  "object_footprint": string;
+                  "population"?: number;
+                  "prepared_per_decoded": {
+                    "denominator_bytes": number;
+                    "numerator_bytes": number;
+                    "overflow"?: boolean;
+                    "samples": number;
+                  };
+                  "prepared_request_body": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "request_compression_deflate": number;
+                  "request_compression_gzip": number;
+                  "request_compression_none": number;
+                  "request_decoded": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "request_encoded": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "response_base64": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "response_discarded": number;
+                  "response_retained": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "response_unavailable": number;
+                  "response_window": number;
+                  "sample_limit_reached"?: boolean;
+                  "samples": number;
+                  "version": number;
+                }) | null;
                 "max": number;
                 "mean": number;
                 "mean_statistic"?: string;
@@ -60849,9 +63583,11 @@ export interface operations {
               "acceptance": {
                 "action_overhead_target_ms": number;
                 "launch_p50_target_ms": number;
+                "measurement_version": string;
                 "required_benchmark_command": string;
                 "required_raw_run_count": number;
                 "rss_attribution": string;
+                "rss_per_vuser_target_bytes"?: number;
                 "rss_per_vuser_target_mb"?: number;
               };
               "artifact_path": string;
@@ -64122,6 +66858,109 @@ export interface operations {
                 };
                 "upgrade_eligible"?: number;
               }) | null;
+              "java_http"?: ({
+                "actions"?: Record<string, {
+                  "diagnostics": ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
+                  "population": number;
+                }>;
+                "incomplete"?: boolean;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
@@ -64722,6 +67561,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -64934,6 +67868,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -65297,6 +68326,109 @@ export interface operations {
                 };
                 "upgrade_eligible"?: number;
               }) | null;
+              "java_http"?: ({
+                "actions"?: Record<string, {
+                  "diagnostics": ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
+                  "population": number;
+                }>;
+                "incomplete"?: boolean;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<{
                   "connect_ms"?: number;
@@ -65512,6 +68644,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -65712,6 +68939,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -65962,6 +69284,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -66361,6 +69778,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -66619,9 +70131,11 @@ export interface operations {
               "acceptance": {
                 "action_overhead_target_ms": number;
                 "launch_p50_target_ms": number;
+                "measurement_version": string;
                 "required_benchmark_command": string;
                 "required_raw_run_count": number;
                 "rss_attribution": string;
+                "rss_per_vuser_target_bytes"?: number;
                 "rss_per_vuser_target_mb"?: number;
               };
               "artifact_path": string;
@@ -68598,6 +72112,109 @@ export interface operations {
                   };
                   "upgrade_eligible"?: number;
                 }) | null;
+                "java_http"?: ({
+                  "actions"?: Record<string, {
+                    "diagnostics": ({
+                      "base64_decode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_encode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_per_retained": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "base64_work": {
+                        "base64_ms": number;
+                        "enclosing_ms": number;
+                        "samples": number;
+                      };
+                      "decoded_per_encoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "enclosing_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "incomplete"?: boolean;
+                      "invalid_samples": number;
+                      "mode": string;
+                      "object_footprint": string;
+                      "population"?: number;
+                      "prepared_per_decoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "prepared_request_body": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_compression_deflate": number;
+                      "request_compression_gzip": number;
+                      "request_compression_none": number;
+                      "request_decoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_encoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_base64": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_discarded": number;
+                      "response_retained": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_unavailable": number;
+                      "response_window": number;
+                      "sample_limit_reached"?: boolean;
+                      "samples": number;
+                      "version": number;
+                    }) | null;
+                    "population": number;
+                  }>;
+                  "incomplete"?: boolean;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -69179,6 +72796,109 @@ export interface operations {
                     "value": number;
                   };
                   "upgrade_eligible"?: number;
+                }) | null;
+                "java_http"?: ({
+                  "actions"?: Record<string, {
+                    "diagnostics": ({
+                      "base64_decode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_encode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_per_retained": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "base64_work": {
+                        "base64_ms": number;
+                        "enclosing_ms": number;
+                        "samples": number;
+                      };
+                      "decoded_per_encoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "enclosing_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "incomplete"?: boolean;
+                      "invalid_samples": number;
+                      "mode": string;
+                      "object_footprint": string;
+                      "population"?: number;
+                      "prepared_per_decoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "prepared_request_body": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_compression_deflate": number;
+                      "request_compression_gzip": number;
+                      "request_compression_none": number;
+                      "request_decoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_encoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_base64": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_discarded": number;
+                      "response_retained": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_unavailable": number;
+                      "response_window": number;
+                      "sample_limit_reached"?: boolean;
+                      "samples": number;
+                      "version": number;
+                    }) | null;
+                    "population": number;
+                  }>;
+                  "incomplete"?: boolean;
+                  "unavailable_reason"?: string;
+                  "version": number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -73399,6 +77119,101 @@ export interface operations {
                     "unavailable_status": number;
                   }) | null;
                   "instances": number;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max": number;
                   "mean": number;
                   "mean_statistic"?: string;
@@ -73788,6 +77603,101 @@ export interface operations {
                     "unavailable_status": number;
                   }) | null;
                   "instances": number;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max": number;
                   "mean": number;
                   "mean_statistic"?: string;
@@ -74214,6 +78124,101 @@ export interface operations {
                 "status_counts": Array<number>;
                 "unavailable_status": number;
               }) | null;
+              "java_http"?: ({
+                "base64_decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_per_retained": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "base64_work": {
+                  "base64_ms": number;
+                  "enclosing_ms": number;
+                  "samples": number;
+                };
+                "decoded_per_encoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "enclosing_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples": number;
+                "mode": string;
+                "object_footprint": string;
+                "population"?: number;
+                "prepared_per_decoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "prepared_request_body": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_compression_deflate": number;
+                "request_compression_gzip": number;
+                "request_compression_none": number;
+                "request_decoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_encoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_base64": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_discarded": number;
+                "response_retained": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_unavailable": number;
+                "response_window": number;
+                "sample_limit_reached"?: boolean;
+                "samples": number;
+                "version": number;
+              }) | null;
               "max_response_ms": number;
               "messaging"?: ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -74359,6 +78364,101 @@ export interface operations {
                 "samples": number;
                 "status_counts": Array<number>;
                 "unavailable_status": number;
+              }) | null;
+              "java_http"?: ({
+                "base64_decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_per_retained": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "base64_work": {
+                  "base64_ms": number;
+                  "enclosing_ms": number;
+                  "samples": number;
+                };
+                "decoded_per_encoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "enclosing_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples": number;
+                "mode": string;
+                "object_footprint": string;
+                "population"?: number;
+                "prepared_per_decoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "prepared_request_body": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_compression_deflate": number;
+                "request_compression_gzip": number;
+                "request_compression_none": number;
+                "request_decoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_encoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_base64": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_discarded": number;
+                "response_retained": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_unavailable": number;
+                "response_window": number;
+                "sample_limit_reached"?: boolean;
+                "samples": number;
+                "version": number;
               }) | null;
               "max_response_ms": number;
               "messaging"?: ({
@@ -74506,6 +78606,101 @@ export interface operations {
                 "status_counts": Array<number>;
                 "unavailable_status": number;
               }) | null;
+              "java_http"?: ({
+                "base64_decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_per_retained": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "base64_work": {
+                  "base64_ms": number;
+                  "enclosing_ms": number;
+                  "samples": number;
+                };
+                "decoded_per_encoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "enclosing_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples": number;
+                "mode": string;
+                "object_footprint": string;
+                "population"?: number;
+                "prepared_per_decoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "prepared_request_body": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_compression_deflate": number;
+                "request_compression_gzip": number;
+                "request_compression_none": number;
+                "request_decoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_encoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_base64": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_discarded": number;
+                "response_retained": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_unavailable": number;
+                "response_window": number;
+                "sample_limit_reached"?: boolean;
+                "samples": number;
+                "version": number;
+              }) | null;
               "max_response_ms": number;
               "messaging"?: ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -74651,6 +78846,101 @@ export interface operations {
                 "samples": number;
                 "status_counts": Array<number>;
                 "unavailable_status": number;
+              }) | null;
+              "java_http"?: ({
+                "base64_decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_per_retained": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "base64_work": {
+                  "base64_ms": number;
+                  "enclosing_ms": number;
+                  "samples": number;
+                };
+                "decoded_per_encoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "enclosing_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples": number;
+                "mode": string;
+                "object_footprint": string;
+                "population"?: number;
+                "prepared_per_decoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "prepared_request_body": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_compression_deflate": number;
+                "request_compression_gzip": number;
+                "request_compression_none": number;
+                "request_decoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_encoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_base64": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_discarded": number;
+                "response_retained": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_unavailable": number;
+                "response_window": number;
+                "sample_limit_reached"?: boolean;
+                "samples": number;
+                "version": number;
               }) | null;
               "max_response_ms": number;
               "messaging"?: ({
@@ -74798,6 +79088,101 @@ export interface operations {
                 "status_counts": Array<number>;
                 "unavailable_status": number;
               }) | null;
+              "java_http"?: ({
+                "base64_decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_per_retained": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "base64_work": {
+                  "base64_ms": number;
+                  "enclosing_ms": number;
+                  "samples": number;
+                };
+                "decoded_per_encoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "enclosing_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples": number;
+                "mode": string;
+                "object_footprint": string;
+                "population"?: number;
+                "prepared_per_decoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "prepared_request_body": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_compression_deflate": number;
+                "request_compression_gzip": number;
+                "request_compression_none": number;
+                "request_decoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_encoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_base64": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_discarded": number;
+                "response_retained": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_unavailable": number;
+                "response_window": number;
+                "sample_limit_reached"?: boolean;
+                "samples": number;
+                "version": number;
+              }) | null;
               "max_response_ms": number;
               "messaging"?: ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -74943,6 +79328,101 @@ export interface operations {
                 "samples": number;
                 "status_counts": Array<number>;
                 "unavailable_status": number;
+              }) | null;
+              "java_http"?: ({
+                "base64_decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_per_retained": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "base64_work": {
+                  "base64_ms": number;
+                  "enclosing_ms": number;
+                  "samples": number;
+                };
+                "decoded_per_encoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "enclosing_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples": number;
+                "mode": string;
+                "object_footprint": string;
+                "population"?: number;
+                "prepared_per_decoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "prepared_request_body": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_compression_deflate": number;
+                "request_compression_gzip": number;
+                "request_compression_none": number;
+                "request_decoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_encoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_base64": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_discarded": number;
+                "response_retained": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_unavailable": number;
+                "response_window": number;
+                "sample_limit_reached"?: boolean;
+                "samples": number;
+                "version": number;
               }) | null;
               "max_response_ms": number;
               "messaging"?: ({
@@ -75092,6 +79572,101 @@ export interface operations {
                 "status_counts": Array<number>;
                 "unavailable_status": number;
               }) | null;
+              "java_http"?: ({
+                "base64_decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_per_retained": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "base64_work": {
+                  "base64_ms": number;
+                  "enclosing_ms": number;
+                  "samples": number;
+                };
+                "decoded_per_encoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "enclosing_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples": number;
+                "mode": string;
+                "object_footprint": string;
+                "population"?: number;
+                "prepared_per_decoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "prepared_request_body": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_compression_deflate": number;
+                "request_compression_gzip": number;
+                "request_compression_none": number;
+                "request_decoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_encoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_base64": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_discarded": number;
+                "response_retained": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_unavailable": number;
+                "response_window": number;
+                "sample_limit_reached"?: boolean;
+                "samples": number;
+                "version": number;
+              }) | null;
               "max_response_ms": number;
               "messaging"?: ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -75238,6 +79813,101 @@ export interface operations {
                 "status_counts": Array<number>;
                 "unavailable_status": number;
               }) | null;
+              "java_http"?: ({
+                "base64_decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_per_retained": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "base64_work": {
+                  "base64_ms": number;
+                  "enclosing_ms": number;
+                  "samples": number;
+                };
+                "decoded_per_encoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "enclosing_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples": number;
+                "mode": string;
+                "object_footprint": string;
+                "population"?: number;
+                "prepared_per_decoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "prepared_request_body": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_compression_deflate": number;
+                "request_compression_gzip": number;
+                "request_compression_none": number;
+                "request_decoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_encoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_base64": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_discarded": number;
+                "response_retained": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_unavailable": number;
+                "response_window": number;
+                "sample_limit_reached"?: boolean;
+                "samples": number;
+                "version": number;
+              }) | null;
               "max_response_ms": number;
               "messaging"?: ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -75383,6 +80053,101 @@ export interface operations {
                 "samples": number;
                 "status_counts": Array<number>;
                 "unavailable_status": number;
+              }) | null;
+              "java_http"?: ({
+                "base64_decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_per_retained": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "base64_work": {
+                  "base64_ms": number;
+                  "enclosing_ms": number;
+                  "samples": number;
+                };
+                "decoded_per_encoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "enclosing_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples": number;
+                "mode": string;
+                "object_footprint": string;
+                "population"?: number;
+                "prepared_per_decoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "prepared_request_body": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_compression_deflate": number;
+                "request_compression_gzip": number;
+                "request_compression_none": number;
+                "request_decoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_encoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_base64": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_discarded": number;
+                "response_retained": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_unavailable": number;
+                "response_window": number;
+                "sample_limit_reached"?: boolean;
+                "samples": number;
+                "version": number;
               }) | null;
               "max_response_ms": number;
               "messaging"?: ({
@@ -76999,6 +81764,101 @@ export interface operations {
                 "samples": number;
                 "status_counts": Array<number>;
                 "unavailable_status": number;
+              }) | null;
+              "java_http"?: ({
+                "base64_decode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_encode_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "base64_per_retained": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "base64_work": {
+                  "base64_ms": number;
+                  "enclosing_ms": number;
+                  "samples": number;
+                };
+                "decoded_per_encoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "enclosing_ms": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "incomplete"?: boolean;
+                "invalid_samples": number;
+                "mode": string;
+                "object_footprint": string;
+                "population"?: number;
+                "prepared_per_decoded": {
+                  "denominator_bytes": number;
+                  "numerator_bytes": number;
+                  "overflow"?: boolean;
+                  "samples": number;
+                };
+                "prepared_request_body": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_compression_deflate": number;
+                "request_compression_gzip": number;
+                "request_compression_none": number;
+                "request_decoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "request_encoded": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_base64": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_discarded": number;
+                "response_retained": {
+                  "count": number;
+                  "max_bytes": number;
+                  "min_bytes": number;
+                  "overflow"?: boolean;
+                  "sum_bytes": number;
+                };
+                "response_unavailable": number;
+                "response_window": number;
+                "sample_limit_reached"?: boolean;
+                "samples": number;
+                "version": number;
               }) | null;
               "max_response_ms": number;
               "messaging"?: ({
@@ -83942,6 +88802,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -84138,6 +89093,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -85024,6 +90074,109 @@ export interface operations {
                 };
                 "upgrade_eligible"?: number;
               }) | null;
+              "java_http"?: ({
+                "actions"?: Record<string, {
+                  "diagnostics": ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
+                  "population": number;
+                }>;
+                "incomplete"?: boolean;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
@@ -85628,6 +90781,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -85840,6 +91088,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -86203,6 +91546,109 @@ export interface operations {
                 };
                 "upgrade_eligible"?: number;
               }) | null;
+              "java_http"?: ({
+                "actions"?: Record<string, {
+                  "diagnostics": ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
+                  "population": number;
+                }>;
+                "incomplete"?: boolean;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<{
                   "connect_ms"?: number;
@@ -86418,6 +91864,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -86618,6 +92159,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -86868,6 +92504,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -87266,6 +92997,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -102203,6 +108029,7 @@ export interface operations {
               }>;
               "excluded"?: Record<string, number>;
               "identities": Array<string>;
+              "java_http_compression"?: string;
               "run_id": string;
               "unit"?: string;
               "warnings": Array<string>;
@@ -102219,6 +108046,7 @@ export interface operations {
               }>;
               "excluded"?: Record<string, number>;
               "identities": Array<string>;
+              "java_http_compression"?: string;
               "run_id": string;
               "unit"?: string;
               "warnings": Array<string>;
@@ -105894,6 +111722,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -106090,6 +112013,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -106976,6 +112994,109 @@ export interface operations {
                 };
                 "upgrade_eligible"?: number;
               }) | null;
+              "java_http"?: ({
+                "actions"?: Record<string, {
+                  "diagnostics": ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
+                  "population": number;
+                }>;
+                "incomplete"?: boolean;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
@@ -107580,6 +113701,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -107792,6 +114008,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -108155,6 +114466,109 @@ export interface operations {
                 };
                 "upgrade_eligible"?: number;
               }) | null;
+              "java_http"?: ({
+                "actions"?: Record<string, {
+                  "diagnostics": ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
+                  "population": number;
+                }>;
+                "incomplete"?: boolean;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<{
                   "connect_ms"?: number;
@@ -108370,6 +114784,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -108570,6 +115079,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -108820,6 +115424,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -109218,6 +115917,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -123398,6 +130192,109 @@ export interface operations {
                   };
                   "upgrade_eligible"?: number;
                 }) | null;
+                "java_http"?: ({
+                  "actions"?: Record<string, {
+                    "diagnostics": ({
+                      "base64_decode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_encode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_per_retained": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "base64_work": {
+                        "base64_ms": number;
+                        "enclosing_ms": number;
+                        "samples": number;
+                      };
+                      "decoded_per_encoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "enclosing_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "incomplete"?: boolean;
+                      "invalid_samples": number;
+                      "mode": string;
+                      "object_footprint": string;
+                      "population"?: number;
+                      "prepared_per_decoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "prepared_request_body": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_compression_deflate": number;
+                      "request_compression_gzip": number;
+                      "request_compression_none": number;
+                      "request_decoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_encoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_base64": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_discarded": number;
+                      "response_retained": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_unavailable": number;
+                      "response_window": number;
+                      "sample_limit_reached"?: boolean;
+                      "samples": number;
+                      "version": number;
+                    }) | null;
+                    "population": number;
+                  }>;
+                  "incomplete"?: boolean;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -123979,6 +130876,109 @@ export interface operations {
                     "value": number;
                   };
                   "upgrade_eligible"?: number;
+                }) | null;
+                "java_http"?: ({
+                  "actions"?: Record<string, {
+                    "diagnostics": ({
+                      "base64_decode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_encode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_per_retained": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "base64_work": {
+                        "base64_ms": number;
+                        "enclosing_ms": number;
+                        "samples": number;
+                      };
+                      "decoded_per_encoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "enclosing_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "incomplete"?: boolean;
+                      "invalid_samples": number;
+                      "mode": string;
+                      "object_footprint": string;
+                      "population"?: number;
+                      "prepared_per_decoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "prepared_request_body": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_compression_deflate": number;
+                      "request_compression_gzip": number;
+                      "request_compression_none": number;
+                      "request_decoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_encoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_base64": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_discarded": number;
+                      "response_retained": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_unavailable": number;
+                      "response_window": number;
+                      "sample_limit_reached"?: boolean;
+                      "samples": number;
+                      "version": number;
+                    }) | null;
+                    "population": number;
+                  }>;
+                  "incomplete"?: boolean;
+                  "unavailable_reason"?: string;
+                  "version": number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -125536,6 +132536,109 @@ export interface operations {
                   };
                   "upgrade_eligible"?: number;
                 }) | null;
+                "java_http"?: ({
+                  "actions"?: Record<string, {
+                    "diagnostics": ({
+                      "base64_decode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_encode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_per_retained": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "base64_work": {
+                        "base64_ms": number;
+                        "enclosing_ms": number;
+                        "samples": number;
+                      };
+                      "decoded_per_encoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "enclosing_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "incomplete"?: boolean;
+                      "invalid_samples": number;
+                      "mode": string;
+                      "object_footprint": string;
+                      "population"?: number;
+                      "prepared_per_decoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "prepared_request_body": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_compression_deflate": number;
+                      "request_compression_gzip": number;
+                      "request_compression_none": number;
+                      "request_decoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_encoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_base64": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_discarded": number;
+                      "response_retained": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_unavailable": number;
+                      "response_window": number;
+                      "sample_limit_reached"?: boolean;
+                      "samples": number;
+                      "version": number;
+                    }) | null;
+                    "population": number;
+                  }>;
+                  "incomplete"?: boolean;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -126117,6 +133220,109 @@ export interface operations {
                     "value": number;
                   };
                   "upgrade_eligible"?: number;
+                }) | null;
+                "java_http"?: ({
+                  "actions"?: Record<string, {
+                    "diagnostics": ({
+                      "base64_decode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_encode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_per_retained": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "base64_work": {
+                        "base64_ms": number;
+                        "enclosing_ms": number;
+                        "samples": number;
+                      };
+                      "decoded_per_encoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "enclosing_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "incomplete"?: boolean;
+                      "invalid_samples": number;
+                      "mode": string;
+                      "object_footprint": string;
+                      "population"?: number;
+                      "prepared_per_decoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "prepared_request_body": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_compression_deflate": number;
+                      "request_compression_gzip": number;
+                      "request_compression_none": number;
+                      "request_decoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_encoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_base64": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_discarded": number;
+                      "response_retained": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_unavailable": number;
+                      "response_window": number;
+                      "sample_limit_reached"?: boolean;
+                      "samples": number;
+                      "version": number;
+                    }) | null;
+                    "population": number;
+                  }>;
+                  "incomplete"?: boolean;
+                  "unavailable_reason"?: string;
+                  "version": number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -127674,6 +134880,109 @@ export interface operations {
                   };
                   "upgrade_eligible"?: number;
                 }) | null;
+                "java_http"?: ({
+                  "actions"?: Record<string, {
+                    "diagnostics": ({
+                      "base64_decode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_encode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_per_retained": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "base64_work": {
+                        "base64_ms": number;
+                        "enclosing_ms": number;
+                        "samples": number;
+                      };
+                      "decoded_per_encoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "enclosing_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "incomplete"?: boolean;
+                      "invalid_samples": number;
+                      "mode": string;
+                      "object_footprint": string;
+                      "population"?: number;
+                      "prepared_per_decoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "prepared_request_body": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_compression_deflate": number;
+                      "request_compression_gzip": number;
+                      "request_compression_none": number;
+                      "request_decoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_encoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_base64": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_discarded": number;
+                      "response_retained": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_unavailable": number;
+                      "response_window": number;
+                      "sample_limit_reached"?: boolean;
+                      "samples": number;
+                      "version": number;
+                    }) | null;
+                    "population": number;
+                  }>;
+                  "incomplete"?: boolean;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -128255,6 +135564,109 @@ export interface operations {
                     "value": number;
                   };
                   "upgrade_eligible"?: number;
+                }) | null;
+                "java_http"?: ({
+                  "actions"?: Record<string, {
+                    "diagnostics": ({
+                      "base64_decode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_encode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_per_retained": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "base64_work": {
+                        "base64_ms": number;
+                        "enclosing_ms": number;
+                        "samples": number;
+                      };
+                      "decoded_per_encoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "enclosing_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "incomplete"?: boolean;
+                      "invalid_samples": number;
+                      "mode": string;
+                      "object_footprint": string;
+                      "population"?: number;
+                      "prepared_per_decoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "prepared_request_body": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_compression_deflate": number;
+                      "request_compression_gzip": number;
+                      "request_compression_none": number;
+                      "request_decoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_encoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_base64": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_discarded": number;
+                      "response_retained": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_unavailable": number;
+                      "response_window": number;
+                      "sample_limit_reached"?: boolean;
+                      "samples": number;
+                      "version": number;
+                    }) | null;
+                    "population": number;
+                  }>;
+                  "incomplete"?: boolean;
+                  "unavailable_reason"?: string;
+                  "version": number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -129812,6 +137224,109 @@ export interface operations {
                   };
                   "upgrade_eligible"?: number;
                 }) | null;
+                "java_http"?: ({
+                  "actions"?: Record<string, {
+                    "diagnostics": ({
+                      "base64_decode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_encode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_per_retained": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "base64_work": {
+                        "base64_ms": number;
+                        "enclosing_ms": number;
+                        "samples": number;
+                      };
+                      "decoded_per_encoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "enclosing_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "incomplete"?: boolean;
+                      "invalid_samples": number;
+                      "mode": string;
+                      "object_footprint": string;
+                      "population"?: number;
+                      "prepared_per_decoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "prepared_request_body": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_compression_deflate": number;
+                      "request_compression_gzip": number;
+                      "request_compression_none": number;
+                      "request_decoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_encoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_base64": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_discarded": number;
+                      "response_retained": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_unavailable": number;
+                      "response_window": number;
+                      "sample_limit_reached"?: boolean;
+                      "samples": number;
+                      "version": number;
+                    }) | null;
+                    "population": number;
+                  }>;
+                  "incomplete"?: boolean;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -130393,6 +137908,109 @@ export interface operations {
                     "value": number;
                   };
                   "upgrade_eligible"?: number;
+                }) | null;
+                "java_http"?: ({
+                  "actions"?: Record<string, {
+                    "diagnostics": ({
+                      "base64_decode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_encode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_per_retained": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "base64_work": {
+                        "base64_ms": number;
+                        "enclosing_ms": number;
+                        "samples": number;
+                      };
+                      "decoded_per_encoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "enclosing_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "incomplete"?: boolean;
+                      "invalid_samples": number;
+                      "mode": string;
+                      "object_footprint": string;
+                      "population"?: number;
+                      "prepared_per_decoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "prepared_request_body": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_compression_deflate": number;
+                      "request_compression_gzip": number;
+                      "request_compression_none": number;
+                      "request_decoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_encoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_base64": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_discarded": number;
+                      "response_retained": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_unavailable": number;
+                      "response_window": number;
+                      "sample_limit_reached"?: boolean;
+                      "samples": number;
+                      "version": number;
+                    }) | null;
+                    "population": number;
+                  }>;
+                  "incomplete"?: boolean;
+                  "unavailable_reason"?: string;
+                  "version": number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -131950,6 +139568,109 @@ export interface operations {
                   };
                   "upgrade_eligible"?: number;
                 }) | null;
+                "java_http"?: ({
+                  "actions"?: Record<string, {
+                    "diagnostics": ({
+                      "base64_decode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_encode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_per_retained": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "base64_work": {
+                        "base64_ms": number;
+                        "enclosing_ms": number;
+                        "samples": number;
+                      };
+                      "decoded_per_encoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "enclosing_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "incomplete"?: boolean;
+                      "invalid_samples": number;
+                      "mode": string;
+                      "object_footprint": string;
+                      "population"?: number;
+                      "prepared_per_decoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "prepared_request_body": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_compression_deflate": number;
+                      "request_compression_gzip": number;
+                      "request_compression_none": number;
+                      "request_decoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_encoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_base64": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_discarded": number;
+                      "response_retained": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_unavailable": number;
+                      "response_window": number;
+                      "sample_limit_reached"?: boolean;
+                      "samples": number;
+                      "version": number;
+                    }) | null;
+                    "population": number;
+                  }>;
+                  "incomplete"?: boolean;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -132531,6 +140252,109 @@ export interface operations {
                     "value": number;
                   };
                   "upgrade_eligible"?: number;
+                }) | null;
+                "java_http"?: ({
+                  "actions"?: Record<string, {
+                    "diagnostics": ({
+                      "base64_decode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_encode_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "base64_per_retained": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "base64_work": {
+                        "base64_ms": number;
+                        "enclosing_ms": number;
+                        "samples": number;
+                      };
+                      "decoded_per_encoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "enclosing_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "incomplete"?: boolean;
+                      "invalid_samples": number;
+                      "mode": string;
+                      "object_footprint": string;
+                      "population"?: number;
+                      "prepared_per_decoded": {
+                        "denominator_bytes": number;
+                        "numerator_bytes": number;
+                        "overflow"?: boolean;
+                        "samples": number;
+                      };
+                      "prepared_request_body": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_compression_deflate": number;
+                      "request_compression_gzip": number;
+                      "request_compression_none": number;
+                      "request_decoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "request_encoded": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_base64": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_discarded": number;
+                      "response_retained": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "response_unavailable": number;
+                      "response_window": number;
+                      "sample_limit_reached"?: boolean;
+                      "samples": number;
+                      "version": number;
+                    }) | null;
+                    "population": number;
+                  }>;
+                  "incomplete"?: boolean;
+                  "unavailable_reason"?: string;
+                  "version": number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -135511,6 +143335,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -135707,6 +143626,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -136593,6 +144607,109 @@ export interface operations {
                 };
                 "upgrade_eligible"?: number;
               }) | null;
+              "java_http"?: ({
+                "actions"?: Record<string, {
+                  "diagnostics": ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
+                  "population": number;
+                }>;
+                "incomplete"?: boolean;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
@@ -137197,6 +145314,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -137409,6 +145621,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -137772,6 +146079,109 @@ export interface operations {
                 };
                 "upgrade_eligible"?: number;
               }) | null;
+              "java_http"?: ({
+                "actions"?: Record<string, {
+                  "diagnostics": ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
+                  "population": number;
+                }>;
+                "incomplete"?: boolean;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<{
                   "connect_ms"?: number;
@@ -137987,6 +146397,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -138187,6 +146692,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -138437,6 +147037,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -138835,6 +147530,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -160757,6 +169547,55 @@ export interface operations {
       };
     };
   };
+  "handleTelemetryNotificationStatus": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "available": boolean;
+            "publication"?: ({
+              "decision": string;
+              "deliveries": Record<string, number>;
+              "event_id"?: string;
+              "manifest_sha256": string;
+              "suppressed_publications": number;
+              "updated_at": string;
+            }) | null;
+            "reason"?: string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleTestCloudConnection": {
     parameters: {
       "path": {
@@ -161644,6 +170483,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -161840,6 +170774,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -162726,6 +171755,109 @@ export interface operations {
                 };
                 "upgrade_eligible"?: number;
               }) | null;
+              "java_http"?: ({
+                "actions"?: Record<string, {
+                  "diagnostics": ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
+                  "population": number;
+                }>;
+                "incomplete"?: boolean;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
@@ -163330,6 +172462,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -163542,6 +172769,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -163905,6 +173227,109 @@ export interface operations {
                 };
                 "upgrade_eligible"?: number;
               }) | null;
+              "java_http"?: ({
+                "actions"?: Record<string, {
+                  "diagnostics": ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
+                  "population": number;
+                }>;
+                "incomplete"?: boolean;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<{
                   "connect_ms"?: number;
@@ -164120,6 +173545,101 @@ export interface operations {
                     "status_counts": Array<number>;
                     "unavailable_status": number;
                   }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
+                  }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
                   "max_end_to_end_latency_ms"?: number;
@@ -164320,6 +173840,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -164570,6 +174185,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -164968,6 +174678,101 @@ export interface operations {
                     "samples": number;
                     "status_counts": Array<number>;
                     "unavailable_status": number;
+                  }) | null;
+                  "java_http"?: ({
+                    "base64_decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "base64_per_retained": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "base64_work": {
+                      "base64_ms": number;
+                      "enclosing_ms": number;
+                      "samples": number;
+                    };
+                    "decoded_per_encoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "enclosing_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "incomplete"?: boolean;
+                    "invalid_samples": number;
+                    "mode": string;
+                    "object_footprint": string;
+                    "population"?: number;
+                    "prepared_per_decoded": {
+                      "denominator_bytes": number;
+                      "numerator_bytes": number;
+                      "overflow"?: boolean;
+                      "samples": number;
+                    };
+                    "prepared_request_body": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_compression_deflate": number;
+                    "request_compression_gzip": number;
+                    "request_compression_none": number;
+                    "request_decoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "request_encoded": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_base64": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_discarded": number;
+                    "response_retained": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "response_unavailable": number;
+                    "response_window": number;
+                    "sample_limit_reached"?: boolean;
+                    "samples": number;
+                    "version": number;
                   }) | null;
                   "max_consumer_lag_ms"?: number;
                   "max_consumer_offset_lag"?: number;
@@ -182510,6 +192315,7 @@ export interface paths {
   };
   "/api/v1/analysis/datasets/{id}/association": {
     "put": operations["handleAnalysisAssociation"];
+    "patch": operations["handleAnalysisMappingAssociation"];
   };
   "/api/v1/analysis/datasets/{id}/rejections/{index}": {
     "get": operations["handleAnalysisRejections"];
@@ -184421,6 +194227,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/telemetry/client-render": {
     "post": operations["handleReportClientRender"];
+  };
+  "/api/v1/tests/{id}/telemetry/notifications": {
+    "get": operations["handleTelemetryNotificationStatus"];
   };
   "/api/v1/tests/{id}/transactions/live/{event_id}": {
     "get": operations["handleGetLiveTransactionDetail"];

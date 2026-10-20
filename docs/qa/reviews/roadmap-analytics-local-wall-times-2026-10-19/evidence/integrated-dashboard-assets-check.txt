@@ -1,0 +1,3 @@
+1145 generated static import and HTML entry-point references resolve.
+308 generated files hashed in integrated-dashboard-assets-sha256.json.
+The integrated build was used by both auth-profile browser workflows and the corrected full Go suite. Assets are committed separately from source changes.

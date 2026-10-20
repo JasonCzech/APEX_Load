@@ -28,7 +28,7 @@ func TestOwnedHARSDKForkIntegrityAndPackaging(t *testing.T) {
 			SHA          string `json:"sha256"`
 		} `json:"sources"`
 	}
-	if json.Unmarshal(data, &manifest) != nil || manifest.UpstreamModule != "github.com/mxschmitt/playwright-go" || manifest.UpstreamVersion != "v0.6100.0" || manifest.ModuleZipSum != "h1:HYNnbGZsTHz8veJyDGe4fU1iPxfvXqzmwKchzuvGCsY=" || len(manifest.Sources) != 80 || len(manifest.Altered) != 1 || manifest.Altered[0] != "browser_context.go" {
+	if json.Unmarshal(data, &manifest) != nil || manifest.UpstreamModule != "github.com/mxschmitt/playwright-go" || manifest.UpstreamVersion != "v0.6100.0" || manifest.ModuleZipSum != "h1:HYNnbGZsTHz8veJyDGe4fU1iPxfvXqzmwKchzuvGCsY=" || len(manifest.Sources) != 80 || len(manifest.Altered) != 2 || manifest.Altered[0] != "browser_context.go" || manifest.Altered[1] != "frame.go" {
 		t.Fatal("pinned SDK provenance/source boundary changed")
 	}
 	renamedREADME := 0
@@ -49,7 +49,7 @@ func TestOwnedHARSDKForkIntegrityAndPackaging(t *testing.T) {
 			t.Fatal(err)
 		}
 		sum := sha256.Sum256(bytes)
-		if item.Path != "browser_context.go" && hex.EncodeToString(sum[:]) != item.SHA {
+		if item.Path != "browser_context.go" && item.Path != "frame.go" && hex.EncodeToString(sum[:]) != item.SHA {
 			t.Fatalf("undeclared SDK source delta: %s", item.Path)
 		}
 	}
@@ -83,7 +83,7 @@ func TestOwnedHARSDKForkIntegrityAndPackaging(t *testing.T) {
 			if !strings.Contains(string(data), "replace github.com/mxschmitt/playwright-go => ./third_party/playwright-go") {
 				t.Fatal("SDK local replacement missing")
 			}
-		} else if !strings.Contains(string(data), "github.com/mxschmitt/playwright-go -run '^TestAPEXOwnedHAR'") {
+		} else if !strings.Contains(string(data), "github.com/mxschmitt/playwright-go -run '^TestAPEX(OwnedHAR|LoadState)'") {
 			t.Fatalf("dependency-module contract tests missing from %s", rel)
 		}
 	}

@@ -194,6 +194,48 @@ Combined controller/generator loss and production node-loss qualification remain
 open in the [node-failure readiness ledger](NODE_FAILURE_READINESS_PLAN.md);
 controller-only adoption and same-host trials do not close those gates.
 
+### Resolving an unproven generator evacuation
+
+A canceled evacuation can stay `STOPPING` when a restarted replacement rejects
+the old generation and cannot acknowledge an exact-generation stop. For the
+current controller's canceled run with a durable evacuation journal, automatic
+cleanup makes one initial round and at most five retry rounds. Each participant
+RPC retains its existing bounded timeout and retry count. Exhaustion records
+`automatic evacuation stop retries exhausted` durably before the worker retires.
+A failed diagnostic write remains retryable without sending more stop rounds.
+
+The run remains `STOPPING`; its possible participants and capacity stay held.
+The run error preserves the original cause, unresolved stop errors and the
+resolution action. A canceled controller context, expired lease, missing
+heartbeat, Kubernetes `NotReady` state or reused pod name is not proof that a
+process stopped. Do not erase epochs or change the global owner generation to
+force cleanup.
+
+A system administrator may use
+`POST /api/v1/tests/{id}/interrupted-stop/resolve` only after independently
+establishing that **every generator process that could execute the run is stopped
+or fenced**, including staged replacements and old process incarnations. Send
+`{"attestation":"all-generator-processes-stopped","note":"<operator evidence>"}`.
+The route is audited. A missing attestation is rejected; an active runtime or an
+already resolved run is ineligible. Transient persistence/ownership failure
+returns an error and must not be treated as successful resolution.
+
+A successful resolution first persists `FAILED` and the explicit proof while
+preserving the cause. Cleanup then closes retained transports and reconciles
+archive failure and capacity. Missing archive evidence stays incomplete;
+capacity that lacks its own safe-release proof stays quarantined. The operation
+does not create a successful result, advance the execution epoch or delete
+retained source evidence. Successor recovery continues to use its existing
+all-participant process-fence protocol. Terminal/stale-runtime cleanup and runs
+without an eligible evacuation journal retain their existing cleanup contracts.
+
+The [same-leader intervention review](qa/reviews/roadmap-same-leader-intervention-2026-10-19/README.md)
+records the local failure, persistence and authorization regressions. Deployed
+multi-host failure qualification remains pending. Historical successor proof
+wording remains readable. Older controllers do not recognize the new same-leader
+proof for post-terminal cleanup; retain the record and upgrade the cleanup owner
+instead of erasing its journal or inventing another acknowledgement.
+
 ### Restart Contracts
 
 | Condition | Expected behavior |

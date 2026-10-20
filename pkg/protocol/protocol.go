@@ -618,7 +618,8 @@ type ClientMetrics struct {
 }
 
 type ServerTelemetry struct {
-	SubscriptionID string `json:"subscription_id,omitempty"`
+	JavaHTTP       *JavaHTTPDiagnostics `json:"java_http,omitempty"`
+	SubscriptionID string               `json:"subscription_id,omitempty"`
 	// Successful client publish acknowledgement or settlement duration; unavailable for local/mock acknowledgements.
 	Messaging                 *MessagingDiagnostics `json:"messaging,omitempty"`
 	AcknowledgementMs         *float64              `json:"acknowledgement_ms,omitempty"`

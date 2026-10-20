@@ -1,0 +1,16 @@
+Isolated branch codex/roadmap-durable-cursors; main integrated through 5a9355e16 before builds.
+Node 22.23.3; Go 1.26.9; darwin/arm64.
+GOCACHE=/private/tmp/apex-roadmap-prerequisite/go-cache
+GOTMPDIR=/private/tmp/apex-roadmap-prerequisite/go-tmp
+GOMAXPROCS=2 GOGC=30 GOFLAGS=-p=1
+PATH included pinned Node runtime and a go wrapper that fetched main and required it to be an ancestor before every explicit Go build.
+APEXLOAD_E2E_PORT=18401 APEXLOAD_E2E_AUTH_PORT=18402
+APEXLOAD_E2E_OUTPUT_ROOT=/private/tmp/apex-roadmap-prerequisite/browser-full-cycle-fixed
+
+npm --prefix dashboard run test:cycle
+Targeted unit and browser correction logs are retained separately.
+APEXLOAD_UPDATE_LIFECYCLE_PARITY_MATRIX=1 APEXLOAD_HAR_COMPAT_FILE=<private ZIP> APEXLOAD_HAR_COMPAT_SHA256=7469ebdef88a576cd3cfa5891318a4aa5afb4efe97fccb410df339fc609ddef7 go test -trimpath -overlay=<private HAR compatibility overlay> -count=1 -timeout=10m ./pkg/api -run 'TestExternalHARImportCompatibility|TestLifecycleParity'
+go test -trimpath -count=1 ./pkg/api -run 'TestAPIDocsHandlersServeEmbeddedGeneratedAssets|TestLifecycleParity'
+python3 scripts/qa-generate-dashboard.py
+python3 scripts/check-docs.py
+git diff --cached --check -- . ':!pkg/api/static'

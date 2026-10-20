@@ -460,6 +460,7 @@ type ResourceSample struct {
 }
 
 type IntervalSummaryRecord struct {
+	JavaHTTP                 *protocol.JavaHTTPActions             `json:"java_http,omitempty"`
 	BrowserDocuments         *protocol.BrowserDocumentSummary      `json:"browser_documents,omitempty"`
 	MessagingProgress        *protocol.MessagingProgressSnapshot   `json:"messaging_progress,omitempty"`
 	Messaging                map[string]*protocol.MessagingSummary `json:"messaging,omitempty"`
@@ -1024,6 +1025,7 @@ type RunArchiveTelemetrySummary struct {
 
 type RunArchiveActionStats struct {
 	Messaging          *protocol.MessagingSummary   `json:"messaging,omitempty"`
+	JavaHTTP           *protocol.JavaHTTPSummary    `json:"java_http,omitempty"`
 	GRPC               *protocol.GRPCSummary        `json:"grpc,omitempty"`
 	WebSocket          *protocol.WebSocketSummary   `json:"websocket,omitempty"`
 	DiagnosticFindings []protocol.DiagnosticFinding `json:"diagnostic_findings,omitempty"`
@@ -1040,6 +1042,9 @@ type RunArchiveActionStats struct {
 	P99Ms              float64                      `json:"p99_ms,omitempty"`
 	PercentileQuality  string                       `json:"percentile_quality,omitempty"`
 	durations          []float64
+	// javaHTTPActions counts actual java_http actions, which JavaHTTP.Population
+	// reports; enclosing transactions and other protocols' actions are excluded.
+	javaHTTPActions int64
 }
 
 type RunArchiveResourcePeaks struct {

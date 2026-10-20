@@ -8,8 +8,19 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 | --- | --- | --- |
 | Long, wide and nested mappings | `TestNativeAcceptanceMappingLayoutsAgree` (`pkg/analysis/duckdb/native_acceptance_golden_test.go`) | DuckDB build |
 |  | `TestDecodeParquetMappingDefinitionRejectsUnsupportedAmbiguousAndMalformedFields` (`pkg/analysis/parquet_mapping_decode_test.go`) | Default build |
+| Directory labels cannot override physical columns or explicit mappings | `TestNativePartitionLabelsCannotOverridePhysicalColumnsOrMapping` (`pkg/analysis/duckdb/native_partition_precedence_test.go`) | DuckDB build |
 | Decimals | `TestNativeAcceptanceDecimalValues` (`pkg/analysis/duckdb/native_acceptance_golden_test.go`) | DuckDB build |
 | Timezones and DST | `TestNativeSummaryWallTimeWindowsAcrossDaylightSaving` (`pkg/analysis/duckdb/native_summary_test.go`) | DuckDB build |
+|  | `TestNativeAbsoluteTimestampRequiresSourceOffset` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
+|  | `TestNativeTimestampUsesEachRowsTimezoneOffset` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
+|  | `TestNativeLocalTimestampRejectsShortOffsetText` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
+|  | `TestNativeAbsoluteTimestampRejectsNaiveTypedColumns` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
+|  | `TestResolveLocalTimestamp` (`pkg/analysis/local_timestamp_test.go`) | Default build |
+|  | `TestResolveLocalTimestampLimits` (`pkg/analysis/local_timestamp_test.go`) | Default build |
+|  | `TestResolveLocalTimestampBoundsTransitionTraversal` (`pkg/analysis/local_timestamp_test.go`) | Default build |
+|  | `TestNativeLocalWallTimeRejectsAmbiguityWithRowProvenance` (`pkg/analysis/duckdb/native_local_timestamp_test.go`) | DuckDB build |
+|  | `TestNativeLocalTimestampGuardCoversSummaryAndHistogram` (`pkg/analysis/duckdb/native_local_timestamp_test.go`) | DuckDB build |
+|  | `TestNativeLocalTimestampQualifierRequiresAgreementAndCancellation` (`pkg/analysis/duckdb/native_local_timestamp_test.go`) | DuckDB build |
 | Nulls | `TestNativeRejectionProvenanceAndNullBuckets` (`pkg/analysis/duckdb/native_test.go`) | DuckDB build |
 |  | `TestNativeSummaryPartialWindowsDuplicatesNullsAndMissingCounts` (`pkg/analysis/duckdb/native_summary_test.go`) | DuckDB build |
 | Malformed files and rows | `TestNativeHistogramRejectsMalformedRowsWithProvenance` (`pkg/analysis/duckdb/native_histogram_test.go`) | DuckDB build |
@@ -20,6 +31,9 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 | Raw versus summary and distribution inputs | `TestAnalysisSummaryImportPreviewCommitQueryReconcile` (`pkg/api/analysis_summary_native_test.go`) | DuckDB build |
 |  | `TestAnalysisHistogramImportCommitQueryReconcile` (`pkg/api/analysis_histogram_native_test.go`) | DuckDB build |
 |  | `TestAnalysisComparisonAdmitsSummaryOnlyStatisticsForDatasets` (`pkg/api/analysis_summary_test.go`) | Default build |
+| Negotiated mapping-preserving reassociation | `TestAnalysisCapabilitiesAdvertiseMappingAssociationContract` (`pkg/api/analysis_mapping_association_test.go`) | Default build |
+|  | `TestAnalysisNegotiatedAssociationGeneratedContract` (`pkg/api/analysis_mapping_association_test.go`) | Default build |
+|  | `TestAnalysisNegotiatedAssociationPreservesMeasurementMapping` (`pkg/api/analysis_mapping_association_native_test.go`) | DuckDB build |
 | Units | `TestCatalogNativeWireUnitsMatchExecutedQueries` (`pkg/api/analysis_catalog_test.go`) | Default build |
 |  | `TestNormalizeNativeObservationUnitAliases` (`pkg/analysis/parquet_mapping_test.go`) | Default build |
 | Duplicate files | `TestAnalysisAcceptanceDuplicateAndDriftedFiles` (`pkg/api/analysis_acceptance_native_test.go`) | DuckDB build |
@@ -35,6 +49,7 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 |  | `TestAnalysisHistogramImportCommitQueryReconcile` (`pkg/api/analysis_histogram_native_test.go`) | DuckDB build |
 |  | `TestNativeReconciliationPinsStoreAtRealServerConstruction` (`pkg/api/analysis_reconciliation_test.go`) | Default build |
 | Source non-mutation | `TestNativeAcceptanceMappingLayoutsAgree` (`pkg/analysis/duckdb/native_acceptance_golden_test.go`) | DuckDB build |
+|  | `TestNativeAbsoluteTimestampRequiresSourceOffset` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
 | Cross-project denial | `TestAnalysisSavedMappingsProjectIsolationAndRevision` (`pkg/api/analysis_queries_test.go`) | Default build |
 |  | `TestAnalysisComparisonBoundsAndForeignRun` (`pkg/api/analysis_queries_test.go`) | Default build |
 |  | `TestAnalysisUploadCursorRefusesForeignReturnedImportIdentity` (`pkg/api/analysis_upload_reconciliation_test.go`) | Default build |
@@ -46,6 +61,13 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 | Raw count, sum and percentile reconciliation | `TestNativeAcceptanceMappingLayoutsAgree` (`pkg/analysis/duckdb/native_acceptance_golden_test.go`) | DuckDB build |
 |  | `TestAnalysisHistogramImportCommitQueryReconcile` (`pkg/api/analysis_histogram_native_test.go`) | DuckDB build |
 |  | `TestNativeRejectsInvalidRowsAndSummaryPercentiles` (`pkg/analysis/duckdb/native_test.go`) | DuckDB build |
+| Distribution copies and oversized pending publications | `TestDurationSketchCopyRejectsOversizedBeforeRetention` (`pkg/engine/distribution_copy_bounds_test.go`) | Default build |
+|  | `TestDistributionWireCopiesKeepExistingBounds` (`pkg/distributed/generatorrpc/distribution_wire_bounds_test.go`) | Default build |
+|  | `TestOversizedDistributionRefusalPreservesCountsAndCompatibleFallback` (`pkg/distributed/generatorrpc/distribution_wire_bounds_test.go`) | Default build |
+|  | `TestJointPendingOversizeRefusalPreservesEarlierWindows` (`pkg/api/joint_pending_oversize_test.go`) | Default build |
+|  | `TestJointWireAdmissionBeforeRetainedCopies` (`pkg/distributed/generatorrpc/joint_wire_admission_test.go`) | Default build |
+|  | `TestJointWireAdmissionKeepsExactCardinalityBoundary` (`pkg/distributed/generatorrpc/joint_wire_admission_test.go`) | Default build |
+|  | `TestJointWireAdmissionThroughMetricsStreamPreservesOtherPopulations` (`pkg/distributed/generatorrpc/joint_wire_admission_test.go`) | Default build |
 | v4 joint and rate coverage | `TestJointEvidenceArchiveMatchesLocalWindowsAtStoreResolution` (`pkg/api/joint_evidence_test.go`) | Default build |
 |  | `TestNativeMergedRatesCheckCoveragePerSource` (`pkg/api/native_rate_window_coverage_test.go`) | Default build |
 |  | `TestNativeMergedRatesExactFractionalCoverage` (`pkg/api/native_rate_window_coverage_test.go`) | Default build |

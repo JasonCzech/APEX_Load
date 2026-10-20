@@ -74,8 +74,41 @@ describe('Help documentation', () => {
   })
   it('does not expose administration while access is unresolved or failed', async () => {
     await render({ activePage: 'admin-guide', effectiveAccessResources: access(['manage_system']), effectiveAccessLoaded: false })
-    expect(container.querySelector('.help-article-header h2')?.textContent).toBe('Your first test')
+    expect(container.textContent).toContain('Loading help access…')
+    expect(container.querySelector('.markdown-body')).toBeNull()
     await render({ activePage: 'admin-guide', effectiveAccessResources: access(['manage_system']), effectiveAccessError: true })
+    expect(container.querySelector('.help-article-header h2')?.textContent).toBe('Your first test')
+  })
+  it('keeps public help available while permissions load', async () => {
+    await navigate('#/docs?guide=user-guide&article=scenarios')
+    await render({ effectiveAccessLoaded: false })
+    expect(container.querySelector('.help-article-header h2')?.textContent).toBe('Model load')
+    expect(container.querySelector('.markdown-body')?.textContent).toContain('250 VUsers')
+    expect(container.textContent).not.toContain('Loading help access…')
+  })
+  it('preserves an administrator section link while access loads, then opens the permitted section', async () => {
+    const target = '#/docs?guide=admin-guide&article=platform&section=resolving-an-unproven-generator-evacuation'
+    await navigate(target)
+    await render({ effectiveAccessLoaded: false, effectiveAccessResources: access(['manage_system']) })
+    expect(window.location.hash).toBe(target)
+    expect(container.textContent).toContain('Loading help access…')
+    expect(container.textContent).not.toContain('Administration requires administrative access')
+    expect(container.querySelector('.markdown-body')).toBeNull()
+    await render({ effectiveAccessLoaded: true, effectiveAccessResources: access(['manage_system']) })
+    expect(window.location.hash).toContain('section=resolving-an-unproven-generator-evacuation')
+    expect(container.querySelector('#resolving-an-unproven-generator-evacuation')).not.toBeNull()
+    expect(container.textContent).not.toContain('Loading help access…')
+    expect(container.textContent).not.toContain('Administration requires administrative access')
+  })
+  it.each(['denied', 'failed'] as const)('does not keep an administrator link after access is %s', async outcome => {
+    const target = '#/docs?guide=admin-guide&article=platform&section=resolving-an-unproven-generator-evacuation'
+    await navigate(target)
+    await render({ effectiveAccessLoaded: false })
+    expect(window.location.hash).toBe(target)
+    await render({ effectiveAccessLoaded: outcome === 'denied', effectiveAccessError: outcome === 'failed', effectiveAccessResources: access(['view_scripts']) })
+    expect(window.location.hash).not.toContain('article=platform')
+    expect(container.textContent).toContain('Administration requires administrative access')
+    expect(container.querySelector('#resolving-an-unproven-generator-evacuation')).toBeNull()
     expect(container.querySelector('.help-article-header h2')?.textContent).toBe('Your first test')
   })
   it('renders a bounded task article and safe in-app references', async () => {

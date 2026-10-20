@@ -78,6 +78,7 @@ type assignedTest struct {
 	activeGroups                    map[string]int32
 	groupStats                      map[string]GeneratorStats
 	groupTelemetry                  map[string]MetricsTelemetry
+	groupCollectionWindows          map[string]MetricsCollectionWindow
 	groupTransactions               map[string][]TransactionMetric
 	groupAggregates                 map[string]metricsAggregateSet
 	groupTransactionResponseTimeSLA map[string][]engine.TransactionResponseTimeSLACompliance
@@ -148,6 +149,7 @@ type groupExecution struct {
 }
 
 type executionMetricsSnapshot struct {
+	collectionWindow           MetricsCollectionWindow
 	stats                      GeneratorStats
 	transactions               []TransactionMetric
 	telemetry                  MetricsTelemetry
@@ -746,7 +748,7 @@ func (b *transactionBuffer) Drain() []TransactionMetric {
 // wall-clock window since the previous drain, computed under the buffer lock so
 // it is race-free against concurrent publishers (the periodic ticker and the
 // final post-run publish). The first drain reports the window since the buffer
-// was created (see newTransactionBuffer).
+// was initialized at execution staging.
 func (b *transactionBuffer) DrainWindow() ([]TransactionMetric, *transactionWindowAggregate, time.Duration) {
 	return b.drainWindow(true)
 }
@@ -755,25 +757,37 @@ func (b *transactionBuffer) DrainWindow() ([]TransactionMetric, *transactionWind
 // advance idle windows to preserve cadence, while out-of-band final drains must
 // not split a sibling's rate window unless they actually publish new evidence.
 func (b *transactionBuffer) drainWindow(advanceEmpty bool) ([]TransactionMetric, *transactionWindowAggregate, time.Duration) {
+	transactions, aggregate, window, _ := b.drainObservedWindow(advanceEmpty)
+	return transactions, aggregate, window
+}
+
+// drainObservedWindow captures both boundaries under the same lock that drains
+// results. The interval is independent of any later rate normalization.
+func (b *transactionBuffer) drainObservedWindow(advanceEmpty bool) ([]TransactionMetric, *transactionWindowAggregate, time.Duration, MetricsCollectionWindow) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if !advanceEmpty && len(b.transactions) == 0 && b.window.empty() {
-		return nil, nil, 0
+		return nil, nil, 0, MetricsCollectionWindow{}
 	}
 	now := time.Now()
 	var window time.Duration
+	var observed MetricsCollectionWindow
 	if !b.lastDrainAt.IsZero() {
 		window = now.Sub(b.lastDrainAt)
+		observed.Start = generatorPublishedClock.at(b.lastDrainAt)
+		// Use one clock anchor for both endpoints even if an idle
+		// heartbeat re-anchors the published clock concurrently.
+		observed.End = observed.Start.Add(window)
 	}
 	b.lastDrainAt = now
 	aggregate := b.window
 	b.window = nil
 	if len(b.transactions) == 0 {
-		return nil, aggregate, window
+		return nil, aggregate, window, observed
 	}
 	out := append([]TransactionMetric(nil), b.transactions...)
 	b.transactions = nil
-	return out, aggregate, window
+	return out, aggregate, window, observed
 }
 
 type Service struct {
@@ -1746,6 +1760,9 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 		if normalized == "websocket" {
 			features = append(features, FeatureWebSocketDiagnosticsV1)
 		}
+		if normalized == "java_http" {
+			features = append(features, FeatureJavaHTTPDiagnosticsV1)
+		}
 		if normalized == "grpc" {
 			features = append(features, FeatureGRPCDiagnosticsV1)
 		}
@@ -2007,6 +2024,7 @@ func (s *Service) publishMetricsWithAggregates(testID string, groupName string, 
 	// again.
 	assignment.groupTransactions = make(map[string][]TransactionMetric)
 	assignment.groupAggregates = make(map[string]metricsAggregateSet)
+	assignment.groupCollectionWindows = map[string]MetricsCollectionWindow{groupName: {}}
 	if assignment.groupTransactionResponseTimeSLA == nil {
 		assignment.groupTransactionResponseTimeSLA = make(map[string][]engine.TransactionResponseTimeSLACompliance)
 	}
@@ -2073,6 +2091,7 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 		avgResponse = totalDuration / float64(totalAttempts)
 	}
 	_ = writer.RecordIntervalSummary(archiveIntervalSummary{
+		JavaHTTP:            archiveJavaHTTPFromBatch(batch),
 		Messaging:           archiveMessagingFromBatch(batch),
 		BrowserDocuments:    browserDocumentsFromJSON(batch.GetBrowserDocumentSummaryJson(), batch.GetBrowserDocumentSummaryVersion()),
 		MessagingProgress:   messagingProgressFromJSON(batch.GetMessagingProgressJson(), batch.GetMessagingProgressVersion()),
@@ -2198,6 +2217,7 @@ func archiveSummaryTelemetryFromBatch(batch *pb.MetricsBatch) *archiveTelemetryH
 	}
 	telemetry := batch.GetTelemetry()
 	out := &archiveTelemetryHealth{
+		CollectionWindows:       archiveCollectionWindowsFromBatch(batch),
 		DroppedResultsAvailable: telemetry.GetDroppedResults() >= 0,
 		DroppedResults:          telemetry.GetDroppedResults(), SheddedArrivals: telemetry.GetSheddedArrivals(),
 		DroppedSubscriberBatches: telemetry.GetDroppedSubscriberBatches(),
@@ -2413,6 +2433,7 @@ func (s *Service) metricsBatchForAssignment(testID string, assignment assignedTe
 	}
 	batch.TransactionResponseTimeSla = transactionResponseTimeSLA
 	batch.HttpVersionMix = httpVersionMixToProto(assignment.groupHTTPVersions)
+	batch.CollectionWindows, batch.CollectionWindowsComplete = collectionWindowsToProto(assignment.groupCollectionWindows)
 	return batch
 }
 
@@ -2472,6 +2493,7 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 				AcknowledgementMs:           cloneMessagingAck(tx.ServerTelemetry.AcknowledgementMs),
 				MessagingDiagnosticsJson:    messagingDiagnosticsJSON(tx.ServerTelemetry.Messaging),
 				MessagingDiagnosticsVersion: messagingDiagnosticsVersion(tx.ServerTelemetry.Messaging),
+				JavaHttp:                    javaHTTPDiagnosticsToProto(tx.ServerTelemetry.JavaHTTP),
 				Grpc:                        grpcDiagnosticsToProto(tx.ServerTelemetry.GRPC),
 				Websocket:                   websocketDiagnosticsToProto(tx.ServerTelemetry.WebSocket),
 				ServerProcessingMs:          tx.ServerTelemetry.ServerProcessingMs,
@@ -2775,6 +2797,7 @@ func (s *Service) publishTestExecutionSnapshot(testID string, groupName string, 
 	// and deliberately retain their latest values.
 	assignment.groupTransactions = make(map[string][]TransactionMetric)
 	assignment.groupAggregates = make(map[string]metricsAggregateSet)
+	assignment.groupCollectionWindows = make(map[string]MetricsCollectionWindow)
 	assignment.metricsCollection = nextMetricsCollection()
 	for _, group := range collected {
 		if group.ok {
@@ -2833,8 +2856,9 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 	var transactions []TransactionMetric
 	var aggregateWindow *transactionWindowAggregate
 	var window time.Duration
+	var observed MetricsCollectionWindow
 	if exec.results != nil {
-		transactions, aggregateWindow, window = exec.results.drainWindow(includeIdle || changes.sourceSnapshot)
+		transactions, aggregateWindow, window, observed = exec.results.drainObservedWindow(includeIdle || changes.sourceSnapshot)
 	}
 	hasWindowEvidence := len(transactions) > 0 || !aggregateWindow.empty()
 	changes.windowEvidence = hasWindowEvidence
@@ -2843,6 +2867,7 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 	}
 	if !changes.sourceSnapshot && !hasWindowEvidence {
 		idle := *previous
+		idle.collectionWindow = observed
 		idle.stats = stats
 		idle.transactions = nil
 		idle.aggregates = metricsAggregateSet{MessagingProgress: previous.aggregates.MessagingProgress.Clone()}
@@ -2909,7 +2934,7 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 		httpVersions = previous.httpVersions
 	}
 	metrics := executionMetricsSnapshot{
-		stats: stats, transactions: transactions, telemetry: telemetry, aggregates: aggregates,
+		stats: stats, transactions: transactions, telemetry: telemetry, aggregates: aggregates, collectionWindow: observed,
 		transactionResponseTimeSLA: append([]engine.TransactionResponseTimeSLACompliance(nil), transactionResponseTimeSLA...),
 		httpVersions:               httpVersions.Clone(),
 	}
@@ -3013,6 +3038,10 @@ func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName strin
 	assignment.activeGroups[groupName] = metrics.stats.ActiveVUsers
 	assignment.groupStats[groupName] = metrics.stats
 	assignment.groupTelemetry[groupName] = metrics.telemetry
+	if assignment.groupCollectionWindows == nil {
+		assignment.groupCollectionWindows = make(map[string]MetricsCollectionWindow)
+	}
+	assignment.groupCollectionWindows[groupName] = metrics.collectionWindow
 	if len(metrics.transactions) > 0 {
 		transactions := append([]TransactionMetric(nil), metrics.transactions...)
 		for index := range transactions {
@@ -3091,6 +3120,7 @@ func (s *Service) captureStoppedExecutionMetrics(assignment *assignedTest, execu
 	}
 	assignment.groupTransactions = make(map[string][]TransactionMetric)
 	assignment.groupAggregates = make(map[string]metricsAggregateSet)
+	assignment.groupCollectionWindows = make(map[string]MetricsCollectionWindow)
 	assignment.metricsCollection = nextMetricsCollection()
 	for _, group := range drained {
 		applyExecutionMetricsToAssignment(assignment, group.groupName, group.metrics)
@@ -3306,6 +3336,7 @@ func engineActionMetricsToAggregates(values map[string]*engine.ActionMetrics) []
 		out = append(out, MetricAggregate{
 			DurationDigest:   engine.CloneTDigestSnapshot(metrics.DurationDigest),
 			DurationSketch:   engine.CloneDurationSketchSnapshot(metrics.DurationSketch),
+			JavaHTTP:         javaHTTPSummaryForCount(engineJavaHTTPSummary(metrics.ServerTelemetry), metrics.Count),
 			Messaging:        engineMessagingSummary(metrics.ServerTelemetry),
 			MessagingVersion: messagingSummaryVersion(metrics.ServerTelemetry),
 			Name:             firstNonEmptyString(metrics.Name, name),
@@ -3558,10 +3589,12 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	out := MetricAggregate{}
 	durations := engine.NewDurationDistributionMerge()
 	var weightedAvgMs, weightedDNSMs, weightedConnectMs, weightedTLSMs, weightedTTFBMs float64
+	javaUncounted := false
 	for _, value := range values {
 		if value.Count == 0 {
 			continue
 		}
+		javaUncounted = javaUncounted || protocol.JavaHTTPPeerUncounted(value.JavaHTTP, value.Count, value.DependencyType)
 		if out.Name == "" {
 			out.Name = value.Name
 		}
@@ -3570,6 +3603,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 		count := float64(value.Count)
 		out.Count += value.Count
 		out.Errors += value.Errors
+		protocol.MergeJavaHTTPSummary(&out.JavaHTTP, javaHTTPSummaryForCount(value.JavaHTTP, value.Count))
 		protocol.MergeMessagingSummary(&out.Messaging, value.Messaging)
 		weightedAvgMs += value.AvgMs * count
 		weightedDNSMs += value.AvgDNSMs * count
@@ -3584,6 +3618,10 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	if out.Count == 0 {
 		return nil
 	}
+	if javaUncounted {
+		out.JavaHTTP.ForgetPopulation()
+	}
+	out.JavaHTTP = javaHTTPSummaryForCount(out.JavaHTTP, out.Count)
 	out.MessagingVersion = 1
 	for _, v := range values {
 		if v.Count > 0 && !supportedMessagingSummaryVersion(v.MessagingVersion) {

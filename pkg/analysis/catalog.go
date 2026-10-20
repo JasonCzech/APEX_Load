@@ -12,6 +12,7 @@ import (
 const CatalogVersion = "apexload.metric_catalog.v1"
 
 const (
+	PopulationJavaHTTPAction  = "java_http_action"
 	PopulationAction          = "action"
 	PopulationTransaction     = "transaction"
 	PopulationMessage         = "message"
@@ -154,7 +155,8 @@ func buildCatalog() MetricCatalog {
 		}
 		metrics = append(metrics, definition)
 	}
-	operations := []OperationDefinition{}
+	metrics = append(metrics, javaHTTPMetricDefinitions(profiles)...)
+	operations := []OperationDefinition{{Name: "ratio_of_sums", InputKinds: []string{KindObservation}, Populations: []string{PopulationJavaHTTPAction}, UnitRule: "paired_sums_ratio", RequiredEvidence: []string{"java_http_diagnostics.v1_same_sample_pairs"}}}
 	for _, name := range []string{"avg", "min", "max", "sum", "count"} {
 		unit := "preserve"
 		if name == "count" {

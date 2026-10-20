@@ -1,3 +1,5 @@
+import JavaHTTPDiagnostics from '../JavaHTTPDiagnostics'
+import { javaHTTPActionsFromArchive } from '../../utils/javaHttpDiagnostics'
 import type { HTTP3PreflightResult, RunArchiveAnalysisResponse, RunArchiveReport } from '../../types'
 import { formatMs, formatNumber, formatPct } from './runReportModel'
 import { versionMixView, versionPhaseRows } from './httpVersionMixModel'
@@ -30,6 +32,7 @@ export default function RunReportDiagnostics({ report, loading, error }: Props) 
           <p>Network phases and the load generators' resource peaks.</p>
         </div>
       </div>
+      <JavaHTTPDiagnostics evidence={javaHTTPActionsFromArchive(report?.by_action)} archived />
       {loading && <p role="status">Loading diagnostics…</p>}
       {error && <p className="run-report-error">{error}</p>}
       <details>

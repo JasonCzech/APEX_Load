@@ -1,0 +1,22 @@
+{
+  "dashboard/src/metricLabels.ts": "6a4ad044145fcb07181c8749aa7d31cc0acbd4ea8f724efdf9dfc6a13db9eb7e",
+  "dashboard/src/types.ts": "1e08cbea855903be6e356665fff71e5d2b8f87f316bc90d6ae5cb314b25d7954",
+  "dashboard/src/components/TestExecution.tsx": "4240d7de2f10e9041f9f85944cb378ca2a17d92f2870676eb5e1950ccdca2007",
+  "dashboard/src/types/javaHttp.ts": null,
+  "dashboard/src/utils/javaHttpDiagnostics.ts": null,
+  "dashboard/src/components/JavaHTTPDiagnostics.tsx": null,
+  "dashboard/src/utils/javaHttpDiagnostics.test.ts": null,
+  "dashboard/src/components/JavaHTTPDiagnostics.test.tsx": null,
+  "dashboard/src/components/baselineComparison/model.ts": "d5c4c5be9470f0c6298fa91eea6ea3a329d242a639d3b72136022954082b8f28",
+  "dashboard/src/components/baselineComparison/ComparisonDetail.tsx": "e8110f83e4e74a192bcd2a01ec532e615b76b3a3389494ccff8f496855491efb",
+  "dashboard/src/components/nativeAnalyticsModel.ts": "2e0bd269feea30cb4709ee88438c58599055750960c3de838e1dc49601534e1e",
+  "dashboard/src/hooks/api/useDashboardDefinitionsApi.ts": "4764605300086ccdf738c4da9a2135b0a081e300f0f855af2c69b95ec6c23c21",
+  "dashboard/src/components/NativeAnalyticsPanel.tsx": "0486e9b94b2e4fd446ffbd89390247b6ce3a11abbc584fb02b5ab36c97508dba",
+  "dashboard/src/components/ArchivedNativePanel.tsx": "906a684ecbd533aba8f4b4525c17c344067cb9b9a72c60dcc1fbfd23986da794",
+  "dashboard/src/components/NativePanelAuthoring.browser.test.tsx": "2fa3dc5b705783b7fe8819c30659197a86d6224cdf5ed3e7a395fb31499c50d1",
+  "dashboard/src/components/ArchivedNativePanel.test.tsx": "26e1bb6a0dcfb6db57c5ea9b56d338084af6e908bf40d976579bfee83f073ea3",
+  "dashboard/src/components/runReport/RunReportDiagnostics.tsx": "2d109ffc9a4143ea5d3552e32bbce7bb49f04b9a202e6281a2b9eafd3b4f5036",
+  "dashboard/src/components/runReport/RunReportDiagnostics.test.tsx": "d3b744e50fcab885ce1f5fdb447de18e8c218520d7591a3dc66116fce98c42d9",
+  "dashboard/src/utils/javaHttpTestFixtures.ts": null,
+  "dashboard/e2e/workflow-java-representation.spec.ts": null
+}

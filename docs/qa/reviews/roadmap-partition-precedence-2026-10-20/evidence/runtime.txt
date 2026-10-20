@@ -1,0 +1,3 @@
+go version go1.26.9 darwin/arm64
+Darwin arm64
+Baseline HEAD: cb89e0b9e8f56b0dd64ed826427b208261146c4b

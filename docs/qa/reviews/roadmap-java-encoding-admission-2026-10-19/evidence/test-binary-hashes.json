@@ -1,0 +1,17 @@
+[
+  {
+    "binary": "websocket.test",
+    "sha256": "1c9e746ec3666b0139c3d5a1b2cad6c9443de88bc69c5c075dcc2b10aeae02f8",
+    "bytes": 11875794
+  },
+  {
+    "binary": "grpc.test",
+    "sha256": "217ac6185abb5636f3e46a13aa167da27d3c1e5d7a8278745cb0ede18156a69b",
+    "bytes": 55195186
+  },
+  {
+    "binary": "java_http.test",
+    "sha256": "09ce11b1cd18e8d44dc4da8f1d98b292a2144709fe42e20ec03b97753b47a65c",
+    "bytes": 23436802
+  }
+]

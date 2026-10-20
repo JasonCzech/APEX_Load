@@ -1,0 +1,18 @@
+{
+  "dashboard/src/metricLabels.ts": "589344560a39f1cfb1ff57d80598c1d8028e0064ffa98e1867d0827b30575bfb",
+  "dashboard/src/types.ts": "530b36df73ce6cb6092482cac70393864b75f5592840ebf562dd4a0b89e9b508",
+  "dashboard/src/components/TestExecution.tsx": "ae738490318f3127180d81e2741a21e33c0c0ec2ea5cdb8f2fb27d786c213396",
+  "dashboard/src/types/javaHttp.ts": "f7d0b32a2bd16ee42fc11caa9514d5d731e0528ccef39b6e75190ed29ccdd2e2",
+  "dashboard/src/utils/javaHttpDiagnostics.ts": "49bc082c1ca83689bcf57c9e6cd7438d41b03c15912775a1e3949ac0a37ced90",
+  "dashboard/src/components/JavaHTTPDiagnostics.tsx": "32e132391bb5377431b2224c8463af0dccbea82d0ce2c12dff8cc4ad7aa96532",
+  "dashboard/src/utils/javaHttpDiagnostics.test.ts": "318d5609c938d2eb74401a15f6188509677d6ca0d5942ec315a349d7313af287",
+  "dashboard/src/components/JavaHTTPDiagnostics.test.tsx": "a5b20837580f5a6e390973870a645e8bf7ce892d2874c51b7f25d8ab9867bc11",
+  "dashboard/src/components/baselineComparison/model.ts": "2c6539a30d91a35d098f740eb408e80ce2a748ae4964235f6da3bbeabb464bb4",
+  "dashboard/src/components/baselineComparison/ComparisonDetail.tsx": "bfc1cd1ccf0b9f5e1bbb05024504d317c69f2f8bc1e123de67837838c4ca4f79",
+  "dashboard/src/components/nativeAnalyticsModel.ts": "62e3cf6b6e7d9f9916cf64dc193bad742abeb848c83a46bb323a4083664724fd",
+  "dashboard/src/hooks/api/useDashboardDefinitionsApi.ts": "e60883fc4f34de19c8e1c297af13822dc9b2c0a90c1ffd953291848633cddd88",
+  "dashboard/src/components/NativeAnalyticsPanel.tsx": "b67e3018416ee09a6ae5d9a309f43fad490206e0ffd6acbda91741ce68857935",
+  "dashboard/src/components/ArchivedNativePanel.tsx": "2d3af1d1ef6b7cc3942d85acee298364381814bbfd24f8592ec8577a7463b23d",
+  "dashboard/src/components/NativePanelAuthoring.browser.test.tsx": "e35c245d443d436c082ca59f5cd0e74ae9e574a2c6f55303e2e1a3d5c4fd89b3",
+  "dashboard/src/components/ArchivedNativePanel.test.tsx": "944d056062e24b2b4a8a903a56562b46edcfc94bf4f5b69f98bb6e3c513a8715"
+}

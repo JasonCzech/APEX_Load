@@ -1,5 +1,7 @@
-import { test, expect, seedScript, login, json, idOf, editScenarioFromRow } from './support/workflow'
+import { test, expect, seedScript, login, json, idOf, editScenarioFromRow, mutation } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
+import { storedZip } from './support/zip'
+import { canonicalImportDraft } from './support/importResponse'
 
 test('scenario composition combines group editing with a live preview', async ({ page }, testInfo) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
@@ -186,4 +188,92 @@ test('changing a saved workload shape retains the authored root SLA and rules', 
   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Run settings/ }).click()
   await expect(page.getByRole('spinbutton', { name: 'Ending load level VUsers', exact: true })).toHaveValue('14')
   expect(target.count()).toBe(0)
+})
+
+
+test('scenario prerequisite saves retain archive siblings and later editor changes', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  await seedScript(request, workspace, 'Original group script')
+  // This legacy plain response is the direct-editor cohort. Protected imports
+  // retain save-before-edit; all saves and reopen requests below use real HTTP.
+  await page.route('**/api/v1/scripts/import/enterprise-script-archive/validate', async route => {
+    const response = await route.fetch()
+    expect(response.ok()).toBe(true)
+    const payload = await response.json()
+    expect(payload.secret_binding_requirements || []).toHaveLength(0)
+    const draft = canonicalImportDraft(payload)
+    delete payload.import_draft_expires_at
+    if (draft.metadata?.import?.preserved) delete draft.metadata.import.preserved.server_import_attestation_v1
+    await route.fulfill({ response, json: payload })
+  })
+  await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByPlaceholder('Scenario name').fill('Retained prerequisite scenario')
+  await page.getByRole('button', { name: 'Add script to Group 1' }).click()
+  await page.getByRole('row').filter({ hasText: 'Original group script' }).getByRole('button', { name: 'Use for Group 1' }).click()
+  await page.getByRole('button', { name: /Add group/ }).click()
+  await page.getByRole('button', { name: 'Add script to Group 2' }).click()
+  await page.getByRole('button', { name: 'Import script', exact: true }).click()
+  await page.getByRole('button', { name: /LoadRunner Script Archive/ }).click()
+  const archive = storedZip([
+    { name: 'Plain.usr', content: '[General]\nType=Web\n[Actions]\nAction1=Action.c\n' },
+    { name: 'Action.c', content: 'Action()\n{\nweb_url("Home", "URL=https://example.invalid/home", LAST);\nreturn 0;\n}' },
+  ])
+  const siblingArchive = storedZip([
+    { name: 'Sibling.usr', content: '[General]\nType=Web\n[Actions]\nAction1=Action.c\n' },
+    { name: 'Action.c', content: 'Action()\n{\nweb_url("Sibling", "URL=https://example.invalid/sibling", LAST);\nreturn 0;\n}' },
+  ])
+  await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles([
+    { name: 'first.zip', mimeType: 'application/zip', buffer: archive },
+    { name: 'sibling.zip', mimeType: 'application/zip', buffer: siblingArchive },
+  ])
+  await page.getByRole('button', { name: 'Validate 2 Scripts', exact: true }).click()
+  await page.getByRole('button', { name: 'Open draft in Visual Editor', exact: true }).click()
+  const name = page.getByRole('textbox', { name: 'Script name', exact: true })
+  await expect(name).toBeVisible()
+  await name.fill('Saved prerequisite draft')
+  let releaseResponse = () => {}
+  let responseCreated = () => {}
+  const created = new Promise<void>(resolve => { responseCreated = resolve })
+  const release = new Promise<void>(resolve => { releaseResponse = resolve })
+  await page.route('**/api/v1/scripts', async route => {
+    if (route.request().method() !== 'POST') return route.continue()
+    const response = await route.fetch()
+    responseCreated()
+    await release
+    await route.fulfill({ response })
+  }, { times: 1 })
+  const save = mutation(page, 'POST', '/api/v1/scripts')
+  await page.getByRole('button', { name: 'Save script', exact: true }).click()
+  try {
+    await created
+    await name.fill('Later prerequisite changes')
+  } finally { releaseResponse() }
+  const saved = await json(await save)
+  await expect(page.getByRole('region', { name: 'Create prerequisite script' })).toBeVisible()
+  await expect(name).toHaveValue('Later prerequisite changes')
+  // Saving the later edit updates the same library script and keeps its source.
+  const update = mutation(page, 'PUT', `/api/v1/scripts/${saved.id}`)
+  await page.getByRole('button', { name: 'Save script', exact: true }).click()
+  await json(await update)
+  await page.getByRole('button', { name: 'Back to converted script', exact: true }).click()
+  await expect(page.getByText('sibling.zip', { exact: true }).first()).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Create prerequisite script' })).toBeVisible()
+  await page.getByRole('button', { name: 'Back to scenario draft', exact: true }).click()
+  const leave = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Unsaved Changes', exact: true }) })
+  await expect(leave).toContainText('LoadRunner import review')
+  await leave.getByRole('button', { name: 'Keep editing', exact: true }).click()
+  await page.getByRole('button', { name: /^sibling\.zip / }).click()
+  const siblingSave = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
+  await page.getByRole('button', { name: 'Save reviewed drafts', exact: true }).click()
+  await json(await siblingSave)
+  await page.getByRole('button', { name: 'Back to scenario draft', exact: true }).click()
+  await expect(page.getByPlaceholder('Scenario name')).toHaveValue('Retained prerequisite scenario')
+  const groups = page.locator('.scenario-script-group-card')
+  await expect(groups).toHaveCount(2)
+  await expect(groups.nth(0)).toContainText('Original group script')
+  await expect(groups.nth(1)).toContainText('Later prerequisite changes')
+  expect((await json(await request.get(`/api/v1/scripts?project_id=${workspace.projectId}`))).scripts).toHaveLength(3)
 })

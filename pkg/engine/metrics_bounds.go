@@ -76,6 +76,10 @@ func compactMetricsResult(input *protocol.Result) *protocol.Result {
 		if !server.WebSocket.Valid() {
 			server.WebSocket = nil
 		}
+		server.JavaHTTP = server.JavaHTTP.Retained()
+		if input.BusinessTransaction {
+			server.JavaHTTP = nil
+		}
 		server.GRPC = server.GRPC.Clone()
 		server.WebSocket = server.WebSocket.Clone()
 		if server.Messaging != nil && !server.Messaging.Valid() {
@@ -178,6 +182,9 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 				bytes += 512
 				if telemetry.WebSocket != nil {
 					bytes += int(unsafe.Sizeof(*telemetry.WebSocket))
+				}
+				if telemetry.JavaHTTP != nil {
+					bytes += int(unsafe.Sizeof(*telemetry.JavaHTTP))
 				}
 				if telemetry.GRPC != nil {
 					// The distributions and status buckets are inline arrays, so

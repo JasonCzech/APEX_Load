@@ -58,8 +58,10 @@ func TestCoverageSpansUnionAndBound(t *testing.T) {
 // coverageOf measures a ledger's coverage over [from, to) the way the live
 // view does.
 func coverageOf(ledger *telemetrySourceLedger, assigned []string, from, to time.Time) (TelemetryCoverage, *coverageSpans) {
-	observed, requirements := ledger.coverageSnapshot()
-	return telemetryCoverageOver(observed, requiredTelemetrySources(observed, requirements, assigned, from, to), false, from, to)
+	observed, requirements, truncated := ledger.coverageSnapshot()
+	coverage, all := telemetryCoverageOver(observed, requiredTelemetrySources(observed, requirements, assigned, from, to), false, from, to)
+	coverage.Truncated = coverage.Truncated || truncated
+	return coverage, all
 }
 
 // observeSequenced publishes contiguous one-second windows received with
@@ -80,13 +82,13 @@ func TestTelemetryCoverageBridgesJitterButNotLoss(t *testing.T) {
 	start := time.Unix(1_800_000_000, 0).UTC()
 	ledger := newTelemetrySourceLedger()
 	observeSequenced(ledger, "gen-a", start, 7200, 3*time.Millisecond, nil)
-	observed, _ := ledger.coverageSnapshot()
+	observed, _, _ := ledger.coverageSnapshot()
 	if spans := observed["gen-a"]; len(spans.spans) != 1 || spans.truncated {
 		t.Fatalf("jittered two-hour stream fragmented into %d spans (truncated %v)", len(spans.spans), spans.truncated)
 	}
 	lossy := newTelemetrySourceLedger()
 	observeSequenced(lossy, "gen-a", start, 100, 3*time.Millisecond, func(i int) bool { return i == 50 })
-	observed, _ = lossy.coverageSnapshot()
+	observed, _, _ = lossy.coverageSnapshot()
 	if spans := observed["gen-a"]; len(spans.spans) != 2 {
 		t.Fatalf("a lost publication was bridged: %v", spans.spans)
 	}

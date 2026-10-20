@@ -1,3 +1,4 @@
+import { admitMappingAssociationResponse, mappingAssociationCapabilityError, mappingAssociationVersion, mappingRequiresNegotiatedAssociation } from '../utils/analysisMappingAssociation'
 import SeriesChartExport from "./SeriesChartExport"
 import { formatAnalysisTimeTick } from '../utils/analysisTime'
 import { useEffect, useRef, useState } from 'react'
@@ -14,7 +15,7 @@ interface Definition { left: Selection; right: Selection; from: string; to: stri
 interface SavedComparison { id: string; name: string; revision: number; definition: Definition; deleted: boolean }
 interface Comparison { request: Definition; left: AnalysisPoint[]; right: AnalysisPoint[]; correlation?: CorrelationScore[]; correlation_semantics?: CorrelationSemantics }
 
-export default function AnalysisComparison({ projectId, dataset, datasets, canEdit, onAssociated, importedIdentityVersion }: { importedIdentityVersion?: number; projectId: string; dataset: AnalysisImport; datasets: AnalysisImport[]; canEdit: boolean; onAssociated: (in_: AnalysisImport) => void }) {
+export default function AnalysisComparison({ projectId, dataset, datasets, canEdit, onAssociated, importedIdentityVersion, mappingAssociationContract }: { mappingAssociationContract?: number; importedIdentityVersion?: number; projectId: string; dataset: AnalysisImport; datasets: AnalysisImport[]; canEdit: boolean; onAssociated: (in_: AnalysisImport) => void }) {
   const [target, setTarget] = useState('')
   const [runId, setRunId] = useState(dataset.run_id ?? '')
   const [sourceId, setSourceId] = useState('')
@@ -43,6 +44,7 @@ export default function AnalysisComparison({ projectId, dataset, datasets, canEd
   const [saveName, setSaveName] = useState('')
   const operation = useRef<AbortController | undefined>(undefined)
   const identityAvailable = analysisImportedIdentityAvailable(importedIdentityVersion)
+  const associationError = mappingAssociationCapabilityError(dataset.mapping, mappingAssociationContract)
   const retainedImportedFilters = leftFilters.source_id !== '' || leftFilters.host !== '' || leftFilters.service !== '' || leftFilters.dimensions.length > 0 || target !== 'run' && (rightFilters.source_id !== '' || rightFilters.host !== '' || rightFilters.service !== '' || rightFilters.dimensions.length > 0)
   const identityDisclosureError = analysisMappingDisclosureError(dataset.mapping) || target !== 'run' && analysisMappingDisclosureError(datasets.find(item => item.id === target)?.mapping)
   const identityUnsupported = !identityAvailable && (analysisMappingRequiresImportedIdentity(dataset.mapping) || analysisMappingRequiresImportedIdentity(datasets.find(item => item.id === target)?.mapping) || retainedImportedFilters)
@@ -138,10 +140,21 @@ export default function AnalysisComparison({ projectId, dataset, datasets, canEd
       <label>Compare with<select value={target} onChange={e => { setTarget(e.target.value); setResult(undefined); setRightFilters(emptyAnalysisIdentityFilters()) }}><option value="">Select evidence…</option>{datasets.filter(d => d.state === 'ready' && d.id !== dataset.id).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}<option value="run">Managed run</option></select></label>
       {identityAvailable && target !== 'run' && datasets.find(item => item.id === target)?.mapping?.version === 2 && <AnalysisIdentityFilters label="Comparison identity filters" value={rightFilters} onChange={setRightFilters} />}
       {target === 'run' && <>
+        {associationError && <p role="alert">{associationError} The stored mapping remains unchanged.</p>}
         <label>Run ID<input value={runId} onChange={e => setRunId(e.target.value)} /></label>
         <p>{dataset.run_id ? `Associated with run ${dataset.run_id}` : 'Associate this dataset with a run before comparison.'}</p>
-        {canEdit && <button type="button" className="btn btn-secondary btn-sm" disabled={!runId || runId === dataset.run_id} onClick={() => void act(async signal => {
-          const next = await request<AnalysisImport>(`/analysis/datasets/${encodeURIComponent(dataset.id)}/association`, { method: 'PUT', signal, body: JSON.stringify({ run_id: runId, revision: dataset.revision }) }); if (!signal.aborted) onAssociated(next)
+        {canEdit && <button type="button" className="btn btn-secondary btn-sm" disabled={!runId || runId === dataset.run_id || !!associationError || identityUnsupported} onClick={() => void act(async signal => {
+          if (associationError || identityUnsupported) throw new Error(associationError || 'Imported identity schema 2 is unavailable on this controller.')
+          const path = `/analysis/datasets/${encodeURIComponent(dataset.id)}/association`
+          let next: AnalysisImport
+          if (mappingRequiresNegotiatedAssociation(dataset.mapping)) {
+            const reply = await request<{ contract_version: number; import: AnalysisImport }>(path, { method: 'PATCH', signal, body: JSON.stringify({ contract_version: mappingAssociationVersion, run_id: runId, revision: dataset.revision }) })
+            if (signal.aborted) return
+            next = admitMappingAssociationResponse(dataset, runId, reply)
+          } else {
+            next = await request<AnalysisImport>(path, { method: 'PUT', signal, body: JSON.stringify({ run_id: runId, revision: dataset.revision }) })
+          }
+          if (!signal.aborted) onAssociated(next)
         })}>Associate with run</button>}
         <label>Monitor source ID (leave empty for a transaction)<input value={sourceId} onChange={e => setSourceId(e.target.value)} /></label>
         {!sourceId && <><label>Transaction name<input value={transaction} onChange={e => setTransaction(e.target.value)} /></label><label>Protocol<input value={protocol} onChange={e => setProtocol(e.target.value)} /></label><label>Group<input value={group} onChange={e => setGroup(e.target.value)} /></label></>}

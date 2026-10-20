@@ -57,14 +57,16 @@ func browserAcceptanceInventory() []browserAcceptanceItem {
 		{"HTTP errors", []browserAcceptanceTest{both("TestBrowserAcceptanceRedirectsHTTPErrorsAndTransportClose"), both("TestBrowserFailedSubresourceRetainsBoundedFailureEvidence")}},
 		{"Secret-bearing URLs, headers and bodies", []browserAcceptanceTest{both("TestBrowserActualInteractionRouteIsRuntimeRedacted"), unit("TestFinalizeHARCaptureRedactsLowEntropyRuntimeSecrets"), unit("TestFinalizeHARCaptureRedactsPercentEncodedRuntimeSecrets"), unit("TestApplyHARCaptureOptionsDisablesRawCaptureForRuntimeSecrets")}},
 		{"Context close and crash", []browserAcceptanceTest{both("TestHAROwnershipReclaimsKilledNativeRecording"), both("TestBrowserDocumentActualBlockedDrainClosesOwnedContext"), unit("TestHAROwnershipReclaimsKilledGenerations")}},
-		{"Never-finishing requests", []browserAcceptanceTest{both("TestNeverFinishingRequestFloodStaysBoundedAndCloses")}},
+		{"Never-finishing requests", []browserAcceptanceTest{both("TestNeverFinishingRequestFloodStaysBoundedAndCloses"), unit("TestHARInFlightBudgetUsesOutstandingRequests"), unit("TestHARInFlightBudgetDoesNotCapCompletedOrUnrecordedRequests"), unit("TestHARInFlightOverflowClosesAndCensorsThroughMonitor"), unit("TestHARInFlightOverflowCancellationRetainsExactWriter")}},
 		{"Huge and chunked bodies", []browserAcceptanceTest{both("TestNeverEndingChunkedBodyIsStoppedByTheMemoryWatchdog"), unit("TestHARMonitorStopsOnActualFileSize")}},
 		{"Metadata floods", []browserAcceptanceTest{unit("TestNetworkEntriesMetadataBudget"), unit("TestBoundBrowserNetworkHeadersLimitsEntriesAndBytes"), unit("TestNetworkEntriesRingAndByteBudget")}},
+		{"Shared native finalization deadline and physical ownership", []browserAcceptanceTest{unit("TestHARFinalizationUsesOneDeadlineAcrossPhases"), unit("TestHARFinalizationExpiredJoinRetainsOwnershipUntilProof"), unit("TestHARFinalizationExpiryDuringScrubRefusesPublication"), unit("TestHARFinalizationExpiryAfterLinkRemovesOnlyOwnedPublication"), unit("TestHARFinalizationReportsExhaustionOnceWhileWriterIsBlocked")}},
 		{"Flush-time quota exhaustion", []browserAcceptanceTest{unit("TestHAROverflowFailsTheSessionExplicitly"), unit("TestHARWritersReserveTheAggregateBudgetAndScratch")}},
 		{"Recorder limits", []browserAcceptanceTest{unit("pkg/recorder/browser:TestValidateRecorderOptionsRejectsResourceBounds"), unit("pkg/recorder/browser:TestRecorderCapHitsAreRetainedInArtifact"), unit("pkg/recorder:TestReadRecorderHTTPRequestWithLimitRejectsOversizedHeaders")}},
 		{"Cancellation", []browserAcceptanceTest{both("TestBrowserDocumentActualCancelledRunCannotInventFinality"), unit("TestRouteNetworkLatencyWaitIsCanceledByBrowserShutdown")}},
 		{"Waterfall timing against independent fixture clocks and native HAR", []browserAcceptanceTest{both("TestBrowserAcceptanceWaterfallMatchesFixtureClockAndHAR")}},
 		{"Old archives and synthetic fallback", []browserAcceptanceTest{unit("pkg/api:TestRunArchiveSyntheticHARLeavesNativeContextsOutAndScrubs"), unit("pkg/api:TestRunArchiveSyntheticHARDropsLegacyParquetHeaders"), unit("pkg/harsynth:TestSyntheticHARNeverInventsTimingsOrContent")}},
+		{"Benchmark units and missing samples", []browserAcceptanceTest{unit("TestBrowserBenchmarkRSSPreservesRawBytesAndMissingness"), unit("TestBrowserBenchmarkV2ArtifactKeepsRawMemoryPopulation"), unit("TestBrowserBenchmarkRSSSampleDenominatorIncludesUnavailable"), unit("TestBrowserBenchmarkRSSRuntimeConversionRequiresAvailableFiniteSnapshot")}},
 		{"Benchmark (opt-in)", []browserAcceptanceTest{both("TestBrowserBenchmark")}},
 	}
 }
@@ -150,11 +152,11 @@ func renderBrowserAcceptance(t *testing.T) string {
 				continue
 			}
 			bothEngines := strings.Contains(body, `"chromium"`) && strings.Contains(body, `"webkit"`)
-			startsBrowser := strings.Contains(body, ".Init(") || strings.Contains(body, "requireBrowserRuntime(")
+			startsBrowser := browserAcceptanceStartsBrowser(body)
 			switch {
 			case test.Scope == scopeBothEngines && !bothEngines:
 				t.Errorf("%s: %s is listed for Chromium and WebKit but does not name both engines", item.Behavior, test.Ref)
-			case test.Scope == scopeUnit && (bothEngines || startsBrowser):
+			case test.Scope == scopeUnit && startsBrowser:
 				t.Errorf("%s: %s is listed as a unit test but starts a browser", item.Behavior, test.Ref)
 			}
 			behavior := ""
@@ -195,7 +197,7 @@ func renderBrowserAcceptance(t *testing.T) string {
 		}
 	}
 	out.WriteString("\n## Benchmark\n\n`APEXLOAD_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser -run '^TestBrowserBenchmark$' -v` measures each engine with a desktop and a mobile profile it accepts (Chromium: `desktop_1080p`, `pixel_8`; WebKit, which has no desktop profile: a 1920x1080 viewport, `iphone_15_pro`). Each runs five sessions in each of three modes: plain, document capture, and 200 ms of network latency. It records:\n\n")
-	out.WriteString("- the host (OS and kernel version, CPU model and count, memory), the Playwright driver version and each browser's version;\n- cold launch (the engine's browser started from nothing) and session start against the pooled browser a generator keeps running;\n- navigation time, the overhead of document capture, and the throttled navigation's separation from the plain one;\n- peak RSS and CPU seconds of the Playwright driver and browser process tree;\n- teardown time, and processes left once the browser closes;\n- failures.\n\n")
+	out.WriteString("- the host (OS and kernel version, CPU model and count, memory), the Playwright driver version and each browser's version;\n- cold launch (the engine's browser started from nothing) and session start against the pooled browser a generator keeps running;\n- navigation time, the overhead of document capture, and the throttled navigation's separation from the plain one;\n- largest observed RSS snapshot in bytes (nullable when unavailable), attempted/partial/unavailable snapshot counts, and CPU seconds of the observed test-process descendants including Playwright and browsers;\n- teardown time, and processes left once the browser closes;\n- failures.\n\n")
 	out.WriteString("Each engine is a subtest, so an engine missing from the host skips or fails alone and the other's results are still written. It writes `browser-benchmark.json` to `APEXLOAD_BROWSER_BENCHMARK_OUT`. When `APEXLOAD_COMMIT_SHA` names the measured commit, it also writes `browser-benchmark-acceptance-requests.json`: one F4 feature acceptance request per engine and profile (`BE-4`, `browser-benchmark`), naming the results' SHA-256. A request is `pending` for a reviewer to judge against the published targets (launch, action overhead, RSS per VUser), or `failed` when sessions failed, processes were left or throttling did not separate; it never claims a pass by itself. Navigation time is absolute, not an overhead against a baseline. An operator posts the requests to `/api/v1/system/acceptance-records`. The Go benchmarks (`BenchmarkBrowser*`) the browser benchmark evidence names run with their own command.\n\n")
 	out.WriteString("The published five-browser-VUser ceiling stays until reviewed evidence authorizes more. Synthetic shaping is a calibrated approximation, not a device equivalence claim.\n")
 	return out.String()
@@ -219,5 +221,28 @@ func TestBrowserAcceptanceInventory(t *testing.T) {
 	runner, err := os.ReadFile(filepath.Join("..", "..", "scripts", "run-optin-suites.sh"))
 	if err != nil || !strings.Contains(string(runner), `run_suite "browser acceptance`) {
 		t.Fatalf("scripts/run-optin-suites.sh does not register the browser acceptance suite (%v)", err)
+	}
+}
+
+// Engine names in a serialized fixture do not launch a browser. Keep runtime
+// admission checks separate from the two-engine coverage label.
+func browserAcceptanceStartsBrowser(body string) bool {
+	return strings.Contains(body, ".Init(") || strings.Contains(body, "requireBrowserRuntime(")
+}
+
+func TestBrowserAcceptanceRuntimeClassification(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		runtime    bool
+	}{
+		{"serialized engine labels", `results := []string{"chromium", "webkit"}`, false},
+		{"initializer", `br.Init(ctx, config)`, true},
+		{"runtime gate", `requireBrowserRuntime(t)`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := browserAcceptanceStartsBrowser(tc.body); got != tc.runtime {
+				t.Fatalf("runtime = %v, want %v", got, tc.runtime)
+			}
+		})
 	}
 }

@@ -73,6 +73,14 @@ export interface ScenarioAuthoringBaseline {
   etag: string
 }
 
+/** A durable review session exists; this is not a library save or approval. */
+export interface ScriptApprovalQueued {
+  sessionId: string
+  name: string
+  projectId: string
+  folderId: string | null
+}
+
 export interface ScriptSaveOptions {
   /** The editor's document changed while the save was in flight; retainedDraft carries the change. */
   laterEdits?: boolean

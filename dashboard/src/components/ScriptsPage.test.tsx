@@ -82,12 +82,12 @@ vi.mock('../hooks/useProject', () => ({
 }))
 
 vi.mock('./ScriptEditor', () => ({
-  default: ({ initialScript, initiallyDirty, scriptId, onSave, onClose, returnTarget }: { initialScript?: { name?: string }, initiallyDirty?: boolean, scriptId?: string | null, onSave?: (script: { id: string; name: string; script?: unknown }, options?: { laterEdits?: boolean; configureSecrets?: boolean }) => void, onClose?: () => void, returnTarget?: { label: string; retainedGuardIds?: readonly string[]; onReturn: () => void } | null }) => (
+  default: ({ initialScript, initiallyDirty, scriptId, onSave, onClose, returnTarget }: { initialScript?: { name?: string }, initiallyDirty?: boolean, scriptId?: string | null, onSave?: (script: { id: string; name: string; script?: unknown }, options?: { laterEdits?: boolean; configureSecrets?: boolean; retainedDraft?: unknown }) => void, onClose?: () => void, returnTarget?: { label: string; retainedGuardIds?: readonly string[]; onReturn: () => void } | null }) => (
     <div data-testid="script-editor" data-retained-guards={returnTarget?.retainedGuardIds?.join(',') ?? ''}>
       {returnTarget && <button onClick={returnTarget.onReturn}>{returnTarget.label}</button>}
       {/* Save changes in the prompt on the way back: the editor saves, then the return goes ahead. */}
       {returnTarget && <button onClick={() => { onSave?.({ id: 'saved-script-1', name: initialScript?.name || 'Saved Script' }); returnTarget.onReturn() }}>mock-return-after-saving</button>}
-      <button onClick={() => onSave?.({ id: 'saved-script-1', name: initialScript?.name || 'Saved Script' }, { laterEdits: true })}>mock-edited-while-saving</button>
+      <button onClick={() => onSave?.({ id: 'saved-script-1', name: initialScript?.name || 'Saved Script' }, { laterEdits: true, retainedDraft: { name: 'Late changes', version: '1.0', protocol: 'http', config: { base_url: '' }, actions: [] } })}>mock-edited-while-saving</button>
       <button onClick={() => onSave?.({ id: initialScript?.name === 'Second Converted Draft' ? 'saved-script-2' : 'saved-script-1', name: initialScript?.name || 'Saved Script', script: { name: initialScript?.name || 'Saved Script', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Login', type: 'request', target: '/', headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' } }] } }, { configureSecrets: true })}>mock-secrets-after-saving</button>
       <span>editor:{initialScript?.name || 'blank'}</span>
       <span>script-id:{scriptId || 'none'}</span>
@@ -2367,7 +2367,7 @@ describe('ScriptsPage', () => {
       expect(apiMock.getScriptAuthoring.mock.calls.some(call => call[0] === 'saved-script-1')).toBe(false)
       // A page embedding this one still hears of the save, once.
       expect(onScriptSaved).toHaveBeenCalledTimes(1)
-      expect(onScriptSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'saved-script-1' }))
+      expect(onScriptSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'saved-script-1' }), { keepAuthoringOpen: true })
     }
 
     it('goes back to the archive review, which records it as saved', async () => {
@@ -2382,11 +2382,18 @@ describe('ScriptsPage', () => {
       expectBackOnTheReview()
     })
 
-    it('opens the saved script instead when it was edited while saving, and the review still counts it', async () => {
+    it.each([false, true])('retains the source after a late-edit save, including canonical read failure: %s', async failRead => {
       await openTrackedDraft()
+      if (failRead) apiMock.getScriptAuthoring.mockRejectedValueOnce(new Error('Canonical read unavailable'))
       await clickExactly('mock-edited-while-saving')
       expect(archiveDraftSaves).toEqual(['saved-script-1'])
       expect(apiMock.getScriptAuthoring.mock.calls.some(call => call[0] === 'saved-script-1')).toBe(true)
+      expect(onScriptSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'saved-script-1' }), { keepAuthoringOpen: true })
+      expect((container.querySelector('input[aria-label="mock-enterprise-archive-state"]') as HTMLInputElement)?.value).toBe('review-state-preserved')
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+      await clickExactly('Back to converted script')
+      expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+      expect((container.querySelector('input[aria-label="mock-enterprise-archive-state"]') as HTMLInputElement)?.value).toBe('review-state-preserved')
     })
 
     it('goes back to the review when the save also asked to set up secrets, and opens them in the library', async () => {

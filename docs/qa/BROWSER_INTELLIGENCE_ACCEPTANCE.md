@@ -17,6 +17,11 @@ Each BI-4 golden behavior names the tests that accept it. **Chromium and WebKit*
 | Regressions against a baseline | `TestBrowserBaselineFindsASeededRegression` (`pkg/rca/browser_baseline_test.go`) | Unit (no browser) |
 |  | `TestBrowserBaselineNeedsAPracticalEffect` (`pkg/rca/browser_baseline_test.go`) | Unit (no browser) |
 |  | `TestBrowserBaselineFollowsThePinnedBrowserPolicy` (`pkg/rca/browser_baseline_test.go`) | Unit (no browser) |
+|  | `TestBrowserEffectFloorOnlyRaisesTimingAndCLSDefaults` (`pkg/rca/browser_effect_floor_test.go`) | Unit (no browser) |
+|  | `TestBrowserEffectFloorRejectsInvalidConfiguredValues` (`pkg/rca/browser_effect_floor_test.go`) | Unit (no browser) |
+|  | `TestBrowserBaselineMetricFloorCannotCreateSmallEffectAnomaly` (`pkg/rca/browser_effect_floor_test.go`) | Unit (no browser) |
+|  | `TestBrowserEffectFloorPreservesRaisedGlobalFloors` (`pkg/rca/browser_effect_floor_test.go`) | Unit (no browser) |
+|  | `TestBrowserEffectFloorCannotQualifyNonfiniteFloor` (`pkg/rca/browser_effect_floor_test.go`) | Unit (no browser) |
 | Missing and unsupported metrics (unavailable with a reason, never zero; the score stays unscored) | `TestBrowserIntelligenceGoldenAcceptance` (`pkg/api/browser_intelligence_golden_integration_test.go`) | Chromium and WebKit |
 |  | `TestBrowserDocumentActualNativeIdentityAndNoInteraction` (`pkg/protocol/browser/document_actual_integration_test.go`) | Chromium and WebKit |
 |  | `TestBrowserScoreNeedsEveryRequiredMetric` (`pkg/api/browser_findings_test.go`) | Unit (no browser) |
@@ -42,6 +47,7 @@ Each BI-4 golden behavior names the tests that accept it. **Chromium and WebKit*
 |  | `TestBrowserFindingEvidenceAndQuality` (`pkg/api/browser_findings_test.go`) | Unit (no browser) |
 |  | `TestBrowserCollectionHealthIsKeptApart` (`pkg/api/browser_findings_test.go`) | Unit (no browser) |
 | Exclusion rules | `TestBrowserBaselineExcludesBucketsOutsideSteadyLoadAndCarriesSourceLoss` (`pkg/rca/browser_baseline_test.go`) | Unit (no browser) |
+|  | `TestBrowserBaselineRefusesKnownSourceLoss` (`pkg/rca/browser_effect_floor_test.go`) | Unit (no browser) |
 |  | `TestBrowserBaselineRefusesABaselineWhoseScriptChanged` (`pkg/rca/browser_baseline_test.go`) | Unit (no browser) |
 |  | `TestHeatmapsCountKeyboardTargetsAndExclusions` (`pkg/api/browser_interaction_patterns_test.go`) | Unit (no browser) |
 | No added target traffic | `TestBrowserIntelligenceGoldenAcceptance` (`pkg/api/browser_intelligence_golden_integration_test.go`) | Chromium and WebKit |

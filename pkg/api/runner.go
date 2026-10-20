@@ -404,8 +404,9 @@ type TestRunner struct {
 	notifications                               atomic.Value
 	// archiveAttachedHook, installed by Server, runs (in its own goroutine)
 	// after a finalized archive is attached to its run.
-	archiveAttachedHook func(testID string)
-	routeCache          map[string]latencyRouteCacheEntry
+	archiveAttachedHook              func(testID string)
+	telemetryNotificationPublication func(context.Context, string, *RunArchiveManifest) (storage.TelemetryNotificationPublication, error)
+	routeCache                       map[string]latencyRouteCacheEntry
 	// importPublicationSnapshot is installed by Server after construction. It
 	// reads the durable direct-import journal and returns assets that have been
 	// created but whose containing batch has not committed. Keeping the callback
@@ -531,6 +532,10 @@ func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
 }
 
 type ManagedTest struct {
+	telemetryCheckpointRevision int64
+	telemetryCheckpointRestored bool
+	telemetryCheckpointReadOnly bool
+
 	MonitorBindings *storage.MonitorBindings `json:"monitor_bindings,omitempty"`
 	TraceContext    *RunTraceContextSettings `json:"trace_context,omitempty"`
 	MonitorWarnings []string                 `json:"monitor_warnings,omitempty"`
@@ -958,6 +963,7 @@ type RunLogicGoalSnapshot struct {
 }
 
 type LiveMetrics struct {
+	JavaHTTP            *protocol.JavaHTTPActions             `json:"java_http,omitempty"`
 	BrowserDocuments    *protocol.BrowserDocumentSummary      `json:"browser_documents,omitempty"`
 	MessagingProgress   *protocol.MessagingProgressSnapshot   `json:"messaging_progress,omitempty"`
 	Messaging           map[string]*protocol.MessagingSummary `json:"messaging,omitempty"`
@@ -1135,6 +1141,7 @@ type ServerTelemetrySummary struct {
 	DiagnosticFindings        []protocol.DiagnosticFinding `json:"diagnostic_findings,omitempty"`
 	FirstEventSamples         int64                        `json:"first_event_samples,omitempty"`
 	WebSocket                 *protocol.WebSocketSummary   `json:"websocket,omitempty"`
+	JavaHTTP                  *protocol.JavaHTTPSummary    `json:"java_http,omitempty"`
 	GRPC                      *protocol.GRPCSummary        `json:"grpc,omitempty"`
 	Samples                   int64                        `json:"samples"`
 	AvgServerProcessingMs     float64                      `json:"avg_server_processing_ms,omitempty"`

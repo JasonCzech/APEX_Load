@@ -117,5 +117,8 @@ func nativeQueryProfiles() []NativeQueryProfile {
 	before := len(profiles)
 	add(PopulationBrowserDocument, "", "", "", "disabled", BrowserDocumentFilters(), nil, "browser_document_evidence.v2_final_qualified_distribution")
 	profiles[before].AllowedAggregations = []string{"p50", "p75", "p90", "p95", "p99"}
+	before = len(profiles)
+	add(PopulationJavaHTTPAction, "", "", "", "disabled", []string{"action"}, []string{"action"}, "java_http_diagnostics.v1")
+	profiles[before].AllowedAggregations = []string{"avg", "min", "max", "p50", "p90", "p95", "p99", "ratio_of_sums"}
 	return profiles
 }

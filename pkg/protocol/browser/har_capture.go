@@ -182,6 +182,7 @@ func (b *Browser) startHARMonitor() {
 	b.harLimitOnce = sync.Once{}
 	b.harObservedBytes = 0
 	b.harObservedEntries = 0
+	b.harInFlightExceeded = false
 	b.harMonitorWG.Add(1)
 	workingPath := b.harWorkingPath
 	owner := b.harOwner
@@ -228,7 +229,11 @@ func (b *Browser) closeOwnedOversizedHARContext(owner *harCaptureOwner, expected
 	overflow := b.resourceLimit == ""
 	if overflow {
 		b.resourceLimit = resourceLimitHARCapture
+		if b.harInFlightExceeded {
+			b.resourceLimit = resourceLimitHARInFlight
+		}
 	}
+	reason := b.resourceLimit
 	browserContext := b.pwContext
 	if owner == nil {
 		b.pwContext = nil
@@ -236,7 +241,7 @@ func (b *Browser) closeOwnedOversizedHARContext(owner *harCaptureOwner, expected
 	b.mu.Unlock()
 	if overflow {
 		browserEvidenceBudget.counters.harOverflow.Add(1)
-		logEvidenceEvent("browser HAR recording closed at its size limit")
+		logEvidenceEvent("browser HAR recording closed at its resource limit", "reason", reason)
 	}
 	// Unfinished observations end at the limit, not at an ordinary close.
 	b.censorDocumentEvidence(nil, "resource_limit")
@@ -248,6 +253,12 @@ func (b *Browser) closeOwnedOversizedHARContext(owner *harCaptureOwner, expected
 }
 
 const maxRuntimeHAREntries = 100_000
+
+// Outstanding issued requests include browser-queued work; the limit protects
+// native HAR buffering before completion or file growth can reveal its size.
+// It exceeds the 512-entry request-identity inventory, so heavy pages lose
+// per-request identities (marked incomplete) before the context is closed.
+const maxRuntimeHARInFlightRequests = 1024
 
 func (b *Browser) noteHARRequest(request playwright.Request, expectedGeneration ...string) {
 	b.mu.Lock()

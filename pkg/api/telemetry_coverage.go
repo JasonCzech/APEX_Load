@@ -18,7 +18,7 @@ const (
 	// Past it the shortest span is dropped to admit a longer one, so
 	// coverage is understated (a lower bound), never overstated.
 	maxTelemetryCoverageSpans  = 1024
-	telemetryCoverageAlgorithm = "telemetry_coverage.v2"
+	telemetryCoverageAlgorithm = "telemetry_coverage.v3"
 )
 
 // coverageSpans is a bounded union of half-open [start, end) intervals in
@@ -144,12 +144,17 @@ type telemetrySourceRequirement struct {
 	retiredAtMs  int64
 }
 
-// coverageCursor is the last sequenced publication seen from one source, so
-// a contiguous next publication bridges receipt-time jitter.
+// coverageCursor keeps the current epoch's publication and collection high
+// water marks. Sequence loss accounting separately retains late publications;
+// their later receipt time cannot establish a new observation window.
 type coverageCursor struct {
-	key      telemetrySourceKey
-	sequence uint64
-	endMs    int64
+	key            telemetrySourceKey
+	epochStartedMs int64
+	sequence       uint64
+	windowSequence uint64
+	endMs          int64
+	collection     distributedWindowMark
+	terminal       bool
 }
 
 // TelemetrySourceCoverage is the time one source was observed in the run's
@@ -176,7 +181,7 @@ type TelemetryCoverage struct {
 	ObservedMs  int64                     `json:"observed_ms"`
 	UnknownMs   int64                     `json:"unknown_ms"`
 	Sources     []TelemetrySourceCoverage `json:"sources"`
-	// Truncated means a source's observed spans exceeded their bound, so
+	// Truncated means source epochs or observed spans exceeded their bound, so
 	// observed time is a lower bound.
 	Truncated bool `json:"truncated,omitempty"`
 	// ObserverLost says the controller reporting coverage did not observe
@@ -230,13 +235,12 @@ type TelemetryCoverageRecord struct {
 	Segments              []TelemetryPolicySegment `json:"segments"`
 }
 
-// observeCoverage records one publication's observation window, timed by
-// the controller's receipt clock so it lines up with the run's window.
-// Retried and overlapping publications count once. A publication whose
-// sequence directly follows the source's previous one in the same epoch
-// covers the receipt jitter since that one (up to its own window), so jitter
-// does not fragment a continuous stream. A terminal publication retires the
-// source. The caller holds l.mu.
+// observeCoverage records a fresh collection's receipt-time window. This
+// remains an approximation, not a reconstruction of source-clock windows.
+// Duplicate/out-of-order envelopes and repeated collections never move old
+// evidence onto a later receipt window. Only consecutive window-bearing
+// publications in the current epoch can bridge bounded receipt jitter.
+// The caller holds l.mu and has admitted the epoch into the bounded ledger.
 func (l *telemetrySourceLedger) observeCoverage(source string, batch generatorrpc.MetricsBatch, at time.Time) {
 	end := at.UnixMilli()
 	key := telemetrySourceKey{source: source, generation: batch.ExecutionGeneration, epoch: batch.SourceEpoch}
@@ -244,15 +248,35 @@ func (l *telemetrySourceLedger) observeCoverage(source string, batch generatorrp
 		l.cursors = map[string]*coverageCursor{}
 	}
 	cursor := l.cursors[source]
-	contiguous := cursor != nil && cursor.key == key && batch.BatchSequence > 0 && batch.BatchSequence == cursor.sequence+1
-	if cursor == nil || cursor.key != key {
-		cursor = &coverageCursor{key: key}
+	if cursor != nil {
+		if cursor.key != key {
+			// An earlier generation never replaces current evidence. Within
+			// a generation, preserve the live receiver's terminal and epoch
+			// ordering rules as well.
+			if key.generation < cursor.key.generation || key.generation == cursor.key.generation &&
+				(cursor.terminal || key.epoch == "" || cursor.key.epoch != "" && batch.SourceEpochStartedUnixMs <= cursor.epochStartedMs) {
+				return
+			}
+			// Adoption changes the execution generation, not the generator's
+			// collection identity. Preserve deduplication but never bridge the
+			// unobserved takeover gap with a receipt-time window.
+			previous := cursor
+			cursor = &coverageCursor{key: key, epochStartedMs: batch.SourceEpochStartedUnixMs}
+			if previous.key.epoch == key.epoch && key.epoch != "" {
+				cursor.collection = previous.collection
+			}
+			l.cursors[source] = cursor
+		} else if cursor.terminal || cursor.sequence > 0 && batch.BatchSequence <= cursor.sequence {
+			return
+		}
+	}
+	if cursor == nil {
+		cursor = &coverageCursor{key: key, epochStartedMs: batch.SourceEpochStartedUnixMs}
 		l.cursors[source] = cursor
 	}
-	if batch.BatchSequence > 0 {
-		cursor.sequence = batch.BatchSequence
-	}
-	if windowMs := batch.WindowMs; windowMs > 0 {
+	contiguous := cursor.windowSequence > 0 && batch.BatchSequence > cursor.windowSequence && batch.BatchSequence-cursor.windowSequence == 1
+	cursor.sequence = batch.BatchSequence
+	if windowMs := batch.WindowMs; windowMs > 0 && end >= cursor.endMs && cursor.freshCollection(batch) {
 		start := end - windowMs
 		if contiguous && cursor.endMs > 0 && cursor.endMs < start && start-cursor.endMs <= windowMs {
 			start = cursor.endMs
@@ -266,11 +290,32 @@ func (l *telemetrySourceLedger) observeCoverage(source string, batch generatorrp
 			l.coverage[source] = spans
 		}
 		spans.add(start, end)
-		cursor.endMs = end
+		cursor.endMs, cursor.windowSequence = end, batch.BatchSequence
 	}
 	if isTerminalRemoteLifecycle(batch.LifecycleState) {
 		l.retireLocked(source, at)
+		cursor.terminal = true
 	}
+}
+
+// freshCollection advances only a comparable collection identity. A legacy
+// source with neither collection number nor publication time retains its
+// receipt-window behavior; absence after an identified collection is not
+// proof of new data. An epoch/generation change creates a fresh cursor.
+func (c *coverageCursor) freshCollection(batch generatorrpc.MetricsBatch) bool {
+	mark, _ := distributedCollectionMark(batch)
+	switch {
+	case c.collection.collection > 0:
+		if mark.collection <= c.collection.collection {
+			return false
+		}
+	case c.collection.publishedAt > 0:
+		if mark.collection > 0 || mark.publishedAt <= c.collection.publishedAt {
+			return false
+		}
+	}
+	c.collection = mark
+	return true
 }
 
 // assign records that source is required from at (the first assignment
@@ -297,6 +342,21 @@ func (l *telemetrySourceLedger) retire(source string, at time.Time) {
 	l.retireLocked(source, at)
 }
 
+// retireAtAdoption retires a source that completed during a takeover gap. A
+// retirement restored from the checkpoint is an observed terminal publication
+// and keeps its earlier boundary instead of extending to the adoption.
+func (l *telemetrySourceLedger) retireAtAdoption(source string, at time.Time) {
+	if l == nil || source == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	requirement := l.requirementLocked(source)
+	if requirement.retiredAtMs == 0 {
+		requirement.retiredAtMs = at.UnixMilli()
+	}
+}
+
 func (l *telemetrySourceLedger) retireLocked(source string, at time.Time) {
 	requirement := l.requirementLocked(source)
 	if requirement.retiredAtMs == 0 || at.UnixMilli() > requirement.retiredAtMs {
@@ -317,9 +377,9 @@ func (l *telemetrySourceLedger) requirementLocked(source string) *telemetrySourc
 }
 
 // coverageSnapshot copies each source's observed spans and requirement.
-func (l *telemetrySourceLedger) coverageSnapshot() (map[string]*coverageSpans, map[string]telemetrySourceRequirement) {
+func (l *telemetrySourceLedger) coverageSnapshot() (map[string]*coverageSpans, map[string]telemetrySourceRequirement, bool) {
 	if l == nil {
-		return nil, nil
+		return nil, nil, false
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -331,7 +391,7 @@ func (l *telemetrySourceLedger) coverageSnapshot() (map[string]*coverageSpans, m
 	for source, requirement := range l.requirements {
 		requirements[source] = *requirement
 	}
-	return observed, requirements
+	return observed, requirements, l.truncated
 }
 
 // telemetryCoverageInterval is when one source had to be observed, clipped
@@ -541,9 +601,10 @@ func telemetryLiveCoverageLocked(test *ManagedTest, now time.Time) *TelemetryCov
 	if !ok || test.telemetrySources == nil {
 		return nil
 	}
-	observed, requirements := test.telemetrySources.coverageSnapshot()
+	observed, requirements, truncated := test.telemetrySources.coverageSnapshot()
 	assigned := assignedTelemetrySourcesLocked(test)
 	coverage, _ := telemetryCoverageOver(observed, requiredTelemetrySources(observed, requirements, assigned, from, to), false, from, to)
+	coverage.Truncated = coverage.Truncated || truncated
 	// An adopting controller observed the run only from the adoption, as
 	// the coverage recorded at finalize will say.
 	coverage.ObserverLost = telemetryCoverageObserverLost(test.telemetrySources, assigned, len(test.continuityFailovers) > 0 || test.telemetrySources.wasAdopted())
@@ -619,7 +680,8 @@ func telemetryCoverageObserverLost(ledger *telemetrySourceLedger, assigned []str
 // executed in this process.
 func telemetryRunCoverageRecord(ledger *telemetrySourceLedger, assigned []string, from, to time.Time, rows []IntervalSummaryRecord, segments []TelemetryPolicySegment) *TelemetryCoverageRecord {
 	distributed := ledger != nil || len(assigned) > 0
-	observed, requirements := ledger.coverageSnapshot()
+	observed, requirements, truncated := ledger.coverageSnapshot()
 	coverage, all := telemetryCoverageOver(observed, requiredTelemetrySources(observed, requirements, assigned, from, to), !distributed, from, to)
+	coverage.Truncated = coverage.Truncated || truncated
 	return telemetryCoverageRecord(coverage, all, rows, segments)
 }

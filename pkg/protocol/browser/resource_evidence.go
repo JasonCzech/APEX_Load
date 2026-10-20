@@ -37,6 +37,14 @@ func (b *Browser) beginRequestEvidence(request playwright.Request, expectedGener
 	join := b.resourceJoinLocked(request, frame)
 	s.issued++
 	s.inFlight++
+	if b.harLimitExceeded != nil && s.inFlight > maxRuntimeHARInFlightRequests {
+		// Signal the existing exact-owner close path, never invoke synchronous
+		// Playwright Close from its own callback. Keep counting issued work and
+		// preserve incompleteness while that bounded close joins the writer.
+		b.harInFlightExceeded = true
+		s.incomplete = true
+		b.harLimitOnce.Do(func() { close(b.harLimitExceeded) })
+	}
 	if len(s.requests) >= browserRequestIdentityLimit {
 		s.droppedRequests++
 		s.incomplete = true

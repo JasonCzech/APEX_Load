@@ -1,0 +1,71 @@
+{
+  "protocols.jsonl": {
+    "packages": [
+      {
+        "Time": "2026-10-19T22:53:27.289916-04:00",
+        "Action": "pass",
+        "Package": "github.com/jasonczech/apexload/pkg/protocol/java_http",
+        "Elapsed": 0.408
+      },
+      {
+        "Time": "2026-10-19T22:54:43.960802-04:00",
+        "Action": "pass",
+        "Package": "github.com/jasonczech/apexload/pkg/protocol/grpc",
+        "Elapsed": 0.998
+      },
+      {
+        "Time": "2026-10-19T22:54:44.639624-04:00",
+        "Action": "pass",
+        "Package": "github.com/jasonczech/apexload/pkg/protocol/websocket",
+        "Elapsed": 0.268
+      }
+    ],
+    "top_level_passes": 80,
+    "skips": 0,
+    "failures": 0
+  },
+  "propagation.jsonl": {
+    "packages": [
+      {
+        "Time": "2026-10-19T22:53:37.735092-04:00",
+        "Action": "pass",
+        "Package": "github.com/jasonczech/apexload/pkg/distributed/generatorrpc",
+        "Elapsed": 0.509
+      },
+      {
+        "Time": "2026-10-19T22:53:49.968473-04:00",
+        "Action": "pass",
+        "Package": "github.com/jasonczech/apexload/pkg/api",
+        "Elapsed": 1.806
+      }
+    ],
+    "top_level_passes": 8,
+    "skips": 0,
+    "failures": 0
+  },
+  "applied-protocols.jsonl": {
+    "packages": [
+      {
+        "Time": "2026-10-19T23:01:39.661939-04:00",
+        "Action": "pass",
+        "Package": "github.com/jasonczech/apexload/pkg/protocol/java_http",
+        "Elapsed": 0.488
+      },
+      {
+        "Time": "2026-10-19T23:01:44.161404-04:00",
+        "Action": "pass",
+        "Package": "github.com/jasonczech/apexload/pkg/protocol/grpc",
+        "Elapsed": 0.823
+      },
+      {
+        "Time": "2026-10-19T23:01:44.596237-04:00",
+        "Action": "pass",
+        "Package": "github.com/jasonczech/apexload/pkg/protocol/websocket",
+        "Elapsed": 0.25
+      }
+    ],
+    "top_level_passes": 80,
+    "skips": 0,
+    "failures": 0
+  }
+}

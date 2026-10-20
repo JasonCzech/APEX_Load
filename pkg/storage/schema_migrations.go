@@ -93,6 +93,10 @@ var schemaReleases = []schemaRelease{
 	{Version: 64, Name: "object-activity-summary-index", Fingerprint: "c3c6c6508b2ffdc3942207a5419b82773cb4d2c8b880fd3665769f98014f6255"},
 	{Version: 65, Name: "audit-event-insertion-order", Fingerprint: "642a661c427abb0b78aeb6396a86d0e94ccd1cf5a33b2724314b8986aa8eadae"},
 	{Version: 66, Name: "object-activity-insertion-order", Fingerprint: "3e407f1ddff5f098166d724dfef728cee82a893eb38b52fc083681dc9b9af7e5"},
+	{Version: 67, Name: "durable-telemetry-checkpoint", Fingerprint: "6e53190738516893c37874c83619953523d9cd18d05aba2bbf5a36aac3be3d32"},
+	{Version: 68, Name: "durable-telemetry-notification-outbox", Fingerprint: "be3b4004e8c8291b487a00536d736aa46e57759bcbbaf55daf74cb7e34d04869"},
+	{Version: 69, Name: "atomic-telemetry-notification-publication", Fingerprint: "da725565a48cf8671ff9df9b7d2083e51cd888c4ae5cad553d1efb1178ce5deb"},
+	{Version: 70, Name: "durable-java-http-action-history", Fingerprint: "e1cfdf7cb8281eb9236da48ff4df94cdab8e72f9da16e18e2de36d414662cd9d"},
 }
 
 type SchemaMigrationRecord struct {

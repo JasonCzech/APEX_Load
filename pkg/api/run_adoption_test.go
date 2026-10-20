@@ -1098,3 +1098,13 @@ func setStoredAdoptionTestCheckpoint(t *testing.T, runner *TestRunner, store *st
 	}
 	setContinuityCheckpointLocked(test, raw)
 }
+
+// Adoption replaces the evacuation journal, so neither the pending-proof
+// message nor the terminal error keeps the evacuation's resolve instruction.
+func TestStoppingAdoptionDropsTheEvacuationResolveInstruction(t *testing.T) {
+	cause := uncertainEvacuationReasonPrefix + "replacement unreachable"
+	status, message := stoppingRunAdoptionOutcome(cause + uncertainEvacuationIntervention + "; unreachable generators left to execution-lease expiry: gen-b")
+	if status != "FAILED" || message != cause+"; unreachable generators left to execution-lease expiry: gen-b" {
+		t.Fatalf("outcome = %s %q", status, message)
+	}
+}

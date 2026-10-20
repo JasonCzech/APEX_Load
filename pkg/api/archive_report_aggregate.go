@@ -537,6 +537,17 @@ func finalizeArchiveSOAPPayloadTimelineBucket(bucket RunArchiveSOAPPayloadTimeli
 }
 
 func mergeRunArchiveActionStats(stats RunArchiveActionStats, quantiles *archiveQuantileAccumulator, tx TransactionEvent) RunArchiveActionStats {
+	actualAction := archiveEventPopulation(tx) == "action" && !tx.BusinessTransaction
+	if actualAction && (tx.DependencyType == "java_http" || tx.ServerTelemetry != nil && tx.ServerTelemetry.JavaHTTP != nil) {
+		// Java coverage is measured against actual java_http actions only, not a
+		// same-named action of another protocol. Legacy runs without diagnostics
+		// keep no Java summary rather than a reconstructed empty one.
+		stats.javaHTTPActions++
+		if tx.ServerTelemetry != nil {
+			protocol.MergeJavaHTTPDiagnostic(&stats.JavaHTTP, tx.ServerTelemetry.JavaHTTP)
+		}
+		stats.JavaHTTP.SetPopulation(stats.javaHTTPActions)
+	}
 	if tx.ServerTelemetry != nil {
 		// Synthetic business transactions can mirror an action's telemetry.
 		// Count broker observations only in the actual action population.

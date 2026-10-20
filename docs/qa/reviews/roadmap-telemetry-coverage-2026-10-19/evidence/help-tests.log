@@ -1,0 +1,12 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run src/helpContent.test.ts src/contextualHelp.test.ts
+
+
+ RUN  v5.0.3 /Users/jasonczech/.codex/worktrees/docs-main-integration/Project_Stormrunner/dashboard
+
+
+ Test Files  2 passed (2)
+      Tests  34 passed (34)
+   Start at  13:29:33
+   Duration  452ms (tests 72%, transform 21%, import 3%, setup 2%, worker 1%)

@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TestStatus, WSMessage } from '../types'
+import { getClientTelemetryReceipt } from './clientTelemetryReceipt'
 import { latencySeriesKeyForTarget, routeLatencyDetailSeriesKeyForTarget } from './latencySeries'
 import { EXECUTION_STREAM_HISTORY_LIMIT, useExecutionMetricsStream } from './useExecutionMetricsStream'
 
@@ -45,6 +46,8 @@ function MetricsStreamHarness({ status = 'RUNNING', testId = 'test-1' }: { statu
       <span data-testid="end-to-end-age">{String(latestMetrics?.telemetry?.end_to_end_age_ms ?? -1)}</span>
       <span data-testid="transport-lag">{String(latestMetrics?.telemetry?.transport_lag_ms ?? -1)}</span>
       <span data-testid="fanout-lag">{String(latestMetrics?.telemetry?.controller_fanout_lag_ms ?? -1)}</span>
+      <span data-testid="receipt-run">{getClientTelemetryReceipt(latestMetrics?.telemetry)?.testId}</span>
+      <span data-testid="receipt-monotonic">{String(getClientTelemetryReceipt(latestMetrics?.telemetry)?.monotonicMs ?? -1)}</span>
       <span data-testid="received-at">{String(latestMetrics?.telemetry?.client_received_at ?? '')}</span>
     </div>
   )
@@ -168,6 +171,8 @@ describe('useExecutionMetricsStream', () => {
     expect(readTestId('end-to-end-age')).toBe('1250')
     expect(readTestId('transport-lag')).toBe('300')
     expect(readTestId('fanout-lag')).toBe('350')
+    expect(readTestId('receipt-run')).toBe('test-1')
+    expect(Number(readTestId('receipt-monotonic'))).toBeGreaterThanOrEqual(0)
     expect(readTestId('received-at')).toBe('2026-05-12T20:05:01.250Z')
   })
 

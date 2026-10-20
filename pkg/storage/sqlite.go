@@ -161,6 +161,7 @@ type NetworkLatencyTargetRecord struct {
 }
 
 type IntervalSummaryRecord struct {
+	JavaHTTP                 *protocol.JavaHTTPActions              `json:"java_http,omitempty"`
 	MessagingProgress        *protocol.MessagingProgressSnapshot    `json:"messaging_progress,omitempty"`
 	Messaging                map[string]*protocol.MessagingSummary  `json:"messaging,omitempty"`
 	NativeEvidence           *NativeIntervalEvidence                `json:"native_evidence,omitempty"`

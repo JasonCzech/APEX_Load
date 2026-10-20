@@ -8541,6 +8541,7 @@ describe('ScriptEditor', () => {
     // actions, so saving one from the editor was simply broken. It now creates
     // a governed authoring session; approval stays a separate, explicit act.
     const onSave = vi.fn()
+    const onApprovalQueued = vi.fn()
     apiMock.createAuthoringSession.mockResolvedValueOnce({
       id: 'java-authoring-session-1',
       source: 'manual',
@@ -8559,7 +8560,7 @@ describe('ScriptEditor', () => {
     }
 
     await act(async () => {
-      root.render(<ScriptEditor initialScript={javaScript} initiallyDirty projectId="project-1" onSave={onSave} />)
+      root.render(<ScriptEditor initialScript={javaScript} initiallyDirty projectId="project-1" onSave={onSave} onApprovalQueued={onApprovalQueued} />)
     })
 
     const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
@@ -8581,6 +8582,7 @@ describe('ScriptEditor', () => {
     }))
     // No library script exists yet, so onSave must not fire and the copy must
     // not claim the script was saved.
+    expect(onApprovalQueued).toHaveBeenCalledWith({ sessionId: 'java-authoring-session-1', name: 'Java Checkout Flow', projectId: 'project-1', folderId: null }, { laterEdits: false })
     expect(onSave).not.toHaveBeenCalled()
     expect(container.textContent).toContain('queued for approval')
     expect(container.textContent).not.toContain('Script saved successfully!')
@@ -8892,6 +8894,7 @@ describe('ScriptEditor', () => {
       })
     }))
     const onReturn = vi.fn()
+    const onApprovalQueued = vi.fn()
     const javaScript: ScriptDefinition = {
       ...initialScript, protocol: 'java_vuser', name: 'Java Flow A',
       actions: [{ name: 'Java action', type: 'java_vuser_run', target: '', params: { method: 'action' } }],
@@ -8899,7 +8902,7 @@ describe('ScriptEditor', () => {
     await act(async () => {
       root.render(
         <NavigationGuardProvider>
-          <ScriptEditor initialScript={javaScript} initiallyDirty projectId="project-1" returnTarget={{ label: 'Back to Converted Script', onReturn }} />
+          <ScriptEditor initialScript={javaScript} initiallyDirty projectId="project-1" onApprovalQueued={onApprovalQueued} returnTarget={{ label: 'Back to Converted Script', onReturn }} />
         </NavigationGuardProvider>,
       )
     })
@@ -8911,6 +8914,7 @@ describe('ScriptEditor', () => {
     await act(async () => { findButtonByText(container, 'Save changes')!.click(); await Promise.resolve() })
     await act(async () => { finishQueue(); await Promise.resolve() })
     await flushReact()
+    expect(onApprovalQueued).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'java-session-running' }), { laterEdits: true })
     expect(onReturn).not.toHaveBeenCalled()
     expect(container.textContent).toContain('edits made since it started are not saved yet')
     expect(nameInput.value).toBe('Java Flow B')

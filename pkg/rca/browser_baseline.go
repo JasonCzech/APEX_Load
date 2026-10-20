@@ -72,7 +72,8 @@ type BrowserBaselineParams struct {
 	Sigma              float64 `json:"sigma"`
 	// A timing anomaly must also move at least max(TimingFloorMs,
 	// TimingFloorFraction of the baseline mean); layout shift at least
-	// CLSFloor; any other metric its MetricFloors entry.
+	// CLSFloor. A MetricFloors entry can only raise these floors; any
+	// other metric requires its own positive MetricFloors entry.
 	TimingFloorMs       float64            `json:"timing_floor_ms"`
 	TimingFloorFraction float64            `json:"timing_floor_fraction"`
 	CLSFloor            float64            `json:"cls_floor"`
@@ -292,6 +293,9 @@ func DetectBrowserBaseline(input DetectionInput, params BrowserBaselineParams) *
 			case baseline.ScriptChangedGroups[s.Document.Group]:
 				result = browserBaselineUnscoredResult(result, BrowserBaselineCohortChanged, fmt.Sprintf("group %q ran a different or unrecorded script in the baseline, so its documents are not the same authored pages", s.Document.Group))
 			}
+			if slices.Contains(result.Caveats, BrowserBaselineSourceLoss) || slices.Contains(result.Caveats, BrowserBaselineBaselineSourceLoss) {
+				out.Status = DetectionPartial
+			}
 			out.Results = append(out.Results, result)
 		}
 		for _, p := range s.Points {
@@ -420,6 +424,14 @@ func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples 
 		}
 	}
 	result.BaselineBuckets = len(values)
+	// Retained bucket counts are useful provenance, but a known loss in
+	// either population cannot qualify an anomaly or a within-range verdict.
+	if s.Document.Incomplete {
+		return unscored(BrowserBaselineSourceLoss, "the run's document cohort lost observations, so the retained buckets cannot qualify this comparison")
+	}
+	if b.Document.Incomplete {
+		return unscored(BrowserBaselineBaselineSourceLoss, "the baseline's document cohort lost observations, so the retained buckets cannot qualify this comparison")
+	}
 	if !matched {
 		return unscored(BrowserBaselineNoSameLoadWindow, "the baseline run has no steady level at this load")
 	}
@@ -454,18 +466,29 @@ func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples 
 
 // browserEffectFloor is the smallest change a cohort's anomaly must show:
 // max(TimingFloorMs, TimingFloorFraction of the baseline mean) for a timing,
-// CLSFloor for layout shift, a catalog floor otherwise.
+// CLSFloor for layout shift, a catalog floor otherwise. Per-metric floors
+// can only raise the applicable timing/CLS floor. Invalid supplied floors
+// cannot qualify a comparison.
 func browserEffectFloor(metric, unit string, mean float64, params BrowserBaselineParams) (float64, bool) {
-	if floor, ok := params.MetricFloors[metric]; ok && floor > 0 {
-		return floor, true
+	floor, configured := params.MetricFloors[metric]
+	if configured && (floor <= 0 || math.IsNaN(floor) || math.IsInf(floor, 0)) {
+		return 0, false
 	}
 	switch {
 	case metric == "cls":
-		return params.CLSFloor, params.CLSFloor > 0
+		if math.IsNaN(params.CLSFloor) || math.IsInf(params.CLSFloor, 0) {
+			return 0, false
+		}
+		floor = math.Max(floor, params.CLSFloor)
 	case strings.EqualFold(unit, "ms"):
-		return math.Max(params.TimingFloorMs, params.TimingFloorFraction*math.Abs(mean)), true
+		if math.IsNaN(mean) || math.IsInf(mean, 0) || math.IsNaN(params.TimingFloorMs) || math.IsInf(params.TimingFloorMs, 0) || math.IsNaN(params.TimingFloorFraction) || math.IsInf(params.TimingFloorFraction, 0) {
+			return 0, false
+		}
+		absolute := params.TimingFloorMs
+		relative := params.TimingFloorFraction * math.Abs(mean)
+		floor = math.Max(floor, math.Max(absolute, relative))
 	}
-	return 0, false
+	return floor, floor > 0 && !math.IsNaN(floor) && !math.IsInf(floor, 0)
 }
 
 // cohortDifference names the runtime cohort fields in which the run's cohort

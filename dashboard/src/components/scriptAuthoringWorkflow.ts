@@ -1,6 +1,6 @@
 import type { ApiServices } from '../hooks/ApiProvider'
 import type { ScriptDefinition } from '../types/scripts'
-import type { ScriptAuthoringBaseline, StoredScript } from '../types/storedContent'
+import type { ScriptApprovalQueued, ScriptAuthoringBaseline, StoredScript } from '../types/storedContent'
 import { baselineFromSavedScript } from '../utils/scriptAuthoringRevision'
 import { preserveMappingBindings } from './sourceMappingReviewState'
 import { authoringSessionIdempotencyKey, scriptRequiresJavaVuserAuthoringApproval } from './javaVuserApprovalGate'
@@ -11,7 +11,7 @@ type ScriptPersistence = Pick<ApiServices, 'createAuthoringSession' | 'updateScr
 type ScriptSaveResult =
   | { kind: 'superseded'; saved: boolean }
   | { kind: 'invalid' }
-  | { kind: 'approval'; script: ScriptDefinition; name: string }
+  | { kind: 'approval'; script: ScriptDefinition; name: string; approval: ScriptApprovalQueued }
   | { kind: 'saved'; script: ScriptDefinition; stored: StoredScript; baseline: ScriptAuthoringBaseline | null; definition: ScriptDefinition }
 
 /** Owns persistence routing and admission; the editor owns draft publication. */
@@ -38,7 +38,12 @@ export async function persistScriptAuthoringDraft(
       draft: script,
       idempotency_key: authoringSessionIdempotencyKey('script-editor-java-vuser', script),
     })
-    return ports.isCurrent() ? { kind: 'approval', script, name: session.name } : { kind: 'superseded', saved: true }
+    if (!ports.isCurrent()) return { kind: 'superseded', saved: true }
+    if (!session.id?.trim()) throw new Error('The approval queue did not return a session identity. Your draft is retained; reconcile the authoring sessions before retrying.')
+    return { kind: 'approval', script, name: session.name, approval: {
+      sessionId: session.id, name: session.name || script.name,
+      projectId: input.projectId || '', folderId: input.folderId || null,
+    } }
   }
   if (collectAuthoringIssues(script).some(issue => issue.severity === 'error')) return { kind: 'invalid' }
   // An edit cannot become a create or use an unpaired baseline.

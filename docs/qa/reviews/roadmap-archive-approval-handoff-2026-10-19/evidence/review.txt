@@ -1,0 +1,44 @@
+Source review rounds
+
+Round 1: checked persistence routing, source-session ownership, callback scope,
+review-generation invalidation, saved-versus-queued semantics, and delayed edits.
+Fixed projectless scope normalization and initial handoff destination fencing.
+
+Round 2: real browser tests exposed a stale batch notice hiding the receipt and
+an internal history return incorrectly invoking the retained import guard.
+Fixed notice precedence, accessible queued counts, and one-shot history
+acknowledgement constrained by origin view/index and target hash/index.
+
+Round 3: re-read all production changes and callers. Confirmed protected imports
+retain save-before-edit, Java approval remains separate from library persistence,
+no library baseline is marked saved for a queued draft, late edits remain dirty,
+queued lanes are excluded from batch saves, and pending siblings retain their
+source sessions. Internal history acknowledgement is consumed on the first
+route event and only matches the exact pending return; genuine navigation
+continues through the existing guard. No remaining source findings.
+
+Generated assets were reviewed as build outputs. The ScriptEditor bundle retains
+one blank whitespace-only line from its existing template literal (one in HEAD,
+one in the new bundle); source diffs pass whitespace checks. No compiled output
+was hand-edited to change template content.
+
+The existing collection browser workflow needed its exact status assertion
+updated for the separate queued-session count. Its library-save and retained
+review checks had already passed. Targeted revalidation passed after the
+dev-admin suite; this did not change production code.
+
+Additional protocol-gate check: a new regression verified that the shared
+ScriptImportReview reviewBusy guard already disables a queued lane even when
+its protocol-review save path would otherwise be available. The test passed
+before any production modification; retain the coverage, no production fix needed.
+
+Final staged review: checked all production source, new and changed tests,
+consumer callers, documentation and generated inventory. Rechecked embedded
+JavaScript/CSS chunk references: no missing targets. Staged scope excludes the
+primary checkout's unrelated package lock and launch configuration. No new
+findings; browser results are recorded in the final review below.
+
+Final review: all applicable browser cases have passed, including the corrected
+collection assertion. Both-profile handoff, retained sibling save, genuine dirty
+navigation and durable approval reopen pass. Scoped source and generated-output
+review found no remaining issues. No unrelated primary-checkout edits included.

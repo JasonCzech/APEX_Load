@@ -1,7 +1,7 @@
 import { parseLiveTableSandboxSeeds } from './liveTableSandboxModel'
 import { nativeJavaScriptTemplate } from './nativeServicesModel'
 import { scriptSecretReferenceSummaries } from './scriptSecretReferenceModel'
-import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
+import type { ScriptApprovalQueued, ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
 import { reapplyScriptDraft, scriptSaveFailedOnServer, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
 import ScriptRevisionConflict from './ScriptRevisionConflict'
 import TooltipButton from './ux/TooltipButton'
@@ -717,6 +717,7 @@ interface Props {
   /** Names of the other scripts in this script's folder; a repeat gets a hint, not a block. */
   takenScriptNames?: string[]
   onSave?: (script: StoredScript, options?: ScriptSaveOptions) => void
+  onApprovalQueued?: (approval: ScriptApprovalQueued, options: { laterEdits: boolean }) => void
   onClose?: () => void
   /**
    * Where the editor returns to, besides closing (an import review it was
@@ -737,7 +738,7 @@ function scriptHasAuthoredActions(script: ScriptData): boolean {
 
 const SAVED_SCRIPT_OPENING = 'This script was saved and is opening. Edits made after it was saved are not kept.'
 
-export default function ScriptEditor({ scriptId, initialScript, initialAuthoring, initialRetainedDraft, initialRetainedNeedsReview = false, initialRetainedJsonText, initialRetainedCreatedSecretNames, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, takenScriptNames, onSave, onClose, returnTarget, activity, initialWorkspace }: Props) {
+export default function ScriptEditor({ scriptId, initialScript, initialAuthoring, initialRetainedDraft, initialRetainedNeedsReview = false, initialRetainedJsonText, initialRetainedCreatedSecretNames, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, takenScriptNames, onSave, onApprovalQueued, onClose, returnTarget, activity, initialWorkspace }: Props) {
   const [authorOverview, setAuthorOverview] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [insertSeed, setInsertSeed] = useState<Action | null>(null)
@@ -3046,6 +3047,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         if (unchangedSinceQueued) commitJsonDraft(currentScript)
         // Approval is still pending: no library baseline or saved marker exists.
         setSuccess(`Java Vuser draft "${persisted.name}" queued for approval. Approve it from Scripts to add it to the library.`)
+        saveAndConfigureRequestedRef.current = false
+        onApprovalQueued?.(persisted.approval, { laterEdits: !unchangedSinceQueued })
         return true
       }
       const { stored: savedScript, baseline: savedBaseline, definition: savedDefinition } = persisted

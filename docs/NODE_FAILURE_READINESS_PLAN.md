@@ -494,6 +494,8 @@ cleanup. Interrupted adoption fails explicitly and preserves prior failover hist
 This is a prerequisite for the package-5 recovery journal, not resumable combined-loss
 recovery. Its source validation is recorded in the review ledger.
 
+The [same-leader intervention slice](qa/reviews/roadmap-same-leader-intervention-2026-10-19/README.md) adds a durable bounded-retry/intervention state for a canceled current-owner evacuation with a journal. Stop uncertainty retains STOPPING and its resources; only explicit durable proof permits terminal cleanup. Local regression evidence does not close the deployed combined-loss gate. The [operator procedure](ENTERPRISE_PLATFORM_RUNBOOK.md#resolving-an-unproven-generator-evacuation) is available in application Help.
+
 The source-pod scale-down found during the interrupted evacuation trial is
 addressed for KEDA-owned fleets by an incarnation-bound archive replica hold.
 Pending collection retains the highest source ordinal in the existing

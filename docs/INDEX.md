@@ -130,6 +130,7 @@ The inventories below retain qualification gates. Nested guides are listed in th
 | [Analytics acceptance](qa/ANALYTICS_ACCEPTANCE.md) | Native platform and reference-workload gates |
 | [Browser acceptance](qa/BROWSER_ACCEPTANCE.md) | Browser evidence inventory and qualification |
 | [Browser intelligence acceptance](qa/BROWSER_INTELLIGENCE_ACCEPTANCE.md) | Findings, baselines and journey workflows |
+| [Protocol telemetry](qa/PROTOCOL_TELEMETRY_MATRIX.md) | Non-Messaging local measurement fixtures, propagation evidence and pending qualification |
 | [Telemetry acceptance](qa/TELEMETRY_ACCEPTANCE.md) | Fault matrix and reference-workload limits |
 | [Lifecycle parity](qa/LIFECYCLE_PARITY_MATRIX.md) | Authoring lifecycle evidence |
 | [Adapter retirement](qa/ADAPTER_RETIREMENT.md) | Remaining adapters and retirement evidence |

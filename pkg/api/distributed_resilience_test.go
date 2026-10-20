@@ -794,10 +794,14 @@ func TestFailClosedUncertainEvacuationPreservesStoppedParticipantArchive(t *test
 		t.Fatal("expected the evacuation uncertainty to be returned")
 	}
 	runner.mu.RLock()
-	status, archive := test.Status, test.Archive
+	status, archive, finalError := test.Status, test.Archive, test.Error
 	runner.mu.RUnlock()
 	if status != "FAILED" {
 		t.Fatalf("status = %q, want FAILED", status)
+	}
+	// The STOPPING-only resolve instruction does not survive into the terminal error.
+	if !strings.HasPrefix(finalError, uncertainEvacuationReasonPrefix+"replacement commit response was lost") || strings.Contains(finalError, uncertainEvacuationIntervention) {
+		t.Fatalf("terminal error = %q", finalError)
 	}
 	if archive == nil {
 		t.Fatal("stopped participant archive was not attached")
@@ -949,6 +953,11 @@ func TestFailClosedGeneratorLossEvacuationWaitsForUnfencedSource(t *testing.T) {
 	}
 	if !strings.Contains(failure, "generator evacuation state is uncertain") {
 		t.Fatalf("run error = %q, want the fail-closed evacuation reason", failure)
+	}
+	// Without an evacuation journal the resolve endpoint refuses this run, so
+	// its error must not direct an administrator there.
+	if strings.Contains(failure, uncertainEvacuationIntervention) {
+		t.Fatalf("journal-less run error = %q names an unavailable resolution", failure)
 	}
 	if source.faultStops() < durableTransitionAttempts {
 		t.Fatalf("dead source stop attempts = %d, want at least %d before retry", source.faultStops(), durableTransitionAttempts)

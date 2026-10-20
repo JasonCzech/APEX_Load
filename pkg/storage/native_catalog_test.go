@@ -25,6 +25,9 @@ func TestNativeQueryUsesCanonicalMetricCatalog(t *testing.T) {
 			for _, aggregation := range metric.Aggregations {
 				t.Run(metric.Name+"/"+population+"/"+aggregation, func(t *testing.T) {
 					q := AnalyticsQuery{Population: population, Metric: metric.Name, Aggregation: aggregation, EndSeconds: 60, BucketSeconds: 1, MaxSeries: 1}
+					if population == analysis.PopulationJavaHTTPAction {
+						q.Filters = map[string]string{"action": "request"}
+					}
 					if err := ValidateNativeArchiveQuery(q); err != nil {
 						t.Fatal(err)
 					}

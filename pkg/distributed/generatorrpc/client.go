@@ -175,13 +175,15 @@ type PauseResult struct {
 }
 
 type MetricsBatch struct {
-	BrowserDocuments         *protocol.BrowserDocumentSummary
-	BrowserDocumentsVersion  uint32
-	MessagingProgress        *protocol.MessagingProgressSnapshot
-	MessagingProgressVersion uint32
-	TestID                   string
-	ExecutionGeneration      uint64
-	BatchSequence            uint64
+	CollectionWindows         []MetricsCollectionWindow
+	CollectionWindowsComplete bool
+	BrowserDocuments          *protocol.BrowserDocumentSummary
+	BrowserDocumentsVersion   uint32
+	MessagingProgress         *protocol.MessagingProgressSnapshot
+	MessagingProgressVersion  uint32
+	TestID                    string
+	ExecutionGeneration       uint64
+	BatchSequence             uint64
 	// SourceEpoch identifies the generator process that numbered
 	// BatchSequence; sequences restart with each epoch. Empty for older peers.
 	SourceEpoch              string
@@ -330,6 +332,7 @@ type GroupMetric struct {
 }
 
 type MetricAggregate struct {
+	JavaHTTP         *protocol.JavaHTTPSummary
 	Messaging        *protocol.MessagingSummary
 	MessagingVersion uint32
 	Name             string
@@ -387,6 +390,7 @@ type ServerTelemetry struct {
 	AcknowledgementMs         *float64
 	ConsumerLagObserved       bool
 	ConsumerOffsetLagObserved bool
+	JavaHTTP                  *protocol.JavaHTTPDiagnostics
 	GRPC                      *protocol.GRPCDiagnostics
 	WebSocket                 *protocol.WebSocketDiagnostics
 	ServerProcessingMs        float64
@@ -618,6 +622,9 @@ const FeatureMessageDetailCaptureV1 = "message_detail_capture_v1"
 
 // FeatureGRPCDiagnosticsV1 advertises typed client RPC evidence with optional measurements.
 const FeatureGRPCDiagnosticsV1 = "grpc_diagnostics_v1"
+
+// FeatureJavaHTTPDiagnosticsV1 advertises versioned opaque byte/base64 evidence.
+const FeatureJavaHTTPDiagnosticsV1 = "java_http_diagnostics_v1"
 
 const FeatureControlParallelV1 = "control_parallel_v1"
 
@@ -1698,6 +1705,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 				SubscriptionID:            tx.GetServerTelemetry().GetSubscriptionId(),
 				AcknowledgementMs:         cloneMessagingAck(tx.GetServerTelemetry().AcknowledgementMs),
 				Messaging:                 messagingDiagnosticsFromJSON(tx.GetServerTelemetry().GetMessagingDiagnosticsJson(), tx.GetServerTelemetry().GetMessagingDiagnosticsVersion()),
+				JavaHTTP:                  javaHTTPDiagnosticsFromProto(tx.GetServerTelemetry().GetJavaHttp()),
 				GRPC:                      grpcDiagnosticsFromProto(tx.GetServerTelemetry().GetGrpc()),
 				WebSocket:                 websocketDiagnosticsFromProto(tx.GetServerTelemetry().GetWebsocket()),
 				ServerProcessingMs:        tx.GetServerTelemetry().GetServerProcessingMs(),
@@ -1773,8 +1781,11 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 
 	stats := generatorStatsFromProto(batch.GetStats())
 	telemetry := metricsTelemetryFromProto(batch.GetTelemetry())
+	windows, windowsComplete := collectionWindowsFromProto(batch.GetCollectionWindows(), batch.GetCollectionWindowsComplete())
+	jointMetrics, jointInfo := jointPublicationFromProto(batch.GetJointMetricsInfo(), batch.GetJointMetricsV4())
 
 	return MetricsBatch{
+		CollectionWindows: windows, CollectionWindowsComplete: windowsComplete,
 		BrowserDocuments:           browserDocumentsFromJSON(batch.GetBrowserDocumentSummaryJson(), batch.GetBrowserDocumentSummaryVersion()),
 		BrowserDocumentsVersion:    batch.GetBrowserDocumentSummaryVersion(),
 		MessagingProgress:          messagingProgressFromJSON(batch.GetMessagingProgressJson(), batch.GetMessagingProgressVersion()),
@@ -1797,8 +1808,8 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		NetworkProfileMetrics:      metricAggregatesFromProto(batch.GetNetworkProfileMetrics()),
 		ActionMetrics:              metricAggregatesFromProto(batch.GetActionMetrics()),
 		ActionDimensionMetrics:     metricAggregatesFromProto(batch.GetActionDimensionMetrics()),
-		JointMetrics:               metricAggregatesFromProto(batch.GetJointMetricsV4()),
-		JointInfo:                  jointInfoFromProto(batch.GetJointMetricsInfo()),
+		JointMetrics:               jointMetrics,
+		JointInfo:                  jointInfo,
 		ActionPropertyMetrics:      metricAggregatesFromProto(batch.GetActionPropertyMetrics()),
 		ActionMetricsVersion:       batch.GetActionMetricsVersion(),
 		RequestCountsVersion:       batch.GetRequestCountsVersion(),
@@ -2069,6 +2080,7 @@ func metricAggregateFromProto(value *pb.MetricAggregate) *MetricAggregate {
 		TPS:              value.GetTps(),
 		DurationDigest:   tdigestSnapshotFromProto(value.GetDurationDigest()),
 		DurationSketch:   durationSketchSnapshotFromProto(value.GetDurationSketch()),
+		JavaHTTP:         javaHTTPSummaryForCount(javaHTTPSummaryFromProto(value.GetJavaHttp()), value.GetCount()),
 		Messaging:        messagingSummaryFromJSON(value.GetMessagingSummaryJson(), value.GetMessagingVersion()),
 		MessagingVersion: value.GetMessagingVersion(),
 		Exemplars:        traceExemplarsFromProto(value.GetExemplars()),
@@ -2136,6 +2148,7 @@ func metricAggregateToProto(value *MetricAggregate) *pb.MetricAggregate {
 		Tps:                  value.TPS,
 		DurationDigest:       tdigestSnapshotToProto(value.DurationDigest),
 		DurationSketch:       durationSketchSnapshotToProto(value.DurationSketch),
+		JavaHttp:             javaHTTPSummaryToProto(javaHTTPSummaryForCount(value.JavaHTTP, value.Count)),
 		MessagingSummaryJson: messagingSummaryJSON(value.Messaging),
 		MessagingVersion:     value.MessagingVersion,
 		Exemplars:            traceExemplarsToProto(value.Exemplars),
@@ -2171,7 +2184,7 @@ func durationSketchSnapshotFromProto(value *pb.DurationSketchSnapshot) *engine.D
 }
 
 func durationSketchSnapshotToProto(value *engine.DurationSketchSnapshot) *pb.DurationSketchSnapshot {
-	if value == nil || value.Count == 0 {
+	if value == nil || value.Count == 0 || len(value.Bins) > engine.DurationSketchMaxBuckets {
 		return nil
 	}
 	bins := make([]*pb.DurationSketchBin, 0, len(value.Bins))
@@ -2192,7 +2205,7 @@ func durationSketchSnapshotToProto(value *engine.DurationSketchSnapshot) *pb.Dur
 }
 
 func tdigestSnapshotFromProto(value *pb.TDigestSnapshot) *engine.TDigestSnapshot {
-	if value == nil || value.GetCount() == 0 {
+	if value == nil || value.GetCount() == 0 || len(value.GetCentroids()) > 1024 {
 		return nil
 	}
 	centroids := make([]engine.TDigestCentroidSnapshot, 0, len(value.GetCentroids()))
@@ -2213,7 +2226,7 @@ func tdigestSnapshotFromProto(value *pb.TDigestSnapshot) *engine.TDigestSnapshot
 }
 
 func tdigestSnapshotToProto(value *engine.TDigestSnapshot) *pb.TDigestSnapshot {
-	if value == nil || value.Count == 0 {
+	if value == nil || value.Count == 0 || len(value.Centroids) > 1024 {
 		return nil
 	}
 	centroids := make([]*pb.TDigestCentroid, 0, len(value.Centroids))

@@ -95,6 +95,7 @@ type Browser struct {
 	harLimitOnce         sync.Once
 	harObservedBytes     int64
 	harObservedEntries   int
+	harInFlightExceeded  bool
 	runtimeTextRedactor  protocol.TextRedactor
 	runtimeSecretsActive func() bool
 	mobile               bool

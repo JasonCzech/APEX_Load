@@ -108,10 +108,24 @@ func (j *JavaHTTP) Init(ctx context.Context, config map[string]any) error {
 	return j.http.Init(ctx, config)
 }
 
-func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (result *protocol.Result, err error) {
 	if action == nil {
 		return &protocol.Result{ErrorMessage: "java_http action is required"}, nil
 	}
+	outerStart := time.Now()
+	diagnostic := &protocol.JavaHTTPDiagnostics{Version: 1, Mode: "embedded_opaque_bytes", InputState: "unsupported_encoding", RequestEncodedBytes: int64(len(action.Body)), ResponseState: "unavailable", ObjectFootprint: "unavailable_embedded_opaque_bytes"}
+	defer func() {
+		if result == nil {
+			return
+		}
+		diagnostic.EnclosingMs = float64(time.Since(outerStart)) / float64(time.Millisecond)
+		if diagnostic.Valid() {
+			if result.ServerTelemetry == nil {
+				result.ServerTelemetry = &protocol.ServerTelemetry{}
+			}
+			result.ServerTelemetry.JavaHTTP = diagnostic
+		}
+	}()
 	prepared := *action
 	prepared.Headers = cloneHeaders(action.Headers)
 	if prepared.Headers == nil {
@@ -128,22 +142,32 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 		bodyEncoding = j.bodyEncoding
 	}
 	base64DecodeDuration := time.Duration(0)
-	if len(action.Body) > 0 {
+	// An explicitly unsupported encoding is invalid even when no bytes need
+	// decoding. Check it before calling HTTP so empty bodies cannot bypass
+	// the codec's admission contract.
+	if bodyEncoding != "base64" {
 		startedAt := time.Now()
-		if bodyEncoding != "base64" {
-			base64DecodeDuration = time.Since(startedAt)
-			return &protocol.Result{
-				ActionName:      action.Name,
-				StartTime:       startedAt,
-				Duration:        base64DecodeDuration,
-				DependencyType:  "java_http",
-				ErrorMessage:    fmt.Sprintf("unsupported java_http action body encoding: %s", bodyEncoding),
-				ServerTelemetry: &protocol.ServerTelemetry{SerializationMs: durationToMilliseconds(base64DecodeDuration)},
-				Snapshot:        buildJavaHTTPPreflightSnapshot(j.baseURL, &prepared),
-			}, nil
-		}
+		base64DecodeDuration = time.Since(startedAt)
+		return &protocol.Result{
+			ActionName:      action.Name,
+			StartTime:       startedAt,
+			Duration:        base64DecodeDuration,
+			DependencyType:  "java_http",
+			ErrorMessage:    fmt.Sprintf("unsupported java_http action body encoding: %s", bodyEncoding),
+			ServerTelemetry: &protocol.ServerTelemetry{SerializationMs: durationToMilliseconds(base64DecodeDuration)},
+			Snapshot:        buildJavaHTTPPreflightSnapshot(j.baseURL, &prepared),
+		}, nil
+	}
+	zeroBytes := int64(0)
+	diagnostic.InputState, diagnostic.RequestDecodedBytes = "empty", &zeroBytes
+	if len(action.Body) > 0 {
+		diagnostic.InputState, diagnostic.RequestDecodedBytes = "decode_failed", nil
+		startedAt := time.Now()
 		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(action.Body)))
-		base64DecodeDuration = measuredOperationDuration(time.Since(startedAt))
+		observedDecode := time.Since(startedAt)
+		var decodeMs float64
+		base64DecodeDuration, decodeMs = base64OperationMeasurement(observedDecode)
+		diagnostic.Base64DecodeMs = &decodeMs
 		if err != nil {
 			return &protocol.Result{
 				ActionName:      action.Name,
@@ -155,9 +179,39 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 				Snapshot:        buildJavaHTTPPreflightSnapshot(j.baseURL, &prepared),
 			}, nil
 		}
+		decodedBytes := int64(len(decoded))
+		diagnostic.InputState, diagnostic.RequestDecodedBytes = "decoded", &decodedBytes
 		prepared.Body = decoded
 	}
-	result, err := j.http.Execute(ctx, &prepared)
+	// Java HTTP owns the one base64 conversion. The shared HTTP runtime must
+	// receive opaque bytes, even when the action explicitly selected base64.
+	prepared.BodyEncoding = ""
+	httpContext := protocol.WithHTTPBodyObserver(ctx, func(observation protocol.HTTPBodyObservation) {
+		value := observation.Bytes
+		diagnostic.PreparedRequestBodyBytes, diagnostic.AppliedRequestCompression = &value, observation.AppliedCompression
+	})
+	result, err = j.http.Execute(httpContext, &prepared)
+	if result != nil {
+		state, _ := result.ProtocolEvidence["response_content_state"].(string)
+		// The HTTP adapter discards a successful body before later checks can
+		// fail the action, so a failed action with discard requested and an
+		// empty body may have had either; it stays unavailable, not a 0.
+		lateFailureAfterDiscard := !result.Success && prepared.DiscardResponseBodyOnSuccess && result.ResponseBody == ""
+		if (state == "complete" || state == "collection_window") && !lateFailureAfterDiscard {
+			diagnostic.ResponseState = state
+			if result.Success && prepared.DiscardResponseBodyOnSuccess {
+				diagnostic.ResponseState = "discarded"
+			}
+			retainedBytes := int64(len(result.ResponseBody))
+			diagnostic.ResponseRetainedBytes = &retainedBytes
+		}
+	}
+	if result != nil && result.CorrelationEvidence != nil && len(action.Body) > 0 {
+		// Replay repairs cannot address the decoded representation as if it
+		// were the original authored body. Preserve that boundary separately
+		// from the HTTP adapter's now-cleared encoding instruction.
+		result.CorrelationEvidence.RequestBodyTransformed = true
+	}
 	// Apply response mappings against the raw (pre-base64) response bytes. Java
 	// serialized streams embed their string fields as ASCII, so regex mappings can
 	// pull named values out of an otherwise-opaque payload and feed correlation —
@@ -170,7 +224,14 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 	if result != nil && j.preserveBinaryResult {
 		startedAt := time.Now()
 		result.ResponseBody = base64.StdEncoding.EncodeToString([]byte(result.ResponseBody))
-		deserializationDuration = measuredOperationDuration(time.Since(startedAt))
+		observedEncode := time.Since(startedAt)
+		var encodeMs float64
+		deserializationDuration, encodeMs = base64OperationMeasurement(observedEncode)
+		diagnostic.Base64EncodeMs = &encodeMs
+		if diagnostic.ResponseRetainedBytes != nil {
+			encodedBytes := int64(len(result.ResponseBody))
+			diagnostic.ResponseBase64Bytes = &encodedBytes
+		}
 	}
 	if result != nil {
 		result.DependencyType = "java_http"
@@ -395,4 +456,10 @@ func (j *JavaHTTP) BeginIteration(ctx context.Context) error {
 		return nil
 	}
 	return j.http.BeginIteration(ctx)
+}
+
+// Keep the old nonzero completed-operation convention while the versioned
+// observation preserves the timer reading, including a zero-resolution sample.
+func base64OperationMeasurement(elapsed time.Duration) (time.Duration, float64) {
+	return measuredOperationDuration(elapsed), durationToMilliseconds(elapsed)
 }
