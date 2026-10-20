@@ -130,10 +130,31 @@ column is matched at its own precision. Summary rows rejected only for their
 sample count or sum are recorded as `invalid_summary_sample`.
 
 Summary and histogram declarations are stored as fields of mapping versions 1
-and 2. An older controller that rewrites a dataset's association drops them, and
-queries of that dataset then fail; do not run controllers older than this
-release against datasets that declare summary statistics or histograms, and
-re-import a dataset that an older controller rewrote.
+and 2. Changing an associated run must retain those declarations and imported
+identity fields. The dashboard requires the exact controller capability
+`mapping_association_version: 1` for these mappings and sends contract version 1
+with the expected dataset revision to the negotiated PATCH association route.
+It verifies the returned contract, dataset/project/run/revision and unchanged
+mapping before adopting the response. Missing capabilities, unsupported versions
+and failed confirmation leave the local selection available; reload the dataset
+after an ambiguous response before retrying. It never falls back to legacy PUT
+when PATCH is rejected. Unavailable mapping metadata also blocks reassociation
+until the dataset can be reloaded. Plain legacy mappings retain their existing PUT contract.
+
+The minimum controller for this workflow is one that advertises association
+contract version 1 and implements that PATCH route; a generic native-Parquet or
+imported-identity capability is insufficient. Complete the upgrade across every
+controller serving the project before enabling reassociation of identity,
+summary or histogram datasets, and require compatible clients. An older route
+table rejects PATCH before rewriting metadata, so a request routed to an old peer
+during rollout fails safely. The capability read alone does not prove that every
+peer has upgraded. An old client can still call legacy PUT against an older
+controller and silently discard these fields; the new protocol cannot repair
+that path or previously damaged mappings. Keep those writers disabled until the
+rolling-upgrade barrier is complete, and re-import any affected dataset. Unknown
+contract or mapping versions are refused before mutation on capable controllers.
+See the [reassociation review](qa/reviews/roadmap-mapping-association-2026-10-20/README.md)
+for exact local evidence and remaining qualification limits.
 
 ### Analysis policies and run pins
 

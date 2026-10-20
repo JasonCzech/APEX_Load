@@ -31,6 +31,9 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 | Raw versus summary and distribution inputs | `TestAnalysisSummaryImportPreviewCommitQueryReconcile` (`pkg/api/analysis_summary_native_test.go`) | DuckDB build |
 |  | `TestAnalysisHistogramImportCommitQueryReconcile` (`pkg/api/analysis_histogram_native_test.go`) | DuckDB build |
 |  | `TestAnalysisComparisonAdmitsSummaryOnlyStatisticsForDatasets` (`pkg/api/analysis_summary_test.go`) | Default build |
+| Negotiated mapping-preserving reassociation | `TestAnalysisCapabilitiesAdvertiseMappingAssociationContract` (`pkg/api/analysis_mapping_association_test.go`) | Default build |
+|  | `TestAnalysisNegotiatedAssociationGeneratedContract` (`pkg/api/analysis_mapping_association_test.go`) | Default build |
+|  | `TestAnalysisNegotiatedAssociationPreservesMeasurementMapping` (`pkg/api/analysis_mapping_association_native_test.go`) | DuckDB build |
 | Units | `TestCatalogNativeWireUnitsMatchExecutedQueries` (`pkg/api/analysis_catalog_test.go`) | Default build |
 |  | `TestNormalizeNativeObservationUnitAliases` (`pkg/analysis/parquet_mapping_test.go`) | Default build |
 | Duplicate files | `TestAnalysisAcceptanceDuplicateAndDriftedFiles` (`pkg/api/analysis_acceptance_native_test.go`) | DuckDB build |

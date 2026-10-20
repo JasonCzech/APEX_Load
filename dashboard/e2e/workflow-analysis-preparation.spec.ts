@@ -640,3 +640,50 @@ test('older analytical peers keep v1 imports usable and refuse v2 identity work 
   expect(queries).toBe(1); expect(mutations).toBe(2)
   expect(records()[1].mapping.version).toBe(2)
 })
+
+
+for (const peer of ['missing-capability', 'missing-mapping', 'current', 'legacy-handler', 'bad-echo'] as const) {
+  test(`mapping reassociation preserves declared measurements with ${peer}`, async ({ page }) => {
+    if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+    const workspace = await createWorkspace(page.context().request)
+    const mapping = { version: 2, timestamp: ['ts'], timestamp_encoding: 'unix_s', timezone: 'UTC', measures: [{ value: ['value'], name: 'latency', kind: 'summary', unit: 'ms', statistic: 'p95', window_seconds: 60 }] }
+    const dataset = { id: '00000000-0000-0000-0000-000000000031', project_id: workspace.projectId, name: 'Declared measurements', state: 'ready', revision: 4, files: [], mapping: peer === 'missing-mapping' ? undefined : mapping, accepted: 2, rejected: 0 }
+    let requests = 0
+    await page.route('**/api/v1/analysis/**', async route => {
+      const request = route.request(); const path = new URL(request.url()).pathname
+      const send = (value: unknown) => route.fulfill({ json: value })
+      if (path.endsWith('/capabilities')) return send({ native_parquet: true, enabled: true, imported_identity_version: 2, mapping_association_version: peer === 'missing-capability' ? undefined : 1, chunk_bytes: 4 * 1024 * 1024, summary_statistics: ['p95'] })
+      if (path.endsWith('/imports')) return send([dataset])
+      if (path.endsWith('/mappings') || path.endsWith('/comparisons')) return send([])
+      if (path.endsWith('/association')) {
+        expect(request.method()).toBe('PATCH')
+        expect(request.postDataJSON()).toEqual({ contract_version: 1, run_id: 'reviewed-run', revision: 4 })
+        requests++
+        if (peer === 'legacy-handler') return route.fulfill({ status: 405, json: { error: 'method not allowed' } })
+        return send({ contract_version: 1, import: { ...dataset, revision: 5, run_id: 'reviewed-run', mapping: peer === 'bad-echo' ? undefined : mapping } })
+      }
+      return route.fulfill({ status: 404, json: { error: 'unexpected reassociation workflow operation' } })
+    })
+    await page.goto(`/#/monitoring?${scopeQuery(workspace)}`); await page.reload()
+    const area = page.getByRole('region', { name: 'Analysis workspace', exact: true })
+    await area.getByRole('button', { name: 'Declared measurements · ready', exact: true }).click()
+    const comparison = area.getByRole('region', { name: 'Dataset comparison', exact: true })
+    await comparison.getByRole('combobox', { name: 'Compare with', exact: true }).selectOption('run')
+    await comparison.getByLabel('Run ID', { exact: true }).fill('reviewed-run')
+    const associate = comparison.getByRole('button', { name: 'Associate with run', exact: true })
+    if (peer === 'missing-capability' || peer === 'missing-mapping') {
+      await expect(associate).toBeDisabled()
+      await expect(comparison).toContainText(peer === 'missing-mapping' ? 'Mapping details are unavailable' : 'cannot safely reassociate')
+      expect(requests).toBe(0)
+    } else {
+      await associate.click()
+      await expect.poll(() => requests).toBe(1)
+      if (peer === 'current') await expect(comparison).toContainText('Associated with run reviewed-run')
+      else {
+        await expect(comparison).not.toContainText('Associated with run reviewed-run')
+        await expect(comparison.getByRole('alert')).toContainText(peer === 'bad-echo' ? 'did not confirm the mapping-preserving association' : 'method not allowed')
+      }
+    }
+    expect(dataset.mapping).toEqual(peer === 'missing-mapping' ? undefined : mapping)
+  })
+}

@@ -119,26 +119,33 @@ func (s *Server) handleAnalysisAssociation(w http.ResponseWriter, r *http.Reques
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if req.Revision != in.Revision {
-		writeError(w, 409, "dataset revision conflict")
-		return
+	if saved := s.applyAnalysisAssociation(w, r, store, in, req.RunID, req.Revision); saved != nil {
+		writeJSON(w, 200, saved)
 	}
-	if req.RunID != "" {
-		run, err := s.store.GetTest(req.RunID)
+}
+
+// The legacy and negotiated routes share the same project and revision CAS owner.
+func (s *Server) applyAnalysisAssociation(w http.ResponseWriter, r *http.Request, store storage.AnalysisImportStore, in *storage.AnalysisImport, runID string, revision int64) *storage.AnalysisImport {
+	if revision != in.Revision {
+		writeError(w, 409, "dataset revision conflict")
+		return nil
+	}
+	if runID != "" {
+		run, err := s.store.GetTest(runID)
 		if err != nil || run.ProjectID != in.ProjectID {
 			writeError(w, 404, "run not found in this project")
-			return
+			return nil
 		}
 	}
-	in.RunID = req.RunID
+	in.RunID = runID
 	saved, err := store.SaveAnalysisImport(*in, in.Revision)
 	if err != nil {
 		writeError(w, 409, "dataset association changed concurrently")
-		return
+		return nil
 	}
-	s.recordAuditEvent(r, "analysis.dataset.associate", "success", "analysis_import", in.ID, in.ProjectID, map[string]any{"run_id": req.RunID})
+	s.recordAuditEvent(r, "analysis.dataset.associate", "success", "analysis_import", in.ID, in.ProjectID, map[string]any{"run_id": runID})
 	reportAnalysisArtifactDigest(saved)
-	writeJSON(w, 200, saved)
+	return saved
 }
 
 func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request) {

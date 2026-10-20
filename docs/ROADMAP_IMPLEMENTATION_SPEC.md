@@ -162,6 +162,8 @@ Retire a seam only after all callers use its canonical owner and property parity
 
 ### NA-A — Deterministic import semantics
 
+The [mapping reassociation slice](qa/reviews/roadmap-mapping-association-2026-10-20/README.md) negotiates a distinct PATCH contract, refuses unsupported peers and validates the returned identity/mapping before client adoption. The minimum-controller/rolling-upgrade barrier remains mandatory; precision consent, advanced mapping authoring gates and broader qualification below remain open.
+
 The [partition-precedence qualification](qa/reviews/roadmap-partition-precedence-2026-10-20/README.md) verifies that existing v1/v2 physical-column and explicit-name mappings ignore conflicting directory labels and reject simultaneous constant/name-column selection. It preserves both mapping versions; precision disclosure and the other semantic gates below remain open.
 
 The [native timestamp source-offset slice](qa/reviews/roadmap-analytics-timestamp-offsets-2026-10-19/README.md) refuses inferred offsets and verifies per-row DST conversion for unambiguous/offset-qualified inputs. The [local-wall-time slice](qa/reviews/roadmap-analytics-local-wall-times-2026-10-19/README.md) rejects ambiguous/nonexistent times with row provenance; precision disclosure and other mapping requirements below remain open.

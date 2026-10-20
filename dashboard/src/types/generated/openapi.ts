@@ -8666,7 +8666,113 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "accepted": number;
+            "allow_rejected": boolean;
+            "artifact_sha256"?: string;
+            "created_at": string;
+            "error"?: string;
+            "files": Array<{
+              "chunks"?: Array<{
+                "object_key"?: string;
+                "offset": number;
+                "sha256": string;
+                "size": number;
+              }>;
+              "id": string;
+              "relative_path": string;
+              "sha256"?: string;
+              "size": number;
+              "uploaded": number;
+            }>;
+            "id": string;
+            "mapping"?: ({
+              "identity"?: ({
+                "dimensions"?: Array<{
+                  "name": string;
+                  "value": Record<string, unknown>;
+                }>;
+                "host"?: Array<string>;
+                "service"?: Array<string>;
+                "source"?: Array<string>;
+              }) | null;
+              "measures": Array<{
+                "histogram"?: ({
+                  "bound_column"?: Record<string, unknown>;
+                  "bounds": Array<string>;
+                  "bucket_counts": string;
+                  "count_columns"?: Array<Record<string, unknown>>;
+                  "temporality": string;
+                  "window_seconds"?: number;
+                }) | null;
+                "kind": string;
+                "name"?: string;
+                "name_column"?: Array<string>;
+                "sample_count_column"?: Array<string>;
+                "sample_sum_column"?: Array<string>;
+                "statistic"?: string;
+                "unit": string;
+                "value": Array<string>;
+                "window_seconds"?: number;
+              }>;
+              "timestamp": Array<string>;
+              "timestamp_encoding": string;
+              "timezone": string;
+              "version": number;
+            }) | null;
+            "mapping_id"?: string;
+            "mapping_revision"?: number;
+            "name": string;
+            "normalized"?: Array<string>;
+            "normalized_sha256"?: Record<string, string>;
+            "obsolete_objects"?: Array<string>;
+            "partition_manifest"?: ({
+              "dataset_id": string;
+              "digest": string;
+              "mapping_sha256": string;
+              "mapping_version": number;
+              "partitions": Array<{
+                "bytes": number;
+                "object_key": string;
+                "sha256": string;
+                "stats": {
+                  "identity"?: (Record<string, unknown>) | null;
+                  "identity_version": number;
+                  "kind": string;
+                  "max_time"?: (string) | null;
+                  "max_window_end"?: (string) | null;
+                  "metric"?: (string) | null;
+                  "min_time"?: (string) | null;
+                  "missing": number;
+                  "rows": number;
+                  "schema_version": string;
+                  "source_rows"?: number;
+                  "unit": string;
+                  "valid": number;
+                  "version": number;
+                };
+              }>;
+              "producer": string;
+              "project_id": string;
+              "version": number;
+            }) | null;
+            "partition_manifest_version"?: number;
+            "project_id": string;
+            "rejected": number;
+            "rejection_artifacts"?: Array<string>;
+            "rejection_sha256"?: Record<string, string>;
+            "rejections"?: Array<{
+              "count": number;
+              "file": number;
+              "measure": number;
+              "rows": Array<number>;
+            }>;
+            "revision": number;
+            "run_id"?: string;
+            "state": string;
+            "updated_at": string;
+            "upload_writer_version"?: number;
+          }) | null;
         };
       };
       "400": {
@@ -8680,11 +8786,6 @@ export interface operations {
         };
       };
       "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -8721,6 +8822,7 @@ export interface operations {
             "heavy_jobs": number;
             "histogram_bound_limit"?: number;
             "imported_identity_version": number;
+            "mapping_association_version": number;
             "max_import_bytes": number;
             "memory_limit": string;
             "messaging_management_enabled": boolean;
@@ -11930,6 +12032,136 @@ export interface operations {
       "200": {
         content: {
           "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisMappingAssociation": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "contract_version"?: number;
+          "revision"?: number;
+          "run_id"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "contract_version": number;
+            "import": ({
+              "accepted": number;
+              "allow_rejected": boolean;
+              "artifact_sha256"?: string;
+              "created_at": string;
+              "error"?: string;
+              "files": Array<{
+                "chunks"?: Array<Record<string, unknown>>;
+                "id": string;
+                "relative_path": string;
+                "sha256"?: string;
+                "size": number;
+                "uploaded": number;
+              }>;
+              "id": string;
+              "mapping"?: ({
+                "identity"?: ({
+                  "dimensions"?: Array<Record<string, unknown>>;
+                  "host"?: Array<string>;
+                  "service"?: Array<string>;
+                  "source"?: Array<string>;
+                }) | null;
+                "measures": Array<{
+                  "histogram"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "name_column"?: Record<string, unknown>;
+                  "sample_count_column"?: Record<string, unknown>;
+                  "sample_sum_column"?: Record<string, unknown>;
+                  "statistic"?: string;
+                  "unit": string;
+                  "value": Record<string, unknown>;
+                  "window_seconds"?: number;
+                }>;
+                "timestamp": Array<string>;
+                "timestamp_encoding": string;
+                "timezone": string;
+                "version": number;
+              }) | null;
+              "mapping_id"?: string;
+              "mapping_revision"?: number;
+              "name": string;
+              "normalized"?: Array<string>;
+              "normalized_sha256"?: Record<string, string>;
+              "obsolete_objects"?: Array<string>;
+              "partition_manifest"?: ({
+                "dataset_id": string;
+                "digest": string;
+                "mapping_sha256": string;
+                "mapping_version": number;
+                "partitions": Array<{
+                  "bytes": number;
+                  "object_key": string;
+                  "sha256": string;
+                  "stats": Record<string, unknown>;
+                }>;
+                "producer": string;
+                "project_id": string;
+                "version": number;
+              }) | null;
+              "partition_manifest_version"?: number;
+              "project_id": string;
+              "rejected": number;
+              "rejection_artifacts"?: Array<string>;
+              "rejection_sha256"?: Record<string, string>;
+              "rejections"?: Array<{
+                "count": number;
+                "file": number;
+                "measure": number;
+                "rows": Array<number>;
+              }>;
+              "revision": number;
+              "run_id"?: string;
+              "state": string;
+              "updated_at": string;
+              "upload_writer_version"?: number;
+            }) | null;
+          };
         };
       };
       "400": {
@@ -182563,6 +182795,7 @@ export interface paths {
   };
   "/api/v1/analysis/datasets/{id}/association": {
     "put": operations["handleAnalysisAssociation"];
+    "patch": operations["handleAnalysisMappingAssociation"];
   };
   "/api/v1/analysis/datasets/{id}/rejections/{index}": {
     "get": operations["handleAnalysisRejections"];

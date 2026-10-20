@@ -1,4 +1,4 @@
-export interface AnalysisCapabilities { imported_identity_version?: number; diagnostics_enabled?: boolean; native_parquet: boolean; enabled: boolean; chunk_bytes: number; monitoring_enabled: boolean; preparation_enabled: boolean; summary_statistics?: string[]; histogram_bound_limit?: number }
+export interface AnalysisCapabilities { mapping_association_version?: number; imported_identity_version?: number; diagnostics_enabled?: boolean; native_parquet: boolean; enabled: boolean; chunk_bytes: number; monitoring_enabled: boolean; preparation_enabled: boolean; summary_statistics?: string[]; histogram_bound_limit?: number }
 export interface AnalysisColumn { path: string; path_components: string[]; physical_type: string; repeated: boolean }
 export interface AnalysisPreview { schema: { rows: number; columns: AnalysisColumn[] }; samples: Record<string, unknown>[] }
 export interface AnalysisHistogram { bounds: string[]; bucket_counts: string; temporality: string; window_seconds?: number; bound_column?: string[]; count_columns?: string[][] }
