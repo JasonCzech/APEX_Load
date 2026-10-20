@@ -102,6 +102,8 @@ Retain the October 18 local pass as regression evidence. Live AWS/Azure collecto
 
 ### PROTO-A — Finish truthful measurements and propagation
 
+The [Java encoding admission slice](qa/reviews/roadmap-java-encoding-admission-2026-10-19/README.md) rejects unsupported encodings even for empty bodies before target traffic. Its [local protocol matrix](qa/PROTOCOL_TELEMETRY_MATRIX.md) records Java HTTP, gRPC and WebSocket fixtures and propagation checks; versioned Java representations, helper measurements and complete consumer qualification below remain open.
+
 The [Java body-conversion prerequisite](qa/reviews/roadmap-java-body-conversion-2026-10-19/README.md) fixes double decoding of explicit base64 actions and preserves transformed-body replay provenance. New measurement contracts and qualification below remain open.
 
 For Java HTTP, distinguish source encoded bytes, decoded serialized-representation bytes, HTTP body bytes and measured base64 conversion work. The current embedded adapter rejects `object_schema` and `request_mapping` and the unwired sidecar; preserve its supported `response_mapping`; its conversion timings are not Java serialization/deserialization measurements. Preserve old field meanings and add optional versioned values with codec, unit, availability and population. A ratio uses a declared outer interval that actually includes conversion work, not the wrapped HTTP duration alone.

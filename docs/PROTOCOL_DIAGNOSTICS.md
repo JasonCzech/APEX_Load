@@ -5,6 +5,11 @@ to transaction records and live summaries. Generators advertise
 `grpc_diagnostics_v1` when the gRPC runtime is registered. Older peers and
 archives can omit this field; omission means unavailable.
 
+The [non-Messaging protocol telemetry matrix](qa/PROTOCOL_TELEMETRY_MATRIX.md)
+records local Java HTTP, gRPC and WebSocket fixtures, propagation checks and
+remaining qualification limits. Explicit unsupported Java HTTP body encodings
+are rejected before target traffic, including nil and empty bodies.
+
 ## Measurement semantics
 
 - All four call modes are measured: unary, server streaming, client streaming,

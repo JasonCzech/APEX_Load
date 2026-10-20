@@ -128,20 +128,24 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 		bodyEncoding = j.bodyEncoding
 	}
 	base64DecodeDuration := time.Duration(0)
+	// An explicitly unsupported encoding is invalid even when no bytes need
+	// decoding. Check it before calling HTTP so empty bodies cannot bypass
+	// the codec's admission contract.
+	if bodyEncoding != "base64" {
+		startedAt := time.Now()
+		base64DecodeDuration = time.Since(startedAt)
+		return &protocol.Result{
+			ActionName:      action.Name,
+			StartTime:       startedAt,
+			Duration:        base64DecodeDuration,
+			DependencyType:  "java_http",
+			ErrorMessage:    fmt.Sprintf("unsupported java_http action body encoding: %s", bodyEncoding),
+			ServerTelemetry: &protocol.ServerTelemetry{SerializationMs: durationToMilliseconds(base64DecodeDuration)},
+			Snapshot:        buildJavaHTTPPreflightSnapshot(j.baseURL, &prepared),
+		}, nil
+	}
 	if len(action.Body) > 0 {
 		startedAt := time.Now()
-		if bodyEncoding != "base64" {
-			base64DecodeDuration = time.Since(startedAt)
-			return &protocol.Result{
-				ActionName:      action.Name,
-				StartTime:       startedAt,
-				Duration:        base64DecodeDuration,
-				DependencyType:  "java_http",
-				ErrorMessage:    fmt.Sprintf("unsupported java_http action body encoding: %s", bodyEncoding),
-				ServerTelemetry: &protocol.ServerTelemetry{SerializationMs: durationToMilliseconds(base64DecodeDuration)},
-				Snapshot:        buildJavaHTTPPreflightSnapshot(j.baseURL, &prepared),
-			}, nil
-		}
 		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(action.Body)))
 		base64DecodeDuration = measuredOperationDuration(time.Since(startedAt))
 		if err != nil {
