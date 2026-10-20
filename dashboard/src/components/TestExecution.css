@@ -1425,6 +1425,12 @@
   min-width: 0;
 }
 
+.chart-series-note {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .chart-table-row-toggle {
   display: inline-flex;
   align-items: center;

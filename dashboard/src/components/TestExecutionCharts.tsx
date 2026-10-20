@@ -154,6 +154,8 @@ interface Props {
   refAreaEnd: string | number
   timeRange: ExecutionChartTimeRange
   onTimeRangeChange: (value: ExecutionChartTimeRange) => void
+  /** The display window slider's longest minute value before "All"; an hour when unset. */
+  displayWindowMaxMinutes?: number
   isMultiGroup: boolean
   groupNames: string[]
   groupColors: string[]
@@ -227,17 +229,20 @@ const graphGroupTabs: Array<{ id: GraphGroupTabId; label: string }> = [
 ]
 
 const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'tx_network_phases', 'generator_impact', 'network_latency'])
-const displayWindowAllSliderValue = executionChartMaxMinuteRange + 1
+const noTransactionNames: string[] = []
+// The graphs whose rows are the run total, its groups and its transactions.
+const seriesChartIds = new Set(['tps', 'latency', 'errors'])
 const displayWindowPresets = [
   { label: '1m', minutes: 1 },
   { label: '3m', minutes: 3 },
   { label: '5m', minutes: 5 },
+  { label: '10m', minutes: 10 },
   { label: '1h', minutes: 60 },
 ] as const
 
-function displayWindowSliderPercent(value: number) {
-  const clamped = Math.min(displayWindowAllSliderValue, Math.max(executionChartMinMinuteRange, value))
-  const percent = (clamped - executionChartMinMinuteRange) / (displayWindowAllSliderValue - executionChartMinMinuteRange) * 100
+function displayWindowSliderPercent(value: number, allSliderValue: number) {
+  const clamped = Math.min(allSliderValue, Math.max(executionChartMinMinuteRange, value))
+  const percent = (clamped - executionChartMinMinuteRange) / (allSliderValue - executionChartMinMinuteRange) * 100
   return `${Number(percent.toFixed(4))}%`
 }
 
@@ -520,6 +525,7 @@ export default function TestExecutionCharts({
   refAreaEnd,
   timeRange,
   onTimeRangeChange,
+  displayWindowMaxMinutes = executionChartMaxMinuteRange,
   isMultiGroup,
   groupNames,
   groupColors,
@@ -575,6 +581,8 @@ export default function TestExecutionCharts({
   const graphTableRowsStorageKey = storageKeyFor('graphTableRows')
   const cursorLabelsStorageKey = storageKeyFor('cursorLabels')
   const gradientUnderlaysStorageKey = storageKeyFor('gradientUnderlays')
+  const groupSeriesStorageKey = storageKeyFor('groupSeries')
+  const transactionSeriesStorageKey = storageKeyFor('transactionSeries')
   const downsampleChartsStorageKey = storageKeyFor('downsampleCharts')
   const responseTimeNetworkModeStorageKey = storageKeyFor('responseTimeNetworkMode')
   const artStdDevBandsStorageKey = storageKeyFor('artStdDevBands')
@@ -599,6 +607,19 @@ export default function TestExecutionCharts({
   const [showGraphTableRows, setShowGraphTableRows] = useState(() => readStoredString(graphTableRowsStorageKey) === 'true')
   const [showCursorLabels, setShowCursorLabels] = useState(() => readStoredString(cursorLabelsStorageKey) !== 'false')
   const [showGradientUnderlays, setShowGradientUnderlays] = useState(() => readStoredString(gradientUnderlaysStorageKey) !== 'false')
+  // Which series the graphs and their tables draw: the groups', the
+  // transactions', or both — never neither. The run's total always shows.
+  const [seriesVisibility, setSeriesVisibility] = useState(() => {
+    const groups = readStoredString(groupSeriesStorageKey) !== 'false'
+    const transactions = readStoredString(transactionSeriesStorageKey) !== 'false'
+    return groups || transactions ? { groups, transactions } : { groups: true, transactions: true }
+  })
+  const setSeriesShown = (kind: 'groups' | 'transactions', shown: boolean) => {
+    setSeriesVisibility(previous => {
+      const next = { ...previous, [kind]: shown }
+      return next.groups || next.transactions ? next : previous
+    })
+  }
   const [downsampleDenseCharts, setDownsampleDenseCharts] = useState(() => readStoredString(downsampleChartsStorageKey) !== 'false')
   const [responseTimeNetworkMode, setResponseTimeNetworkMode] = useState<ResponseTimeNetworkMode>(() => readStoredResponseTimeNetworkMode(responseTimeNetworkModeStorageKey))
   const [artStdDevBandsEnabled, setArtStdDevBandsEnabled] = useState(() => readStoredString(artStdDevBandsStorageKey) === 'true')
@@ -650,10 +671,18 @@ export default function TestExecutionCharts({
     }>
   >(new Map())
   const commandCenterSurface = surface === 'command-center'
+  // A window longer than the schedule would still trim a run that outlasts
+  // it while the slider reads All: make it All.
+  const timeRangeMinutes = executionChartMinuteRangeValue(timeRange)
+  const displayWindowPastSchedule = timeRangeMinutes !== null && Number.isFinite(displayWindowMaxMinutes)
+    && timeRangeMinutes > Math.max(executionChartMinMinuteRange, Math.round(displayWindowMaxMinutes))
+  useEffect(() => {
+    if (displayWindowPastSchedule) onTimeRangeChange('all')
+  }, [displayWindowPastSchedule, onTimeRangeChange])
   // Group names arrive as a fresh array on every parent render, so memoize on a
   // signature instead of identity — the load-impact model is rebuilt from the
   // whole history and must not recompute on unrelated renders.
-  const graphGroupNamesSignature = (isMultiGroup ? groupNames : []).join('\u001f')
+  const graphGroupNamesSignature = (isMultiGroup && seriesVisibility.groups ? groupNames : []).join('\u001f')
   const graphGroupNames = useMemo(
     () => graphGroupNamesSignature ? graphGroupNamesSignature.split('\u001f') : [],
     [graphGroupNamesSignature],
@@ -803,6 +832,11 @@ export default function TestExecutionCharts({
   }, [gradientUnderlaysStorageKey, showGradientUnderlays])
 
   useEffect(() => {
+    writeStoredString(groupSeriesStorageKey, seriesVisibility.groups ? 'true' : 'false')
+    writeStoredString(transactionSeriesStorageKey, seriesVisibility.transactions ? 'true' : 'false')
+  }, [groupSeriesStorageKey, seriesVisibility, transactionSeriesStorageKey])
+
+  useEffect(() => {
     writeStoredString(downsampleChartsStorageKey, downsampleDenseCharts ? 'true' : 'false')
   }, [downsampleChartsStorageKey, downsampleDenseCharts])
 
@@ -897,16 +931,37 @@ export default function TestExecutionCharts({
     return ordered.length ? ordered : allChartConfigs
   }, [allChartConfigs, chartOrder])
   const latencyKeys = useMemo(() => routeLatencySeriesKeys(filteredData), [filteredData])
-  const transactionNames = useMemo(() => transactionChartSeriesNames(filteredData), [filteredData])
+  const allTransactionNames = useMemo(() => transactionChartSeriesNames(filteredData), [filteredData])
+  const transactionNames = seriesVisibility.transactions ? allTransactionNames : noTransactionNames
+  // Which charts have shown transaction lines since this run's graphs opened,
+  // so a zoom or a stretch without transactions does not change which row
+  // choices apply. Percentile charts count their own percentile.
+  const transactionPresence = useMemo(() => {
+    const present: Record<string, boolean> = { all: allTransactionNames.length > 0 }
+    RESPONSE_PERCENTILE_KEYS.forEach(percentileKey => {
+      present[percentileKey] = transactionChartSeriesNames(filteredData, percentileKey).length > 0
+    })
+    return present
+  }, [allTransactionNames, filteredData])
+  const [seenTransactions, setSeenTransactions] = useState<{ runId?: string; seen: Record<string, boolean> }>({ runId, seen: {} })
+  const seenTransactionsForRun = seenTransactions.runId === runId ? seenTransactions.seen : {}
+  useEffect(() => {
+    setSeenTransactions(previous => {
+      const seen = previous.runId === runId ? previous.seen : {}
+      const added = Object.keys(transactionPresence).filter(key => transactionPresence[key] && !seen[key])
+      if (added.length === 0 && previous.runId === runId) return previous
+      return { runId, seen: { ...seen, ...Object.fromEntries(added.map(key => [key, true])) } }
+    })
+  }, [runId, transactionPresence])
   // A percentile graph lists only the transactions that actually reported that
   // percentile, so an archived run whose interval summaries carry no
   // per-transaction percentiles never offers an empty line.
   const percentileTransactionNames = useMemo(() => (
     RESPONSE_PERCENTILE_KEYS.reduce((names, percentileKey) => {
-      names[percentileKey] = transactionChartSeriesNames(filteredData, percentileKey)
+      names[percentileKey] = seriesVisibility.transactions ? transactionChartSeriesNames(filteredData, percentileKey) : noTransactionNames
       return names
     }, {} as Record<ResponsePercentileKey, string[]>)
-  ), [filteredData])
+  ), [filteredData, seriesVisibility.transactions])
   const transactionNamesForChart = (chart: ChartConfig) => (
     isResponsePercentileChart(chart) ? percentileTransactionNames[chart.percentileKey] : transactionNames
   )
@@ -1411,18 +1466,49 @@ export default function TestExecutionCharts({
         ? prev.filter(id => id !== chart.id)
         : [...prev, chart.id],
     )
-    setChartMetricFilters(prev => {
-      const storedKeys = prev[chart.id]
+    // The overlay is shared by every Series setting, so each one's row
+    // choices follow it.
+    setChartMetricFilters(prev => metricFilterKeysForChart(chart).reduce((next, filterKey) => {
+      const storedKeys = next[filterKey]
       if (enabling) {
         return storedKeys && !storedKeys.includes(key)
-          ? { ...prev, [chart.id]: [...storedKeys, key] }
-          : prev
+          ? { ...next, [filterKey]: [...storedKeys, key] }
+          : next
       }
-      if (!storedKeys?.includes(key)) return prev
+      if (!storedKeys?.includes(key)) return next
       const nextKeys = storedKeys.filter(storedKey => storedKey !== key)
-      return nextKeys.length > 0 ? { ...prev, [chart.id]: nextKeys } : prev
-    })
+      return nextKeys.length > 0 ? { ...next, [filterKey]: nextKeys } : next
+    }, prev))
   }
+
+  // Each Series setting keeps its own row choices, so choices made while a
+  // kind is hidden never touch the ones made with both shown. A toggle with
+  // nothing to hide on this run (one group, no transactions) changes nothing.
+  const groupSeriesHidden = !seriesVisibility.groups && isMultiGroup && groupNames.length > 0
+  const transactionSeriesHiddenOn = (chart: ChartConfig) => {
+    if (seriesVisibility.transactions) return false
+    const presenceKey = isResponsePercentileChart(chart) ? chart.percentileKey : 'all'
+    return Boolean(seenTransactionsForRun[presenceKey] || transactionPresence[presenceKey])
+  }
+  // Only these graphs draw group or transaction lines; every other graph's
+  // row choices stay put whatever the Series setting.
+  const chartDrawsTransactionSeries = (chart: ChartConfig) => (
+    seriesChartIds.has(chart.id) || isResponsePercentileChart(chart)
+  )
+  const chartDrawsGroupSeries = (chart: ChartConfig) => (
+    chartDrawsTransactionSeries(chart)
+    // Under Load graphs draw group lines only for performance metrics.
+    || (isLoadImpactChart(chart) && !isLoadImpactHeatmapChart(chart) && !isLoadImpactPercentilesChart(chart)
+      && chart.loadImpactMetric?.category === 'performance')
+  )
+  const metricFilterKeyForChart = (chart: ChartConfig) => (
+    groupSeriesHidden && chartDrawsGroupSeries(chart)
+      ? `${chart.id}\u0000transactions`
+      : chartDrawsTransactionSeries(chart) && transactionSeriesHiddenOn(chart)
+        ? `${chart.id}\u0000groups`
+        : chart.id
+  )
+  const metricFilterKeysForChart = (chart: ChartConfig) => [chart.id, `${chart.id}\u0000groups`, `${chart.id}\u0000transactions`]
 
   const metricRowsForChart = (chart: ChartConfig) => chartMetricRows(
     chart,
@@ -1445,7 +1531,7 @@ export default function TestExecutionCharts({
 
   const visibleMetricKeysForChart = (chart: ChartConfig, rows = metricRowsForChart(chart)) => {
     const availableKeys = rows.map(row => row.key)
-    const storedKeys = chartMetricFilters[chart.id]?.filter(key => availableKeys.includes(key)) ?? []
+    const storedKeys = chartMetricFilters[metricFilterKeyForChart(chart)]?.filter(key => availableKeys.includes(key)) ?? []
     const defaultKeys = chart.defaultMetricKeys?.filter(key => availableKeys.includes(key)) ?? []
     return storedKeys.length > 0 ? storedKeys : defaultKeys.length > 0 ? defaultKeys : availableKeys
   }
@@ -1458,19 +1544,21 @@ export default function TestExecutionCharts({
   const metricYAxisId = (chart: ChartConfig, visibleMetricKeys: string[]) => visibleOverlayMetricKeys(chart, visibleMetricKeys).length > 0 ? 'metric' : undefined
 
   const showAllMetricRows = (chart: ChartConfig, rows: ChartMetricRow[]) => {
-    setChartMetricFilters(prev => ({ ...prev, [chart.id]: rows.map(row => row.key) }))
+    const filterKey = metricFilterKeyForChart(chart)
+    setChartMetricFilters(prev => ({ ...prev, [filterKey]: rows.map(row => row.key) }))
   }
 
   const toggleMetricRow = (chart: ChartConfig, rows: ChartMetricRow[], key: string) => {
     const availableKeys = rows.map(row => row.key)
     const defaultKeys = chart.defaultMetricKeys?.filter(candidate => availableKeys.includes(candidate)) ?? []
+    const filterKey = metricFilterKeyForChart(chart)
     setChartMetricFilters(prev => {
-      const currentKeys = prev[chart.id]?.filter(candidate => availableKeys.includes(candidate)) ?? (defaultKeys.length > 0 ? defaultKeys : availableKeys)
+      const currentKeys = prev[filterKey]?.filter(candidate => availableKeys.includes(candidate)) ?? (defaultKeys.length > 0 ? defaultKeys : availableKeys)
       const nextKeys = currentKeys.includes(key)
         ? currentKeys.filter(candidate => candidate !== key)
         : [...currentKeys, key]
       if (nextKeys.length === 0) return prev
-      return { ...prev, [chart.id]: nextKeys }
+      return { ...prev, [filterKey]: nextKeys }
     })
   }
 
@@ -1774,6 +1862,7 @@ export default function TestExecutionCharts({
     setChartDensity(densityFallback)
     setGraphPage({ scope: graphPageScope, index: 0 })
     setShowGradientUnderlays(true)
+    setSeriesVisibility({ groups: true, transactions: true })
     setDownsampleDenseCharts(true)
     if (commandCenterSurface) {
       setShowGraphTableRows(false)
@@ -1785,17 +1874,25 @@ export default function TestExecutionCharts({
   }
 
   const renderSectionSubtext = (text: string) => commandCenterSurface ? null : <span>{text}</span>
+  const seriesNoteId = chartDomIdFor('series', 'note')
+  // The slider runs to the scheduled length, then "All"; a window past the
+  // schedule shows the whole run, so it sits at "All".
+  const displayWindowMaxValue = Number.isFinite(displayWindowMaxMinutes)
+    ? Math.max(executionChartMinMinuteRange, Math.round(displayWindowMaxMinutes))
+    : executionChartMaxMinuteRange
+  const displayWindowAllSliderValue = displayWindowMaxValue + 1
   const displayWindowMinuteValue = executionChartMinuteRangeValue(timeRange)
-  const displayWindowSliderValue = displayWindowMinuteValue ?? displayWindowAllSliderValue
+  const displayWindowSliderValue = Math.min(displayWindowMinuteValue ?? displayWindowAllSliderValue, displayWindowAllSliderValue)
+  const visibleDisplayWindowPresets = displayWindowPresets.filter(preset => preset.minutes <= displayWindowMaxValue)
   const displayWindowLabel = timeRange === 'custom'
     ? 'Custom'
     : displayWindowSliderValue >= displayWindowAllSliderValue
       ? 'All'
       : `${displayWindowSliderValue}m`
-  const displayWindowSliderPosition = displayWindowSliderPercent(displayWindowSliderValue)
+  const displayWindowSliderPosition = displayWindowSliderPercent(displayWindowSliderValue, displayWindowAllSliderValue)
   const setDisplayWindowFromSlider = (value: string) => {
     const nextValue = Number(value)
-    onTimeRangeChange(nextValue >= displayWindowAllSliderValue ? 'all' : executionChartTimeRangeForMinutes(nextValue))
+    onTimeRangeChange(nextValue >= displayWindowAllSliderValue ? 'all' : executionChartTimeRangeForMinutes(nextValue, displayWindowMaxValue))
   }
 
   const renderChartDisplayControlSections = () => (
@@ -1823,12 +1920,12 @@ export default function TestExecutionCharts({
             <span>{displayWindowLabel}</span>
           </div>
           <div className="chart-window-presets" role="group" aria-label="Graph display window presets">
-            {displayWindowPresets.map(preset => (
+            {visibleDisplayWindowPresets.map(preset => (
               <button
                 key={preset.label}
                 className={`btn-chip ${displayWindowMinuteValue === preset.minutes ? 'active' : ''}`}
                 type="button"
-                onClick={() => onTimeRangeChange(executionChartTimeRangeForMinutes(preset.minutes))}
+                onClick={() => onTimeRangeChange(executionChartTimeRangeForMinutes(preset.minutes, displayWindowMaxValue))}
                 aria-pressed={displayWindowMinuteValue === preset.minutes}
               >
                 {preset.label}
@@ -1952,6 +2049,41 @@ export default function TestExecutionCharts({
           </div>
         </div>
       )}
+      <div className="charts-config-panel-section">
+        <div>
+          <h4>Series</h4>
+          {renderSectionSubtext('Group and transaction lines')}
+        </div>
+        <div className="chart-rendering-options" role="group" aria-label="Graph series">
+          {/* The last kind shown stays reachable and says why it cannot be
+              turned off, rather than going dim and unfocusable. */}
+          <label className="chart-table-row-toggle">
+            <input
+              type="checkbox"
+              checked={seriesVisibility.groups}
+              aria-disabled={seriesVisibility.groups && !seriesVisibility.transactions}
+              aria-describedby={seriesVisibility.groups && !seriesVisibility.transactions ? seriesNoteId : undefined}
+              aria-label="Show group series on graphs"
+              onChange={event => setSeriesShown('groups', event.currentTarget.checked)}
+            />
+            <span>Groups</span>
+          </label>
+          <label className="chart-table-row-toggle">
+            <input
+              type="checkbox"
+              checked={seriesVisibility.transactions}
+              aria-disabled={seriesVisibility.transactions && !seriesVisibility.groups}
+              aria-describedby={seriesVisibility.transactions && !seriesVisibility.groups ? seriesNoteId : undefined}
+              aria-label="Show transaction series on graphs"
+              onChange={event => setSeriesShown('transactions', event.currentTarget.checked)}
+            />
+            <span>Transactions</span>
+          </label>
+          {seriesVisibility.groups !== seriesVisibility.transactions && (
+            <span id={seriesNoteId} className="chart-series-note">At least one of groups and transactions stays shown.</span>
+          )}
+        </div>
+      </div>
       <div className="charts-config-panel-section">
         <div>
           <h4>Cursor Labels</h4>

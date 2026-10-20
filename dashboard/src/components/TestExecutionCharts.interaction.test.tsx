@@ -701,6 +701,318 @@ describe('TestExecutionCharts context menu', () => {
     expectTransactionLines(chartFor('Error Rate (%)'), 'errorPct')
   })
 
+  it('shows group and transaction series on their own toggles, never both off', async () => {
+    const point = (time: string, tps: number): MetricsHistoryPoint => ({
+      time, vusers: 4, tps, avgMs: 100, errorPct: 0, p50: 80, p90: 120, p99: 160,
+      Checkout_tps: tps / 2, Checkout_avgMs: 100, Checkout_errorPct: 0,
+      Browse_tps: tps / 2, Browse_avgMs: 100, Browse_errorPct: 0,
+      [transactionChartSeriesKey('Login', 'tps')]: tps, [transactionChartSeriesKey('Login', 'avgMs')]: 90, [transactionChartSeriesKey('Login', 'errorPct')]: 0,
+    })
+    const renderSeriesCharts = async () => {
+      await act(async () => {
+        root.render(
+          <TestExecutionCharts
+            filteredData={[point('10:00:00', 4), point('10:00:01', 6)]}
+            expandedChart={null}
+            onExpandedChartChange={vi.fn()}
+            onChartMouseDown={vi.fn()}
+            onChartMouseMove={vi.fn()}
+            onZoom={vi.fn()}
+            onResetZoom={vi.fn()}
+            showRefArea={false}
+            refAreaLeft=""
+            refAreaEnd=""
+            timeRange="3m"
+            onTimeRangeChange={vi.fn()}
+            isMultiGroup
+            groupNames={['Checkout', 'Browse']}
+            groupColors={['#00a3ff', '#ffaa00']}
+          />,
+        )
+      })
+    }
+    await renderSeriesCharts()
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const tpsChart = () => Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.querySelector('.chart-title')?.textContent === 'Transactions Per Second')
+    const line = (key: string) => tpsChart()?.querySelector(`path[data-testid="mock-line"][data-key="${key}"]`) ?? null
+    const loginKey = transactionChartSeriesKey('Login', 'tps')
+    const groupsToggle = () => container.querySelector<HTMLInputElement>('input[aria-label="Show group series on graphs"]')!
+    const transactionsToggle = () => container.querySelector<HTMLInputElement>('input[aria-label="Show transaction series on graphs"]')!
+
+    expect(line('Checkout_tps')).not.toBeNull()
+    expect(line(loginKey)).not.toBeNull()
+    expect(groupsToggle().checked).toBe(true)
+    expect(transactionsToggle().checked).toBe(true)
+    expect(groupsToggle().getAttribute('aria-disabled')).toBe('false')
+
+    // Transactions off: the groups and the total stay, and groups is the last one on.
+    await act(async () => { transactionsToggle().click() })
+    expect(line(loginKey)).toBeNull()
+    expect(line('Checkout_tps')).not.toBeNull()
+    expect(line('Browse_tps')).not.toBeNull()
+    expect(line('tps')).not.toBeNull()
+    expect(tpsChart()?.textContent).not.toContain('Transaction · Login')
+    // It stays reachable and says why it cannot be turned off.
+    expect(groupsToggle().disabled).toBe(false)
+    expect(groupsToggle().getAttribute('aria-disabled')).toBe('true')
+    const note = document.getElementById(groupsToggle().getAttribute('aria-describedby')!)
+    expect(note?.textContent).toContain('At least one of groups and transactions stays shown')
+    await act(async () => { groupsToggle().click() })
+    expect(groupsToggle().checked).toBe(true)
+    expect(line('Checkout_tps')).not.toBeNull()
+
+    // Row choices made while transactions are hidden are their own: showing
+    // transactions again brings back the choices made with both shown.
+    await act(async () => { tpsChart()?.querySelector<HTMLInputElement>('input[aria-label="Show Browse"]')?.click() })
+    expect(line('Browse_tps')).toBeNull()
+    await act(async () => { transactionsToggle().click() })
+    expect(line(loginKey)).not.toBeNull()
+    expect(line('Checkout_tps')).not.toBeNull()
+    expect(line('Browse_tps')).not.toBeNull()
+    // And a choice made with both shown survives hiding a kind and back.
+    await act(async () => { tpsChart()?.querySelector<HTMLInputElement>('input[aria-label="Show Checkout"]')?.click() })
+    expect(line('Checkout_tps')).toBeNull()
+    await act(async () => { transactionsToggle().click() })
+    expect(line('Browse_tps')).toBeNull()
+    expect(line('Checkout_tps')).not.toBeNull()
+    await act(async () => { transactionsToggle().click() })
+    expect(line('Checkout_tps')).toBeNull()
+    expect(line(loginKey)).not.toBeNull()
+    await act(async () => { tpsChart()?.querySelector<HTMLInputElement>('input[aria-label="Show Checkout"]')?.click() })
+    await act(async () => { transactionsToggle().click() })
+    await act(async () => { tpsChart()?.querySelector<HTMLInputElement>('input[aria-label="Show Browse"]')?.click() })
+
+    // Groups off instead: the transactions and the total stay.
+    await act(async () => { transactionsToggle().click() })
+    await act(async () => { groupsToggle().click() })
+    expect(line('Checkout_tps')).toBeNull()
+    expect(line('Browse_tps')).toBeNull()
+    expect(line(loginKey)).not.toBeNull()
+    expect(line('tps')).not.toBeNull()
+    expect(transactionsToggle().getAttribute('aria-disabled')).toBe('true')
+    expect(window.localStorage.getItem('apexload.execution.groupSeries')).toBe('false')
+
+    // The table under the graph follows the same choice.
+    const table = () => tpsChart()?.querySelector('.chart-metrics-table')
+    expect(table()).not.toBeNull()
+    expect(table()?.textContent).toContain('Login')
+    expect(table()?.textContent).not.toContain('Checkout')
+
+    // The choice is remembered on the next visit.
+    await act(async () => { root.unmount() })
+    root = createRoot(container)
+    await renderSeriesCharts()
+    expect(line('Checkout_tps')).toBeNull()
+    expect(line(loginKey)).not.toBeNull()
+
+    // Reset Graphs shows both again.
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => { buttonByText('Reset Graphs')?.click() })
+    expect(line('Checkout_tps')).not.toBeNull()
+    expect(line(loginKey)).not.toBeNull()
+    expect(window.localStorage.getItem('apexload.execution.groupSeries')).toBe('true')
+
+    // A stored pair that hides both falls back to both.
+    window.localStorage.setItem('apexload.execution.groupSeries', 'false')
+    window.localStorage.setItem('apexload.execution.transactionSeries', 'false')
+    await act(async () => { root.unmount() })
+    root = createRoot(container)
+    await renderSeriesCharts()
+    expect(line('Checkout_tps')).not.toBeNull()
+    expect(line(loginKey)).not.toBeNull()
+  })
+
+  it('shows an overlay in every series setting', async () => {
+    const point = (time: string, tps: number): MetricsHistoryPoint => ({
+      time, vusers: 4, tps, avgMs: 100, errorPct: 0, p50: 80, p90: 120, p99: 160,
+      Checkout_tps: tps / 2, Checkout_avgMs: 100, Checkout_errorPct: 0,
+      Browse_tps: tps / 2, Browse_avgMs: 100, Browse_errorPct: 0,
+      [transactionChartSeriesKey('Login', 'tps')]: tps, [transactionChartSeriesKey('Login', 'avgMs')]: 90, [transactionChartSeriesKey('Login', 'errorPct')]: 0,
+      [transactionChartSeriesKey('Search', 'tps')]: tps, [transactionChartSeriesKey('Search', 'avgMs')]: 90, [transactionChartSeriesKey('Search', 'errorPct')]: 0,
+    })
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[point('10:00:00', 4), point('10:00:01', 6)]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup
+          groupNames={['Checkout', 'Browse']}
+          groupColors={['#00a3ff', '#ffaa00']}
+        />,
+      )
+    })
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    // The overlay adds itself to the title.
+    const tpsChart = () => Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.querySelector('.chart-title')?.textContent?.startsWith('Transactions Per Second'))
+    const groupsToggle = () => container.querySelector<HTMLInputElement>('input[aria-label="Show group series on graphs"]')!
+    const vusersOverlay = () => tpsChart()?.querySelector('path[data-testid="mock-line"][data-name="Active VUsers"]') ?? null
+
+    // Rows chosen with groups hidden, then the overlay turned on with both shown.
+    await act(async () => { groupsToggle().click() })
+    await act(async () => { tpsChart()?.querySelector<HTMLInputElement>('input[aria-label="Show Transaction · Search"]')?.click() })
+    await act(async () => { groupsToggle().click() })
+    await act(async () => {
+      tpsChart()?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 180, clientY: 160 }))
+    })
+    await act(async () => {
+      menuButton('Overlay VUsers')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(vusersOverlay()).not.toBeNull()
+
+    await act(async () => { groupsToggle().click() })
+    expect(vusersOverlay()).not.toBeNull()
+  })
+
+  it('keeps row choices across a window without transactions', async () => {
+    const point = (time: string, tps: number, withTransactions: boolean): MetricsHistoryPoint => ({
+      time, vusers: 4, tps, avgMs: 100, errorPct: 0, p50: 80, p90: 120, p99: 160,
+      Checkout_tps: tps / 2, Checkout_avgMs: 100, Checkout_errorPct: 0,
+      Browse_tps: tps / 2, Browse_avgMs: 100, Browse_errorPct: 0,
+      ...(withTransactions ? { [transactionChartSeriesKey('Login', 'tps')]: tps, [transactionChartSeriesKey('Login', 'avgMs')]: 90, [transactionChartSeriesKey('Login', 'errorPct')]: 0 } : {}),
+    })
+    const renderWindow = async (withTransactions: boolean) => {
+      await act(async () => {
+        root.render(
+          <TestExecutionCharts
+            runId="run-1"
+            filteredData={[point('10:00:00', 4, withTransactions), point('10:00:01', 6, withTransactions)]}
+            expandedChart={null}
+            onExpandedChartChange={vi.fn()}
+            onChartMouseDown={vi.fn()}
+            onChartMouseMove={vi.fn()}
+            onZoom={vi.fn()}
+            onResetZoom={vi.fn()}
+            showRefArea={false}
+            refAreaLeft=""
+            refAreaEnd=""
+            timeRange="3m"
+            onTimeRangeChange={vi.fn()}
+            isMultiGroup
+            groupNames={['Checkout', 'Browse']}
+            groupColors={['#00a3ff', '#ffaa00']}
+          />,
+        )
+      })
+    }
+    await renderWindow(true)
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const tpsChart = () => Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.querySelector('.chart-title')?.textContent === 'Transactions Per Second')
+    const browseLine = () => tpsChart()?.querySelector('path[data-testid="mock-line"][data-key="Browse_tps"]') ?? null
+
+    await act(async () => { container.querySelector<HTMLInputElement>('input[aria-label="Show transaction series on graphs"]')!.click() })
+    await act(async () => { tpsChart()?.querySelector<HTMLInputElement>('input[aria-label="Show Browse"]')?.click() })
+    expect(browseLine()).toBeNull()
+
+    // A zoom onto a stretch before the first transaction keeps the choice.
+    await renderWindow(false)
+    expect(browseLine()).toBeNull()
+    await renderWindow(true)
+    expect(browseLine()).toBeNull()
+  })
+
+  it('keeps row choices on graphs without group or transaction lines', async () => {
+    const point = (time: string, tps: number): MetricsHistoryPoint => ({
+      time, vusers: 4, tps, avgMs: 100, errorPct: 0, p50: 80, p90: 120, p99: 160,
+      netSent: 10, netRecv: 20, diskRead: 30, diskWrite: 40,
+      Checkout_tps: tps / 2, Checkout_avgMs: 100, Checkout_errorPct: 0,
+      Browse_tps: tps / 2, Browse_avgMs: 100, Browse_errorPct: 0,
+      [transactionChartSeriesKey('Login', 'tps')]: tps, [transactionChartSeriesKey('Login', 'avgMs')]: 90, [transactionChartSeriesKey('Login', 'errorPct')]: 0,
+    })
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[point('10:00:00', 4), point('10:00:01', 6)]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup
+          groupNames={['Checkout', 'Browse']}
+          groupColors={['#00a3ff', '#ffaa00']}
+        />,
+      )
+    })
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const ioChart = () => Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.querySelector('.chart-title')?.textContent?.startsWith('Network & Disk I/O'))
+    const diskWriteRow = () => ioChart()?.querySelector<HTMLInputElement>('input[aria-label="Show Disk Write"]') ?? null
+    expect(diskWriteRow()?.checked).toBe(true)
+
+    await act(async () => { diskWriteRow()?.click() })
+    expect(diskWriteRow()?.checked).toBe(false)
+    await act(async () => { container.querySelector<HTMLInputElement>('input[aria-label="Show transaction series on graphs"]')!.click() })
+    expect(diskWriteRow()?.checked).toBe(false)
+    await act(async () => { container.querySelector<HTMLInputElement>('input[aria-label="Show transaction series on graphs"]')!.click() })
+    await act(async () => { container.querySelector<HTMLInputElement>('input[aria-label="Show group series on graphs"]')!.click() })
+    expect(diskWriteRow()?.checked).toBe(false)
+  })
+
+  it('keeps row choices when a series toggle has nothing to hide', async () => {
+    const point = (time: string, tps: number): MetricsHistoryPoint => ({
+      time, vusers: 4, tps, avgMs: 100, errorPct: 0, p50: 80, p90: 120, p99: 160,
+      [transactionChartSeriesKey('Login', 'tps')]: tps, [transactionChartSeriesKey('Login', 'avgMs')]: 90, [transactionChartSeriesKey('Login', 'errorPct')]: 0,
+      [transactionChartSeriesKey('Search', 'tps')]: tps, [transactionChartSeriesKey('Search', 'avgMs')]: 90, [transactionChartSeriesKey('Search', 'errorPct')]: 0,
+    })
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[point('10:00:00', 4), point('10:00:01', 6)]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={['Only']}
+          groupColors={['#00a3ff']}
+        />,
+      )
+    })
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const tpsChart = () => Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.querySelector('.chart-title')?.textContent === 'Transactions Per Second')
+    const searchLine = () => tpsChart()?.querySelector(`path[data-testid="mock-line"][data-key="${transactionChartSeriesKey('Search', 'tps')}"]`) ?? null
+
+    await act(async () => { tpsChart()?.querySelector<HTMLInputElement>('input[aria-label="Show Transaction · Search"]')?.click() })
+    expect(searchLine()).toBeNull()
+    // A single-group run draws no group lines, so hiding groups changes nothing.
+    await act(async () => { container.querySelector<HTMLInputElement>('input[aria-label="Show group series on graphs"]')!.click() })
+    expect(searchLine()).toBeNull()
+  })
+
   it('bounds transaction legends with an explicit overflow count while retaining every line', async () => {
     const transactionNames = Array.from({ length: 30 }, (_, index) => `Transaction ${String(index).padStart(2, '0')}`)
     const point: MetricsHistoryPoint = {
@@ -1928,11 +2240,83 @@ describe('TestExecutionCharts context menu', () => {
     expect(presetGroup?.textContent).toContain('1m')
     expect(presetGroup?.textContent).toContain('3m')
     expect(presetGroup?.textContent).toContain('5m')
+    expect(presetGroup?.textContent).toContain('10m')
     expect(presetGroup?.textContent).toContain('1h')
+    await act(async () => {
+      Array.from(presetGroup?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(button => button.textContent === '10m')?.click()
+    })
+    expect(onTimeRangeChange).toHaveBeenLastCalledWith('10m')
     await act(async () => {
       presetGroup?.querySelector<HTMLButtonElement>('button:last-child')?.click()
     })
     expect(onTimeRangeChange).toHaveBeenLastCalledWith('60m')
+  })
+
+  it('runs the display window slider to the scheduled run length', async () => {
+    const onTimeRangeChange = vi.fn()
+    const renderWindow = async (timeRange: '10m' | '40m' | 'all', displayWindowMaxMinutes: number) => {
+      await act(async () => {
+        root.render(
+          <TestExecutionCharts
+            filteredData={[
+              { time: '10:00:00', vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130 },
+              { time: '10:00:01', vusers: 4, tps: 2, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p99: 135 },
+            ]}
+            expandedChart={null}
+            onExpandedChartChange={vi.fn()}
+            onChartMouseDown={vi.fn()}
+            onChartMouseMove={vi.fn()}
+            onZoom={vi.fn()}
+            onResetZoom={vi.fn()}
+            showRefArea={false}
+            refAreaLeft=""
+            refAreaEnd=""
+            timeRange={timeRange}
+            onTimeRangeChange={onTimeRangeChange}
+            displayWindowMaxMinutes={displayWindowMaxMinutes}
+            isMultiGroup={false}
+            groupNames={[]}
+            groupColors={['#00a3ff']}
+          />,
+        )
+      })
+    }
+    await renderWindow('10m', 25)
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const slider = () => container.querySelector<HTMLInputElement>('input[aria-label="Graph display window"]')!
+    // A 25-minute schedule: minutes 1-25, then All.
+    expect(slider().max).toBe('26')
+    expect(slider().value).toBe('10')
+    const presets = () => Array.from(container.querySelectorAll('[aria-label="Graph display window presets"] button')).map(button => button.textContent)
+    expect(presets()).toEqual(['1m', '3m', '5m', '10m'])
+
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      valueSetter?.call(slider(), '25')
+      slider().dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onTimeRangeChange).toHaveBeenLastCalledWith('25m')
+    await act(async () => {
+      valueSetter?.call(slider(), '26')
+      slider().dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onTimeRangeChange).toHaveBeenLastCalledWith('all')
+
+    // A window longer than the schedule becomes All, so a run that outlasts
+    // its schedule is not trimmed while the slider reads All.
+    onTimeRangeChange.mockClear()
+    await renderWindow('40m', 25)
+    expect(onTimeRangeChange).toHaveBeenCalledWith('all')
+    expect(slider().value).toBe('26')
+    expect(slider().getAttribute('aria-valuetext')).toBe('All')
+
+    // A two-hour schedule reaches past the old one-hour limit.
+    await renderWindow('all', 120)
+    expect(slider().max).toBe('121')
+    expect(presets()).toEqual(['1m', '3m', '5m', '10m', '1h'])
   })
 
   it('applies seconds to the live response-time graph title and axis', async () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   executionChartMaxMinuteRange,
+  executionChartMaxMinutesForSchedule,
   executionChartMinuteRangeValue,
   executionChartTimeRangeForMinutes,
   executionChartZoomReducer,
@@ -88,5 +89,17 @@ describe('testExecutionChartZoomModel', () => {
     expect(executionChartTimeRangeForMinutes(0)).toBe('1m')
     expect(executionChartTimeRangeForMinutes(16)).toBe('16m')
     expect(executionChartTimeRangeForMinutes(99)).toBe('60m')
+    expect(executionChartTimeRangeForMinutes(99, 120)).toBe('99m')
+    expect(executionChartMinuteRangeValue('90m')).toBe(90)
+    expect(executionChartMinuteRangeValue('0m')).toBeNull()
+    expect(executionChartMinuteRangeValue('1.5m' as never)).toBeNull()
+  })
+
+  it('sizes the slider to the run schedule', () => {
+    expect(executionChartMaxMinutesForSchedule(25 * 60)).toBe(25)
+    expect(executionChartMaxMinutesForSchedule(25 * 60 + 1)).toBe(26)
+    expect(executionChartMaxMinutesForSchedule(20)).toBe(1)
+    expect(executionChartMaxMinutesForSchedule(0)).toBe(60)
+    expect(executionChartMaxMinutesForSchedule(undefined)).toBe(60)
   })
 })
