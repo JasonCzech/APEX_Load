@@ -1,0 +1,9 @@
+{
+  "scope": "Unrelated primary checkout; read-only audit",
+  "head": "3b6f15dbc5a39b2fc02b4e3d5601301da35c9cc7",
+  "status": " M .claude/launch.json\n M dashboard/package-lock.json\n",
+  "files": {
+    ".claude/launch.json": "ed4203a4c1e16c0033057e9edf2f74e1e7372e3489b5373c96e6ed1c4456cde6",
+    "dashboard/package-lock.json": "76bcca648f166115afb0a5f9a843fa0b735596a5905485130b860e3f6770f3b9"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "base_main": "c90fa4cd148bab1c8446838a2fa713bc9a43ca54",
+  "committed_precision_head": "5b1d23d5f079397faab0f9af99e36a599e3a5f4a",
+  "staged_files_relative_main": 434,
+  "unexpected_scope_files": [],
+  "excluded_unrelated_primary_paths": [
+    ".claude/launch.json",
+    "dashboard/package-lock.json"
+  ],
+  "passed": true,
+  "note": "Review narrative/evidence and index additions are staged only after final browser accounting."
+}

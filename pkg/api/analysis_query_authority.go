@@ -98,6 +98,14 @@ func (s *Server) writeNativeDatasetSeries(w http.ResponseWriter, r *http.Request
 // Preview is a completed analytical result too. A cancelled/deleted import or
 // later mapping/upload/association revision cannot authorize the old result.
 func (s *Server) writeNativeAnalysisPreview(w http.ResponseWriter, r *http.Request, captured *storage.AnalysisImport, preview analytics.Preview) bool {
+	return s.writeNativeAnalysisResult(w, r, captured, preview)
+}
+
+func (s *Server) writeNativeAnalysisPrecisionReview(w http.ResponseWriter, r *http.Request, captured *storage.AnalysisImport, review AnalysisPrecisionReview) bool {
+	return s.writeNativeAnalysisResult(w, r, captured, review)
+}
+
+func (s *Server) writeNativeAnalysisResult(w http.ResponseWriter, r *http.Request, captured *storage.AnalysisImport, preview any) bool {
 	if captured == nil {
 		writeError(w, 409, "analytical preview snapshot mismatch")
 		return false

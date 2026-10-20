@@ -42,8 +42,8 @@ func (s *Server) handleAnalysisMappingAssociation(w http.ResponseWriter, r *http
 		writeError(w, 400, "invalid association identity or revision")
 		return
 	}
-	// Version1/2 mappings preserve every currently supported summary/histogram
-	// declaration. Unknown future versions cannot be rewritten through this contract.
+	// Supported mappings preserve summary/histogram and precision declarations.
+	// Unknown future versions cannot be rewritten through this contract.
 	if in.Mapping == nil {
 		writeError(w, 409, "dataset mapping is unavailable")
 		return

@@ -25605,6 +25605,9 @@ paths:
                     format: int64
                   partition_pruning_available:
                     type: boolean
+                  precision_consent_version:
+                    type: integer
+                    format: int64
                   preparation_enabled:
                     type: boolean
                   resource_configuration_accepted:
@@ -25635,6 +25638,7 @@ paths:
                   - native_parquet
                   - partition_manifest_version
                   - partition_pruning_available
+                  - precision_consent_version
                   - preparation_enabled
                   - resource_configuration_accepted
                   - spill_limit
@@ -27546,6 +27550,8 @@ paths:
                             - kind
                             - unit
                             - value
+                      precision_policy:
+                        type: string
                       timestamp:
                         type: array
                         items:
@@ -27688,6 +27694,13 @@ paths:
                   partition_manifest_version:
                     type: integer
                     format: int64
+                  precision_acknowledgement_sha256:
+                    type: string
+                  precision_consent_revision:
+                    type: integer
+                    format: int64
+                  precision_review_sha256:
+                    type: string
                   project_id:
                     type: string
                   rejected:
@@ -27936,6 +27949,8 @@ paths:
                                 - kind
                                 - unit
                                 - value
+                          precision_policy:
+                            type: string
                           timestamp:
                             type: array
                             items:
@@ -28026,6 +28041,13 @@ paths:
                       partition_manifest_version:
                         type: integer
                         format: int64
+                      precision_acknowledgement_sha256:
+                        type: string
+                      precision_consent_revision:
+                        type: integer
+                        format: int64
+                      precision_review_sha256:
+                        type: string
                       project_id:
                         type: string
                       rejected:
@@ -28311,6 +28333,8 @@ paths:
                             - kind
                             - unit
                             - value
+                      precision_policy:
+                        type: string
                       timestamp:
                         type: array
                         items:
@@ -28453,6 +28477,13 @@ paths:
                   partition_manifest_version:
                     type: integer
                     format: int64
+                  precision_acknowledgement_sha256:
+                    type: string
+                  precision_consent_revision:
+                    type: integer
+                    format: int64
+                  precision_review_sha256:
+                    type: string
                   project_id:
                     type: string
                   rejected:
@@ -29972,6 +30003,8 @@ paths:
                             - kind
                             - unit
                             - value
+                      precision_policy:
+                        type: string
                       timestamp:
                         type: array
                         items:
@@ -30114,6 +30147,13 @@ paths:
                   partition_manifest_version:
                     type: integer
                     format: int64
+                  precision_acknowledgement_sha256:
+                    type: string
+                  precision_consent_revision:
+                    type: integer
+                    format: int64
+                  precision_review_sha256:
+                    type: string
                   project_id:
                     type: string
                   rejected:
@@ -30386,6 +30426,8 @@ paths:
                             - kind
                             - unit
                             - value
+                      precision_policy:
+                        type: string
                       timestamp:
                         type: array
                         items:
@@ -30528,6 +30570,13 @@ paths:
                   partition_manifest_version:
                     type: integer
                     format: int64
+                  precision_acknowledgement_sha256:
+                    type: string
+                  precision_consent_revision:
+                    type: integer
+                    format: int64
+                  precision_review_sha256:
+                    type: string
                   project_id:
                     type: string
                   rejected:
@@ -30801,6 +30850,8 @@ paths:
                             - kind
                             - unit
                             - value
+                      precision_policy:
+                        type: string
                       timestamp:
                         type: array
                         items:
@@ -30943,6 +30994,13 @@ paths:
                   partition_manifest_version:
                     type: integer
                     format: int64
+                  precision_acknowledgement_sha256:
+                    type: string
+                  precision_consent_revision:
+                    type: integer
+                    format: int64
+                  precision_review_sha256:
+                    type: string
                   project_id:
                     type: string
                   rejected:
@@ -31166,6 +31224,8 @@ paths:
                             - kind
                             - unit
                             - value
+                      precision_policy:
+                        type: string
                       timestamp:
                         type: array
                         items:
@@ -31308,6 +31368,13 @@ paths:
                   partition_manifest_version:
                     type: integer
                     format: int64
+                  precision_acknowledgement_sha256:
+                    type: string
+                  precision_consent_revision:
+                    type: integer
+                    format: int64
+                  precision_review_sha256:
+                    type: string
                   project_id:
                     type: string
                   rejected:
@@ -31679,6 +31746,8 @@ paths:
                             type: integer
                             format: int64
                         additionalProperties: false
+                    precision_policy:
+                      type: string
                     timestamp:
                       type: array
                       items:
@@ -31696,6 +31765,10 @@ paths:
                 mapping_revision:
                   type: integer
                   format: int64
+                precision_acknowledgement_sha256:
+                  type: string
+                precision_review_sha256:
+                  type: string
                 revision:
                   type: integer
                   format: int64
@@ -31749,6 +31822,254 @@ paths:
       tags:
         - Analysis
       x-handler: handleAnalysisMapping
+  /api/v1/analysis/imports/{id}/precision-review:
+    post:
+      summary: Analysis Precision Review
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleAnalysisPrecisionReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mapping:
+                  type: object
+                  properties:
+                    identity:
+                      type: object
+                      properties:
+                        dimensions:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              value:
+                                type: array
+                                items:
+                                  type: string
+                            additionalProperties: false
+                        host:
+                          type: array
+                          items:
+                            type: string
+                        service:
+                          type: array
+                          items:
+                            type: string
+                        source:
+                          type: array
+                          items:
+                            type: string
+                      additionalProperties: false
+                    measures:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          histogram:
+                            type: object
+                            properties:
+                              bound_column:
+                                type: array
+                                items:
+                                  type: string
+                              bounds:
+                                type: array
+                                items:
+                                  type: string
+                              bucket_counts:
+                                type: string
+                              count_columns:
+                                type: array
+                                items:
+                                  type: array
+                                  items:
+                                    type: string
+                              temporality:
+                                type: string
+                              window_seconds:
+                                type: integer
+                                format: int64
+                            additionalProperties: false
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          name_column:
+                            type: array
+                            items:
+                              type: string
+                          sample_count_column:
+                            type: array
+                            items:
+                              type: string
+                          sample_sum_column:
+                            type: array
+                            items:
+                              type: string
+                          statistic:
+                            type: string
+                          unit:
+                            type: string
+                          value:
+                            type: array
+                            items:
+                              type: string
+                          window_seconds:
+                            type: integer
+                            format: int64
+                        additionalProperties: false
+                    precision_policy:
+                      type: string
+                    timestamp:
+                      type: array
+                      items:
+                        type: string
+                    timestamp_encoding:
+                      type: string
+                    timezone:
+                      type: string
+                    version:
+                      type: integer
+                      format: int64
+                  additionalProperties: false
+                revision:
+                  type: integer
+                  format: int64
+              additionalProperties: false
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  acknowledgement_sha256:
+                    type: string
+                  import_id:
+                    type: string
+                  review:
+                    type: object
+                    properties:
+                      conversion:
+                        type: string
+                      mapping_sha256:
+                        type: string
+                      risks:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            column:
+                              type: array
+                              items:
+                                type: string
+                            file_sha256:
+                              type: string
+                            precision:
+                              type: integer
+                              format: int64
+                            reason:
+                              type: string
+                            scale:
+                              type: integer
+                              format: int64
+                          required:
+                            - column
+                            - file_sha256
+                            - precision
+                            - reason
+                            - scale
+                      sha256:
+                        type: string
+                      source_count:
+                        type: integer
+                        format: int64
+                      source_set_sha256:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - conversion
+                      - mapping_sha256
+                      - risks
+                      - sha256
+                      - source_count
+                      - source_set_sha256
+                      - version
+                    nullable: true
+                  revision:
+                    type: integer
+                    format: int64
+                  version:
+                    type: integer
+                    format: int64
+                required:
+                  - acknowledgement_sha256
+                  - import_id
+                  - review
+                  - revision
+                  - version
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Analysis
+      x-handler: handleAnalysisPrecisionReview
   /api/v1/analysis/mappings:
     get:
       summary: Analysis Definitions
@@ -31972,6 +32293,8 @@ paths:
                             type: integer
                             format: int64
                         additionalProperties: false
+                    precision_policy:
+                      type: string
                     timestamp:
                       type: array
                       items:
@@ -32489,6 +32812,8 @@ paths:
                             type: integer
                             format: int64
                         additionalProperties: false
+                    precision_policy:
+                      type: string
                     timestamp:
                       type: array
                       items:

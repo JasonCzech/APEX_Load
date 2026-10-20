@@ -1,0 +1,9 @@
+{
+  "baseline": "roadmap-java-representations-2026-10-20/evidence/har-import-final-summary.json",
+  "current": "private-har-final-profile-summary.json",
+  "equal": true,
+  "excluded_fields": [
+    "script_sha256_without_id_created_at"
+  ],
+  "reason": "Script creation assigns random identifiers; all remaining aggregate fields match."
+}

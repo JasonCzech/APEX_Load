@@ -1,0 +1,13 @@
+{
+  "container": "apex-roadmap-precision-integration-20261020",
+  "container_id": "834a4ecb047354d5fb8301dfd14c023942c4970fa530a3bff65a0c0e66d98738",
+  "owned_by_this_task": true,
+  "mounts": [],
+  "action": "docker stop",
+  "result": "success",
+  "preserved": [
+    "container",
+    "image"
+  ],
+  "reason": "Actual PostgreSQL consent/attempt tests completed successfully."
+}

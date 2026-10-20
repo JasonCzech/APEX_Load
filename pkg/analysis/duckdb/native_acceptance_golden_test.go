@@ -96,7 +96,7 @@ func nativeAcceptanceDigest(t *testing.T, path string) [32]byte {
 
 func nativeAcceptanceSeries(t *testing.T, e *Engine, r NormalizeResult, metric, aggregation string, from time.Time, buckets int) []analysis.MetricPoint {
 	t.Helper()
-	points, err := e.Series(context.Background(), r.Files, SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: metric, From: from, To: from.Add(time.Duration(buckets) * time.Minute), BucketSeconds: 60, Aggregation: aggregation})
+	points, err := e.Series(context.Background(), r.Files, SeriesQuery{IdentitySchemaVersion: nativeFixtureIdentityVersion(t, e, r.Files), ProjectID: "p", DatasetID: "d", Metric: metric, From: from, To: from.Add(time.Duration(buckets) * time.Minute), BucketSeconds: 60, Aggregation: aggregation})
 	if err != nil || len(points) != buckets {
 		t.Fatalf("%s %s: %+v %v", metric, aggregation, points, err)
 	}
@@ -176,11 +176,12 @@ func TestNativeAcceptanceMappingLayoutsAgree(t *testing.T) {
 // DECIMAL values become double-precision measurements: per-minute sums equal
 // DuckDB's exact DECIMAL sums to double precision, and a value beyond about
 // 15 significant digits is rounded to the nearest double (stated, not hidden:
-// measurements are doubles).
+// measurements are doubles). New normalization explicitly acknowledges this
+// potential rounding; historical normalized artifacts retain their reader.
 func TestNativeAcceptanceDecimalValues(t *testing.T) {
 	e, path := nativeFixture(t, "SELECT 1700000040+i AS ts, (i*0.001 + 0.1)::DECIMAL(18,3) AS amount FROM range(360) t(i)")
 	mapping := Mapping{Version: 1, Timestamp: Column{"ts"}, TimestampEncoding: "unix_s", Timezone: "UTC", Measures: []Measure{{Value: Column{"amount"}, Name: "amount", Kind: analysis.KindGauge, Unit: "count"}}}
-	r, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping})
+	r, err := normalizeConsentedNativeFixture(t, e, context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping})
 	if err != nil || r.Accepted != 360 || r.Rejected != 0 {
 		t.Fatalf("decimal normalize: accepted %d rejected %d %v", r.Accepted, r.Rejected, err)
 	}
@@ -193,7 +194,7 @@ func TestNativeAcceptanceDecimalValues(t *testing.T) {
 		}
 	}
 	big := nativeAcceptanceFile(t, e, "big.parquet", "SELECT 1700000040 AS ts, 12345678901234567.89::DECIMAL(38,2) AS amount")
-	r, err = e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{big}, Mapping: mapping})
+	r, err = normalizeConsentedNativeFixture(t, e, context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{big}, Mapping: mapping})
 	if err != nil || r.Accepted != 1 {
 		t.Fatalf("big decimal: accepted %d %v", r.Accepted, err)
 	}

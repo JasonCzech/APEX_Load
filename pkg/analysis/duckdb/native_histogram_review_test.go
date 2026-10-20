@@ -43,7 +43,7 @@ func TestNativeCumulativeHistogramDifferencesAcrossFiles(t *testing.T) {
 	// File b (later scrapes) is listed first: order of files must not matter.
 	e, a := nativeFixture(t, "SELECT * FROM (VALUES "+scrape(1700000040, 1, 2)+", "+scrape(1700000100, 2, 4)+") t(ts, le, requests)")
 	b := nativeExtraFixture(t, e, "b.parquet", "SELECT * FROM (VALUES "+scrape(1700000160, 4, 7)+", "+scrape(1700000220, 5, 9)+", "+scrape(1700000280, 6, 12)+") t(ts, le, requests)")
-	result, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{b, a}, Mapping: cumulativeLatency(Column{"le"})})
+	result, err := normalizeConsentedNativeFixture(t, e, context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{b, a}, Mapping: cumulativeLatency(Column{"le"})})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestNativeCumulativeHistogramInstantsReportedByTwoFiles(t *testing.T) {
 	// Overlap: both files report +60 with the same bins.
 	e, a := nativeFixture(t, "SELECT * FROM (VALUES "+scrape(1700000040, 1, 2)+", "+scrape(1700000100, 2, 4)+") t(ts, le, requests)")
 	b := nativeExtraFixture(t, e, "b.parquet", "SELECT * FROM (VALUES "+scrape(1700000100, 2, 4)+", "+scrape(1700000160, 4, 7)+") t(ts, le, requests)")
-	result, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{a, b}, Mapping: cumulativeLatency(Column{"le"})})
+	result, err := normalizeConsentedNativeFixture(t, e, context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{a, b}, Mapping: cumulativeLatency(Column{"le"})})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestNativeCumulativeHistogramInstantsReportedByTwoFiles(t *testing.T) {
 	// at the same instants.
 	e, a = nativeFixture(t, "SELECT * FROM (VALUES "+scrape(1700000040, 500, 1000)+", "+scrape(1700000100, 530, 1060)+") t(ts, le, requests)")
 	b = nativeExtraFixture(t, e, "b.parquet", "SELECT * FROM (VALUES "+scrape(1700000040, 5, 10)+", "+scrape(1700000100, 35, 70)+") t(ts, le, requests)")
-	result, err = e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{a, b}, Mapping: cumulativeLatency(Column{"le"})})
+	result, err = normalizeConsentedNativeFixture(t, e, context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{a, b}, Mapping: cumulativeLatency(Column{"le"})})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestNativeCumulativeHistogramDisagreeingInstantMidSeries(t *testing.T) {
 	}
 	e, a := nativeFixture(t, "SELECT * FROM (VALUES "+scrape(1700000040, 1, 2)+", "+scrape(1700000100, 2, 4)+", "+scrape(1700000160, 4, 7)+", "+scrape(1700000220, 5, 9)+") t(ts, le, requests)")
 	b := nativeExtraFixture(t, e, "b.parquet", "SELECT * FROM (VALUES "+scrape(1700000100, 3, 5)+") t(ts, le, requests)")
-	result, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{a, b}, Mapping: cumulativeLatency(Column{"le"})})
+	result, err := normalizeConsentedNativeFixture(t, e, context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{a, b}, Mapping: cumulativeLatency(Column{"le"})})
 	if err != nil {
 		t.Fatal(err)
 	}

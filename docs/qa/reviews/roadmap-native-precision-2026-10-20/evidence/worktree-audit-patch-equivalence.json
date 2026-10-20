@@ -1,0 +1,75 @@
+[
+  {
+    "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner",
+    "commits": [
+      "= 3b6f15dbc feat(graphs): toggle group and transaction series",
+      "= 2a6ad07fc fix(command-center): keep the whole live history for selected groups; size the display window to the run",
+      "= 29eafb691 fix(command-center): graph transactions when rebuilding groups from archive events",
+      "= 62ac3f231 fix(command-center): graph selected groups' transactions and lone group line"
+    ]
+  },
+  {
+    "worktree": "/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner",
+    "commits": [
+      "= 39c0db8a2 Fence durable import publication and source ID repair"
+    ]
+  },
+  {
+    "worktree": "/Users/jasonczech/.codex/worktrees/kafka-owned-seek/Project_Stormrunner",
+    "commits": [
+      "= be26392bd feat(browser): retain qualified document lifecycle evidence"
+    ]
+  },
+  {
+    "worktree": "/Users/jasonczech/.codex/worktrees/live-table-ux/Project_Stormrunner",
+    "commits": [
+      "> 1c9575510 Add isolated interactive live-table UX sandbox"
+    ]
+  },
+  {
+    "worktree": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+    "commits": [
+      "= 6e2f1082e Isolate stale browser frames during document finalization",
+      "= fe24d2191 feat(browser): retain qualified document lifecycle evidence",
+      "= e420bcc6e Capture immutable telemetry budgets at execution admission"
+    ]
+  },
+  {
+    "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/.claude/worktrees/lr-review-spec",
+    "commits": [
+      "> 6349aacf1 Expect a reviewed LoadRunner note to leave the unresolved count"
+    ]
+  },
+  {
+    "worktree": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner/.claude/worktrees/pr254",
+    "commits": [
+      "> f831f9465 test: qualify controlled gRPC and WebSocket measurements",
+      "> 72188c255 feat: retain qualified Java HTTP representation evidence",
+      "> 0f3da9cf1 fix: negotiate mapping-preserving dataset associations",
+      "> c74e87709 test: qualify native import partition precedence",
+      "> cb89e0b9e fix: bound retained joint evidence before copying and queuing",
+      "> aaa3bac0e fix: make browser benchmark memory units explicit",
+      "> a604a431e feat: deliver durable telemetry acceptance notifications",
+      "> 82376d1bf fix: bound native HAR outstanding requests and load-state waits",
+      "> d0d54cd96 feat: persist bounded telemetry notification delivery outbox",
+      "> e86de66a6 fix: bound same-leader evacuation cleanup with durable intervention",
+      "> 66c31ba1f Merge origin/main before roadmap recovery validation",
+      "> 23dbe470b fix: reject unsupported empty Java HTTP encodings",
+      "> 2c4cdc26f fix: retain scenario prerequisite import drafts",
+      "> ab0dc2fe9 Merge remote-tracking branch 'origin/main' into codex/roadmap-durable-cursors",
+      "> 90c2c84a0 fix: preserve archive approval handoffs and sibling drafts",
+      "> 5486af9c6 fix: bound native HAR finalization while retaining ownership",
+      "> 0cea94070 fix: refuse unqualified browser baseline comparisons",
+      "> 86a9f5cdb build: refresh embedded dashboard after roadmap telemetry changes",
+      "> 0dc6152eb fix: reject ambiguous native analytics local timestamps",
+      "> b5a263a33 fix: translate coordinated barriers through the published clock",
+      "> 9dda56987 Merge origin/main into roadmap implementation branch",
+      "> dd397bbd7 fix: require source offsets for absolute analytics timestamps",
+      "> dd1e8308f fix: decode Java HTTP request bodies exactly once",
+      "> 0c51cc296 fix: use monotonic local browser telemetry receipts",
+      "> 07c25d409 feat: persist telemetry cursors and recover source windows",
+      "> 8f120a25f feat: retain source collection window provenance",
+      "> 57c7ff947 fix: prevent telemetry coverage inflation from publication replays"
+    ]
+  }
+]

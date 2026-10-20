@@ -40,7 +40,7 @@ func nativeIdentityProjection(mapping Mapping, dataset string) (projection, cano
 		}
 		dimensions = "to_json(map([" + strings.Join(names, ",") + "],[" + strings.Join(values, ",") + "]))::VARCHAR"
 	}
-	canonical = strconv.Itoa(mapping.Version) + " AS identity_version, source, host, service, " + dimensions + " AS dimensions_json"
+	canonical = strconv.Itoa(mapping.IdentityVersion()) + " AS identity_version, source, host, service, " + dimensions + " AS dimensions_json"
 	return projection, canonical, valid
 }
 func nativeIdentityTable(paths []string) (string, error) {

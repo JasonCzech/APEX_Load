@@ -8,7 +8,12 @@
 # what the application does.
 #
 # The controller is started on a dedicated port with a throwaway database and
-# archive directory, so a run never touches the developer's own apexload.db.
+# archive and import directories, so a run never uses the developer's database
+# or shared default import-session capacity. Explicit roots also override any
+# import-store directories inherited from the caller.
+# Whole-suite invocations (no CLI filters/options) reset that state per test file
+# to avoid exhausting bounded import sessions. Filtered/interactive invocations
+# retain normal Playwright CLI semantics and share one disposable controller.
 # Its recording proxy listens on a port the OS picks: on the default
 # 127.0.0.1:8081, a developer's own controller would hold the port, the proxy
 # could not start, and Recording Studio would rightly hide the HTTP proxy
@@ -94,14 +99,23 @@ require_free_port
 
 node dashboard/scripts/check-e2e-browser.mjs
 
-workdir="$(mktemp -d -t apexload-e2e.XXXXXX)"
-controller_bin="$workdir/controller"
-controller_log="$workdir/controller.log"
+session_dir="$(mktemp -d -t apexload-e2e.XXXXXX)"
+controller_bin="$session_dir/controller"
+workdir="$session_dir/selected"
+controller_log=""
+controller_log_archive=""
 pid=""
+browser_pid=""
+output_root="${APEXLOAD_E2E_OUTPUT_ROOT:-test-results}"
+if [[ "$output_root" != /* ]]; then output_root="$repo_root/dashboard/$output_root"; fi
 
 cleanup() {
   local code=$?
   trap - EXIT INT TERM
+  if [[ -n "$browser_pid" ]]; then
+    kill "$browser_pid" 2>/dev/null || true
+    wait "$browser_pid" 2>/dev/null || true
+  fi
   if [[ -n "$pid" ]]; then
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
@@ -110,12 +124,19 @@ cleanup() {
     echo "--- controller log (last 60 lines) ---" >&2
     tail -60 "$controller_log" >&2
   fi
-  rm -rf "$workdir"
+  if [[ -n "$controller_log_archive" && -f "$controller_log" ]]; then
+    cp "$controller_log" "$controller_log_archive" || code=1
+  fi
+  rm -rf "$session_dir"
   exit "$code"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+# Logs live outside Playwright's output directory, which it clears at startup.
+mkdir -p "$output_root/controller-logs/$profile"
+log_dir="$(mktemp -d "$output_root/controller-logs/$profile/run-XXXXXX")"
 
 if [[ ! -f pkg/api/static/index.html ]]; then
   echo "ERROR: pkg/api/static/index.html is missing — the controller serves the" >&2
@@ -134,6 +155,8 @@ start_controller() {
   APEXLOAD_ADDR="127.0.0.1:${port}" \
     APEXLOAD_DB="$workdir/apexload-e2e.db" \
     APEXLOAD_ARCHIVE_DIR="$workdir/archives" \
+    APEXLOAD_IMPORT_ASSET_DIR="$workdir/import-assets" \
+    APEXLOAD_BRUNO_ARTIFACT_ROOT="$workdir/protected-imports" \
     APEXLOAD_RECORDER_PROXY_ADDR="127.0.0.1:0" \
     APEXLOAD_WRAPPING_MASTER_KEY="${APEXLOAD_WRAPPING_MASTER_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}" \
     "$controller_bin" >>"$controller_log" 2>&1 &
@@ -167,44 +190,82 @@ stop_controller() {
   fi
 }
 
-start_controller
+run_selected() {
+  mkdir -p "$workdir"
+  controller_log="$workdir/controller.log"
+  start_controller
 
-if [[ "$profile" == "local-auth" ]]; then
-  settings_headers="$workdir/settings.headers"
-  curl --silent --fail --dump-header "$settings_headers" \
-    "${base_url}/api/v1/system/settings" >/dev/null
-  settings_etag="$(awk 'tolower($1) == "etag:" {sub(/\r$/, "", $2); print $2}' "$settings_headers")"
-  if [[ -z "$settings_etag" ]]; then
-    echo "ERROR: system settings response carried no ETag" >&2
+  if [[ "$profile" == "local-auth" ]]; then
+    settings_headers="$workdir/settings.headers"
+    curl --silent --fail --dump-header "$settings_headers" \
+      "${base_url}/api/v1/system/settings" >/dev/null
+    settings_etag="$(awk 'tolower($1) == "etag:" {sub(/\r$/, "", $2); print $2}' "$settings_headers")"
+    if [[ -z "$settings_etag" ]]; then
+      echo "ERROR: system settings response carried no ETag" >&2
+      exit 1
+    fi
+    curl --silent --fail --request PUT \
+      --header "Content-Type: application/json" \
+      --header "If-Match: $settings_etag" \
+      --data '{"auth":{"mode":"local"}}' \
+      "${base_url}/api/v1/system/settings" >/dev/null
+    stop_controller
+    start_controller
+  fi
+
+  # A fresh throwaway store is expected to start in the local dev bypass mode.
+  # There is intentionally no APEXLOAD_AUTH_MODE environment variable: auth mode
+  # is persisted system state. Check it here so E2E never silently inherits a
+  # production-mode database or proves the journey under an unknown identity.
+  auth_status="$(curl --silent --fail "${base_url}/api/v1/auth/me")"
+  if [[ "$profile" == "dev-admin" ]]; then
+    expected_auth='"mode":"dev"'
+    expected_enabled='"enabled":false'
+  else
+    expected_auth='"mode":"local"'
+    expected_enabled='"enabled":true'
+  fi
+  if [[ "$auth_status" != *"$expected_auth"* ]] || [[ "$auth_status" != *"$expected_enabled"* ]]; then
+    echo "ERROR: E2E auth profile $profile was not applied; /api/v1/auth/me returned:" >&2
+    echo "$auth_status" >&2
     exit 1
   fi
-  curl --silent --fail --request PUT \
-    --header "Content-Type: application/json" \
-    --header "If-Match: $settings_etag" \
-    --data '{"auth":{"mode":"local"}}' \
-    "${base_url}/api/v1/system/settings" >/dev/null
+  echo "Auth profile verified: $profile." >&2
+  last_status=0
+  (cd dashboard && export APEXLOAD_E2E_BASE_URL="$base_url" APEXLOAD_E2E_PROFILE="$profile" APEXLOAD_E2E_OUTPUT_ROOT="$case_output_root" && exec ./node_modules/.bin/playwright test "$@") &
+  browser_pid=$!
+  if wait "$browser_pid"; then
+    last_status=0
+  else
+    last_status=$?
+  fi
+  browser_pid=""
   stop_controller
-  start_controller
+  cp "$controller_log" "$controller_log_archive"
+  echo "Controller log retained: $controller_log_archive (test exit=$last_status)" >&2
+  rm -rf "$workdir"
+  controller_log=""
+}
+
+if (( $# > 0 )); then
+  # Preserve options such as --shard, --last-failed, custom configs and --ui.
+  case_output_root="$output_root"
+  controller_log_archive="$log_dir/selected.log"
+  run_selected "$@"
+  exit "$last_status"
 fi
 
-# A fresh throwaway store is expected to start in the local dev bypass mode.
-# There is intentionally no APEXLOAD_AUTH_MODE environment variable: auth mode
-# is persisted system state. Check it here so E2E never silently inherits a
-# production-mode database or proves the journey under an unknown identity.
-auth_status="$(curl --silent --fail "${base_url}/api/v1/auth/me")"
-if [[ "$profile" == "dev-admin" ]]; then
-  expected_auth='"mode":"dev"'
-  expected_enabled='"enabled":false'
-else
-  expected_auth='"mode":"local"'
-  expected_enabled='"enabled":true'
-fi
-if [[ "$auth_status" != *"$expected_auth"* ]] || [[ "$auth_status" != *"$expected_enabled"* ]]; then
-  echo "ERROR: E2E auth profile $profile was not applied; /api/v1/auth/me returned:" >&2
-  echo "$auth_status" >&2
-  exit 1
-fi
-echo "Auth profile verified: $profile." >&2
-
-cd dashboard
-APEXLOAD_E2E_BASE_URL="$base_url" ./node_modules/.bin/playwright test "$@"
+# Discover the profile's actual selection once. Never guess a glob or append a
+# second positional filter (Playwright unions positional filters).
+(cd dashboard && unset PLAYWRIGHT_JSON_OUTPUT_NAME PLAYWRIGHT_JSON_OUTPUT_FILE PLAYWRIGHT_JSON_OUTPUT_DIR && APEXLOAD_E2E_PROFILE="$profile" ./node_modules/.bin/playwright test --list --reporter=json) > "$log_dir/selection.json"
+node dashboard/scripts/e2e-file-selection.mjs "$log_dir/selection.json" "$repo_root/dashboard/playwright.config.ts" "$repo_root/dashboard/e2e" > "$session_dir/files.tsv"
+status=0
+while IFS=$'\t' read -r file_id file_filter file_name; do
+  workdir="$session_dir/$file_id"
+  case_output_root="$output_root/files/$file_id"
+  controller_log_archive="$log_dir/$file_id.log"
+  echo "Running isolated workflow file: $file_name" >&2
+  run_selected "$file_filter"
+  if (( last_status != 0 )); then status=1; fi
+done < "$session_dir/files.tsv"
+exit "$status"

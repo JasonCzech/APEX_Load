@@ -4,15 +4,17 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { apiFetch, request } from '../hooks/apiClient'
 import { analysisProtectedIdentityColumn } from '../utils/analysisCredentialColumn'
-import type { AnalysisCapabilities, AnalysisImport, AnalysisMapping, AnalysisPoint, AnalysisPreview } from '../types/analysis'
+import type { AnalysisCapabilities, AnalysisImport, AnalysisMapping, AnalysisPoint, AnalysisPreview, AnalysisPrecisionReview } from '../types/analysis'
 import './AnalysisWorkspace.css'
 import { downloadBlob } from '../utils/fileUtils'
 import AnalysisSavedMappings from './AnalysisSavedMappings'
+import AnalysisPrecisionPanel from './AnalysisPrecisionPanel'
+import { admitAnalysisPrecisionReview, analysisPrecisionImportReady } from '../utils/analysisPrecision'
 import TimezoneSelect from './ux/TimezoneSelect'
 import AnalysisComparison from './AnalysisComparison'
 import AnalysisIdentityMapping from './AnalysisIdentityMapping'
 import AnalysisIdentityFilters from './AnalysisIdentityFilters'
-import { analysisIdentityFilterError, analysisMappingDisclosureError, analysisImportedIdentityAvailable, analysisMappingRequiresImportedIdentity, buildAnalysisIdentitySelection, emptyAnalysisIdentityFilters } from '../utils/analysisIdentity'
+import { analysisMappingUsesIdentity2, analysisIdentityFilterError, analysisMappingDisclosureError, analysisImportedIdentityAvailable, analysisMappingRequiresImportedIdentity, buildAnalysisIdentitySelection, emptyAnalysisIdentityFilters } from '../utils/analysisIdentity'
 import AnalysisSummaryMeasureFields from './AnalysisSummaryMeasureFields'
 import AnalysisHistogramMeasureFields from './AnalysisHistogramMeasureFields'
 import { analysisBucketSeconds, analysisHistogramDeclaration, analysisHistogramMeasureError, analysisMetricAggregations, analysisMetricNames, analysisMissingReasonLabels, analysisSummaryDeclarations, analysisSummaryMeasureError, analysisWindowAlignedRange, analysisWindowAnchor, withAnalysisMeasureKind } from '../utils/analysisSummary'
@@ -40,7 +42,8 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
   const [preview, setPreview] = useState<AnalysisPreview>()
   const [mapping, updateMapping] = useState<AnalysisMapping>(initialMapping)
   const [mappingTemplate, setMappingTemplate] = useState<{ id: string; revision: number }>()
-  const setMapping = (next: AnalysisMapping) => { updateMapping(next); setMappingTemplate(undefined) }
+  const [precision, setPrecision] = useState<{ snapshot: string; response: AnalysisPrecisionReview; acknowledged: boolean }>()
+  const setMapping = (next: AnalysisMapping) => { updateMapping(next); setMappingTemplate(undefined); setPrecision(undefined) }
   const [acceptRejected, setAcceptRejected] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -62,7 +65,7 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
 
   useEffect(() => {
     const controller = new AbortController()
-    setSelected(undefined); setPreview(undefined); setPoints([]); setImports([]); setImportsLoaded(false); setFiles([]); setFileError(''); setName(''); setProgress(''); setBusy(false); setAcceptRejected(false); updateMapping(initialMapping); setMappingTemplate(undefined); setCapabilities(undefined); setError(''); setIdentityFilters(emptyAnalysisIdentityFilters())
+    setSelected(undefined); setPreview(undefined); setPoints([]); setImports([]); setImportsLoaded(false); setFiles([]); setFileError(''); setName(''); setProgress(''); setBusy(false); setAcceptRejected(false); updateMapping(initialMapping); setMappingTemplate(undefined); setCapabilities(undefined); setPrecision(undefined); setError(''); setIdentityFilters(emptyAnalysisIdentityFilters())
     if (projectId) request<AnalysisCapabilities>(`/analysis/capabilities?project_id=${encodeURIComponent(projectId)}`, { signal: controller.signal })
       .then(async caps => { if (controller.signal.aborted) return; setCapabilities(caps); if (caps.enabled && caps.native_parquet) await reload(controller.signal) })
       .catch(e => { if (!controller.signal.aborted) setError(String(e)) })
@@ -129,6 +132,11 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
 
   const columns = preview?.schema.columns.filter(c => !c.repeated) ?? []
   const identityAvailable = analysisImportedIdentityAvailable(capabilities?.imported_identity_version)
+  const precisionAvailable = capabilities?.precision_consent_version === 1
+  const precisionUnsupported = mapping.version === 3 && !precisionAvailable
+  const precisionSnapshot = JSON.stringify([projectId, selected?.id, selected?.revision, mapping])
+  const currentPrecision = precision?.snapshot === precisionSnapshot ? precision : undefined
+  const precisionReady = !precisionAvailable || analysisPrecisionImportReady(mapping, currentPrecision?.response, currentPrecision?.acknowledged ?? false)
   const mappingUnsupported = !identityAvailable && analysisMappingRequiresImportedIdentity(mapping)
   const selectedMappingDisclosureError = analysisMappingDisclosureError(selected?.mapping)
   const selectedIdentityUnsupported = !identityAvailable && analysisMappingRequiresImportedIdentity(selected?.mapping)
@@ -183,7 +191,7 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
           {preview && <><p>{preview.schema.rows.toLocaleString()} source rows. Text and nested sample values are redacted.</p><div className="analysis-table"><table><thead><tr>{preview.schema.columns.map(c => <th key={c.path}>{c.path}<small>{c.physical_type}</small></th>)}</tr></thead><tbody>{preview.samples.slice(0, 5).map((row, i) => <tr key={i}>{preview.schema.columns.map(c => <td key={c.path}>{String(row[c.path] ?? 'missing')}</td>)}</tr>)}</tbody></table></div></>}
           {canEdit && preview && selected && ['uploading', 'mapped', 'failed'].includes(selected.state) && <fieldset disabled={busy}>
             <legend>Map measurements</legend>
-            <AnalysisSavedMappings projectId={projectId} mapping={mapping} canEdit={canEdit && !mappingUnsupported} onLoad={item => { updateMapping(item.definition); setMappingTemplate(item) }} />
+            <AnalysisSavedMappings projectId={projectId} mapping={mapping} canEdit={canEdit && !mappingUnsupported && !precisionUnsupported} onLoad={item => { setMapping(item.definition); setMappingTemplate(item) }} />
             <label>Timestamp column<select value={JSON.stringify(mapping.timestamp)} onChange={e => setMapping({ ...mapping, timestamp: JSON.parse(e.target.value) })}><option value="[]">Choose a timestamp</option>{columns.map(c => <option key={c.path} disabled={analysisProtectedIdentityColumn(c.path_components)} value={JSON.stringify(c.path_components)}>{c.path}{analysisProtectedIdentityColumn(c.path_components) ? ' (protected)' : ''}</option>)}</select></label>
             <label>Timestamp format<select value={mapping.timestamp_encoding} onChange={e => setMapping({ ...mapping, timestamp_encoding: e.target.value })}>{['timestamp', 'timestamp_offset', 'unix_s', 'unix_ms', 'unix_us', 'unix_ns'].map(value => <option key={value}>{value}</option>)}</select></label>
             <label>Source timezone<TimezoneSelect ariaLabel="Source timezone" note="Timestamps without an offset are read in this zone; exports are usually UTC" value={mapping.timezone} onChange={timezone => setMapping({ ...mapping, timezone })} /></label>
@@ -200,12 +208,21 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
               </div>
             })}
             {summaryMeasureError && <p role="alert">{summaryMeasureError}</p>}
+            {precisionUnsupported && <p role="alert">This mapping requires precision consent support. Connect to a controller advertising that capability.</p>}
+            {precisionAvailable && <AnalysisPrecisionPanel mapping={mapping} review={currentPrecision?.response} acknowledged={currentPrecision?.acknowledged ?? false} onMappingChange={setMapping} onAcknowledge={acknowledged => { if (currentPrecision) setPrecision({ ...currentPrecision, acknowledged }) }} reviewDisabled={!mapping.timestamp.length || !mapping.measures.length || mappingUnsupported || !!analysisMappingDisclosureError(mapping) || !!summaryMeasureError} onReview={() => void act(async signal => {
+              setPrecision(undefined)
+              const response = await request<AnalysisPrecisionReview>(`${importPath(selected.id)}/precision-review`, { method: 'POST', signal, body: JSON.stringify({ revision: selected.revision, mapping }) })
+              if (signal.aborted) return
+              admitAnalysisPrecisionReview(response, selected)
+              setPrecision({ snapshot: precisionSnapshot, response, acknowledged: false })
+            })} />}
             <label><input type="checkbox" checked={acceptRejected} onChange={e => setAcceptRejected(e.target.checked)} />Accept rejected observations and retain the full rejected-row set in provenance</label>
-            <button type="button" className="btn btn-primary btn-sm" disabled={!mapping.timestamp.length || !mapping.measures.length || mappingUnsupported || !!analysisMappingDisclosureError(mapping) || !!summaryMeasureError} onClick={() => void act(async signal => {
+            <button type="button" className="btn btn-primary btn-sm" disabled={!mapping.timestamp.length || !mapping.measures.length || mappingUnsupported || precisionUnsupported || !precisionReady || !!analysisMappingDisclosureError(mapping) || !!summaryMeasureError} onClick={() => void act(async signal => {
+              if (precisionUnsupported || !precisionReady) throw new Error('Review precision for the current mapping and acknowledge any permitted rounding before importing.')
               if (mappingUnsupported) throw new Error('Imported identity schema 2 is unavailable on this controller.')
               const identityError = analysisMappingDisclosureError(mapping)
               if (identityError) throw new Error(identityError)
-              const saved = await request<AnalysisImport>(`${importPath(selected.id)}/mapping`, { method: 'PUT', signal, body: JSON.stringify({ revision: selected.revision, mapping, allow_rejected: acceptRejected, mapping_id: mappingTemplate?.id, mapping_revision: mappingTemplate?.revision }) })
+              const saved = await request<AnalysisImport>(`${importPath(selected.id)}/mapping`, { method: 'PUT', signal, body: JSON.stringify({ revision: selected.revision, mapping, allow_rejected: acceptRejected, mapping_id: mappingTemplate?.id, mapping_revision: mappingTemplate?.revision, ...(mapping.version === 3 && currentPrecision ? { precision_review_sha256: currentPrecision.response.review.sha256, precision_acknowledgement_sha256: currentPrecision.response.acknowledgement_sha256 } : {}) }) })
               if (signal.aborted) return
               if (!identityAvailable && analysisMappingRequiresImportedIdentity(saved.mapping)) throw new Error('Imported identity schema 2 is unavailable on this controller.')
               const returnedIdentityError = analysisMappingDisclosureError(saved.mapping)
@@ -226,11 +243,11 @@ export default function AnalysisWorkspace({ projectId, canEdit = false, showEnab
             <label>To (UTC)<input type="datetime-local" step="1" value={to} onChange={e => setTo(e.target.value)} /></label>
             <label>Bucket (seconds, optional)<input type="number" min={1} max={86400} step={1} placeholder="automatic" value={bucket} onChange={e => setBucket(e.target.value)} /></label>
             <label>{histogramDeclaration ? 'Histogram statistic' : summaryDeclarations.length ? 'Summary statistic' : 'Aggregation'}<select value={queryAggregation} onChange={e => setAggregation(e.target.value)}>{aggregationOptions.map(v => <option key={v}>{v}</option>)}</select></label>
-            {selected.mapping?.version === 2 && <AnalysisIdentityFilters value={identityFilters} onChange={setIdentityFilters} label="Dataset identity filters" />}
-            <button type="button" className="btn btn-primary btn-sm" disabled={!metric || !from || !to || !!selectedMappingDisclosureError || selectedIdentityUnsupported || selected.mapping?.version === 2 && !!analysisIdentityFilterError(identityFilters)} onClick={() => void act(async signal => {
+            {analysisMappingUsesIdentity2(selected.mapping) && <AnalysisIdentityFilters value={identityFilters} onChange={setIdentityFilters} label="Dataset identity filters" />}
+            <button type="button" className="btn btn-primary btn-sm" disabled={!metric || !from || !to || !!selectedMappingDisclosureError || selectedIdentityUnsupported || analysisMappingUsesIdentity2(selected.mapping) && !!analysisIdentityFilterError(identityFilters)} onClick={() => void act(async signal => {
               if (selectedIdentityUnsupported) throw new Error('Imported identity schema 2 is unavailable on this controller.')
               if (selectedMappingDisclosureError) throw new Error(selectedMappingDisclosureError)
-              const identitySelection = selected.mapping?.version === 2 ? buildAnalysisIdentitySelection(identityFilters) : {}
+              const identitySelection = analysisMappingUsesIdentity2(selected.mapping) ? buildAnalysisIdentitySelection(identityFilters) : {}
               // Buckets start on the metric's own source window grid, so a bucket never cuts a window in two.
               const range = analysisWindowAlignedRange(Date.parse(`${from}Z`), Date.parse(`${to}Z`), summaryWindowSeconds, analysisWindowAnchor(selected, metric, summaryWindowSeconds, identitySelection))
               // An explicit bucket (for example a whole multiple of a cumulative histogram's scrape

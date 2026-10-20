@@ -54,3 +54,9 @@
 .analysis-workspace .analysis-identity-filters > div > label { flex: 1 1 150px; min-width: 0; max-width: 100%; }
 .analysis-workspace .analysis-identity-filters input { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
 .analysis-workspace .analysis-identity-filters button { flex: 0 0 auto; max-width: 100%; height: auto; white-space: normal; }
+
+/* Precision evidence must remain readable for bounded but long source paths. */
+.analysis-workspace .analysis-precision-panel { flex-basis: 100%; width: 100%; box-sizing: border-box; }
+.analysis-workspace .analysis-precision-panel > :is(p, ul) { flex-basis: 100%; min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.analysis-workspace .analysis-precision-panel > ul { margin: 0; padding-left: 20px; box-sizing: border-box; }
+.analysis-workspace .analysis-precision-panel > label:has(> input[type="checkbox"]) { flex-basis: 100%; min-width: 0; max-width: 100%; overflow-wrap: anywhere; }

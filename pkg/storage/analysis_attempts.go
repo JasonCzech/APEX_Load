@@ -62,14 +62,17 @@ type AnalysisAttemptStore interface {
 // project FK: publication receipts and exact cleanup plans outlive deletion.
 func analysisAttemptInputDigest(in AnalysisImport) (string, error) {
 	body, err := analysis.MarshalBoundedAnalysisJSON(struct {
-		PartitionManifestVersion int `json:"partition_manifest_version,omitempty"`
-		UploadWriterVersion      int
-		Files                    []AnalysisImportFile
-		Mapping                  any
-		AllowRejected            bool
-		MappingID                string
-		MappingRevision          int64
-	}{in.PartitionManifestVersion, in.UploadWriterVersion, in.Files, in.Mapping, in.AllowRejected, in.MappingID, in.MappingRevision}, 2<<20)
+		PartitionManifestVersion       int `json:"partition_manifest_version,omitempty"`
+		UploadWriterVersion            int
+		Files                          []AnalysisImportFile
+		Mapping                        any
+		AllowRejected                  bool
+		MappingID                      string
+		MappingRevision                int64
+		PrecisionReviewSHA256          string `json:",omitempty"`
+		PrecisionAcknowledgementSHA256 string `json:",omitempty"`
+		PrecisionConsentRevision       int64  `json:",omitempty"`
+	}{in.PartitionManifestVersion, in.UploadWriterVersion, in.Files, in.Mapping, in.AllowRejected, in.MappingID, in.MappingRevision, in.PrecisionReviewSHA256, in.PrecisionAcknowledgementSHA256, in.PrecisionConsentRevision}, 2<<20)
 	if err != nil || len(body) > 2<<20 {
 		return "", ErrAnalysisAuthority
 	}
@@ -268,6 +271,9 @@ func (s *SQLiteStore) ClaimAnalysisImportAttempt(ctx context.Context, id, projec
 		return nil, nil, err
 	}
 	if in.Revision != revision || in.Mapping == nil || len(in.Files) < 1 || len(in.Files) > 1024 || len(in.Mapping.Measures) < 1 || len(in.Files)*len(in.Mapping.Measures) > 1024 {
+		return nil, nil, ErrAnalysisAuthority
+	}
+	if err := validateAnalysisPrecisionConsent(*in, revision); err != nil {
 		return nil, nil, ErrAnalysisAuthority
 	}
 	switch in.State {

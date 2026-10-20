@@ -42,3 +42,14 @@ it('refuses reassociation when mapping metadata is unavailable', () => {
   expect(mappingRequiresNegotiatedAssociation(undefined)).toBe(true)
   for (const advertised of [undefined, 1, 2]) expect(mappingAssociationCapabilityError(undefined, advertised)).toContain('Mapping details are unavailable')
 })
+
+it('preserves precision policy and durable consent during reassociation', () => {
+  const precision = { ...before, mapping: { ...mapping, version: 3, precision_policy: 'allow_float64_rounding' as const }, precision_review_sha256: 'a'.repeat(64), precision_acknowledgement_sha256: 'b'.repeat(64), precision_consent_revision: 1 }
+  expect(mappingAssociationCapabilityError(precision.mapping, 1)).toBeUndefined()
+  expect(mappingAssociationCapabilityError({ ...precision.mapping, version: 4 }, 1)).toBeTruthy()
+  const response = { contract_version: 1, import: { ...precision, revision: 3, run_id: 'run' } }
+  expect(admitMappingAssociationResponse(precision, 'run', response)).toBe(response.import)
+  for (const field of ['precision_review_sha256', 'precision_acknowledgement_sha256', 'precision_consent_revision'] as const) {
+    expect(() => admitMappingAssociationResponse(precision, 'run', { ...response, import: { ...response.import, [field]: undefined } })).toThrow('did not confirm')
+  }
+})

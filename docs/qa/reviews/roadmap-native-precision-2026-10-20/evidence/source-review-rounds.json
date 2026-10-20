@@ -1,0 +1,73 @@
+{
+  "reviewed_at": "2026-10-20T16:29:42.354222+00:00",
+  "base_head": "f831f94656db95c86630a09387d8b968abf454d7",
+  "reviewer": "primary agent source review",
+  "source_manifest": "final-embedded-validation-source-hashes.json",
+  "source_files_unchanged_since_final_validation_started": true,
+  "review_rounds": [
+    {
+      "round": 1,
+      "finding": "API and native worker retained every full input schema before precision review.",
+      "resolution": "Streaming reviewer owns the mapping and retains only bounded risks/hashes; complete-source and failure-poisoning checks prevent partial disclosure.",
+      "tests": [
+        "streaming-analysis.jsonl",
+        "streaming-race.jsonl",
+        "streaming-native-api-headroom.jsonl",
+        "streaming-full-native-worker-headroom.jsonl"
+      ],
+      "wire_contract": "precision-review-before-streaming.json equals precision-review-after-streaming.json"
+    },
+    {
+      "round": 2,
+      "scope": "analysis classifier/reviewer, mapping/identity compatibility, worker admission, API authority, storage CAS/attempt fences, CLI negotiation, dashboard invalidation, generated route/schema changes",
+      "actionable_findings": []
+    },
+    {
+      "round": 3,
+      "finding": "Embedded native analytics Help predated the final streaming-inspection paragraph.",
+      "resolution": "Rebuilt embedded dashboard after verifying origin/main integration; exact comparison confirms embedded Help equals source and backend/dashboard source hashes remain unchanged.",
+      "validation": [
+        "help-freshness-build.log",
+        "help-freshness-review.json",
+        "browser-help-freshness-dev-admin.log",
+        "browser-help-freshness-local-auth.log"
+      ]
+    },
+    {
+      "round": 4,
+      "scope": "Precision implementation and tests, generated API contracts, final embedded Help equality, source and asset hash ownership, bounded evidence, original failed-run qualifications, private HAR aggregate equivalence and read-only parallel-work audit.",
+      "actionable_findings": [],
+      "verification": [
+        "final-profile-full-go.jsonl",
+        "final-embedded-contracts.jsonl",
+        "browser-help-freshness-dev-admin.log",
+        "browser-help-freshness-local-auth.log"
+      ]
+    },
+    {
+      "round": 5,
+      "finding": "Raw Playwright error-context files contain trailing whitespace, failing the staged whitespace check.",
+      "resolution": "Store original bytes as deterministic gzip evidence and verify exact decompression; no failure evidence was rewritten or omitted.",
+      "files_compressed": 9
+    },
+    {
+      "round": 6,
+      "scope": "Final staged scope, original evidence bytes/checksums, documentation links and formatting after evidence packaging correction.",
+      "actionable_findings": [],
+      "verification": {
+        "staged_files": 425,
+        "validated_source_asset_paths": 451,
+        "active_markdown_files": 292,
+        "unstaged_changes": false,
+        "evidence_checksums": "all match",
+        "staged_whitespace_check": "pass"
+      }
+    }
+  ],
+  "separate_validation_limitations": [
+    "Full dashboard gate remains unqualified: shared-controller import-session capacity failures and an unresolved JMeter publication inner cause are retained in browser-full-local-diagnosis.json; focused precision/Help workflows pass both profiles.",
+    "External reference hosts, other native runners, real sanitized TruClient exports and disposable multi-host recovery infrastructure are unavailable.",
+    "Shared caches remain in use by follow-up and parallel work."
+  ],
+  "commit_authorized_but_not_yet_created": true
+}

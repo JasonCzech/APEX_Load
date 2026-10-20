@@ -1,0 +1,25 @@
+{
+  "dev-admin": {
+    "completed_files": 89,
+    "tests": 337,
+    "failures": 0,
+    "skipped": 6,
+    "errors": 0,
+    "failed_cases": []
+  },
+  "local-auth": {
+    "completed_files": 40,
+    "tests": 150,
+    "failures": 4,
+    "skipped": 1,
+    "errors": 0,
+    "failed_cases": [
+      "LoadRunner review renders real sap-review.zip response",
+      "LoadRunner credentials edit and apply in place while preserving protected values",
+      "fresh runtime diagnostic import separates capture from dormant source values",
+      "JMeter messaging preview preserves three blocked drafts and workload curves"
+    ]
+  },
+  "status": "failed and deliberately interrupted after discovering shared filesystem import storage; remaining selected files are not counted as run",
+  "reason": "Stop further use of the shared default import root. Current-file logs were retained by the termination trap; shared import data was not deleted."
+}

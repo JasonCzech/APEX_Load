@@ -363,6 +363,16 @@
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/analysis/imports/{id}/precision-review",
+      "operationId": "handleAnalysisPrecisionReview",
+      "summary": "Analysis Precision Review",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/analysis/mappings",
       "operationId": "handleAnalysisDefinitions_11",
