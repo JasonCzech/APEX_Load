@@ -53,7 +53,7 @@ func nativeAttemptPublicationFixture(t *testing.T, in *AnalysisImport, a *Analys
 			if i == 0 {
 				rows = value.Accepted
 			}
-			stats := analysis.NormalizedPartitionStats{Version: analysis.PartitionManifestVersion, SchemaVersion: analysis.SchemaVersion, IdentityVersion: value.Mapping.Version, Kind: value.Mapping.Measures[i%len(value.Mapping.Measures)].Kind, Unit: value.Mapping.Measures[i%len(value.Mapping.Measures)].Unit, Rows: rows, Valid: rows}
+			stats := analysis.NormalizedPartitionStats{Version: analysis.PartitionManifestVersion, SchemaVersion: analysis.SchemaVersion, IdentityVersion: value.Mapping.IdentityVersion(), Kind: value.Mapping.Measures[i%len(value.Mapping.Measures)].Kind, Unit: value.Mapping.Measures[i%len(value.Mapping.Measures)].Unit, Rows: rows, Valid: rows}
 			if rows > 0 {
 				stats.MinTime = &at
 				stats.MaxTime = &at

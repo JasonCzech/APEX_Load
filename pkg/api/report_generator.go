@@ -95,6 +95,7 @@ var profileHTMLFuncMap = template.FuncMap{
 	"identityName":             identityName,
 	"reportEnvironment":        reportEnvironment,
 	"reportScripts":            reportScriptLabels,
+	"reportScenario":           reportScenarioLabel,
 	"populationRate": func(rate *float64) string {
 		if rate == nil {
 			return "Unknown"
@@ -582,19 +583,13 @@ func reportEnvironment(report *RunArchiveReport) string {
 // reportScriptLabels names the run's scripts for the change-attribution
 // section: each archived script ID as its group's script name with the ID's
 // first eight characters, so a reader recognizes the script and can still
-// match it; an ID no group names stays as recorded. The CSV keeps the IDs.
+// match it; an ID no group names stays as recorded. Labels are in name
+// order. The CSV keeps the IDs.
 func reportScriptLabels(report *RunArchiveReport) string {
 	if report == nil || len(report.ChangeAttribution.ScriptRevisions) == 0 {
 		return "Not recorded"
 	}
-	names := map[string]string{}
-	if report.Manifest != nil {
-		for _, group := range report.Manifest.Provenance.Groups {
-			if id, name := strings.TrimSpace(group.ScriptID), strings.TrimSpace(group.ScriptName); id != "" && name != "" {
-				names[id] = name
-			}
-		}
-	}
+	names := reportScriptNames(report)
 	labels := make([]string, 0, len(report.ChangeAttribution.ScriptRevisions))
 	for _, id := range report.ChangeAttribution.ScriptRevisions {
 		if name, ok := names[id]; ok {
@@ -607,7 +602,53 @@ func reportScriptLabels(report *RunArchiveReport) string {
 		}
 		labels = append(labels, id)
 	}
+	sort.Strings(labels)
 	return strings.Join(labels, ", ")
+}
+
+// reportScenarioLabel names the run's scenario for the change-attribution
+// and test-setup sections; an ID the controller could not resolve (a
+// deleted scenario) stays as recorded.
+func reportScenarioLabel(report *RunArchiveReport) string {
+	if report == nil || strings.TrimSpace(report.ChangeAttribution.ScenarioRevision) == "" {
+		return "Not recorded"
+	}
+	return identityName(report.IdentityNames.Scenario, report.ChangeAttribution.ScenarioRevision)
+}
+
+// reportDataLabel names each script's data in the data revision, which lists
+// "<script ID>:data" per script.
+func reportDataLabel(report *RunArchiveReport) string {
+	if report == nil || strings.TrimSpace(report.ChangeAttribution.DataRevision) == "" {
+		return ""
+	}
+	names := reportScriptNames(report)
+	entries := strings.Split(report.ChangeAttribution.DataRevision, ",")
+	labels := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		id, kind, found := strings.Cut(entry, ":")
+		if name, ok := names[id]; ok && found {
+			labels = append(labels, name+" "+kind)
+			continue
+		}
+		labels = append(labels, entry)
+	}
+	sort.Strings(labels)
+	return strings.Join(labels, ", ")
+}
+
+// reportScriptNames maps each archived script ID to its group's script name.
+func reportScriptNames(report *RunArchiveReport) map[string]string {
+	names := map[string]string{}
+	if report != nil && report.Manifest != nil {
+		for _, group := range report.Manifest.Provenance.Groups {
+			if id, name := strings.TrimSpace(group.ScriptID), strings.TrimSpace(group.ScriptName); id != "" && name != "" {
+				names[id] = name
+			}
+		}
+	}
+	return names
 }
 
 // formatReportDateTime is how a report states a moment: readable, to the

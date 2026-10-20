@@ -1876,6 +1876,12 @@ describe('TestExecutionCharts context menu', () => {
     expect(lineFor('Search__loadImpactAverage')?.getAttribute('data-name')).toBe('Search')
     expect(lineFor('Search__loadImpactAverage')?.getAttribute('data-stroke')).toBe('#ff8a00')
     expect(lineFor('average')).toBeNull()
+    // Each group line keeps its gradient underlay, as a single average line does.
+    for (const key of ['Checkout__loadImpactAverage', 'Search__loadImpactAverage']) {
+      expect(artUnderLoad()?.querySelector(`path[data-testid="mock-area"][data-key="${key}"]`)?.getAttribute('data-fill')).toMatch(/^url\(#/)
+    }
+    expect(artUnderLoad()?.querySelectorAll('linearGradient')).toHaveLength(2)
+    expect(new Set(Array.from(artUnderLoad()?.querySelectorAll('linearGradient') ?? []).map(node => node.id)).size).toBe(2)
     expect(artUnderLoad()?.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-key')).toBe('vusers')
     expect(artUnderLoad()?.querySelector('.chart-series-legend')?.textContent).toContain('Checkout')
     expect(artUnderLoad()?.querySelector('.chart-series-legend')?.textContent).toContain('Search')
@@ -1890,6 +1896,43 @@ describe('TestExecutionCharts context menu', () => {
 
     expect(lineFor('Search__loadImpactAverage')).toBeNull()
     expect(lineFor('Checkout__loadImpactAverage')).not.toBeNull()
+  })
+
+  it('gives groups whose names differ only in case their own Under Load gradients', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', vusers: 10, tps: 5, avgMs: 150, errorPct: 0, p50: 130, p90: 180, p95: 200, p99: 240, Checkout_vusers: 10, checkout_vusers: 10, Checkout_avgMs: 100, checkout_avgMs: 200 },
+            { time: '10:01:00', vusers: 20, tps: 9, avgMs: 300, errorPct: 0, p50: 260, p90: 360, p95: 400, p99: 480, Checkout_vusers: 20, checkout_vusers: 20, Checkout_avgMs: 200, checkout_avgMs: 400 },
+          ]}
+          expandedChart="load_impact_avgMs"
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup
+          groupNames={['Checkout', 'checkout']}
+          groupColors={['#ff8a00', '#00a3ff']}
+          showLoadImpact={false}
+          surface="command-center"
+          storageScope="apexload.commandCenter.grafana"
+          enableGraphGroupTabs
+          activeGraphGroupTab="under_load"
+          underLoadDisplayMode="graphs"
+        />,
+      )
+    })
+    const artUnderLoad = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('ART Under Load'))
+    const fills = ['Checkout__loadImpactAverage', 'checkout__loadImpactAverage'].map(key => artUnderLoad?.querySelector(`path[data-testid="mock-area"][data-key="${key}"]`)?.getAttribute('data-fill'))
+    expect(fills.every(fill => fill?.startsWith('url(#'))).toBe(true)
+    expect(fills[0]).not.toBe(fills[1])
   })
 
   it('applies default load-under visibility when old graph preferences are stored', async () => {

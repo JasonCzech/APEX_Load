@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -227,5 +228,26 @@ func TestArchiveReportCanOmitReleaseTrendForInteractiveSummary(t *testing.T) {
 	}
 	if report.Verdict == nil || report.Verdict.Status == "" {
 		t.Fatal("interactive report must preserve computed acceptance")
+	}
+}
+
+// The dashboard's report names the run's release rather than showing its ID.
+func TestArchiveReportJSONAttachesIdentityNames(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "identity.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	server := NewServer(ServerConfig{Store: store})
+	started := time.Date(2026, time.May, 18, 12, 0, 0, 0, time.UTC)
+	// The store seeds the legacy-imported release.
+	release, err := store.GetRelease("legacy-imported")
+	if err != nil || release == nil || release.Name == "" {
+		t.Fatalf("seeded release = %#v, %v", release, err)
+	}
+	registerReleaseTrendRun(t, server, "legacy-imported", "run-named", "Named Run", started, started.Add(3*time.Minute), false)
+	report := getArchiveReportJSON(t, server, "run-named")
+	if report.IdentityNames.Release != release.Name {
+		t.Fatalf("identity_names.release = %q, want %q", report.IdentityNames.Release, release.Name)
 	}
 }

@@ -1,0 +1,152 @@
+{
+  "scope": "Local regression of precision consent integrated with main plus browser workflow store isolation",
+  "base_main": "c90fa4cd148bab1c8446838a2fa713bc9a43ca54",
+  "precision_head": "5b1d23d5f079397faab0f9af99e36a599e3a5f4a",
+  "backend": {
+    "integrated-full-go": {
+      "passed_packages": 168,
+      "top_pass": 17789,
+      "nested_pass": 17722,
+      "top_skip": 33,
+      "nested_skip": 5,
+      "failures": []
+    },
+    "integrated-native-worker": {
+      "passed_packages": 1,
+      "top_pass": 165,
+      "nested_pass": 310,
+      "top_skip": 0,
+      "nested_skip": 0,
+      "failures": []
+    },
+    "integrated-native-api": {
+      "passed_packages": 1,
+      "top_pass": 3,
+      "nested_pass": 16,
+      "top_skip": 0,
+      "nested_skip": 0,
+      "failures": []
+    },
+    "integrated-postgres-consent": {
+      "passed_packages": 1,
+      "top_pass": 1,
+      "nested_pass": 9,
+      "top_skip": 0,
+      "nested_skip": 0,
+      "failures": []
+    }
+  },
+  "browser": {
+    "dev-admin": {
+      "attempt": "final-dev-repetition",
+      "profile": "dev-admin",
+      "selected_files": 89,
+      "selected_tests": 337,
+      "reported_files": 89,
+      "tests": 337,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 6,
+      "passed": 331,
+      "missing_or_incomplete": [],
+      "unexpected_files": [],
+      "failed_tests": [],
+      "complete_and_green": true
+    },
+    "local-auth": {
+      "attempt": "final-cycle",
+      "profile": "local-auth",
+      "selected_files": 67,
+      "selected_tests": 271,
+      "reported_files": 67,
+      "tests": 271,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "passed": 270,
+      "missing_or_incomplete": [],
+      "unexpected_files": [],
+      "failed_tests": [],
+      "complete_and_green": true
+    },
+    "focused_import_repetition": {
+      "tests": 21,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    }
+  },
+  "dashboard": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "unit_files": 722,
+    "unit_tests_passed": 8044,
+    "build": "passed"
+  },
+  "runner_tests": {
+    "passed": 14,
+    "failed": 0
+  },
+  "bundle_tests": {
+    "passed": 7,
+    "failed": 0
+  },
+  "embedded_and_generated_contracts": {
+    "packages_passed": 2,
+    "top_tests_passed": 12,
+    "nested_tests_passed": 8
+  },
+  "bundle_inventory": {
+    "passed": true,
+    "aggregate_js_gzip_mib_rounded": 2.43,
+    "limit_mib": 2.45,
+    "previous_limit_mib": 2.42,
+    "route_limits_changed": false
+  },
+  "private_har": {
+    "comparison": {
+      "baseline": "docs/qa/reviews/roadmap-java-representations-2026-10-20/evidence/har-import-final-summary.json",
+      "current": "integrated-private-har-summary.json",
+      "excluded_field": "script_sha256_without_id_created_at",
+      "exclusion_reason": "Existing converter generates randomized identifiers within the executable script; compare the retained import aggregates and original source hash.",
+      "matching_aggregate_fields": 10,
+      "differing_fields": [],
+      "passed": true
+    },
+    "source_sha256_rechecked": "7469ebdef88a576cd3cfa5891318a4aa5afb4efe97fccb410df339fc609ddef7",
+    "source_unchanged": true,
+    "replayed": false,
+    "executable_payload_retained": false
+  },
+  "full_cycle_invocation": {
+    "exit_code": 127,
+    "reason": "Dev-admin launch overlapped a runner edit and failed parsing after its build, before test discovery. The wrapper continued local-auth, then encountered a truncated loop terminator after its own overlapping edit. All non-browser cycle stages passed; the frozen wrapper passes both success and first-profile-failure regression cases.",
+    "replacement": "Frozen-source dev-admin repetition exited 0; both final profiles have complete exact-selection accounting with no failures.",
+    "relabelled_as_pass": false
+  },
+  "retained_unsuccessful_attempts": [
+    "Early selection/fixture unit failures and the import-root sentinel red regression",
+    "First cycle refused by the task-local pending-merge build guard",
+    "Shared-import-root diagnostic cycle: complete dev-admin, four local-auth failures, intentionally interrupted after 40 files",
+    "First independent main bundle build omitted a required generated input; corrected exact-main snapshot built successfully",
+    "Original 2.42 MiB aggregate bundle budget failure",
+    "Initial Docker/PostgreSQL availability probes, superseded by actual passing PostgreSQL tests",
+    "Final cycle dev-admin launch parsing failure, superseded only for browser coverage by the separate complete repetition"
+  ],
+  "limits": [
+    "No external reference-host performance acceptance",
+    "No Linux/Windows native packaging acceptance",
+    "No real TruClient export qualification",
+    "No multi-host recovery qualification",
+    "Original JMeter publication 409 inner cause remains unknown unless reproduced with retained logs"
+  ],
+  "review_record": "docs/qa/reviews/roadmap-e2e-isolation-2026-10-20/README.md",
+  "documentation": {
+    "passed": true,
+    "active_markdown_files": 293
+  },
+  "cleanup": {
+    "private_cache_reclaimed_allocated_bytes": 26324291584,
+    "shared_docker_build_cache": "deferred for parallel work"
+  }
+}

@@ -47,4 +47,5 @@ func TestPostgresNativeAttemptTwoStoreAuthorityAndPublicationFences(t *testing.T
 	defer second.Close()
 	exerciseAnalysisNativeAttemptAuthority(t, first.SQLiteStore, second.SQLiteStore)
 	exerciseAnalysisNativePublicationSQLFence(t, first.SQLiteStore)
+	t.Run("precision consent durable authority", func(t *testing.T) { exerciseAnalysisPrecisionConsent(t, first.SQLiteStore) })
 }

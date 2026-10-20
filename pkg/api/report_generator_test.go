@@ -1,6 +1,7 @@
 package api
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -503,5 +504,61 @@ func TestAuditIdentityShowsResolvedNamesNotIDs(t *testing.T) {
 		if strings.Contains(html, id) {
 			t.Errorf("audit identity leaked raw id %q", id)
 		}
+	}
+}
+
+// Change attribution and test setup name the scenario, scripts and data in
+// the HTML and PDF exports; the CSV keeps the IDs and adds the scenario name.
+func TestExportsNameChangeAttributionInsteadOfIDs(t *testing.T) {
+	report := &RunArchiveReport{
+		IdentityNames: RunArchiveIdentityNames{Scenario: "Peak Load"},
+		Manifest: &RunArchiveManifest{
+			TestID:   "run-1",
+			TestName: "Nightly Checkout",
+			Provenance: RunArchiveProvenance{ScenarioID: "scn-abc123", Groups: []TestGroup{
+				{Name: "Browse", ScriptID: "b0c7ce9e-6c24-46c5", ScriptName: "browse"},
+				{Name: "Buy", ScriptID: "4a3131e1-5222-4ef5", ScriptName: "buy"},
+			}},
+		},
+		ChangeAttribution: RunArchiveChangeAttribution{
+			ScriptRevisions:  []string{"4a3131e1-5222-4ef5", "b0c7ce9e-6c24-46c5"},
+			ScenarioRevision: "scn-abc123",
+			DataRevision:     "4a3131e1-5222-4ef5:data,b0c7ce9e-6c24-46c5:data",
+		},
+	}
+	if got := reportDataLabel(report); got != "browse data, buy data" {
+		t.Fatalf("data label = %q", got)
+	}
+	body, err := renderRunArchiveHTMLReportWithProfile(report, "engineer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if html := string(body); !strings.Contains(html, "Peak Load") || strings.Contains(html, "scn-abc123") {
+		t.Fatalf("html export scenario: want the name and not the id")
+	}
+	var lines []string
+	for _, id := range []string{"change_attribution", "test_setup"} {
+		reportSectionRegistry[id].PDF(&runArchiveHTMLReportData{Report: report}, &lines)
+	}
+	pdf := strings.Join(lines, "\n")
+	for _, want := range []string{"Scenario: Peak Load", "Data: browse data, buy data", "Scripts: browse (b0c7ce9e), buy (4a3131e1)"} {
+		if !strings.Contains(pdf, want) {
+			t.Errorf("pdf lines missing %q:\n%s", want, pdf)
+		}
+	}
+	if strings.Contains(pdf, "scn-abc123") || strings.Contains(pdf, ":data") {
+		t.Errorf("pdf lines show raw ids:\n%s", pdf)
+	}
+	var rows [][]string
+	write := func(section, group, metric, value string) error {
+		rows = append(rows, []string{metric, value})
+		return nil
+	}
+	if err := writeChangeAttributionCSVRows(write, report.ChangeAttribution, report.IdentityNames.Scenario); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(rows, func(row []string) bool { return row[0] == "scenario_revision" && row[1] == "scn-abc123" }) ||
+		!slices.ContainsFunc(rows, func(row []string) bool { return row[0] == "scenario_name" && row[1] == "Peak Load" }) {
+		t.Fatalf("csv rows = %v, want the scenario id and its name", rows)
 	}
 }

@@ -67,7 +67,7 @@ func TestNativeWindowAdmissionAcrossRepresentations(t *testing.T) {
 					partial, duplicate = analysis.MissingPartialHistogramWindow, analysis.MissingDuplicateHistogramRow
 				}
 				mapping := Mapping{Version: 2, Timestamp: Column{"ts"}, TimestampEncoding: "unix_s", Timezone: "UTC", Identity: &analysis.ParquetIdentityMapping{Host: Column{"host"}}, Measures: []Measure{measure}}
-				result, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: files, Mapping: mapping})
+				result, err := normalizeConsentedNativeFixture(t, e, context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: files, Mapping: mapping})
 				if err != nil {
 					t.Fatal(err)
 				}

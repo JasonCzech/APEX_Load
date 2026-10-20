@@ -1651,6 +1651,37 @@ describe('TestExecutionArchive', () => {
     expect(row?.querySelector('dd')?.textContent).toBe(samples)
     if (!telemetry) expect(panel?.textContent).toContain('Legacy: not captured')
   })
+  it('names the run scope, scripts, scenario and data instead of showing their IDs', async () => {
+    const report = {
+      ...archiveReport,
+      identity_names: { project: 'Payments', application: 'Checkout', release: 'R26.4', scenario: 'Peak hour' },
+      manifest: { ...archiveReport.manifest, provenance: { ...archiveReport.manifest.provenance,
+        project_id: 'proj-1a2b', application_id: 'app-3c4d', release_id: 'rel-5e6f', scenario_id: 'scn-7a8b',
+        groups: [{ name: 'Browse', script_id: 'b0c7ce9e-6c24', script_name: 'browse', vusers: 3 }, { name: 'Buy', script_id: '4a3131e1-5222', script_name: 'buy', vusers: 2 }] } },
+      change_attribution: { script_revisions: ['4a3131e1-5222', 'b0c7ce9e-6c24'], scenario_revision: 'scn-7a8b', data_revision: '4a3131e1-5222:data,b0c7ce9e-6c24:data', runtime_overrides: false },
+    } as unknown as RunArchiveReport
+    await renderArchiveView('report-metadata', report)
+    const value = (title: string, label: string) => {
+      const panel = Array.from(container.querySelectorAll('.archive-metadata-box')).find(node => node.querySelector('h3')?.textContent === title)
+      return Array.from(panel?.querySelectorAll('.archive-compact-row') ?? []).find(node => node.querySelector('dt')?.textContent === label)?.querySelector('dd')?.textContent
+    }
+    expect(value('Run Provenance', 'Scope')).toBe('Payments / Checkout / R26.4 / Peak hour')
+    expect(value('Change Attribution', 'Scripts')).toBe('browse, buy')
+    expect(value('Change Attribution', 'Scenario')).toBe('Peak hour')
+    expect(value('Change Attribution', 'Data')).toBe('browse data, buy data')
+  })
+  it('keeps short IDs on different scripts that share a name', async () => {
+    const report = {
+      ...archiveReport,
+      manifest: { ...archiveReport.manifest, provenance: { ...archiveReport.manifest.provenance,
+        groups: [{ name: 'A', script_id: 'aaaaaaaa-1111', script_name: 'login', vusers: 1 }, { name: 'B', script_id: 'bbbbbbbb-2222', script_name: 'login', vusers: 1 }] } },
+      change_attribution: { script_revisions: ['aaaaaaaa-1111', 'bbbbbbbb-2222'], runtime_overrides: false },
+    } as unknown as RunArchiveReport
+    await renderArchiveView('report-metadata', report)
+    const panel = Array.from(container.querySelectorAll('.archive-metadata-box')).find(node => node.querySelector('h3')?.textContent === 'Change Attribution')
+    const scripts = Array.from(panel?.querySelectorAll('.archive-compact-row') ?? []).find(node => node.querySelector('dt')?.textContent === 'Scripts')
+    expect(scripts?.querySelector('dd')?.textContent).toBe('login (aaaaaaaa), login (bbbbbbbb)')
+  })
   it('preserves unknown legacy classification interval counts instead of manufacturing zeros', async () => {
     const telemetry = { status: 'degraded', samples: 1 } as NonNullable<RunArchiveReport['overview']['telemetry']>
     await renderArchiveView('report-metadata', { ...archiveReport, overview: { ...archiveReport.overview, telemetry } })

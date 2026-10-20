@@ -1,0 +1,9 @@
+{
+  "baseline": "roadmap-java-representations-2026-10-20/evidence/har-import-final-summary.json",
+  "current": "private-har-streaming-summary.json",
+  "excluded_fields": [
+    "script_sha256_without_id_created_at"
+  ],
+  "all_other_fields_equal": true,
+  "target_replay_performed": false
+}

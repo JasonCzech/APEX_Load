@@ -252,6 +252,13 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 	if request.ProjectID == "" || len(request.ProjectID) > 256 || request.DatasetID == "" || len(request.DatasetID) > 256 || len(request.Files) == 0 || len(request.Files) > 1024 || len(request.Files)*len(request.Mapping.Measures) > 1024 {
 		return result, errors.New("invalid normalization identity or file count")
 	}
+	if len(request.verifiedInputHashes) != len(request.Files) {
+		return result, errWorkerProtocol
+	}
+	precisionReviewer, err := analysis.NewParquetPrecisionReviewer(request.Mapping, len(request.Files))
+	if err != nil {
+		return result, err
+	}
 	paths := make([]string, len(request.Files))
 	for i, p := range request.Files {
 		paths[i], err = e.authorizedPath(p)
@@ -262,15 +269,18 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 		if err != nil {
 			return result, err
 		}
-		if err = request.Mapping.Validate(schema); err != nil {
-			return result, fmt.Errorf("file %d: %w", i, err)
-		}
 		for _, c := range schema.Columns {
 			if len(c.PathComponents) == 1 && c.PathComponents[0] == "file_row_number" {
 				return result, errors.New("reserved Parquet file_row_number column prevents stable rejection provenance")
 			}
 		}
+		if err := precisionReviewer.AddSource(analysis.ParquetPrecisionInput{SHA256: request.verifiedInputHashes[i], Schema: schema}); err != nil {
+			return result, err
+		}
 		result.InputRows += schema.Rows
+	}
+	if _, err := precisionReviewer.Admit(request.PrecisionAcknowledgement); err != nil {
+		return result, err
 	}
 	dir, err := os.MkdirTemp(e.root, "normalized-")
 	if err != nil {

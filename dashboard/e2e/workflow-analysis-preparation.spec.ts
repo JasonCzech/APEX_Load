@@ -687,3 +687,63 @@ for (const peer of ['missing-capability', 'missing-mapping', 'current', 'legacy-
     expect(dataset.mapping).toEqual(peer === 'missing-mapping' ? undefined : mapping)
   })
 }
+
+test('decimal precision review requires current consent and preserves identity queries', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const workspace = await createWorkspace(page.context().request)
+  const id = '00000000-0000-0000-0000-000000000091'
+  const column = 'amount_' + 'x'.repeat(200)
+  let revision = 7; let state = 'mapped'; let reviews = 0; let commits = 0
+  let mapping: { version: number; precision_policy?: string; timestamp: string[]; timestamp_encoding: string; timezone: string; measures: { value: string[]; name: string; kind: string; unit: string }[]; identity?: { host?: string[] } } = { version: 2, timestamp: ['ts'], timestamp_encoding: 'unix_s', timezone: 'UTC', measures: [{ value: [column], name: 'amount', kind: 'gauge', unit: 'count' }] }
+  const digest = 'a'.repeat(64)
+  const record = () => ({ id, project_id: workspace.projectId, name: 'Decimal precision evidence', revision, state, files: [{ id: 'source', relative_path: 'decimal.parquet', size: 16, uploaded: 16 }], mapping, accepted: state === 'ready' ? 1 : 0, rejected: 0 })
+  await page.route('**/api/v1/analysis/**', async route => {
+    const req = route.request(); const path = new URL(req.url()).pathname
+    const send = (value: unknown, status = 200) => route.fulfill({ status, json: value })
+    if (path.endsWith('/capabilities')) return send({ native_parquet: true, enabled: true, imported_identity_version: 2, precision_consent_version: 1 })
+    if (path.endsWith('/imports')) return send([record()])
+    if (path.endsWith('/mappings') || path.endsWith('/comparisons')) return send([])
+    if (path.endsWith('/preview')) return send({ schema: { rows: 1, columns: ['ts', column].map(path => ({ path, path_components: [path], physical_type: 'INT64', repeated: false })) }, samples: [] })
+    if (path.endsWith('/precision-review')) {
+      expect(req.postDataJSON().revision).toBe(revision); reviews++
+      return send({ version: 1, import_id: id, revision, acknowledgement_sha256: 'b'.repeat(64), review: { version: 1, conversion: 'float64', mapping_sha256: digest, source_set_sha256: digest, source_count: 1, sha256: 'c'.repeat(64), risks: [{ file_sha256: digest, column: [column], precision: 38, scale: 2, reason: 'fractional_decimal_may_round_to_float64' }] } })
+    }
+    if (path.endsWith('/mapping')) {
+      expect(req.postDataJSON()).toMatchObject({ revision, mapping: { version: 3, precision_policy: 'allow_float64_rounding', identity: { host: [column] } }, precision_review_sha256: 'c'.repeat(64), precision_acknowledgement_sha256: 'b'.repeat(64) })
+      mapping = req.postDataJSON().mapping; revision++; return send(record())
+    }
+    if (path.endsWith('/commit')) { commits++; state = 'ready'; revision++; return send(record(), 202) }
+    if (path.endsWith('/series')) { expect(req.postDataJSON().host).toBe('exact-host'); return send({ points: [] }) }
+    return send(record())
+  })
+  await page.goto(`/#/monitoring?${scopeQuery(workspace)}`); await page.reload()
+  const area = page.getByRole('region', { name: 'Analysis workspace' })
+  await area.getByRole('button', { name: 'Decimal precision evidence · mapped' }).click()
+  const commit = area.getByRole('button', { name: 'Validate and import', exact: true })
+  await expect(commit).toBeDisabled()
+  await area.getByRole('button', { name: 'Review precision', exact: true }).click()
+  await expect(area).toContainText('does not count rows whose values actually change')
+  await expect(commit).toBeDisabled()
+  await area.getByRole('combobox', { name: 'Decimal conversion', exact: true }).selectOption('allow_float64_rounding')
+  await area.getByRole('button', { name: 'Review precision', exact: true }).click()
+  const accept = area.getByRole('checkbox', { name: 'I accept potential rounding for these source files and this mapping', exact: true })
+  await expect(commit).toBeDisabled(); await accept.check(); await expect(commit).toBeEnabled()
+  await area.getByRole('combobox', { name: 'Host column', exact: true }).selectOption(JSON.stringify([column]))
+  await expect(accept).toHaveCount(0); await expect(commit).toBeDisabled()
+  await area.getByRole('button', { name: 'Review precision', exact: true }).click()
+  await accept.check()
+  await page.setViewportSize({ width: 760, height: 900 })
+  const precisionPanel = area.getByRole('group', { name: 'Numeric precision', exact: true })
+  await expect(precisionPanel).toBeVisible()
+  expect(await precisionPanel.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  expect(await precisionPanel.evaluate(element => element.getBoundingClientRect().right <= window.innerWidth)).toBe(true)
+  await precisionPanel.screenshot({ path: test.info().outputPath('decimal-precision-consent.png') })
+  await commit.click(); await expect(area).toContainText('State: ready')
+  expect(reviews).toBe(3); expect(commits).toBe(1)
+  const query = area.getByRole('group', { name: 'Query dataset', exact: true })
+  await query.getByLabel('Host', { exact: true }).fill('exact-host')
+  await query.getByLabel('From (UTC)', { exact: true }).fill('2026-01-01T00:00')
+  await query.getByLabel('To (UTC)', { exact: true }).fill('2026-01-01T00:01')
+  await query.getByRole('button', { name: 'Show series', exact: true }).click()
+  await expect(area.getByRole('alert')).toHaveCount(0)
+})

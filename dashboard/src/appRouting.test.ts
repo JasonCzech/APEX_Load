@@ -517,7 +517,7 @@ describe('terminal run route compatibility', () => {
     const scope = { projectId: 'p', applicationId: 'a', releaseId: 'r' }
     expect(terminalRunReportView({ page: 'command-center', testId: 'run', ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section: 'summary' })
     expect(terminalRunReportView({ page: 'test', testId: 'run', ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section: 'summary' })
-    for (const [tab, section] of [['overview', 'summary'], ['control', 'execution'], ['configuration', 'execution'], ['graphs', 'performance'], ['diagnostics', 'diagnostics'], ['archive', 'evidence'], ['action-summary', 'performance'], ['load-impact', 'performance'], ['transaction-drilldown', 'diagnostics']] as const) {
+    for (const [tab, section] of [['overview', 'summary'], ['control', 'execution'], ['configuration', 'execution'], ['graphs', 'performance'], ['diagnostics', 'diagnostics'], ['archive', 'evidence'], ['action-summary', 'performance'], ['load-impact', 'load-impact'], ['transaction-drilldown', 'diagnostics']] as const) {
       const focus = ['action-summary', 'load-impact', 'transaction-drilldown'].includes(tab) ? { focus: tab } : {}
       expect(terminalRunReportView({ page: 'test', testId: 'run', tab, ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section, ...focus })
     }

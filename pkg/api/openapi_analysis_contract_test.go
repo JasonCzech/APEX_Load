@@ -7,6 +7,7 @@ import (
 
 func TestOpenAPIClosedAnalyticalRequestsRetainTypedIdentityAndDefinition(t *testing.T) {
 	routes := []discoveredRoute{
+		{Method: http.MethodPost, Path: "/api/v1/analysis/imports/{id}/precision-review", Handler: "handleAnalysisPrecisionReview"},
 		{Method: http.MethodPut, Path: "/api/v1/analysis/imports/{id}/mapping", Handler: "handleAnalysisMapping"},
 		{Method: http.MethodPost, Path: "/api/v1/analysis/mappings", Handler: "handleAnalysisDefinitions"},
 		{Method: http.MethodPut, Path: "/api/v1/analysis/mappings/{id}", Handler: "handleAnalysisDefinitions"},
@@ -31,7 +32,7 @@ func TestOpenAPIClosedAnalyticalRequestsRetainTypedIdentityAndDefinition(t *test
 			}
 			schema := media.Schema
 			switch route.Path {
-			case "/api/v1/analysis/imports/{id}/mapping":
+			case "/api/v1/analysis/imports/{id}/mapping", "/api/v1/analysis/imports/{id}/precision-review":
 				assertAnalysisMappingSchema(t, schema.Properties["mapping"])
 			case "/api/v1/analysis/mappings", "/api/v1/analysis/mappings/{id}":
 				assertAnalysisMappingSchema(t, schema.Properties["definition"])
@@ -58,7 +59,7 @@ func analysisSchemaClosed(schema oasSchema) bool {
 }
 func assertAnalysisMappingSchema(t *testing.T, schema oasSchema) {
 	t.Helper()
-	if !analysisSchemaClosed(schema) || schema.Properties["version"].Type != "integer" || schema.Properties["timestamp"].Type != "array" {
+	if !analysisSchemaClosed(schema) || schema.Properties["version"].Type != "integer" || schema.Properties["precision_policy"].Type != "string" || schema.Properties["timestamp"].Type != "array" {
 		t.Fatal("mapping raw bytes were advertised as opaque", schema)
 	}
 	identity := schema.Properties["identity"]
@@ -71,5 +72,23 @@ func assertAnalysisFilterSchema(t *testing.T, schema oasSchema) {
 	value, ok := schema.AdditionalProperties.(*oasSchema)
 	if schema.Type != "object" || !ok || value.Type != "string" || value.Nullable {
 		t.Fatal("exact arbitrary filter keys no longer carry string values", schema)
+	}
+}
+
+func TestOpenAPIAnalysisPrecisionReviewResponseRetainsTypedRisks(t *testing.T) {
+	route := discoveredRoute{Method: http.MethodPost, Path: "/api/v1/analysis/imports/{id}/precision-review", Handler: "handleAnalysisPrecisionReview"}
+	contracts, err := inferRouteContracts("server.go", []discoveredRoute{route})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := contracts[route.Method+" "+route.Path].Responses["200"].Content["application/json"].Schema
+	review := response.Properties["review"]
+	risks := review.Properties["risks"]
+	if response.Properties["acknowledgement_sha256"].Type != "string" || response.Properties["revision"].Type != "integer" || review.Properties["source_count"].Type != "integer" || review.Properties["sha256"].Type != "string" || risks.Type != "array" || risks.Items == nil {
+		t.Fatal("precision review response was erased", response)
+	}
+	risk := risks.Items
+	if risk.Properties["file_sha256"].Type != "string" || risk.Properties["precision"].Type != "integer" || risk.Properties["scale"].Type != "integer" || risk.Properties["column"].Items == nil || risk.Properties["column"].Items.Type != "string" {
+		t.Fatal("precision risk provenance was erased", risk)
 	}
 }

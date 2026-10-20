@@ -230,3 +230,67 @@ export function graphHasData(graph: TimelineGraph, keys: Set<string>, transactio
       : keys.has(series.key),
   )
 }
+
+// A gap longer than this many of a series' own median sampling intervals is a
+// real absence of data, not a sample of another kind between two of its own.
+const TIMELINE_GAP_FACTOR = 3
+
+const finiteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+
+export interface TimelineSeriesSegments {
+  /** The chart rows, with each split series' segment keys added. */
+  rows: MetricsHistoryPoint[]
+  /** Each series' keys to draw: its own key, or one key per segment. */
+  segments: Map<string, string[]>
+  /** Segment keys holding a single sample, which a line cannot show: draw a dot. */
+  points: Set<string>
+}
+
+// timelineSeriesSegments lets a lane connect a series across the samples of
+// other kinds that sit between its own (a resource sample has no throughput,
+// an interval may have no resource reading) while still breaking it where its
+// own samples stop for longer than a few of its intervals. A series with such
+// a gap is split into segment keys, each drawn with connectNulls; the rows
+// keep the original key for tooltips and exports.
+export function timelineSeriesSegments(data: MetricsHistoryPoint[], keys: string[]): TimelineSeriesSegments {
+  const segments = new Map<string, string[]>()
+  const points = new Set<string>()
+  const splits: Array<{ key: string; ranges: Array<[number, number]> }> = []
+  for (const key of keys) {
+    const defined: number[] = []
+    data.forEach((point, index) => {
+      if (finiteNumber(point.timestampMs) && finiteNumber((point as Record<string, unknown>)[key])) defined.push(index)
+    })
+    const deltas = defined.slice(1).map((index, i) => data[index].timestampMs! - data[defined[i]].timestampMs!).sort((a, b) => a - b)
+    const median = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 0
+    const ranges: Array<[number, number]> = []
+    if (median > 0) {
+      let start = defined[0]
+      for (let i = 1; i < defined.length; i++) {
+        if (data[defined[i]].timestampMs! - data[defined[i - 1]].timestampMs! > TIMELINE_GAP_FACTOR * median) {
+          ranges.push([start, defined[i - 1]])
+          start = defined[i]
+        }
+      }
+      ranges.push([start, defined[defined.length - 1]])
+    }
+    if (ranges.length <= 1) {
+      segments.set(key, [key])
+      continue
+    }
+    segments.set(key, ranges.map((_, n) => `${key}\u0001${n}`))
+    ranges.forEach(([first, last], n) => { if (first === last) points.add(`${key}\u0001${n}`) })
+    splits.push({ key, ranges })
+  }
+  if (splits.length === 0) return { rows: data, segments, points }
+  const rows = data.map((point, index) => {
+    const row: Record<string, unknown> = { ...point }
+    for (const { key, ranges } of splits) {
+      ranges.forEach(([first, last], n) => {
+        if (index >= first && index <= last) row[`${key}\u0001${n}`] = (point as Record<string, unknown>)[key]
+      })
+    }
+    return row as MetricsHistoryPoint
+  })
+  return { rows, segments, points }
+}

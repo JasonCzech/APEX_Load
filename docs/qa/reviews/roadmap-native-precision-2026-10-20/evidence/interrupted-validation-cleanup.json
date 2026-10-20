@@ -1,0 +1,15 @@
+{
+  "owned_temporary_directories_removed": [
+    {
+      "path": "/private/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.aznN4ZUXUf",
+      "bytes": 262142192
+    },
+    {
+      "path": "/private/tmp/apex-roadmap-prerequisite/go-tmp/go-build2059385715",
+      "bytes": 308983548
+    }
+  ],
+  "reclaimed_bytes": 571125740,
+  "controller_log_manually_retained": true,
+  "reason": "Wrapper cleanup lacked APEXLOAD_E2E_LOG_COPY and stopped after shutting down controller; completed explicit cleanup after confirming no open files."
+}

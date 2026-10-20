@@ -25,7 +25,7 @@ func unscored(reason string) histogramBucket { return histogramBucket{reason: re
 
 func histogramSeries(t *testing.T, e *Engine, files []string, metric, aggregation string, from time.Time, buckets, bucketSeconds int) []analysis.MetricPoint {
 	t.Helper()
-	points, err := e.Series(context.Background(), files, SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: metric, From: from, To: from.Add(time.Duration(buckets*bucketSeconds) * time.Second), BucketSeconds: bucketSeconds, Aggregation: aggregation})
+	points, err := e.Series(context.Background(), files, SeriesQuery{IdentitySchemaVersion: nativeFixtureIdentityVersion(t, e, files), ProjectID: "p", DatasetID: "d", Metric: metric, From: from, To: from.Add(time.Duration(buckets*bucketSeconds) * time.Second), BucketSeconds: bucketSeconds, Aggregation: aggregation})
 	if err != nil {
 		t.Fatalf("%s %s/%ds: %v", metric, aggregation, bucketSeconds, err)
 	}
@@ -81,7 +81,7 @@ func TestNativeWideDeltaHistogramMergesBinsAndInterpolates(t *testing.T) {
 		aggregation string
 		bucket      int
 	}{{"avg", 60}, {"p95", 90}, {"rate", 60}} {
-		if _, err := e.Series(context.Background(), result.Files, SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: "latency", From: from, To: from.Add(4 * time.Minute), BucketSeconds: bad.bucket, Aggregation: bad.aggregation}); err == nil {
+		if _, err := e.Series(context.Background(), result.Files, SeriesQuery{IdentitySchemaVersion: nativeFixtureIdentityVersion(t, e, result.Files), ProjectID: "p", DatasetID: "d", Metric: "latency", From: from, To: from.Add(4 * time.Minute), BucketSeconds: bad.bucket, Aggregation: bad.aggregation}); err == nil {
 			t.Errorf("histogram answered %s over %ds", bad.aggregation, bad.bucket)
 		}
 	}
@@ -133,7 +133,7 @@ func TestNativeHistogramRejectsMalformedRowsWithProvenance(t *testing.T) {
 		Value: Column{"n"}, Name: "size", Kind: analysis.KindHistogram, Unit: "bytes",
 		Histogram: &analysis.ParquetHistogram{Bounds: []string{"1", "+Inf"}, BucketCounts: analysis.HistogramLeCumulative, Temporality: analysis.HistogramDelta, WindowSeconds: 60, BoundColumn: Column{"le"}},
 	}}}
-	if _, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping}); err == nil {
+	if _, err := normalizeConsentedNativeFixture(t, e, context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping}); err == nil {
 		t.Fatal("malformed histograms accepted without explicit acceptance")
 	}
 	result := normalizeSummaryFixture(t, e, path, mapping, true)
@@ -157,7 +157,7 @@ func TestNativeHistogramRefusesDifferentBoundSets(t *testing.T) {
 	}
 	mapping := Mapping{Version: 1, Timestamp: Column{"ts"}, TimestampEncoding: "unix_s", Timezone: "UTC", Measures: []Measure{measure("a", "le_a", "1"), measure("b", "le_b", "2")}}
 	result := normalizeSummaryFixture(t, e, path, mapping, false)
-	_, err := e.Series(context.Background(), result.Files, SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: "rt", From: summaryStart(), To: summaryStart().Add(time.Minute), BucketSeconds: 60, Aggregation: "count"})
+	_, err := e.Series(context.Background(), result.Files, SeriesQuery{IdentitySchemaVersion: nativeFixtureIdentityVersion(t, e, result.Files), ProjectID: "p", DatasetID: "d", Metric: "rt", From: summaryStart(), To: summaryStart().Add(time.Minute), BucketSeconds: 60, Aggregation: "count"})
 	if err == nil {
 		t.Fatal("histograms with different bounds merged")
 	}

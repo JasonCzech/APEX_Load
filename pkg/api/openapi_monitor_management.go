@@ -41,7 +41,8 @@ func completeBoundedEvidenceModel(pkg, name string) bool {
 	}
 	if pkg == "analysis" {
 		switch name {
-		case "MonitorEvidenceEnvelope", "MonitorEvidenceAttribution", "MessagingManagementSnapshot", "MessagingManagementRow", "ManagementEntity", "KafkaManagementEntity", "ServiceBusManagementEntity", "SolaceManagementEntity", "KafkaOffsets", "ServiceBusRuntime", "SolaceSEMP", "ManagementInteger", "ManagementScope", "ManagementIdentity":
+		case "ParquetPrecisionReview", "ParquetPrecisionRisk", "ParquetDecimalRisk",
+			"MonitorEvidenceEnvelope", "MonitorEvidenceAttribution", "MessagingManagementSnapshot", "MessagingManagementRow", "ManagementEntity", "KafkaManagementEntity", "ServiceBusManagementEntity", "SolaceManagementEntity", "KafkaOffsets", "ServiceBusRuntime", "SolaceSEMP", "ManagementInteger", "ManagementScope", "ManagementIdentity":
 			return true
 		}
 	}

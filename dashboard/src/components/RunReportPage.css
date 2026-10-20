@@ -705,7 +705,7 @@
 .run-report-compare-controls select { max-width: min(520px, 100%); }
 @media (max-width: 600px) { .run-report-areas button { padding: 12px 8px; flex: 1; font-size: 12px; } .run-report-context label { flex-wrap: wrap; } }
 .run-report-kpi strong { white-space: nowrap; }
-#result-panel-Performance .tx-table td:first-child { min-width: 180px; overflow-wrap: break-word; word-break: normal; }
+#result-panel-performance .tx-table td:first-child { min-width: 180px; overflow-wrap: break-word; word-break: normal; }
 .report-toolbar-left, .report-toolbar-right { flex-wrap: wrap; min-width: 0; }
 .report-toolbar-title { overflow-wrap: anywhere; }
 .run-report-page .archive-report-card, .run-report-page .tx-section { min-width: 0; max-width: 100%; }
@@ -757,22 +757,91 @@
 
 .run-report-timeline-window {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
+  gap: 6px;
   margin: 16px 0;
-}
-.run-report-timeline-window label {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
   font-size: 13px;
 }
-.run-report-timeline-window input[type="range"] {
-  width: 100%;
-  min-height: 28px;
-  accent-color: var(--accent);
+.run-report-timeline-window-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
+/* Two range inputs share one track; only their thumbs take the pointer. */
+.run-report-timeline-window-range {
+  position: relative;
+  height: 28px;
+}
+.run-report-timeline-window-track {
+  position: absolute;
+  inset: 12px 0 auto;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right,
+    var(--border) 0 var(--window-start, 0%),
+    var(--accent) var(--window-start, 0%) var(--window-end, 100%),
+    var(--border) var(--window-end, 100%) 100%);
+}
+.run-report-timeline-window-range input[type="range"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  background: none;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.run-report-timeline-window-range input[type="range"][data-raised] { z-index: 1; }
+.run-report-timeline-window-range input[type="range"]::-webkit-slider-runnable-track { background: none; height: 28px; }
+.run-report-timeline-window-range input[type="range"]::-moz-range-track { background: none; }
+.run-report-timeline-window-range input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  pointer-events: auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 6px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: var(--bg-card);
+  cursor: grab;
+}
+.run-report-timeline-window-range input[type="range"]::-moz-range-thumb {
+  pointer-events: auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: var(--bg-card);
+  cursor: grab;
+}
+.run-report-timeline-window-range input[type="range"]:focus-visible { outline: none; }
+.run-report-timeline-window-range input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--accent-soft); }
+.run-report-timeline-window-range input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* Summary: results by group, then each group's transactions. */
+.run-report-group-breakdown-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 0 0 12px;
+}
+.run-report-group-breakdown-facts div { display: flex; gap: 6px; align-items: baseline; }
+.run-report-group-breakdown-facts dt { color: var(--text-secondary); font-size: 13px; }
+.run-report-group-breakdown-facts dd { margin: 0; font-weight: 600; }
+.run-report-group-breakdown-table td,
+.run-report-group-breakdown-table thead th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.run-report-group-breakdown-table tbody th { text-align: left; font-weight: 400; }
+.run-report-group-breakdown-table .run-report-delta { display: block; font-size: 11px; }
+.run-report-group-breakdown-overall th,
+.run-report-group-breakdown-overall td { font-weight: 600; border-bottom: 2px solid var(--border); }
+.run-report-group-breakdown-group th,
+.run-report-group-breakdown-group td { font-weight: 600; background: var(--subtle-fill); }
+.run-report-group-breakdown-group th .btn { padding-left: 0; font-weight: 600; }
+.run-report-group-breakdown-group th small { margin-left: 6px; color: var(--text-muted); font-weight: 400; }
+.run-report-group-breakdown-item th { padding-left: 28px; overflow-wrap: anywhere; }
+.run-report-group-breakdown-table td.run-report-muted { text-align: left; }
 
 .run-archive-coverage h2 { font-size: 16px; }
 .run-archive-coverage-table { max-height: 320px; overflow: auto; margin-top: 12px; }

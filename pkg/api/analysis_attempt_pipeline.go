@@ -87,7 +87,7 @@ func (s *Server) normalizeAnalysisImportOwned(parent context.Context, store stor
 			}
 			paths = append(paths, local)
 		}
-		result, err := engine.Normalize(ctx, analytics.NormalizeRequest{ProjectID: in.ProjectID, DatasetID: in.ID, Files: paths, Mapping: *in.Mapping, AllowRejected: in.AllowRejected})
+		result, err := engine.Normalize(ctx, analytics.NormalizeRequest{ProjectID: in.ProjectID, DatasetID: in.ID, Files: paths, Mapping: *in.Mapping, AllowRejected: in.AllowRejected, PrecisionAcknowledgement: in.PrecisionReviewSHA256})
 		if err != nil {
 			return err
 		}

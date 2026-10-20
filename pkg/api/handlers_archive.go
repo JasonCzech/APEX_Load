@@ -664,6 +664,9 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	// Interactive result summaries can omit the release-wide scan. Full reports
 	// retain the prior-run trend by default.
 	attachReportVerdictAndSLA(report)
+	// The provenance and change-attribution panels name the run's project,
+	// application, release and scenario rather than their ids.
+	s.attachIdentityNames(report)
 	if r.URL.Query().Get("include_release_trend") != "false" {
 		s.attachReleaseTrend(report)
 	}

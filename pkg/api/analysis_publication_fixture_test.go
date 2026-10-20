@@ -75,7 +75,7 @@ func addAnalysisPublicationFixtureManifest(t *testing.T, in *storage.AnalysisImp
 	at := time.Unix(1700000000, 0).UTC()
 	parts := make([]analysis.NormalizedPartition, 0, len(in.Normalized))
 	for i, key := range in.Normalized {
-		stats := analysis.NormalizedPartitionStats{Version: 1, SchemaVersion: analysis.SchemaVersion, IdentityVersion: in.Mapping.Version, Kind: measure.Kind, Unit: unit}
+		stats := analysis.NormalizedPartitionStats{Version: 1, SchemaVersion: analysis.SchemaVersion, IdentityVersion: in.Mapping.IdentityVersion(), Kind: measure.Kind, Unit: unit}
 		if i == 0 && in.Accepted > 0 {
 			stats.Rows, stats.Valid = in.Accepted, in.Accepted
 			stats.MinTime, stats.MaxTime = &at, &at

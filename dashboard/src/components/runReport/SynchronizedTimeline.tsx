@@ -1,5 +1,5 @@
 import SeriesChartExport from "../SeriesChartExport"
-import { useId, useMemo, useReducer, useState } from 'react'
+import { useId, useMemo, useReducer, useState, type CSSProperties } from 'react'
 import {
   Area,
   CartesianGrid,
@@ -31,6 +31,7 @@ import {
   MAX_TIMELINE_TRANSACTIONS,
   TIMELINE_GRAPHS,
   timelineMetricKeys,
+  timelineSeriesSegments,
   type TimelineGraph,
 } from './timelineGraphModel'
 
@@ -131,6 +132,8 @@ function LaneChart({
       result.push({ key: item.baselineKey, name: `Baseline · ${item.name}`, color: seriesColor(index), dash: '5 4' })
     return result
   })
+  // Lines bridge samples of other kinds but break where their own data stops.
+  const { rows: chartRows, segments, points } = timelineSeriesSegments(data, series.map(item => item.key))
   // Whole-run thresholds and bands are not transaction-specific evidence.
   const sla = transactionScoped
     ? undefined
@@ -165,7 +168,7 @@ function LaneChart({
         ) : (
           <>
             <SeriesChartExport id={`timeline-${lane.id}`} title={lane.title} rows={data} axes={[{ key: "time", label: "Run time", value: point => point.time }, { key: "utc", label: "Captured UTC timestamp (when retained)", value: point => point.timestampMs === undefined ? undefined : new Date(point.timestampMs).toISOString() }]} series={series.map(item => ({ key: item.key, label: item.name, unit: lane.unit }))} context={{ run_id: runId, baseline_id: showBaseline && !transactionScoped ? baselineId : undefined, scope: transactionScoped ? transactions : "Whole run", baseline_visible: showBaseline && !transactionScoped, sla, breach_windows: transactionScoped ? undefined : breachWindows }}><ResponsiveContainer width="100%" height={138}>
-              <ComposedChart data={data} syncId="metrics" margin={{ top: 14, right: 24, bottom: 8, left: 4 }}>
+              <ComposedChart data={chartRows} syncId="metrics" margin={{ top: 14, right: 24, bottom: 8, left: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} minTickGap={28} />
                 <YAxis stroke="var(--text-muted)" fontSize={11} width={48} domain={[0, 'auto']} />
@@ -225,32 +228,35 @@ function LaneChart({
                     }}
                   />
                 )}
-                {series.map((item) =>
+                {series.flatMap((item) => (segments.get(item.key) ?? [item.key]).map((dataKey) =>
                   item.key === 'vusers' ? (
                     <Area
-                      key={item.key}
+                      key={dataKey}
                       type="monotone"
-                      dataKey={item.key}
+                      dataKey={dataKey}
                       name={item.name}
                       stroke={item.color}
                       fill={item.color}
                       fillOpacity={0.18}
+                      dot={points.has(dataKey) ? { r: 2.5, fill: item.color, strokeWidth: 0 } : false}
+                      connectNulls
                       isAnimationActive={false}
                     />
                   ) : (
                     <Line
-                      key={item.key}
+                      key={dataKey}
                       type="monotone"
-                      dataKey={item.key}
+                      dataKey={dataKey}
                       name={item.name}
                       stroke={item.color}
                       strokeDasharray={item.dash}
                       strokeWidth={2}
-                      dot={false}
+                      dot={points.has(dataKey) ? { r: 2.5, fill: item.color, strokeWidth: 0 } : false}
+                      connectNulls
                       isAnimationActive={false}
                     />
                   ),
-                )}
+                ))}
               </ComposedChart>
             </ResponsiveContainer></SeriesChartExport>
             <div className="run-report-timeline-legend" aria-label={`${lane.title} series`}>
@@ -263,6 +269,54 @@ function LaneChart({
             </div>
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+// One track with a thumb for each end of the window. Each thumb is its own
+// range input, so either end keeps keyboard and screen-reader control; a
+// thumb stops at the other rather than passing it.
+function TimelineWindowSlider({ data, startIndex, endIndex, onChange }: {
+  data: MetricsHistoryPoint[]
+  startIndex: number
+  endIndex: number
+  onChange: (startIndex: number, endIndex: number) => void
+}) {
+  const max = data.length - 1
+  const percent = (index: number) => (max > 0 ? (index / max) * 100 : 0)
+  return (
+    <div className="run-report-timeline-window" role="group" aria-label="Timeline window">
+      <div className="run-report-timeline-window-labels">
+        <span>Window start: {data[startIndex]?.time}</span>
+        <span>Window end: {data[endIndex]?.time}</span>
+      </div>
+      <div
+        className="run-report-timeline-window-range"
+        style={{ '--window-start': `${percent(startIndex)}%`, '--window-end': `${percent(endIndex)}%` } as CSSProperties}
+      >
+        <div className="run-report-timeline-window-track" aria-hidden="true" />
+        <input
+          type="range"
+          aria-label="Timeline window start"
+          min={0}
+          max={max}
+          value={startIndex}
+          aria-valuetext={data[startIndex]?.time}
+          // Where the thumbs meet, the start thumb sits on top in the right half
+          // (more room to widen leftward) and the end thumb in the left half.
+          data-raised={startIndex === endIndex && startIndex > max / 2 ? 'true' : undefined}
+          onChange={(event) => onChange(Math.min(Number(event.target.value), endIndex), endIndex)}
+        />
+        <input
+          type="range"
+          aria-label="Timeline window end"
+          min={0}
+          max={max}
+          value={endIndex}
+          aria-valuetext={data[endIndex]?.time}
+          onChange={(event) => onChange(startIndex, Math.max(Number(event.target.value), startIndex))}
+        />
       </div>
     </div>
   )
@@ -542,46 +596,14 @@ export default function SynchronizedTimeline({ data, annotations, overlays, onOv
         </p>
       )}
       {data.length > 1 && (
-        <div className="run-report-timeline-window" aria-label="Timeline window">
-          <label>
-            Window start: {data[startIndex]?.time}
-            <input
-              type="range"
-              aria-label="Timeline window start"
-              min={0}
-              max={endIndex}
-              value={startIndex}
-              aria-valuetext={data[startIndex]?.time}
-              onChange={(event) =>
-                dispatchZoom({
-                  type: 'set-window',
-                  startIndex: Number(event.target.value),
-                  endIndex,
-                  pointCount: data.length,
-                })
-              }
-            />
-          </label>
-          <label>
-            Window end: {data[endIndex]?.time}
-            <input
-              type="range"
-              aria-label="Timeline window end"
-              min={startIndex}
-              max={data.length - 1}
-              value={endIndex}
-              aria-valuetext={data[endIndex]?.time}
-              onChange={(event) =>
-                dispatchZoom({
-                  type: 'set-window',
-                  startIndex,
-                  endIndex: Number(event.target.value),
-                  pointCount: data.length,
-                })
-              }
-            />
-          </label>
-        </div>
+        <TimelineWindowSlider
+          data={data}
+          startIndex={startIndex}
+          endIndex={endIndex}
+          onChange={(nextStart, nextEnd) =>
+            dispatchZoom({ type: 'set-window', startIndex: nextStart, endIndex: nextEnd, pointCount: data.length })
+          }
+        />
       )}
       <div className="run-report-timeline-stack">
         {TIMELINE_GRAPHS.filter((lane) => visibleLanes.has(lane.id)).map((lane) => (

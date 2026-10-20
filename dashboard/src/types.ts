@@ -1531,6 +1531,11 @@ export interface ArchivePage<T> {
   summaries?: T[]
 }
 
+export interface RunArchiveGroupBreakdown {
+  totals: RunArchiveActionStats & { average_rate_per_second?: number }
+  items: Record<string, RunArchiveActionStats & { average_rate_per_second?: number }>
+}
+
 export interface RunArchiveActionStats {
   java_http?: import('./types/javaHttp').JavaHTTPSummary
   messaging?: MessagingSummary
@@ -1789,6 +1794,12 @@ export interface RunArchiveReport {
   by_request?: Record<string, RunArchiveActionStats>
   by_transaction?: Record<string, RunArchiveActionStats>
   metric_populations?: Record<string, RunArchiveActionStats & { average_rate_per_second?: number }>
+  /** Per metric population, each group's totals and the transactions (or requests) inside it. */
+  group_breakdown?: Record<string, Record<string, RunArchiveGroupBreakdown>>
+  /** The populations that had more group and name pairs than the report keeps. */
+  group_breakdown_truncated?: string[]
+  /** Display names for the provenance ids, where the controller could resolve them. */
+  identity_names?: { project?: string; application?: string; release?: string; scenario?: string }
 
   schema_version?: string
   compatibility?: RunArchiveReportCompatibility

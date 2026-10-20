@@ -13,7 +13,8 @@ export function mappingRequiresNegotiatedAssociation(mapping?: AnalysisMapping):
 export function mappingAssociationCapabilityError(mapping: AnalysisMapping | undefined, advertised?: number): string | undefined {
   if (!mapping) return 'Mapping details are unavailable. Reload the dataset before changing the associated run.'
   if (!mappingRequiresNegotiatedAssociation(mapping)) return
-  if (mapping?.version !== 1 && mapping?.version !== 2) return 'This mapping version cannot be reassociated by this client.'
+  if (mapping?.version !== 1 && mapping?.version !== 2 && mapping?.version !== 3) return 'This mapping version cannot be reassociated by this client.'
+  if (mapping.version === 3 && mapping.precision_policy !== 'reject_potential_loss' && mapping.precision_policy !== 'allow_float64_rounding') return 'This precision mapping is incomplete and cannot be reassociated.'
   if (advertised !== mappingAssociationVersion) return 'This controller cannot safely reassociate this mapping. Upgrade the controller before changing the associated run.'
 }
 
@@ -25,7 +26,7 @@ function canonical(value: unknown): unknown {
 
 export function admitMappingAssociationResponse(before: AnalysisImport, runID: string, response: { contract_version?: number; import?: AnalysisImport }): AnalysisImport {
   const result = response?.import
-  if (response?.contract_version !== mappingAssociationVersion || !result || result.id !== before.id || result.project_id !== before.project_id || result.revision !== before.revision + 1 || (result.run_id ?? '') !== runID || result.state !== 'ready' || JSON.stringify(canonical(result.mapping)) !== JSON.stringify(canonical(before.mapping))) {
+  if (response?.contract_version !== mappingAssociationVersion || !result || result.id !== before.id || result.project_id !== before.project_id || result.revision !== before.revision + 1 || (result.run_id ?? '') !== runID || result.state !== 'ready' || result.precision_review_sha256 !== before.precision_review_sha256 || result.precision_acknowledgement_sha256 !== before.precision_acknowledgement_sha256 || result.precision_consent_revision !== before.precision_consent_revision || JSON.stringify(canonical(result.mapping)) !== JSON.stringify(canonical(before.mapping))) {
     throw new Error('The controller did not confirm the mapping-preserving association. Reload the dataset before continuing.')
   }
   return result

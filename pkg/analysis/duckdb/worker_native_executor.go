@@ -56,7 +56,12 @@ func (workerNativeExecutor) execute(ctx context.Context, a *workerAttempt, r wor
 			}
 		}
 	}
-	result, err := e.childNativeNormalize(ctx, NormalizeRequest{ProjectID: r.Normalize.ProjectID, DatasetID: r.Normalize.DatasetID, Files: paths(r.Normalize.InputHandles), Mapping: r.Normalize.Mapping, AllowRejected: r.Normalize.AllowRejected})
+	hashes := make([]string, len(r.Normalize.InputHandles))
+	for i, id := range r.Normalize.InputHandles {
+		h, _ := a.bootstrap.handle(id, "input")
+		hashes[i] = h.SHA256
+	}
+	result, err := e.childNativeNormalize(ctx, NormalizeRequest{ProjectID: r.Normalize.ProjectID, DatasetID: r.Normalize.DatasetID, Files: paths(r.Normalize.InputHandles), Mapping: r.Normalize.Mapping, AllowRejected: r.Normalize.AllowRejected, PrecisionAcknowledgement: r.Normalize.PrecisionAcknowledgement, verifiedInputHashes: hashes})
 	if err != nil {
 		return workerResult{}, err
 	}
@@ -115,7 +120,7 @@ func (workerNativeExecutor) execute(ctx context.Context, a *workerAttempt, r wor
 			}
 		}
 	}
-	if err := workerBoundPartitionMetadata(typed.Outputs, r.Normalize.ProjectID, r.Normalize.DatasetID, r.Normalize.Mapping.Version); err != nil {
+	if err := workerBoundPartitionMetadata(typed.Outputs, r.Normalize.ProjectID, r.Normalize.DatasetID, r.Normalize.Mapping.IdentityVersion()); err != nil {
 		return workerResult{}, err
 	}
 	out := workerResult{Status: "ok", Normalize: &typed}

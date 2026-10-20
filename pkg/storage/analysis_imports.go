@@ -28,33 +28,36 @@ type AnalysisImportFile struct {
 	Chunks       []AnalysisChunk `json:"chunks,omitempty"`
 }
 type AnalysisImport struct {
-	PartitionManifestVersion int                                   `json:"partition_manifest_version,omitempty"`
-	PartitionManifest        *analysis.NormalizedPartitionManifest `json:"partition_manifest,omitempty"`
-	UploadWriterVersion      int                                   `json:"upload_writer_version,omitempty"`
-	ID                       string                                `json:"id"`
-	ProjectID                string                                `json:"project_id"`
-	Name                     string                                `json:"name"`
-	Revision                 int64                                 `json:"revision"`
-	State                    string                                `json:"state"`
-	Files                    []AnalysisImportFile                  `json:"files"`
-	Mapping                  *analysis.ParquetMapping              `json:"mapping,omitempty"`
-	AllowRejected            bool                                  `json:"allow_rejected"`
-	Accepted                 int64                                 `json:"accepted"`
-	Rejected                 int64                                 `json:"rejected"`
-	Rejections               []analysis.ParquetRejectionSummary    `json:"rejections,omitempty"`
-	RejectionArtifacts       []string                              `json:"rejection_artifacts,omitempty"`
-	RejectionSHA256          map[string]string                     `json:"rejection_sha256,omitempty"`
-	Normalized               []string                              `json:"normalized,omitempty"`
-	NormalizedSHA256         map[string]string                     `json:"normalized_sha256,omitempty"`
-	ObsoleteObjects          []string                              `json:"obsolete_objects,omitempty"`
-	MappingID                string                                `json:"mapping_id,omitempty"`
-	MappingRevision          int64                                 `json:"mapping_revision,omitempty"`
-	RunID                    string                                `json:"run_id,omitempty"`
-	Error                    string                                `json:"error,omitempty"`
-	Owner                    string                                `json:"-"`
-	LeaseExpiresAt           time.Time                             `json:"-"`
-	CreatedAt                time.Time                             `json:"created_at"`
-	UpdatedAt                time.Time                             `json:"updated_at"`
+	PartitionManifestVersion       int                                   `json:"partition_manifest_version,omitempty"`
+	PartitionManifest              *analysis.NormalizedPartitionManifest `json:"partition_manifest,omitempty"`
+	UploadWriterVersion            int                                   `json:"upload_writer_version,omitempty"`
+	ID                             string                                `json:"id"`
+	ProjectID                      string                                `json:"project_id"`
+	Name                           string                                `json:"name"`
+	Revision                       int64                                 `json:"revision"`
+	State                          string                                `json:"state"`
+	Files                          []AnalysisImportFile                  `json:"files"`
+	Mapping                        *analysis.ParquetMapping              `json:"mapping,omitempty"`
+	PrecisionReviewSHA256          string                                `json:"precision_review_sha256,omitempty"`
+	PrecisionAcknowledgementSHA256 string                                `json:"precision_acknowledgement_sha256,omitempty"`
+	PrecisionConsentRevision       int64                                 `json:"precision_consent_revision,omitempty"`
+	AllowRejected                  bool                                  `json:"allow_rejected"`
+	Accepted                       int64                                 `json:"accepted"`
+	Rejected                       int64                                 `json:"rejected"`
+	Rejections                     []analysis.ParquetRejectionSummary    `json:"rejections,omitempty"`
+	RejectionArtifacts             []string                              `json:"rejection_artifacts,omitempty"`
+	RejectionSHA256                map[string]string                     `json:"rejection_sha256,omitempty"`
+	Normalized                     []string                              `json:"normalized,omitempty"`
+	NormalizedSHA256               map[string]string                     `json:"normalized_sha256,omitempty"`
+	ObsoleteObjects                []string                              `json:"obsolete_objects,omitempty"`
+	MappingID                      string                                `json:"mapping_id,omitempty"`
+	MappingRevision                int64                                 `json:"mapping_revision,omitempty"`
+	RunID                          string                                `json:"run_id,omitempty"`
+	Error                          string                                `json:"error,omitempty"`
+	Owner                          string                                `json:"-"`
+	LeaseExpiresAt                 time.Time                             `json:"-"`
+	CreatedAt                      time.Time                             `json:"created_at"`
+	UpdatedAt                      time.Time                             `json:"updated_at"`
 	// ArtifactSHA256 identifies a committed dataset's normalized artifacts,
 	// so a saved selection can pin the evidence it was saved against. It is
 	// computed for API responses, never stored.
@@ -77,6 +80,9 @@ func (s *SQLiteStore) SaveAnalysisImport(in AnalysisImport, expected int64) (*An
 	case "uploading", "mapped", "normalizing", "ready", "failed", "cancelled", "deleting", "deleted":
 	default:
 		return nil, errors.New("invalid analysis import state")
+	}
+	if err := validateAnalysisPrecisionConsent(in, expected); err != nil {
+		return nil, err
 	}
 	in.Revision = expected + 1
 	in.UpdatedAt = time.Now().UTC()
@@ -176,10 +182,17 @@ func (s *SQLiteStore) SaveAnalysisImport(in AnalysisImport, expected int64) (*An
 				return nil, errors.New("active analytical ownership cannot be changed by generic save")
 			}
 		}
+		consentChanged := old.PrecisionReviewSHA256 != in.PrecisionReviewSHA256 || old.PrecisionAcknowledgementSHA256 != in.PrecisionAcknowledgementSHA256 || old.PrecisionConsentRevision != in.PrecisionConsentRevision
+		if consentChanged && in.PrecisionConsentRevision != 0 && in.PrecisionConsentRevision != expected {
+			return nil, errors.New("new precision consent requires the current import revision")
+		}
+		if old.State != "uploading" && old.State != "mapped" && old.State != "failed" && (old.PrecisionReviewSHA256 != in.PrecisionReviewSHA256 || old.PrecisionAcknowledgementSHA256 != in.PrecisionAcknowledgementSHA256 || old.PrecisionConsentRevision != in.PrecisionConsentRevision) {
+			return nil, errors.New("precision consent is immutable outside mapping edits")
+		}
 		if old.State == "ready" {
 			a, _ := json.Marshal(old.Mapping)
 			b, _ := json.Marshal(in.Mapping)
-			if string(a) != string(b) || old.AllowRejected != in.AllowRejected || old.MappingID != in.MappingID || old.MappingRevision != in.MappingRevision || !analysisImportOwnedOutputsEqual(old, in) {
+			if string(a) != string(b) || old.PrecisionReviewSHA256 != in.PrecisionReviewSHA256 || old.PrecisionAcknowledgementSHA256 != in.PrecisionAcknowledgementSHA256 || old.PrecisionConsentRevision != in.PrecisionConsentRevision || old.AllowRejected != in.AllowRejected || old.MappingID != in.MappingID || old.MappingRevision != in.MappingRevision || !analysisImportOwnedOutputsEqual(old, in) {
 				return nil, errors.New("committed analytical data is immutable")
 			}
 		}
@@ -266,4 +279,18 @@ func analysisImportOwnedOutputsEqual(a, b AnalysisImport) bool {
 		(len(a.RejectionSHA256) == 0 && len(b.RejectionSHA256) == 0 || reflect.DeepEqual(a.RejectionSHA256, b.RejectionSHA256)) &&
 		(len(a.Rejections) == 0 && len(b.Rejections) == 0 || reflect.DeepEqual(a.Rejections, b.Rejections)) &&
 		(len(a.ObsoleteObjects) == 0 && len(b.ObsoleteObjects) == 0 || reflect.DeepEqual(a.ObsoleteObjects, b.ObsoleteObjects))
+}
+
+func validateAnalysisPrecisionConsent(in AnalysisImport, maximumRevision int64) error {
+	if in.PrecisionReviewSHA256 == "" && in.PrecisionAcknowledgementSHA256 == "" && in.PrecisionConsentRevision == 0 {
+		return nil
+	}
+	if in.Mapping == nil || in.Mapping.Version != 3 || in.PrecisionConsentRevision < 1 || in.PrecisionConsentRevision > maximumRevision {
+		return errors.New("invalid precision consent metadata")
+	}
+	ack, err := analysis.ParquetPrecisionAcknowledgement(in.ProjectID, in.ID, in.PrecisionConsentRevision, *in.Mapping, in.PrecisionReviewSHA256)
+	if err != nil || ack != in.PrecisionAcknowledgementSHA256 {
+		return errors.New("precision consent does not match import identity and mapping")
+	}
+	return nil
 }

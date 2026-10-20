@@ -53,7 +53,7 @@ func importedNativeSeriesQuery(project string, in *storage.AnalysisImport, s Ana
 	}
 	version := 1
 	if in.Mapping != nil {
-		version = in.Mapping.Version
+		version = in.Mapping.IdentityVersion()
 	}
 	if version != 1 && version != 2 {
 		return analytics.SeriesQuery{}, errors.New("unsupported imported identity mapping version")
@@ -84,7 +84,7 @@ func bindImportedNativeSeriesQuery(in *storage.AnalysisImport, query analytics.S
 	}
 	version := 1
 	if in.Mapping != nil {
-		version = in.Mapping.Version
+		version = in.Mapping.IdentityVersion()
 	}
 	if version != 1 && version != 2 {
 		return analytics.SeriesQuery{}, errors.New("unsupported imported identity mapping version")
