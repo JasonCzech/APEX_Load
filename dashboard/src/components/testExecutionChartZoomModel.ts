@@ -1,18 +1,11 @@
-export const executionChartMinuteRangeValues = [
-  1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-  11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-  21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
-  31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
-  41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
-  51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-] as const
-
-export type ExecutionChartMinuteValue = typeof executionChartMinuteRangeValues[number]
-export type ExecutionChartMinuteRange = `${ExecutionChartMinuteValue}m`
+// A display window is any whole number of minutes. The slider spans up to the
+// run's scheduled length (an hour when it has none) and then "All".
+export type ExecutionChartMinuteValue = number
+export type ExecutionChartMinuteRange = `${number}m`
 export type ExecutionChartTimeRange = ExecutionChartMinuteRange | 'all' | 'custom'
 
-export const executionChartMinMinuteRange = executionChartMinuteRangeValues[0]
-export const executionChartMaxMinuteRange = executionChartMinuteRangeValues[executionChartMinuteRangeValues.length - 1]
+export const executionChartMinMinuteRange = 1
+export const executionChartMaxMinuteRange = 60
 
 export interface ExecutionChartZoomAnchor {
   label: string | number
@@ -46,18 +39,23 @@ export const initialExecutionChartZoomState: ExecutionChartZoomState = {
 }
 
 export function executionChartMinuteRangeValue(timeRange: ExecutionChartTimeRange): ExecutionChartMinuteValue | null {
-  if (!timeRange.endsWith('m')) return null
+  if (!/^\d+m$/.test(timeRange)) return null
   const minutes = Number(timeRange.slice(0, -1))
-  return executionChartMinuteRangeValues.includes(minutes as ExecutionChartMinuteValue)
-    ? minutes as ExecutionChartMinuteValue
-    : null
+  return Number.isSafeInteger(minutes) && minutes >= executionChartMinMinuteRange ? minutes : null
 }
 
-export function executionChartTimeRangeForMinutes(minutes: number): ExecutionChartMinuteRange {
+/** The slider's longest minute value: the run's scheduled length, else an hour. */
+export function executionChartMaxMinutesForSchedule(scheduledSeconds?: number): number {
+  return typeof scheduledSeconds === 'number' && Number.isFinite(scheduledSeconds) && scheduledSeconds > 0
+    ? Math.max(executionChartMinMinuteRange, Math.ceil(scheduledSeconds / 60))
+    : executionChartMaxMinuteRange
+}
+
+export function executionChartTimeRangeForMinutes(minutes: number, maxMinutes = executionChartMaxMinuteRange): ExecutionChartMinuteRange {
   const clamped = Math.min(
-    executionChartMaxMinuteRange,
+    Math.max(executionChartMinMinuteRange, Math.round(maxMinutes)),
     Math.max(executionChartMinMinuteRange, Math.round(minutes)),
-  ) as ExecutionChartMinuteValue
+  )
   return `${clamped}m`
 }
 
