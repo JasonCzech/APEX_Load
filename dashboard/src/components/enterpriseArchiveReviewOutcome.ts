@@ -9,6 +9,7 @@ export const ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID = 'enterprise-archive-import'
 interface ReviewState {
   result: EnterpriseArchiveImportResult | null
   savedResultScripts: Record<number, unknown>
+  queuedResultScripts?: Record<number, unknown>
   reviewOptionsIdentity: string
   reviewGeneration: number
   replayReviewGeneration: number
@@ -22,6 +23,8 @@ export function archiveReviewOutcome(item: ReviewState, optionsIdentity: string,
   const result = item.result
   const scripts = result?.scripts?.length ? result.scripts : result?.script ? [result.script] : []
   const savedCount = scripts.filter((_, index) => Object.prototype.hasOwnProperty.call(item.savedResultScripts, index)).length
+  const queuedCount = scripts.filter((_, index) => !Object.prototype.hasOwnProperty.call(item.savedResultScripts, index) && Boolean(item.queuedResultScripts?.[index])).length
+  if (queuedCount > 0) return `Queued ${queuedCount} of ${scripts.length} for approval${savedCount ? `; saved ${savedCount}` : ''}`
   if (savedCount > 0) return savedCount === scripts.length ? 'Saved' : `Saved ${savedCount} of ${scripts.length}`
   if (item.reviewOptionsIdentity !== optionsIdentity) return 'Needs validation'
   if (!result) return 'Review required'

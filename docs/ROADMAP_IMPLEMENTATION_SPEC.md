@@ -142,6 +142,8 @@ Preserve strong ETags, durable `If-Match`, strict project policy, foreign-resour
 
 ### AUTH-C — Lifecycle edges and property-level parity
 
+The [archive approval handoff slice](qa/reviews/roadmap-archive-approval-handoff-2026-10-19/README.md) returns a distinct durable session receipt to the legacy/plain archive review, keeps later editor changes, and retains shared source sessions while sibling lanes remain pending. Protected imports still require save-before-edit. Scenario prerequisite handoff, the complete property matrix, and AUTH-A/B remain open.
+
 Close the named remaining edges: scenario prerequisite-script saves must retain unsaved import siblings; Java approval queueing must return an explicit queued state to the review; edited-during-save recovery must not discard sibling drafts or protected source sessions. Retain Save one/all/subset, partial-failure results, configure-secret queues and the existing return destination.
 
 Expand the lifecycle matrix from entry-point presence to every AUTH-2 property: source/ownership, warnings/provenance, protected references, context/approval gates, pending edits, dirty navigation, delayed replies, exact resolved payload and durable reload. Include script producers outside the ordinary import route, recorder conversion, components/clone and library imports. Session-backed imports must be tested through real HTTP requests, not only constructed DTOs.

@@ -339,6 +339,11 @@ function AppShell({
   // index, so closing the step goes back to that entry instead of adding one.
   const scriptsBuilderParents = useRef(new Map<number, string>());
   const pendingScriptsBuilderParent = useRef<string | null>(null);
+  // A surface already returned to its retained parent; history only catches up.
+  // This one-shot acknowledgement never applies to user-initiated traversal.
+  const pendingScriptsSurfaceReturn = useRef<{
+    originIndex: number; originHash: string; targetHash: string; targetView: AppView;
+  } | null>(null);
   // What the Scripts page last reported: whether its surface moved since (a
   // Close may go back to the entry it came from), and what to name instead of
   // a draft route the page cannot open.
@@ -2445,6 +2450,10 @@ function AppShell({
       // a deeper step is a new one, closing a step goes back to the entry it
       // came from, and a tab within a step replaces the current one.
       if (surfaceMoved && scriptsBuilderParents.current.get(appHistoryIndex.current) === next) {
+        pendingScriptsSurfaceReturn.current = {
+          originIndex: appHistoryIndex.current, originHash: viewToLocationHash(viewRef.current),
+          targetHash: next, targetView: nextView,
+        };
         window.history.back();
         return;
       }
@@ -2625,6 +2634,20 @@ function AppShell({
       const targetHistoryIndex = isPopState
         ? readAppHistoryIndex((event as PopStateEvent).state)
         : null;
+
+      const surfaceReturn = pendingScriptsSurfaceReturn.current;
+      pendingScriptsSurfaceReturn.current = null;
+      if (surfaceReturn && isPopState && !guardedHistoryTraversal.current
+        && appHistoryIndex.current === surfaceReturn.originIndex
+        && viewToLocationHash(viewRef.current) === surfaceReturn.originHash
+        && targetHistoryIndex === surfaceReturn.originIndex - 1
+        && window.location.hash === surfaceReturn.targetHash) {
+        // The Scripts page has already changed surfaces without unmounting its
+        // source. Retained sibling guards remain dirty for genuine navigation.
+        appHistoryIndex.current = targetHistoryIndex;
+        setView(surfaceReturn.targetView);
+        return;
+      }
 
       if (
         isPopState &&

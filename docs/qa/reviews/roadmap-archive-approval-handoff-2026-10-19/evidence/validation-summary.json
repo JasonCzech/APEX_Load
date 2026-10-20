@@ -1,0 +1,23 @@
+{
+  "base_commit": "5486af9c6e7c55a0f7e179ff0245825f2860e59b",
+  "origin_main": "609bf1b1a9417a7f1b99a9c476d6ef5d419e5864",
+  "typecheck": "passed",
+  "lint": "passed; changed E2E files rechecked after assertion correction",
+  "unit_tests": {
+    "passed": 7980,
+    "files": 716
+  },
+  "browser_dev_admin": {
+    "passed": 319,
+    "skipped": 6,
+    "detail": "318 passed in full cycle; sole stale exact status assertion corrected and passed in targeted recheck"
+  },
+  "browser_local_auth": {
+    "passed": 258,
+    "skipped": 1
+  },
+  "test_cycle_exit": "1 due only to the corrected dev-admin assertion; all applicable final tests verified by full-cycle plus targeted recheck",
+  "api_lifecycle_and_private_har": "passed",
+  "active_markdown_files_checked": 260,
+  "external_qualification": "unavailable; not claimed"
+}

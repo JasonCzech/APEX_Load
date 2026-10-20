@@ -2567,7 +2567,7 @@ describe('EnterpriseArchiveImport', () => {
       bindings: [{ requirement_id: 'login-password', secret_name: 'LOGIN_PASSWORD' }],
     })
     expect(onEdit).toHaveBeenCalledTimes(1)
-    expect(onEdit).toHaveBeenCalledWith(resolvedScript, { targetAction: 'Login' }, expect.any(Function))
+    expect(onEdit).toHaveBeenCalledWith(resolvedScript, { targetAction: 'Login' }, expect.any(Function), expect.any(Function))
     expect(JSON.stringify(onEdit.mock.calls[0]?.[0])).not.toContain('[REDACTED]')
   })
 
@@ -2806,9 +2806,9 @@ describe('EnterpriseArchiveImport', () => {
       stayInImportReview: true,
     })
     expect(container.textContent).toContain('Combined Java Vuser draft saved as authoring session')
-    expect(container.textContent).toContain('0 scripts saved · 1 review session saved · 0 drafts awaiting save · 0 archives validated, awaiting save')
+    expect(container.textContent).toContain('0 scripts saved · 1 review session saved · 0 approval sessions queued · 0 drafts awaiting save · 0 archives validated, awaiting save')
     await clickImportAction(container, 'Validate Only')
-    expect(container.textContent).toContain('0 scripts saved · 0 review sessions saved · 1 draft awaiting save · 1 archive validated, awaiting save')
+    expect(container.textContent).toContain('0 scripts saved · 0 review sessions saved · 0 approval sessions queued · 1 draft awaiting save · 1 archive validated, awaiting save')
   })
 
   const javaDependencyDraft = () => ({
@@ -4817,7 +4817,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickButton(findButton(container, 'Open draft in Visual Editor')!)
     await flushPromises()
 
-    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ name: 'alpha.zip' }), undefined, expect.any(Function))
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ name: 'alpha.zip' }), undefined, expect.any(Function), expect.any(Function))
     expect(apiMock.discardImportSecretSession).toHaveBeenCalledTimes(1)
     expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
       project_id: 'project-1',
@@ -5125,6 +5125,68 @@ describe('EnterpriseArchiveImport', () => {
     for (const button of sectionButtons()) {
       expect(button.disabled).toBe(false)
       expect(button.title).toBe('')
+    }
+  })
+
+  it.each(['accepted', 'no-project', 'protocol-gate', 'project', 'folder', 'options', 'generation'] as const)('records only the current editor approval outcome: %s', async change => {
+    const projectId = change === 'no-project' ? undefined : 'project-1'
+    const expectedAccepted = change === 'accepted' || change === 'no-project' || change === 'protocol-gate'
+    const onEdit = vi.fn()
+    const onImported = vi.fn()
+    const lane = (name: string) => ({ name, version: '1.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Request', type: 'request', method: 'GET', target: '/' }] })
+    const first = lane('First Lane')
+    const twoDrafts = { ...executableEnterpriseResult(first, change === 'protocol-gate' ? {
+      detected_protocol: { canonical_source_protocol: 'sap_gui', apexload_protocol: 'sap_gui', import_mode: 'external_runner_required', confidence: 'high' },
+      review_artifact: { id: 'source-review', title: 'Source review', status: 'external_runner_required', summary: 'Retained source evidence' },
+    } : {}), scripts: [first, lane('Sibling Lane')], source_secret_session_id: 'shared-source-session' }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(twoDrafts)
+    apiMock.importEnterpriseArchive.mockResolvedValue(twoDrafts)
+    await act(async () => root.render(<EnterpriseArchiveImport projectId={projectId} folderId="folder-1" onEdit={onEdit} onImported={onImported} />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['lanes'], 'lanes.zip', { type: 'application/zip' }), new File(['other'], 'other.zip', { type: 'application/zip' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate 2 Scripts')
+    await flushPromises()
+    apiMock.discardImportSecretSession.mockClear()
+    await clickButton(findButton(container, 'Open draft in Visual Editor')!)
+    await flushPromises()
+    const queued = onEdit.mock.calls[0]?.[3] as (receipt: { sessionId: string; name: string; projectId: string; folderId: string }) => boolean
+    expect(queued).toBeTypeOf('function')
+    // The protected source belongs to both lanes, including the unsaved sibling.
+    expect(apiMock.discardImportSecretSession).not.toHaveBeenCalled()
+    if (change === 'project' || change === 'folder') {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId={change === 'project' ? 'project-2' : 'project-1'} folderId={change === 'folder' ? 'folder-2' : 'folder-1'} onEdit={onEdit} onImported={onImported} />))
+    } else if (change === 'options') {
+      const baseURL = container.querySelector<HTMLInputElement>('input[placeholder="Auto-detected from first URL"]')!
+      await act(async () => { Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(baseURL, 'https://changed.example'); baseURL.dispatchEvent(new Event('input', { bubbles: true })) })
+    } else if (change === 'generation') {
+      await clickImportAction(container, 'Validate 2 Scripts')
+      await flushPromises()
+    }
+    let accepted = false
+    await act(async () => { accepted = queued({ sessionId: 'approval-session', name: 'Edited Java Lane', projectId: projectId || '', folderId: 'folder-1' }) })
+    await flushPromises()
+    expect(accepted).toBe(expectedAccepted)
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(onImported).not.toHaveBeenCalled()
+    if (!expectedAccepted) {
+      expect(container.textContent).not.toContain('Queued Edited Java Lane for approval')
+    } else {
+      expect(container.textContent).toContain('Queued Edited Java Lane for approval (session approval-session)')
+      expect(container.textContent).toContain('Queued for approval')
+      expect(container.textContent).toContain('1 approval session queued')
+      expect(container.textContent).toContain('Sibling Lane')
+      expect(container.textContent).not.toContain('Saved First Lane to the script library')
+      const save = findButton(container, 'Queued for approval')!
+      expect(save.disabled).toBe(true)
+      // Refreshing a partly handled archive retains its queue receipt and sibling.
+      await clickImportAction(container, 'Validate 2 Scripts')
+      await flushPromises()
+      expect(container.textContent).toContain('Queued for approval')
+      expect(container.textContent).toContain('Sibling Lane')
     }
   })
 
@@ -5945,7 +6007,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo Enterprise Script Archive',
       protocol: 'http',
-    }), { targetAction: 'Homepage' }, expect.any(Function))
+    }), { targetAction: 'Homepage' }, expect.any(Function), expect.any(Function))
   })
 
   it('locks inline runtime settings after saving the reviewed draft', async () => {
@@ -6049,7 +6111,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo Enterprise Script Archive',
       protocol: 'http',
-    }), { targetAction: 'Homepage' }, expect.any(Function))
+    }), { targetAction: 'Homepage' }, expect.any(Function), expect.any(Function))
   })
 
   it('opens imported runtime review in the visual editor with a runtime focus hint', async () => {
@@ -6103,7 +6165,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo Enterprise Script Archive',
       protocol: 'http',
-    }), { targetSection: 'runtime' }, expect.any(Function))
+    }), { targetSection: 'runtime' }, expect.any(Function), expect.any(Function))
   })
 
   it('opens a runtime repair suggestion in the visual editor with a runtime focus hint', async () => {
@@ -6157,7 +6219,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo Enterprise Script Archive',
       protocol: 'http',
-    }), { targetSection: 'runtime' }, expect.any(Function))
+    }), { targetSection: 'runtime' }, expect.any(Function), expect.any(Function))
   })
 
 
@@ -6217,7 +6279,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo Enterprise Script Archive',
       protocol: 'http',
-    }), { targetSection: 'parameter-data', targetDataSource: 'users' }, expect.any(Function))
+    }), { targetSection: 'parameter-data', targetDataSource: 'users' }, expect.any(Function), expect.any(Function))
   })
 
   it('opens the first generated data source summary jump in the visual editor with a data source focus hint', async () => {
@@ -6271,7 +6333,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo Enterprise Script Archive',
       protocol: 'http',
-    }), { targetSection: 'parameter-data', targetDataSource: 'users' }, expect.any(Function))
+    }), { targetSection: 'parameter-data', targetDataSource: 'users' }, expect.any(Function), expect.any(Function))
   })
 
 
@@ -8015,7 +8077,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Imported TruClient Mobile Web',
       protocol: 'browser',
-    }), undefined, expect.any(Function))
+    }), undefined, expect.any(Function), expect.any(Function))
   })
 })
 

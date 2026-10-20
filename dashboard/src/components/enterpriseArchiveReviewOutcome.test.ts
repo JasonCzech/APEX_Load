@@ -64,6 +64,17 @@ describe('archive queue review outcome', () => {
     expect(outcome(item)).toBe('Review only')
   })
 
+  it('distinguishes queued approval sessions from library saves and ignores unrelated indices', () => {
+    const item = state()
+    item.result!.scripts.push({ ...item.result!.scripts[0], name: 'sibling' })
+    item.queuedResultScripts = { 0: { sessionId: 'review-1' }, 99: {} }
+    expect(outcome(item)).toBe('Queued 1 of 2 for approval')
+    item.savedResultScripts[1] = {}
+    expect(outcome(item)).toBe('Queued 1 of 2 for approval; saved 1')
+    item.savedResultScripts[0] = {}
+    expect(outcome(item)).toBe('Saved')
+  })
+
   it('reports partial saves without counting unrelated indices', () => {
     const item = state()
     item.result!.scripts.push({ ...item.result!.scripts[0], name: 'second' })

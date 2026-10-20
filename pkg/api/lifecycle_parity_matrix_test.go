@@ -404,8 +404,9 @@ func lifecycleAuth2Rows() []lifecycleAuth2Row {
 			"workflow-jmeter-fidelity.spec.ts": {"JMeter fidelity review retains blockers and regenerates explicit timestamp and name repairs"},
 		}},
 		{Entry: "Multi-script imports", E2E: map[string][]string{
-			"workflow-loadrunner-collection.spec.ts": {"reviews and saves nested VuGen projects independently, retaining failed and Java reviews"},
-			"workflow-loadrunner-review.spec.ts":     {"LoadRunner batch saves ready scripts, stays on import, and accepts another ZIP"},
+			"workflow-archive-approval-handoff.spec.ts": {"Legacy archive editor returns a durable approval receipt", "Legacy archive editor retains later edits while queueing approval"},
+			"workflow-loadrunner-collection.spec.ts":    {"reviews and saves nested VuGen projects independently, retaining failed and Java reviews"},
+			"workflow-loadrunner-review.spec.ts":        {"LoadRunner batch saves ready scripts, stays on import, and accepts another ZIP"},
 		}},
 		{Entry: "Recording", E2E: map[string][]string{
 			"workflow-recording-review.spec.ts": {"recording review scopes verification to outputs and invalidates changed conversions"},

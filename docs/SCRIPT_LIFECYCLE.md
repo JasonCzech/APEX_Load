@@ -681,3 +681,18 @@ configuration, parameter or data-source edit makes it stale too, not only an
 action edit. Secret-reference availability is reconciled against the live
 secret probe when the readiness card renders rather than bound into the
 result.
+
+### Archive editor approval handoff
+
+When a plain archive draft is opened directly in the Visual Editor and changed
+into a Java Vuser draft, Save queues an authoring session for approval. The
+archive review shows **Queued for approval**, with the session identity; it is
+not a saved library script and cannot be debugged from that review. Resume the
+session from Scripts to continue the approval workflow. If the editor changed
+while queueing was pending, those later edits remain open and unsaved.
+
+Pending sibling drafts stay in the archive review. A source session shared by
+multiple generated lanes is retained while another lane still needs it.
+Protected imports continue to require saving before editing. The
+[handoff review](qa/reviews/roadmap-archive-approval-handoff-2026-10-19/README.md)
+records coverage and remaining lifecycle work.

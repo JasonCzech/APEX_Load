@@ -135,9 +135,9 @@ Retired seams are kept retired by `dashboard/src/adapterRetirement.test.ts`. Tha
   - `useScriptsAuthoringState` holds the routing state: the open sub-view and the return target it reopens.
   - An archive import's pending sibling drafts live in the importer (`EnterpriseArchiveImport`), which stays mounted behind the editor.
   - The session decides only whether the editor may leave.
-- **Open:**
+- **Remaining and completed edges:**
   - Inside the scenario editor's "Create prerequisite script", saving a converted draft closes the embedded Scripts page with the review, dropping its other unsaved drafts without a prompt.
-  - A converted Java Vuser draft is queued for approval, not saved to the library. Save changes on the way back queues it and returns to the review, which still lists the draft as unsaved, with no notice.
+  - The [archive approval handoff slice](reviews/roadmap-archive-approval-handoff-2026-10-19/README.md) closes the legacy/plain direct-editor Java queue edge: an accepted receipt marks the lane queued, carries its session identity, and returns an unchanged editor to review. Later edits stay in the editor. Project, folder, options and review-generation fences reject stale callbacks. The review retains source sessions used by pending sibling lanes. Protected imports keep save-before-edit; this does not close the scenario prerequisite edge above or the full AUTH-2 property matrix.
 
 ## Retained seams
 

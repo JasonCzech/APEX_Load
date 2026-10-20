@@ -39,6 +39,6 @@ test('reviews and saves nested VuGen projects independently, retaining failed an
   const reviewReceipt = await json(await reviewSaved)
   expect(reviewReceipt.id).toBeTruthy()
   await expect(page.getByText(/saved as authoring session/)).toBeVisible()
-  await expect(page.getByText(/1 script saved · 1 review session saved · 0 drafts awaiting save/)).toBeVisible()
+  await expect(page.getByText(/1 script saved · 1 review session saved · 0 approval sessions queued · 0 drafts awaiting save/)).toBeVisible()
   await expect(page.getByText('Execution blocked', { exact: true }).first()).toBeVisible()
 })

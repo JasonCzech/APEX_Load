@@ -42,13 +42,24 @@ describe('script authoring persistence workflow', () => {
     expect(await persistScriptAuthoringDraft(input, { api, isCurrent: () => current })).toEqual({ kind: 'superseded', saved: true })
   })
 
+  it('does not publish a queued receipt after a scope change or without an identity', async () => {
+    const api = apiFixture()
+    const java = { ...draft, protocol: 'java_vuser', actions: [{ name: 'Run', type: 'java_vuser_run', target: '' }] }
+    let current = true
+    api.createAuthoringSession.mockImplementation(async () => { current = false; return { id: 'queue-old', name: 'Orders' } as Awaited<ReturnType<ApiServices['createAuthoringSession']>> })
+    expect(await persistScriptAuthoringDraft({ ...input, draft: java }, { api, isCurrent: () => current })).toEqual({ kind: 'superseded', saved: true })
+    api.createAuthoringSession.mockResolvedValue({ name: 'Orders' } as Awaited<ReturnType<ApiServices['createAuthoringSession']>>)
+    await expect(persistScriptAuthoringDraft({ ...input, draft: java }, { api, isCurrent: () => true })).rejects.toThrow('session identity')
+    expect(api.createScript).not.toHaveBeenCalled()
+  })
+
   it('queues executable Java drafts with a repeatable content identity', async () => {
     const api = apiFixture()
     const java = { ...draft, protocol: 'java_vuser', actions: [{ name: 'Run', type: 'java_vuser_run', target: '' }] }
-    api.createAuthoringSession.mockResolvedValue({ name: 'Orders' } as Awaited<ReturnType<ApiServices['createAuthoringSession']>>)
+    api.createAuthoringSession.mockResolvedValue({ id: 'queue-1', name: 'Orders' } as Awaited<ReturnType<ApiServices['createAuthoringSession']>>)
     const first = await persistScriptAuthoringDraft({ ...input, draft: java }, { api, isCurrent: () => true })
     await persistScriptAuthoringDraft({ ...input, draft: java }, { api, isCurrent: () => true })
-    expect(first.kind).toBe('approval')
+    expect(first).toMatchObject({ kind: 'approval', approval: { sessionId: 'queue-1', name: 'Orders', projectId: 'project-1', folderId: null } })
     expect(api.createScript).not.toHaveBeenCalled()
     expect(api.createAuthoringSession.mock.calls[0][0].idempotency_key).toBe(api.createAuthoringSession.mock.calls[1][0].idempotency_key)
   })
