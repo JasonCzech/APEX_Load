@@ -133,7 +133,7 @@ export function rootCauseRouteState(params: URLSearchParams): RootCauseRouteStat
   }
 }
 
-export const REPORT_SECTIONS = ['summary', 'performance', 'comparison', 'diagnostics', 'browser', 'evidence', 'execution'] as const
+export const REPORT_SECTIONS = ['summary', 'performance', 'load-impact', 'comparison', 'diagnostics', 'browser', 'evidence', 'execution'] as const
 export type ReportSection = typeof REPORT_SECTIONS[number]
 export const REPORT_LENSES = ['executive', 'engineer', 'audit'] as const
 
@@ -817,7 +817,7 @@ export function terminalRunReportView(view: AppView, status: string, enabled: bo
   // its configuration and control tabs to Execution.
   const sections: Partial<Record<TestWorkspaceTabID, ReportSection>> = {
     overview: 'summary', configuration: 'execution', infrastructure: 'execution', control: 'execution', graphs: 'performance', diagnostics: 'diagnostics',
-    archive: 'evidence', 'action-summary': 'performance', 'load-impact': 'performance', 'transaction-drilldown': 'diagnostics',
+    archive: 'evidence', 'action-summary': 'performance', 'load-impact': 'load-impact', 'transaction-drilldown': 'diagnostics',
   }
   const focus = view.page === 'test' && REPORT_FOCUS.includes(view.tab as ReportFocus) ? view.tab as ReportFocus : undefined
   return { page: 'report', testId: view.testId, ...workspaceScopeForAppView(view),

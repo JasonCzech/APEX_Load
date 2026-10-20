@@ -277,10 +277,67 @@ describe('RunReportPage', () => {
   it('opens and focuses the archive section a legacy test-tab link points at', async () => {
     mocks.polling.test = buildTest('COMPLETE')
     mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, metric_populations: { action: { transactions: 10 } } } as unknown as RunArchiveReport
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="load-impact" initialFocus="load-impact" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    const loadImpact = container.querySelector<HTMLElement>('[data-report-focus="load-impact"]')!
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Load Impact')
+    expect(loadImpact.contains(document.activeElement)).toBe(true)
+  })
+
+  it('opens Load Impact as its own section from a link that named it under Performance', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, metric_populations: { action: { transactions: 10 } } } as unknown as RunArchiveReport
     await act(async () => root.render(<RunReportPage testId="run-1" initialSection="performance" initialFocus="load-impact" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
-    const loadImpact = container.querySelector<HTMLDetailsElement>('details[data-report-focus="load-impact"]')!
-    expect(loadImpact.open).toBe(true)
-    expect(document.activeElement).toBe(loadImpact.querySelector('summary'))
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Load Impact')
+    expect(container.querySelector('[data-report-focus="load-impact"]')).not.toBeNull()
+    // Performance no longer carries it.
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="performance" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    expect(container.querySelector('[data-report-focus="load-impact"]')).toBeNull()
+  })
+
+  it('starts the group table afresh when the metric population changes', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    const group = (name: string) => ({ totals: { transactions: 1 }, items: { [name]: { transactions: 1 } } })
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, by_action: {},
+      metric_populations: { action: { transactions: 1 }, transaction: { transactions: 1 } },
+      group_breakdown: { transaction: { Browse: group('Login') }, action: { Browse: group('GET /') } } } as unknown as RunArchiveReport
+    const render = (population: 'action' | 'transaction') => <RunReportPage testId="run-1" initialSection="summary" initialPopulation={population} onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />
+    await act(async () => root.render(render('transaction')))
+    const toggle = () => container.querySelector<HTMLButtonElement>('.run-report-group-breakdown-group button')!
+    await act(async () => toggle().click())
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    await act(async () => root.render(render('action')))
+    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    expect(container.querySelector('.run-report-group-breakdown-item th')?.textContent).toBe('GET /')
+  })
+
+  it('gives the Load Impact tab and panel ids without spaces', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, metric_populations: { action: { transactions: 10 } } } as unknown as RunArchiveReport
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="load-impact" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    const tab = container.querySelector('[role="tab"][aria-selected="true"]')!
+    expect(tab.id).toBe('result-tab-load-impact')
+    const panel = container.querySelector('[role="tabpanel"]')!
+    expect(tab.getAttribute('aria-controls')).toBe(panel.id)
+    expect(panel.getAttribute('aria-labelledby')).toBe(tab.id)
+  })
+
+  it('shows the Summary results by group and transaction and the analyst assessment without a disclosure', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, by_action: {},
+      metric_populations: { action: { transactions: 0 }, transaction: { transactions: 3, errors: 1, error_pct: 33.3, avg_response_ms: 150 } },
+      group_breakdown: { transaction: {
+        Browse: { totals: { transactions: 2, errors: 1, error_pct: 50, avg_response_ms: 200 }, items: { Login: { transactions: 2, errors: 1, error_pct: 50, avg_response_ms: 200 } } },
+        Buy: { totals: { transactions: 1, errors: 0, error_pct: 0, avg_response_ms: 50 }, items: { Login: { transactions: 1, errors: 0, error_pct: 0, avg_response_ms: 50 } } },
+      } } } as unknown as RunArchiveReport
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="summary" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    const table = container.querySelector('[aria-label="Results by group and transaction"] table')!
+    const rows = Array.from(table.querySelectorAll('tbody tr')).map(row => row.querySelector('th')?.textContent?.trim())
+    expect(rows[0]).toBe('Whole run')
+    expect(rows.slice(1)).toEqual([expect.stringContaining('Browse'), 'Login', expect.stringContaining('Buy'), 'Login'])
+    expect(container.querySelector('[aria-label="Run KPI scorecard"]')).toBeNull()
+    // The assessment (its own heading is the banner's) is not behind a disclosure.
+    const assessment = container.querySelector('[data-testid="verdict"]')!
+    expect(assessment.closest('details')).toBeNull()
   })
 
   it('offers empty populations with their count, disabled, and keeps a chosen population in the URL', async () => {
@@ -519,9 +576,9 @@ describe('RunReportPage', () => {
   it('includes Execution in keyboard navigation without navigating away', async () => {
     mocks.polling.test = buildTest('COMPLETE')
     await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
-    await act(async () => container.querySelector('#result-tab-Summary')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })))
+    await act(async () => container.querySelector('#result-tab-summary')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })))
     expect(onNavigateReport).toHaveBeenCalledWith(expect.objectContaining({ section: 'execution' }))
-    expect(document.activeElement?.id).toBe('result-tab-Execution')
+    expect(document.activeElement?.id).toBe('result-tab-execution')
     await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
     expect(onNavigateReport).toHaveBeenLastCalledWith(expect.objectContaining({ section: 'summary' }))
     expect(onOpenCommandCenter).not.toHaveBeenCalled()
@@ -530,21 +587,21 @@ describe('RunReportPage', () => {
   it('offers the Browser area only for runs with browser evidence (BI-4)', async () => {
     mocks.polling.test = buildTest('COMPLETE')
     await act(async () => { root.render(<NavigationGuardProvider><RunReportPage testId="run-1" initialSection="summary" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>) })
-    expect(container.querySelector('#result-tab-Browser')).toBeNull()
+    expect(container.querySelector('#result-tab-browser')).toBeNull()
     // A run that pinned a browser policy offers it even without browser evidence.
     mocks.archiveModel.archiveReport = { manifest: { provenance: { policy_pins: [{ kind: 'telemetry_policy', id: 't' }] } }, overview: {} } as unknown as RunArchiveReport
     await act(async () => { root.render(<NavigationGuardProvider><RunReportPage testId="run-1" initialSection="summary" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>) })
-    expect(container.querySelector('#result-tab-Browser')).toBeNull()
+    expect(container.querySelector('#result-tab-browser')).toBeNull()
     // A journey policy, which any protocol may pin, is not a reason for one.
     mocks.archiveModel.archiveReport = { manifest: { provenance: { policy_pins: [{ kind: 'journey_policy', id: 'j' }] } }, overview: {} } as unknown as RunArchiveReport
     await act(async () => { root.render(<NavigationGuardProvider><RunReportPage testId="run-1" initialSection="summary" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>) })
-    expect(container.querySelector('#result-tab-Browser')).toBeNull()
+    expect(container.querySelector('#result-tab-browser')).toBeNull()
     // A Browser link to such a run falls back to Summary, a selected tab.
     await act(async () => { root.render(<NavigationGuardProvider><RunReportPage testId="run-1" initialSection="browser" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>) })
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Summary')
     mocks.archiveModel.archiveReport = { manifest: { provenance: { policy_pins: [{ kind: 'browser_policy', id: 'p' }] } }, overview: {} } as unknown as RunArchiveReport
     await act(async () => { root.render(<NavigationGuardProvider><RunReportPage testId="run-1" initialSection="summary" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>) })
-    expect(container.querySelector('#result-tab-Browser')).not.toBeNull()
+    expect(container.querySelector('#result-tab-browser')).not.toBeNull()
     mocks.archiveModel.archiveReport = null
     mocks.polling.test = { ...buildTest('COMPLETE'), groups: [{ name: 'Shop', script_id: 's', script_name: 'Shop', protocol: 'browser', vusers: 1 }] }
     await act(async () => { root.render(<NavigationGuardProvider><RunReportPage testId="run-1" initialSection="browser" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>) })
@@ -569,7 +626,7 @@ describe('RunReportPage', () => {
     mocks.polling.test = buildTest('COMPLETE')
     const render = (section: 'summary' | 'evidence') => <NavigationGuardProvider><RunReportPage testId="run-1" initialSection={section} onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>
     await act(async () => { root.render(render('summary')) })
-    await act(async () => { (container.querySelector('#result-tab-Evidence') as HTMLButtonElement).click() })
+    await act(async () => { (container.querySelector('#result-tab-evidence') as HTMLButtonElement).click() })
     expect(onNavigateReport).toHaveBeenCalledWith(expect.objectContaining({ section: 'evidence' }))
     // A canceled guard leaves the route prop unchanged.
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Summary')

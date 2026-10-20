@@ -11866,6 +11866,26 @@ paths:
                             type: string
                           title:
                             type: string
+                    group_breakdown:
+                      type: object
+                      additionalProperties:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            items:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ArchiveMetricPopulation'
+                                additionalProperties: true
+                            totals:
+                              type: object
+                              additionalProperties: true
+                    group_breakdown_truncated:
+                      type: array
+                      items:
+                        type: string
                     host_network:
                       type: array
                       items:
@@ -412754,6 +412774,36 @@ paths:
                         - id
                         - severity
                         - title
+                  group_breakdown:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      additionalProperties:
+                        type: object
+                        properties:
+                          items:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                average_rate_per_second:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                          totals:
+                            type: object
+                            properties:
+                              average_rate_per_second:
+                                type: number
+                                format: double
+                                nullable: true
+                        required:
+                          - items
+                          - totals
+                  group_breakdown_truncated:
+                    type: array
+                    items:
+                      type: string
                   host_network:
                     type: array
                     items:

@@ -626,7 +626,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <h2>{{sectionTitle "change_attribution"}}</h2>
 <div class="overview">
   <div class="metric"><span class="metric-label">Scripts</span><span class="metric-text">{{reportScripts .Report}}</span></div>
-  <div class="metric"><span class="metric-label">Scenario</span><span class="metric-text mono">{{if .Report.ChangeAttribution.ScenarioRevision}}{{.Report.ChangeAttribution.ScenarioRevision}}{{else}}Not recorded{{end}}</span></div>
+  <div class="metric"><span class="metric-label">Scenario</span><span class="metric-text">{{reportScenario .Report}}</span></div>
   <div class="metric"><span class="metric-label">Environment</span><span class="metric-text">{{reportEnvironment .Report}}</span></div>
   <div class="metric"><span class="metric-label">Generators</span><span class="metric-text">{{if .Report.ChangeAttribution.GeneratorVersions}}{{join .Report.ChangeAttribution.GeneratorVersions}}{{else}}Not recorded{{end}}</span></div>
 </div>
@@ -941,7 +941,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <thead><tr><th>Component</th><th>Detail</th></tr></thead>
 <tbody>
 <tr><td>Environment</td><td>{{reportEnvironment .Report}}</td></tr>
-<tr><td>Scenario revision</td><td>{{if .Report.ChangeAttribution.ScenarioRevision}}{{.Report.ChangeAttribution.ScenarioRevision}}{{else}}n/a{{end}}</td></tr>
+<tr><td>Scenario</td><td>{{reportScenario .Report}}</td></tr>
 <tr><td>Load generation</td><td>APEX Load{{if gt .GeneratorCount 0}} · {{.GeneratorCount}} load {{if eq .GeneratorCount 1}}generator{{else}}generators{{end}}{{end}}{{if .Report.ChangeAttribution.GeneratorVersions}} · {{join .Report.ChangeAttribution.GeneratorVersions}}{{end}}</td></tr>
 <tr><td>Scripts</td><td>{{reportScripts .Report}}</td></tr>
 </tbody></table>
