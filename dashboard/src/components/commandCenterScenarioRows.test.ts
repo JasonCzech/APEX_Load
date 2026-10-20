@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildGroupRunRows, buildTransactionRunRows, type CommandGroup } from './commandCenterScenarioRows'
+import { buildGroupRunRows, buildTransactionRunRows, transactionTableSections, type CommandGroup, type GroupRunRow, type TransactionRunRow } from './commandCenterScenarioRows'
 import { groupTransactionKey } from './testExecutionMetricsModel'
 
 function commandGroup(overrides: Partial<CommandGroup> = {}): CommandGroup {
@@ -98,5 +98,40 @@ describe('run table rows', () => {
   it('keeps the last transactions when a window completed none', () => {
     const snapshot = { Login: { name: 'Login', tps: 3, count: 3, errors: 0, avg_ms: 10, p50_ms: 1, p90_ms: 1, p99_ms: 1 } } as never
     expect(buildTransactionRunRows({ transactions: {} } as never, snapshot).map(row => row.name)).toEqual(['Login'])
+  })
+})
+
+describe('transactionTableSections', () => {
+  const tx = (name: string, group: string | undefined, figures: Partial<TransactionRunRow> = {}): TransactionRunRow => ({
+    id: `transaction-${group ?? ''}:${name}`, name, group, protocol: 'transaction', tps: 1, attempts: 10, errors: 0, errorPct: 0, art: 100, p50: 90, p90: 150, p95: 180, p99: 200, ...figures,
+  })
+  const groupRow = (name: string, figures: Partial<GroupRunRow> = {}): GroupRunRow => ({
+    id: `group-${name}`, name, protocol: 'http', rate: 0, attempts: 0, errors: 0, art: 120, p50: 100, p90: 160, p95: 190, p99: 250, ...figures,
+  })
+
+  it('nests transactions under their groups with the group totals and response times', () => {
+    const rows = [tx('Login', 'Browse', { tps: 2, attempts: 20, errors: 2, art: 40 }), tx('Search', 'Browse', { tps: 3, attempts: 30, art: 140 }), tx('Login', 'Buy', { attempts: 5 })]
+    const sections = transactionTableSections(rows, rows, [groupRow('Browse', { art: 140, p95: 210 }), groupRow('Buy')], { key: 'name', direction: 'asc' })
+    expect(sections.map(section => section.label)).toEqual(['Browse', 'Buy'])
+    const browse = sections[0]
+    expect(browse.rows.map(row => row.name)).toEqual(['Login', 'Search'])
+    // ART is its transactions' weighted by attempts; percentiles are the group's own.
+    expect(browse.summary).toMatchObject({ tps: 5, attempts: 50, errors: 2, errorPct: 4, art: 100, p95: 210 })
+  })
+
+  it('keeps group totals whole while a filter hides some transactions, and lists unattributed rows last', () => {
+    const all = [tx('Login', 'Browse', { attempts: 20 }), tx('Search', 'Browse', { attempts: 30 }), tx('Health', undefined, { attempts: 4, art: 50 })]
+    const sections = transactionTableSections([all[0], all[2]], all, [groupRow('Browse')], { key: 'attempts', direction: 'desc' })
+    expect(sections.map(section => section.label)).toEqual(['Browse', 'No group'])
+    expect(sections[0].rows.map(row => row.name)).toEqual(['Login'])
+    expect(sections[0].summary.attempts).toBe(50)
+    expect(sections[1].summary.art).toBe(50)
+    expect(Number.isNaN(sections[1].summary.p50)).toBe(true)
+  })
+
+  it('orders groups by the table sort', () => {
+    const rows = [tx('A', 'Fast', { art: 10 }), tx('B', 'Slow', { art: 900 })]
+    const sections = transactionTableSections(rows, rows, [groupRow('Fast', { art: 10 }), groupRow('Slow', { art: 900 })], { key: 'art', direction: 'desc' })
+    expect(sections.map(section => section.label)).toEqual(['Slow', 'Fast'])
   })
 })

@@ -2585,3 +2585,24 @@ button.command-group-name:focus-visible {
 .command-browser-groups h4 {
   margin: 0;
 }
+
+/* Transactions table: each group's heading row, then its transactions. */
+/* The tint sits over the page colour: the first columns are sticky and must stay opaque. */
+.command-scenario-table .command-table-section-row td { font-weight: 600; background: linear-gradient(var(--subtle-fill), var(--subtle-fill)), var(--bg-primary); }
+.command-table-section-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.command-table-section-toggle:disabled { cursor: default; }
+.command-table-section-toggle .command-table-subtext { font-weight: 400; }
+.command-scenario-table .command-table-child-row td:first-child { padding-left: 24px; }
+.command-scenario-table .command-table-child-row td:first-child strong { font-weight: 500; }

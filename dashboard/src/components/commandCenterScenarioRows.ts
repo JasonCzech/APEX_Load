@@ -1,4 +1,5 @@
 import type { LiveMetrics, TxMetrics, VUserRampStatus } from '../types'
+import { filterAndSortRows, type CommandTableSort } from './commandCenterTableSort'
 import { groupTransactionKey } from './testExecutionMetricsModel'
 
 export interface CommandGroup {
@@ -192,4 +193,62 @@ export function buildTransactionRunRows(
         : row(key, name, group, protocol, recentTps?.[name] ?? tx.tps ?? 0, tx)
     })
   })
+}
+
+export interface TransactionTableSection {
+  id: string
+  label: string
+  noun: string
+  /** The group's heading row: its transactions' TPS, attempts and failures added up, their ART weighted by attempts, the group's own percentiles. */
+  summary: TransactionRunRow
+  rows: TransactionRunRow[]
+}
+
+// transactionTableSections nests transaction rows under their groups. rows are
+// the table's filtered, sorted rows and keep their order inside each group;
+// allRows (unfiltered) give each heading its totals. Groups sort by their
+// headings on the table's sort, rows the source does not attribute last.
+export function transactionTableSections(
+  rows: TransactionRunRow[],
+  allRows: TransactionRunRow[],
+  groupRows: GroupRunRow[],
+  sort: CommandTableSort,
+): TransactionTableSection[] {
+  const byGroup = new Map<string, TransactionRunRow[]>()
+  for (const row of rows) {
+    const key = row.group ?? ''
+    byGroup.set(key, [...(byGroup.get(key) ?? []), row])
+  }
+  const sections = [...byGroup.entries()].map(([group, groupTransactions]): TransactionTableSection => {
+    const members = allRows.filter(row => (row.group ?? '') === group)
+    const attempts = members.reduce((total, row) => total + row.attempts, 0)
+    const errors = members.reduce((total, row) => total + row.errors, 0)
+    const own = group ? groupRows.find(row => row.name === group) : undefined
+    const weightedArt = attempts > 0 ? members.reduce((total, row) => total + row.art * row.attempts, 0) / attempts : Number.NaN
+    const label = group || 'No group'
+    return {
+      id: `group-${encodeURIComponent(group)}`,
+      label,
+      noun: 'transaction',
+      rows: groupTransactions,
+      summary: {
+        id: `group-${encodeURIComponent(group)}`,
+        name: label,
+        group: group || undefined,
+        protocol: own?.protocol ?? '',
+        tps: members.reduce((total, row) => total + row.tps, 0),
+        attempts,
+        errors,
+        errorPct: errorPctFromAttempts(errors, attempts),
+        art: weightedArt,
+        p50: own?.p50 ?? Number.NaN,
+        p90: own?.p90 ?? Number.NaN,
+        p95: own ? own.p95 : undefined,
+        p99: own?.p99 ?? Number.NaN,
+      },
+    }
+  })
+  const order = filterAndSortRows(sections.filter(section => section.summary.group !== undefined).map(section => section.summary), '', sort).map(summary => summary.id)
+  const rank = new Map(order.map((id, index) => [id, index]))
+  return sections.sort((left, right) => (rank.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(right.id) ?? Number.MAX_SAFE_INTEGER))
 }
