@@ -56,6 +56,10 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
+		if errors.Is(err, errTestIDOwnedByAnotherProject) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -348,6 +352,10 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 				"test_id": id,
 				"ref":     ref,
 			})
+			return
+		}
+		if errors.Is(err, errPreparationInProgress) {
+			writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "code": "preparation_in_progress", "test_id": id})
 			return
 		}
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -1768,7 +1776,7 @@ func (s *Server) handleTestStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	projectID := normalizeProjectID(test.ProjectID)
-	s.hub.serveWS(w, r, id, "", s.websocketAuthorizer(r, projectID))
+	s.hub.serveTestWS(w, r, id, projectID, s.websocketAuthorizer(r, projectID))
 }
 
 var validateScript = importreview.ValidateScript

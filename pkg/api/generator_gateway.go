@@ -3,7 +3,9 @@ package api
 import (
 	"crypto/sha256"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -140,6 +142,11 @@ func (s *Server) handleGeneratorGatewayConnect(w http.ResponseWriter, r *http.Re
 		return
 	}
 	target, err := s.executionTargetStore.GetExecutionTarget(targetID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		// A store outage is not a rejection: the generator retries.
+		writeError(w, http.StatusServiceUnavailable, "generator enrollment authority is unavailable")
+		return
+	}
 	if err != nil || target == nil || target.Status != "active" || target.ConnectivityMode != storage.ConnectivityReverse {
 		writeError(w, http.StatusUnauthorized, "generator enrollment was rejected")
 		return
@@ -165,8 +172,12 @@ func (s *Server) handleGeneratorGatewayConnect(w http.ResponseWriter, r *http.Re
 		}
 	}
 	poolID, err := s.dynamicPoolForExecutionTarget(targetID)
-	if err != nil {
+	if errors.Is(err, errAmbiguousFleetPoolOwnership) {
 		writeError(w, http.StatusConflict, "generator enrollment target has ambiguous fleet-pool ownership")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "generator enrollment authority is unavailable")
 		return
 	}
 	owners, ok := s.store.(storage.ReverseGeneratorIdentityStore)
@@ -300,6 +311,10 @@ func (s *Server) consumeReverseEnrollmentNonce(targetID, nonce, timestamp string
 	return true
 }
 
+// errAmbiguousFleetPoolOwnership marks a target bound to several fleet pools,
+// a configuration conflict rather than a retryable store failure.
+var errAmbiguousFleetPoolOwnership = errors.New("execution target is bound to several fleet pools")
+
 func (s *Server) dynamicPoolForExecutionTarget(targetID string) (string, error) {
 	if s == nil || s.executionTargetStore == nil {
 		return "", nil
@@ -312,7 +327,7 @@ func (s *Server) dynamicPoolForExecutionTarget(targetID string) (string, error) 
 		return "", nil
 	}
 	if len(pools) > 1 {
-		return "", fmt.Errorf("execution target %q is bound to %d fleet pools", targetID, len(pools))
+		return "", fmt.Errorf("%w: %q is bound to %d", errAmbiguousFleetPoolOwnership, targetID, len(pools))
 	}
 	return strings.TrimSpace(pools[0].ID), nil
 }

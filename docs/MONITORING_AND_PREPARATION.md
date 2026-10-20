@@ -75,7 +75,12 @@ Local HTTP/TCP counters and real in-process gRPC transport test the preparation 
 Start rechecks revision, secrets, ownership, collector availability and the
 execution reservation, then atomically consumes readiness. Concurrent consumers
 cannot start the same preparation twice. Ordinary Start remains available for
-runs without preparations. Cancellation and expiry interrupt provisioning and
+runs without preparations; while a preparation is in progress it answers 409
+`preparation_in_progress`. Prepare reserves capacity at once: if quota, a launch
+window or a timeslot holds the run back, the preparation fails with 409 and the
+run stays queued for ordinary Start or a later Prepare. If peak pod capacity is
+unavailable once preparation has begun, the preparation and the run fail rather
+than waiting in the queue. Cancellation and expiry interrupt provisioning and
 release capacity through the existing execution cleanup path; audit history is
 retained. Existing readiness and cancellation remain accessible through the API and CLI after the project preparation flag is disabled. Controller recovery fails closed when a reservation cannot be recovered.
 

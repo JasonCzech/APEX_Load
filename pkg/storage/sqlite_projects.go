@@ -1711,6 +1711,7 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		{`DELETE FROM archive_refresh_jobs WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id, id}},
 		{`UPDATE scenario_schedules SET last_run_test_id = NULL WHERE last_run_test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id}},
 		{`DELETE FROM scenario_schedule_occurrences WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?) OR schedule_id IN (SELECT id FROM scenario_schedules WHERE scenario_id IN (` + scenarioSubquery + `))`, []any{id, id, id, id}},
+		{`INSERT INTO deleted_test_identities (test_id, project_id, deleted_at) SELECT id, COALESCE(project_id, ''), ? FROM tests WHERE project_id = ? ON CONFLICT(test_id) DO UPDATE SET project_id = excluded.project_id, deleted_at = excluded.deleted_at`, []any{time.Now().UTC(), id}},
 		{`DELETE FROM tests WHERE project_id = ?`, []any{id}},
 
 		// Recurring scenario governance and the scenario itself.

@@ -1,30 +1,17 @@
-import { canonicalImportDraft } from './support/importResponse'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Page } from '@playwright/test'
-import { test, expect, mutation, login } from './support/workflow'
-import { createWorkspace, scopeQuery } from './support/workspace'
+import { test, expect } from './support/workflow'
+import { checkUSZPickerAndReselection, openLoadRunnerImport, validateQueuedFolder } from './support/loadrunnerImport'
 
 const folder = path.join(process.cwd(), '../pkg/convert/enterprisearchive/testdata/golden_web_http_html_vugen24')
 
-async function openLoadRunnerImport(page: Page) {
-  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
-  const workspace = await createWorkspace(page.context().request)
-  await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
-  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  await page.getByRole('tab', { name: 'Import', exact: true }).click()
-  await page.getByRole('button', { name: /LoadRunner Script Archive/ }).click()
-}
-
-async function validateQueuedFolder(page: Page) {
-  const validated = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
-  await page.getByRole('button', { name: 'Validate Script', exact: true }).click()
-  const response = await validated
-  expect(response.ok()).toBeTruthy()
-  const result = await response.json()
-  expect(canonicalImportDraft(result).name).toBe('VuGen24Real')
-  await expect(page.getByRole('tab', { name: /^Review(,|$)/ })).toBeVisible()
-}
+test('queues and validates USZ archives from the browser picker, including reselection', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', error => pageErrors.push(error.message))
+  await openLoadRunnerImport(page)
+  await checkUSZPickerAndReselection(page)
+  expect(pageErrors).toEqual([])
+})
 
 test('imports an unpacked VuGen project folder chosen with the drop zone picker', async ({ page }) => {
   await openLoadRunnerImport(page)

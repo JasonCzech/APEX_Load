@@ -51,6 +51,7 @@ var retainedAfterProjectDeletionTables = stringSet(
 	"analysis_cleanup_jobs",     // Physical analytics cleanup must outlive project metadata.
 	"pod_capacity_reservations", // Only generator-confirmed drainage or incarnation fencing releases capacity.
 	"run_evidence_receipts",     // Tombstoned receipts outlive the run so a late evidence upload is refused.
+	"deleted_test_identities",   // Written by the delete itself so a deleted run's ID never moves to another project.
 	"archive_cleanup_jobs", "archive_version_cleanup_jobs", "audit_events", "capacity_instance_intents", "replay_session_leases",
 )
 
@@ -70,6 +71,7 @@ var retainedAfterTestDeletionTables = stringSet(
 	"project_live_table_attachments", // Detached bounded retry tombstones are reconciled by the project service.
 	"pod_capacity_reservations",      // Reconciler also drains claims whose test record has been deleted.
 	"run_evidence_receipts",          // Tombstoned in deleteTestGraphTx; they outlive the run so a late upload is refused.
+	"deleted_test_identities",        // Written by deleteTestGraphTx so a deleted run's ID never moves to another project.
 	"archive_cleanup_jobs", "archive_version_cleanup_jobs", "capacity_instance_intents",
 )
 

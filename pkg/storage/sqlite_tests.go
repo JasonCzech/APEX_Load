@@ -1795,6 +1795,9 @@ func lockCapacityReservationsForTestMutation(tx *storeTx, testID string, timeslo
 }
 
 func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
+	if err := recordDeletedTestIdentitiesTx(tx, `WHERE id = ?`, id); err != nil {
+		return err
+	}
 	if err := queueAnalysisCleanupTx(tx, "monitor", projectID, id); err != nil {
 		return err
 	}
@@ -2597,4 +2600,27 @@ func lockMonitorTestProjectTx(tx *storeTx, id string) error {
 	}
 	_, err := lockProjectForOwnedMutation(tx, project)
 	return err
+}
+
+// recordDeletedTestIdentitiesTx keeps the project of each test the filter
+// selects, in the transaction that deletes it. A later delete of a same-project
+// re-creation refreshes the record.
+func recordDeletedTestIdentitiesTx(tx *storeTx, filter string, args ...any) error {
+	_, err := tx.Exec(`INSERT INTO deleted_test_identities (test_id, project_id, deleted_at)
+		SELECT id, COALESCE(project_id, ''), ? FROM tests `+filter+`
+		ON CONFLICT(test_id) DO UPDATE SET project_id = excluded.project_id, deleted_at = excluded.deleted_at`, append([]any{time.Now().UTC()}, args...)...)
+	return err
+}
+
+// DeletedTestProject reports the project a deleted test's ID belonged to.
+func (s *SQLiteStore) DeletedTestProject(id string) (string, bool, error) {
+	var projectID string
+	err := s.db.QueryRow(`SELECT project_id FROM deleted_test_identities WHERE test_id = ?`, strings.TrimSpace(id)).Scan(&projectID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return projectID, true, nil
 }

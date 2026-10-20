@@ -101,14 +101,17 @@ type HubStats struct {
 }
 
 type Client struct {
-	hub        *Hub
-	conn       *websocket.Conn
-	send       chan []byte
-	testID     string // empty = all tests, set = specific test
-	projectID  string // empty = all projects, set = specific project
-	authorized func() bool
-	slotHeld   bool
-	slotOnce   sync.Once
+	hub       *Hub
+	conn      *websocket.Conn
+	send      chan []byte
+	testID    string // empty = all tests, set = specific test
+	projectID string // empty = all projects, set = specific project
+	// testProjectID is the project a test stream was authorized for. An event
+	// that names another project is a different run reusing the ID.
+	testProjectID string
+	authorized    func() bool
+	slotHeld      bool
+	slotOnce      sync.Once
 }
 
 type websocketFanoutEnvelope struct {
@@ -202,6 +205,9 @@ func (h *Hub) Run() {
 						continue
 					}
 					if client.projectID != "" && msg.projectID != client.projectID {
+						continue
+					}
+					if client.testProjectID != "" && msg.projectID != "" && msg.projectID != client.testProjectID {
 						continue
 					}
 				}
@@ -368,6 +374,15 @@ func (h *Hub) Stats() HubStats {
 }
 
 func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string, projectID string, authorized ...func() bool) {
+	h.serveScopedWS(w, r, testID, projectID, "", authorized...)
+}
+
+// serveTestWS binds a test stream to the project it was authorized for.
+func (h *Hub) serveTestWS(w http.ResponseWriter, r *http.Request, testID, testProjectID string, authorized func() bool) {
+	h.serveScopedWS(w, r, testID, "", testProjectID, authorized)
+}
+
+func (h *Hub) serveScopedWS(w http.ResponseWriter, r *http.Request, testID, projectID, testProjectID string, authorized ...func() bool) {
 	select {
 	case <-h.done:
 		http.Error(w, "websocket hub is shutting down", http.StatusServiceUnavailable)
@@ -390,12 +405,13 @@ func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string, pro
 	}
 
 	client := &Client{
-		hub:       h,
-		conn:      conn,
-		send:      make(chan []byte, websocketClientSendBuffer),
-		testID:    testID,
-		projectID: projectID,
-		slotHeld:  true,
+		hub:           h,
+		conn:          conn,
+		send:          make(chan []byte, websocketClientSendBuffer),
+		testID:        testID,
+		projectID:     projectID,
+		testProjectID: strings.TrimSpace(testProjectID),
+		slotHeld:      true,
 	}
 	if len(authorized) > 0 {
 		client.authorized = authorized[0]

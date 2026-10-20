@@ -511,10 +511,8 @@ func TestCancelAsyncCapacityFencesWorkerAndCallsProvider(t *testing.T) {
 		select {
 		case message := <-server.hub.broadcast:
 			var event struct {
-				Event string `json:"event"`
-				Data  struct {
-					Status string `json:"status"`
-				} `json:"data"`
+				Event string          `json:"event"`
+				Data  json.RawMessage `json:"data"`
 			}
 			if err := json.Unmarshal(message.payload, &event); err != nil {
 				t.Fatal(err)
@@ -522,8 +520,9 @@ func TestCancelAsyncCapacityFencesWorkerAndCallsProvider(t *testing.T) {
 			if event.Event != "provisioning_request_cancelled" {
 				continue
 			}
-			if event.Data.Status != "cancelled" {
-				t.Fatalf("cancelled event status=%q", event.Data.Status)
+			// Fleet events reach every socket, so they are content-free signals.
+			if len(event.Data) != 0 {
+				t.Fatalf("cancelled event carried data %s", event.Data)
 			}
 			return
 		case <-timer.C:

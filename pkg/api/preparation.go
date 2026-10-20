@@ -301,10 +301,18 @@ func (s *Server) handlePreparation(w http.ResponseWriter, r *http.Request) {
 	s.runner.mu.Lock()
 	test = s.runner.tests[id]
 	already := test != nil && test.preparationID == p.ID
-	if test != nil && !already && p.State == "preparing" {
+	// Bind only a run that has not started: an ordinary start that won the
+	// race while the preparation committed must not inherit it.
+	startable := test != nil && (test.Status == "QUEUED" || test.Status == "PENDING")
+	if !already && p.State == "preparing" && startable {
 		test.preparationID = p.ID
 	}
 	s.runner.mu.Unlock()
+	if !already && p.State == "preparing" && !startable {
+		_, _ = store.TransitionPreparation(p.ID, "preparing", "failed", p.Revision, p.OwnerFence, nil)
+		writeError(w, 409, "test started before its preparation could be bound")
+		return
+	}
 	if !already && p.State == "preparing" {
 		actorType, actorSubject, actorName := s.resolveAuditActor(r)
 		opts := StartTestOptions{prepareOnly: true, actor: testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorName}}
@@ -323,6 +331,31 @@ func (s *Server) handlePreparation(w http.ResponseWriter, r *http.Request) {
 	s.recordAuditEvent(r, "test.preparation.create", "started", "test", id, project, map[string]any{"preparation_id": p.ID, "execution_revision": revision})
 	writeJSON(w, 202, safePreparation(p))
 }
+
+// errPreparationCapacityUnavailable refuses a prepare-only start that quota
+// would queue: preparation reserves capacity at once and leaves the run QUEUED.
+var errPreparationCapacityUnavailable = errors.New("preparation could not reserve capacity now; the run remains queued")
+
+// failBoundPreparation fails the preparation bound to a run whose prepare-only
+// start cannot continue, and reports whether one was bound.
+func (tr *TestRunner) failBoundPreparation(test *ManagedTest) bool {
+	tr.mu.RLock()
+	preparationID := test.preparationID
+	tr.mu.RUnlock()
+	if preparationID == "" {
+		return false
+	}
+	if store, ok := tr.testStore.(storage.PreparationStore); ok {
+		if p, err := store.GetPreparation(preparationID); err == nil && (p.State == "preparing" || p.State == "ready") {
+			_, _ = tr.transitionPreparation(p.ID, p.State, "failed", p.Revision, p.OwnerFence, nil)
+		}
+	}
+	return true
+}
+
+// errPreparationInProgress refuses an ordinary start of a run whose
+// preparation is still claiming it.
+var errPreparationInProgress = errors.New("test has a preparation in progress; start it with its preparation_id or wait for the preparation to finish")
 
 // awaitPreparedStart is placed after immutable staging/reservation but before
 // any runtime preflight, protocol initialization, probe, or execution commit.

@@ -1563,6 +1563,10 @@ func (tr *TestRunner) evaluateStartGatesLockedWithEvidence(id string, test *Mana
 		excludeTestID = id
 	}
 	if blocked, reason := tr.evaluateQuotaBlockWithLaunchEvidenceLocked(test, excludeTestID, now, evidence.launchWindow); blocked {
+		// A preparation reserves capacity at once; it never queues the run.
+		if opts.prepareOnly {
+			return false, fmt.Errorf("%w: %s", errPreparationCapacityUnavailable, reason)
+		}
 		authorizationSnapshot := cloneQueuedStartAuthorization(test.StartAuthorization)
 		actorSnapshot, actorChanged := applyTestStartedByActor(test, opts.actor)
 		applyRequestedStartAuthorizations(test, opts, time.Now().UTC())
@@ -1638,6 +1642,11 @@ func (tr *TestRunner) preflightStartBlocksLockedWithExpectedTermAndEvidence(id s
 	}
 	if !testexec.IsStartableTestStatus(test.Status) {
 		return false, testexec.StartableTestStatusError(test.Status)
+	}
+	// A bound preparation owns the run until its prepare-only start claims it
+	// or it is released; an ordinary start must not inherit it.
+	if test.preparationID != "" && !opts.prepareOnly && opts.PreparationID == "" {
+		return false, errPreparationInProgress
 	}
 	if test.runtimeHydrationError != "" {
 		return false, fmt.Errorf("test runtime could not be restored: %s", test.runtimeHydrationError)
@@ -2571,6 +2580,11 @@ func (tr *TestRunner) prepareTestStartLockedWithExpectedTermAndEvidence(id strin
 	previousPassiveOperationToken := test.passiveOperationToken
 	previousExpectedStartAdmissionRevision := test.expectedStartAdmissionRevision
 	previousStartAuthorization := cloneQueuedStartAuthorization(test.StartAuthorization)
+	// Re-check at the claim: the preflight released tr.mu, and a preparation
+	// may have bound the queued run since.
+	if test.preparationID != "" && !opts.prepareOnly && opts.PreparationID == "" {
+		return nil, errPreparationInProgress
+	}
 	actorSnapshot, actorChanged := applyTestStartedByActor(test, opts.actor)
 	applyRequestedStartAuthorizations(test, opts, time.Now().UTC())
 	if err := tr.markTestInitializingLockedWithExpectedTerm(test, expectedTerm); err != nil {
@@ -3797,6 +3811,21 @@ func (tr *TestRunner) startStageSchedules(ctx context.Context, test *ManagedTest
 }
 
 func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, groupName string, stages []storage.LoadStage, activeOffset time.Duration, mge *engine.MultiGroupEngine) {
+	// The schedule belongs to the run that started it; its direct scale calls
+	// re-check that at the commit boundary so a successor published under the
+	// same ID never inherits them.
+	tr.mu.RLock()
+	owner := tr.tests[testID]
+	tr.mu.RUnlock()
+	ownsRun := func(current *ManagedTest) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if current == nil || current != owner {
+			return context.Canceled
+		}
+		return nil
+	}
 	// Stage definitions are relative to group activation, not controller
 	// admission. Anchor them to the same pause-aware run clock as generator-side
 	// StartOffset so a delayed group cannot be scaled before it activates. This
@@ -3854,9 +3883,12 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 		}
 		if distributed && found {
 			for {
-				err := tr.scaleVUsersNow(testID, groupName, currentVUsers, false)
+				err := tr.scaleVUsersNowWithAdmissionGuard(testID, groupName, currentVUsers, false, ownsRun)
 				if err == nil {
 					break
+				}
+				if errors.Is(err, context.Canceled) {
+					return
 				}
 				if errors.Is(err, engine.ErrInitialRampInProgress) {
 					if !waitContextDuration(ctx, initialRampScaleRetryInterval) {
@@ -3970,7 +4002,7 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 		if !tr.waitTestRunning(ctx, testID) {
 			return
 		}
-		if err := tr.scaleVUsersNow(testID, groupName, 0, false); err != nil && ctx.Err() == nil {
+		if err := tr.scaleVUsersNowWithAdmissionGuard(testID, groupName, 0, false, ownsRun); err != nil && ctx.Err() == nil && !errors.Is(err, context.Canceled) {
 			slog.Warn("closed VUser group stop failed", "test_id", testID, "group", groupName, "error", err)
 		}
 	}
@@ -4064,12 +4096,28 @@ func (tr *TestRunner) runtimeGroupAcceptsStages(testID, groupName string) bool {
 // runStageSchedule, so retry after resume instead of abandoning the remaining
 // stage schedule on that transient lifecycle transition.
 func (tr *TestRunner) applyStageHoldTarget(ctx context.Context, testID string, groupName string, targetVUsers int) error {
+	// The hold belongs to the run that started it. A run published under the
+	// same ID (recovery, replacement) or a cancelled hold never scales.
+	var owner *ManagedTest
+	stillOwner := func(current *ManagedTest) error {
+		if ctx.Err() != nil || current != owner {
+			return context.Canceled
+		}
+		return nil
+	}
 	for {
 		tr.mu.Lock()
 		currentTest := tr.tests[testID]
 		if currentTest == nil {
 			tr.mu.Unlock()
 			return fmt.Errorf("test not found: %s", testID)
+		}
+		if owner == nil {
+			owner = currentTest
+		}
+		if err := stillOwner(currentTest); err != nil {
+			tr.mu.Unlock()
+			return err
 		}
 		if !runtimeGroupAcceptsStagesLocked(currentTest, groupName) {
 			tr.mu.Unlock()
@@ -4086,9 +4134,12 @@ func (tr *TestRunner) applyStageHoldTarget(ctx context.Context, testID string, g
 			return fmt.Errorf("group not found: %s", groupName)
 		}
 
-		err := tr.scaleVUsersNow(testID, groupName, targetVUsers, true)
+		err := tr.scaleVUsersNowWithAdmissionGuard(testID, groupName, targetVUsers, true, stillOwner)
 		if err == nil {
 			return nil
+		}
+		if errors.Is(err, context.Canceled) {
+			return err
 		}
 		if errors.Is(err, engine.ErrInitialRampInProgress) {
 			if !waitContextDuration(ctx, initialRampScaleRetryInterval) {
@@ -6601,6 +6652,12 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 		tr.mu.Lock()
 		pending = tr.tests[pendingID]
 		if pending == nil || pending.Status != "PENDING" {
+			tr.mu.Unlock()
+			continue
+		}
+		// A preparation request is still deciding this run; promotion would
+		// start it as an ordinary run that inherits the preparation.
+		if pending.preparationID != "" {
 			tr.mu.Unlock()
 			continue
 		}
