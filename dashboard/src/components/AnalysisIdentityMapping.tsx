@@ -4,14 +4,14 @@ import { analysisIdentityMappingError, analysisIdentityMappingShapeError, analys
 
 export default function AnalysisIdentityMapping({ mapping, columns, onChange }: { mapping: AnalysisMapping; columns: AnalysisColumn[]; onChange: (mapping: AnalysisMapping) => void }) {
   const shapeError = analysisIdentityMappingShapeError(mapping.identity)
-  if (shapeError) return <fieldset aria-label="Imported measurement identities"><legend>Source and labels</legend><p role="alert">{shapeError}</p><button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange({ ...mapping, version: 2, identity: {} })}>Reset identity mapping</button></fieldset>
+  if (shapeError) return <fieldset aria-label="Imported measurement identities"><legend>Source and labels</legend><p role="alert">{shapeError}</p><button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange({ ...mapping, version: mapping.version === 3 ? 3 : 2, identity: {} })}>Reset identity mapping</button></fieldset>
   // Schema previews share the worker's bounded 1024-column contract. Refuse
   // malformed options before serializing paths or creating controls.
   if (!Array.isArray(columns) || columns.length > 1024 || columns.some(column => !column || typeof column !== 'object' || !!analysisIdentityTextError(column.path, 8207, true) || analysisIdentityMappingShapeError({ source: column.path_components }) || !column.path_components?.length)) return <fieldset aria-label="Imported measurement identities"><legend>Source and labels</legend><p role="alert">Column preview is invalid or exceeds the supported limit. Reload the schema preview.</p></fieldset>
   const identity = mapping.identity ?? {}
   const dimensions = identity.dimensions ?? []
   const scalarColumns = columns.filter(column => !column.repeated)
-  const update = (next: IdentityMapping) => onChange({ ...mapping, version: 2, identity: next })
+  const update = (next: IdentityMapping) => onChange({ ...mapping, version: mapping.version === 3 ? 3 : 2, identity: next })
   const options = scalarColumns.map(column => <option key={column.path} disabled={analysisProtectedIdentityColumn(column.path_components)} value={JSON.stringify(column.path_components)}>{column.path}{analysisProtectedIdentityColumn(column.path_components) ? " (protected)" : ""}</option>)
   const error = analysisIdentityMappingError(identity)
   return <fieldset aria-label="Imported measurement identities">

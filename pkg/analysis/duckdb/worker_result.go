@@ -277,7 +277,7 @@ func (r workerNormalizeResult) validate(b workerBootstrap, op workerNormalizeOpe
 		}
 		if plan.Role == "normalized" {
 			unit, _, unitErr := unitScale(op.Mapping.Measures[plan.Measure].Unit)
-			if out.Partition == nil || out.Partition.Validate() != nil || out.Partition.Rows != out.Rows || out.Partition.IdentityVersion != op.Mapping.Version || out.Partition.Kind != op.Mapping.Measures[plan.Measure].Kind || unitErr != nil || out.Partition.Unit != unit || out.Partition.IdentityVersion == 1 && out.Partition.Identity != nil && out.Partition.Identity.Source != op.DatasetID {
+			if out.Partition == nil || out.Partition.Validate() != nil || out.Partition.Rows != out.Rows || out.Partition.IdentityVersion != op.Mapping.IdentityVersion() || out.Partition.Kind != op.Mapping.Measures[plan.Measure].Kind || unitErr != nil || out.Partition.Unit != unit || out.Partition.IdentityVersion == 1 && out.Partition.Identity != nil && out.Partition.Identity.Source != op.DatasetID {
 				return errWorkerProtocol
 			}
 			normalizedRows, err = workerAdd(normalizedRows, out.Partition.AcceptedRows())

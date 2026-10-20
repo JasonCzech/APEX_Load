@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Both profiles are part of the normal code-change cycle. Each invocation uses
-# its own disposable controller/store and separate Playwright artifact directory.
+# isolated per-file controllers/stores and separate Playwright artifact directories.
 # APEXLOAD_E2E_PROFILES narrows the run to some of them (CI runs each profile
 # in its own job).
 set -euo pipefail

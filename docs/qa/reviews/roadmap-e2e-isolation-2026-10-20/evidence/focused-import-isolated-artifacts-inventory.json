@@ -1,0 +1,200 @@
+[
+  {
+    "path": "controller-logs/local-auth/run-1rvJku/selected.log",
+    "bytes": 560533,
+    "sha256": "150aff3e9453866e29bb946dda8a2046bc3b94c1bcd2818e013e3845f5c1ab69",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/.last-run.json",
+    "bytes": 45,
+    "sha256": "91d1c43004802cd49950d78eb11c8fa7d05da8ffffe219a8b13b2f561bc00903",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/playwright-junit.xml",
+    "bytes": 4126,
+    "sha256": "bc24eaa9d15f66da6eb7424d29105932f2b8a2a086d4df1ee41e4c59e0321197",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-jmeter-fidelity-J-720e8--drafts-and-workload-curves/messaging-fidelity.png",
+    "bytes": 101978,
+    "sha256": "2809793534e709decc77856376bf22a215c916847a5f7a583af773fb9a67ecb4",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-17ba7-pe-header-on-an-XML-request/xml-json-content-type-message.png",
+    "bytes": 84547,
+    "sha256": "0657abb9c0a73928b0fa3b680563af222cde057d834f44ce54ddd52fa828a2a1",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-after-code-narrow.png",
+    "bytes": 22025,
+    "sha256": "5aa62bf158505b0786573587ad62c0b73b44de2ea9094d03735a205205c28974",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-preview-code.png",
+    "bytes": 50076,
+    "sha256": "a0adc4195d640cc4736bca522656a9d05979ca6bf6af1f6ecb938152d87212b0",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-preview-narrow.png",
+    "bytes": 67257,
+    "sha256": "aae874db18941f3fed637453bdcbb074355348cf3552bb63f26832752e5309a8",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-preview.png",
+    "bytes": 42435,
+    "sha256": "47c26dd4c910b5b1730fa3373dac8e064b895f4b6421f25c52d1d28e6aefa816",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-30e50-s-an-oversized-idle-timeout/runtime-context.png",
+    "bytes": 124206,
+    "sha256": "78be14197e64d2a190e02be5091db6a13e9644d099526b40a92492724036655f",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-3266b-java-lifecycle-zip-response/loadrunner-review.png",
+    "bytes": 143493,
+    "sha256": "9f41bb5ed36fd9c41aa45ba651cd93fb3a4e95b387d3a50052b20e0b1fb2a238",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-37eaf-dential-groups-zip-response/credential-groups.png",
+    "bytes": 111394,
+    "sha256": "9447ffb4c5838bd069367d8d3b14bd3e9b0fceaf95ced8d2bd8560cbb5b05537",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-37eaf-dential-groups-zip-response/loadrunner-review.png",
+    "bytes": 113748,
+    "sha256": "f2c9e8ccf365c798eb271024b9842f7187a38130a44faf6062c4d1cf6086c5e4",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/conversion-reference-desktop.png",
+    "bytes": 113256,
+    "sha256": "2944bf5ec142cfe009955e6799ca6a902bbc990af7d8e04554067d6f72f5e22d",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/conversion-reference-narrow.png",
+    "bytes": 103194,
+    "sha256": "5b732f36cecc89e26f4787f5a4e44a4c1aa9c42e60faa991f67e5470f62e7a30",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/loadrunner-review.png",
+    "bytes": 62615,
+    "sha256": "4b4353f0e49d26fed403c459f95732730c808ab430e18b2f4ca4b582e90f09f8",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-data.png",
+    "bytes": 108257,
+    "sha256": "eb3cac766919ef50d52c252e80a0ac421f7f902332be20e4cc69ed3502b79b1a",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-dsl.png",
+    "bytes": 106249,
+    "sha256": "5e85ad0b831329d156f2994f4d25ddf0a3a71a98a0ba3a7ce93593b328262aa2",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-runtime.png",
+    "bytes": 105470,
+    "sha256": "3882e54dbce1efed3fade60962ff263d59ddfb1b6d089a9f72e3b273b531efcf",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-source.png",
+    "bytes": 147941,
+    "sha256": "8647cc97714ca00338de9bcb6dd83c5681f7b21d314824dc7ba1feab7553e1fc",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-8bfd9-nges-without-leaving-Review/issue-narrow.png",
+    "bytes": 106184,
+    "sha256": "709800a5555ce9213e2efb0e47c8560a7c537f69e8e96c6d1f4b781243535f63",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-8bfd9-nges-without-leaving-Review/issue-runtime.png",
+    "bytes": 129050,
+    "sha256": "b0b39fb12fcf814cbd1f51b9d8aa4ac1bb3db3cd1734730f14e354af0e9cd0bb",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-8bfd9-nges-without-leaving-Review/issue-warning.png",
+    "bytes": 131821,
+    "sha256": "2125b09ea5aedfe33401d042baebe22abb52f8222382d59955bc58c82912a209",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-bbda9-uclient-review-zip-response/loadrunner-review.png",
+    "bytes": 104861,
+    "sha256": "bf684bb57f0afc3496f24ac208f938d7b7731d42d05f2013c96fecdb2b49f758",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-c0c2f-ence-and-survive-draft-save/data-settings-narrow.png",
+    "bytes": 101816,
+    "sha256": "7dac1e46f279ecdbfb43924cb39fa618806d5d1ef291d9da8ccddc8cf8ca84ec",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-c0c2f-ence-and-survive-draft-save/runtime-settings-desktop.png",
+    "bytes": 100944,
+    "sha256": "36dd3f75775fcd416a0f8808e795a354bfc4f1ff68998fda222a1b3141ffbb89",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-d220e-preserving-protected-values/credentials-inline-edit.png",
+    "bytes": 132423,
+    "sha256": "aa09b4b104c62fab2fabd2106b90ad59e67abb08a054aceeaa0d7a91dec12925",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-daf3d-ort-and-accepts-another-ZIP/batch-import-saved.png",
+    "bytes": 110076,
+    "sha256": "b9d413e64cd8a974db5cf11276bab24dea6ffbe80b81aa4d9852f3e687e4e916",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-ddf3d-eal-sap-review-zip-response/loadrunner-review.png",
+    "bytes": 87602,
+    "sha256": "8876fdea2b70626d37d2e3e111ba01633baaf55c6a59410defe9d69a633f46a4",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-eb5a1--from-dormant-source-values/runtime-diagnostic-classification.png",
+    "bytes": 105978,
+    "sha256": "add7dc027fe83de6d421ae0dd9a96b0047fc85cc505ea26e96228742f3dd6013",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-eb5a1--from-dormant-source-values/runtime-diagnostic-mapping.png",
+    "bytes": 106800,
+    "sha256": "cb7fc527477764d75203cf07ce0036a5c669bd3ff8a7cb3bd7a40f1c2a4d3200",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-eb5a1--from-dormant-source-values/runtime-dormant-explanation.png",
+    "bytes": 107182,
+    "sha256": "d612be1839f656dd34d7399677b737888b8d7e0c69d59e04e3286525c8da3531",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  },
+  {
+    "path": "local-auth/workflow-loadrunner-review-fbc64-nd-saves-edited-percentages/percentage-runtime-settings.png",
+    "bytes": 139403,
+    "sha256": "20fbad69a773de49d1f9926d16ce5022d2cccfb8156dfb31ce2d476c9b358e45",
+    "archive": "focused-import-isolated-artifacts-01.tar.gz"
+  }
+]

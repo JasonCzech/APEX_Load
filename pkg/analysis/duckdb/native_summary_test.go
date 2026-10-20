@@ -21,7 +21,7 @@ func summaryFixtureMeasure(column, name, statistic, unit string) Measure {
 
 func normalizeSummaryFixture(t *testing.T, e *Engine, path string, mapping Mapping, allowRejected bool) NormalizeResult {
 	t.Helper()
-	result, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping, AllowRejected: allowRejected})
+	result, err := normalizeConsentedNativeFixture(t, e, context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping, AllowRejected: allowRejected})
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
@@ -30,7 +30,7 @@ func normalizeSummaryFixture(t *testing.T, e *Engine, path string, mapping Mappi
 
 func summarySeries(t *testing.T, e *Engine, files []string, metric, aggregation string, from time.Time, buckets, bucketSeconds int) []analysis.MetricPoint {
 	t.Helper()
-	points, err := e.Series(context.Background(), files, SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: metric, From: from, To: from.Add(time.Duration(buckets*bucketSeconds) * time.Second), BucketSeconds: bucketSeconds, Aggregation: aggregation})
+	points, err := e.Series(context.Background(), files, SeriesQuery{IdentitySchemaVersion: nativeFixtureIdentityVersion(t, e, files), ProjectID: "p", DatasetID: "d", Metric: metric, From: from, To: from.Add(time.Duration(buckets*bucketSeconds) * time.Second), BucketSeconds: bucketSeconds, Aggregation: aggregation})
 	if err != nil {
 		t.Fatalf("%s %s/%ds: %v", metric, aggregation, bucketSeconds, err)
 	}
@@ -101,7 +101,7 @@ func TestNativeSummaryStatisticsReBucketOnlyWhereExact(t *testing.T) {
 		aggregation string
 		bucket      int
 	}{{"p99", 60}, {"p95", 30}, {"avg", 90}, {"rate", 60}} {
-		if _, err := e.Series(context.Background(), files, SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: "latency", From: from, To: from.Add(4 * time.Minute), BucketSeconds: bad.bucket, Aggregation: bad.aggregation}); err == nil {
+		if _, err := e.Series(context.Background(), files, SeriesQuery{IdentitySchemaVersion: nativeFixtureIdentityVersion(t, e, files), ProjectID: "p", DatasetID: "d", Metric: "latency", From: from, To: from.Add(4 * time.Minute), BucketSeconds: bad.bucket, Aggregation: bad.aggregation}); err == nil {
 			t.Errorf("summary answered %s over %ds", bad.aggregation, bad.bucket)
 		}
 	}
@@ -133,7 +133,7 @@ func TestNativeSummaryScalesSampleSumsAndRejectsInvalidSamples(t *testing.T) {
 	e, path := nativeFixture(t, "SELECT * FROM (VALUES (1700000040, 0.1, 2.0, 0.2), (1700000100, 0.3, 2.0, 0.6), (1700000160, 0.5, -1.0, 1.0)) t(ts, mean, n, total)")
 	mean := Measure{Value: Column{"mean"}, Name: "latency", Kind: analysis.KindSummary, Unit: "s", Statistic: "avg", WindowSeconds: 60, SampleCountColumn: Column{"n"}, SampleSumColumn: Column{"total"}}
 	mapping := Mapping{Version: 1, Timestamp: Column{"ts"}, TimestampEncoding: "unix_s", Timezone: "UTC", Measures: []Measure{mean}}
-	if _, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping}); err == nil {
+	if _, err := normalizeConsentedNativeFixture(t, e, context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping}); err == nil {
 		t.Fatal("a negative sample count was accepted")
 	}
 	result := normalizeSummaryFixture(t, e, path, mapping, true)

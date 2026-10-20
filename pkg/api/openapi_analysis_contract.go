@@ -12,7 +12,7 @@ func applyAnalysisRequestContract(route discoveredRoute, analysis *handlerContra
 	if analysis == nil || analysis.requestSchema == nil {
 		return
 	}
-	mapping := route.Method == http.MethodPut && route.Path == "/api/v1/analysis/imports/{id}/mapping"
+	mapping := route.Method == http.MethodPut && route.Path == "/api/v1/analysis/imports/{id}/mapping" || route.Method == http.MethodPost && route.Path == "/api/v1/analysis/imports/{id}/precision-review"
 	mappingDefinition := (route.Method == http.MethodPost && route.Path == "/api/v1/analysis/mappings") || (route.Method == http.MethodPut && route.Path == "/api/v1/analysis/mappings/{id}")
 	comparisonDefinition := (route.Method == http.MethodPost && route.Path == "/api/v1/analysis/comparisons") || (route.Method == http.MethodPut && route.Path == "/api/v1/analysis/comparisons/{id}")
 	query := route.Method == http.MethodPost && (route.Path == "/api/v1/analysis/compare" || route.Path == "/api/v1/analysis/datasets/{id}/series")

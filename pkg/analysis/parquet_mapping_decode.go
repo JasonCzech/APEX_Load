@@ -81,7 +81,7 @@ func walkParquetMappingObject(d *json.Decoder, kind string) error {
 			err = walkParquetMappingArray(d, "path", MaxHistogramBounds)
 		case kind == "mapping" && key == "timestamp", kind == "identity" && (key == "source" || key == "host" || key == "service"), kind == "measure" && (key == "value" || key == "name_column" || key == "sample_count_column" || key == "sample_sum_column"), kind == "dimension" && key == "value", kind == "histogram" && key == "bound_column":
 			err = walkParquetMappingArray(d, "scalar", 16)
-		case kind == "mapping" && (key == "timestamp_encoding" || key == "timezone"), kind == "measure" && (key == "name" || key == "kind" || key == "unit" || key == "statistic"), kind == "dimension" && key == "name", kind == "histogram" && (key == "bucket_counts" || key == "temporality"):
+		case kind == "mapping" && (key == "timestamp_encoding" || key == "timezone" || key == "precision_policy"), kind == "measure" && (key == "name" || key == "kind" || key == "unit" || key == "statistic"), kind == "dimension" && key == "name", kind == "histogram" && (key == "bucket_counts" || key == "temporality"):
 			limit := 256
 			if kind == "dimension" {
 				limit = maxDimensionBytes

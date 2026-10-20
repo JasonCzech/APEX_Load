@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	workerProtocolVersion    = 3
+	workerProtocolVersion    = 4
 	workerMaxFrameBytes      = 8 << 20
 	workerMaxInputs          = 1024
 	workerMaxOutputs         = 2048
@@ -62,12 +62,13 @@ type workerPreviewOperation struct {
 	InputHandle string `json:"input_handle"`
 }
 type workerNormalizeOperation struct {
-	ProjectID     string   `json:"project_id"`
-	DatasetID     string   `json:"dataset_id"`
-	InputHandles  []string `json:"input_handles"`
-	OutputHandles []string `json:"output_handles"`
-	Mapping       Mapping  `json:"mapping"`
-	AllowRejected bool     `json:"allow_rejected"`
+	ProjectID                string   `json:"project_id"`
+	DatasetID                string   `json:"dataset_id"`
+	InputHandles             []string `json:"input_handles"`
+	OutputHandles            []string `json:"output_handles"`
+	Mapping                  Mapping  `json:"mapping"`
+	AllowRejected            bool     `json:"allow_rejected"`
+	PrecisionAcknowledgement string   `json:"precision_acknowledgement,omitempty"`
 }
 type workerSeriesOperation struct {
 	InputHandles []string    `json:"input_handles"`
@@ -290,6 +291,9 @@ func (r workerRequest) validate(b workerBootstrap) error {
 		return nil
 	}
 	op := r.Normalize
+	if op.PrecisionAcknowledgement != "" && !workerHex(op.PrecisionAcknowledgement, 32) {
+		return errWorkerProtocol
+	}
 	if checkInputs(op.InputHandles) != nil || !workerText(op.ProjectID, 256) || !workerText(op.DatasetID, 256) || validateWorkerMapping(op.Mapping) != nil || len(op.InputHandles)*len(op.Mapping.Measures) > 1024 || len(op.OutputHandles) < 1 || len(op.OutputHandles) > workerMaxOutputs {
 		return errWorkerProtocol
 	}

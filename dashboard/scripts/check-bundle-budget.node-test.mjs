@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
+import { gzipSync } from 'node:zlib'
 
 import { formatBundleReport, inspectBundle, inspectRouteBudgets } from './check-bundle-budget.mjs'
 
@@ -194,5 +195,33 @@ test('rejects a lazy route importing the shell entry even when assets fit their 
     manifest['src/ScriptsPage.tsx'].imports = ['_vendor.js']
     await writeFile(join(directory, '.vite/manifest.json'), JSON.stringify(manifest))
     assert.deepEqual((await inspectRouteBudgets(directory, [budget])).violations, [])
+  })
+})
+
+
+test('deferred Help remains charged to the exact aggregate boundary without entering the startup route', async () => {
+  const main = 'export const app = true;'
+  const help = 'export default "A deferred native analytics operating contract";'
+  const mainBytes = gzipSync(main, { level: 9 }).byteLength
+  const totalBytes = mainBytes + gzipSync(help, { level: 9 }).byteLength
+  await withBundle({
+    '.vite/manifest.json': JSON.stringify({
+      'index.html': { file: 'assets/index.js', isEntry: true, dynamicImports: ['docs/NATIVE_ANALYTICS.md'] },
+      'docs/NATIVE_ANALYTICS.md': { file: 'assets/NATIVE_ANALYTICS-help.js', isDynamicEntry: true },
+    }),
+    'assets/index.js': main,
+    'assets/NATIVE_ANALYTICS-help.js': help,
+    'assets/style.css': '.app {}',
+  }, async directory => {
+    const routes = [{ id: 'initial', label: 'Initial route', entryKey: 'index.html', maxGzipBytes: mainBytes, forbiddenAssets: [/NATIVE_ANALYTICS/] }]
+    const budgets = { ...generousBudgets, '.js': { ...generousBudgets['.js'], maxTotalGzipBytes: totalBytes } }
+    const exact = await inspectBundle(directory, budgets, routes)
+    assert.deepEqual(exact.violations, [])
+    assert.equal(exact.groups['.js'].totalGzipBytes, totalBytes)
+    assert.equal(exact.routes[0].totalGzipBytes, mainBytes)
+    const exceeded = await inspectBundle(directory, { ...budgets, '.js': { ...budgets['.js'], maxTotalGzipBytes: totalBytes - 1 } }, routes)
+    assert.equal(exceeded.violations.length, 1)
+    assert.match(exceeded.violations[0], /JavaScript total/)
+    assert.deepEqual(exceeded.routes[0].assets.map(asset => asset.path), ['assets/index.js'])
   })
 })

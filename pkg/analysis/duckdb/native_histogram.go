@@ -250,7 +250,7 @@ func nativeDistributionPartitionStats(ctx context.Context, db *sql.DB, path stri
 	if err != nil {
 		return analysis.NormalizedPartitionStats{}, errWorkerProtocol
 	}
-	stats := analysis.NormalizedPartitionStats{Version: analysis.PartitionManifestVersion, SchemaVersion: analysis.DistributionSchemaVersion, IdentityVersion: request.Mapping.Version, Kind: analysis.KindHistogram, Unit: unit, SourceRows: sourceRows}
+	stats := analysis.NormalizedPartitionStats{Version: analysis.PartitionManifestVersion, SchemaVersion: analysis.DistributionSchemaVersion, IdentityVersion: request.Mapping.IdentityVersion(), Kind: analysis.KindHistogram, Unit: unit, SourceRows: sourceRows}
 	window := int64(0)
 	if measure.Histogram.Temporality == analysis.HistogramDelta {
 		window = int64(measure.Histogram.WindowSeconds) * 1_000_000
@@ -259,14 +259,14 @@ func nativeDistributionPartitionStats(ctx context.Context, db *sql.DB, path stri
 	if err != nil {
 		return stats, err
 	}
-	valid := "schema_version=" + literal(analysis.DistributionSchemaVersion) + " AND project_id=" + literal(request.ProjectID) + " AND dataset_id=" + literal(request.DatasetID) + " AND identity_version=" + strconv.Itoa(request.Mapping.Version) + " AND kind='histogram' AND unit=" + literal(unit)
+	valid := "schema_version=" + literal(analysis.DistributionSchemaVersion) + " AND project_id=" + literal(request.ProjectID) + " AND dataset_id=" + literal(request.DatasetID) + " AND identity_version=" + strconv.Itoa(request.Mapping.IdentityVersion()) + " AND kind='histogram' AND unit=" + literal(unit)
 	valid += " AND timestamp_utc IS NOT NULL AND isfinite(timestamp_utc) AND timestamp_utc>=TIMESTAMPTZ '0001-01-01 00:00:00+00' AND timestamp_utc<TIMESTAMPTZ '10000-01-01 00:00:00+00' AND " + nativeRequiredIdentityText("metric_name", 256) + " AND " + nativeRequiredIdentityText("source", 256)
 	valid += " AND host IS NOT NULL AND octet_length(encode(host))<=256 AND NOT contains(host,chr(0)) AND service IS NOT NULL AND octet_length(encode(service))<=256 AND NOT contains(service,chr(0)) AND dimensions_json IS NOT NULL AND octet_length(encode(dimensions_json))<=25000"
 	valid += " AND bounds=" + nativeDoubleList(scaled) + " AND source_window_us=" + strconv.FormatInt(window, 10) + " AND " + nativeDistributionValid(len(scaled))
 	if window > 0 {
 		valid += " AND window_us=source_window_us"
 	}
-	if request.Mapping.Version == 1 {
+	if request.Mapping.IdentityVersion() == 1 {
 		valid += " AND source=" + literal(request.DatasetID) + " AND host='' AND service='' AND dimensions_json='{}'"
 	}
 	stats, err = nativePartitionStatsScan(ctx, db, table, valid, stats)

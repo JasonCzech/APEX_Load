@@ -17,11 +17,13 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+var errAnalysisCLIPrecisionUnavailable = errors.New("controller does not advertise precision consent version 1; request was not sent")
+
 var errAnalysisCLIIdentityUnavailable = errors.New("controller does not advertise the required imported identity version; request was not sent")
 
 func analysisCLIIdentityCommand(action string) bool {
 	switch action {
-	case "map", "commit", "query", "compare", "save-mapping", "save-comparison":
+	case "map", "precision-review", "commit", "query", "compare", "save-mapping", "save-comparison":
 		return true
 	}
 	return false
@@ -116,7 +118,7 @@ func analysisCLIMappingVersion(raw []byte, authored bool) (uint32, error) {
 			return 0, err
 		}
 		if mapping.Version >= 2 || mapping.Identity != nil {
-			return uint32(max(2, mapping.Version)), nil
+			return uint32(max(2, mapping.IdentityVersion())), nil
 		}
 		return 0, nil
 	}
@@ -139,13 +141,20 @@ func analysisCLIHistoricalMappingVersion(raw []byte, evidenceProjection bool) (u
 		}
 	}
 	for key := range object {
-		if key != "version" && strings.EqualFold(key, "version") || key != "identity" && strings.EqualFold(key, "identity") {
+		if key != "version" && strings.EqualFold(key, "version") || key != "identity" && strings.EqualFold(key, "identity") || key != "precision_policy" && strings.EqualFold(key, "precision_policy") {
 			return 0, errors.New("ambiguous historical identity metadata")
 		}
 	}
 	var version uint32
 	if raw, ok := object["version"]; ok && (bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &version) != nil || version < 1) {
 		return 0, errors.New("invalid historical mapping version")
+	}
+	if version == 3 {
+		policy, err := analysisCLIText(object["precision_policy"], 64, true)
+		if err != nil || policy != analysis.PrecisionRejectPotentialLoss && policy != analysis.PrecisionAllowFloat64Rounding {
+			return 0, errors.New("invalid historical precision policy")
+		}
+		version = 2 // Mapping format 3 retains imported identity schema 2.
 	}
 	if _, identity := object["identity"]; identity {
 		return max(2, version), nil
@@ -225,46 +234,50 @@ func analysisCLISelectorsVersion(object map[string]json.RawMessage) (uint32, err
 // Remapping replaces mutable metadata without reading its projected evidence.
 // Admission still checks ownership and the current advertised mapping version,
 // while query/commit/comparison also refuse unsafe historical projections.
-func (c *ApiClient) analysisCLIDataset(ctx context.Context, id, project string, evidenceProjection bool) (string, uint32, error) {
+func (c *ApiClient) analysisCLIDataset(ctx context.Context, id, project string, evidenceProjection bool) (string, uint32, bool, error) {
 	if err := analysisCLIContextLive(ctx); err != nil {
-		return "", 0, err
+		return "", 0, false, err
 	}
 	if len(id) == 0 || len(id) > 128 || id == "." || id == ".." || strings.TrimFunc(id, unicode.IsSpace) == "" || !utf8.ValidString(id) || strings.ContainsRune(id, 0) {
-		return "", 0, errors.New("invalid imported dataset identity")
+		return "", 0, false, errors.New("invalid imported dataset identity")
 	}
 	data, err := c.workflowRequest(ctx, http.MethodGet, "/api/v1/analysis/imports/"+url.PathEscape(id), nil, "")
 	if err != nil {
-		return "", 0, err
+		return "", 0, false, err
 	}
 	if err := analysisCLIContextLive(ctx); err != nil {
-		return "", 0, err
+		return "", 0, false, err
 	}
 	object, err := analysisCLIObject(data, 2<<20, nil)
 	if err != nil {
-		return "", 0, err
+		return "", 0, false, err
 	}
 	for key := range object {
 		for _, field := range []string{"id", "project_id", "mapping"} {
 			if key != field && strings.EqualFold(key, field) {
-				return "", 0, errors.New("ambiguous imported dataset metadata")
+				return "", 0, false, errors.New("ambiguous imported dataset metadata")
 			}
 		}
 	}
 	actualID, err := analysisCLIText(object["id"], 128, true)
 	if err != nil || actualID != id {
-		return "", 0, errors.New("controller returned a different imported dataset")
+		return "", 0, false, errors.New("controller returned a different imported dataset")
 	}
 	actualProject, err := analysisCLIText(object["project_id"], 128, true)
 	if err != nil || project != "" && actualProject != project {
-		return "", 0, errors.New("imported dataset belongs to a different project")
+		return "", 0, false, errors.New("imported dataset belongs to a different project")
 	}
 	version, err := analysisCLIHistoricalMappingVersion(object["mapping"], evidenceProjection)
-	return actualProject, version, err
+	var mapping struct {
+		Version int `json:"version"`
+	}
+	_ = json.Unmarshal(object["mapping"], &mapping)
+	return actualProject, version, mapping.Version == 3, err
 }
 
 func (c *ApiClient) preflightAnalysisIdentity(ctx context.Context, action, project, id string, body []byte) error {
 	switch action {
-	case "map", "commit", "query", "compare", "save-mapping", "save-comparison":
+	case "map", "precision-review", "commit", "query", "compare", "save-mapping", "save-comparison":
 	default:
 		return nil
 	}
@@ -278,16 +291,21 @@ func (c *ApiClient) preflightAnalysisIdentity(ctx context.Context, action, proje
 		return errors.New("analysis commit takes no request body; configure import options with analysis map")
 	}
 	var required uint32
-	if action == "map" || action == "query" || action == "commit" {
-		ownedProject, version, err := c.analysisCLIDataset(ctx, id, project, action != "map")
+	precisionRequired := action == "precision-review"
+	if action == "map" || action == "precision-review" || action == "query" || action == "commit" {
+		ownedProject, version, precision, err := c.analysisCLIDataset(ctx, id, project, action != "map" && action != "precision-review")
 		if err != nil {
 			return err
 		}
 		project, required = ownedProject, version
+		precisionRequired = precisionRequired || action == "commit" && precision
 	}
 	switch action {
-	case "map", "save-mapping":
-		fields, field := []string{"revision", "mapping", "allow_rejected", "mapping_id", "mapping_revision"}, "mapping"
+	case "map", "precision-review", "save-mapping":
+		fields, field := []string{"revision", "mapping", "allow_rejected", "mapping_id", "mapping_revision", "precision_review_sha256", "precision_acknowledgement_sha256"}, "mapping"
+		if action == "precision-review" {
+			fields = []string{"revision", "mapping"}
+		}
 		if action == "save-mapping" {
 			fields, field = []string{"name", "definition"}, "definition"
 		}
@@ -303,6 +321,24 @@ func (c *ApiClient) preflightAnalysisIdentity(ctx context.Context, action, proje
 			return err
 		}
 		required = max(required, version)
+		mapping, err := analysis.DecodeParquetMappingDefinition(object[field])
+		if err != nil {
+			return err
+		}
+		precisionRequired = precisionRequired || mapping.Version == 3
+		_, review := object["precision_review_sha256"]
+		_, acknowledgement := object["precision_acknowledgement_sha256"]
+		if review || acknowledgement {
+			if !review || !acknowledgement || mapping.Version != 3 {
+				return errors.New("precision consent requires version 3 and both review digests")
+			}
+			for _, field := range []string{"precision_review_sha256", "precision_acknowledgement_sha256"} {
+				digest, err := analysisCLIText(object[field], 64, true)
+				if err != nil || !storage.ValidLowerSHA256Hex(digest) {
+					return errors.New("invalid precision consent digest")
+				}
+			}
+		}
 	case "query":
 		object, err := analysisCLIObject(body, 16<<10, analysisCLISeriesFields)
 		if err != nil {
@@ -376,7 +412,7 @@ func (c *ApiClient) preflightAnalysisIdentity(ctx context.Context, action, proje
 			if err != nil {
 				return err
 			}
-			_, version, err := c.analysisCLIDataset(ctx, selectedID, project, true)
+			_, version, _, err := c.analysisCLIDataset(ctx, selectedID, project, true)
 			if err != nil {
 				return err
 			}
@@ -388,7 +424,7 @@ func (c *ApiClient) preflightAnalysisIdentity(ctx context.Context, action, proje
 			required = max(required, version)
 		}
 	}
-	if required != 0 {
+	if required != 0 || precisionRequired {
 		if err := analysisCLIContextLive(ctx); err != nil {
 			return err
 		}
@@ -409,8 +445,19 @@ func (c *ApiClient) preflightAnalysisIdentity(ctx context.Context, action, proje
 			}
 		}
 		var advertised uint32
-		if raw, exists := object["imported_identity_version"]; !exists || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &advertised) != nil || advertised < required {
+		if raw, exists := object["imported_identity_version"]; required != 0 && (!exists || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &advertised) != nil || advertised < required) {
 			return errAnalysisCLIIdentityUnavailable
+		}
+		if precisionRequired {
+			for key := range object {
+				if key != "precision_consent_version" && strings.EqualFold(key, "precision_consent_version") {
+					return errAnalysisCLIPrecisionUnavailable
+				}
+			}
+			var version uint32
+			if raw, exists := object["precision_consent_version"]; !exists || json.Unmarshal(raw, &version) != nil || version != 1 {
+				return errAnalysisCLIPrecisionUnavailable
+			}
 		}
 	}
 	return analysisCLIContextLive(ctx)

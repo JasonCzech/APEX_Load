@@ -7,6 +7,7 @@ export const helpArticles = catalog as HelpArticle[]
 // Explicit catalogue membership is the trust boundary. Sources load in separate chunks.
 const sources = import.meta.glob<string>([
   '../../docs/APPLICATION_USER_GUIDE.md',
+  '../../docs/NATIVE_ANALYTICS.md',
   '../../docs/HELP_CENTER.md',
   '../../docs/PROTOCOL_SUPPORT.md',
   '../../docs/guides/BROWSER_DOCUMENT_EVIDENCE.md',

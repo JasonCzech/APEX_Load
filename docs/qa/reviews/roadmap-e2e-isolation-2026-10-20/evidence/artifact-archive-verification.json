@@ -1,0 +1,26 @@
+[
+  {
+    "inventory": "cycle-final-artifacts-inventory.json",
+    "files": 444,
+    "bytes": 36374746,
+    "passed": true
+  },
+  {
+    "inventory": "cycle-reviewed-artifacts-inventory.json",
+    "files": 2710,
+    "bytes": 133898791,
+    "passed": true
+  },
+  {
+    "inventory": "dev-final-artifacts-inventory.json",
+    "files": 628,
+    "bytes": 48024501,
+    "passed": true
+  },
+  {
+    "inventory": "focused-import-isolated-artifacts-inventory.json",
+    "files": 33,
+    "bytes": 3636985,
+    "passed": true
+  }
+]

@@ -49,13 +49,20 @@ const mib = (value) => value * 1024 * 1024
 //   Scripts route 227 KiB, Test execution route 406 KiB.
 // Limits keep about 4-6% headroom over those numbers. The per-asset gzip
 // ceiling and every forbidden asset or entry stay as they were.
+// 2026-10-20 precision-consent integration: an independent main-source build
+// measures 2.40 MiB gzip; the candidate measures 2.43 MiB. The newly bundled,
+// lazily loaded native analytics Help article accounts for about 24 KiB of the
+// 25.5 KiB increase; the remaining growth is the deferred precision-review UI.
+// Initial shell, Scripts and Test execution remain about 200/228/411 KiB gzip.
+// Allow that measured inventory at 2.45 MiB; keep raw, per-asset, CSS and every
+// route/startup guard unchanged. Evidence: roadmap-e2e-isolation-2026-10-20.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
     maxAssetBytes: kib(800),
     maxAssetGzipBytes: kib(220),
     maxTotalBytes: mib(8.5),
-    maxTotalGzipBytes: mib(2.42),
+    maxTotalGzipBytes: mib(2.45),
   }),
   '.css': Object.freeze({
     label: 'CSS',

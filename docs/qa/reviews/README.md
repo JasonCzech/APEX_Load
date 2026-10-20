@@ -31,6 +31,10 @@ The themed reports preserve the original narrative of each consolidated review, 
 
 ## Completed implementation reviews
 
+[Browser workflow isolation and roadmap integration — 2026-10-20](roadmap-e2e-isolation-2026-10-20/README.md) records the combined precision-consent/main regression, private import-store isolation, measured bundle inventory and retained failed attempts.
+
+[Native decimal precision consent — 2026-10-20](roadmap-native-precision-2026-10-20/README.md) records source/revision-bound conversion consent, worker revalidation, persistence fences and the original slice evidence; its broad browser follow-up is recorded above.
+
 Completion here applies only to the reviewed slice. Outstanding provider, platform, scale and parent-feature gates are retained inside each report and linked from the [roadmap](../../ROADMAP.md). Consolidation does not mark those gates passed. Evidence directories and non-Markdown artifacts remain unchanged.
 
 [Coordinated starts and published clocks — 2026-10-19](roadmap-coordinated-published-clock-2026-10-19/README.md) retains the full-suite failure, clock-domain correction and generator execution regressions.

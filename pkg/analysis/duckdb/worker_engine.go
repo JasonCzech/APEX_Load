@@ -355,7 +355,7 @@ func (e *Engine) prepareWorker(ctx context.Context, paths []string, normalize *N
 		request.Series = &workerSeriesOperation{InputHandles: inputIDs, Query: copyQuery}
 	}
 	if normalize != nil {
-		op := workerNormalizeOperation{ProjectID: normalize.ProjectID, DatasetID: normalize.DatasetID, InputHandles: inputIDs, Mapping: normalize.Mapping, AllowRejected: normalize.AllowRejected, OutputHandles: []string{}}
+		op := workerNormalizeOperation{ProjectID: normalize.ProjectID, DatasetID: normalize.DatasetID, InputHandles: inputIDs, Mapping: normalize.Mapping, AllowRejected: normalize.AllowRejected, PrecisionAcknowledgement: normalize.PrecisionAcknowledgement, OutputHandles: []string{}}
 		quota := outputBytes / int64(slots)
 		if quota < 12 {
 			return nil, workerRequest{}, errWorkerResourceLimit

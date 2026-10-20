@@ -507,6 +507,12 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 				if len(body) == 0 {
 					return errors.New("--file JSON mapping is required")
 				}
+			case "precision-review":
+				method = http.MethodPost
+				path += "/precision-review"
+				if len(body) == 0 {
+					return errors.New("--file JSON with revision and mapping is required")
+				}
 			case "preview":
 				if *fileID == "" {
 					return errors.New("--file-id is required")
@@ -527,7 +533,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 					return errors.New("--file JSON query is required")
 				}
 			default:
-				return errors.New("analysis actions: telemetry-policy, telemetry-reevaluate, browser-documents, browser-resources, browser-har, progress, baseline, catalog, capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison, panels, panel, save-panel, update-panel, delete-panel, run-query")
+				return errors.New("analysis actions: telemetry-policy, telemetry-reevaluate, browser-documents, browser-resources, browser-har, progress, baseline, catalog, capabilities, list, create, show, upload, preview, precision-review, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison, panels, panel, save-panel, update-panel, delete-panel, run-query")
 			}
 		}
 	default:

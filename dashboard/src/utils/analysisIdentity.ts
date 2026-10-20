@@ -251,3 +251,8 @@ export function analysisMappingDisclosureError(mapping: unknown): string | undef
     return analysisIdentityMappingError(admitted)
   } catch (error) { return error === protectedSentinel ? protectedColumn : invalid }
 }
+
+// Mapping format 3 adds precision consent and retains identity schema 2.
+export function analysisMappingUsesIdentity2(mapping?: { version: number }): boolean {
+  return mapping?.version === 2 || mapping?.version === 3
+}

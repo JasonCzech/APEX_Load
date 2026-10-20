@@ -27,6 +27,7 @@ type ParquetMeasure struct {
 	Histogram *ParquetHistogram `json:"histogram,omitempty"`
 }
 type ParquetMapping struct {
+	PrecisionPolicy   string                  `json:"precision_policy,omitempty"`
 	Version           int                     `json:"version"`
 	Timestamp         ParquetColumnPath       `json:"timestamp"`
 	TimestampEncoding string                  `json:"timestamp_encoding"` // timestamp (local wall time), timestamp_offset (absolute), unix_s/ms/us/ns
@@ -101,8 +102,15 @@ func (m ParquetMapping) Validate(schema ParquetSchemaPreview) error {
 	if err := ValidateParquetSQLSchema(schema); err != nil {
 		return err
 	}
-	if (m.Version != 1 && m.Version != 2) || m.Version == 1 && m.Identity != nil || len(m.Measures) < 1 || len(m.Measures) > 64 {
-		return errors.New("mapping version 1 or 2 with 1-64 measures is required; identities require version 2")
+	if m.Version < 1 || m.Version > 3 || m.Version == 1 && m.Identity != nil || len(m.Measures) < 1 || len(m.Measures) > 64 {
+		return errors.New("mapping version 1, 2 or 3 with 1-64 measures is required; identities require version 2 or 3")
+	}
+	if m.Version == 3 {
+		if m.PrecisionPolicy != PrecisionRejectPotentialLoss && m.PrecisionPolicy != PrecisionAllowFloat64Rounding {
+			return errors.New("mapping version 3 requires an explicit precision policy")
+		}
+	} else if m.PrecisionPolicy != "" {
+		return errors.New("precision policy requires mapping version 3")
 	}
 	if m.Timezone == "" {
 		return errors.New("explicit timestamp timezone is required")
@@ -256,4 +264,16 @@ func (m ParquetMapping) reservedColumns() []ParquetColumnPath {
 		}
 	}
 	return reserved
+}
+
+const PrecisionRejectPotentialLoss = "reject_potential_loss"
+const PrecisionAllowFloat64Rounding = "allow_float64_rounding"
+
+// IdentityVersion is independent of mapping evolution. Version 3 adds numeric
+// precision policy and preserves the established v2 normalized identity shape.
+func (m ParquetMapping) IdentityVersion() int {
+	if m.Version == 3 {
+		return 2
+	}
+	return m.Version
 }

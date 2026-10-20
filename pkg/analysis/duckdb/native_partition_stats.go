@@ -18,12 +18,12 @@ func nativePartitionStats(ctx context.Context, db *sql.DB, path string, request 
 	if err != nil {
 		return analysis.NormalizedPartitionStats{}, errWorkerProtocol
 	}
-	stats := analysis.NormalizedPartitionStats{Version: analysis.PartitionManifestVersion, SchemaVersion: analysis.SchemaVersion, IdentityVersion: request.Mapping.Version, Kind: measure.Kind, Unit: unit}
+	stats := analysis.NormalizedPartitionStats{Version: analysis.PartitionManifestVersion, SchemaVersion: analysis.SchemaVersion, IdentityVersion: request.Mapping.IdentityVersion(), Kind: measure.Kind, Unit: unit}
 	table, err := nativeIdentityTable([]string{path})
 	if err != nil {
 		return stats, err
 	}
-	valid := "schema_version=" + literal(analysis.SchemaVersion) + " AND project_id=" + literal(request.ProjectID) + " AND dataset_id=" + literal(request.DatasetID) + " AND identity_version=" + strconv.Itoa(request.Mapping.Version) + " AND kind=" + literal(measure.Kind) + " AND unit=" + literal(unit)
+	valid := "schema_version=" + literal(analysis.SchemaVersion) + " AND project_id=" + literal(request.ProjectID) + " AND dataset_id=" + literal(request.DatasetID) + " AND identity_version=" + strconv.Itoa(request.Mapping.IdentityVersion()) + " AND kind=" + literal(measure.Kind) + " AND unit=" + literal(unit)
 	valid += " AND timestamp_utc IS NOT NULL AND isfinite(timestamp_utc) AND timestamp_utc>=TIMESTAMPTZ '0001-01-01 00:00:00+00' AND timestamp_utc<TIMESTAMPTZ '10000-01-01 00:00:00+00' AND " + nativeRequiredIdentityText("metric_name", 256) + " AND " + nativeRequiredIdentityText("source", 256)
 	valid += " AND host IS NOT NULL AND octet_length(encode(host))<=256 AND NOT contains(host,chr(0)) AND service IS NOT NULL AND octet_length(encode(service))<=256 AND NOT contains(service,chr(0)) AND dimensions_json IS NOT NULL AND octet_length(encode(dimensions_json))<=25000"
 	valid += " AND ((quality='valid' AND value IS NOT NULL AND isfinite(value)) OR (quality='missing' AND value IS NULL))"
@@ -32,7 +32,7 @@ func nativePartitionStats(ctx context.Context, db *sql.DB, path string, request 
 		statistic, window = measure.Statistic, measure.WindowSeconds
 	}
 	valid += " AND summary_statistic=" + literal(statistic) + " AND summary_window_seconds=" + strconv.Itoa(window) + " AND " + nativeSummarySamplesValid
-	if request.Mapping.Version == 1 {
+	if request.Mapping.IdentityVersion() == 1 {
 		valid += " AND source=" + literal(request.DatasetID) + " AND host='' AND service='' AND dimensions_json='{}'"
 	}
 	return nativePartitionStatsScan(ctx, db, table, valid, stats)
