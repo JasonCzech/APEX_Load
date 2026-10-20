@@ -235,6 +235,13 @@ func rememberJointPublicationLocked(test *ManagedTest, source string, batch gene
 	}
 	p := jointPublicationEvidence(source, batch, projection)
 	size := jointPublicationBytes(p)
+	// One publication must fit the same budget as the entire pending queue.
+	// Refuse it before evicting useful earlier windows; the existing dropped
+	// count keeps its absence visible in the joint archive coverage.
+	if size > maxPendingJointBytes {
+		test.jointPublicationsDropped++
+		return
+	}
 	for len(test.pendingJointPublications) > 0 && (len(test.pendingJointPublications) >= maxPendingJointPublications || test.pendingJointBytes+size > maxPendingJointBytes) {
 		test.pendingJointBytes -= jointPublicationBytes(test.pendingJointPublications[0])
 		test.pendingJointPublications[0] = nil

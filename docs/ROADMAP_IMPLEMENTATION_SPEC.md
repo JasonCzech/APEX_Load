@@ -172,6 +172,8 @@ Preserve source hashes and non-mutation, raw versus summary/histogram semantics,
 
 ### NA-B — Bounded joint evidence across execution entry points
 
+The [distribution and pending-queue slice](qa/reviews/roadmap-joint-bounds-2026-10-20/README.md) bounds retained copies of already-invalid distributions and refuses a publication larger than the entire pending queue before evicting earlier evidence. Joint protobuf admission additionally checks cardinality, canonical keys, distribution shapes and encoded bytes before copying, preserving explicit unavailability and independent action counters. Category, execution-entry-point and durable source-window coverage below remain open.
+
 Carry the existing v4 joint contract through scenario, schedule, CI and plan execution plus dashboard selection; direct test creation is not complete workflow coverage. Promote only allowlisted bounded property categories. Validate category/cardinality, encoded-byte and distribution-state budgets at ingestion, before buffering or building sketches. Keep the current limits of three grouping dimensions, 20 returned series, 16 bounded filters and 512 admitted joint keys per source publication unless a separately measured change is approved.
 
 Persist expected source identities and publication/window ownership. Recovery either reconstructs the exact joint population or exposes the lost held batches as incomplete/truncated. Never fabricate an intersection from marginal series. Rates require whole contributing windows and the required source-union coverage, with compatible denominators; partial samples cannot masquerade as exact throughput. Preserve distribution semantics when a source lacks a compatible sketch.

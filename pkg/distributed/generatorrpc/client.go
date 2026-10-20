@@ -1776,6 +1776,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 	stats := generatorStatsFromProto(batch.GetStats())
 	telemetry := metricsTelemetryFromProto(batch.GetTelemetry())
 	windows, windowsComplete := collectionWindowsFromProto(batch.GetCollectionWindows(), batch.GetCollectionWindowsComplete())
+	jointMetrics, jointInfo := jointPublicationFromProto(batch.GetJointMetricsInfo(), batch.GetJointMetricsV4())
 
 	return MetricsBatch{
 		CollectionWindows: windows, CollectionWindowsComplete: windowsComplete,
@@ -1801,8 +1802,8 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		NetworkProfileMetrics:      metricAggregatesFromProto(batch.GetNetworkProfileMetrics()),
 		ActionMetrics:              metricAggregatesFromProto(batch.GetActionMetrics()),
 		ActionDimensionMetrics:     metricAggregatesFromProto(batch.GetActionDimensionMetrics()),
-		JointMetrics:               metricAggregatesFromProto(batch.GetJointMetricsV4()),
-		JointInfo:                  jointInfoFromProto(batch.GetJointMetricsInfo()),
+		JointMetrics:               jointMetrics,
+		JointInfo:                  jointInfo,
 		ActionPropertyMetrics:      metricAggregatesFromProto(batch.GetActionPropertyMetrics()),
 		ActionMetricsVersion:       batch.GetActionMetricsVersion(),
 		RequestCountsVersion:       batch.GetRequestCountsVersion(),
@@ -2175,7 +2176,7 @@ func durationSketchSnapshotFromProto(value *pb.DurationSketchSnapshot) *engine.D
 }
 
 func durationSketchSnapshotToProto(value *engine.DurationSketchSnapshot) *pb.DurationSketchSnapshot {
-	if value == nil || value.Count == 0 {
+	if value == nil || value.Count == 0 || len(value.Bins) > engine.DurationSketchMaxBuckets {
 		return nil
 	}
 	bins := make([]*pb.DurationSketchBin, 0, len(value.Bins))
@@ -2196,7 +2197,7 @@ func durationSketchSnapshotToProto(value *engine.DurationSketchSnapshot) *pb.Dur
 }
 
 func tdigestSnapshotFromProto(value *pb.TDigestSnapshot) *engine.TDigestSnapshot {
-	if value == nil || value.GetCount() == 0 {
+	if value == nil || value.GetCount() == 0 || len(value.GetCentroids()) > 1024 {
 		return nil
 	}
 	centroids := make([]engine.TDigestCentroidSnapshot, 0, len(value.GetCentroids()))
@@ -2217,7 +2218,7 @@ func tdigestSnapshotFromProto(value *pb.TDigestSnapshot) *engine.TDigestSnapshot
 }
 
 func tdigestSnapshotToProto(value *engine.TDigestSnapshot) *pb.TDigestSnapshot {
-	if value == nil || value.Count == 0 {
+	if value == nil || value.Count == 0 || len(value.Centroids) > 1024 {
 		return nil
 	}
 	centroids := make([]*pb.TDigestCentroid, 0, len(value.Centroids))

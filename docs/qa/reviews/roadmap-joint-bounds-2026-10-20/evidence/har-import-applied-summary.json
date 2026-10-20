@@ -1,0 +1,23 @@
+{
+  "actions": 476,
+  "archive_bytes": 38797527,
+  "archive_sha256": "7469ebdef88a576cd3cfa5891318a4aa5afb4efe97fccb410df339fc609ddef7",
+  "protected_requirements": 264,
+  "protected_source_session": false,
+  "script_sha256_without_id_created_at": "28d2da0a327661577e6ed08221d8db51174a1b3954f09a6d72f23d4daae4a542",
+  "stats": {
+    "format": "har",
+    "total_requests": 803,
+    "converted_actions": 476,
+    "filtered_assets": 327,
+    "assertions": 479,
+    "extractors": 37,
+    "correlations_detected": 43
+  },
+  "status": 200,
+  "top_level_action_types": {
+    "request": 476
+  },
+  "validation_issue_count": 0,
+  "warning_count": 4
+}

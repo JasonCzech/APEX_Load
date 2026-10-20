@@ -57,6 +57,13 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 | Raw count, sum and percentile reconciliation | `TestNativeAcceptanceMappingLayoutsAgree` (`pkg/analysis/duckdb/native_acceptance_golden_test.go`) | DuckDB build |
 |  | `TestAnalysisHistogramImportCommitQueryReconcile` (`pkg/api/analysis_histogram_native_test.go`) | DuckDB build |
 |  | `TestNativeRejectsInvalidRowsAndSummaryPercentiles` (`pkg/analysis/duckdb/native_test.go`) | DuckDB build |
+| Distribution copies and oversized pending publications | `TestDurationSketchCopyRejectsOversizedBeforeRetention` (`pkg/engine/distribution_copy_bounds_test.go`) | Default build |
+|  | `TestDistributionWireCopiesKeepExistingBounds` (`pkg/distributed/generatorrpc/distribution_wire_bounds_test.go`) | Default build |
+|  | `TestOversizedDistributionRefusalPreservesCountsAndCompatibleFallback` (`pkg/distributed/generatorrpc/distribution_wire_bounds_test.go`) | Default build |
+|  | `TestJointPendingOversizeRefusalPreservesEarlierWindows` (`pkg/api/joint_pending_oversize_test.go`) | Default build |
+|  | `TestJointWireAdmissionBeforeRetainedCopies` (`pkg/distributed/generatorrpc/joint_wire_admission_test.go`) | Default build |
+|  | `TestJointWireAdmissionKeepsExactCardinalityBoundary` (`pkg/distributed/generatorrpc/joint_wire_admission_test.go`) | Default build |
+|  | `TestJointWireAdmissionThroughMetricsStreamPreservesOtherPopulations` (`pkg/distributed/generatorrpc/joint_wire_admission_test.go`) | Default build |
 | v4 joint and rate coverage | `TestJointEvidenceArchiveMatchesLocalWindowsAtStoreResolution` (`pkg/api/joint_evidence_test.go`) | Default build |
 |  | `TestNativeMergedRatesCheckCoveragePerSource` (`pkg/api/native_rate_window_coverage_test.go`) | Default build |
 |  | `TestNativeMergedRatesExactFractionalCoverage` (`pkg/api/native_rate_window_coverage_test.go`) | Default build |
