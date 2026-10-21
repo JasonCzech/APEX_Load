@@ -70175,6 +70175,11 @@ paths:
                               properties:
                                 aggregation:
                                   type: string
+                                browser_inputs:
+                                  type: object
+                                  description: 'Go type: BrowserPanelInputs'
+                                  additionalProperties: true
+                                  nullable: true
                                 browser_tuple_mode:
                                   type: string
                                 bucket_seconds:
@@ -402234,6 +402239,38 @@ paths:
               properties:
                 aggregation:
                   type: string
+                browser_inputs:
+                  type: object
+                  properties:
+                    baseline:
+                      type: object
+                      properties:
+                        manifest_sha256:
+                          type: string
+                        run_id:
+                          type: string
+                        tuple_ids:
+                          type: array
+                          items:
+                            type: string
+                      nullable: true
+                    current:
+                      type: object
+                      properties:
+                        manifest_sha256:
+                          type: string
+                        run_id:
+                          type: string
+                        tuple_ids:
+                          type: array
+                          items:
+                            type: string
+                    query_sha256:
+                      type: string
+                    version:
+                      type: integer
+                      format: int64
+                  nullable: true
                 browser_tuple_mode:
                   type: string
                 bucket_seconds:
@@ -402417,6 +402454,50 @@ paths:
                       - identities
                       - run_id
                       - warnings
+                    nullable: true
+                  browser_inputs:
+                    type: object
+                    properties:
+                      baseline:
+                        type: object
+                        properties:
+                          manifest_sha256:
+                            type: string
+                          run_id:
+                            type: string
+                          tuple_ids:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - manifest_sha256
+                          - run_id
+                          - tuple_ids
+                        nullable: true
+                      current:
+                        type: object
+                        properties:
+                          manifest_sha256:
+                            type: string
+                          run_id:
+                            type: string
+                          tuple_ids:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - manifest_sha256
+                          - run_id
+                          - tuple_ids
+                      query_sha256:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - current
+                      - query_sha256
+                      - version
                     nullable: true
                   browser_tuple_comparisons:
                     type: array
@@ -505890,6 +505971,38 @@ paths:
               properties:
                 aggregation:
                   type: string
+                browser_inputs:
+                  type: object
+                  properties:
+                    baseline:
+                      type: object
+                      properties:
+                        manifest_sha256:
+                          type: string
+                        run_id:
+                          type: string
+                        tuple_ids:
+                          type: array
+                          items:
+                            type: string
+                      nullable: true
+                    current:
+                      type: object
+                      properties:
+                        manifest_sha256:
+                          type: string
+                        run_id:
+                          type: string
+                        tuple_ids:
+                          type: array
+                          items:
+                            type: string
+                    query_sha256:
+                      type: string
+                    version:
+                      type: integer
+                      format: int64
+                  nullable: true
                 browser_tuple_mode:
                   type: string
                 bucket_seconds:

@@ -17,7 +17,11 @@ export interface DashboardDefinitionPanel {
 // The query semantics a panel is saved under (query_version).
 export const ANALYTICS_QUERY_VERSION = 3
 
+export interface BrowserPanelRunInput { run_id: string; manifest_sha256: string; tuple_ids: string[] }
+export interface BrowserPanelInputs { version: 1; query_sha256: string; current: BrowserPanelRunInput; baseline?: BrowserPanelRunInput }
+
 export interface DashboardAnalyticsQuery {
+  browser_inputs?: BrowserPanelInputs
   browser_tuple_mode?: 'separate'
   query_version?: number
   live_bucket_mode?: 'source' | 'merged'

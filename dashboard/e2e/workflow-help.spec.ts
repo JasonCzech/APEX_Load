@@ -544,3 +544,19 @@ test('native waterfall Help preserves independent timing and cache availability'
   await expect(article).toContainText('a cached response must not claim a negotiated network protocol')
   await page.screenshot({ path: testInfo.outputPath('native-waterfall-help.png'), animations: 'disabled' })
 })
+
+
+test('frozen browser panel Help preserves stale-input and authorization boundaries', async ({ page }, testInfo) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('Frozen browser comparison inputs')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Browser intelligence workflows', exact: true }).click()
+  const article = page.locator('.guide-markdown-article')
+  await expect(article).toContainText('Query version 4 is explicit')
+  await page.reload()
+  await page.setViewportSize({ width: 760, height: 1000 })
+  const heading = article.getByRole('heading', { name: 'Frozen browser comparison inputs', exact: true })
+  await heading.scrollIntoViewIfNeeded()
+  await expect(heading).toBeVisible()
+  await expect(article).toContainText('native HAR downloads retain their separate authorization')
+  expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('browser-panel-pins-help.png'), animations: 'disabled' })
+})

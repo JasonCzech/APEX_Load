@@ -304,6 +304,8 @@ The [run policy selection slice](qa/reviews/roadmap-browser-policy-selection-202
 
 The [separate browser tuple panel slice](qa/reviews/roadmap-browser-tuple-panels-2026-10-21/README.md) adds bounded versioned multi-tuple archive panels and exact-tuple comparison disclosure. Immutable comparison-to-panel input pinning, authored page identity, compatible baseline selection and provisional live findings remain open.
 
+The [frozen browser panel slice](qa/reviews/roadmap-browser-panel-pins-2026-10-21/README.md) preserves exact authorized input publications and query/tuple pins across comparison, save, reopen and CSV. Compatible baseline selection and provisional live findings remain open.
+
 Allow an editor to select a specific immutable browser/journey policy revision for a run while retaining the current default behavior. Use existing optimistic policy writes and authorization. Expose cohort digests and stable page/step identities, support the necessary bounded multi-tuple native panels, and implement comparison → saved panel without losing input/policy/cohort pins.
 
 Finalized findings remain authoritative. Complete BI-4’s live finding, interaction and journey views as explicitly provisional results, bounded to retained evidence, never a final verdict, and replaced by the finalized result with visible coverage/revision. Finalized-only views cannot close BI-4; if live evidence is not qualified, that requirement remains pending. Do not imply the existing live comparison is already a live findings engine. Reports and CLI must preserve these distinctions and expose the same drill-down/policy provenance.

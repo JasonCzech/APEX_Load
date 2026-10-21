@@ -11,7 +11,7 @@ func TestBrowserTupleQueryVersionAndBounds(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, mutate := range map[string]func(*AnalyticsQuery){
-		"legacy": func(q *AnalyticsQuery) { q.QueryVersion = 2 }, "future": func(q *AnalyticsQuery) { q.QueryVersion = 4 }, "unknown mode": func(q *AnalyticsQuery) { q.BrowserTupleMode = "pool" }, "live": func(q *AnalyticsQuery) { q.EvidenceMode = "live" }, "other population": func(q *AnalyticsQuery) { q.Population = "action" }, "21 tuples": func(q *AnalyticsQuery) { q.MaxSeries = 21 }, "negative": func(q *AnalyticsQuery) { q.MaxSeries = -1 }, "1001 buckets": func(q *AnalyticsQuery) { q.EndSeconds = 1001 }, "group": func(q *AnalyticsQuery) { q.Dimensions = []string{"engine"} }, "derived": func(q *AnalyticsQuery) { q.Derivation = &analysis.QueryDerivation{Operation: "moving_mean"} }, "joint": func(q *AnalyticsQuery) { q.JointEvidence = true },
+		"legacy": func(q *AnalyticsQuery) { q.QueryVersion = 2 }, "future": func(q *AnalyticsQuery) { q.QueryVersion = 5 }, "unknown mode": func(q *AnalyticsQuery) { q.BrowserTupleMode = "pool" }, "live": func(q *AnalyticsQuery) { q.EvidenceMode = "live" }, "other population": func(q *AnalyticsQuery) { q.Population = "action" }, "21 tuples": func(q *AnalyticsQuery) { q.MaxSeries = 21 }, "negative": func(q *AnalyticsQuery) { q.MaxSeries = -1 }, "1001 buckets": func(q *AnalyticsQuery) { q.EndSeconds = 1001 }, "group": func(q *AnalyticsQuery) { q.Dimensions = []string{"engine"} }, "derived": func(q *AnalyticsQuery) { q.Derivation = &analysis.QueryDerivation{Operation: "moving_mean"} }, "joint": func(q *AnalyticsQuery) { q.JointEvidence = true },
 	} {
 		t.Run(name, func(t *testing.T) {
 			q := valid

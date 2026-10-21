@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { createHash } from 'node:crypto'
-import { test, expect, json, idOf, login, runStatus } from './support/workflow'
+import { test, expect, json, idOf, login, runStatus, signOut } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 // Real local Chromium desktop and Pixel emulation, with no response routes or
@@ -21,7 +21,7 @@ test('native replay and two browser cohorts survive archive, HAR and saved panel
   })
   await new Promise<void>(resolve => target.listen(0, '127.0.0.1', resolve))
   const url = `http://127.0.0.1:${(target.address() as AddressInfo).port}`
-  let runId = '', replayId = ''
+  let runId = '', replayId = '', extraRunId = ''
   try {
     const ids: string[] = []
     for (const profile of ['', 'pixel_8']) {
@@ -41,7 +41,11 @@ test('native replay and two browser cohorts survive archive, HAR and saved panel
     expect(replayHAR.ok(), await replayHAR.text()).toBeTruthy()
     expect(replayHAR.headers()['x-apexload-har-fidelity']).toBe('native')
     expect((await replayHAR.json()).log.entries).toHaveLength(3)
-    runId = idOf(await json(await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, name: 'Native browser tuple panels', termination_mode: 'iterations', groups: ids.map((script_id, index) => ({ name: index ? 'mobile' : 'desktop', script_id, vusers: 1, iterations: 1 })) } })))
+    const policyDefinition = { version: 1, baseline: { mode: 'none' }, metrics: [{ metric: 'fcp', good: 1800, poor: 3000, weight: 1 }] }
+    const policyScope = `project_id=${encodeURIComponent(workspace.projectId)}`
+    const pinPolicy = await json(await request.post(`/api/v1/analysis/policies?${policyScope}`, { data: { kind: 'browser_policy', name: 'Frozen browser policy', definition: policyDefinition } }))
+    await json(await request.put(`/api/v1/analysis/policies/${pinPolicy.id}?${policyScope}`, { data: { kind: 'browser_policy', revision: 1, name: 'Later policy revision', definition: policyDefinition } }))
+    runId = idOf(await json(await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, name: 'Native browser tuple panels', termination_mode: 'iterations', analysis_policy_selections: { browser: { id: pinPolicy.id, revision: 1 } }, groups: ids.map((script_id, index) => ({ name: index ? 'mobile' : 'desktop', script_id, vusers: 1, iterations: 1 })) } })))
     trackRun(runId)
     await json(await request.post(`/api/v1/tests/${runId}/start`))
     await expect.poll(() => runStatus(request, runId), { timeout: 90_000 }).toBe('COMPLETE')
@@ -113,7 +117,113 @@ test('native replay and two browser cohorts survive archive, HAR and saved panel
     expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath('native-browser-tuples.png'), animations: 'disabled' })
     expect(Object.fromEntries(counts)).toEqual({ '/': 3, '/style.css': 3, '/clicked': 3 })
+    extraRunId = idOf(await json(await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, name: 'Frozen browser comparison input', termination_mode: 'iterations', analysis_policy_selections: { browser: { id: pinPolicy.id, revision: 1 } }, groups: [...ids.map((script_id, index) => ({ name: index ? 'mobile' : 'desktop', script_id, vusers: 1, iterations: 1 })), { name: 'baseline-only', script_id: ids[0], vusers: 1, iterations: 1 }] } })))
+    trackRun(extraRunId)
+    await json(await request.post(`/api/v1/tests/${extraRunId}/start`))
+    await expect.poll(() => runStatus(request, extraRunId), { timeout: 90_000 }).toBe('COMPLETE')
+    await expect.poll(async () => (await request.get(`/api/v1/tests/${extraRunId}/archive/manifest`)).ok(), { timeout: 60_000 }).toBe(true)
+    for (const id of [runId, extraRunId]) {
+      const retained = await json(await request.get(`/api/v1/tests/${id}/archive/manifest`)) as { provenance: { policy_pins: { id: string; revision: number; source: string }[] } }
+      expect(retained.provenance.policy_pins).toEqual(expect.arrayContaining([expect.objectContaining({ id: pinPolicy.id, revision: 1, source: 'run_selection' })]))
+    }
+    await page.goto(`/#/report/${runId}?section=performance&${scopeQuery(workspace)}`); await page.reload()
+    await page.getByText('Create project analytics panel', { exact: true }).click()
+    await page.getByLabel('Panel title', { exact: true }).fill('Frozen native browser comparison')
+    await page.getByRole('combobox', { name: 'Evidence population', exact: true }).selectOption('browser_document')
+    await page.getByLabel('Show separate browser cohorts', { exact: true }).check()
+    await page.getByLabel('Freeze archive inputs for this panel', { exact: true }).check()
+    await page.getByRole('combobox', { name: 'Metric', exact: true }).selectOption('document_fcp')
+    await page.getByLabel('End elapsed seconds', { exact: true }).fill('30')
+    await page.getByLabel('Bucket seconds', { exact: true }).fill('5')
+    await page.getByLabel('Comparison run ID (optional)', { exact: true }).fill(extraRunId)
+    await page.getByRole('combobox', { name: 'Visualization', exact: true }).selectOption('table')
+    const frozenSave = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/monitoring/dashboard-definitions')
+    await page.getByRole('button', { name: 'Save project panel', exact: true }).click()
+    const frozenResponse = await frozenSave
+    expect(frozenResponse.ok(), await frozenResponse.text()).toBeTruthy()
+    const frozenDefinition = await frozenResponse.json()
+    const frozenQuery = frozenDefinition.tabs[0].panels[0].query
+    expect(frozenQuery.query_version).toBe(4)
+    expect(frozenQuery.browser_inputs.current.run_id).toBe(runId)
+    expect(frozenQuery.browser_inputs.baseline.run_id).toBe(extraRunId)
+    expect(frozenQuery.browser_inputs.current.tuple_ids).toHaveLength(2)
+    expect(frozenQuery.browser_inputs.baseline.tuple_ids).toHaveLength(3)
+    for (const input of [frozenQuery.browser_inputs.current, frozenQuery.browser_inputs.baseline]) expect(input.manifest_sha256).toMatch(/^[a-f0-9]{64}$/)
+    await page.goto(`/#/report/${extraRunId}?section=performance&${scopeQuery(workspace)}`); await page.reload()
+    await page.getByRole('combobox', { name: 'Project dashboard', exact: true }).selectOption(frozenDefinition.id)
+    await expect(panel).toContainText(`Current run: ${runId}`)
+    await expect(panel).toContainText(`Baseline run: ${extraRunId}`)
+    await panel.getByText('Frozen archive inputs', { exact: true }).click()
+    await expect(panel).toContainText(frozenQuery.browser_inputs.current.manifest_sha256)
+    await expect(panel).toContainText(frozenQuery.browser_inputs.baseline.manifest_sha256)
+    const frozenCSVEvent = page.waitForEvent('download')
+    await panel.getByRole('button', { name: /Export Frozen native browser comparison.*data as CSV/ }).first().click()
+    const frozenCSVStream = await (await frozenCSVEvent).createReadStream(), frozenChunks: Buffer[] = []
+    for await (const chunk of frozenCSVStream!) frozenChunks.push(Buffer.from(chunk))
+    const frozenCSV = Buffer.concat(frozenChunks).toString('utf8')
+    for (const expected of ['Query SHA-256', frozenQuery.browser_inputs.query_sha256, frozenQuery.browser_inputs.current.manifest_sha256, frozenQuery.browser_inputs.baseline.manifest_sha256, runId, extraRunId]) expect(frozenCSV).toContain(expected)
+    type FrozenNativeTuple = { id: string; measurement: { group: string }; buckets: { offset_seconds: number; value: number | null; count: number }[] }
+    const frozenSeries = await json(await request.post(`/api/v1/tests/${runId}/archive/native-series`, { data: frozenQuery })) as { baseline: { browser_tuples: { tuples: FrozenNativeTuple[] } } }
+    const baselineOnlyTuple = frozenSeries.baseline.browser_tuples.tuples.find((tuple: { measurement: { group: string } }) => tuple.measurement.group === 'baseline-only')!
+    expect(baselineOnlyTuple).toBeTruthy()
+    expect(frozenQuery.browser_inputs.current.tuple_ids).not.toContain(baselineOnlyTuple.id)
+    const baselineOnlyPanel = panel.getByRole('region', { name: /group=baseline-only/ })
+    await baselineOnlyPanel.locator('summary').click()
+    await expect(baselineOnlyPanel.locator('table')).toBeVisible()
+    const baselineRows = await baselineOnlyPanel.locator('tbody tr').evaluateAll(rows => rows.map(row => Array.from(row.querySelectorAll('td')).map(cell => cell.textContent)))
+    expect(baselineRows).toEqual(baselineOnlyTuple.buckets.map((bucket: { offset_seconds: number; value: number | null; count: number }) => [String(bucket.offset_seconds), 'Missing', 'Missing', bucket.value == null ? 'Missing' : String(bucket.value), String(bucket.count)]))
+    const baselineCSVEvent = page.waitForEvent('download')
+    await baselineOnlyPanel.getByRole('button', { name: /Export .*data as CSV/ }).click()
+    const baselineCSVStream = await (await baselineCSVEvent).createReadStream(), baselineCSVChunks: Buffer[] = []
+    for await (const chunk of baselineCSVStream!) baselineCSVChunks.push(Buffer.from(chunk))
+    const baselineCSV = Buffer.concat(baselineCSVChunks).toString('utf8')
+    for (const expected of [baselineOnlyTuple.id, 'Baseline final documents', 'missing_current_tuple', frozenQuery.browser_inputs.baseline.manifest_sha256]) expect(baselineCSV).toContain(expected)
+    await page.setViewportSize({ width: 760, height: 1800 })
+    await panel.scrollIntoViewIfNeeded()
+    expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath('native-frozen-browser-panel.png'), animations: 'disabled' })
+    if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') {
+      const users = (await json(await request.get('/api/v1/auth/users'))).users as { id: string; subject: string }[]
+      const viewer = users.find(user => user.subject === 'local:user')!
+      await signOut(page); await login(page, 'user')
+      expect((await request.post(`/api/v1/tests/${runId}/archive/native-series`, { data: frozenQuery })).status()).toBe(403)
+      expect((await request.get(`/api/v1/monitoring/dashboard-definitions/${frozenDefinition.id}`)).status()).toBe(403)
+      await signOut(page); await login(page)
+      await json(await request.post(`/api/v1/auth/users/${viewer.id}/bindings`, { data: { scope_type: 'domain', scope_id: workspace.domainId, role: 'viewer' } }))
+      await signOut(page); await login(page, 'user')
+      try {
+        await page.goto(`/#/report/${extraRunId}?section=performance&${scopeQuery(workspace)}`); await page.reload()
+        await page.getByRole('combobox', { name: 'Project dashboard', exact: true }).selectOption(frozenDefinition.id)
+        await expect(panel).toContainText(`Current run: ${runId}`)
+        await expect(page.getByText('Create project analytics panel', { exact: true })).toHaveCount(0)
+        expect((await request.post('/api/v1/monitoring/dashboard-definitions', { data: { ...frozenDefinition, name: 'Denied viewer write' } })).status()).toBe(403)
+        expect((await request.get(`/api/v1/tests/${runId}/archive/browser/har/${encodeURIComponent(artifacts[0].name)}`)).status()).toBe(403)
+        const viewerCSVEvent = page.waitForEvent('download')
+        await panel.getByRole('button', { name: /Export Frozen native browser comparison.*data as CSV/ }).first().click()
+        const viewerStream = await (await viewerCSVEvent).createReadStream(), viewerChunks: Buffer[] = []
+        for await (const chunk of viewerStream!) viewerChunks.push(Buffer.from(chunk))
+        expect(Buffer.concat(viewerChunks).toString('utf8')).toContain(frozenQuery.browser_inputs.query_sha256)
+      } finally { await signOut(page); await login(page) }
+      await page.goto(`/#/report/${extraRunId}?section=performance&${scopeQuery(workspace)}`); await page.reload()
+      await page.getByRole('combobox', { name: 'Project dashboard', exact: true }).selectOption(frozenDefinition.id)
+    }
+    const removed = await request.delete(`/api/v1/tests/${runId}`)
+    expect(removed.ok(), await removed.text()).toBeTruthy()
+    await page.reload()
+    await page.getByRole('combobox', { name: 'Project dashboard', exact: true }).selectOption(frozenDefinition.id)
+    await expect(page.getByRole('alert').filter({ hasText: 'Archive panel unavailable' })).toBeVisible()
+    await expect(panel).toHaveCount(0)
+    const savedAgain = await json(await request.get(`/api/v1/monitoring/dashboard-definitions/${frozenDefinition.id}`))
+    expect((savedAgain.tabs as typeof frozenDefinition.tabs)[0].panels[0].query.browser_inputs).toEqual(frozenQuery.browser_inputs)
+    const unavailable = page.getByRole('alert').filter({ hasText: 'Archive panel unavailable' })
+    await unavailable.scrollIntoViewIfNeeded()
+    await expect(unavailable).toBeInViewport()
+    await page.screenshot({ path: testInfo.outputPath('native-frozen-browser-panel-unavailable.png'), animations: 'disabled' })
+    expect(Object.fromEntries(counts)).toEqual({ '/': 6, '/style.css': 6, '/clicked': 6 })
+    await testInfo.attach('frozen-browser-inputs', { body: JSON.stringify({ query: frozenQuery, policy_id: pinPolicy.id, selected_policy_revision: 1, counts: Object.fromEntries(counts), deleted_current_input: true }, null, 2), contentType: 'application/json' })
+
   } finally {
+    if (extraRunId) await request.post(`/api/v1/tests/${extraRunId}/stop`).catch(() => {})
     if (runId) await request.post(`/api/v1/tests/${runId}/stop`).catch(() => {})
     if (replayId) await request.post(`/api/v1/browser-replay/sessions/${replayId}/stop`).catch(() => {})
     target.closeAllConnections()

@@ -26,7 +26,7 @@ export default function RunReportProjectPanels({ testId, projectId, history, pro
   return <section aria-label="Archived project analytics">
     <h2>Project analytics</h2>
     {loading ? <LoadingState what="project panels" inline /> : error ? <p role="alert">{error}</p> : definitions.length ? <NativeProjectPanels definitions={definitions} history={history} testId={testId} /> : <EmptyState title="No project panels yet." hint={canManage ? 'Create a project analytics panel below.' : 'Ask a project editor to create a panel.'} compact />}
-    {canManage && !loading && !error && <NativePanelAuthoring properties={properties} onSave={async definition => {
+    {canManage && !loading && !error && <NativePanelAuthoring runId={testId} properties={properties} onSave={async definition => {
       const controller = lifetime.current
       if (!controller || controller.signal.aborted) throw new Error('Report scope changed; reopen the panel editor')
       const created = await createDashboardDefinition({ ...definition, project_id: projectId, visibility: 'project' }, { signal: controller.signal })

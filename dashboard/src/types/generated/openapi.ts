@@ -108404,6 +108404,20 @@ export interface operations {
       content: {
         "application/json": {
           "aggregation"?: string;
+          "browser_inputs"?: ({
+            "baseline"?: ({
+              "manifest_sha256"?: string;
+              "run_id"?: string;
+              "tuple_ids"?: Array<string>;
+            }) | null;
+            "current"?: {
+              "manifest_sha256"?: string;
+              "run_id"?: string;
+              "tuple_ids"?: Array<string>;
+            };
+            "query_sha256"?: string;
+            "version"?: number;
+          }) | null;
           "browser_tuple_mode"?: string;
           "bucket_seconds"?: number;
           "comparison_run_id"?: string;
@@ -108469,6 +108483,20 @@ export interface operations {
               "run_id": string;
               "unit"?: string;
               "warnings": Array<string>;
+            }) | null;
+            "browser_inputs"?: ({
+              "baseline"?: ({
+                "manifest_sha256": string;
+                "run_id": string;
+                "tuple_ids": Array<string>;
+              }) | null;
+              "current": {
+                "manifest_sha256": string;
+                "run_id": string;
+                "tuple_ids": Array<string>;
+              };
+              "query_sha256": string;
+              "version": number;
             }) | null;
             "browser_tuple_comparisons"?: Array<{
               "reason"?: string;
@@ -108557,6 +108585,20 @@ export interface operations {
       content: {
         "application/json": {
           "aggregation"?: string;
+          "browser_inputs"?: ({
+            "baseline"?: ({
+              "manifest_sha256"?: string;
+              "run_id"?: string;
+              "tuple_ids"?: Array<string>;
+            }) | null;
+            "current"?: {
+              "manifest_sha256"?: string;
+              "run_id"?: string;
+              "tuple_ids"?: Array<string>;
+            };
+            "query_sha256"?: string;
+            "version"?: number;
+          }) | null;
           "browser_tuple_mode"?: string;
           "bucket_seconds"?: number;
           "comparison_run_id"?: string;
@@ -109331,6 +109373,7 @@ export interface operations {
               "kind"?: string;
               "query"?: ({
                 "aggregation"?: string;
+                "browser_inputs"?: (Record<string, unknown>) | null;
                 "browser_tuple_mode"?: string;
                 "bucket_seconds"?: number;
                 "comparison_run_id"?: string;

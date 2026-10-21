@@ -76,6 +76,7 @@ type NativeOverlaySelection struct {
 const AnalyticsQueryVersion = 3
 
 type AnalyticsQuery struct {
+	BrowserInputs *BrowserPanelInputs `json:"browser_inputs,omitempty"`
 	// BrowserTupleMode separates complete document measurement tuples in v3 archive panels.
 	BrowserTupleMode string `json:"browser_tuple_mode,omitempty"`
 	// QueryVersion names the query semantics the panel was saved under.
@@ -175,6 +176,9 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 				continue
 			}
 			q := panel.Query
+			if q.QueryVersion == 4 && q.BrowserInputs == nil {
+				return errors.New("saved browser query version 4 requires evaluated input pins")
+			}
 			if err := validateAnalyticsQueryVersion(*q); err != nil {
 				return fmt.Errorf("dashboard panel %q %w", panel.ID, err)
 			}
@@ -477,11 +481,14 @@ type DashboardDefinitionRevision struct {
 // validateAnalyticsQueryVersion refuses query semantics newer than this
 // controller's, when a query is saved and when it runs.
 func validateAnalyticsQueryVersion(q AnalyticsQuery) error {
-	if q.BrowserTupleMode != "" && (q.QueryVersion != 3 || q.BrowserTupleMode != "separate" || q.Population != analysis.PopulationBrowserDocument || q.EvidenceMode != "" || q.JointEvidence) {
-		return errors.New("separate browser tuples require a version 3 browser document archive query")
+	if err := validateBrowserPanelInputs(q); err != nil {
+		return err
 	}
-	if q.QueryVersion < 0 || q.QueryVersion > AnalyticsQueryVersion {
-		return fmt.Errorf("query_version must be at most %d", AnalyticsQueryVersion)
+	if q.BrowserTupleMode != "" && ((q.QueryVersion != 3 && q.QueryVersion != 4) || q.BrowserTupleMode != "separate" || q.Population != analysis.PopulationBrowserDocument || q.EvidenceMode != "" || q.JointEvidence) {
+		return errors.New("separate browser tuples require a version 3 or 4 browser document archive query")
+	}
+	if q.QueryVersion < 0 || q.QueryVersion > 4 {
+		return fmt.Errorf("query_version must be at most %d", 4)
 	}
 	return nil
 }
@@ -534,8 +541,8 @@ func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
 
 // validateNativeBrowserDocumentQuery admits an archive selection of browser
 // document metrics: no grouping or property, and filters only on the fields
-// of a document measurement tuple. Legacy queries require one tuple; version 3
-// separate mode retains bounded independent tuple series.
+// of a document measurement tuple. Legacy queries require one tuple; separate
+// mode retains bounded independent tuple series.
 func validateNativeBrowserDocumentQuery(q AnalyticsQuery) error {
 	if len(q.Dimensions) != 0 || q.Overlay || q.PropertyName != "" || q.PropertyValue != "" || q.MaxSeries < 0 || q.MaxSeries > 20 || q.BrowserTupleMode == "" && q.MaxSeries > 1 {
 		return errors.New("browser document queries require a valid series limit and take no grouping or property")

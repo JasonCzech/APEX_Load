@@ -29,6 +29,7 @@ type NativeArchiveBucket struct {
 	complete bool
 }
 type NativeArchiveSeries struct {
+	archiveManifestSHA256 string
 	// BrowserTuples is a versioned separate-tuple result; legacy Buckets remains empty.
 	BrowserTuples *NativeBrowserTupleSeries `json:"browser_tuples,omitempty"`
 	RunID         string                    `json:"run_id"`
@@ -47,6 +48,7 @@ type NativeArchiveSeries struct {
 	documentTuple *protocol.BrowserDocumentMetricSummary
 }
 type NativeArchiveResponse struct {
+	BrowserInputs           *storage.BrowserPanelInputs    `json:"browser_inputs,omitempty"`
 	BrowserTupleComparisons []NativeBrowserTupleComparison `json:"browser_tuple_comparisons,omitempty"`
 	// Derivation names the catalog operation the current series values are.
 	Derivation *analysis.QueryDerivation `json:"derivation,omitempty"`
@@ -136,6 +138,10 @@ func (s *Server) handleNativeArchiveSeries(w http.ResponseWriter, r *http.Reques
 		writeError(w, 422, err.Error())
 		return
 	}
+	if err := bindBrowserPanelInputs(q, &response); err != nil {
+		writeError(w, 422, err.Error())
+		return
+	}
 	writeJSON(w, 200, response)
 }
 func nativeIdentityDifference(left, right []string) []string {
@@ -168,6 +174,10 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 	if archiveExecutionCompletedAt(manifest).IsZero() || manifest.Provenance.StartedAt == nil || manifest.Provenance.StartedAt.IsZero() {
 		return result, errors.New("completed archive with execution start time required")
 	}
+	if q.QueryVersion == 4 && record.ManifestSHA256 == "" {
+		return result, errors.New("browser input publication digest unavailable")
+	}
+	result.archiveManifestSHA256 = record.ManifestSHA256
 	result.Fingerprint = manifest.Provenance.ComparisonFingerprint
 	start := *manifest.Provenance.StartedAt
 	from := start.Add(time.Duration(q.StartSeconds) * time.Second)

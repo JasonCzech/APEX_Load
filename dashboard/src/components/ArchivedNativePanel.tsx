@@ -17,17 +17,18 @@ const missingLabel = (bucket?: Pick<Bucket, 'reason'>) => bucket?.reason ? `Miss
 export default function ArchivedNativePanel({ panel, testId }: { panel: DashboardDefinitionPanel; testId: string }) {
   const [revision, setRevision] = useState(0)
   const encoded = JSON.stringify(panel.query)
+  const inputRunId = panel.query?.browser_inputs?.current.run_id || testId
   const [result, setResult] = useState<Result | null>(null)
   const [error, setError] = useState('')
   const [selection, setSelection] = useState<{ run: string; bucket: Bucket } | null>(null)
   useEffect(() => {
     const abort = new AbortController()
     setResult(null); setError(''); setSelection(null)
-    request<Result>(`/tests/${encodeURIComponent(testId)}/archive/native-series`, { method: 'POST', body: encoded, signal: abort.signal, timeoutMs: 35000 })
+    request<Result>(`/tests/${encodeURIComponent(inputRunId)}/archive/native-series`, { method: 'POST', body: encoded, signal: abort.signal, timeoutMs: 35000 })
       .then(value => { if (!abort.signal.aborted) setResult(value) })
       .catch(reason => { if (!abort.signal.aborted) setError(reason instanceof Error ? reason.message : 'Archive query failed') })
     return () => abort.abort()
-  }, [testId, encoded, revision])
+  }, [inputRunId, encoded, revision])
   if (error) return <div><p role="alert">Archive panel unavailable: {error}</p><button onClick={() => setRevision(revision + 1)}>Retry archive panel</button></div>
   if (!result) return <p role="status">Loading archived observations…</p>
   const metric = panel.query?.metric || ''
