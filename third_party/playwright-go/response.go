@@ -158,14 +158,7 @@ func newResponse(parent *channelOwner, objectType string, guid string, initializ
 	// Some CDP implementations (e.g. non-Chromium browsers) omit the timing object
 	// entirely or only return a subset of its fields.
 	if timing, ok := resp.initializer["timing"].(map[string]any); ok {
-		assignFloatIfPresent(timing, "startTime", &resp.request.timing.StartTime)
-		assignFloatIfPresent(timing, "domainLookupStart", &resp.request.timing.DomainLookupStart)
-		assignFloatIfPresent(timing, "domainLookupEnd", &resp.request.timing.DomainLookupEnd)
-		assignFloatIfPresent(timing, "connectStart", &resp.request.timing.ConnectStart)
-		assignFloatIfPresent(timing, "secureConnectionStart", &resp.request.timing.SecureConnectionStart)
-		assignFloatIfPresent(timing, "connectEnd", &resp.request.timing.ConnectEnd)
-		assignFloatIfPresent(timing, "requestStart", &resp.request.timing.RequestStart)
-		assignFloatIfPresent(timing, "responseStart", &resp.request.timing.ResponseStart)
+		resp.request.applyResponseTiming(timing)
 	}
 	resp.provisionalHeaders = newRawHeaders(resp.initializer["headers"])
 	resp.finished = make(chan error, 1)

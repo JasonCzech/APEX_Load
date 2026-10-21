@@ -149,7 +149,8 @@ func waitForReplaySessionWorkers(sessions []<-chan struct{}, timeout time.Durati
 }
 
 // replaySessionLeaseStore is the narrow durable coordination boundary required
-// for caller-visible replay IDs in HA mode. SQLite and PostgreSQL implement it
+// for caller-visible replay IDs in storage-backed controllers (required in HA).
+// Local-only adapters expose no durable artifact capability. SQLite and PostgreSQL implement it
 // with a dedicated lease/tombstone table and database clock.
 type replaySessionLeaseStore interface {
 	TryAcquireReplaySessionLease(context.Context, string, string, string, time.Duration, int, int) (storage.ReplaySessionLeaseAcquireResult, error)

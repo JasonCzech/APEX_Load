@@ -7,7 +7,9 @@
   "scope": "All upstream root Go files (including nine unit/native tests), internal/safe/map.go, LICENSE, go.mod/go.sum and upstream README (copied verbatim as README.upstream.txt); excludes upstream native integration assets, command scripts, examples and workflows.",
   "altered_upstream_files": [
     "browser_context.go",
-    "frame.go"
+    "frame.go",
+    "request.go",
+    "response.go"
   ],
   "sources": [
     {

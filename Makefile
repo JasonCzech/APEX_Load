@@ -111,7 +111,7 @@ java-vuser-slot-runtime:
 	jar --create --file bin/java_vuser/apexload-slot-shim.jar -C bin/java_vuser/slot-shim .
 
 test:
-	go test -race -count=1 github.com/mxschmitt/playwright-go -run '^TestAPEX(OwnedHAR|LoadState)'
+	go test -race -count=1 github.com/mxschmitt/playwright-go -run '^TestAPEX(OwnedHAR|LoadState|RequestTiming|NavigationCommit)'
 	go test -race -count=1 -timeout=20m ./...
 
 test-jms-solace-real:

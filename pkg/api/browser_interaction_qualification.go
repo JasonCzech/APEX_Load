@@ -8,7 +8,7 @@ import (
 )
 
 func interactionQualificationReason(i protocol.BrowserInteraction) string {
-	if i.Version != protocol.BrowserInteractionVersion2 {
+	if !protocol.BrowserInteractionHasDispatch(i.Version) {
 		return "legacy_identity_unavailable"
 	}
 	if !i.AuthoredStep.Valid() {
@@ -23,13 +23,13 @@ func interactionQualificationReason(i protocol.BrowserInteraction) string {
 	return ""
 }
 func interactionClock(i protocol.BrowserInteraction) time.Time {
-	if i.Version == protocol.BrowserInteractionVersion2 && i.Dispatch != nil {
+	if protocol.BrowserInteractionHasDispatch(i.Version) && i.Dispatch != nil {
 		return i.Dispatch.At
 	}
 	return i.CapturedAt
 }
 func sameInvocation(a, b protocol.BrowserInteraction) bool {
-	return a.Version == protocol.BrowserInteractionVersion2 && b.Version == a.Version && a.SourceGeneration == b.SourceGeneration && sameInteractionStep(a, b) && a.Execution.Valid() && b.Execution.Valid() && a.Execution.Invocation == b.Execution.Invocation
+	return protocol.BrowserInteractionHasDispatch(a.Version) && b.Version == a.Version && a.SourceGeneration == b.SourceGeneration && sameInteractionStep(a, b) && a.Execution.Valid() && b.Execution.Valid() && a.Execution.Invocation == b.Execution.Invocation
 }
 
 func interactionInvocationKey(i protocol.BrowserInteraction) string {

@@ -73,9 +73,12 @@ type NativeOverlaySelection struct {
 
 // AnalyticsQueryVersion is the query semantics a saved query states; 0 is a
 // query saved before the version was recorded, read with the same rules.
-const AnalyticsQueryVersion = 2
+const AnalyticsQueryVersion = 3
 
 type AnalyticsQuery struct {
+	BrowserInputs *BrowserPanelInputs `json:"browser_inputs,omitempty"`
+	// BrowserTupleMode separates complete document measurement tuples in v3 archive panels.
+	BrowserTupleMode string `json:"browser_tuple_mode,omitempty"`
 	// QueryVersion names the query semantics the panel was saved under.
 	QueryVersion     int                     `json:"query_version,omitempty"`
 	LiveBucketMode   string                  `json:"live_bucket_mode,omitempty"`
@@ -173,6 +176,9 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 				continue
 			}
 			q := panel.Query
+			if q.QueryVersion == 4 && q.BrowserInputs == nil {
+				return errors.New("saved browser query version 4 requires evaluated input pins")
+			}
 			if err := validateAnalyticsQueryVersion(*q); err != nil {
 				return fmt.Errorf("dashboard panel %q %w", panel.ID, err)
 			}
@@ -188,6 +194,9 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 			} else if q.Population != "" {
 				if q.MaxSeries == 0 {
 					q.MaxSeries = 1
+					if q.BrowserTupleMode == "separate" {
+						q.MaxSeries = 20
+					}
 				}
 				if err := ValidateNativeArchiveQuery(*q); err != nil {
 					return err
@@ -472,8 +481,14 @@ type DashboardDefinitionRevision struct {
 // validateAnalyticsQueryVersion refuses query semantics newer than this
 // controller's, when a query is saved and when it runs.
 func validateAnalyticsQueryVersion(q AnalyticsQuery) error {
-	if q.QueryVersion < 0 || q.QueryVersion > AnalyticsQueryVersion {
-		return fmt.Errorf("query_version must be at most %d", AnalyticsQueryVersion)
+	if err := validateBrowserPanelInputs(q); err != nil {
+		return err
+	}
+	if q.BrowserTupleMode != "" && ((q.QueryVersion != 3 && q.QueryVersion != 4) || q.BrowserTupleMode != "separate" || q.Population != analysis.PopulationBrowserDocument || q.EvidenceMode != "" || q.JointEvidence) {
+		return errors.New("separate browser tuples require a version 3 or 4 browser document archive query")
+	}
+	if q.QueryVersion < 0 || q.QueryVersion > 4 {
+		return fmt.Errorf("query_version must be at most %d", 4)
 	}
 	return nil
 }
@@ -526,11 +541,11 @@ func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
 
 // validateNativeBrowserDocumentQuery admits an archive selection of browser
 // document metrics: no grouping or property, and filters only on the fields
-// of a document measurement tuple. Execution refuses a selection that still
-// spans more than one tuple.
+// of a document measurement tuple. Legacy queries require one tuple; separate
+// mode retains bounded independent tuple series.
 func validateNativeBrowserDocumentQuery(q AnalyticsQuery) error {
-	if len(q.Dimensions) != 0 || q.Overlay || q.PropertyName != "" || q.PropertyValue != "" || q.MaxSeries > 1 || q.MaxSeries < 0 {
-		return errors.New("browser document queries select one measurement tuple; they take no grouping or property")
+	if len(q.Dimensions) != 0 || q.Overlay || q.PropertyName != "" || q.PropertyValue != "" || q.MaxSeries < 0 || q.MaxSeries > 20 || q.BrowserTupleMode == "" && q.MaxSeries > 1 {
+		return errors.New("browser document queries require a valid series limit and take no grouping or property")
 	}
 	for k, v := range q.Filters {
 		if !slices.Contains(analysis.BrowserDocumentFilters(), k) || v == "" || len(v) > 256 {
@@ -545,6 +560,9 @@ func validateNativeBrowserDocumentQuery(q AnalyticsQuery) error {
 	}
 	if err := analysis.ValidateMetricAggregation(q.Metric, q.Population, q.Aggregation); err != nil {
 		return err
+	}
+	if q.BrowserTupleMode != "" && q.Derivation != nil {
+		return errors.New("derived browser tuple panels require a single filtered tuple")
 	}
 	if q.Derivation != nil {
 		return analysis.ValidateQueryDerivation(q.Metric, q.Population, analysis.KindObservation, *q.Derivation, q.ComparisonRunID != "")

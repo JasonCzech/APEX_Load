@@ -38,7 +38,7 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		return b.reloadAction(ctx, action, result), false
 	case "browser_open_window":
 		b.resetWSEvents()
-		return b.dispatchOpenWindow(ctx, action), false
+		return b.dispatchOpenWindow(ctx, action, result), false
 	case "browser_wait":
 		if selector := b.actionSelector(action); selector != "" && waitActionUsesActionSelector(action) {
 			return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
@@ -243,7 +243,7 @@ func loadBrowserInputFiles(paths []string) ([]playwright.InputFile, error) {
 	return files, nil
 }
 
-func (b *Browser) dispatchOpenWindow(ctx context.Context, action *protocol.Action) error {
+func (b *Browser) dispatchOpenWindow(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
 	rawURL := strings.TrimSpace(firstNonEmptyString(action.Target, actionParamString(action.Params, "url", "")))
 	if rawURL == "" {
 		return fmt.Errorf("browser_open_window requires target or params.url")
@@ -269,11 +269,13 @@ func (b *Browser) dispatchOpenWindow(ctx context.Context, action *protocol.Actio
 	b.registerPage(page, true)
 	b.currentFrameSelector = ""
 	timeout := b.actionTimeout(action)
-	if _, err := page.Goto(resolvedURL, playwright.PageGotoOptions{
+	response, err := page.Goto(resolvedURL, playwright.PageGotoOptions{
 		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
+	b.noteAuthoredPageResponse(ctx, action, result, response)
 	b.currentURL = resolvedURL
 	return b.waitVisibleWithTimeout(ctx, "body", timeout)
 }

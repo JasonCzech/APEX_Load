@@ -116,9 +116,9 @@ func browserDocumentAggregate(d protocol.BrowserMetricDistribution, aggregation 
 	return d.Quantile(q)
 }
 
-// buildNativeBrowserDocumentSeries reads one measurement tuple's final
-// document distribution per bucket, by the time each measurement's window
-// closed. A selection that spans more than one tuple is refused.
+// buildNativeBrowserDocumentSeries reads final document distributions per
+// bucket, by the time each measurement's window closed. Legacy queries require
+// one tuple; separate mode emits an independent series for each bounded tuple.
 func buildNativeBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, q storage.AnalyticsQuery, result NativeArchiveSeries, from, to time.Time) (NativeArchiveSeries, error) {
 	metric, ok := analysis.BrowserDocumentMetric(q.Metric)
 	if !ok {
@@ -132,6 +132,10 @@ func buildNativeBrowserDocumentSeries(ctx context.Context, record *storage.RunAr
 		result.Warnings = append(result.Warnings, "The requested window extends past run completion.")
 	}
 	if accumulator == nil {
+		if q.BrowserTupleMode == "separate" {
+			result.Buckets = []NativeArchiveBucket{}
+			result.BrowserTuples = &NativeBrowserTupleSeries{Version: 1, Tuples: []NativeBrowserTuple{}}
+		}
 		if captured {
 			result.Warnings = append(result.Warnings, "Browser document capture was requested but no document evidence was retained.")
 		}
@@ -144,6 +148,9 @@ func buildNativeBrowserDocumentSeries(ctx context.Context, record *storage.RunAr
 	tuples := map[string]protocol.BrowserDocumentMetricSummary{}
 	for _, f := range finals {
 		tuples[f.key] = f.tuple
+	}
+	if q.BrowserTupleMode == "separate" {
+		return buildSeparateBrowserTuples(finals, tuples, excluded, accumulator.incomplete, manifest, q, result, from)
 	}
 	if len(tuples) > 1 {
 		keys := slices.Sorted(maps.Keys(tuples))

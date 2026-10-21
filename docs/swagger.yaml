@@ -5237,6 +5237,62 @@ paths:
                               additionalProperties: true
                           nullable: true
                       nullable: true
+                    browser_authored_pages:
+                      type: object
+                      properties:
+                        bindings:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              association:
+                                type: string
+                              authored_step:
+                                type: object
+                                description: 'Go type: BrowserAuthoredStep'
+                                additionalProperties: true
+                                nullable: true
+                              document_id:
+                                type: string
+                              lifecycle_id:
+                                type: string
+                              navigation_sequence:
+                                type: integer
+                                format: int64
+                              observed_at:
+                                type: string
+                                format: date-time
+                              page_id:
+                                type: string
+                              reason:
+                                type: string
+                              request_id:
+                                type: string
+                              source_generation:
+                                type: string
+                              state:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            nullable: true
+                        dropped:
+                          type: integer
+                          format: int64
+                        incomplete:
+                          type: boolean
+                        receipt_records:
+                          type: integer
+                          format: int64
+                        unavailable:
+                          type: object
+                          additionalProperties:
+                            type: integer
+                            format: int64
+                        version:
+                          type: integer
+                          format: int64
+                      nullable: true
                     browser_by_device:
                       type: object
                       additionalProperties:
@@ -70118,6 +70174,13 @@ paths:
                               type: object
                               properties:
                                 aggregation:
+                                  type: string
+                                browser_inputs:
+                                  type: object
+                                  description: 'Go type: BrowserPanelInputs'
+                                  additionalProperties: true
+                                  nullable: true
+                                browser_tuple_mode:
                                   type: string
                                 bucket_seconds:
                                   type: integer
@@ -402176,6 +402239,40 @@ paths:
               properties:
                 aggregation:
                   type: string
+                browser_inputs:
+                  type: object
+                  properties:
+                    baseline:
+                      type: object
+                      properties:
+                        manifest_sha256:
+                          type: string
+                        run_id:
+                          type: string
+                        tuple_ids:
+                          type: array
+                          items:
+                            type: string
+                      nullable: true
+                    current:
+                      type: object
+                      properties:
+                        manifest_sha256:
+                          type: string
+                        run_id:
+                          type: string
+                        tuple_ids:
+                          type: array
+                          items:
+                            type: string
+                    query_sha256:
+                      type: string
+                    version:
+                      type: integer
+                      format: int64
+                  nullable: true
+                browser_tuple_mode:
+                  type: string
                 bucket_seconds:
                   type: integer
                   format: int64
@@ -402267,6 +402364,43 @@ paths:
                   baseline:
                     type: object
                     properties:
+                      browser_tuples:
+                        type: object
+                        properties:
+                          tuples:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                buckets:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: NativeArchiveBucket'
+                                    additionalProperties: true
+                                cohort_digest:
+                                  type: string
+                                id:
+                                  type: string
+                                label:
+                                  type: string
+                                measurement:
+                                  type: object
+                                  description: 'Go type: NativeBrowserTupleIdentity'
+                                  additionalProperties: true
+                              required:
+                                - buckets
+                                - cohort_digest
+                                - id
+                                - label
+                                - measurement
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - tuples
+                          - version
+                        nullable: true
                       buckets:
                         type: array
                         items:
@@ -402321,11 +402455,106 @@ paths:
                       - run_id
                       - warnings
                     nullable: true
+                  browser_inputs:
+                    type: object
+                    properties:
+                      baseline:
+                        type: object
+                        properties:
+                          manifest_sha256:
+                            type: string
+                          run_id:
+                            type: string
+                          tuple_ids:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - manifest_sha256
+                          - run_id
+                          - tuple_ids
+                        nullable: true
+                      current:
+                        type: object
+                        properties:
+                          manifest_sha256:
+                            type: string
+                          run_id:
+                            type: string
+                          tuple_ids:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - manifest_sha256
+                          - run_id
+                          - tuple_ids
+                      query_sha256:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - current
+                      - query_sha256
+                      - version
+                    nullable: true
+                  browser_tuple_comparisons:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        reason:
+                          type: string
+                        status:
+                          type: string
+                        tuple_id:
+                          type: string
+                      required:
+                        - status
+                        - tuple_id
                   comparable:
                     type: boolean
                   current:
                     type: object
                     properties:
+                      browser_tuples:
+                        type: object
+                        properties:
+                          tuples:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                buckets:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: NativeArchiveBucket'
+                                    additionalProperties: true
+                                cohort_digest:
+                                  type: string
+                                id:
+                                  type: string
+                                label:
+                                  type: string
+                                measurement:
+                                  type: object
+                                  description: 'Go type: NativeBrowserTupleIdentity'
+                                  additionalProperties: true
+                              required:
+                                - buckets
+                                - cohort_digest
+                                - id
+                                - label
+                                - measurement
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - tuples
+                          - version
+                        nullable: true
                       buckets:
                         type: array
                         items:
@@ -405576,6 +405805,87 @@ paths:
                       - setup
                       - transactions
                       - warnings
+                    nullable: true
+                  browser_authored_pages:
+                    type: object
+                    properties:
+                      bindings:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            association:
+                              type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
+                            document_id:
+                              type: string
+                            lifecycle_id:
+                              type: string
+                            navigation_sequence:
+                              type: integer
+                              format: int64
+                            observed_at:
+                              type: string
+                              format: date-time
+                            page_id:
+                              type: string
+                            reason:
+                              type: string
+                            request_id:
+                              type: string
+                            source_generation:
+                              type: string
+                            state:
+                              type: string
+                            version:
+                              type: integer
+                              format: int64
+                          required:
+                            - observed_at
+                            - state
+                            - version
+                          nullable: true
+                      dropped:
+                        type: integer
+                        format: int64
+                      incomplete:
+                        type: boolean
+                      receipt_records:
+                        type: integer
+                        format: int64
+                      unavailable:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - bindings
+                      - dropped
+                      - incomplete
+                      - receipt_records
+                      - version
                     nullable: true
                   browser_by_device:
                     type: object
@@ -505660,6 +505970,40 @@ paths:
               type: object
               properties:
                 aggregation:
+                  type: string
+                browser_inputs:
+                  type: object
+                  properties:
+                    baseline:
+                      type: object
+                      properties:
+                        manifest_sha256:
+                          type: string
+                        run_id:
+                          type: string
+                        tuple_ids:
+                          type: array
+                          items:
+                            type: string
+                      nullable: true
+                    current:
+                      type: object
+                      properties:
+                        manifest_sha256:
+                          type: string
+                        run_id:
+                          type: string
+                        tuple_ids:
+                          type: array
+                          items:
+                            type: string
+                    query_sha256:
+                      type: string
+                    version:
+                      type: integer
+                      format: int64
+                  nullable: true
+                browser_tuple_mode:
                   type: string
                 bucket_seconds:
                   type: integer

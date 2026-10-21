@@ -112,7 +112,7 @@ func (b *Browser) navigate(ctx context.Context, action *protocol.Action, result 
 		return err
 	}
 	b.currentURL = resolvedTarget
-	if err := b.noteDocumentResponse(action, result, page, response); err != nil {
+	if err := b.noteDocumentResponse(ctx, action, result, page, response); err != nil {
 		return err
 	}
 	return b.waitVisibleWithTimeout(ctx, "body", timeout)

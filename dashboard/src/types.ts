@@ -1783,6 +1783,7 @@ export interface RunArchiveReport {
   // The finalized telemetry verdict under the run's pinned acceptance policy.
   telemetry_acceptance?: TelemetryAcceptanceVerdict
   browser_documents?: BrowserDocumentSummary | null
+  browser_authored_pages?: unknown
   browser_document_evidence?: BrowserDocumentObservation[]
   browser_document_evidence_truncated?: boolean
   /** Beside a document summary: soft (same-document) navigations are not measured. */

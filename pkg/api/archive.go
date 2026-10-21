@@ -581,6 +581,7 @@ type RunArchiveIdentityNames struct {
 
 type RunArchiveReport struct {
 	TelemetryPolicy                  *TelemetryPolicyEvidence              `json:"telemetry_policy,omitempty"`
+	BrowserAuthoredPages             *BrowserAuthoredPageReport            `json:"browser_authored_pages,omitempty"`
 	BrowserDocumentEvidence          []protocol.BrowserDocumentObservation `json:"browser_document_evidence,omitempty"`
 	BrowserDocumentEvidenceTruncated bool                                  `json:"browser_document_evidence_truncated,omitempty"`
 	BrowserDocuments                 *protocol.BrowserDocumentSummary      `json:"browser_documents,omitempty"`

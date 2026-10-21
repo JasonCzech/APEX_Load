@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 )
 
 type serializedFallbackOverrides struct {
@@ -17,6 +18,7 @@ type serializedFallbackOverrides struct {
 
 type requestImpl struct {
 	channelOwner
+	timingMu           sync.Mutex
 	timing             *RequestTiming
 	provisionalHeaders *rawHeaders
 	allHeaders         *rawHeaders
@@ -160,7 +162,13 @@ func (r *requestImpl) Failure() error {
 }
 
 func (r *requestImpl) Timing() *RequestTiming {
-	return r.timing
+	r.timingMu.Lock()
+	defer r.timingMu.Unlock()
+	if r.timing == nil {
+		return nil
+	}
+	snapshot := *r.timing
+	return &snapshot
 }
 
 func (r *requestImpl) AllHeaders() (map[string]string, error) {
@@ -272,6 +280,8 @@ func (r *requestImpl) targetClosed() <-chan error {
 }
 
 func (r *requestImpl) setResponseEndTiming(t float64) {
+	r.timingMu.Lock()
+	defer r.timingMu.Unlock()
 	r.timing.ResponseEnd = t
 	if r.timing.ResponseStart == -1 {
 		r.timing.ResponseStart = t
@@ -314,4 +324,18 @@ func newRequest(parent *channelOwner, objectType string, guid string, initialize
 	req.provisionalHeaders = newRawHeaders(req.initializer["headers"])
 	req.fallbackOverrides = &serializedFallbackOverrides{}
 	return req
+}
+
+// applyResponseTiming joins native initialization with detached Timing snapshots.
+func (r *requestImpl) applyResponseTiming(timing map[string]any) {
+	r.timingMu.Lock()
+	defer r.timingMu.Unlock()
+	assignFloatIfPresent(timing, "startTime", &r.timing.StartTime)
+	assignFloatIfPresent(timing, "domainLookupStart", &r.timing.DomainLookupStart)
+	assignFloatIfPresent(timing, "domainLookupEnd", &r.timing.DomainLookupEnd)
+	assignFloatIfPresent(timing, "connectStart", &r.timing.ConnectStart)
+	assignFloatIfPresent(timing, "secureConnectionStart", &r.timing.SecureConnectionStart)
+	assignFloatIfPresent(timing, "connectEnd", &r.timing.ConnectEnd)
+	assignFloatIfPresent(timing, "requestStart", &r.timing.RequestStart)
+	assignFloatIfPresent(timing, "responseStart", &r.timing.ResponseStart)
 }

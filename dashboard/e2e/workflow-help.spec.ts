@@ -482,3 +482,81 @@ test('run policy selection Help preserves revision and admission boundaries', as
   expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('browser-run-policy-help.png'), animations: 'disabled' })
 })
+
+
+test('observed browser wait Help keeps raw and analysis versions distinct', async ({ page }, testInfo) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('Observed post-action wait clocks')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Browser intelligence workflows', exact: true }).click()
+  const article = page.locator('.guide-markdown-article')
+  await expect(article).toContainText('browser_interaction_evidence_v3')
+  await page.reload()
+  await page.setViewportSize({ width: 760, height: 900 })
+  const heading = article.getByRole('heading', { name: 'Observed post-action wait clocks', exact: true })
+  await heading.scrollIntoViewIfNeeded()
+  await expect(heading).toBeVisible()
+  await expect(article).toContainText('Historical version-1/version-2 records never receive invented clocks')
+  expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('browser-wait-clocks-help.png'), animations: 'disabled' })
+})
+
+
+test('separate browser panel Help preserves cohort and comparison limits', async ({ page }, testInfo) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('Separate browser cohorts in saved panels')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Browser intelligence workflows', exact: true }).click()
+  const article = page.locator('.guide-markdown-article')
+  await expect(article).toContainText('browser_tuple_mode: separate')
+  await page.reload()
+  await page.setViewportSize({ width: 760, height: 900 })
+  const heading = article.getByRole('heading', { name: 'Separate browser cohorts in saved panels', exact: true })
+  await heading.scrollIntoViewIfNeeded()
+  await expect(heading).toBeVisible()
+  await expect(article).toContainText('immutable comparison-to-panel input pinning remains separate work')
+  expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('browser-tuple-panel-help.png'), animations: 'disabled' })
+})
+
+
+test('authored navigation Help preserves supported and unavailable identities', async ({ page }, testInfo) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('Supported authored navigation page receipts')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Browser intelligence workflows', exact: true }).click()
+  const article = page.locator('.guide-markdown-article')
+  await expect(article).toContainText('Final document measurements are not rewritten')
+  await page.reload()
+  await page.setViewportSize({ width: 760, height: 900 })
+  const heading = article.getByRole('heading', { name: 'Supported authored navigation page receipts', exact: true })
+  await heading.scrollIntoViewIfNeeded()
+  await expect(heading).toBeVisible()
+  await expect(article).toContainText('no page ID is guessed')
+  await page.screenshot({ path: testInfo.outputPath('browser-authored-pages-help.png'), animations: 'disabled' })
+})
+
+
+test('native waterfall Help preserves independent timing and cache availability', async ({ page }, testInfo) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('Reading native waterfall and cache evidence')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Browser intelligence workflows', exact: true }).click()
+  const article = page.locator('.guide-markdown-article')
+  await expect(article).toContainText('A missing join leaves the waterfall unavailable')
+  await page.reload()
+  await page.setViewportSize({ width: 760, height: 900 })
+  const heading = article.getByRole('heading', { name: 'Reading native waterfall and cache evidence', exact: true })
+  await heading.scrollIntoViewIfNeeded()
+  await expect(heading).toBeVisible()
+  await expect(article).toContainText('a cached response must not claim a negotiated network protocol')
+  await page.screenshot({ path: testInfo.outputPath('native-waterfall-help.png'), animations: 'disabled' })
+})
+
+
+test('frozen browser panel Help preserves stale-input and authorization boundaries', async ({ page }, testInfo) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('Frozen browser comparison inputs')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Browser intelligence workflows', exact: true }).click()
+  const article = page.locator('.guide-markdown-article')
+  await expect(article).toContainText('Query version 4 is explicit')
+  await page.reload()
+  await page.setViewportSize({ width: 760, height: 1000 })
+  const heading = article.getByRole('heading', { name: 'Frozen browser comparison inputs', exact: true })
+  await heading.scrollIntoViewIfNeeded()
+  await expect(heading).toBeVisible()
+  await expect(article).toContainText('native HAR downloads retain their separate authorization')
+  expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('browser-panel-pins-help.png'), animations: 'disabled' })
+})

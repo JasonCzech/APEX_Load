@@ -29,7 +29,10 @@ type NativeArchiveBucket struct {
 	complete bool
 }
 type NativeArchiveSeries struct {
-	RunID string `json:"run_id"`
+	archiveManifestSHA256 string
+	// BrowserTuples is a versioned separate-tuple result; legacy Buckets remains empty.
+	BrowserTuples *NativeBrowserTupleSeries `json:"browser_tuples,omitempty"`
+	RunID         string                    `json:"run_id"`
 	// Unit is set when a derivation changed the series' unit.
 	Unit       string                `json:"unit,omitempty"`
 	Buckets    []NativeArchiveBucket `json:"buckets"`
@@ -45,6 +48,8 @@ type NativeArchiveSeries struct {
 	documentTuple *protocol.BrowserDocumentMetricSummary
 }
 type NativeArchiveResponse struct {
+	BrowserInputs           *storage.BrowserPanelInputs    `json:"browser_inputs,omitempty"`
+	BrowserTupleComparisons []NativeBrowserTupleComparison `json:"browser_tuple_comparisons,omitempty"`
 	// Derivation names the catalog operation the current series values are.
 	Derivation *analysis.QueryDerivation `json:"derivation,omitempty"`
 	Current    NativeArchiveSeries       `json:"current"`
@@ -105,7 +110,13 @@ func (s *Server) handleNativeArchiveSeries(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		response.Baseline = &baseline
+		if series.BrowserTuples != nil && baseline.BrowserTuples != nil {
+			response.BrowserTupleComparisons = compareNativeBrowserTuples(series, baseline)
+		}
 		response.Comparable = series.Fingerprint != "" && series.Fingerprint == baseline.Fingerprint && len(series.Warnings) == 0 && len(baseline.Warnings) == 0
+		if series.BrowserTuples != nil || baseline.BrowserTuples != nil {
+			response.Comparable = false
+		}
 		if series.documentTuple != nil && baseline.documentTuple != nil {
 			if reason := protocol.BrowserDocumentTupleMismatch(*series.documentTuple, *baseline.documentTuple); reason != "" {
 				response.Warnings = append(response.Warnings, "The runs measured different browser document tuples ("+reason+"); their values are not compared.")
@@ -115,13 +126,19 @@ func (s *Server) handleNativeArchiveSeries(w http.ResponseWriter, r *http.Reques
 			response.Comparable = false
 			response.Warnings = append(response.Warnings, "Java HTTP request compression differs between runs; representation measurements are not compared.")
 		}
-		if !response.Comparable {
+		if series.BrowserTuples != nil || baseline.BrowserTuples != nil {
+			response.Warnings = append(response.Warnings, "Browser measurement tuples are compared separately; no pooled comparison is produced.")
+		} else if !response.Comparable {
 			response.Warnings = append(response.Warnings, "Workload/version compatibility or evidence completeness is not established; review both runs before interpreting differences.")
 		}
 		response.Added = nativeIdentityDifference(series.Identities, baseline.Identities)
 		response.Removed = nativeIdentityDifference(baseline.Identities, series.Identities)
 	}
 	if err := applyNativeArchiveDerivation(current.ProjectID, q, &response); err != nil {
+		writeError(w, 422, err.Error())
+		return
+	}
+	if err := bindBrowserPanelInputs(q, &response); err != nil {
 		writeError(w, 422, err.Error())
 		return
 	}
@@ -157,6 +174,10 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 	if archiveExecutionCompletedAt(manifest).IsZero() || manifest.Provenance.StartedAt == nil || manifest.Provenance.StartedAt.IsZero() {
 		return result, errors.New("completed archive with execution start time required")
 	}
+	if q.QueryVersion == 4 && record.ManifestSHA256 == "" {
+		return result, errors.New("browser input publication digest unavailable")
+	}
+	result.archiveManifestSHA256 = record.ManifestSHA256
 	result.Fingerprint = manifest.Provenance.ComparisonFingerprint
 	start := *manifest.Provenance.StartedAt
 	from := start.Add(time.Duration(q.StartSeconds) * time.Second)
