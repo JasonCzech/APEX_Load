@@ -244,7 +244,7 @@ The [rendered native waterfall/cache qualification](qa/reviews/roadmap-browser-n
 
 ### BE-B — HAR durability and real import/replay workflows
 
-The [replay receipt storage foundation](qa/reviews/roadmap-browser-replay-receipts-2026-10-21/README.md) adds bounded immutable artifact reservations, terminal-owner publication fences, restart-readable metadata and exact-generation cleanup tombstones. Controller/backend publication and restart downloads remain open; this foundation alone does not establish durable HAR delivery.
+The [replay receipt storage foundation](qa/reviews/roadmap-browser-replay-receipts-2026-10-21/README.md) adds bounded immutable artifact reservations, terminal-owner publication fences, restart-readable metadata and exact-generation cleanup tombstones. Controller/backend publication and restart downloads remain open; this foundation alone does not establish durable HAR delivery. The [non-HA namespace slice](qa/reviews/roadmap-browser-durable-namespace-2026-10-21/README.md) uses the durable lease contract in capable single-controller stores as well, preserving receipt reservations after process pruning without enabling backend publication.
 
 The [capture omission slice](qa/reviews/roadmap-browser-har-omissions-2026-10-20/README.md) retains pre-artifact native capture failures through local/distributed archives and their existing HAR listing. Physical ownership and replay durability remain separate.
 
