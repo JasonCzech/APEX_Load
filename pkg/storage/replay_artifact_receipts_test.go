@@ -191,6 +191,9 @@ func exerciseReplayArtifactProjectDeletion(t *testing.T, first, second *SQLiteSt
 	if err := first.DeleteProject(project.ID); err != nil {
 		t.Fatal(err)
 	}
+	if scope, err := second.LookupReplayArtifactScope(ctx, spec.SessionID); !errors.Is(err, sql.ErrNoRows) || scope != nil {
+		t.Fatal("deleted project retained authorization scope", scope, err)
+	}
 	if rows, err := second.ClaimReplayArtifactCleanup(ctx, 10); err != nil || len(rows) != 0 {
 		t.Fatal("deleted unknown writer became cleanable", rows, err)
 	}

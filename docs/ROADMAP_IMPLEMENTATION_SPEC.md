@@ -244,6 +244,8 @@ The [rendered native waterfall/cache qualification](qa/reviews/roadmap-browser-n
 
 ### BE-B — HAR durability and real import/replay workflows
 
+The [recovery storage slice](qa/reviews/roadmap-browser-replay-recovery-storage-2026-10-21/README.md) adds validated authorization scope metadata and bounded cleanup keyset traversal across backend configurations. It does not replace project authorization or verified artifact reads; controller recovery wiring remains open.
+
 The [lease-bound replay publisher](qa/reviews/roadmap-browser-replay-publisher-2026-10-21/README.md) combines receipt admission, immutable staging, verified writer completion and the terminal-owner publication CAS. It remains passive until controller admission, recovered authorization and cleanup wiring are complete.
 
 The [terminal replay publication port](qa/reviews/roadmap-browser-replay-publication-port-2026-10-21/README.md) keeps downloads pending until the optional lease-bound native publisher resolves, then rechecks ownership before settling. Local-only bridges preserve their existing behavior. Controller publication, recovered HTTP authorization and cleanup wiring remain open.

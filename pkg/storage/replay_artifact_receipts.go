@@ -223,6 +223,21 @@ func (s *SQLiteStore) GetReplayArtifactReceipt(ctx context.Context, session, pro
 // to cleanup tombstones. It never treats an unjoined writer as safe to delete.
 // The tombstone retains namespace and quota until Finish confirms physical removal.
 func (s *SQLiteStore) ClaimReplayArtifactCleanup(ctx context.Context, limit int) ([]ReplayArtifactReceipt, error) {
+	return s.claimReplayArtifactCleanup(ctx, limit, nil)
+}
+
+// ClaimReplayArtifactCleanupAfter uses a bounded session-ID keyset so a cleanup
+// worker can advance past receipts belonging to another configured backend.
+// The cursor is scheduling only, never proof of writer completion. Callers
+// restart from an empty cursor after reaching the end to retry retained failures.
+func (s *SQLiteStore) ClaimReplayArtifactCleanupAfter(ctx context.Context, after string, limit int) ([]ReplayArtifactReceipt, error) {
+	if len(after) > 128 || !utf8.ValidString(after) || strings.TrimSpace(after) != after {
+		return nil, errors.New("invalid replay cleanup cursor")
+	}
+	return s.claimReplayArtifactCleanup(ctx, limit, &after)
+}
+
+func (s *SQLiteStore) claimReplayArtifactCleanup(ctx context.Context, limit int, after *string) ([]ReplayArtifactReceipt, error) {
 	if limit < 1 || limit > 256 {
 		return nil, errors.New("invalid replay cleanup limit")
 	}
@@ -235,7 +250,16 @@ func (s *SQLiteStore) ClaimReplayArtifactCleanup(ctx context.Context, limit int)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT session_id,project_id,generation,spec_json,reserved_bytes,state,writer_joined,expires_at FROM replay_artifact_receipts r WHERE writer_joined=1 AND (state='cleanup' OR expires_at<=? OR (state='staging' AND NOT EXISTS(SELECT 1 FROM replay_session_leases l WHERE l.session_id=r.session_id AND l.project_id=r.project_id AND l.owner_token=r.owner_token AND l.state=? AND l.expires_at>?))) ORDER BY expires_at,session_id LIMIT ?`, now, replaySessionStateRetained, now, limit)
+	query := `SELECT session_id,project_id,generation,spec_json,reserved_bytes,state,writer_joined,expires_at FROM replay_artifact_receipts r WHERE writer_joined=1 AND (state='cleanup' OR expires_at<=? OR (state='staging' AND NOT EXISTS(SELECT 1 FROM replay_session_leases l WHERE l.session_id=r.session_id AND l.project_id=r.project_id AND l.owner_token=r.owner_token AND l.state=? AND l.expires_at>?)))`
+	args := []any{now, replaySessionStateRetained, now}
+	if after != nil {
+		query += ` AND session_id>? ORDER BY session_id LIMIT ?`
+		args = append(args, *after, limit)
+	} else {
+		query += ` ORDER BY expires_at,session_id LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
