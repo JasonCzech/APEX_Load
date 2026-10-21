@@ -2,6 +2,7 @@ package dsl
 
 const (
 	FeatureBrowserDocumentEvidenceV2    = "browser_document_evidence_v2"
+	FeatureBrowserInteractionEvidenceV2 = "browser_interaction_evidence_v2"
 	FeatureBrowserInteractionEvidenceV1 = "browser_interaction_evidence_v1"
 	// FeatureBrowserSessionIdentitiesV1 is config.browser.session: observer
 	// identities, the session preflight, start gaps and session_lost. A
@@ -26,7 +27,7 @@ func RequiredBrowserRuntimeFeatures(script *Script) []string {
 		features = append(features, FeatureBrowserDocumentEvidenceV2)
 	}
 	if BrowserInteractionCaptureRequested(script) {
-		features = append(features, FeatureBrowserInteractionEvidenceV1)
+		features = append(features, FeatureBrowserInteractionEvidenceV2)
 	}
 	return features
 }

@@ -83,11 +83,14 @@ func TestBrowserRuntimeFeaturesCoverSessionScripts(t *testing.T) {
 		t.Fatal(err)
 	}
 	advertised := browserRuntimeFeatures(instance)
+	if !protocol.RuntimeFeaturesSatisfy(advertised, dsl.FeatureBrowserInteractionEvidenceV1) {
+		t.Fatal("runtime stopped advertising legacy interaction evidence v1")
+	}
 	on := true
 	script := &dsl.Script{Protocol: "browser", Config: dsl.ScriptConfig{Browser: dsl.BrowserConfig{CaptureDocumentMetrics: &on, CaptureInteractions: &on,
 		Session: &dsl.BrowserSessionConfig{Strategy: dsl.BrowserSessionSalesforceJWT}}}}
 	required := requiredProtocolRuntimeFeature(script)
-	for _, feature := range []string{dsl.FeatureBrowserSessionIdentitiesV1, dsl.FeatureBrowserSalesforceJWTV1, dsl.FeatureBrowserDocumentEvidenceV2, dsl.FeatureBrowserInteractionEvidenceV1} {
+	for _, feature := range []string{dsl.FeatureBrowserSessionIdentitiesV1, dsl.FeatureBrowserSalesforceJWTV1, dsl.FeatureBrowserDocumentEvidenceV2, dsl.FeatureBrowserInteractionEvidenceV2} {
 		if !strings.Contains(required, feature) {
 			t.Fatalf("required %q lacks %s", required, feature)
 		}

@@ -194,6 +194,11 @@ type runtimeSecretRecoveryState struct {
 }
 
 type TestRunner struct {
+	// Run drivers register under mu before dispatch and stay owned through terminal finalization.
+	executionWorkerMu      sync.Mutex
+	executionWorkers       int
+	executionWorkerChanged chan struct{}
+
 	archiveCacheOwner archiveCacheOwner
 	// evidenceAcknowledgements tracks background acknowledgements of
 	// published run evidence to generators.

@@ -38,8 +38,10 @@ func importRCACPUDataset(t *testing.T, server *Server, store any, project, run, 
 	for at := from; at.Before(to); at = at.Add(every) {
 		rows = append(rows, fmt.Sprintf("(%d, %f, '%s')", at.UnixMilli(), cpu(at), host))
 	}
+	// This fixture exercises floating-point telemetry; SQL decimal literals
+	// otherwise opt into the separate decimal precision-consent contract.
 	fixture := filepath.Join(t.TempDir(), "cpu.parquet")
-	if _, err := db.Exec("COPY (SELECT * FROM (VALUES " + strings.Join(rows, ",") + ") t(ts, cpu, host)) TO '" + fixture + "' (FORMAT PARQUET)"); err != nil {
+	if _, err := db.Exec("COPY (SELECT ts, cpu::DOUBLE AS cpu, host FROM (VALUES " + strings.Join(rows, ",") + ") t(ts, cpu, host)) TO '" + fixture + "' (FORMAT PARQUET)"); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(fixture)

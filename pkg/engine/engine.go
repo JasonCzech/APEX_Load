@@ -859,6 +859,7 @@ func (e *Engine) runOpenWorkload(
 				ID:                           workerID,
 				Proto:                        vuProto,
 				Script:                       iterationScript,
+				browserAuthoredSource:        e.script,
 				Metrics:                      e.metrics,
 				SecretResolver:               e.secrets,
 				RedactionConfig:              e.redaction,

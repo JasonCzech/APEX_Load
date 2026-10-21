@@ -282,6 +282,10 @@ message WorkAssignment {
   // omission leaves the group uncapped.
   bool throughput_cap_enabled = 50;
   double throughput_cap_tps = 51;
+  // Explicit interaction wire version; omission preserves v1 output for an
+  // older controller. Version 2 requires traffic-free staging and an exact
+  // acknowledgement before CommitWork, after feature negotiation.
+  uint32 browser_interaction_evidence_version = 52;
 }
 
 // JointEvidenceProjection chooses up to three dimensions of one population
@@ -517,6 +521,8 @@ message AssignmentAck {
   // java_vm reports how a java_vuser group that asked for shared JVMs was
   // staged on this generator. Absent for every other group.
   JavaVMOutcome java_vm = 6;
+  // Confirms the staged interaction version before any protocol preflight.
+  uint32 browser_interaction_evidence_version = 7;
 }
 
 // JavaVMOutcome is value-free: a mode, a stable reason code and counts.

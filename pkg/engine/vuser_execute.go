@@ -910,9 +910,25 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 		baseRetryDelay = time.Second
 	}
 
+	// Copy browser actions only: retries share one logical invocation while
+	// repeated authored steps in loops receive a new invocation. Exhaustion
+	// leaves execution identity unavailable instead of reusing an old number.
+	var invocation uint64
+	if action != nil && action.BrowserAuthoredStep.Valid() {
+		copy := *action
+		action = &copy
+		action.BrowserActionExecution = nil
+		if vu.browserInvocation < 1<<53-1 {
+			vu.browserInvocation++
+			invocation = vu.browserInvocation
+		}
+	}
 	var lastResult *protocol.Result
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		attemptCount = attempt + 1
+		if invocation != 0 {
+			action.BrowserActionExecution = &protocol.BrowserActionExecution{Invocation: invocation, Attempt: uint32(attempt + 1)}
+		}
 		if attempt > 0 {
 			// Apply backoff
 			delay := baseRetryDelay

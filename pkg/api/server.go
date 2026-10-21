@@ -2323,6 +2323,7 @@ func (s *Server) shutdown(ctx context.Context) error {
 			cancelWait()
 		}
 		s.releaseExecutionLeadershipForShutdown(ctx)
+		shutdownErr = errors.Join(shutdownErr, s.runner.waitExecutionWorkers(ctx))
 	}
 	select {
 	case err := <-httpDone:

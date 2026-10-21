@@ -76,8 +76,22 @@ describe('BrowserInteractionsPanel', () => {
     const scrolled = { ...analysis, heatmaps: [{ ...analysis.heatmaps[0], device_scale_factor: 2, scroll: { min_x: 0, max_x: 600, min_y: 0, max_y: 0 } }] }
     const { container, root } = await render(scrolled)
     expect(container.textContent).toContain('@2x')
-    expect(container.textContent).toContain('viewport positions at scroll offsets x 0–600 px')
+    expect(container.textContent).toContain('recorded scroll offsets x 0–600 px, y 0 px')
     expect(container.textContent).not.toContain('y 0–0')
+    await act(async () => root.unmount())
+  })
+
+  it('shows separate exact scroll cohorts and unknown-context exclusions for v2', async () => {
+    const result = { ...analysis, version: 'browser_interaction_patterns.v2',
+      coverage: { ...analysis.coverage, excluded: { engine_profile_unknown: 2, layout_unknown: 1 } },
+      heatmaps: [0, 0.25].map((y, index) => ({ ...analysis.heatmaps[0], key: `map-${index}`, device_profile: '', scroll: { min_x: 0, max_x: 0, min_y: y, max_y: y } })),
+    }
+    const { container, root } = await render(result)
+    expect(container.querySelectorAll('figure')).toHaveLength(2)
+    expect(container.textContent).toContain('recorded scroll offsets x 0 px, y 0 px')
+    expect(container.textContent).toContain('recorded scroll offsets x 0 px, y 0.25 px')
+    expect(container.textContent).toContain('chromium / default')
+    expect(container.textContent).toContain('Not mapped: 2 engine profile unknown, 1 layout unknown.')
     await act(async () => root.unmount())
   })
 
@@ -125,4 +139,25 @@ describe('BrowserInteractionsPanel', () => {
     expect(container.textContent).toContain('Scripted repetition')
     await act(async () => root.unmount())
   })
+  it('distinguishes native patterns, exclusions and historical geometry for v3', async () => {
+    const result = { ...analysis, version: 'browser_interaction_patterns.v3',
+      coverage: { ...analysis.coverage, pattern_eligible: 3, pattern_excluded: { legacy_identity_unavailable: 2 } },
+      patterns: [{ ...analysis.patterns[0], authored_step: { version: 1, script_sha256: 'a'.repeat(64), step_path: 'actions[3]', step_id: 'b'.repeat(64) } }],
+      heatmaps: ['native_dispatch', 'post_action'].map((observation, i) => ({ ...analysis.heatmaps[0], key: `v3-${i}`, observation })),
+    }
+    const { container, root } = await render(result)
+    expect(container.textContent).toContain('3 gestures qualify for patterns.')
+    expect(container.textContent).toContain('2000 ms of native dispatch')
+    expect(container.textContent).toContain('Engine retries are separate.')
+    expect(container.textContent).toContain('Excluded from patterns: 2 legacy identity unavailable.')
+    expect(container.textContent).toContain('Step actions[3]')
+    expect(container.textContent).toContain('native dispatch geometry')
+    expect(container.textContent).toContain('historical post-action geometry')
+    expect(container.textContent).not.toContain('one action name')
+    await act(async () => root.unmount())
+    const empty = await render({ ...result, coverage: { ...result.coverage, pattern_eligible: 0 }, patterns: [] })
+    expect(empty.container.textContent).toContain('No gestures qualified for pattern analysis.')
+    await act(async () => empty.root.unmount())
+  })
+
 })

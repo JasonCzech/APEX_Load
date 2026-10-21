@@ -134,7 +134,11 @@ func Walk(script *dsl.Script, visit SurfaceVisitFunc) error {
 	if script == nil || visit == nil {
 		return nil
 	}
-	stack := make([]actionFrame, 0, len(script.Init)+len(script.Actions)+len(script.Teardown))
+	rootCount := len(script.Init) + len(script.Actions) + len(script.Teardown)
+	if rootCount > dsl.MaxScriptActionDefinitions {
+		return fmt.Errorf("script action definitions exceed %d", dsl.MaxScriptActionDefinitions)
+	}
+	stack := make([]actionFrame, 0, rootCount)
 	pushRoots := func(phase Phase, actions []dsl.Action) {
 		for index := len(actions) - 1; index >= 0; index-- {
 			stack = append(stack, actionFrame{
@@ -203,7 +207,11 @@ func Walk(script *dsl.Script, visit SurfaceVisitFunc) error {
 			continue
 		}
 		nextDepth := current.depth + 1
-		pushBranch := func(name string, actions []dsl.Action) {
+		pushBranch := func(name string, actions []dsl.Action) error {
+			// Include queued siblings before allocating paths or frames.
+			if len(actions) > dsl.MaxScriptActionDefinitions-visited-len(stack) {
+				return fmt.Errorf("script action definitions exceed %d", dsl.MaxScriptActionDefinitions)
+			}
 			for index := len(actions) - 1; index >= 0; index-- {
 				stack = append(stack, actionFrame{
 					phase:   current.phase,
@@ -213,20 +221,31 @@ func Walk(script *dsl.Script, visit SurfaceVisitFunc) error {
 					index:   index,
 				})
 			}
+			return nil
 		}
 		// LIFO: push reverse semantic order so traversal remains deterministic:
 		// steps, else, cases[0..n], default, parallel branches[0..n].
 		for branchIndex := len(action.Control.Branches) - 1; branchIndex >= 0; branchIndex-- {
 			name := fmt.Sprintf("branches[%d].steps", branchIndex)
-			pushBranch(name, action.Control.Branches[branchIndex].Steps)
+			if err := pushBranch(name, action.Control.Branches[branchIndex].Steps); err != nil {
+				return err
+			}
 		}
-		pushBranch("default", action.Control.Default)
+		if err := pushBranch("default", action.Control.Default); err != nil {
+			return err
+		}
 		for caseIndex := len(action.Control.Cases) - 1; caseIndex >= 0; caseIndex-- {
 			name := fmt.Sprintf("cases[%d].steps", caseIndex)
-			pushBranch(name, action.Control.Cases[caseIndex].Steps)
+			if err := pushBranch(name, action.Control.Cases[caseIndex].Steps); err != nil {
+				return err
+			}
 		}
-		pushBranch("else", action.Control.Else)
-		pushBranch("steps", action.Control.Steps)
+		if err := pushBranch("else", action.Control.Else); err != nil {
+			return err
+		}
+		if err := pushBranch("steps", action.Control.Steps); err != nil {
+			return err
+		}
 	}
 	return nil
 }

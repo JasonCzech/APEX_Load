@@ -129,6 +129,11 @@ type preparedAssignmentStage struct {
 // preparation, and an atomic coordinator commit or rollback.
 func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment) (ack *pb.AssignmentAck, callErr error) {
 	defer func() {
+		if callErr == nil && ack.GetAccepted() {
+			ack.BrowserInteractionEvidenceVersion = assignment.GetBrowserInteractionEvidenceVersion()
+		}
+	}()
+	defer func() {
 		if assignment != nil && (callErr != nil || !ack.GetAccepted()) {
 			service.abortSourcePlanStage(assignment.TestId, assignment.ExecutionGeneration, assignment.RunSupervisionToken)
 		}
@@ -1143,6 +1148,9 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			}
 		}
 	}
+	if request.GetBrowserInteractionEvidenceVersion() == 2 && !dsl.BrowserInteractionCaptureRequested(&script) {
+		return nil, status.Error(codes.InvalidArgument, "interaction evidence v2 requires browser interaction capture")
+	}
 	validationIssues := dsl.ValidateScriptIssues(&script)
 	if assignmentPreservesImportedCredentials(&script) {
 		// Assignments originate from the controller's durable script snapshot.
@@ -1270,27 +1278,28 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		JointProjection: jointProjection,
 		TerminationMode: request.GetTerminationMode(),
 		Groups: []engine.GroupConfig{{
-			RuntimeResourcePeakFrozen:    plan.runtimeResources.managed,
-			RuntimeResourcePeakVUsers:    int(plan.runtimeResources.peak),
-			RuntimeResourceReservation:   plan.runtimeResources.reservation,
-			JavaBroker:                   javaHost,
-			Name:                         request.GetGroupName(),
-			StartOffset:                  plan.validated.startOffset,
-			Region:                       strings.TrimSpace(request.GetRegion()),
-			RunID:                        request.GetTestId(),
-			ScenarioID:                   request.GetScenarioId(),
-			RunCorrelationOrigins:        append([]string(nil), request.GetRunCorrelationOrigins()...),
-			CorrelationCarriers:          append([]string(nil), request.GetCorrelationCarriers()...),
-			CorrelationTestName:          request.GetCorrelationTestName(),
-			Script:                       &script,
-			VUsers:                       int(request.GetVuserCount()),
-			RampUp:                       plan.validated.rampUp,
-			RampDown:                     plan.validated.rampDown,
-			AllowZeroVUsers:              request.GetVuserCount() == 0,
-			InitStrategy:                 plan.validated.initStrategy,
-			TransactionResponseTimeSLAMs: request.GetTransactionResponseTimeSlaMs(),
-			ThroughputCapTPS:             request.GetThroughputCapTps(),
-			ThroughputCapEnabled:         request.GetThroughputCapEnabled(),
+			RuntimeResourcePeakFrozen:         plan.runtimeResources.managed,
+			RuntimeResourcePeakVUsers:         int(plan.runtimeResources.peak),
+			RuntimeResourceReservation:        plan.runtimeResources.reservation,
+			JavaBroker:                        javaHost,
+			Name:                              request.GetGroupName(),
+			BrowserInteractionEvidenceVersion: assignedBrowserInteractionVersion(request),
+			StartOffset:                       plan.validated.startOffset,
+			Region:                            strings.TrimSpace(request.GetRegion()),
+			RunID:                             request.GetTestId(),
+			ScenarioID:                        request.GetScenarioId(),
+			RunCorrelationOrigins:             append([]string(nil), request.GetRunCorrelationOrigins()...),
+			CorrelationCarriers:               append([]string(nil), request.GetCorrelationCarriers()...),
+			CorrelationTestName:               request.GetCorrelationTestName(),
+			Script:                            &script,
+			VUsers:                            int(request.GetVuserCount()),
+			RampUp:                            plan.validated.rampUp,
+			RampDown:                          plan.validated.rampDown,
+			AllowZeroVUsers:                   request.GetVuserCount() == 0,
+			InitStrategy:                      plan.validated.initStrategy,
+			TransactionResponseTimeSLAMs:      request.GetTransactionResponseTimeSlaMs(),
+			ThroughputCapTPS:                  request.GetThroughputCapTps(),
+			ThroughputCapEnabled:              request.GetThroughputCapEnabled(),
 			DataShard: engine.DataShardConfig{
 				Ordinal: request.GetShardOrdinal(),
 				Count:   plan.validated.shardCount,

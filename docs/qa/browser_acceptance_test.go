@@ -56,7 +56,7 @@ func browserAcceptanceInventory() []browserAcceptanceItem {
 		{"Transport close", []browserAcceptanceTest{both("TestBrowserAcceptanceRedirectsHTTPErrorsAndTransportClose"), both("TestBrowserFailedSubresourceRetainsBoundedFailureEvidence")}},
 		{"HTTP errors", []browserAcceptanceTest{both("TestBrowserAcceptanceRedirectsHTTPErrorsAndTransportClose"), both("TestBrowserFailedSubresourceRetainsBoundedFailureEvidence")}},
 		{"Secret-bearing URLs, headers and bodies", []browserAcceptanceTest{both("TestBrowserActualInteractionRouteIsRuntimeRedacted"), unit("TestFinalizeHARCaptureRedactsLowEntropyRuntimeSecrets"), unit("TestFinalizeHARCaptureRedactsPercentEncodedRuntimeSecrets"), unit("TestApplyHARCaptureOptionsDisablesRawCaptureForRuntimeSecrets")}},
-		{"Context close and crash", []browserAcceptanceTest{both("TestHAROwnershipReclaimsKilledNativeRecording"), both("TestBrowserDocumentActualBlockedDrainClosesOwnedContext"), unit("TestHAROwnershipReclaimsKilledGenerations")}},
+		{"Context close and crash", []browserAcceptanceTest{both("TestHAROwnershipReclaimsKilledNativeRecording"), both("TestBrowserDocumentActualBlockedDrainClosesOwnedContext"), both("TestBrowserDocumentNativePageClosePreservesFinalAndCensorsPending"), {"pkg/protocol/browser:TestBrowserDocumentNativeRendererCrashPreservesFinalAndCensorsPending", scopeChromium}, {"pkg/protocol/browser:TestBrowserDocumentNativeBrowserCrashPreservesContextsAndReplacesPool", scopeChromium}, unit("TestHAROwnershipReclaimsKilledGenerations")}},
 		{"Never-finishing requests", []browserAcceptanceTest{both("TestNeverFinishingRequestFloodStaysBoundedAndCloses"), unit("TestHARInFlightBudgetUsesOutstandingRequests"), unit("TestHARInFlightBudgetDoesNotCapCompletedOrUnrecordedRequests"), unit("TestHARInFlightOverflowClosesAndCensorsThroughMonitor"), unit("TestHARInFlightOverflowCancellationRetainsExactWriter")}},
 		{"Huge and chunked bodies", []browserAcceptanceTest{both("TestNeverEndingChunkedBodyIsStoppedByTheMemoryWatchdog"), unit("TestHARMonitorStopsOnActualFileSize")}},
 		{"Metadata floods", []browserAcceptanceTest{unit("TestNetworkEntriesMetadataBudget"), unit("TestBoundBrowserNetworkHeadersLimitsEntriesAndBytes"), unit("TestNetworkEntriesRingAndByteBudget")}},
@@ -156,6 +156,8 @@ func renderBrowserAcceptance(t *testing.T) string {
 			switch {
 			case test.Scope == scopeBothEngines && !bothEngines:
 				t.Errorf("%s: %s is listed for Chromium and WebKit but does not name both engines", item.Behavior, test.Ref)
+			case test.Scope == scopeChromium && (!strings.Contains(body, `"chromium"`) || strings.Contains(body, `"webkit"`)):
+				t.Errorf("%s: %s must name only Chromium for its native crash cohort", item.Behavior, test.Ref)
 			case test.Scope == scopeUnit && startsBrowser:
 				t.Errorf("%s: %s is listed as a unit test but starts a browser", item.Behavior, test.Ref)
 			}

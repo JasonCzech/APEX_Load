@@ -406,6 +406,11 @@ func (headers HeaderList) ToMap() map[string]string {
 }
 
 type Action struct {
+	// BrowserAuthoredStep is engine-bound identity, never decoded from an
+	// imported protocol action or inferred from a display/source name.
+	BrowserActionExecution *BrowserActionExecution `json:"-"`
+	BrowserAuthoredStep    *BrowserAuthoredStep    `json:"-"`
+
 	Name               string              `json:"name"`
 	Type               string              `json:"type"`
 	Method             string              `json:"method,omitempty"`

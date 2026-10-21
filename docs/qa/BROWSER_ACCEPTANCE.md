@@ -29,6 +29,9 @@ Each BE-4 behavior names the tests that accept it. **Chromium and WebKit** tests
 |  | `TestApplyHARCaptureOptionsDisablesRawCaptureForRuntimeSecrets` (`pkg/protocol/browser/har_capture_integration_test.go`) | Unit (no browser) |
 | Context close and crash | `TestHAROwnershipReclaimsKilledNativeRecording` (`pkg/protocol/browser/har_crash_reclaim_test.go`) | Chromium and WebKit |
 |  | `TestBrowserDocumentActualBlockedDrainClosesOwnedContext` (`pkg/protocol/browser/document_actual_integration_test.go`) | Chromium and WebKit |
+|  | `TestBrowserDocumentNativePageClosePreservesFinalAndCensorsPending` (`pkg/protocol/browser/document_failure_integration_test.go`) | Chromium and WebKit |
+|  | `TestBrowserDocumentNativeRendererCrashPreservesFinalAndCensorsPending` (`pkg/protocol/browser/document_failure_integration_test.go`) | Chromium (the only engine exposing it) |
+|  | `TestBrowserDocumentNativeBrowserCrashPreservesContextsAndReplacesPool` (`pkg/protocol/browser/document_failure_integration_test.go`) | Chromium (the only engine exposing it) |
 |  | `TestHAROwnershipReclaimsKilledGenerations` (`pkg/protocol/browser/har_crash_reclaim_test.go`) | Unit (no browser) |
 | Never-finishing requests | `TestNeverFinishingRequestFloodStaysBoundedAndCloses` (`pkg/protocol/browser/evidence_budget_integration_test.go`) | Chromium and WebKit |
 |  | `TestHARInFlightBudgetUsesOutstandingRequests` (`pkg/protocol/browser/har_inflight_budget_test.go`) | Unit (no browser) |

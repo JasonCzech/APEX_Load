@@ -434,3 +434,11 @@ func qualifyBrowserDocumentSourceCoverage(manifest *RunArchiveManifest, bundles 
 		}
 	}
 }
+
+// requestedBrowserInteractionVersion is controller transport intent, not DSL.
+func requestedBrowserInteractionVersion(script *dsl.Script) uint32 {
+	if dsl.BrowserInteractionCaptureRequested(script) {
+		return protocol.BrowserInteractionVersion2
+	}
+	return 0
+}

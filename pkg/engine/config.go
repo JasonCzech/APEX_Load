@@ -27,6 +27,9 @@ func buildProtoConfigForRunModeWithSecretResolver(script *dsl.Script, runMode st
 
 func buildGroupProtoConfig(group GroupConfig, runMode string) map[string]any {
 	cfg := buildProtoConfigForRunModeWithSecretResolver(group.Script, runMode, group.SecretResolver)
+	if group.BrowserInteractionEvidenceVersion != 0 {
+		cfg["browser_interaction_evidence_version"] = group.BrowserInteractionEvidenceVersion
+	}
 	if group.sourceSamplers != nil {
 		group.sourceSamplers.bindProtocolConfig(cfg, group.Script)
 	}

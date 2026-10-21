@@ -1019,8 +1019,12 @@ type WorkAssignment struct {
 	// omission leaves the group uncapped.
 	ThroughputCapEnabled bool    `protobuf:"varint,50,opt,name=throughput_cap_enabled,json=throughputCapEnabled,proto3" json:"throughput_cap_enabled,omitempty"`
 	ThroughputCapTps     float64 `protobuf:"fixed64,51,opt,name=throughput_cap_tps,json=throughputCapTps,proto3" json:"throughput_cap_tps,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Explicit interaction wire version; omission preserves v1 output for an
+	// older controller. Version 2 requires traffic-free staging and an exact
+	// acknowledgement before CommitWork, after feature negotiation.
+	BrowserInteractionEvidenceVersion uint32 `protobuf:"varint,52,opt,name=browser_interaction_evidence_version,json=browserInteractionEvidenceVersion,proto3" json:"browser_interaction_evidence_version,omitempty"`
+	unknownFields                     protoimpl.UnknownFields
+	sizeCache                         protoimpl.SizeCache
 }
 
 func (x *WorkAssignment) Reset() {
@@ -1406,6 +1410,13 @@ func (x *WorkAssignment) GetThroughputCapEnabled() bool {
 func (x *WorkAssignment) GetThroughputCapTps() float64 {
 	if x != nil {
 		return x.ThroughputCapTps
+	}
+	return 0
+}
+
+func (x *WorkAssignment) GetBrowserInteractionEvidenceVersion() uint32 {
+	if x != nil {
+		return x.BrowserInteractionEvidenceVersion
 	}
 	return 0
 }
@@ -3081,9 +3092,11 @@ type AssignmentAck struct {
 	RuntimeResourceAdmission *RuntimeResourceAdmission `protobuf:"bytes,5,opt,name=runtime_resource_admission,json=runtimeResourceAdmission,proto3" json:"runtime_resource_admission,omitempty"`
 	// java_vm reports how a java_vuser group that asked for shared JVMs was
 	// staged on this generator. Absent for every other group.
-	JavaVm        *JavaVMOutcome `protobuf:"bytes,6,opt,name=java_vm,json=javaVm,proto3" json:"java_vm,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	JavaVm *JavaVMOutcome `protobuf:"bytes,6,opt,name=java_vm,json=javaVm,proto3" json:"java_vm,omitempty"`
+	// Confirms the staged interaction version before any protocol preflight.
+	BrowserInteractionEvidenceVersion uint32 `protobuf:"varint,7,opt,name=browser_interaction_evidence_version,json=browserInteractionEvidenceVersion,proto3" json:"browser_interaction_evidence_version,omitempty"`
+	unknownFields                     protoimpl.UnknownFields
+	sizeCache                         protoimpl.SizeCache
 }
 
 func (x *AssignmentAck) Reset() {
@@ -3156,6 +3169,13 @@ func (x *AssignmentAck) GetJavaVm() *JavaVMOutcome {
 		return x.JavaVm
 	}
 	return nil
+}
+
+func (x *AssignmentAck) GetBrowserInteractionEvidenceVersion() uint32 {
+	if x != nil {
+		return x.BrowserInteractionEvidenceVersion
+	}
+	return 0
 }
 
 // JavaVMOutcome is value-free: a mode, a stable reason code and counts.
@@ -9211,7 +9231,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0fsource_group_id\x18\x02 \x01(\tR\rsourceGroupId\x12\x1f\n" +
 	"\vscript_hash\x18\x03 \x01(\tR\n" +
 	"scriptHash\x12\x16\n" +
-	"\x06vusers\x18\x04 \x01(\x05R\x06vusers\"\xa5\x16\n" +
+	"\x06vusers\x18\x04 \x01(\x05R\x06vusers\"\xf6\x16\n" +
 	"\x0eWorkAssignment\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x1d\n" +
 	"\n" +
@@ -9270,7 +9290,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x18live_table_bindings_json\x180 \x01(\fR\x15liveTableBindingsJson\x124\n" +
 	"\x16rendezvous_config_json\x181 \x01(\fR\x14rendezvousConfigJson\x124\n" +
 	"\x16throughput_cap_enabled\x182 \x01(\bR\x14throughputCapEnabled\x12,\n" +
-	"\x12throughput_cap_tps\x183 \x01(\x01R\x10throughputCapTps\x1a>\n" +
+	"\x12throughput_cap_tps\x183 \x01(\x01R\x10throughputCapTps\x12O\n" +
+	"$browser_interaction_evidence_version\x184 \x01(\rR!browserInteractionEvidenceVersion\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a?\n" +
@@ -9433,14 +9454,15 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\vcontainment\x18\x04 \x01(\tR\vcontainment\x12\x1b\n" +
 	"\tmax_hosts\x18\x05 \x01(\x05R\bmaxHosts\x12\x1d\n" +
 	"\n" +
-	"max_vusers\x18\x06 \x01(\x05R\tmaxVusers\"\xd6\x02\n" +
+	"max_vusers\x18\x06 \x01(\x05R\tmaxVusers\"\xa7\x03\n" +
 	"\rAssignmentAck\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12-\n" +
 	"\x12available_capacity\x18\x03 \x01(\x05R\x11availableCapacity\x12;\n" +
 	"\tjava_host\x18\x04 \x01(\v2\x1e.apexload.v1.JavaHostPlacementR\bjavaHost\x12c\n" +
 	"\x1aruntime_resource_admission\x18\x05 \x01(\v2%.apexload.v1.RuntimeResourceAdmissionR\x18runtimeResourceAdmission\x123\n" +
-	"\ajava_vm\x18\x06 \x01(\v2\x1a.apexload.v1.JavaVMOutcomeR\x06javaVm\"\x91\x01\n" +
+	"\ajava_vm\x18\x06 \x01(\v2\x1a.apexload.v1.JavaVMOutcomeR\x06javaVm\x12O\n" +
+	"$browser_interaction_evidence_version\x18\a \x01(\rR!browserInteractionEvidenceVersion\"\x91\x01\n" +
 	"\rJavaVMOutcome\x12\x12\n" +
 	"\x04mode\x18\x01 \x01(\tR\x04mode\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x12\n" +

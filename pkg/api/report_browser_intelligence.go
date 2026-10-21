@@ -302,19 +302,56 @@ func (d *runArchiveHTMLReportData) InteractionMapView() reportInteractionMapView
 			map[bool]string{true: ", incomplete", false: ""}[coverage.Incomplete], analysis.Version),
 		Notes: append(append([]string(nil), analysis.Notes...), analysis.Limitations...),
 	}
+	if analysis.Version == browserInteractionAnalysisVersion3 {
+		view.Notes = append(view.Notes, fmt.Sprintf("Pattern-eligible gestures: %d.", coverage.PatternEligible))
+		var reasons []string
+		for reason := range coverage.PatternExcluded {
+			reasons = append(reasons, reason)
+		}
+		sort.Strings(reasons)
+		for _, reason := range reasons {
+			view.Notes = append(view.Notes, fmt.Sprintf("Excluded from patterns: %d %s.", coverage.PatternExcluded[reason], reason))
+		}
+	}
+	var excluded []string
+	for reason := range coverage.Excluded {
+		excluded = append(excluded, reason)
+	}
+	sort.Strings(excluded)
+	for _, reason := range excluded {
+		view.Notes = append(view.Notes, fmt.Sprintf("Not mapped: %d %s.", coverage.Excluded[reason], reason))
+	}
 	for index, pattern := range analysis.Patterns {
 		if index == reportInteractionPatternLimit {
 			view.More = len(analysis.Patterns) - index
 			break
 		}
-		view.Patterns = append(view.Patterns, reportInteractionPatternRow{Kind: pattern.Kind, Provenance: pattern.Provenance, Route: pattern.Route, Action: pattern.ActionName, Count: fmt.Sprint(pattern.Count), Detail: pattern.Detail})
+		action, detail := pattern.ActionName, pattern.Detail
+		if step := pattern.AuthoredStep; step.Valid() {
+			action += " (" + step.StepPath + ")"
+			detail += "; authored step " + step.StepID + "; script " + step.ScriptSHA256
+		}
+		view.Patterns = append(view.Patterns, reportInteractionPatternRow{Kind: pattern.Kind, Provenance: pattern.Provenance, Route: pattern.Route, Action: action, Count: fmt.Sprint(pattern.Count), Detail: detail})
 	}
 	for index, heatmap := range analysis.Heatmaps {
 		if index == reportInteractionHeatmapLimit {
 			view.MoreMaps = len(analysis.Heatmaps) - index
 			break
 		}
-		view.Heatmaps = append(view.Heatmaps, reportInteractionHeatmapRow{Route: heatmap.Route, Layout: heatmap.LayoutRevision, Viewport: fmt.Sprintf("%d×%d %s", heatmap.ViewportWidth, heatmap.ViewportHeight, heatmap.Orientation),
+		viewport := fmt.Sprintf("%d×%d %s", heatmap.ViewportWidth, heatmap.ViewportHeight, heatmap.Orientation)
+		if heatmap.DeviceScaleFactor > 0 {
+			viewport += fmt.Sprintf(" @%gx", heatmap.DeviceScaleFactor)
+		}
+		if scroll := heatmap.Scroll; scroll != nil {
+			viewport += fmt.Sprintf("; recorded scroll x %g–%g px, y %g–%g px", scroll.MinX, scroll.MaxX, scroll.MinY, scroll.MaxY)
+		}
+		switch heatmap.Observation {
+		case "native_dispatch":
+			viewport += "; native dispatch geometry"
+		case "post_action":
+			viewport += "; historical post-action geometry"
+		}
+		view.Heatmaps = append(view.Heatmaps, reportInteractionHeatmapRow{Route: heatmap.Route, Layout: heatmap.LayoutRevision, Viewport: viewport,
 			Engine: heatmap.Engine, Profile: heatmap.DeviceProfile, Gestures: fmt.Sprint(heatmap.Points), Cells: fmt.Sprintf("%d of %d×%d", len(heatmap.Cells), heatmap.Columns, heatmap.Rows)})
 	}
 	return view

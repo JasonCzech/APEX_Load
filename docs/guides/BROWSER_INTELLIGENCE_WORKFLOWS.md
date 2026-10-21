@@ -374,7 +374,8 @@ rows outside iterations (init, teardown, or no identity).
 ## Patterns and heatmaps
 
 `GET /api/v1/tests/{id}/archive/browser-interactions` reads a finalized run's
-interaction evidence (`browser_interaction_patterns.v1`). Viewer access is
+interaction evidence (historical-only `browser_interaction_patterns.v2`, or
+`browser_interaction_patterns.v3` when raw v2 is present). Viewer access is
 enough. The run report shows the result in its [Browser area](#the-browser-area-of-a-run-report), under **Interaction patterns**. A run without interaction evidence answers
 `not_captured`; a run that captured some but kept none in its archive (a
 failed transfer, a refused or torn sidecar) answers `unavailable` with what
@@ -388,7 +389,30 @@ report offers to check again), an archive not yet finalized `409`, and
 unreadable evidence or an archive that cannot be read `500`. Nothing is
 replayed or injected.
 
-Patterns are found per document, in capture order:
+V3 pattern eligibility requires a valid authored step, engine invocation and
+joined native dispatch timestamp whose source/document/lifecycle tuple is present
+in the verified document archive. A separate 100,000-tuple bound limits this
+join index; excess tuples remain `document_lifecycle_unavailable`, with
+`document_joins_truncated` disclosed. Metric revisions do not consume extra
+join entries. Its coverage counts eligible gestures and
+exclusions separately (`pattern_eligible`, `pattern_excluded`), including
+legacy identity, missing execution and unavailable dispatch. These counts
+cover the streamed input; the existing 100,000-row retained pattern bound
+still applies. Historical rows remain downloadable and may contribute only
+to separately labelled historical maps in a mixed archive.
+
+V3 groups patterns by source generation, document and lifecycle and sorts by
+native dispatch. Repetition requires the same structural step, compatible
+scroll/layout/viewport geometry and the 2-second native-event window;
+duplicate display names cannot merge. Intended retries share the engine's
+logical invocation and consecutive attempt numbers, rather than being
+inferred from proximity. Retry attempts stay out of repetition even when an
+earlier attempt is missing. Pattern windows use the observed dispatch clock,
+so post-action waits do not move them. Pattern and report output retain the
+authored step and script identity. Sync-only outcome limits remain; canceled
+or otherwise unevaluated waits cannot become dead interactions.
+
+Historical-only v2 analysis keeps the following rules per document, in capture order:
 
 | Pattern | Rule |
 | --- | --- |
@@ -402,27 +426,46 @@ Each pattern lists its route, layout, action, count, window and up to 16
 interaction IDs.
 
 Heatmaps place each pointer gesture's first dispatched point on an abstract
-64×64 grid of its viewport. One map is kept per sanitized route, layout
-revision, viewport size, device pixel ratio and orientation, engine and
-device profile. A cell is a viewport position in CSS pixels at dispatch
-(`coordinate_space` `viewport_css_px`): gestures made at different scroll
-offsets share a map, which states their scroll range. The layout revision is
-the one read after the gesture and its wait. Engine and profile come from the
-gesture's source generation (its browser context) in the run's document
-evidence, read in full. Without it they are `unknown`, the map says why, and
-the analysis lists an `engine_profile_unknown` limitation, since gestures of
-different engines with one layout can then share a map. The reason is that the
-run kept no document evidence for those gestures, that the document evidence
-could not be read (`document_evidence_unreadable`), or that the context is past
-the first 65,536 the analysis keeps (`document_evidence_truncated`). Keyboard and form gestures fill a per-map
-table of target roles and hashed labels, never positions.
+64×64 grid of its viewport. Version 2 keeps separate maps for each sanitized
+route, layout revision, viewport size, device pixel ratio and orientation,
+engine, device profile and exact recorded scroll offset on both axes. Signed
+zero offsets are equivalent; fractional offsets are not rounded together.
+The coordinate space remains `viewport_css_px`. Layout, viewport and scroll
+are read **after** the gesture and its wait, so these maps do not establish
+dispatch-time geometry. V3 adds a separate `native_dispatch` map population
+using the event-time geometry in raw v2; historical maps are labelled
+`post_action`. Those populations never merge even when all other keys match.
+Raw v2 without observed dispatch is excluded from maps as
+`dispatch_unavailable`. Native touch emulation and untransformed child
+frames remain unavailable; this does not qualify actual devices.
+
+Engine and profile come from the gesture's source generation in the run's
+verified document evidence, read in full. An empty profile on a known context
+means an unprofiled browser, not an unknown context. Missing or conflicting
+context evidence excludes the gesture from maps with `engine_profile_unknown`
+and an explanatory limitation; it never combines unknown engines or profiles.
+Unreadable document evidence (`document_evidence_unreadable`) and contexts
+past the first 65,536 (`document_evidence_truncated`) have the same exclusion.
+Keyboard and form gestures fill a per-map table of target roles and hashed
+labels, never positions.
 
 Some gestures are counted, by reason, instead of mapped:
+
 - those with an unavailable reason (`child_frame_unobserved`,
   `document_changed`, `synthetic_dispatch`, `page_state_unavailable`);
+- child-frame gestures without an observed transform, even if capture omitted
+  an unavailable reason;
+- those without a layout revision (`layout_unknown`) or a consistent engine/profile cohort;
 - those without points or without a viewport;
 - those outside the viewport (they make no map);
-- those beyond 64 maps.
+- those requiring a new map beyond the 64-map limit (`heatmaps_truncated`).
+
+Each gesture contributes once to mapped or excluded coverage. Existing maps
+still accept compatible gestures after the map limit. Raw version-1 interaction
+archives remain unchanged and readable; newly computed analysis reports version
+2. Previously exported version-1 analyses keep their original interpretation.
+Pattern detection is unchanged in version 2, including its capture-time window
+and action-name identity limitations described above.
 
 At most 200 patterns are kept, and patterns are found among the first 100,000
 interactions (`interactions_truncated` beyond that). Screenshot overlays are

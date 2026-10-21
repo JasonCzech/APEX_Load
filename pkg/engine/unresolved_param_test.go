@@ -129,8 +129,10 @@ func TestActionUnresolvedParameterScanCoversEveryStringField(t *testing.T) {
 	// Fields the scan intentionally ignores because they are numeric/boolean
 	// settings or strictly validated policy scalars that cannot be interpolated.
 	nonStringFields := map[string]bool{
-		"HTTPVersion": true, // Strict leaf enum; invalid/template values fail before traffic.
-		"TimeoutMs":   true, "MaxRedirects": true, "DiscardResponseBodyOnSuccess": true,
+		"BrowserActionExecution": true,
+		"BrowserAuthoredStep":    true, // Engine-owned canonical path/digests; not an interpolated execution field.
+		"HTTPVersion":            true, // Strict leaf enum; invalid/template values fail before traffic.
+		"TimeoutMs":              true, "MaxRedirects": true, "DiscardResponseBodyOnSuccess": true,
 		"Capture":                    true, // BrowserCaptureOptions is all bools
 		"CaptureMessageDetail":       true,
 		"CaptureResourceDetails":     true,

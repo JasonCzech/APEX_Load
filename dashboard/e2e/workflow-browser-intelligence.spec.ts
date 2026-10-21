@@ -73,6 +73,19 @@ test('the Browser area leads from a finding to its document resources and HAR en
     await route.fulfill({ response, json: { ...(await response.json()), browser_documents: documentsSummary, browser_resources: [] } })
   })
   await page.route(`**/api/v1/tests/${id}/archive/browser-findings*`, route => route.fulfill({ json: findingsFixture(id, String(policy.id)) }))
+  // Transport fixture for v3 pattern eligibility and mixed map rendering; API archive tests independently
+  // qualify cohort separation. This HTTP run does not qualify native capture.
+  await page.route(`**/api/v1/tests/${id}/archive/browser-interactions`, route => route.fulfill({ json: {
+    run_id: id, version: 'browser_interaction_patterns.v3', status: 'ready',
+    thresholds: { repeat_min_gestures: 3, repeat_window_ms: 2000, repeat_radius_px: 32, heatmap_grid: 64 },
+    coverage: { pattern_eligible: 1, pattern_excluded: { legacy_identity_unavailable: 1, dispatch_unavailable: 2 }, interactions: 4, records: 1, dropped: 0, incomplete: false, by_provenance: { scripted: 4 }, mapped: 2, excluded: { engine_profile_unknown: 1, layout_unknown: 1 } },
+    patterns: [], notes: ['Native dispatch and historical post-action maps are separate populations.'],
+    heatmaps: [0, 1200].map((y, index) => ({ key: `cohort-${index}`, observation: index === 0 ? 'native_dispatch' : 'post_action', route: '/cart', layout_revision: 'aabb',
+      viewport_width: 400, viewport_height: 800, orientation: 'portrait', engine: 'webkit', device_profile: 'iphone_15_pro',
+      coordinate_space: 'viewport_css_px', device_scale_factor: 2, scroll: { min_x: 0, max_x: 0, min_y: y, max_y: y },
+      columns: 64, rows: 64, cells: [[1, 1, 1]], points: 1, by_kind: { tap: 1 }, sources: { scripted: 1 },
+    })),
+  } }))
   const resourceQueries: string[] = []
   await page.route(`**/api/v1/tests/${id}/archive/browser-resources*`, async route => {
     resourceQueries.push(new URL(route.request().url()).searchParams.get('document_id') || '')
@@ -92,6 +105,16 @@ test('the Browser area leads from a finding to its document resources and HAR en
   await expect(comparison.getByRole('row').nth(1)).toContainText('chromium')
   await expect(comparison.getByRole('row').nth(1)).toContainText('shop')
   await expect(comparison.getByRole('row').nth(1)).toContainText('(1 document)')
+  const interactions = page.getByRole('region', { name: 'Interaction patterns', exact: true })
+  await expect(interactions.locator('figure')).toHaveCount(2)
+  await expect(interactions).toContainText('recorded scroll offsets x 0 px, y 0 px')
+  await expect(interactions).toContainText('recorded scroll offsets x 0 px, y 1200 px')
+  await expect(interactions).toContainText('Not mapped: 1 engine profile unknown, 1 layout unknown.')
+  await expect(interactions).toContainText('1 gesture qualifies for patterns.')
+  await expect(interactions).toContainText('Excluded from patterns: 1 legacy identity unavailable, 2 dispatch unavailable.')
+  await expect(interactions).toContainText('native dispatch geometry')
+  await expect(interactions).toContainText('historical post-action geometry')
+  await expect(interactions).not.toContainText('one action name')
   const findings = page.getByRole('region', { name: 'Browser findings', exact: true })
   await expect(findings).toContainText('LCP p75 is poor.')
   await expect(page.getByRole('region', { name: 'Browser baseline', exact: true })).toContainText('has not been run for this run')

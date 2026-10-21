@@ -431,6 +431,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	_, captureCorrelationEvidence := opts.DebugController.(ReplayDebugControllerCorrelationObserver)
 	protoConfig := buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver)
 	// A replay runs as the session's first identity.
+	authoredScript := script
 	identity, err := browserIdentityForOrdinal(script, 0)
 	if err == nil && identity != nil {
 		protoConfig, err = withBrowserIdentityConfig(protoConfig, identity, script)
@@ -552,6 +553,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		Proto:                        proto,
 		Script:                       script,
 		browserIdentity:              identity,
+		browserAuthoredSource:        authoredScript,
 		Metrics:                      NewMetricsCollector(16),
 		Variables:                    make(map[string]string),
 		DataProvider:                 dataProvider,
@@ -1388,7 +1390,7 @@ func runReplayUnit(
 		event, shouldContinue = finishReplayProtocolAction(ctx, vu, unit.action, child.action, child.result, child.err, child.started, child.completed, unit.phase, unit.actionIndex, eventIndex, eventID, continueOnError, true, globalThinkCfg, report, capture, nil)
 	} else {
 		_, captureCorrelationEvidence := debugController.(ReplayDebugControllerCorrelationObserver)
-		event, shouldContinue = runReplayAction(ctx, vu, unit.action, unit.phase, unit.actionIndex, eventIndex, eventID, continueOnError, ignoreThinkTime, globalThinkCfg, report, captureCorrelationEvidence)
+		event, shouldContinue = runReplayAction(ctx, vu, unit.action, unit.phase, unit.actionIndex, eventIndex, eventID, continueOnError, ignoreThinkTime, globalThinkCfg, report, captureCorrelationEvidence, vu.browserReplayAuthoredStep(unit))
 	}
 	applyReplayUnitIdentityEvent(&event, unit)
 	if vu.runtimeCredentialRedactionErr != nil {
@@ -1525,6 +1527,7 @@ func runReplayAction(
 	globalThinkCfg protocol.ThinkTimeConfig,
 	report *ReplayReport,
 	captureCorrelationEvidence bool,
+	authored ...*protocol.BrowserAuthoredStep,
 ) (ReplayActionEvent, bool) {
 	if handled, err := vu.handleEngineAction(ctx, action); handled {
 		now := time.Now()
@@ -1584,6 +1587,9 @@ func runReplayAction(
 		return event, false
 	}
 	resolved := vu.resolveAction(action)
+	if len(authored) == 1 {
+		resolved.BrowserAuthoredStep = authored[0].Clone()
+	}
 	start := time.Now()
 	var streamedChildFailure *protocol.Result
 	result, err := vu.executeWithRetryStream(ctx, resolved, vu.Script.Config.ErrorHandling, func(child *protocol.Result) error {

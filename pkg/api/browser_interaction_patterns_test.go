@@ -159,22 +159,20 @@ func TestHeatmapsCountKeyboardTargetsAndExclusions(t *testing.T) {
 	unknownCohort.SourceGeneration = "00000000000000000000000000000000"
 	analysis := analyzeE4(fill, outside, noViewport, framed, unknownCohort)
 	excluded := analysis.Coverage.Excluded
-	if excluded["outside_viewport"] != 1 || excluded["no_viewport"] != 1 || excluded[protocol.InteractionUnavailableChildFrame] != 1 || analysis.Coverage.Mapped != 2 || analysis.Coverage.Interactions != 5 {
+	if excluded["outside_viewport"] != 1 || excluded["no_viewport"] != 1 || excluded[protocol.InteractionUnavailableChildFrame] != 1 || analysis.Coverage.Mapped != 1 || excluded["engine_profile_unknown"] != 1 || analysis.Coverage.Interactions != 5 {
 		t.Fatalf("coverage = %+v", analysis.Coverage)
 	}
-	var keyboard, unknown *BrowserInteractionHeatmap
+	var keyboard *BrowserInteractionHeatmap
 	for index := range analysis.Heatmaps {
 		switch {
 		case len(analysis.Heatmaps[index].Targets) > 0:
 			keyboard = &analysis.Heatmaps[index]
-		case analysis.Heatmaps[index].Engine == "unknown":
-			unknown = &analysis.Heatmaps[index]
 		}
 	}
 	if keyboard == nil || keyboard.Points != 0 || len(keyboard.Cells) != 0 || keyboard.Targets[0].Role != "textbox" || keyboard.Targets[0].Count != 1 {
 		t.Fatalf("keyboard targets = %+v", keyboard)
 	}
-	if unknown == nil || unknown.DeviceProfile != "unknown" {
+	if len(analysis.Heatmaps) != 1 {
 		t.Fatalf("a gesture of an unknown source generation = %+v", analysis.Heatmaps)
 	}
 }
@@ -253,7 +251,7 @@ func TestRunArchiveBrowserInteractionsEndpoint(t *testing.T) {
 	}
 	record.ManifestSHA256 = sha256BytesHex(raw)
 	status, analysis := get()
-	if status != http.StatusOK || analysis.Status != "ready" || analysis.Coverage.Interactions != 3 || analysis.Coverage.Dropped != 2 || len(e4Patterns(analysis, interactionPatternScriptedRepetition)) != 1 || len(analysis.Heatmaps) != 1 {
+	if status != http.StatusOK || analysis.Status != "ready" || analysis.Coverage.Interactions != 3 || analysis.Coverage.Dropped != 2 || len(e4Patterns(analysis, interactionPatternScriptedRepetition)) != 1 || len(analysis.Heatmaps) != 0 || analysis.Coverage.Excluded["engine_profile_unknown"] != 3 {
 		t.Fatalf("analysis = %d %+v", status, analysis)
 	}
 	// An unknown run is not found.
@@ -352,14 +350,14 @@ func TestHeatmapsHoldOnlyMappedGesturesAndStateTheirSpace(t *testing.T) {
 	sharper := e4Tap(3, 10*time.Second, 10, 10)
 	sharper.DeviceScaleFactor = 3
 	got := analyzeE4(e4Tap(1, 0, 10, 10), scrolled, sharper)
-	if len(got.Heatmaps) != 2 {
-		t.Fatalf("device pixel ratios share a map: %+v", got.Heatmaps)
+	if len(got.Heatmaps) != 3 {
+		t.Fatalf("device pixel ratios or scroll offsets share a map: %+v", got.Heatmaps)
 	}
 	for _, m := range got.Heatmaps {
 		if m.CoordinateSpace != "viewport_css_px" || m.Scroll == nil {
 			t.Fatalf("map space = %+v", m)
 		}
-		if m.DeviceScaleFactor == 2 && (m.Scroll.MinY != 0 || m.Scroll.MaxY != 1200) {
+		if m.Scroll.MinY != m.Scroll.MaxY || m.Scroll.MinX != m.Scroll.MaxX {
 			t.Fatalf("scroll range = %+v", m.Scroll)
 		}
 	}
@@ -373,8 +371,8 @@ func TestHeatmapsHoldOnlyMappedGesturesAndStateTheirSpace(t *testing.T) {
 
 // Every document record names its generation's engine and profile, also
 // past the bounded measurement population documents are summarized from; past
-// the generation bound a new generation is left out, and its gestures map as
-// unknown with the reason the handler gives, not the default no-evidence one.
+// the generation bound a new generation is left out, and its gestures are excluded
+// as unknown with the reason the handler gives, not the default no-evidence one.
 func TestBrowserGenerationCohortsReadEveryRecord(t *testing.T) {
 	const late = "11111111111111111111111111111111"
 	early := &protocol.BrowserDocumentEvidence{SourceGeneration: e4Generation}
@@ -406,33 +404,30 @@ func TestBrowserGenerationCohortsReadEveryRecord(t *testing.T) {
 	tap.SourceGeneration = late
 	analyzer.add(&protocol.BrowserInteractionEvidence{Version: protocol.BrowserInteractionVersion, SourceGeneration: late, Interactions: []protocol.BrowserInteraction{tap}})
 	analysis := analyzer.finish()
-	if len(analysis.Heatmaps) != 1 || analysis.Heatmaps[0].Engine != "unknown" || !strings.Contains(strings.Join(analysis.Heatmaps[0].Notes, " "), "(past the kept contexts)") || strings.Contains(strings.Join(analysis.Heatmaps[0].Notes, " "), "("+unknownCohortNoDocuments+")") {
-		t.Fatalf("unknown map = %+v", analysis.Heatmaps)
+	if len(analysis.Heatmaps) != 0 || analysis.Coverage.Excluded["engine_profile_unknown"] != 1 {
+		t.Fatalf("unknown cohort was mapped: %+v", analysis)
 	}
 	if len(analysis.Limitations) != 1 || !strings.HasSuffix(analysis.Limitations[0], "(past the kept contexts)") {
 		t.Fatalf("limitations = %q", analysis.Limitations)
 	}
 }
 
-// Past the heatmap bound a gesture is excluded, not mapped: an unknown-engine
-// gesture left out that way is not counted as mapped without an engine.
-func TestInteractionHeatmapBoundExcludesBeforeCountingUnknownCohorts(t *testing.T) {
+// Unknown contexts are excluded independently of the map bound; a known
+// new cohort past the bound is counted as heatmaps_truncated.
+func TestInteractionHeatmapBoundAndUnknownCohorts(t *testing.T) {
 	var gestures []protocol.BrowserInteraction
-	for n := 0; n < maxInteractionHeatmaps; n++ {
+	for n := 0; n < maxInteractionHeatmaps+1; n++ {
 		tap := e4Tap(n+1, time.Duration(n)*5*time.Second, 10, 10)
-		tap.Route = fmt.Sprintf("/page-%d", n)
+		tap.ScrollY = float64(n)
 		gestures = append(gestures, tap)
 	}
-	unknown := e4Tap(maxInteractionHeatmaps+1, time.Hour, 10, 10)
-	unknown.Route, unknown.SourceGeneration = "/one-more", "00000000000000000000000000000000"
-	analysis := analyzeE4(append(gestures, unknown)...)
-	if len(analysis.Heatmaps) != maxInteractionHeatmaps || analysis.Coverage.Mapped != int64(maxInteractionHeatmaps) || analysis.Coverage.Excluded["heatmaps_truncated"] != 1 {
+	unknown := e4Tap(maxInteractionHeatmaps+2, time.Hour, 10, 10)
+	unknown.SourceGeneration = "00000000000000000000000000000000"
+	// An existing cohort remains admissible after the map limit.
+	gestures = append(gestures, unknown, e4Tap(maxInteractionHeatmaps+3, 2*time.Hour, 10, 10))
+	analysis := analyzeE4(gestures...)
+	if len(analysis.Heatmaps) != maxInteractionHeatmaps || analysis.Coverage.Mapped != int64(maxInteractionHeatmaps+1) || analysis.Coverage.Excluded["heatmaps_truncated"] != 1 || analysis.Coverage.Excluded["engine_profile_unknown"] != 1 {
 		t.Fatalf("heatmaps %d, coverage %+v", len(analysis.Heatmaps), analysis.Coverage)
-	}
-	for _, limitation := range analysis.Limitations {
-		if strings.HasPrefix(limitation, "engine_profile_unknown") {
-			t.Fatalf("an excluded gesture was counted as mapped without an engine: %q", analysis.Limitations)
-		}
 	}
 }
 
@@ -505,15 +500,15 @@ func TestRunArchiveBrowserInteractionsJoinsDocumentsAndDisclosesLoss(t *testing.
 	maxInteractionGenerationCohorts = 0
 	analysis, err = server.runArchiveBrowserInteractions(context.Background(), "e4-documents")
 	maxInteractionGenerationCohorts = bound
-	if err != nil || analysis.Heatmaps[0].Engine != "unknown" || len(analysis.Limitations) != 2 || !strings.HasPrefix(analysis.Limitations[0], "document_evidence_truncated") ||
-		!strings.Contains(strings.Join(analysis.Heatmaps[0].Notes, " "), "kept no document evidence for these gestures, or their browser context is past the first 0") {
+	if err != nil || len(analysis.Heatmaps) != 0 || analysis.Coverage.Excluded["engine_profile_unknown"] != int64(len(interactions)) || len(analysis.Limitations) != 2 || !strings.HasPrefix(analysis.Limitations[0], "document_evidence_truncated") ||
+		!strings.Contains(strings.Join(analysis.Limitations, " "), "kept no consistent engine/profile document evidence for these gestures, or their browser context is past the first 0") {
 		t.Fatalf("truncated cohorts = %+v %v", analysis, err)
 	}
 	// A read that fails after valid records (here the record count) names
 	// no engine from them.
 	rewrite(func(m *RunArchiveManifest) { m.BrowserDocumentRecordCount++ })
 	analysis, err = server.runArchiveBrowserInteractions(context.Background(), "e4-documents")
-	if err != nil || analysis.Heatmaps[0].Engine != "unknown" || len(analysis.Limitations) == 0 || !strings.HasPrefix(analysis.Limitations[0], "document_evidence_unreadable") {
+	if err != nil || len(analysis.Heatmaps) != 0 || analysis.Coverage.Excluded["engine_profile_unknown"] != int64(len(interactions)) || len(analysis.Limitations) == 0 || !strings.HasPrefix(analysis.Limitations[0], "document_evidence_unreadable") {
 		t.Fatalf("partially read documents = %+v %v", analysis, err)
 	}
 	rewrite(func(m *RunArchiveManifest) { m.BrowserDocumentRecordCount-- })
@@ -566,7 +561,7 @@ func TestRunArchiveBrowserInteractionsUnreadableEvidence(t *testing.T) {
 		m.BrowserInteractionsFile, m.BrowserInteractionRecordCount = browserInteractionsFileName, 1
 	})
 	analysis, err := server.runArchiveBrowserInteractions(context.Background(), "e4-unreadable")
-	if err != nil || len(analysis.Limitations) == 0 || !strings.HasPrefix(analysis.Limitations[0], "document_evidence_unreadable") || analysis.Heatmaps[0].Engine != "unknown" || !strings.Contains(strings.Join(analysis.Heatmaps[0].Notes, " "), "document evidence could not be read") {
+	if err != nil || len(analysis.Limitations) == 0 || !strings.HasPrefix(analysis.Limitations[0], "document_evidence_unreadable") || len(analysis.Heatmaps) != 0 || analysis.Coverage.Excluded["engine_profile_unknown"] != 1 || !strings.Contains(strings.Join(analysis.Limitations, " "), "document evidence could not be read") {
 		t.Fatalf("unreadable documents = %+v %v", analysis, err)
 	}
 	if err := os.WriteFile(interactions, []byte("not interaction evidence\n"), 0o600); err != nil {

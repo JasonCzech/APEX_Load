@@ -23,11 +23,13 @@ const maxMultiGroupRuntimeSecretRedactionBytes = 32 << 20
 var ErrInitialRampInProgress = errors.New("initial vuser ramp is still in progress")
 
 type GroupConfig struct {
-	DistributedRendezvousClient rendezvous.Client
-	distributedRendezvous       *rendezvous.Aggregator
-	LiveTableClient             livetable.Client
-	LiveTableClientID           string
-	LiveTableBindings           []LiveTableBinding
+	// BrowserInteractionEvidenceVersion is negotiated transport wiring; zero uses the current local version.
+	BrowserInteractionEvidenceVersion int
+	DistributedRendezvousClient       rendezvous.Client
+	distributedRendezvous             *rendezvous.Aggregator
+	LiveTableClient                   livetable.Client
+	LiveTableClientID                 string
+	LiveTableBindings                 []LiveTableBinding
 	// RuntimeResourcePeakVUsers pins the admitted closed population ceiling.
 	// Zero uses VUsers; open workloads use their independent in-flight bound.
 	RuntimeResourcePeakVUsers int
@@ -1992,6 +1994,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 	}
 	vu = &VUser{
 		correlation:                  groupVUserCorrelation(group),
+		browserInteractionVersion:    group.BrowserInteractionEvidenceVersion,
 		ID:                           -1,
 		TotalVUsers:                  group.VUsers,
 		ParameterAllocation:          groupParameterAllocation(group, 0),
@@ -2283,6 +2286,7 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 
 		vu = &VUser{
 			correlation:                  groupVUserCorrelation(prepared.group),
+			browserInteractionVersion:    prepared.group.BrowserInteractionEvidenceVersion,
 			ID:                           prepared.runtimeID,
 			TotalVUsers:                  prepared.group.VUsers,
 			ParameterAllocation:          groupParameterAllocation(prepared.group, prepared.identity.local),
@@ -2291,6 +2295,7 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 			RunID:                        prepared.group.RunID,
 			Proto:                        prepared.proto,
 			Script:                       prepared.script,
+			browserAuthoredSource:        prepared.group.Script,
 			browserIdentity:              prepared.browserIdentity,
 			sessionStartNotBefore:        browserSessionStart(mge.runStartedAt, prepared.browserIdentity, prepared.script),
 			Metrics:                      mge.metrics,
@@ -2862,12 +2867,14 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 
 		vu = &VUser{
 			correlation:                  groupVUserCorrelation(group),
+			browserInteractionVersion:    group.BrowserInteractionEvidenceVersion,
 			ID:                           runtimeVUserID,
 			Group:                        group.Name,
 			Region:                       group.Region,
 			RunID:                        group.RunID,
 			Proto:                        vuProto,
 			Script:                       iterationScript,
+			browserAuthoredSource:        group.Script,
 			Metrics:                      mge.metrics,
 			ResultSink:                   group.ResultSink,
 			RedactionConfig:              group.RedactionConfig,

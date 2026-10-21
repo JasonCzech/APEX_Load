@@ -846,7 +846,7 @@ func TestContainerBuildIsSelfContainedAndProfiled(t *testing.T) {
 		t.Errorf("Dockerfile must build the dashboard on FROM node:%s-alpine<version>@sha256:<64-hex digest> AS dashboard-builder", pinnedNodeVersion(t))
 	}
 	for _, required := range []string{
-		"golang:1.26.9-alpine3.24@sha256:",
+		"golang:1.26.10-alpine3.24@sha256:",
 		"FROM alpine:3.24@sha256:",
 		"AS dashboard-builder",
 		"COPY dashboard/scripts/check-node-version.mjs ./dashboard/scripts/check-node-version.mjs",

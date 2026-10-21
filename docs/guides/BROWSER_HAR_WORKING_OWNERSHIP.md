@@ -206,6 +206,23 @@ smaller, so required evidence always keeps the rest. This holds on a
 generator and on a controller running the test itself: when space is tight,
 a HAR beyond the allowance is `archive_quota`.
 
+Capture losses that occur before an artifact exists also mark the run archive
+incomplete. Local and distributed archive sinks retain one omission per capture
+owner: `native_capture_failed` for joined finalization/publication failures,
+`native_finalization_budget` for deadline exhaustion, or
+`native_owner_unretired` when ownership has not retired. Unretired ownership
+can mean unfinished writers or a cleanup/identity-fence failure after join;
+the count does not claim which physical step is still pending. A full published
+artifact queue reports `native_publication_limit` and keeps the owned file
+under its existing retention policy. An invalid or panicking status provider
+reports `native_status_unavailable`, without exposing its error details.
+Per-source counts saturate at 131,072 and set `native_omission_count_limit` to
+one when saturated. These counts survive generator archive transfer and appear
+in the existing HAR listing. Taking the counts does not release a writer,
+change cleanup authority, or turn optional evidence loss into a failed run.
+Capture policies that intentionally discard a HAR do not report capture loss.
+Replay durability and its fallback disclosure remain separate below.
+
 At finalization the controller fetches each declared HAR from the live
 generator, never from the collection cache, so a source served only from
 the cache (its generator gone) has its HARs `source_unavailable`. The fetch is

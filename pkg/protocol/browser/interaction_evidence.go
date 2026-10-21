@@ -161,8 +161,9 @@ func sanitizeBrowserRoute(path string) string {
 }
 
 type browserInteractionPage struct {
-	Doc    string `json:"doc"`
-	Events []struct {
+	Dispatch *browserInteractionDispatchPage `json:"dispatch"`
+	Doc      string                          `json:"doc"`
+	Events   []struct {
 		T string  `json:"t"`
 		X float64 `json:"x"`
 		Y float64 `json:"y"`
@@ -211,17 +212,18 @@ const interactionReadOverhead = 25 * time.Millisecond
 // beginBrowserInteraction discards events earlier actions left and notes
 // the document a gesture starts in.
 func (b *Browser) beginBrowserInteraction(ctx context.Context, action *protocol.Action) *browserInteractionStart {
-	if _, gesture := b.browserInteractionKind(action); !gesture || !b.interactionsEnabled || ctx.Err() != nil {
+	kind, gesture := b.browserInteractionKind(action)
+	if !gesture || !b.interactionsEnabled || ctx.Err() != nil {
 		return nil
 	}
 	b.mu.Lock()
-	generation := b.evidence.generation
+	generation, actionID := b.evidence.generation, b.evidence.currentAction
 	b.mu.Unlock()
 	if generation == "" {
 		return nil
 	}
 	start := &browserInteractionStart{}
-	start.read = b.drainBrowserInteractionPageAs(ctx, generation, true, &start.page) == nil && start.page.Doc != ""
+	start.read = b.drainBrowserInteractionPageAs(ctx, generation, true, &start.page, kind, actionID) == nil && start.page.Doc != ""
 	return start
 }
 
@@ -233,13 +235,20 @@ func (b *Browser) drainBrowserInteractionPage(ctx context.Context, generation st
 
 // drainBrowserInteractionPageAs drains the observer; a light read (at a
 // gesture's start) skips the layout fingerprint.
-func (b *Browser) drainBrowserInteractionPageAs(ctx context.Context, generation string, light bool, page *browserInteractionPage) error {
+func (b *Browser) drainBrowserInteractionPageAs(ctx context.Context, generation string, light bool, page *browserInteractionPage, kinds ...string) error {
 	readCtx, cancel := context.WithTimeout(ctx, interactionReadTimeout)
 	defer cancel()
 	done := make(chan error, 1)
 	var read browserInteractionPage
+	kind, actionID := "", ""
+	if len(kinds) > 0 {
+		kind = kinds[0]
+	}
+	if len(kinds) > 1 {
+		actionID = kinds[1]
+	}
 	go func() {
-		done <- b.evaluatePageExpression(readCtx, fmt.Sprintf(`(() => { const o = globalThis[%q]; return o ? o.drain(%t) : null })()`, browserInteractionGlobal(generation), light), &read)
+		done <- b.evaluatePageExpression(readCtx, fmt.Sprintf(`(() => { const o = globalThis[%q]; return o ? o.drain(%t, %q, %q) : null })()`, browserInteractionGlobal(generation), light, kind, actionID), &read)
 	}()
 	select {
 	case err := <-done:
@@ -284,16 +293,28 @@ func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protoco
 	framed := len(b.actionFrameSelectors(action)) > 0
 	if framed {
 		interaction.FrameScope = "child_frame"
+		if b.interactionVersion == protocol.BrowserInteractionVersion2 {
+			interaction.UnavailableReason = protocol.InteractionUnavailableChildFrame
+		}
 	}
 	var page browserInteractionPage
+	defer func() {
+		b.enrichBrowserInteractionDispatch(&interaction, action, page, start)
+		if interaction.Version == protocol.BrowserInteractionVersion2 {
+			interaction.Outcome = browserInteractionOutcomeV2(ctx, interaction.Outcome, sync)
+		}
+		b.recordBrowserInteraction(interaction)
+	}()
 	if err := b.drainBrowserInteractionPage(ctx, generation, &page); err != nil || page.Doc == "" {
 		interaction.UnavailableReason = protocol.InteractionUnavailablePageState
-		b.recordBrowserInteraction(interaction)
 		return
 	}
 	// A gesture that navigated left its events in the document it started
 	// in: the record describes that document, without points.
 	navigated := start != nil && start.read && start.page.Doc != page.Doc
+	if navigated && b.interactionVersion == protocol.BrowserInteractionVersion2 {
+		interaction.UnavailableReason = protocol.InteractionUnavailableDocumentChanged
+	}
 	state := page
 	if navigated {
 		state = start.page
@@ -323,7 +344,7 @@ func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protoco
 	}
 	// Keyboard-style gestures (and a check) name their target; a scroll
 	// names none.
-	if kind != "scroll" && !protocol.BrowserInteractionPointerKind(kind) || kind == "check" {
+	if b.interactionVersion != protocol.BrowserInteractionVersion2 && (kind != "scroll" && !protocol.BrowserInteractionPointerKind(kind) || kind == "check") {
 		switch {
 		case framed:
 			interaction.UnavailableReason = protocol.InteractionUnavailableChildFrame
@@ -338,7 +359,6 @@ func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protoco
 			}
 		}
 	}
-	b.recordBrowserInteraction(interaction)
 }
 
 // documentChangedSince reports whether the page now holds a different
@@ -555,8 +575,8 @@ func (b *Browser) TakeBrowserInteractionEvidence() []*protocol.BrowserInteractio
 	size := 0
 	for k, interaction := range s.pending {
 		encoded := s.sizes[k] + 1
-		if len(out) == 0 || out[len(out)-1].SourceGeneration != interaction.SourceGeneration || size+encoded > protocol.MaxBrowserInteractionEvidenceBytes-envelope {
-			out = append(out, &protocol.BrowserInteractionEvidence{Version: protocol.BrowserInteractionVersion, SourceGeneration: interaction.SourceGeneration})
+		if len(out) == 0 || out[len(out)-1].SourceGeneration != interaction.SourceGeneration || out[len(out)-1].Version != interaction.Version || size+encoded > protocol.MaxBrowserInteractionEvidenceBytes-envelope {
+			out = append(out, &protocol.BrowserInteractionEvidence{Version: interaction.Version, SourceGeneration: interaction.SourceGeneration})
 			size = 0
 		}
 		last := out[len(out)-1]
@@ -565,7 +585,7 @@ func (b *Browser) TakeBrowserInteractionEvidence() []*protocol.BrowserInteractio
 	}
 	if s.dropped > 0 || s.incomplete {
 		if len(out) == 0 && b.evidence.generation != "" {
-			out = append(out, &protocol.BrowserInteractionEvidence{Version: protocol.BrowserInteractionVersion, SourceGeneration: b.evidence.generation, Interactions: []protocol.BrowserInteraction{}})
+			out = append(out, &protocol.BrowserInteractionEvidence{Version: b.browserInteractionWireVersion(), SourceGeneration: b.evidence.generation, Interactions: []protocol.BrowserInteraction{}})
 		}
 		if len(out) > 0 {
 			out[len(out)-1].Dropped, out[len(out)-1].Incomplete = s.dropped, true
@@ -581,3 +601,10 @@ func (b *Browser) TakeBrowserInteractionEvidence() []*protocol.BrowserInteractio
 // BrowserInteractionCaptureEnabled reports whether this session records
 // interactions.
 func (b *Browser) BrowserInteractionCaptureEnabled() bool { return b.interactionsEnabled }
+
+func (b *Browser) browserInteractionWireVersion() int {
+	if b.interactionVersion == protocol.BrowserInteractionVersion2 {
+		return protocol.BrowserInteractionVersion2
+	}
+	return protocol.BrowserInteractionVersion
+}

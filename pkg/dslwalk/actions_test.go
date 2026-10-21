@@ -358,3 +358,29 @@ func TestWalkVisitsAsyncConversationRequest(t *testing.T) {
 		t.Fatalf("visitors must be able to rewrite the request: %v", request)
 	}
 }
+
+func TestWalkRejectsOversizedPendingDefinitions(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		script     *dsl.Script
+		wantVisits int
+	}{
+		{"roots", &dsl.Script{Init: make([]dsl.Action, 1), Actions: make([]dsl.Action, dsl.MaxScriptActionDefinitions)}, 0},
+		{"children", &dsl.Script{Actions: []dsl.Action{{Control: &dsl.ControlFlow{Steps: make([]dsl.Action, dsl.MaxScriptActionDefinitions)}}}}, 1},
+		{"queued_siblings", &dsl.Script{Actions: []dsl.Action{{Control: &dsl.ControlFlow{Steps: make([]dsl.Action, dsl.MaxScriptActionDefinitions-1)}}, {}}}, 1},
+		{"combined_branches", &dsl.Script{Actions: []dsl.Action{{Control: &dsl.ControlFlow{Steps: make([]dsl.Action, dsl.MaxScriptActionDefinitions-1), Else: []dsl.Action{{}}}}}}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			visits := 0
+			err := WalkActions(tc.script, func(ActionRef) error { visits++; return nil })
+			if err == nil || visits != tc.wantVisits {
+				t.Fatalf("err=%v visits=%d want=%d", err, visits, tc.wantVisits)
+			}
+		})
+	}
+	visits := 0
+	err := WalkActions(&dsl.Script{Actions: make([]dsl.Action, dsl.MaxScriptActionDefinitions)}, func(ActionRef) error { visits++; return nil })
+	if err != nil || visits != dsl.MaxScriptActionDefinitions {
+		t.Fatalf("exact limit: err=%v visits=%d", err, visits)
+	}
+}

@@ -18,6 +18,15 @@ import (
 )
 
 type VUser struct {
+	browserInvocation         uint64
+	browserInteractionVersion int
+	// browserAuthoredSource is the trusted authored script before an engine
+	// iteration/session copy. It is never read from executable script metadata.
+	browserAuthoredSource        *dsl.Script
+	browserAuthoredIndexedSource *dsl.Script
+	browserAuthoredScript        *dsl.Script
+	browserAuthored              *browserAuthoredIndex
+
 	LiveTableClient   livetable.Client
 	LiveTableClientID string
 	LiveTableBindings []LiveTableBinding
@@ -683,7 +692,7 @@ func (lc *lifecycleRun) runLeaf(step *dsl.Action) (actionFlow, bool) {
 		return flowTeardown, false
 	}
 	defer releasePause()
-	resolved := vu.resolveAction(action)
+	resolved := vu.resolveBrowserAuthoredAction(action, step)
 	knownBusinessTransactionEmitter := actionEmitsBusinessTransactions(action)
 	emitterTransactionReserved := false
 	if knownBusinessTransactionEmitter &&

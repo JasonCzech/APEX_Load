@@ -19,6 +19,7 @@ type BrowserHARArtifactSink interface {
 // in their HAR directory under its retention policy. A failed handoff is
 // optional evidence lost, never a failed run; the sink records it.
 func handOffBrowserHARArtifacts(p protocol.Protocol, sink ResultSink) {
+	defer handOffBrowserHARCaptureOmissions(p, sink)
 	provider, ok := p.(protocol.BrowserHARArtifactProvider)
 	if !ok {
 		return

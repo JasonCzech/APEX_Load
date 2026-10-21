@@ -12,6 +12,7 @@ const FeatureBrowserDocumentEvidenceV2 = "browser_document_evidence_v2"
 // FeatureBrowserInteractionEvidenceV1 advertises gesture interaction
 // evidence capture (E3).
 const FeatureBrowserInteractionEvidenceV1 = "browser_interaction_evidence_v1"
+const FeatureBrowserInteractionEvidenceV2 = dsl.FeatureBrowserInteractionEvidenceV2
 
 // browserRuntimeFeatures are the features a browser runtime instance
 // advertises, read the same way when the generator advertises them and when
@@ -25,6 +26,9 @@ func browserRuntimeFeatures(instance protocol.Protocol) []string {
 	}
 	if _, ok := instance.(protocol.BrowserInteractionEvidenceProvider); ok {
 		features = append(features, FeatureBrowserInteractionEvidenceV1)
+	}
+	if _, ok := instance.(protocol.BrowserInteractionEvidenceV2Provider); ok {
+		features = append(features, FeatureBrowserInteractionEvidenceV2)
 	}
 	return features
 }
