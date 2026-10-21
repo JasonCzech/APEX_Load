@@ -58,7 +58,9 @@ const (
 // archive is still being finalized is refused instead of failing later.
 // archive.5: the monitor_sources coverage row names each source and its
 // outcome.
-const rcaArchiveAdapterVersion = "archive.5"
+// archive.6: admission resolves a pinned browser baseline into the frozen
+// request, and waits for baseline archive finalization before freezing it.
+const rcaArchiveAdapterVersion = "archive.6"
 
 // maxRCACoverageSources bounds the sources a monitor_sources coverage row
 // names.
@@ -488,6 +490,19 @@ func (s *Server) queueRCAAnalysis(ctx context.Context, project, testID string, r
 	if err != nil {
 		return nil, false, &rcaRequestError{Status: http.StatusInternalServerError, Message: err.Error()}
 	}
+	// Resolve only the immutable policy pinned by this run. Execution reads the
+	// resolved request below; later policy revisions must never reselect it.
+	// An explicit caller baseline remains available for non-browser RCA too;
+	// the browser detector separately enforces the pinned policy's constraint.
+	if request.BaselineTestID == "" {
+		policy, policyErr := s.rcaBrowserBaselinePolicy(project, manifest)
+		if policyErr != nil {
+			return nil, false, &rcaRequestError{Status: http.StatusServiceUnavailable, Message: "failed to read the run's pinned browser policy"}
+		}
+		if policy != nil && policy.Unavailable == "" && policy.Mode == "pinned_run" {
+			request.BaselineTestID = strings.TrimSpace(policy.RunID)
+		}
+	}
 	inputs := rca.InputDigests{Archive: archiveDigest, Engine: rcaEngineVersion, SignatureSet: signatures.Version}
 	if request.BaselineTestID != "" {
 		baseline, status, message := s.rcaBaselineArchive(ctx, testID, project, request.BaselineTestID)
@@ -600,6 +615,9 @@ func (s *Server) rcaBaselineArchive(ctx context.Context, currentID, project, bas
 	baseline, ok := archives.GetTestSummary(baselineID)
 	if !ok || baseline == nil || normalizeProjectID(baseline.ProjectID) != project {
 		return "", http.StatusNotFound, "baseline run not found in project"
+	}
+	if s.rcaArchiveFinalizing(baselineID) {
+		return "", http.StatusConflict, "baseline archive is being finalized; retry the analysis after finalization"
 	}
 	record, ok := archives.GetRunArchiveContext(ctx, baselineID)
 	if !ok {
