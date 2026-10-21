@@ -12,6 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/internal/importreview"
 	"github.com/jasonczech/apexload/pkg/recorder"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
@@ -640,6 +641,7 @@ func (s *Service) HandleVerifyBrowserRecording(w http.ResponseWriter, r *http.Re
 	if script.ID == "" {
 		script.ID = uuid.New().String()
 	}
+	authoredDefinition := engine.BrowserOriginalAuthoredDefinition(script)
 	if req.VisibleBrowser && strings.EqualFold(strings.TrimSpace(script.Protocol), "browser") {
 		headless := false
 		script = ApplyBrowserReplayOverrides(script, BrowserReplayStartRequest{Browser: &dsl.BrowserConfig{Headless: &headless}})
@@ -647,11 +649,12 @@ func (s *Service) HandleVerifyBrowserRecording(w http.ResponseWriter, r *http.Re
 	ignoreThink := true
 	executionCtx, releaseExecutionCtx := s.executionContext()
 	replay, replayErr := s.Replay.Start(script.ID, script, BrowserReplayStartRequest{
-		GroupName:               script.Name + " — verify",
-		ReplaySessionID:         req.ReplaySessionID,
-		IgnoreThinkTime:         &ignoreThink,
-		ExecutionContext:        executionCtx,
-		ReleaseExecutionContext: releaseExecutionCtx,
+		BrowserAuthoredDefinition: authoredDefinition,
+		GroupName:                 script.Name + " — verify",
+		ReplaySessionID:           req.ReplaySessionID,
+		IgnoreThinkTime:           &ignoreThink,
+		ExecutionContext:          executionCtx,
+		ReleaseExecutionContext:   releaseExecutionCtx,
 	})
 	if replayErr != nil {
 		releaseExecutionCtx()

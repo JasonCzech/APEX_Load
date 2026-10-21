@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 
+import { METRIC_LABELS } from '../../metricLabels'
 import { ApiError } from '../../hooks/apiClient'
 import { useNavigationGuardRunner, useUnsavedWorkGuard } from '../../hooks/NavigationGuardProvider'
 import { analysisPoliciesApi, type AnalysisPolicyRecord, type EditableAnalysisPolicyKind } from '../../hooks/api/analysisPoliciesApi'
@@ -9,7 +10,7 @@ import Notice from '../ux/Notice'
 import TabList from '../ux/TabList'
 import { confirmAction } from '../ux/confirmAction'
 import {
-  BROWSER_POLICY_METRICS, browserDefinitionFromDraft, browserDraftFromDefinition, defaultBrowserPolicyDraft, defaultJourneyPolicyDraft,
+  BROWSER_TIMING_METRICS, BROWSER_POLICY_METRICS, browserDefinitionFromDraft, browserDraftFromDefinition, defaultBrowserPolicyDraft, defaultJourneyPolicyDraft,
   emptyJourney, journeyDefinitionFromDraft, journeyDraftFromDefinition, type BrowserPolicyDraft, type JourneyPolicyDraft,
 } from './policyEditorModel'
 
@@ -155,7 +156,7 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
 
   return <section className="settings-subsection analysis-policies" aria-label="Browser and journey policies">
     <h3>Browser &amp; journey policies</h3>
-    <p className="setting-desc">Browser policies score a run's document metrics and set how the root-cause browser baseline compares them; journey policies define the journeys whose attempts are accounted. The default policy of each kind is pinned when a run starts, and findings keep the revision they were evaluated under: editing a policy never rewrites a finished run's results.</p>
+    <p className="setting-desc">Browser policies score a run's document metrics and set how the root-cause browser baseline compares them; journey policies define the journeys whose attempts are accounted. Each run pins its selected policy revision, or the project default when none is selected, at start, and findings keep the revision they were evaluated under: editing a policy never rewrites a finished run's results.</p>
     {/* The kind is a view of the list below, so it is a tab row; creating a
         policy is an action, kept apart from it. */}
     <TabList className="access-subtab-row" aria-label="Policy kind">
@@ -172,7 +173,7 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
       <tbody>{policies.map(policy => <tr key={policy.id}>
         <td>{policy.name || policy.id}</td>
         <td>{policy.revision}</td>
-        <td>{isDefault(policy) ? 'Pinned at Start' : '—'}</td>
+        <td>{isDefault(policy) ? 'Project default' : '—'}</td>
         <td>
           {canEdit && <button type="button" className="btn btn-ghost btn-sm" onClick={() => runGuarded(() => startEdit(policy))}>Edit</button>}
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => runGuarded(() => { setEditing(null); setRevisionView({ policy, revision: String(policy.revision), record: null, error: '' }) })}>View a revision</button>
@@ -199,7 +200,7 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
       <h4>{editing.id ? `Edit ${editing.draft.name || 'policy'} (revision ${editing.revision})` : `New ${KIND_LABELS[editing.kind].singular}`}</h4>
       <label className="settings-field">Name <input className="settings-input" value={editing.draft.name} maxLength={256} onChange={event => setEditing({ ...editing, draft: { ...editing.draft, name: event.target.value } } as Editing)} /></label>
       <label className="settings-field">Description <input className="settings-input" value={editing.draft.description} maxLength={256} onChange={event => setEditing({ ...editing, draft: { ...editing.draft, description: event.target.value } } as Editing)} /></label>
-      <label className="settings-checkbox"><input type="checkbox" checked={editing.draft.applyByDefault} onChange={event => setEditing({ ...editing, draft: { ...editing.draft, applyByDefault: event.target.checked } } as Editing)} /> Pin this policy when runs start (the project default)</label>
+      <label className="settings-checkbox"><input type="checkbox" checked={editing.draft.applyByDefault} onChange={event => setEditing({ ...editing, draft: { ...editing.draft, applyByDefault: event.target.checked } } as Editing)} /> Use this policy as the project default</label>
       {editing.kind === 'browser_policy'
         ? <BrowserPolicyFields draft={editing.draft} onChange={draft => setEditing({ ...editing, draft })} />
         : <JourneyPolicyFields draft={editing.draft} onChange={draft => setEditing({ ...editing, draft })} />}
@@ -244,6 +245,8 @@ function BrowserPolicyFields({ draft, onChange }: { draft: BrowserPolicyDraft; o
       <p className="run-report-muted">Effect floors only raise the defaults (50 ms and 10% for timings, 0.02 for CLS).</p>
       <label className="settings-field">Timing floor (ms) <input className="settings-input" inputMode="decimal" value={draft.floorTimingMs} onChange={event => onChange({ ...draft, floorTimingMs: event.target.value })} /></label>
       <label className="settings-field">Relative timing floor (fraction, 0.1–10) <input className="settings-input" inputMode="decimal" value={draft.floorTimingRelative} onChange={event => onChange({ ...draft, floorTimingRelative: event.target.value })} /></label>
+      <p className="run-report-muted">Set a separate timing floor when a metric needs a larger minimum change. Leave it empty to use the overall timing floors. These settings apply independently of scoring weights.</p>
+      {BROWSER_TIMING_METRICS.map(name => <label key={name} className="settings-field">{METRIC_LABELS[name].label} floor ({METRIC_LABELS[name].unit}) <input className="settings-input" inputMode="decimal" value={draft.floorTimingByMetricMs[name]} onChange={event => onChange({ ...draft, floorTimingByMetricMs: { ...draft.floorTimingByMetricMs, [name]: event.target.value } })} /></label>)}
       <label className="settings-field">CLS floor <input className="settings-input" inputMode="decimal" value={draft.floorCls} onChange={event => onChange({ ...draft, floorCls: event.target.value })} /></label>
     </fieldset>
   </>

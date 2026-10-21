@@ -1535,6 +1535,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				ContentHash:         contentHash,
 			},
 			generatorrpc.Assignment{PrepareOnly: test.preparationID != "",
+				BrowserAuthoredDefinition:         group.browserAuthoredDefinition,
 				BrowserInteractionEvidenceVersion: requestedBrowserInteractionVersion(group.script),
 				SourcePlan:                        sourcePlan,
 				LiveTableBindingsJSON:             liveBindingsJSON,

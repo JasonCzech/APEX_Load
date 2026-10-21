@@ -61,29 +61,30 @@ const (
 // contention. Call MetricsSnapshot() periodically (e.g., every second) to
 // extract aggregated metrics during or after a run.
 type Engine struct {
-	liveTableClient    livetable.Client
-	liveTableClientID  string
-	liveTableBindings  []LiveTableBinding
-	runtimeResources   *engineRuntimeResources
-	runtimePause       *engineRuntimePause
-	pooledPilot        *javaPooledPilot
-	brokerExecution    *javaBrokerExecution
-	sharedExecution    *javaSharedGroup
-	evidenceSchedule   []VUserLifetime
-	evidenceStarted    func(time.Time)
-	completionObserver func(int, bool)
-	script             *dsl.Script
-	vusers             int
-	duration           time.Duration
-	terminationMode    string
-	rampUp             time.Duration
-	metrics            *MetricsCollector
-	data               *DataProvider
-	mu                 sync.Mutex // guards cancel
-	cancel             context.CancelFunc
-	softStop           context.CancelFunc
-	secrets            SecretResolver
-	redaction          *RedactionConfig
+	browserAuthoredDefinition protocol.BrowserAuthoredDefinition
+	liveTableClient           livetable.Client
+	liveTableClientID         string
+	liveTableBindings         []LiveTableBinding
+	runtimeResources          *engineRuntimeResources
+	runtimePause              *engineRuntimePause
+	pooledPilot               *javaPooledPilot
+	brokerExecution           *javaBrokerExecution
+	sharedExecution           *javaSharedGroup
+	evidenceSchedule          []VUserLifetime
+	evidenceStarted           func(time.Time)
+	completionObserver        func(int, bool)
+	script                    *dsl.Script
+	vusers                    int
+	duration                  time.Duration
+	terminationMode           string
+	rampUp                    time.Duration
+	metrics                   *MetricsCollector
+	data                      *DataProvider
+	mu                        sync.Mutex // guards cancel
+	cancel                    context.CancelFunc
+	softStop                  context.CancelFunc
+	secrets                   SecretResolver
+	redaction                 *RedactionConfig
 	// importedCredentials is the run's single retained-credential locator walk.
 	// Every VUser this engine creates is handed it; see
 	// runtimeSecretValuesForScript.
@@ -97,6 +98,8 @@ type Engine struct {
 
 // Config contains configuration for Engine creation.
 type Config struct {
+	// BrowserAuthoredDefinition is trusted original-source provenance, never DSL configuration.
+	BrowserAuthoredDefinition protocol.BrowserAuthoredDefinition `json:"-"`
 	// Live table capabilities are trusted caller wiring, never DSL configuration.
 	// Governed single-group Java runtimes use the same admitted client boundary
 	// as GroupConfig; an unmanaged script cannot manufacture a binding.
@@ -244,16 +247,17 @@ func New(cfg Config) (*Engine, error) {
 		runtimePause:      newEngineRuntimePause(runtimeResources, false),
 		evidenceSchedule:  append([]VUserLifetime(nil), cfg.EvidenceSchedule...),
 		evidenceStarted:   cfg.EvidenceStarted, completionObserver: cfg.CompletionObserver,
-		script:              cfg.Script,
-		vusers:              cfg.VUsers,
-		duration:            cfg.Duration,
-		terminationMode:     cfg.TerminationMode,
-		rampUp:              cfg.RampUp,
-		metrics:             metrics,
-		data:                dataProvider,
-		secrets:             secretResolver,
-		redaction:           redactionConfig,
-		importedCredentials: importedCredentials,
+		script:                    cfg.Script,
+		browserAuthoredDefinition: cfg.BrowserAuthoredDefinition,
+		vusers:                    cfg.VUsers,
+		duration:                  cfg.Duration,
+		terminationMode:           cfg.TerminationMode,
+		rampUp:                    cfg.RampUp,
+		metrics:                   metrics,
+		data:                      dataProvider,
+		secrets:                   secretResolver,
+		redaction:                 redactionConfig,
+		importedCredentials:       importedCredentials,
 	}, nil
 }
 
@@ -860,6 +864,7 @@ func (e *Engine) runOpenWorkload(
 				Proto:                        vuProto,
 				Script:                       iterationScript,
 				browserAuthoredSource:        e.script,
+				browserAuthoredDefinition:    e.browserAuthoredDefinition,
 				Metrics:                      e.metrics,
 				SecretResolver:               e.secrets,
 				RedactionConfig:              e.redaction,

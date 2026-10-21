@@ -39,6 +39,9 @@ func validateWorkAssignment(assignment *pb.WorkAssignment, scriptCacheLimit int6
 	if assignment == nil {
 		return validatedWorkAssignment{}, status.Error(codes.InvalidArgument, "assignment is required")
 	}
+	if err := validateBrowserOriginalSource(assignment); err != nil {
+		return validatedWorkAssignment{}, err
+	}
 	if err := validateBrowserInteractionVersion(assignment); err != nil {
 		return validatedWorkAssignment{}, err
 	}

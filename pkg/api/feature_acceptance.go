@@ -17,7 +17,8 @@ import (
 // claims: which commit and binary ran which suite on which profile, provider
 // and platform, with hashes of the sanitized evidence. Records are
 // append-only; a newer failed, pending or revoked record of the subject, or
-// of a broader subject that covers it, withdraws its claim.
+// of a broader subject that covers it, withdraws its claim. Versioned browser
+// measurement/analysis cohorts are independent subjects.
 
 var (
 	acceptanceRequirementPattern = regexp.MustCompile(`^[A-Z]{1,6}-[0-9A-Za-z]{1,8}$`)
@@ -28,17 +29,18 @@ var (
 
 // FeatureAcceptanceRequest records one qualification result.
 type FeatureAcceptanceRequest struct {
-	RequirementID string                              `json:"requirement_id"`
-	Feature       string                              `json:"feature"`
-	Profile       string                              `json:"profile,omitempty"`
-	Provider      string                              `json:"provider,omitempty"`
-	Platform      string                              `json:"platform,omitempty"`
-	CommitSHA     string                              `json:"commit_sha"`
-	BinarySHA256  string                              `json:"binary_sha256,omitempty"`
-	Suite         string                              `json:"suite"`
-	Result        string                              `json:"result"`
-	Artifacts     []storage.FeatureAcceptanceArtifact `json:"artifacts,omitempty"`
-	Notes         string                              `json:"notes,omitempty"`
+	Qualification *storage.BrowserAcceptanceQualification `json:"qualification,omitempty"`
+	RequirementID string                                  `json:"requirement_id"`
+	Feature       string                                  `json:"feature"`
+	Profile       string                                  `json:"profile,omitempty"`
+	Provider      string                                  `json:"provider,omitempty"`
+	Platform      string                                  `json:"platform,omitempty"`
+	CommitSHA     string                                  `json:"commit_sha"`
+	BinarySHA256  string                                  `json:"binary_sha256,omitempty"`
+	Suite         string                                  `json:"suite"`
+	Result        string                                  `json:"result"`
+	Artifacts     []storage.FeatureAcceptanceArtifact     `json:"artifacts,omitempty"`
+	Notes         string                                  `json:"notes,omitempty"`
 }
 
 func (req FeatureAcceptanceRequest) validate() error {
@@ -91,6 +93,7 @@ func (req FeatureAcceptanceRequest) validate() error {
 // unset profile, provider or platform covers this one), and, when the query
 // names a commit or binary, recorded for exactly that commit or binary.
 type FeatureSupportStatus struct {
+	CohortSHA256  string                           `json:"cohort_sha256,omitempty"`
 	RequirementID string                           `json:"requirement_id"`
 	Feature       string                           `json:"feature"`
 	Profile       string                           `json:"profile,omitempty"`
@@ -168,11 +171,25 @@ func (s *Server) handleCreateFeatureAcceptanceRecord(w http.ResponseWriter, r *h
 	}
 	actorType, actorSubject, _ := s.resolveAuditActor(r)
 	record := &storage.FeatureAcceptanceRecord{
-		ID: uuid.NewString(), RequirementID: req.RequirementID, Feature: req.Feature, Profile: req.Profile, Provider: req.Provider,
+		Qualification: req.Qualification, ID: uuid.NewString(), RequirementID: req.RequirementID, Feature: req.Feature, Profile: req.Profile, Provider: req.Provider,
 		Platform: req.Platform, CommitSHA: req.CommitSHA, BinarySHA256: req.BinarySHA256, Suite: req.Suite, Result: req.Result,
 		Artifacts: req.Artifacts, Notes: req.Notes, RecordedAt: time.Now().UTC(), RecordedBy: strings.Trim(actorType+":"+actorSubject, ":"),
 	}
-	if err := store.AppendFeatureAcceptanceRecord(record); err != nil {
+	if storage.IsBrowserIntelligenceAcceptance(record) && record.Result == storage.AcceptancePassed {
+		gate, ok := s.store.(storage.BrowserAcceptanceDependencyStore)
+		if !ok {
+			writeError(w, http.StatusServiceUnavailable, "atomic browser acceptance promotion unavailable")
+			return
+		}
+		err = gate.AppendBrowserIntelligenceAcceptanceRecord(record)
+	} else {
+		err = store.AppendFeatureAcceptanceRecord(record)
+	}
+	if err != nil {
+		if errors.Is(err, storage.ErrBrowserAcceptanceDependency) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusServiceUnavailable, "cannot record feature acceptance")
 		return
 	}
@@ -192,6 +209,11 @@ func (s *Server) handleFeatureAcceptanceStatus(w http.ResponseWriter, r *http.Re
 		return
 	}
 	query := r.URL.Query()
+	cohort := query.Get("cohort_sha256")
+	if cohort != "" && !acceptanceSHA256Pattern.MatchString(cohort) {
+		writeError(w, http.StatusBadRequest, "cohort_sha256 must be a lowercase SHA-256")
+		return
+	}
 	commit, binary := strings.ToLower(query.Get("commit_sha")), strings.ToLower(query.Get("binary_sha256"))
 	if commit != "" && !acceptanceCommitPattern.MatchString(commit) || binary != "" && !acceptanceSHA256Pattern.MatchString(binary) {
 		writeError(w, http.StatusBadRequest, "commit_sha must be a hex commit and binary_sha256 a hex SHA-256")
@@ -211,8 +233,26 @@ func (s *Server) handleFeatureAcceptanceStatus(w http.ResponseWriter, r *http.Re
 	statuses := resolveFeatureSupport(latest, withdrawals, commit, binary)
 	filtered := statuses[:0]
 	for _, status := range statuses {
-		if dimensionMatches(query.Get("profile"), status.Profile) && dimensionMatches(query.Get("provider"), status.Provider) && dimensionMatches(query.Get("platform"), status.Platform) {
+		if dimensionMatches(cohort, status.CohortSHA256) && dimensionMatches(query.Get("profile"), status.Profile) && dimensionMatches(query.Get("provider"), status.Provider) && dimensionMatches(query.Get("platform"), status.Platform) {
 			filtered = append(filtered, status)
+		}
+	}
+	for i := range filtered {
+		status := &filtered[i]
+		if !status.Supported || !storage.IsBrowserIntelligenceAcceptance(status.Latest) {
+			continue
+		}
+		gate, ok := s.store.(storage.BrowserAcceptanceDependencyStore)
+		if !ok {
+			writeError(w, http.StatusServiceUnavailable, "browser acceptance dependency validation unavailable")
+			return
+		}
+		if err := gate.CheckBrowserAcceptanceDependencies(status.Latest); err != nil {
+			if !errors.Is(err, storage.ErrBrowserAcceptanceDependency) {
+				writeError(w, http.StatusServiceUnavailable, "browser acceptance dependency validation unavailable")
+				return
+			}
+			status.Supported, status.Reason = false, "browser_evidence_dependency_unavailable"
 		}
 	}
 	writeJSON(w, http.StatusOK, FeatureSupportStatusResponse{Statuses: filtered, Truncated: truncated})
@@ -238,6 +278,7 @@ func acceptanceRecordNewer(a, b *storage.FeatureAcceptanceRecord) bool {
 // narrow's; an unset dimension covers every value.
 func acceptanceSubjectCovers(broad, narrow *storage.FeatureAcceptanceRecord) bool {
 	return broad.RequirementID == narrow.RequirementID && broad.Feature == narrow.Feature &&
+		(broad.CohortSHA256 == "" || broad.CohortSHA256 == narrow.CohortSHA256) &&
 		(broad.Profile == "" || broad.Profile == narrow.Profile) &&
 		(broad.Provider == "" || broad.Provider == narrow.Provider) &&
 		(broad.Platform == "" || broad.Platform == narrow.Platform)
@@ -248,7 +289,7 @@ func commitMatches(recorded, queried string) bool {
 }
 
 func sameAcceptanceSubject(a, b *storage.FeatureAcceptanceRecord) bool {
-	return a.RequirementID == b.RequirementID && a.Feature == b.Feature && a.Profile == b.Profile && a.Provider == b.Provider && a.Platform == b.Platform
+	return a.RequirementID == b.RequirementID && a.Feature == b.Feature && a.Profile == b.Profile && a.Provider == b.Provider && a.Platform == b.Platform && a.CohortSHA256 == b.CohortSHA256
 }
 
 // resolveFeatureSupport judges each subject by its latest record. A passed
@@ -259,7 +300,7 @@ func resolveFeatureSupport(latest, withdrawals []*storage.FeatureAcceptanceRecor
 	statuses := make([]FeatureSupportStatus, 0, len(latest))
 	for _, record := range latest {
 		status := FeatureSupportStatus{
-			RequirementID: record.RequirementID, Feature: record.Feature, Profile: record.Profile, Provider: record.Provider,
+			CohortSHA256: record.CohortSHA256, RequirementID: record.RequirementID, Feature: record.Feature, Profile: record.Profile, Provider: record.Provider,
 			Platform: record.Platform, Supported: record.Result == storage.AcceptancePassed, Latest: record,
 		}
 		if !status.Supported {
@@ -284,7 +325,7 @@ func resolveFeatureSupport(latest, withdrawals []*storage.FeatureAcceptanceRecor
 	}
 	sort.Slice(statuses, func(i, j int) bool {
 		a, b := statuses[i], statuses[j]
-		return strings.Join([]string{a.RequirementID, a.Feature, a.Profile, a.Provider, a.Platform}, "\x00") < strings.Join([]string{b.RequirementID, b.Feature, b.Profile, b.Provider, b.Platform}, "\x00")
+		return strings.Join([]string{a.RequirementID, a.Feature, a.Profile, a.Provider, a.Platform, a.CohortSHA256}, "\x00") < strings.Join([]string{b.RequirementID, b.Feature, b.Profile, b.Provider, b.Platform, b.CohortSHA256}, "\x00")
 	})
 	return statuses
 }

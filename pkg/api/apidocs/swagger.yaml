@@ -12461,6 +12461,11 @@ paths:
                               type: string
                               format: date-time
                               nullable: true
+                            browser_authored_sources:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
                             business_keys:
                               type: object
                               additionalProperties: true
@@ -12978,6 +12983,11 @@ paths:
                               type: string
                               format: date-time
                               nullable: true
+                            browser_authored_sources:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
                             business_keys:
                               type: object
                               additionalProperties: true
@@ -41041,6 +41051,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -41772,6 +41802,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -42487,6 +42537,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -42966,6 +43020,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -43697,6 +43771,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -44412,6 +44506,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -44928,6 +45026,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -45659,6 +45777,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -46374,6 +46512,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -46772,6 +46914,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -47503,6 +47665,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -48218,6 +48400,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -48616,6 +48802,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -49347,6 +49553,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -50062,6 +50288,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -63856,6 +64086,11 @@ paths:
                                 activity:
                                   type: object
                                   description: 'Go type: ObjectActivitySummary'
+                                  additionalProperties: true
+                                  nullable: true
+                                analysis_policy_selections:
+                                  type: object
+                                  description: 'Go type: RunAnalysisPolicySelections'
                                   additionalProperties: true
                                   nullable: true
                                 application_id:
@@ -90888,6 +91123,28 @@ paths:
             schema:
               type: object
               properties:
+                analysis_policy_selections:
+                  type: object
+                  properties:
+                    browser:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                    journey:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                  nullable: true
                 application_id:
                   type: string
                 assignment:
@@ -92003,6 +92260,28 @@ paths:
                 test:
                   type: object
                   properties:
+                    analysis_policy_selections:
+                      type: object
+                      properties:
+                        browser:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                          nullable: true
+                        journey:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                          nullable: true
+                      nullable: true
                     application_id:
                       type: string
                     assignment:
@@ -93699,6 +93978,34 @@ paths:
                               - resource_name
                               - resource_type
                               - status
+                            nullable: true
+                        nullable: true
+                      analysis_policy_selections:
+                        type: object
+                        properties:
+                          browser:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                            required:
+                              - id
+                              - revision
+                            nullable: true
+                          journey:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                            required:
+                              - id
+                              - revision
                             nullable: true
                         nullable: true
                       application_id:
@@ -101044,6 +101351,34 @@ paths:
                               - status
                             nullable: true
                         nullable: true
+                      analysis_policy_selections:
+                        type: object
+                        properties:
+                          browser:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                            required:
+                              - id
+                              - revision
+                            nullable: true
+                          journey:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                            required:
+                              - id
+                              - revision
+                            nullable: true
+                        nullable: true
                       application_id:
                         type: string
                       archive:
@@ -108386,6 +108721,34 @@ paths:
                               - resource_name
                               - resource_type
                               - status
+                            nullable: true
+                        nullable: true
+                      analysis_policy_selections:
+                        type: object
+                        properties:
+                          browser:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                            required:
+                              - id
+                              - revision
+                            nullable: true
+                          journey:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                            required:
+                              - id
+                              - revision
                             nullable: true
                         nullable: true
                       application_id:
@@ -115744,6 +116107,34 @@ paths:
                               - status
                             nullable: true
                         nullable: true
+                      analysis_policy_selections:
+                        type: object
+                        properties:
+                          browser:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                            required:
+                              - id
+                              - revision
+                            nullable: true
+                          journey:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                            required:
+                              - id
+                              - revision
+                            nullable: true
+                        nullable: true
                       application_id:
                         type: string
                       archive:
@@ -123098,6 +123489,34 @@ paths:
                               - resource_name
                               - resource_type
                               - status
+                            nullable: true
+                        nullable: true
+                      analysis_policy_selections:
+                        type: object
+                        properties:
+                          browser:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                            required:
+                              - id
+                              - revision
+                            nullable: true
+                          journey:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                            required:
+                              - id
+                              - revision
                             nullable: true
                         nullable: true
                       application_id:
@@ -130456,6 +130875,34 @@ paths:
                               - status
                             nullable: true
                         nullable: true
+                      analysis_policy_selections:
+                        type: object
+                        properties:
+                          browser:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                            required:
+                              - id
+                              - revision
+                            nullable: true
+                          journey:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                            required:
+                              - id
+                              - revision
+                            nullable: true
+                        nullable: true
                       application_id:
                         type: string
                       archive:
@@ -137812,6 +138259,34 @@ paths:
                               - status
                             nullable: true
                         nullable: true
+                      analysis_policy_selections:
+                        type: object
+                        properties:
+                          browser:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                            required:
+                              - id
+                              - revision
+                            nullable: true
+                          journey:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                            required:
+                              - id
+                              - revision
+                            nullable: true
+                        nullable: true
                       application_id:
                         type: string
                       archive:
@@ -145002,6 +145477,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -145733,6 +146228,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -146485,6 +147000,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -147082,6 +147601,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -147813,6 +148352,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -148565,6 +149124,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -149222,6 +149785,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -149953,6 +150536,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -150705,6 +151308,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -151308,6 +151915,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -152039,6 +152666,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -152791,6 +153438,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -153388,6 +154039,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -154119,6 +154790,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -154871,6 +155562,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -155473,6 +156168,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -156204,6 +156919,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -156956,6 +157691,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -157559,6 +158298,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -158290,6 +159049,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -159042,6 +159821,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -199373,6 +200156,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -200104,6 +200907,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -200856,6 +201679,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -201454,6 +202281,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -202185,6 +203032,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -202937,6 +203804,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -203596,6 +204467,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -204327,6 +205218,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -205079,6 +205990,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -205683,6 +206598,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -206414,6 +207349,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -207166,6 +208121,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -207764,6 +208723,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -208495,6 +209474,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -209247,6 +210246,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -209850,6 +210853,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -210581,6 +211604,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -211333,6 +212376,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -211937,6 +212984,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -212668,6 +213735,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -213420,6 +214507,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -235117,6 +236208,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -235848,6 +236959,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -236563,6 +237694,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -239663,6 +240798,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -240394,6 +241549,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -241146,6 +242321,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -246995,6 +248174,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -247726,6 +248925,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -248478,6 +249697,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -270409,6 +271632,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -271140,6 +272383,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -271855,6 +273118,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -281064,6 +282331,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -281795,6 +283082,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -282547,6 +283854,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -332900,6 +334211,26 @@ paths:
                             type: string
                           action_type:
                             type: string
+                          authored_step:
+                            type: object
+                            properties:
+                              script_sha256:
+                                type: string
+                              source_structure_sha256:
+                                type: string
+                              step_id:
+                                type: string
+                              step_path:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            required:
+                              - script_sha256
+                              - step_id
+                              - step_path
+                              - version
+                            nullable: true
                           body:
                             type: string
                           client_metrics:
@@ -333631,6 +334962,26 @@ paths:
                               type: string
                             action_type:
                               type: string
+                            authored_step:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                source_structure_sha256:
+                                  type: string
+                                step_id:
+                                  type: string
+                                step_path:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - step_id
+                                - step_path
+                                - version
+                              nullable: true
                             body:
                               type: string
                             client_metrics:
@@ -334383,6 +335734,10 @@ paths:
                                   type: string
                                 action_type:
                                   type: string
+                                authored_step:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 body:
                                   type: string
                                 client_metrics:
@@ -345491,6 +346846,8 @@ paths:
                               - sha256
                         binary_sha256:
                           type: string
+                        cohort_sha256:
+                          type: string
                         commit_sha:
                           type: string
                         feature:
@@ -345504,6 +346861,36 @@ paths:
                         profile:
                           type: string
                         provider:
+                          type: string
+                        qualification:
+                          type: object
+                          properties:
+                            analysis_algorithm:
+                              type: string
+                            capability_sha256:
+                              type: string
+                            dependencies:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            measurement_algorithm:
+                              type: string
+                            metric:
+                              type: string
+                            runtime_sha256:
+                              type: string
+                            version:
+                              type: integer
+                              format: int64
+                          required:
+                            - capability_sha256
+                            - measurement_algorithm
+                            - metric
+                            - runtime_sha256
+                            - version
+                          nullable: true
+                        record_sha256:
                           type: string
                         recorded_at:
                           type: string
@@ -345624,6 +347011,32 @@ paths:
                   type: string
                 provider:
                   type: string
+                qualification:
+                  type: object
+                  properties:
+                    analysis_algorithm:
+                      type: string
+                    capability_sha256:
+                      type: string
+                    dependencies:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          record_id:
+                            type: string
+                          record_sha256:
+                            type: string
+                    measurement_algorithm:
+                      type: string
+                    metric:
+                      type: string
+                    runtime_sha256:
+                      type: string
+                    version:
+                      type: integer
+                      format: int64
+                  nullable: true
                 requirement_id:
                   type: string
                 result:
@@ -345651,6 +347064,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
           content:
             application/json:
               schema:
@@ -345691,6 +347110,8 @@ paths:
                     items:
                       type: object
                       properties:
+                        cohort_sha256:
+                          type: string
                         feature:
                           type: string
                         latest:
@@ -345702,6 +347123,8 @@ paths:
                                 type: object
                                 additionalProperties: true
                             binary_sha256:
+                              type: string
+                            cohort_sha256:
                               type: string
                             commit_sha:
                               type: string
@@ -345716,6 +347139,37 @@ paths:
                             profile:
                               type: string
                             provider:
+                              type: string
+                            qualification:
+                              type: object
+                              properties:
+                                analysis_algorithm:
+                                  type: string
+                                capability_sha256:
+                                  type: string
+                                dependencies:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BrowserAcceptanceDependency'
+                                    additionalProperties: true
+                                measurement_algorithm:
+                                  type: string
+                                metric:
+                                  type: string
+                                runtime_sha256:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - capability_sha256
+                                - measurement_algorithm
+                                - metric
+                                - runtime_sha256
+                                - version
+                              nullable: true
+                            record_sha256:
                               type: string
                             recorded_at:
                               type: string
@@ -345765,6 +347219,8 @@ paths:
                                 additionalProperties: true
                             binary_sha256:
                               type: string
+                            cohort_sha256:
+                              type: string
                             commit_sha:
                               type: string
                             feature:
@@ -345778,6 +347234,37 @@ paths:
                             profile:
                               type: string
                             provider:
+                              type: string
+                            qualification:
+                              type: object
+                              properties:
+                                analysis_algorithm:
+                                  type: string
+                                capability_sha256:
+                                  type: string
+                                dependencies:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BrowserAcceptanceDependency'
+                                    additionalProperties: true
+                                measurement_algorithm:
+                                  type: string
+                                metric:
+                                  type: string
+                                runtime_sha256:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - capability_sha256
+                                - measurement_algorithm
+                                - metric
+                                - runtime_sha256
+                                - version
+                              nullable: true
+                            record_sha256:
                               type: string
                             recorded_at:
                               type: string
@@ -345850,6 +347337,12 @@ paths:
       x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read'
       parameters:
         - name: binary_sha256
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: cohort_sha256
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -354491,6 +355984,28 @@ paths:
             schema:
               type: object
               properties:
+                analysis_policy_selections:
+                  type: object
+                  properties:
+                    browser:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                    journey:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                  nullable: true
                 application_id:
                   type: string
                 assignment:
@@ -356773,6 +358288,34 @@ paths:
                           - resource_name
                           - resource_type
                           - status
+                        nullable: true
+                    nullable: true
+                  analysis_policy_selections:
+                    type: object
+                    properties:
+                      browser:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                      journey:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
                         nullable: true
                     nullable: true
                   application_id:
@@ -373981,6 +375524,34 @@ paths:
                           - resource_name
                           - resource_type
                           - status
+                        nullable: true
+                    nullable: true
+                  analysis_policy_selections:
+                    type: object
+                    properties:
+                      browser:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                      journey:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
                         nullable: true
                     nullable: true
                   application_id:
@@ -392455,6 +394026,8 @@ paths:
                           properties:
                             script_sha256:
                               type: string
+                            source_structure_sha256:
+                              type: string
                             step_id:
                               type: string
                             step_path:
@@ -394488,6 +396061,22 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      browser_authored_sources:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            script_sha256:
+                              type: string
+                            structure_sha256:
+                              type: string
+                            version:
+                              type: integer
+                              format: int64
+                          required:
+                            - script_sha256
+                            - structure_sha256
+                            - version
                       business_keys:
                         type: object
                         properties:
@@ -397543,6 +399132,22 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      browser_authored_sources:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            script_sha256:
+                              type: string
+                            structure_sha256:
+                              type: string
+                            version:
+                              type: integer
+                              format: int64
+                          required:
+                            - script_sha256
+                            - structure_sha256
+                            - version
                       business_keys:
                         type: object
                         properties:
@@ -413607,6 +415212,22 @@ paths:
                             type: string
                             format: date-time
                             nullable: true
+                          browser_authored_sources:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                structure_sha256:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - structure_sha256
+                                - version
                           business_keys:
                             type: object
                             properties:
@@ -415234,6 +416855,22 @@ paths:
                             type: string
                             format: date-time
                             nullable: true
+                          browser_authored_sources:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                script_sha256:
+                                  type: string
+                                structure_sha256:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - script_sha256
+                                - structure_sha256
+                                - version
                           business_keys:
                             type: object
                             properties:
@@ -428442,6 +430079,34 @@ paths:
                           - resource_name
                           - resource_type
                           - status
+                        nullable: true
+                    nullable: true
+                  analysis_policy_selections:
+                    type: object
+                    properties:
+                      browser:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                      journey:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
                         nullable: true
                     nullable: true
                   application_id:
@@ -445588,6 +447253,34 @@ paths:
                           - resource_name
                           - resource_type
                           - status
+                        nullable: true
+                    nullable: true
+                  analysis_policy_selections:
+                    type: object
+                    properties:
+                      browser:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                      journey:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
                         nullable: true
                     nullable: true
                   application_id:
@@ -468798,6 +470491,34 @@ paths:
                           - resource_name
                           - resource_type
                           - status
+                        nullable: true
+                    nullable: true
+                  analysis_policy_selections:
+                    type: object
+                    properties:
+                      browser:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                      journey:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
                         nullable: true
                     nullable: true
                   application_id:
@@ -510089,6 +511810,28 @@ paths:
             schema:
               type: object
               properties:
+                analysis_policy_selections:
+                  type: object
+                  properties:
+                    browser:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                    journey:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                  nullable: true
                 application_id:
                   type: string
                 assignment:
@@ -513716,6 +515459,28 @@ paths:
             schema:
               type: object
               properties:
+                analysis_policy_selections:
+                  type: object
+                  properties:
+                    browser:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                    journey:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                  nullable: true
                 application_id:
                   type: string
                 assignment:

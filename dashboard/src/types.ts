@@ -795,6 +795,7 @@ export interface RunContinuityStatus {
 }
 
 export interface TestSummary {
+  analysis_policy_selections?: import('./types/analysisPolicies').RunAnalysisPolicySelections
   /** Safe configured capture identities; credentials are never part of this projection. */
   elk_capture?: { connection_id: string; connection_name?: string }
   dynatrace_capture?: { connection_id: string; connection_name?: string }
@@ -2345,6 +2346,7 @@ export interface ScenarioDraftGroup {
 }
 
 export interface ScenarioDraftRevisionContext {
+  analysisPolicySelections?: import('./types/analysisPolicies').RunAnalysisPolicySelections
   /** Initial source presence distinguishes an authored empty replacement from inheritance. */
   sourceGoalConfigPresent?: boolean
   sourceRuntimeSettingsPresent?: boolean

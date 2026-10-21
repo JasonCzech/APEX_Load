@@ -23,6 +23,8 @@ const maxMultiGroupRuntimeSecretRedactionBytes = 32 << 20
 var ErrInitialRampInProgress = errors.New("initial vuser ramp is still in progress")
 
 type GroupConfig struct {
+	// BrowserAuthoredDefinition is trusted original-source provenance, never DSL configuration.
+	BrowserAuthoredDefinition protocol.BrowserAuthoredDefinition `json:"-"`
 	// BrowserInteractionEvidenceVersion is negotiated transport wiring; zero uses the current local version.
 	BrowserInteractionEvidenceVersion int
 	DistributedRendezvousClient       rendezvous.Client
@@ -1995,6 +1997,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 	vu = &VUser{
 		correlation:                  groupVUserCorrelation(group),
 		browserInteractionVersion:    group.BrowserInteractionEvidenceVersion,
+		browserAuthoredDefinition:    group.BrowserAuthoredDefinition,
 		ID:                           -1,
 		TotalVUsers:                  group.VUsers,
 		ParameterAllocation:          groupParameterAllocation(group, 0),
@@ -2284,45 +2287,55 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 		defer recoverVUserGoroutine(prepared.runtimeID, redaction)
 		defer mge.finishPreparedVUser(prepared, redaction)
 
-		vu = &VUser{
-			correlation:                  groupVUserCorrelation(prepared.group),
-			browserInteractionVersion:    prepared.group.BrowserInteractionEvidenceVersion,
-			ID:                           prepared.runtimeID,
-			TotalVUsers:                  prepared.group.VUsers,
-			ParameterAllocation:          groupParameterAllocation(prepared.group, prepared.identity.local),
-			Group:                        prepared.group.Name,
-			Region:                       prepared.group.Region,
-			RunID:                        prepared.group.RunID,
-			Proto:                        prepared.proto,
-			Script:                       prepared.script,
-			browserAuthoredSource:        prepared.group.Script,
-			browserIdentity:              prepared.browserIdentity,
-			sessionStartNotBefore:        browserSessionStart(mge.runStartedAt, prepared.browserIdentity, prepared.script),
-			Metrics:                      mge.metrics,
-			ResultSink:                   prepared.group.ResultSink,
-			RedactionConfig:              prepared.group.RedactionConfig,
-			importedCredentialInspection: prepared.group.importedCredentials,
-			sourceParameters:             prepared.group.sourceParameters,
-			sourceSamplers:               prepared.group.sourceSamplers,
-			SecretResolver:               prepared.group.SecretResolver,
-			PauseControl:                 mge,
-			IterationRateLimiter:         prepared.group.rateLimiter,
-			ThroughputCap:                prepared.group.throughputCap,
-			Rendezvous:                   prepared.group.rendezvous,
-			DistributedRendezvous:        prepared.group.distributedRendezvous,
-			ExecutionGoals:               prepared.group.executionGoals,
-			HardStopCtx:                  prepared.shedCtx,
-			ActionBoundaryCtx:            prepared.boundaryCtx,
-			DataProvider:                 prepared.group.dataProvider,
-			LiveTableClient:              prepared.group.LiveTableClient,
-			LiveTableClientID:            prepared.group.LiveTableClientID,
-			LiveTableBindings:            prepared.group.LiveTableBindings,
-			SkipInit:                     groupLifecycleAtOnce(prepared.group),
-			SkipTeardown:                 groupLifecycleAtOnce(prepared.group),
-		}
+		vu = mge.newPreparedVUser(prepared)
 		vu.Run(prepared.vuCtx)
 	}()
 	return true
+}
+
+// newPreparedVUser builds the startup state outside the parked goroutine's
+// frame. Copying GroupConfig while constructing a VUser in that frame keeps
+// lifecycle waits above the GC stack-shrink threshold as source metadata grows.
+//
+//go:noinline
+func (mge *MultiGroupEngine) newPreparedVUser(prepared *preparedVUser) *VUser {
+	return &VUser{
+		correlation:                  groupVUserCorrelation(prepared.group),
+		browserInteractionVersion:    prepared.group.BrowserInteractionEvidenceVersion,
+		browserAuthoredDefinition:    prepared.group.BrowserAuthoredDefinition,
+		ID:                           prepared.runtimeID,
+		TotalVUsers:                  prepared.group.VUsers,
+		ParameterAllocation:          groupParameterAllocation(prepared.group, prepared.identity.local),
+		Group:                        prepared.group.Name,
+		Region:                       prepared.group.Region,
+		RunID:                        prepared.group.RunID,
+		Proto:                        prepared.proto,
+		Script:                       prepared.script,
+		browserAuthoredSource:        prepared.group.Script,
+		browserIdentity:              prepared.browserIdentity,
+		sessionStartNotBefore:        browserSessionStart(mge.runStartedAt, prepared.browserIdentity, prepared.script),
+		Metrics:                      mge.metrics,
+		ResultSink:                   prepared.group.ResultSink,
+		RedactionConfig:              prepared.group.RedactionConfig,
+		importedCredentialInspection: prepared.group.importedCredentials,
+		sourceParameters:             prepared.group.sourceParameters,
+		sourceSamplers:               prepared.group.sourceSamplers,
+		SecretResolver:               prepared.group.SecretResolver,
+		PauseControl:                 mge,
+		IterationRateLimiter:         prepared.group.rateLimiter,
+		ThroughputCap:                prepared.group.throughputCap,
+		Rendezvous:                   prepared.group.rendezvous,
+		DistributedRendezvous:        prepared.group.distributedRendezvous,
+		ExecutionGoals:               prepared.group.executionGoals,
+		HardStopCtx:                  prepared.shedCtx,
+		ActionBoundaryCtx:            prepared.boundaryCtx,
+		DataProvider:                 prepared.group.dataProvider,
+		LiveTableClient:              prepared.group.LiveTableClient,
+		LiveTableClientID:            prepared.group.LiveTableClientID,
+		LiveTableBindings:            prepared.group.LiveTableBindings,
+		SkipInit:                     groupLifecycleAtOnce(prepared.group),
+		SkipTeardown:                 groupLifecycleAtOnce(prepared.group),
+	}
 }
 
 func (mge *MultiGroupEngine) finishPreparedVUser(prepared *preparedVUser, redaction func() *RedactionConfig) {
@@ -2868,6 +2881,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		vu = &VUser{
 			correlation:                  groupVUserCorrelation(group),
 			browserInteractionVersion:    group.BrowserInteractionEvidenceVersion,
+			browserAuthoredDefinition:    group.BrowserAuthoredDefinition,
 			ID:                           runtimeVUserID,
 			Group:                        group.Name,
 			Region:                       group.Region,

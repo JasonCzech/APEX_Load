@@ -286,6 +286,15 @@ message WorkAssignment {
   // older controller. Version 2 requires traffic-free staging and an exact
   // acknowledgement before CommitWork, after feature negotiation.
   uint32 browser_interaction_evidence_version = 52;
+  // Original authored source before controller runtime overlays. Send only to
+  // browser_original_source_v1 peers during traffic-free preparation.
+  BrowserAuthoredDefinition browser_authored_definition = 53;
+}
+
+message BrowserAuthoredDefinition {
+  uint32 version = 1;
+  string script_sha256 = 2;
+  string structure_sha256 = 3;
 }
 
 // JointEvidenceProjection chooses up to three dimensions of one population
@@ -523,6 +532,8 @@ message AssignmentAck {
   JavaVMOutcome java_vm = 6;
   // Confirms the staged interaction version before any protocol preflight.
   uint32 browser_interaction_evidence_version = 7;
+  // Exact source descriptor staged before CommitWork. Absent for legacy work.
+  BrowserAuthoredDefinition browser_authored_definition = 8;
 }
 
 // JavaVMOutcome is value-free: a mode, a stable reason code and counts.

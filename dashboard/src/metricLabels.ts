@@ -4,6 +4,9 @@
  * values carry it after the number ("1,006 ms", via formatMs).
  */
 export const METRIC_LABELS = {
+  lcp: { label: 'LCP', unit: 'ms' },
+  fcp: { label: 'FCP', unit: 'ms' },
+  inp: { label: 'INP', unit: 'ms' },
   javaAuthoredBase64: { label: 'Runtime input representation', unit: 'bytes' },
   javaDecodedRequest: { label: 'Decoded request', unit: 'bytes' },
   javaPreparedRequest: { label: 'Prepared request body', unit: 'bytes' },

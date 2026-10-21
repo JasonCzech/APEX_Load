@@ -131,6 +131,7 @@ func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssig
 	defer func() {
 		if callErr == nil && ack.GetAccepted() {
 			ack.BrowserInteractionEvidenceVersion = assignment.GetBrowserInteractionEvidenceVersion()
+			ack.BrowserAuthoredDefinition = assignment.GetBrowserAuthoredDefinition()
 		}
 	}()
 	defer func() {
@@ -1151,6 +1152,12 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if request.GetBrowserInteractionEvidenceVersion() == 2 && !dsl.BrowserInteractionCaptureRequested(&script) {
 		return nil, status.Error(codes.InvalidArgument, "interaction evidence v2 requires browser interaction capture")
 	}
+	if source := request.GetBrowserAuthoredDefinition(); source != nil {
+		runtimeSource := engine.BrowserOriginalAuthoredDefinition(&script)
+		if !runtimeSource.Valid() || runtimeSource.StructureSHA256 != source.StructureSha256 {
+			return nil, status.Error(codes.InvalidArgument, "browser original source structure does not match runtime")
+		}
+	}
 	validationIssues := dsl.ValidateScriptIssues(&script)
 	if assignmentPreservesImportedCredentials(&script) {
 		// Assignments originate from the controller's durable script snapshot.
@@ -1283,6 +1290,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			RuntimeResourceReservation:        plan.runtimeResources.reservation,
 			JavaBroker:                        javaHost,
 			Name:                              request.GetGroupName(),
+			BrowserAuthoredDefinition:         browserAuthoredDefinitionFromProto(request.GetBrowserAuthoredDefinition()),
 			BrowserInteractionEvidenceVersion: assignedBrowserInteractionVersion(request),
 			StartOffset:                       plan.validated.startOffset,
 			Region:                            strings.TrimSpace(request.GetRegion()),

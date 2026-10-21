@@ -226,6 +226,8 @@ The [authored identity foundation](qa/reviews/roadmap-browser-authored-identity-
 
 The [native dispatch and interaction analysis slice](qa/reviews/roadmap-browser-dispatch-v2-2026-10-20/README.md) retains authored step and engine invocation/attempt identity in negotiated raw v2, joins observed native-event clocks and geometry to document lifecycles, and separates qualified v3 patterns from historical maps. Its missing/canceled populations remain explicit. Authored page identity, durable replay HAR, broader outcomes and the remaining qualification gates below remain open.
 
+The [original-source binding slice](qa/reviews/roadmap-browser-original-source-2026-10-21/README.md) extends engine-input identity with a distinct original-source step version, preserves it through compiled restart and replay, and negotiates exact generator staging. Mutable-library legacy repair leaves original proof unavailable. Native local replay/run chains verify the binding across desktop and mobile-emulation cohorts; authored page identity and complete runtime comparability remain open.
+
 Add versioned stable authored page/action/step identity and actual gesture dispatch time, separate from post-action wait/capture time. Join evidence by run/source generation and document lifecycle identity. Duplicate action names must remain distinct steps. Capture scroll/layout/frame provenance at the relevant observation; child-frame coordinates require an observed transform, otherwise explicitly retain an unmapped frame population. Old records remain identity-unavailable rather than receiving invented keys or dispatch times.
 
 Preserve independent availability per metric, document finality/deduplication and standards-qualified document measurements. Do not infer INP from action duration, reset a page's lifetime for every action or count duplicate final publications as new documents. Validate the actual browser lifecycle: genuine BFCache restore, navigation, managed browser/renderer/page crashes, cancellation and late final evidence. Synthetic lifecycle events are unit fixtures, not proof of BFCache behavior.
@@ -260,7 +262,9 @@ Retain recommended **1–2 browser VUsers and maximum 5 per generator**. A highe
 
 ### BI-A — Qualified baseline selection and findings
 
-The [baseline qualification guard slice](qa/reviews/roadmap-browser-baseline-qualification-2026-10-19/README.md) prevents per-metric floors from lowering the effective timing/CLS thresholds and leaves cohorts with known document loss unscored. The v1 estimator is unchanged; configured policy editing, compatible baseline selection and real-run qualification below remain open.
+The [baseline qualification guard slice](qa/reviews/roadmap-browser-baseline-qualification-2026-10-19/README.md) prevents per-metric floors from lowering the effective timing/CLS thresholds and leaves cohorts with known document loss unscored. The v1 estimator is unchanged; the configured metric-floor slice below adds policy editing. Compatible baseline selection and real-run qualification remain open.
+
+The [configured metric-floor slice](qa/reviews/roadmap-browser-metric-floors-2026-10-21/README.md) carries optional LCP/FCP/INP floors from policy editing through immutable revision pins into the existing estimator. Per-metric values can only raise the overall absolute and relative floors. Compatible baseline selection and real two-run qualification remain open.
 
 Extend the existing RCA browser baseline with stable authored identity and actual `latest_compatible` selection. Qualify immutable script, engine/profile/runtime cohort, policy revision, comparable load/window, clocks and source coverage before selection. Exclude pause/shaping/loss/insufficient-window mismatches and show why; do not select merely the newest run. Add configured per-metric effect floors and immutable links from each threshold/baseline finding to its selected baseline and pinned policy.
 
@@ -284,7 +288,11 @@ Preserve scripted/consented-recorded/unknown provenance. Synthetic repeats do no
 
 ### BI-C — Complete policy, panel and evidence workflows
 
+The [atomic browser promotion gate](qa/reviews/roadmap-browser-promotion-2026-10-20/README.md) binds accepted BE-4 evidence to the exact binary and measurement cohort, checks and inserts BI promotions in one transaction, and withdraws current support when a dependency is superseded or revoked. SQLite and disposable local PostgreSQL cover the concurrent withdrawal race. This does not itself qualify any browser cohort or close the policy/live/panel workflows below.
+
 Implement a release/CI dependency gate before promoting BI support: the claimed binary, engine/profile/platform and metric/algorithm cohort must resolve to reviewed, accepted BE evidence for that same scope. Bind evidence digests in the promotion result. Missing, failed, revoked or stale/mismatched binary/capability evidence blocks promotion; suite execution order or a pending acceptance request is insufficient. Test each refusal and a valid matching dependency, including a change between checking evidence and promotion. Preserve authorized historical results and explicitly labelled preview behavior; the gate must not rewrite old findings.
+
+The [run policy selection slice](qa/reviews/roadmap-browser-policy-selection-2026-10-21/README.md) adds exact browser/journey revision selection to New run and revised queued copies, retains it through drafts/reload/admission, and refuses unavailable selections. Recurring schedule authoring continues to use project defaults. Compatible baselines, panels, provisional live results and external qualification remain open.
 
 Allow an editor to select a specific immutable browser/journey policy revision for a run while retaining the current default behavior. Use existing optimistic policy writes and authorization. Expose cohort digests and stable page/step identities, support the necessary bounded multi-tuple native panels, and implement comparison → saved panel without losing input/policy/cohort pins.
 

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -263,6 +264,38 @@ func browserManagedAuthorReplayRunArchiveHARChain(t *testing.T, browserEngine, p
 	call("GET", base+"?include=har", nil, harViewer, 403, nil)
 	call("GET", base+"/browser-resources", nil, harOtherEditor, 403, nil)
 	call("POST", "/api/v1/scripts", map[string]any{"script": script}, harViewer, 403, nil)
+	// Replay and managed execution must bind the same authored definition even
+	// though their controller-owned HAR directories and runtime options differ.
+	if terminal.FinalReport == nil || len(terminal.FinalReport.Events) != 2 {
+		t.Fatal("replay event proof unavailable")
+	}
+	replayStep := terminal.FinalReport.Events[1].AuthoredStep
+	if !replayStep.Valid() || replayStep.Version != protocol.BrowserOriginalAuthoredStepVersion || replayStep.StepPath != "actions[1]" {
+		t.Fatalf("replay source proof=%+v", replayStep)
+	}
+	sourceDefinition := manifest.Provenance.BrowserAuthoredSources["browser"]
+	if !sourceDefinition.Valid() || sourceDefinition.ScriptSHA256 != replayStep.ScriptSHA256 || sourceDefinition.StructureSHA256 != replayStep.SourceStructureSHA256 {
+		t.Fatal("archive lost original source provenance")
+	}
+	archiveRecord, err := store.GetRunArchive(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matches := 0
+	if _, err := forEachBrowserInteractionRecord(filepath.Join(archiveRecord.ArchivePath, manifest.BrowserInteractionsFile), func(e *protocol.BrowserInteractionEvidence) error {
+		for _, interaction := range e.Interactions {
+			if !reflect.DeepEqual(interaction.AuthoredStep, replayStep) {
+				t.Fatalf("managed/replay original step mismatch: managed=%+v replay=%+v", interaction.AuthoredStep, replayStep)
+			}
+			matches++
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if matches != 1 {
+		t.Fatalf("original source interaction population=%d", matches)
+	}
 	var interactions BrowserInteractionAnalysis
 	call("GET", base+"/browser-interactions", nil, harViewer, 200, &interactions)
 	wantEligible := int64(1)

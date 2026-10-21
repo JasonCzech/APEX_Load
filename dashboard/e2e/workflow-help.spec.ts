@@ -263,6 +263,9 @@ test('retained resource guide is searchable and remains selected after reload an
     expect(value.target.x).toBeGreaterThanOrEqual(value.owner.x)
     expect(value.target.x + value.target.width).toBeLessThanOrEqual(Math.min(value.viewport.width, value.owner.x + value.owner.width))
   }
+  // ResizeObserver re-aligns the focused anchor after the toolbar wraps.
+  // Wait for that real layout update; never scroll the heading in the test.
+  await expect(async () => assertVisible(await geometry())).toPass({ timeout: 5000 })
   const before = await geometry()
   await testInfo.attach('resource-help-heading-before', { body: JSON.stringify(before), contentType: 'application/json' })
   assertVisible(before)
@@ -407,4 +410,75 @@ test('browser Help distinguishes qualified native dispatch from historical evide
   await expect(article).toContainText('historical maps')
   await page.setViewportSize({ width: 760, height: 900 })
   expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+})
+
+
+test('browser promotion Help preserves atomic evidence dependencies', async ({ page }, testInfo) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('Promoting browser intelligence support')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Browser intelligence workflows', exact: true }).click()
+  const article = page.locator('.guide-markdown-article')
+  await expect(article).toContainText('writer fence')
+  await expect(article).toContainText('cohort_sha256')
+  await expect(article).toContainText('record_sha256')
+  await page.reload()
+  const heading = article.getByRole('heading', { name: 'Promoting browser intelligence support', exact: true })
+  await heading.scrollIntoViewIfNeeded()
+  await expect(heading).toBeVisible()
+  await page.setViewportSize({ width: 760, height: 900 })
+  expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('browser-promotion-help.png'), animations: 'disabled' })
+})
+
+
+test('browser metric-floor Help retains pinned revision and threshold rules', async ({ page }, testInfo) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('Per-metric baseline effect floors')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Browser intelligence workflows', exact: true }).click()
+  const article = page.locator('.guide-markdown-article')
+  await expect(article).toContainText('timing_by_metric_ms')
+  await expect(article).toContainText('largest of its configured')
+  await page.reload()
+  const heading = article.getByRole('heading', { name: 'Per-metric baseline effect floors', exact: true })
+  await heading.scrollIntoViewIfNeeded()
+  await expect(heading).toBeVisible()
+  await expect(article).toContainText('pinned immutable')
+  await page.setViewportSize({ width: 760, height: 900 })
+  expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('browser-metric-floors-help.png'), animations: 'disabled' })
+})
+
+
+test('original browser source Help distinguishes source proof from runtime equivalence', async ({ page }, testInfo) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('Original authored source identity')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Browser intelligence workflows', exact: true }).click()
+  const article = page.locator('.guide-markdown-article')
+  await expect(article).toContainText('browser_original_source_v1')
+  await expect(article).toContainText('original-source identity unavailable')
+  await page.reload()
+  const heading = article.getByRole('heading', { name: 'Original authored source identity', exact: true })
+  await heading.scrollIntoViewIfNeeded()
+  await expect(heading).toBeVisible()
+  await expect(article).toContainText('Source equality alone')
+  await page.setViewportSize({ width: 760, height: 900 })
+  await heading.scrollIntoViewIfNeeded()
+  await expect(heading).toBeVisible()
+  expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('browser-original-source-help.png'), animations: 'disabled' })
+})
+
+
+test('run policy selection Help preserves revision and admission boundaries', async ({ page }, testInfo) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('Choose policy revisions for a run')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Browser intelligence workflows', exact: true }).click()
+  const article = page.locator('.guide-markdown-article')
+  await expect(article).toContainText('source: run_selection')
+  await page.reload()
+  const heading = article.getByRole('heading', { name: 'Choose policy revisions for a run', exact: true })
+  await heading.scrollIntoViewIfNeeded()
+  await expect(heading).toBeVisible()
+  await expect(article).toContainText('Recurring schedule authoring continues to use project defaults')
+  await page.setViewportSize({ width: 760, height: 900 })
+  await heading.scrollIntoViewIfNeeded()
+  await expect(heading).toBeVisible()
+  expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('browser-run-policy-help.png'), animations: 'disabled' })
 })

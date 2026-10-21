@@ -18,8 +18,10 @@ import (
 )
 
 type VUser struct {
-	browserInvocation         uint64
-	browserInteractionVersion int
+	browserAuthoredDefinition        protocol.BrowserAuthoredDefinition
+	browserAuthoredIndexedDefinition protocol.BrowserAuthoredDefinition
+	browserInvocation                uint64
+	browserInteractionVersion        int
 	// browserAuthoredSource is the trusted authored script before an engine
 	// iteration/session copy. It is never read from executable script metadata.
 	browserAuthoredSource        *dsl.Script

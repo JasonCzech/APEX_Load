@@ -254,11 +254,30 @@ test('the Transactions table attributes each live transaction to the groups that
     await page.goto(`/#/command-center/${testId}?${scopeQuery(workspace)}`)
     const tables = page.getByRole('region', { name: 'Command center run tables', exact: true })
     await tables.getByRole('tab', { name: 'Transactions', exact: true }).click()
-    const rows = tables.locator('tbody tr')
-    await expect(rows.filter({ hasText: 'Login' }).filter({ hasText: 'Buyers' })).toHaveCount(1, { timeout: 60_000 })
-    await expect(rows.filter({ hasText: 'Login' }).filter({ hasText: 'Sellers' })).toHaveCount(1)
-    await expect(rows.filter({ hasText: 'Search' })).toContainText('Buyers')
-    await expect(tables.getByText(/has a row for each group's share/)).toBeVisible()
+    // Group headings own their following child rows; group names no longer
+    // repeat in each transaction row. Check the actual hierarchy and counts.
+    const groupedTransactions = () => tables.locator('tbody tr').evaluateAll(rows => {
+      const groups: Record<string, string[]> = {}
+      let group = ''
+      for (const row of rows) {
+        if (row.classList.contains('command-table-section-row')) {
+          group = row.querySelector('strong')?.textContent?.trim() || ''
+          groups[group] = []
+        } else if (row.classList.contains('command-table-child-row') && group) {
+          groups[group].push(row.querySelector('td strong')?.textContent?.trim() || '')
+        }
+      }
+      for (const names of Object.values(groups)) names.sort()
+      return groups
+    })
+    await expect.poll(groupedTransactions, { timeout: 60_000 }).toEqual({ Buyers: ['Login', 'Search'], Sellers: ['Login'] })
+    const buyersHeading = tables.getByRole('button', { name: /Buyers/ })
+    await expect(buyersHeading).toHaveAttribute('aria-expanded', 'true')
+    await buyersHeading.click()
+    await expect.poll(groupedTransactions).toEqual({ Buyers: [], Sellers: ['Login'] })
+    await buyersHeading.click()
+    await expect.poll(groupedTransactions).toEqual({ Buyers: ['Login', 'Search'], Sellers: ['Login'] })
+    await expect(tables.getByText(/Each group, then the transactions it ran/)).toBeVisible()
   } finally {
     await abortLiveRun(request, { testId, scriptId: buyers })
     await request.delete(`/api/v1/scripts/${sellers}`)

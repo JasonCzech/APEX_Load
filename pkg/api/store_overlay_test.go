@@ -278,6 +278,15 @@ func (o *sqliteStoreOverlay) AnalysisUploadWriterCleanupPlan(a0 context.Context,
 	return o.base().AnalysisUploadWriterCleanupPlan(a0, a1)
 }
 
+func (o *sqliteStoreOverlay) AppendBrowserIntelligenceAcceptanceRecord(a0 *storage.FeatureAcceptanceRecord) error {
+	if fake, ok := o.fake.(interface {
+		AppendBrowserIntelligenceAcceptanceRecord(*storage.FeatureAcceptanceRecord) error
+	}); ok {
+		return fake.AppendBrowserIntelligenceAcceptanceRecord(a0)
+	}
+	return o.base().AppendBrowserIntelligenceAcceptanceRecord(a0)
+}
+
 func (o *sqliteStoreOverlay) AppendFeatureAcceptanceRecord(a0 *storage.FeatureAcceptanceRecord) error {
 	if fake, ok := o.fake.(interface {
 		AppendFeatureAcceptanceRecord(*storage.FeatureAcceptanceRecord) error
@@ -535,6 +544,15 @@ func (o *sqliteStoreOverlay) CancelUnissuedManagementPoll(a0 string, a1 string, 
 		return fake.CancelUnissuedManagementPoll(a0, a1, a2, a3, a4, a5)
 	}
 	return o.base().CancelUnissuedManagementPoll(a0, a1, a2, a3, a4, a5)
+}
+
+func (o *sqliteStoreOverlay) CheckBrowserAcceptanceDependencies(a0 *storage.FeatureAcceptanceRecord) error {
+	if fake, ok := o.fake.(interface {
+		CheckBrowserAcceptanceDependencies(*storage.FeatureAcceptanceRecord) error
+	}); ok {
+		return fake.CheckBrowserAcceptanceDependencies(a0)
+	}
+	return o.base().CheckBrowserAcceptanceDependencies(a0)
 }
 
 func (o *sqliteStoreOverlay) ClaimAnalysisImportAttempt(a0 context.Context, a1 string, a2 string, a3 int64, a4 time.Duration) (*storage.AnalysisImport, *storage.AnalysisAttempt, error) {
@@ -2785,6 +2803,15 @@ func (o *sqliteStoreOverlay) GetAnalysisImport(a0 string) (*storage.AnalysisImpo
 		return fake.GetAnalysisImport(a0)
 	}
 	return o.base().GetAnalysisImport(a0)
+}
+
+func (o *sqliteStoreOverlay) GetAnalysisPolicyRevision(a0 string, a1 string, a2 int64) (*storage.AnalysisDefinition, *storage.AnalysisDefinition, error) {
+	if fake, ok := o.fake.(interface {
+		GetAnalysisPolicyRevision(string, string, int64) (*storage.AnalysisDefinition, *storage.AnalysisDefinition, error)
+	}); ok {
+		return fake.GetAnalysisPolicyRevision(a0, a1, a2)
+	}
+	return o.base().GetAnalysisPolicyRevision(a0, a1, a2)
 }
 
 func (o *sqliteStoreOverlay) GetAppDynamicsConnection(a0 string) (*storage.AppDynamicsConnection, error) {
