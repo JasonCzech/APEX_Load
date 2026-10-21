@@ -1,3 +1,5 @@
+import RunPolicySelector from './analysisPolicies/RunPolicySelector'
+import { cloneRunPolicySelections, runPolicySelectionProblem, type RunAnalysisPolicySelections } from './analysisPolicies/runPolicySelection'
 import { countLabel as formatCount } from '../utils/numberFormat'
 import { validateGoalConfig } from './goalConfigValidation'
 import RunMonitorBindingSelector from './RunMonitorBindingSelector'
@@ -612,6 +614,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [dynatraceConnectionId, setDynatraceConnectionId] = useState('')
   const [monitorBindings, setMonitorBindings] = useState<MonitorBinding[] | undefined>()
   const [traceContext, setTraceContext] = useState<RunTraceContextSettings | undefined>()
+  const [analysisPolicySelections, setAnalysisPolicySelections] = useState<RunAnalysisPolicySelections | undefined>()
+  const analysisPolicyProblem = runPolicySelectionProblem(analysisPolicySelections)
   const traceContextNeedsReview = traceContextErrors(traceContext).length > 0
   const [monitorRules, setMonitorRules] = useState<MonitorRule[] | undefined>()
   const [monitorEditorError, setMonitorEditorError] = useState('')
@@ -847,6 +851,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     runNameScenarioRef.current = ''
     runNameEditedRef.current = false
     setRunName('')
+    setAnalysisPolicySelections(undefined)
     setScenarioState({ projectID: activeProjectID, scenarios: [], loaded: false })
     setTimeslotState({ projectID: activeProjectID, timeslots: [] })
     setScenarioId('')
@@ -1536,7 +1541,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     const target = field === 'application' ? applicationSelectRef.current : showNewRelease ? newReleaseInputRef.current : releaseSelectRef.current
     target?.focus()
   }
-  const canLaunch = !elasticMonitorConflict && !monitorRuleValidationError && !scenario?.archived_at && archivedDependencies.length === 0 && readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError && !captureNeedsReview && !traceContextNeedsReview
+  const canLaunch = !elasticMonitorConflict && !monitorRuleValidationError && !scenario?.archived_at && archivedDependencies.length === 0 && readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError && !captureNeedsReview && !traceContextNeedsReview && !analysisPolicyProblem
   const buildCurrentRunCreatePayload = useCallback((
     currentRunDefaults: RunDefaultOverrides,
     currentGroupOverrides: Record<string, GroupRunOverride>,
@@ -1561,9 +1566,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
 	  ...(dynatraceConnectionId ? { dynatrace_capture: { connection_id: dynatraceConnectionId } } : {}),
       ...(monitorBindings !== undefined ? { monitor_bindings: monitorBindings } : {}),
       ...(traceContextPayload(traceContext) ? { trace_context: traceContextPayload(traceContext) } : {}),
+      ...(analysisPolicySelections !== undefined ? { analysis_policy_selections: cloneRunPolicySelections(analysisPolicySelections) } : {}),
       ...(monitorRules !== undefined ? { goal_config: { ...scenario.goal_config, monitor_rules: monitorRules } } : {}),
     }
-  }, [activeApplication, activeProject?.id, dynatraceConnectionId, elkConnectionId, monitorBindings, monitorRules, releaseId, runName, scenario, traceContext])
+  }, [activeApplication, activeProject?.id, dynatraceConnectionId, elkConnectionId, monitorBindings, monitorRules, releaseId, runName, scenario, traceContext, analysisPolicySelections])
   const runCreatePayload = useMemo(
     () => buildCurrentRunCreatePayload(runDefaultOverrides, groupRunOverrides),
     [buildCurrentRunCreatePayload, groupRunOverrides, runDefaultOverrides],
@@ -1757,6 +1763,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     if (monitorRuleValidationError) { setError(monitorRuleValidationError); return false }
     if (captureNeedsReview) { setError('Review the unavailable capture connection, retry, or explicitly turn capture off before launching.'); return false }
     if (traceContextNeedsReview) { setError('Fix the trace context origins, or turn trace context off, before launching.'); return false }
+    if (analysisPolicyProblem) { setError(analysisPolicyProblem); return false }
     if (creatingRef.current) return false
     const navigate = options.navigate ?? true
     const currentRunDefaults = runDefaultOverridesRef.current
@@ -1962,6 +1969,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setELKConnectionId('')
 	setDynatraceConnectionId('')
     setMonitorBindings(undefined)
+    setAnalysisPolicySelections(undefined)
     setMonitorRules(undefined)
     void refreshBindableTimeslots()
   }, [refreshBindableTimeslots])
@@ -2024,6 +2032,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setELKConnectionId('')
 	setDynatraceConnectionId('')
     setMonitorBindings(undefined)
+    setAnalysisPolicySelections(undefined)
     setMonitorRules(undefined)
     setMonitorEditorError('')
     setMonitorEditorRevision(value => value + 1)
@@ -2055,6 +2064,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
 	|| dynatraceConnectionId
     || monitorBindings !== undefined
     || traceContext !== undefined
+    || analysisPolicySelections !== undefined
     || monitorRules !== undefined
     || Boolean(monitorEditorError)
     || scheduledStartLocal !== scheduledStartBaselineRef.current
@@ -2067,7 +2077,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       version: 1, projectId: activeProjectID, applicationId: activeApplication?.id || '',
       scenarioId: scenario?.id || '', scenarioUpdatedAt: scenario?.updated_at || '', pageMode,
       runName, releaseId, runDefaultOverrides: runDefaultOverridesRef.current,
-      groupRunOverrides: groupRunOverridesRef.current, scheduledStartLocal, selectedTimeslotId, elkConnectionId, dynatraceConnectionId, monitorBindings, traceContext, monitorRules, newReleaseName, showNewRelease,
+      groupRunOverrides: groupRunOverridesRef.current, scheduledStartLocal, selectedTimeslotId, elkConnectionId, dynatraceConnectionId, monitorBindings, traceContext, analysisPolicySelections, monitorRules, newReleaseName, showNewRelease,
       scheduleDraft, editingScheduleId,
     })
   const savedDraftMatches = savedDraft && JSON.stringify({ ...savedDraft, pageMode: null }) === JSON.stringify({ ...buildCurrentDraft(), pageMode: null })
@@ -2889,6 +2899,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
 	setDynatraceConnectionId(restoreDraft.dynatraceConnectionId || '')
     setMonitorBindings(restoreDraft.monitorBindings)
     setTraceContext(restoreDraft.traceContext)
+    setAnalysisPolicySelections(cloneRunPolicySelections(restoreDraft.analysisPolicySelections))
     setMonitorRules(restoreDraft.monitorRules)
     setScheduleDraft(restoreDraft.editingScheduleId ? restoreDraft.scheduleDraft : { ...restoreDraft.scheduleDraft, approval_policy: scheduleDefaults.approval_policy || 'auto', missed_run_policy: scheduleDefaults.missed_run_policy || 'skip' })
     setEditingScheduleId(restoreDraft.editingScheduleId)
@@ -3678,6 +3689,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   <RunTraceContextSelector value={traceContext} onChange={setTraceContext} suggest={Boolean(elkConnectionId || dynatraceConnectionId || (monitorBindings?.length ?? 0) > 0)} />
                   </div>
                 </details>
+                <RunPolicySelector projectId={activeProjectID} value={analysisPolicySelections} onChange={setAnalysisPolicySelections} disabled={!canManageTests || creating} />
               </div>
             </section>
 

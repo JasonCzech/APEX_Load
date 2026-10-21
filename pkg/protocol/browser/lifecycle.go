@@ -45,7 +45,13 @@ func (b *Browser) closeWithContext(ctx context.Context) error {
 		}
 		owner.startRuntimeJoin(func() {
 			if cdp != nil {
-				owner.recordRuntimeError(cdp.Detach())
+				// Detaching the diagnostic CDP session races the owned context
+				// close. That close can already have destroyed the session, so
+				// a returned detach error is not missing HAR-writer proof.
+				// Still join the call: a blocked/panicking detach must retain
+				// ownership. CloseHAROwned and the other workers independently
+				// supply the required successful writer/reader joins.
+				_ = cdp.Detach()
 			}
 			<-owner.closeDone
 			if monitorStop != nil {

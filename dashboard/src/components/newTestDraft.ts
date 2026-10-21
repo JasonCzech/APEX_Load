@@ -1,3 +1,4 @@
+import { runPolicySelectionProblem, type RunAnalysisPolicySelections } from './analysisPolicies/runPolicySelection'
 import type { MonitorBinding, MonitorRule } from '../types/runMonitoring'
 import type { GroupRunOverride, RunDefaultOverrides } from './newTestRunModel'
 import type { RunTraceContextSettings } from './runTraceContext'
@@ -43,6 +44,7 @@ export interface NewTestDraft {
   dynatraceConnectionId?: string
   monitorBindings?: MonitorBinding[]
   traceContext?: RunTraceContextSettings
+  analysisPolicySelections?: RunAnalysisPolicySelections
   monitorRules?: MonitorRule[]
   newReleaseName: string
   showNewRelease: boolean
@@ -57,6 +59,7 @@ function validDraft(value: unknown): value is NewTestDraft {
   if (!['projectId', 'applicationId', 'scenarioId', 'scenarioUpdatedAt', 'runName', 'releaseId', 'scheduledStartLocal', 'selectedTimeslotId', 'newReleaseName'].every(field => typeof value[field] === 'string')) return false
   if (value.elkConnectionId !== undefined && typeof value.elkConnectionId !== 'string') return false
   if (value.dynatraceConnectionId !== undefined && typeof value.dynatraceConnectionId !== 'string') return false
+  if (value.analysisPolicySelections !== undefined && runPolicySelectionProblem(value.analysisPolicySelections)) return false
   if (value.monitorBindings !== undefined && (!Array.isArray(value.monitorBindings) || value.monitorBindings.length > 32 || !value.monitorBindings.every(binding => record(binding) && typeof binding.source_id === 'string' && typeof binding.required === 'boolean'))) return false
   if (value.traceContext !== undefined && (!record(value.traceContext) || typeof value.traceContext.enabled !== 'boolean'
     || (value.traceContext.transaction_marker !== undefined && typeof value.traceContext.transaction_marker !== 'boolean')

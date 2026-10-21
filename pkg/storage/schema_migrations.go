@@ -98,6 +98,8 @@ var schemaReleases = []schemaRelease{
 	{Version: 69, Name: "atomic-telemetry-notification-publication", Fingerprint: "da725565a48cf8671ff9df9b7d2083e51cd888c4ae5cad553d1efb1178ce5deb"},
 	{Version: 70, Name: "durable-java-http-action-history", Fingerprint: "e1cfdf7cb8281eb9236da48ff4df94cdab8e72f9da16e18e2de36d414662cd9d"},
 	{Version: 71, Name: "deleted-test-identities", Fingerprint: "eb3e5fd1f6988061c86d0c4c50dee89c0c3853732dddd91c1439e9cc43f0fd5c"},
+	{Version: 72, Name: "browser-acceptance-dependency-pins", Fingerprint: "8738458dd436ce260ff34e9f7640762e22b1df5cad6c02a38884bd91e81a363d"},
+	{Version: 73, Name: "run-analysis-policy-selections", Fingerprint: "c930085449d7bd3b0eec530963d9cea06b50b9c27090a2c91259f93f8e7abd4a"},
 }
 
 type SchemaMigrationRecord struct {

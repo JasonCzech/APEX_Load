@@ -175,6 +175,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		Proto:                        instance,
 		Script:                       vu.Script,
 		browserAuthoredSource:        vu.browserAuthoredSource,
+		browserAuthoredDefinition:    vu.browserAuthoredDefinition,
 		Metrics:                      vu.Metrics,
 		ResultSink:                   sink,
 		Variables:                    variables,

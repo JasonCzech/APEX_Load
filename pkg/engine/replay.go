@@ -23,6 +23,8 @@ import (
 var replaySandboxSecretReference = regexp.MustCompile(`\{\{\s*secret\.`)
 
 type ReplayOptions struct {
+	// BrowserAuthoredDefinition must be bound by the host before runtime overlays.
+	BrowserAuthoredDefinition protocol.BrowserAuthoredDefinition `json:"-"`
 	// LiveTableSeeds are isolated ephemeral seeds; replay never accepts a live run client.
 	LiveTableSeeds  []LiveTableSandboxSeed
 	GroupName       string
@@ -196,44 +198,46 @@ type ReplayReport struct {
 }
 
 type ReplayActionEvent struct {
-	ResponseBodyState string                   `json:"response_body_state,omitempty"`
-	EventID           string                   `json:"event_id,omitempty"`
-	ActionIndex       int                      `json:"action_index"`
-	EventIndex        int                      `json:"event_index"`
-	Phase             string                   `json:"phase"`
-	ActionName        string                   `json:"action_name"`
-	ActionType        string                   `json:"action_type"`
-	Method            string                   `json:"method,omitempty"`
-	Target            string                   `json:"target"`
-	Selector          string                   `json:"selector,omitempty"`
-	Value             string                   `json:"value,omitempty"`
-	Headers           map[string]string        `json:"headers,omitempty"`
-	Body              string                   `json:"body,omitempty"`
-	StartedAt         time.Time                `json:"started_at"`
-	CompletedAt       time.Time                `json:"completed_at"`
-	DurationMs        float64                  `json:"duration_ms"`
-	StatusCode        int                      `json:"status_code,omitempty"`
-	Success           bool                     `json:"success"`
-	ErrorMessage      string                   `json:"error_message,omitempty"`
-	Extractions       map[string]string        `json:"extractions,omitempty"`
-	PageURL           string                   `json:"page_url,omitempty"`
-	PageTitle         string                   `json:"page_title,omitempty"`
-	HTML              string                   `json:"html,omitempty"`
-	Screenshot        string                   `json:"screenshot_base64,omitempty"`
-	Console           []protocol.ConsoleEntry  `json:"console_entries,omitempty"`
-	Network           []protocol.NetworkEntry  `json:"network_entries,omitempty"`
-	DOMSummary        *protocol.DOMSummary     `json:"dom_summary,omitempty"`
-	ClientMetrics     *protocol.ClientMetrics  `json:"client_metrics,omitempty"`
-	ProtocolEvidence  map[string]any           `json:"protocol_evidence,omitempty"`
-	Snapshot          *protocol.ErrorSnapshot  `json:"snapshot,omitempty"`
-	SourceStepID      string                   `json:"source_step_id,omitempty"`
-	SourceStepIndex   int                      `json:"source_step_index,omitempty"`
-	SourceAction      string                   `json:"source_action,omitempty"`
-	SourceActionName  string                   `json:"source_action_name,omitempty"`
-	SourceTransaction string                   `json:"source_transaction,omitempty"`
-	SourceProfile     string                   `json:"source_profile,omitempty"`
-	Diagnosis         *ReplayDiagnosis         `json:"diagnosis,omitempty"`
-	RepairSuggestions []ReplayRepairSuggestion `json:"repair_suggestions,omitempty"`
+	// AuthoredStep identifies the definition, not proof that dispatch occurred.
+	AuthoredStep      *protocol.BrowserAuthoredStep `json:"authored_step,omitempty"`
+	ResponseBodyState string                        `json:"response_body_state,omitempty"`
+	EventID           string                        `json:"event_id,omitempty"`
+	ActionIndex       int                           `json:"action_index"`
+	EventIndex        int                           `json:"event_index"`
+	Phase             string                        `json:"phase"`
+	ActionName        string                        `json:"action_name"`
+	ActionType        string                        `json:"action_type"`
+	Method            string                        `json:"method,omitempty"`
+	Target            string                        `json:"target"`
+	Selector          string                        `json:"selector,omitempty"`
+	Value             string                        `json:"value,omitempty"`
+	Headers           map[string]string             `json:"headers,omitempty"`
+	Body              string                        `json:"body,omitempty"`
+	StartedAt         time.Time                     `json:"started_at"`
+	CompletedAt       time.Time                     `json:"completed_at"`
+	DurationMs        float64                       `json:"duration_ms"`
+	StatusCode        int                           `json:"status_code,omitempty"`
+	Success           bool                          `json:"success"`
+	ErrorMessage      string                        `json:"error_message,omitempty"`
+	Extractions       map[string]string             `json:"extractions,omitempty"`
+	PageURL           string                        `json:"page_url,omitempty"`
+	PageTitle         string                        `json:"page_title,omitempty"`
+	HTML              string                        `json:"html,omitempty"`
+	Screenshot        string                        `json:"screenshot_base64,omitempty"`
+	Console           []protocol.ConsoleEntry       `json:"console_entries,omitempty"`
+	Network           []protocol.NetworkEntry       `json:"network_entries,omitempty"`
+	DOMSummary        *protocol.DOMSummary          `json:"dom_summary,omitempty"`
+	ClientMetrics     *protocol.ClientMetrics       `json:"client_metrics,omitempty"`
+	ProtocolEvidence  map[string]any                `json:"protocol_evidence,omitempty"`
+	Snapshot          *protocol.ErrorSnapshot       `json:"snapshot,omitempty"`
+	SourceStepID      string                        `json:"source_step_id,omitempty"`
+	SourceStepIndex   int                           `json:"source_step_index,omitempty"`
+	SourceAction      string                        `json:"source_action,omitempty"`
+	SourceActionName  string                        `json:"source_action_name,omitempty"`
+	SourceTransaction string                        `json:"source_transaction,omitempty"`
+	SourceProfile     string                        `json:"source_profile,omitempty"`
+	Diagnosis         *ReplayDiagnosis              `json:"diagnosis,omitempty"`
+	RepairSuggestions []ReplayRepairSuggestion      `json:"repair_suggestions,omitempty"`
 	// Sub-request / sub-step identity for leaves of a container action
 	// (http_sequence / control_if / control_loop). Absent for a plain top-level
 	// action so existing events serialize unchanged.
@@ -554,6 +558,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		Script:                       script,
 		browserIdentity:              identity,
 		browserAuthoredSource:        authoredScript,
+		browserAuthoredDefinition:    opts.BrowserAuthoredDefinition,
 		Metrics:                      NewMetricsCollector(16),
 		Variables:                    make(map[string]string),
 		DataProvider:                 dataProvider,
@@ -1392,6 +1397,7 @@ func runReplayUnit(
 		_, captureCorrelationEvidence := debugController.(ReplayDebugControllerCorrelationObserver)
 		event, shouldContinue = runReplayAction(ctx, vu, unit.action, unit.phase, unit.actionIndex, eventIndex, eventID, continueOnError, ignoreThinkTime, globalThinkCfg, report, captureCorrelationEvidence, vu.browserReplayAuthoredStep(unit))
 	}
+	event.AuthoredStep = vu.browserReplayAuthoredStep(unit).Clone()
 	applyReplayUnitIdentityEvent(&event, unit)
 	if vu.runtimeCredentialRedactionErr != nil {
 		omitUnredactableReplayActionEvent(&event)

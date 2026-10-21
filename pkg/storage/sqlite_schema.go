@@ -734,6 +734,7 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 			monitor_bindings_json TEXT,
 			trace_context_json TEXT,
 			joint_evidence_json TEXT,
+			analysis_policy_selections_json TEXT,
 			start_authorization_json TEXT,
 			execution_plan_approval_json TEXT,
 			execution_plan_json TEXT,
@@ -2027,6 +2028,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.monitor_bindings_json", query: `ALTER TABLE tests ADD COLUMN monitor_bindings_json TEXT`},
 		{name: "tests.trace_context_json", query: `ALTER TABLE tests ADD COLUMN trace_context_json TEXT`},
 		{name: "tests.joint_evidence_json", query: `ALTER TABLE tests ADD COLUMN joint_evidence_json TEXT`},
+		{name: "tests.analysis_policy_selections_json", query: `ALTER TABLE tests ADD COLUMN analysis_policy_selections_json TEXT`},
 		{name: "tests.start_authorization_json", query: `ALTER TABLE tests ADD COLUMN start_authorization_json TEXT`},
 		{name: "tests.timeslot_id", query: `ALTER TABLE tests ADD COLUMN timeslot_id TEXT`},
 		booleanColumnMigration("tests", "shakeout_enabled", false, false),
@@ -2257,6 +2259,8 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "feature_evaluation_jobs.result_bytes", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN result_bytes INTEGER NOT NULL DEFAULT 0`},
 		{name: "feature_evaluation_jobs.subject_id", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN subject_id TEXT NOT NULL DEFAULT ''`},
 		{name: "rca_analyses.origin", query: `ALTER TABLE rca_analyses ADD COLUMN origin TEXT NOT NULL DEFAULT 'requested'`},
+		{name: "feature_acceptance_records.cohort_sha256", query: `ALTER TABLE feature_acceptance_records ADD COLUMN cohort_sha256 TEXT NOT NULL DEFAULT ''`},
+		{name: "feature_acceptance_records.qualification", query: `ALTER TABLE feature_acceptance_records ADD COLUMN qualification TEXT NOT NULL DEFAULT 'null'`},
 		{name: "feature_acceptance_records.seq", query: `ALTER TABLE feature_acceptance_records ADD COLUMN seq BIGINT NOT NULL DEFAULT 0`},
 	}
 }

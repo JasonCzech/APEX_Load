@@ -89,21 +89,41 @@ type BrowserBaselineParams struct {
 // baseline mode (none, latest_compatible, or pinned_run with RunID).
 // Unavailable says why the pinned policy could not be used.
 type BrowserBaselinePolicy struct {
-	Ref            string   `json:"ref"`
-	TimingMs       *float64 `json:"timing_ms,omitempty"`
-	TimingRelative *float64 `json:"timing_relative,omitempty"`
-	CLS            *float64 `json:"cls,omitempty"`
-	Mode           string   `json:"mode,omitempty"`
-	RunID          string   `json:"run_id,omitempty"`
-	Unavailable    string   `json:"unavailable,omitempty"`
+	MetricFloors   map[string]float64 `json:"metric_floors,omitempty"`
+	Ref            string             `json:"ref"`
+	TimingMs       *float64           `json:"timing_ms,omitempty"`
+	TimingRelative *float64           `json:"timing_relative,omitempty"`
+	CLS            *float64           `json:"cls,omitempty"`
+	Mode           string             `json:"mode,omitempty"`
+	RunID          string             `json:"run_id,omitempty"`
+	Unavailable    string             `json:"unavailable,omitempty"`
 }
 
 // BrowserBaselineParamsFor are the defaults with a pinned policy's effect
 // floors applied; a floor can only raise its default.
 func BrowserBaselineParamsFor(policy *BrowserBaselinePolicy) BrowserBaselineParams {
 	params := DefaultBrowserBaselineParams
+	if params.MetricFloors != nil {
+		original := params.MetricFloors
+		params.MetricFloors = make(map[string]float64, len(original))
+		for metric, value := range original {
+			params.MetricFloors[metric] = value
+		}
+	}
 	if policy == nil || policy.Unavailable != "" {
 		return params
+	}
+	if len(policy.MetricFloors) > 0 {
+		if params.MetricFloors == nil {
+			params.MetricFloors = make(map[string]float64, len(policy.MetricFloors))
+		}
+		for metric, value := range policy.MetricFloors {
+			if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+				params.MetricFloors[metric] = value
+				continue
+			}
+			params.MetricFloors[metric] = max(params.MetricFloors[metric], value)
+		}
 	}
 	if policy.TimingMs != nil {
 		params.TimingFloorMs = max(params.TimingFloorMs, *policy.TimingMs)

@@ -1806,6 +1806,7 @@ func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest
 		return true, fmt.Errorf("unsupported durable start status %q", durableStatus)
 	}
 	snapshot := newManagedTestStartPersistenceSnapshot(test)
+	policySelections := cloneRunAnalysisPolicySelections(test.AnalysisPolicySelections)
 	var freshAdmission *RunArchiveProvenance
 	if durableStatus == "INITIALIZING" {
 		fresh := test.initialArchiveProvenance == nil
@@ -1834,7 +1835,7 @@ func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest
 		// runner lock, and frozen into the same write-once admission receipt.
 		// A resolution failure refuses Start: silently dropping a fail_ci
 		// policy would let CI pass without the telemetry gate it configured.
-		pins, acceptance, pinErr := tr.resolveRunPolicyPins(freshAdmission.ProjectID)
+		pins, acceptance, pinErr := tr.resolveRunPolicyPinsWithSelections(freshAdmission.ProjectID, policySelections)
 		if errors.Is(pinErr, errRunPolicyConfiguration) {
 			persistErr = pinErr
 		} else if pinErr != nil {

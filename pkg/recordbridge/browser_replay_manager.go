@@ -435,18 +435,19 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 
 		continueOnError := session.ContinueOnError
 		report, err := engine.ReplayScript(ctx, script, engine.ReplayOptions{
-			LiveTableSeeds:  req.LiveTableSeeds,
-			ReplaySessionID: sessionID,
-			GroupName:       groupName,
-			RuntimeProfile:  &session.RuntimeProfile,
-			Variables:       req.Variables,
-			RedactionRules:  req.RedactionRules,
-			SecretResolver:  req.SecretResolver,
-			IgnoreThinkTime: ignoreThinkTime,
-			RunID:           session.RunID,
-			ContinueOnError: &continueOnError,
-			RecordHAR:       req.RecordHAR != nil && *req.RecordHAR,
-			DiscardHAR:      m.discardReplayHAR,
+			BrowserAuthoredDefinition: req.BrowserAuthoredDefinition,
+			LiveTableSeeds:            req.LiveTableSeeds,
+			ReplaySessionID:           sessionID,
+			GroupName:                 groupName,
+			RuntimeProfile:            &session.RuntimeProfile,
+			Variables:                 req.Variables,
+			RedactionRules:            req.RedactionRules,
+			SecretResolver:            req.SecretResolver,
+			IgnoreThinkTime:           ignoreThinkTime,
+			RunID:                     session.RunID,
+			ContinueOnError:           &continueOnError,
+			RecordHAR:                 req.RecordHAR != nil && *req.RecordHAR,
+			DiscardHAR:                m.discardReplayHAR,
 			OnProgress: func(event engine.ReplayProgressEvent) {
 				m.handleReplayProgress(ctx, session, event)
 			},

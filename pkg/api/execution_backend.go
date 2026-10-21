@@ -415,6 +415,7 @@ func buildRunArchiveProvenanceFromSnapshot(snapshot *ManagedTest) RunArchiveProv
 		provenance.PolicyPins = cloneRunPolicyPins(snapshot.initialArchiveProvenance.PolicyPins)
 		provenance.TelemetryAcceptancePolicy = cloneTelemetryAcceptancePolicySnapshot(snapshot.initialArchiveProvenance.TelemetryAcceptancePolicy)
 	}
+	provenance.BrowserAuthoredSources = browserAuthoredDefinitionsForGroups(snapshot.Groups)
 	provenance.ApplicationID = snapshot.ApplicationID
 	provenance.ReleaseID = snapshot.ReleaseID
 	provenance.ScenarioID = snapshot.ScenarioID

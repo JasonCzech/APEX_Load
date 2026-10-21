@@ -28,7 +28,7 @@ func browserRuntimeFeatures(instance protocol.Protocol) []string {
 		features = append(features, FeatureBrowserInteractionEvidenceV1)
 	}
 	if _, ok := instance.(protocol.BrowserInteractionEvidenceV2Provider); ok {
-		features = append(features, FeatureBrowserInteractionEvidenceV2)
+		features = append(features, FeatureBrowserInteractionEvidenceV2, FeatureBrowserOriginalSourceV1)
 	}
 	return features
 }

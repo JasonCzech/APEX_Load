@@ -62,6 +62,12 @@ func (s *Server) rcaBrowserBaselinePolicy(projectID string, manifest *RunArchive
 		return out, nil //nolint:nilerr // an invalid pinned revision is reported in Unavailable and the defaults apply
 	}
 	out.TimingMs, out.TimingRelative, out.CLS = policy.EffectFloors.TimingMs, policy.EffectFloors.TimingRelative, policy.EffectFloors.CLS
+	if len(policy.EffectFloors.TimingByMetricMs) > 0 {
+		out.MetricFloors = make(map[string]float64, len(policy.EffectFloors.TimingByMetricMs))
+		for metric, value := range policy.EffectFloors.TimingByMetricMs {
+			out.MetricFloors[metric] = value
+		}
+	}
 	out.Mode, out.RunID = policy.Baseline.Mode, policy.Baseline.RunID
 	return out, nil
 }

@@ -471,3 +471,101 @@ At most 200 patterns are kept, and patterns are found among the first 100,000
 interactions (`interactions_truncated` beyond that). Screenshot overlays are
 not produced. Incomplete journeys are E5's journey accounting
 (`/archive/journeys`), not a pattern here.
+
+## Promoting browser intelligence support
+
+Passing `BI-*` acceptance records require reviewed, currently accepted `BE-4`
+evidence for the exact claimed measurement cohort. A pending request or a test
+suite that ran earlier does not authorize promotion. This gate changes support
+claims; it does not rewrite historical findings or promote preview results.
+
+Supply a version-1 `qualification` object with the measured `runtime_sha256`,
+`capability_sha256`, `metric` and `measurement_algorithm`. The acceptance record
+must also identify the engine in `provider`, a nonempty profile (use `desktop`
+for desktop), platform, full commit SHA and tested binary SHA-256. A BI record
+adds its versioned `analysis_algorithm` and one to eight `dependencies`, each
+with the accepted BE record's `record_id` and returned `record_sha256`.
+Both records must name the same binary and measurement scope. Artifact hashes
+remain required, and the accepted BE record's digest binds its artifact hashes,
+reviewer identity, sequence and cohort. The server returns `record_sha256` so
+callers do not need to reproduce its canonical serialization.
+
+The dependency check and promotion insert share a database transaction and
+writer fence. A missing, pending, failed, revoked, superseded or mismatched BE
+record returns a conflict without inserting a promotion. A later withdrawal
+also makes current BI support unavailable; the original accepted record and
+its pins stay readable. Old records without qualification remain historical
+records and cannot qualify a new BI promotion.
+
+The returned `cohort_sha256` identifies one metric/measurement/analysis scope,
+including its runtime and capability digests. Different metrics or estimators
+remain separate acceptance subjects. A broader withdrawal without qualification
+covers every matching cohort. Query the exact cohort in release automation:
+
+```bash
+apexctl qa record-acceptance --requirement BI-1 --feature browser-findings \
+  --provider chromium --profile desktop --platform linux-amd64 \
+  --commit FULL_COMMIT_SHA --binary ./controller --suite browser-intelligence \
+  --result passed --artifact reviewed-evidence.json --qualification cohort.json
+apexctl qa acceptance --requirement BI-1 --feature browser-findings \
+  --provider chromium --profile desktop --platform linux-amd64 \
+  --commit FULL_COMMIT_SHA --binary ./controller --cohort COHORT_SHA256 \
+  --require-supported
+```
+
+`cohort.json` holds the qualification object only and is limited to 16 KiB.
+The server validates its fields and dependency pins. Evidence bytes are not
+uploaded by these commands; the existing operator review remains responsible
+for the evidence behind their hashes. A passing local/emulated cohort cannot
+qualify another host, actual device, engine or binary.
+
+### Per-metric baseline effect floors
+
+Browser policies can set separate LCP, FCP and INP minimum changes in
+`effect_floors.timing_by_metric_ms`. Each optional value must be between 50 and
+600,000 milliseconds. The policy editor offers the same three fields; leaving
+one empty uses the overall timing floors. These values affect baseline anomaly
+qualification independently of whether the metric contributes to the weighted
+threshold score. CLS continues to use its separate `effect_floors.cls` field.
+
+For each timing metric, the effective floor is the largest of its configured
+metric floor, the overall absolute floor (at least 50 ms), and the overall
+relative floor (at least 10% of the baseline mean). A per-metric value cannot
+lower either overall floor. Runs keep the floors from their pinned immutable
+policy revision even when the policy is edited later. This does not change the
+`browser_baseline.v1` estimator or implement compatible-run selection.
+
+### Original authored source identity
+
+New managed browser runs and stored-script replays bind authored steps before
+controller runtime overrides. Each version-2 `authored_step` identifies the
+original script SHA-256, its structural path/type digest, the exact step path
+and a derived step ID. Replay events expose that definition identity, and run
+archives retain the source descriptors in `provenance.browser_authored_sources`.
+The step identity does not prove that a gesture dispatched; use the separately
+retained native dispatch and invocation evidence for that claim.
+
+Version 1 continues to identify the exact engine input. It is not relabeled as
+original-source proof. A restored compiled run preserves its stored source
+binding; rebuilding legacy runtime inputs from the current script library leaves
+original-source identity unavailable. The runtime validates the structural
+binding before using a descriptor. Public DSL and replay option JSON cannot
+supply source authority.
+
+Prepared generator assignments carry source descriptors only after fresh
+`browser_original_source_v1` capability negotiation and require an exact
+staging acknowledgement. Older or stale peers and immediate assignments retain
+legacy identity. Source equality alone does not establish matching browser
+runtime, policy, load, document, page or measurement cohorts. Authored page
+identity and compatible-baseline selection remain separate requirements.
+
+
+## Choose policy revisions for a run
+
+In New run, expand **Browser and journey policies** to choose an exact browser or journey policy revision. The latest revision is offered initially; an older revision remains selectable by its revision number. Leaving a kind on **Project default at start** preserves default resolution. Policy lists load when the section opens.
+
+Run drafts, held runs, delayed starts and revised queued copies retain the selection. In a revised copy, explicitly choosing the project default clears the inherited selection. Switching projects clears the prior project's selection. Recurring schedule authoring continues to use project defaults; this selector does not change a saved scenario or recurring schedule.
+
+Creation checks the selected revision and project. Admission resolves the same immutable revision again and computes its digest on the server. A later edit does not change the chosen revision. A policy deletion visible when admission resolves the selection refuses the start; it cannot silently replace the selection with a default. Already admitted runs retain their historical policy pins and findings. Policy resolution and the admission write use the existing run-identity and execution-ownership fences.
+
+The archive's `provenance.policy_pins` identifies an explicit selection with `source: run_selection`. A default uses `source: project_default`. The selected revision and current tombstone are read in one database snapshot. A concurrent deletion after that read follows the same admission boundary as existing default policies. Historical policy reads remain available after deletion for authorized inspection.

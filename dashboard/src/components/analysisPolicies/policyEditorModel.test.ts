@@ -13,7 +13,7 @@ describe('browser policy editor model (BI-4)', () => {
       description: 'Checkout vitals',
       metrics: [{ metric: 'lcp', good: 2000, poor: 3500, weight: 50 }, { metric: 'cls', good: 0.05, poor: 0.2, weight: 10 }],
       applicability: { engines: ['webkit'], device_profiles: ['iphone_15', 'pixel_8'] },
-      effect_floors: { timing_ms: 120, cls: 0.05 },
+      effect_floors: { timing_ms: 120, cls: 0.05, timing_by_metric_ms: { lcp: 350, fcp: 75, inp: 50 } },
       baseline: { mode: 'pinned_run', run_id: 'run-7' },
     }
     const draft = browserDraftFromDefinition('Checkout', stored)
@@ -34,6 +34,20 @@ describe('browser policy editor model (BI-4)', () => {
       ],
       baseline: { mode: 'latest_compatible' },
     })
+  })
+
+  it('keeps baseline floors when a metric is excluded from scoring and rejects invalid floors', () => {
+    const draft = { ...defaultBrowserPolicyDraft(), name: 'Floors' }
+    draft.metrics.lcp.include = false
+    draft.floorTimingByMetricMs.lcp = '350'
+    expect(browserDefinitionFromDraft(draft).definition?.effect_floors).toEqual({ timing_by_metric_ms: { lcp: 350 } })
+    for (const value of ['49', '600001', 'NaN', 'Infinity', '-1']) {
+      draft.floorTimingByMetricMs.lcp = value
+      expect(browserDefinitionFromDraft(draft).problem).toContain('LCP floor must be between')
+    }
+    draft.floorTimingByMetricMs.lcp = ' '
+    expect(browserDefinitionFromDraft(draft).definition?.effect_floors).toBeUndefined()
+    expect(defaultBrowserPolicyDraft().floorTimingByMetricMs.lcp).toBe('')
   })
 
   it('explains a draft the controller would refuse', () => {

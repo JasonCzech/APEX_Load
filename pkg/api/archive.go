@@ -219,15 +219,17 @@ type RunArchiveExecutionSettingsSnapshot struct {
 }
 
 type RunArchiveProvenance struct {
+	// Original authored definitions do not by themselves qualify runtime equivalence.
+	BrowserAuthoredSources map[string]protocol.BrowserAuthoredDefinition `json:"browser_authored_sources,omitempty"`
 	// RunIncarnation is minted by controller admission and frozen in the durable
 	// initial provenance. It survives leadership changes, unlike completion time.
 	RunIncarnation    string                                 `json:"run_incarnation,omitempty"`
 	ProjectLiveTables []RunArchiveProjectLiveTableAttachment `json:"project_live_tables,omitempty"`
 	LiveTables        []RunArchiveLiveTableSummary           `json:"live_tables,omitempty"`
 	TelemetryPolicy   *TelemetryBudgetPolicy                 `json:"telemetry_policy,omitempty"`
-	// PolicyPins are the project policy revisions in force at Start: null on
-	// runs admitted before policies existed, an empty list when no default
-	// policy was configured. The field is always present so the two differ.
+	// PolicyPins are the selected or default policy revisions frozen at Start:
+	// null on runs admitted before policies existed, an empty list when neither
+	// explicit selections nor project defaults apply. The field is always present so the two differ.
 	PolicyPins []RunPolicyPin `json:"policy_pins"`
 	// TelemetryAcceptancePolicy is the pinned telemetry acceptance policy's
 	// definition, frozen at Start so the run's verdict never follows a later
