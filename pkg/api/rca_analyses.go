@@ -954,6 +954,9 @@ func (s *Server) assessRCAAnalysis(ctx context.Context, analysis *storage.RCAAna
 // assessRCAAnalysisWithExcerpts also takes the evidence excerpts the
 // assessment's references name, from the series it judged.
 func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *storage.RCAAnalysis, payload rcaAnalysisPayload) (*rca.Assessment, []RCAEvidenceExcerpt, error) {
+	if payload.Inputs.Engine != rcaEngineVersion {
+		return nil, nil, errors.New("the analysis engine changed after this analysis was queued; request a new analysis")
+	}
 	// Reading the archive is bounded by its size, not by the engine's
 	// budget, which starts once the evidence is in hand: a slow download or
 	// a long pass over the rows must not spend the time the engine's stages

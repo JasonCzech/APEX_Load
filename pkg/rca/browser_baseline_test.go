@@ -401,3 +401,62 @@ func TestBrowserBaselinePoolsBaselineLevelsAtOneLoad(t *testing.T) {
 		t.Fatalf("pooled baseline levels = %+v", got)
 	}
 }
+
+func TestBrowserBaselineRequiresComparableBucketCadence(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		current, baseline time.Duration
+		observation       string
+		want              string
+	}{
+		{"equal", time.Second, time.Second, ObservationInterval, ""},
+		{"changed", time.Second, 2 * time.Second, ObservationInterval, "cadence_changed"},
+		{"current missing", 0, time.Second, ObservationInterval, "cadence_unavailable"},
+		{"baseline missing", time.Second, 0, ObservationInterval, "cadence_unavailable"},
+		{"negative", time.Second, -time.Second, ObservationInterval, "cadence_unavailable"},
+		{"snapshot", time.Second, time.Second, ObservationSnapshot, "cadence_unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			current := documentSeries("lcp", "lcp", "ms", "family", chromium141, browserNoisy(20, 1400, 20), 7)
+			baseline := documentSeries("lcp", "lcp", "ms", "family", chromium141, browserNoisy(40, 1000, 20), 3)
+			current.Bucket, baseline.Bucket, baseline.Observation = tc.current, tc.baseline, tc.observation
+			got := DetectBrowserBaseline(browserBaselineInput([]Series{current}, []Series{baseline}, BaselineQualified), DefaultBrowserBaselineParams)
+			if got == nil || len(got.Results) != 1 {
+				t.Fatalf("result=%+v", got)
+			}
+			r := got.Results[0]
+			if tc.want == "" {
+				if r.State != BrowserBaselineAnomaly || r.Current != 1400 || r.CurrentSamples != 140 || r.BaselineSamples != 120 {
+					t.Fatalf("equal cadence changed estimator: %+v", r)
+				}
+			} else if r.State != BrowserBaselineUnscored || r.Reason != tc.want || r.Z != 0 || r.ExpectedHigh != 0 || len(r.Evidence) != 1 {
+				t.Fatalf("incompatible cadence scored: %+v", r)
+			}
+		})
+	}
+}
+
+func TestBrowserBaselineChecksTupleEvenWhenSeriesIDMatches(t *testing.T) {
+	for _, field := range []string{"runtime", "metric", "family", "group", "unit"} {
+		t.Run(field, func(t *testing.T) {
+			current := documentSeries("same-id", "lcp", "ms", "family", chromium141, browserNoisy(20, 1400, 20), 3)
+			baseline := documentSeries("same-id", "lcp", "ms", "family", chromium141, browserNoisy(40, 1000, 20), 3)
+			switch field {
+			case "runtime":
+				baseline.Document.Fields = map[string]string{"browser_version": "142.0", "shaping_applied": "true"}
+			case "metric":
+				baseline.Document.Metric = "fcp"
+			case "family":
+				baseline.Document.Family = "other-family"
+			case "group":
+				baseline.Document.Group = "other-group"
+			case "unit":
+				baseline.Unit = "seconds"
+			}
+			got := DetectBrowserBaseline(browserBaselineInput([]Series{current}, []Series{baseline}, BaselineQualified), DefaultBrowserBaselineParams).Results[0]
+			if got.State != BrowserBaselineUnscored || got.Reason != BrowserBaselineCohortChanged || got.Z != 0 || got.ExpectedHigh != 0 || len(got.Evidence) != 1 {
+				t.Fatalf("different tuple scored: %+v", got)
+			}
+		})
+	}
+}

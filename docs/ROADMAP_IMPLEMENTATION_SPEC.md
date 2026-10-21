@@ -288,6 +288,8 @@ Retain recommended **1–2 browser VUsers and maximum 5 per generator**. A highe
 
 ### BI-A — Qualified baseline selection and findings
 
+The [cadence qualification slice](qa/reviews/roadmap-browser-baseline-cadence-2026-10-21/README.md) leaves different or unrecorded interval cadences unscored and checks the actual measurement/runtime tuple even when series IDs match. RCA engine v4 prevents reuse of earlier qualification results while preserving historical assessments and the `browser_baseline.v1` estimator. Latest-compatible admission selection and full clock/source qualification remain open.
+
 The [baseline qualification guard slice](qa/reviews/roadmap-browser-baseline-qualification-2026-10-19/README.md) prevents per-metric floors from lowering the effective timing/CLS thresholds and leaves cohorts with known document loss unscored. The v1 estimator is unchanged; the configured metric-floor slice below adds policy editing. Compatible baseline selection and real-run qualification remain open.
 
 The [configured metric-floor slice](qa/reviews/roadmap-browser-metric-floors-2026-10-21/README.md) carries optional LCP/FCP/INP floors from policy editing through immutable revision pins into the existing estimator. Per-metric values can only raise the overall absolute and relative floors. Compatible baseline selection and real two-run qualification remain open.

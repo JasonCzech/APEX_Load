@@ -2,6 +2,7 @@ package rca
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -37,6 +38,8 @@ const (
 	BrowserBaselineNoBaselineRun      = "no_qualified_baseline"
 	BrowserBaselineNoBaselineCohort   = "no_baseline_cohort"
 	BrowserBaselineCohortChanged      = "cohort_changed"
+	BrowserBaselineCadenceChanged     = "cadence_changed"
+	BrowserBaselineCadenceUnavailable = "cadence_unavailable"
 	BrowserBaselineNoSameLoadWindow   = "no_same_load_window"
 	BrowserBaselineInsufficient       = "insufficient_baseline"
 	BrowserBaselineZeroVariance       = "zero_variance"
@@ -430,6 +433,20 @@ func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples 
 	}
 	if b.Document.Incomplete {
 		result.Caveats = append(result.Caveats, BrowserBaselineBaselineSourceLoss)
+	}
+	// A series ID is a lookup key, not proof of the measurement contract.
+	// Retained/custom inputs must still describe the same tuple and runtime.
+	if s.Document.Metric != b.Document.Metric || s.Document.Family != b.Document.Family || s.Document.Group != b.Document.Group || s.Unit != b.Unit || !maps.Equal(s.Document.Fields, b.Document.Fields) {
+		return unscored(BrowserBaselineCohortChanged, "the matching series ID describes a different measurement tuple or runtime cohort")
+	}
+	// v1 gives each interval bucket equal weight. Comparing different bucket
+	// durations changes the population and cannot establish a like-for-like
+	// baseline, even when both sides retained enough buckets.
+	if s.Observation != ObservationInterval || b.Observation != ObservationInterval || s.Bucket <= 0 || b.Bucket <= 0 {
+		return unscored(BrowserBaselineCadenceUnavailable, "both document series need a recorded positive interval bucket duration")
+	}
+	if s.Bucket != b.Bucket {
+		return unscored(BrowserBaselineCadenceChanged, "the run and baseline document buckets have different durations")
 	}
 	b.Points = sortedPoints(b.Points)
 	baselineSpans := segments(b, baselineLevels)
