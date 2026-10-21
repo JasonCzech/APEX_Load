@@ -46,7 +46,9 @@ const (
 	maxInteractionPatternMembers = 16
 	maxInteractionHeatmaps       = 64
 	maxHeatmapTargets            = 64
-	maxRetainedInteractions      = 100000
+	// Bound aggregation as well as output: at most 64 maps × 1024 target keys.
+	maxRetainedHeatmapTargets = 1024
+	maxRetainedInteractions   = 100000
 )
 
 // Interaction pattern kinds.
@@ -146,14 +148,15 @@ type BrowserInteractionHeatmap struct {
 	Columns         int                       `json:"columns"`
 	Rows            int                       `json:"rows"`
 	// Cells are the occupied cells as [row, column, count].
-	Cells   [][3]int                        `json:"cells"`
-	Points  int64                           `json:"points"`
-	Targets []BrowserInteractionTargetCount `json:"targets,omitempty"`
-	ByKind  map[string]int64                `json:"by_kind"`
-	Sources map[string]int64                `json:"by_provenance"`
-	Notes   []string                        `json:"notes,omitempty"`
-	cells   map[[2]int]int                  `json:"-"`
-	targets map[interactionTargetKey]int64  `json:"-"`
+	Cells           [][3]int                        `json:"cells"`
+	Points          int64                           `json:"points"`
+	Targets         []BrowserInteractionTargetCount `json:"targets,omitempty"`
+	ByKind          map[string]int64                `json:"by_kind"`
+	Sources         map[string]int64                `json:"by_provenance"`
+	Notes           []string                        `json:"notes,omitempty"`
+	cells           map[[2]int]int                  `json:"-"`
+	targets         map[interactionTargetKey]int64  `json:"-"`
+	targetsExcluded int64
 }
 
 // BrowserInteractionScroll is the range of scroll offsets, in CSS pixels.
@@ -374,7 +377,13 @@ func (a *interactionAnalyzer) mapInteraction(i protocol.BrowserInteraction) {
 		label := ""
 		if i.Target != nil {
 			label = i.Target.LabelSHA256
-			m.targets[interactionTargetKey{role: i.Target.Role, label: label}]++
+			key := interactionTargetKey{role: i.Target.Role, label: label}
+			if _, retained := m.targets[key]; !retained && len(m.targets) >= maxRetainedHeatmapTargets {
+				m.targetsExcluded++
+				exclude("keyboard_targets_truncated")
+				return
+			}
+			m.targets[key]++
 		}
 	}
 	m.ByKind[i.Kind]++
@@ -404,8 +413,11 @@ func (a *interactionAnalyzer) finish() BrowserInteractionAnalysis {
 		slices.SortFunc(m.Targets, func(x, y BrowserInteractionTargetCount) int {
 			return cmp.Or(cmp.Compare(y.Count, x.Count), cmp.Compare(x.Role, y.Role), cmp.Compare(x.LabelSHA256, y.LabelSHA256))
 		})
+		if m.targetsExcluded > 0 {
+			m.Notes = append(m.Notes, fmt.Sprintf("%d keyboard gestures excluded after the first %d distinct targets; counts describe retained targets only", m.targetsExcluded, maxRetainedHeatmapTargets))
+		}
 		if len(m.Targets) > maxHeatmapTargets {
-			m.Notes = append(m.Notes, fmt.Sprintf("kept the %d most used of %d keyboard targets", maxHeatmapTargets, len(m.Targets)))
+			m.Notes = append(m.Notes, fmt.Sprintf("kept the %d most used of %d retained keyboard targets", maxHeatmapTargets, len(m.Targets)))
 			m.Targets = m.Targets[:maxHeatmapTargets]
 		}
 		a.analysis.Heatmaps = append(a.analysis.Heatmaps, *m)
