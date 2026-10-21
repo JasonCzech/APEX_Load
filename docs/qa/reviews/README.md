@@ -1,5 +1,7 @@
 # QA Review Records
 
+- [Lease-bound replay artifact publisher](roadmap-browser-replay-publisher-2026-10-21/README.md) — immutable receipt admission, verified writer completion and owner-fenced publication.
+
 - [Terminal replay publication port](roadmap-browser-replay-publication-port-2026-10-21/README.md) — optional lease-bound native publication, pending download gate and late-completion fences.
 
 - [Chromium browser-process loss and pool replacement](roadmap-browser-process-loss-2026-10-20/README.md) — shared desktop/mobile-emulation context censoring and independent replacement-source evidence.

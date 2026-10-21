@@ -5,7 +5,7 @@ This BE-B slice adds the optional lease-bound publication boundary to the shared
 ## Contracts
 
 - Publication receives a detached, normalized terminal session/report and the joined native HAR reader. No synthetic HAR substitutes for missing native bytes. Readers remain owned by the worker until the synchronous publisher returns.
-- Publication runs outside manager/session locks with a two-minute context deadline. The adapter must honor cancellation and join all I/O before returning; context expiry alone never establishes writer completion.
+- Publication runs outside manager/session locks with a two-minute context deadline. The adapter must honor cancellation and stop using its input readers before returning. Ambiguous remote writer outcomes retain durable cleanup identity and quota; context expiry alone never establishes writer completion.
 - Downloads return 409 with retry guidance while publication is pending. Completion callbacks run only after the publication decision. A failed publisher does not change the replay's successful action result.
 - Optional capability results distinguish local-only, pending, durable and unavailable. This slice exposes these to adapters, not as a new HTTP/UI contract. A nil publisher remains local-only.
 - A late publisher cannot settle an abandoned/replaced session. Execution epoch or retained-lease loss during publication suppresses the report and retires the local capability; the controller adapter must additionally enforce storage ownership at publication CAS.
@@ -22,4 +22,4 @@ Main `ceb3f9b83` was current before cross-package validation. Final reviewed sou
 
 Documentation checks pass for 319 active Markdown files; whitespace checks pass. All 311 previously tested embedded dashboard assets remain unchanged. Raw local logs live under `/private/tmp/apex-browser-durable-backend/`: `publication-reviewed-race.jsonl`, `publication-reviewed-api.jsonl`, `publication-final-api.jsonl`, and `publication-private-har-summary.json`. `publication-reviewed-source-hashes.json` pins the final reviewed source. No dashboard assets or runtime browser qualification changed.
 
-The broader Go suite was also started in this cycle, before the final local-only/stopped-before-start compatibility fixes. Its result is tracked separately; the final bridge and controller checks above qualify those fixes. This record does not claim the in-progress full suite as a passing final-source gate.
+The broader Go suite was also started in this cycle, before the final local-only/stopped-before-start compatibility fixes. It reached 32,891 passing events and 42 conditional skips, then the API package hit its 20-minute timeout under concurrent compilation, without an assertion failure. The final bridge and controller checks above qualify the compatibility fixes. This is not a passing full-suite gate; serial final-source validation remains required before merge.

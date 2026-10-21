@@ -244,6 +244,8 @@ The [rendered native waterfall/cache qualification](qa/reviews/roadmap-browser-n
 
 ### BE-B — HAR durability and real import/replay workflows
 
+The [lease-bound replay publisher](qa/reviews/roadmap-browser-replay-publisher-2026-10-21/README.md) combines receipt admission, immutable staging, verified writer completion and the terminal-owner publication CAS. It remains passive until controller admission, recovered authorization and cleanup wiring are complete.
+
 The [terminal replay publication port](qa/reviews/roadmap-browser-replay-publication-port-2026-10-21/README.md) keeps downloads pending until the optional lease-bound native publisher resolves, then rechecks ownership before settling. Local-only bridges preserve their existing behavior. Controller publication, recovered HTTP authorization and cleanup wiring remain open.
 
 The [immutable replay backend adapter](qa/reviews/roadmap-browser-replay-backend-2026-10-21/README.md) adds generation-exclusive HAR/report staging, source-bound verified disk reads and exact joined-generation cleanup. Its filesystem and local object-store fixtures do not qualify live cloud backends. Terminal publication wiring, retained-state recovery and authorized recovered HTTP downloads remain open.
