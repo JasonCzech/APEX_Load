@@ -116,6 +116,7 @@ import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 import { retargetRecent } from '../desktop/desktopRecents'
 import { savedScenarioBuilderHash } from './importScenario'
 import { persistScenarioAuthoringDraft, persistScenarioProjectDraft, restoreScenarioDraftBaseline } from './scenarioAuthoringWorkflow'
+import { AuthoringCreateNeedsNewIntent, forgetAuthoringCreateIntent, type AuthoringCreateIntent } from './authoringCreateIntent'
 import type { ScenarioFormState, ScenarioFormGroup, ScenarioStartChoice } from '../types/scenarioAuthoring'
 
 interface Props {
@@ -850,6 +851,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   // Advances whenever the builder starts other work, so a reply to a request
   // made for earlier work does not attach to it.
   const builderSessionRef = useRef(0)
+  // The new scenario's create intent (AUTH-1), checkpointed with the draft.
+  const createIntentRef = useRef<AuthoringCreateIntent | null>(null)
+  const createIntentFreshRef = useRef(false)
+  const writeOwnCheckpointRef = useRef<() => void>(() => undefined)
+  const [createNeedsNewIntent, setCreateNeedsNewIntent] = useState(false)
   const [form, setForm] = useState<ScenarioFormState>(() => emptyScenarioForm())
   const currentDraftRef = useRef({ form, activeProjectId, showForm })
   currentDraftRef.current = { form, activeProjectId, showForm }
@@ -1627,6 +1633,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     // Leaving the builder's work leaves its project draft in the library.
     projectDraftRef.current = null
     builderSessionRef.current += 1
+    createIntentRef.current = null
+    createIntentFreshRef.current = false
+    setCreateNeedsNewIntent(false)
     activeCheckpointSavedAtRef.current = ''
     autosaveSavedAtRef.current = ''
     autosaveReplacedRef.current = null
@@ -2839,6 +2848,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const persistScenario = async () => {
     if (savingRef.current) return null
     setError('')
+    setCreateNeedsNewIntent(false)
     if (sourcePending) { setError(sourcePendingMessage); setWizardStep('source'); return null }
     if (!canManageTests) {
       setError('Current session can view scenarios but cannot create or edit them.')
@@ -2918,12 +2928,27 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     }
     const payload = buildScenarioDraftPayload()
     const submittedDraft = currentDraftRef.current
+    const submittedSession = builderSessionRef.current
     const stillCurrent = () => currentDraftRef.current.form === submittedDraft.form && currentDraftRef.current.activeProjectId === submittedDraft.activeProjectId && currentDraftRef.current.showForm === submittedDraft.showForm
     savingRef.current = true
     setSavePending(true)
     try {
       const persisted = await persistScenarioAuthoringDraft({
         editingId, payload, baseline, projectId: activeProjectId || undefined,
+        createIntent: {
+          current: createIntentRef.current,
+          fresh: createIntentFreshRef.current,
+          update: next => {
+            // The intent belongs to the draft that sent it. Another draft
+            // opened since keeps its own; this key stays in the local
+            // record of unanswered creates.
+            if (builderSessionRef.current !== submittedSession) return
+            createIntentRef.current = next
+            createIntentFreshRef.current = false
+            // A reload during or after an unanswered create keeps the key.
+            if (next) writeOwnCheckpointRef.current()
+          },
+        },
       }, { api, isCurrent: stillCurrent })
       if (persisted.kind === 'superseded') return null
       if (persisted.kind === 'incomplete') {
@@ -2933,10 +2958,13 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       const saved = persisted.saved
       setScenarioBaseline(persisted.baseline)
       originalShapeIdRef.current = selectedShapeId
-      setSavedNotice(`Saved ${saved.name || form.name}${saved.ref_key ? ` (${saved.ref_key})` : ''}.`)
+      setSavedNotice(persisted.replayed
+        ? `This draft had already been saved as ${saved.name || form.name}${saved.ref_key ? ` (${saved.ref_key})` : ''} by an earlier attempt; showing that scenario.`
+        : `Saved ${saved.name || form.name}${saved.ref_key ? ` (${saved.ref_key})` : ''}.`)
       return saved
     } catch (err: unknown) {
-      if (!stillCurrent()) return null
+      if (!stillCurrent() || builderSessionRef.current !== submittedSession) return null
+      if (err instanceof AuthoringCreateNeedsNewIntent && !editingId) setCreateNeedsNewIntent(true)
       if (editingId && scenarioSaveNeedsReconciliation(err)) setScenarioConflict({ reason: scenarioConflictReason(err), loading: false, current: null })
       else setError(getErrorMessage(err, 'Unable to save scenario'))
       return null
@@ -2971,6 +2999,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     form, source: scenarioSourceMode, startChoice: scenarioStartChoice,
     shapeId: selectedShapeId, templateId: selectedLoadModelTemplateId, cloneId: selectedCloneScenarioId,
     step: wizardStep, visited: maxVisitedWizardIndex,
+    ...(!editingId && createIntentRef.current ? { createIntent: createIntentRef.current } : {}),
   })
   buildBrowserDraftRef.current = buildBrowserDraft
   // Saves the builder's work as a project draft (creating it, or updating the
@@ -2980,7 +3009,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     if (!canManageTests || !projectId || savingRef.current) return false
     let document: ScenarioAuthoringDraft
     try {
+      // A create intent is this browser's, never the project's.
       document = buildBrowserDraft()
+      delete document.createIntent
       assertDraftHasNoInlineCredentials(document.form)
     } catch (cause) {
       setError(getErrorMessage(cause, 'Unable to save the draft. Your edits remain here.'))
@@ -3183,6 +3214,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     const resumedFingerprint = JSON.stringify([draft.form, draft.source, draft.startChoice, draft.shapeId, draft.templateId, draft.cloneId])
     // Work from this browser may differ from what the project holds.
     projectDraftRef.current = projectDraft && { id: projectDraft.id, revision: projectDraft.revision, savedFingerprint: openedName === undefined ? '' : resumedFingerprint }
+    // Only this browser's own checkpoint carries its create intent.
+    createIntentRef.current = openedName === undefined && !draft.editingId ? draft.createIntent ?? null : null
     activeCheckpointSavedAtRef.current = draft.savedAt
     setForm(draft.form)
     const storedGoal = draft.form.goal_config?.workload_shape_config?.goal_driven
@@ -3400,22 +3433,27 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   // does not move the dirty baseline: leaving still asks to save or discard.
   // The browser keeps one checkpoint per project, so autosave never replaces
   // a checkpoint of other work (an unresumed draft, another tab's save).
+  // Writes this builder's checkpoint unless the browser holds another one (an
+  // unresumed draft, another tab's save). Best effort: an explicit Save draft
+  // reports errors.
+  const writeOwnCheckpoint = () => {
+    const build = buildBrowserDraftRef.current
+    if (!build || !activeProjectId) return
+    try {
+      const latest = readScenarioAuthoringDraft(activeProjectId)
+      if (latest && latest.savedAt !== activeCheckpointSavedAtRef.current) return
+      if (!autosaveSavedAtRef.current) autosaveReplacedRef.current = latest
+      const link = projectDraftRef.current
+      const draft: ScenarioAuthoringDraft = { ...build(), ...(link ? { projectDraft: { id: link.id, revision: link.revision } } : {}) }
+      saveScenarioAuthoringDraft(draft)
+      activeCheckpointSavedAtRef.current = draft.savedAt
+      autosaveSavedAtRef.current = draft.savedAt
+    } catch { /* best effort */ }
+  }
+  writeOwnCheckpointRef.current = writeOwnCheckpoint
   useEffect(() => {
     if (!showForm || !canManageTests || !activeProjectId || !scenarioBuilderDirty || monitorEditorError) return undefined
-    const timer = window.setTimeout(() => {
-      const build = buildBrowserDraftRef.current
-      if (!build) return
-      try {
-        const latest = readScenarioAuthoringDraft(activeProjectId)
-        if (latest && latest.savedAt !== activeCheckpointSavedAtRef.current) return
-        if (!autosaveSavedAtRef.current) autosaveReplacedRef.current = latest
-        const link = projectDraftRef.current
-        const draft: ScenarioAuthoringDraft = { ...build(), ...(link ? { projectDraft: { id: link.id, revision: link.revision } } : {}) }
-        saveScenarioAuthoringDraft(draft)
-        activeCheckpointSavedAtRef.current = draft.savedAt
-        autosaveSavedAtRef.current = draft.savedAt
-      } catch { /* best effort; an explicit Save draft reports errors */ }
-    }, SCENARIO_AUTOSAVE_DELAY_MS)
+    const timer = window.setTimeout(() => writeOwnCheckpointRef.current(), SCENARIO_AUTOSAVE_DELAY_MS)
     return () => window.clearTimeout(timer)
   }, [activeProjectId, canManageTests, checkpointFingerprint, maxVisitedWizardIndex, monitorEditorError, scenarioBuilderDirty, showForm, wizardStep])
   // Script-local navigation retains the scenario mounted underneath it. Global
@@ -4944,7 +4982,20 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         </div>
       )}
 
-      {error && <div ref={errorRef} tabIndex={-1} className="settings-error-inline page-error-banner" role="alert">{error}</div>}
+      {error && <div ref={errorRef} tabIndex={-1} className="settings-error-inline page-error-banner" role="alert">
+        {error}
+        {createNeedsNewIntent && !editingId && showForm && (
+          <button type="button" className="btn btn-sm btn-secondary" disabled={savePending} onClick={() => {
+            // An explicit new intent: the next save creates under a new key.
+            forgetAuthoringCreateIntent(createIntentRef.current)
+            createIntentRef.current = null
+            createIntentFreshRef.current = true
+            setCreateNeedsNewIntent(false)
+            writeOwnCheckpoint()
+            void saveScenario()
+          }}>Save as new</button>
+        )}
+      </div>}
       {savedNotice && <p className="scenario-save-notice" role="status">{savedNotice}</p>}
       {pendingScenarioDraft && <p className="scenario-save-notice" role="note">{`${pendingScenarioDraft.updated_by || 'Someone'} saved a draft of changes to this scenario ${formatDisplayDateTime(pendingScenarioDraft.updated_at)}. To pick up those changes, continue “${pendingScenarioDraft.name}” from the library's Drafts; saving here leaves that draft as it is.`}</p>}
 

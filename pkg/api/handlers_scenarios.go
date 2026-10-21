@@ -28,7 +28,12 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, projectErr.Error())
 		return
 	}
-	receipt, outcome := s.claimAuthoringCreate(w, r, storage.AuthoringPurposeScenarioCreate, "scenario", projectID, "", req)
+	fingerprint, fingerprintErr := scenarioCreateReceiptFingerprint(req)
+	if fingerprintErr != nil {
+		writeError(w, http.StatusBadRequest, fingerprintErr.Error())
+		return
+	}
+	receipt, outcome := s.claimAuthoringCreate(w, r, storage.AuthoringPurposeScenarioCreate, "scenario", projectID, "", fingerprint)
 	switch outcome {
 	case authoringCreateHandled:
 		return
@@ -75,7 +80,12 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		// The receipt fixes the scenario ID, so a retry after a lost response
 		// finds the scenario this request created instead of making another.
 		receipt.markAttempted()
-		scenario, committed, err = s.runner.CreateScenarioAuthoringDurable(receipt.resourceID(), req)
+		if receipt.originalOutcome() {
+			scenario, committed, err = s.runner.CreateScenarioAuthoringDurableCompletingReceipt(receipt.resourceID(), req, receipt.completion())
+			receipt.completedInTransaction = err == nil
+		} else {
+			scenario, committed, err = s.runner.CreateScenarioAuthoringDurable(receipt.resourceID(), req)
+		}
 		receipt.fail(err)
 		// errScenarioConcurrentChange covers both "the ID already exists" and a
 		// concurrent content change during compilation. Only a durable read can
@@ -95,6 +105,9 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		scenario, committed, err = s.runner.CreateScenarioAuthoringDurable("", req)
 	}
 	if err != nil {
+		if writeAuthoringReceiptCreateError(w, err) {
+			return
+		}
 		if errors.Is(err, errServiceAccountRuntimeSecretWrite) || errors.Is(err, errUnattributedRuntimeSecretWrite) {
 			writeError(w, http.StatusForbidden, err.Error())
 			return
@@ -121,6 +134,7 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		receipt.complete(revision)
 	}
 	s.recordAuditEvent(r, "scenario.create", "success", "scenario", scenario.ID, scenario.ProjectID, map[string]any{"name": scenario.Name, "duration": scenario.Duration})
+	markAuthoringReceiptVersion(w, receipt)
 	response := maskStoredScenario(scenario)
 	// The created baseline and its strong tag let an editor save next without
 	// a separate authoring read. Both come from the snapshot read inside the

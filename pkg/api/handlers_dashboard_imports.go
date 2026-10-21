@@ -608,6 +608,42 @@ func firstNonEmptyString(values ...string) string {
 	return ""
 }
 
+// startAuthoringReceiptOutcomeJanitor scrubs request digests and stored
+// original outcomes once their keys can no longer replay (24 hours after the
+// first claim).
+func (s *Server) startAuthoringReceiptOutcomeJanitor() {
+	if s == nil || s.store == nil || s.receiptOutcomeCleanupCancel != nil {
+		return
+	}
+	store, supported := s.store.(storage.AuthoringReceiptCreateStore)
+	if !supported {
+		return
+	}
+	purge := func(now time.Time) {
+		if _, err := store.ScrubExpiredAuthoringReceipts(now.UTC()); err != nil {
+			slog.Warn("failed to scrub expired authoring receipts", "error", err)
+		}
+	}
+	purge(time.Now())
+	ctx, cancel := context.WithCancel(context.Background())
+	s.receiptOutcomeCleanupCancel = cancel
+	if !s.launchBackground(func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-ticker.C:
+				purge(now)
+			}
+		}
+	}) {
+		cancel()
+		s.receiptOutcomeCleanupCancel = nil
+	}
+}
+
 func (s *Server) startGrafanaImportSessionJanitor() {
 	if s == nil || s.store == nil || s.grafanaSessionCleanupCancel != nil {
 		return

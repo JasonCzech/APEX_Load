@@ -51,6 +51,7 @@ import { type ApplyImportTransportRequest, type ApplyImportTransportResponse, ty
 import { type JsonRequestBody } from '../../types/generated/openapi'
 import { ApiError, REQUEST_ID_HEADER, apiFetch, request, requestWithResponse } from '../apiClient'
 import { type ApiCallOptions, withCallOptions } from './requestOptions'
+import { keyedAuthoringCreate } from './keyedAuthoringCreate'
 
 import { admitScriptAuthoringBaseline, baselineFromSavedScript, ScriptSaveOutcomeUnknown, withoutScriptAuthoringReadContext } from '../../utils/scriptAuthoringRevision'
 import { admitScenarioAuthoringBaseline, baselineFromSavedScenario, ScenarioChangedSinceObserved, scenarioBaselineFromRead, ScenarioSaveOutcomeUnknown } from '../../utils/scenarioAuthoringRevision'
@@ -394,6 +395,14 @@ export function useScriptApi() {
           source_recording_session_id: sourceRecordingSessionId,
         }),
       }, options)),
+    [],
+  )
+
+  // An ordinary create under a draft-owned intent key (AUTH-1): a retry
+  // after a lost response replays the script the first attempt created.
+  const createScriptKeyed = useCallback(
+    (script: ScriptDefinition, projectId: string | undefined, folderId: string | null | undefined, key: string) =>
+      keyedAuthoringCreate<StoredScript>('/scripts', JSON.stringify({ script, project_id: projectId, folder_id: folderId }), key, 'script'),
     [],
   )
 
@@ -1508,6 +1517,11 @@ export function useScriptApi() {
     [],
   )
 
+  const createScenarioKeyed = useCallback(
+    (data: ScenarioUpsertRequest, key: string) => keyedAuthoringCreate<StoredScenario>('/scenarios', JSON.stringify(data), key, 'scenario'),
+    [],
+  )
+
   const getScenario = useCallback((id: string) => request<StoredScenario>(`/scenarios/${id}`), [])
 
   // A scenario save presents the baseline its draft was loaded from and
@@ -1635,6 +1649,7 @@ export function useScriptApi() {
     () => ({
       listScripts,
       createScript,
+      createScriptKeyed,
       getScript,
       getScriptAuthoring,
       updateScript,
@@ -1740,6 +1755,7 @@ export function useScriptApi() {
       suggestParameterization,
       listScenarios,
       createScenario,
+      createScenarioKeyed,
       getScenario,
       updateScenario,
       deleteScenario,
@@ -1760,6 +1776,7 @@ export function useScriptApi() {
     [
       listScripts,
       createScript,
+      createScriptKeyed,
       getScript,
       getScriptAuthoring,
       updateScript,
@@ -1865,6 +1882,7 @@ export function useScriptApi() {
       suggestParameterization,
       listScenarios,
       createScenario,
+      createScenarioKeyed,
       getScenario,
       updateScenario,
       deleteScenario,

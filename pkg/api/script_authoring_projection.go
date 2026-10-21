@@ -396,6 +396,13 @@ func (tr *TestRunner) CreateScriptAuthoringDurable(script *dsl.Script) (*StoredS
 	return stored, err
 }
 
+// CreateScriptAuthoringDurableCompletingReceipt is an ordinary create that
+// completes the caller's original-outcome receipt in the same transaction.
+func (tr *TestRunner) CreateScriptAuthoringDurableCompletingReceipt(script *dsl.Script, receipt storage.AuthoringReceiptCompletion) (*StoredScript, error) {
+	stored, _, err := tr.createScriptDurableCompletingReceipt(script, false, false, "", true, &receipt)
+	return stored, err
+}
+
 // Fixed workflow guidance is safe to disclose; persistence errors and request
 // details still use the standard redacted internal-error path.
 type ScriptAuthoringSaveOutcomeError struct {

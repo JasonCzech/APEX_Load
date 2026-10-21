@@ -694,7 +694,7 @@ func corsMiddleware(allowedOrigins []string, authSettings ...func() AuthSettings
 			// allow-list is configured this permits same-origin requests only —
 			// never an arbitrary reflected origin.
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, If-Match, Idempotency-Key, X-Request-ID, X-APEXLoad-API-Key, X-APEXLoad-CSRF-Token, X-APEXLoad-Dev-View, X-APEXLoad-Dev-Project-ID, X-APEXLoad-Deployment-Lease-Token, "+desktopCapabilityHeader)
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, If-Match, Idempotency-Key, X-APEX-Authoring-Receipt-Version, X-Request-ID, X-APEXLoad-API-Key, X-APEXLoad-CSRF-Token, X-APEXLoad-Dev-View, X-APEXLoad-Dev-Project-ID, X-APEXLoad-Deployment-Lease-Token, "+desktopCapabilityHeader)
 			w.Header().Set("Access-Control-Max-Age", "86400")
 
 			if r.Method == http.MethodOptions {
@@ -738,7 +738,7 @@ func applyCORSOriginHeadersWithAuth(w http.ResponseWriter, r *http.Request, allo
 	if !decision.allowed {
 		return decision
 	}
-	w.Header().Set("Access-Control-Expose-Headers", "X-APEXLOAD-Audit-Status, ETag, X-APEX-Script-Save-Mode, X-APEX-Scenario-Save-Mode, X-APEX-Original-Content-Revision, Idempotent-Replayed, X-Request-ID")
+	w.Header().Set("Access-Control-Expose-Headers", "X-APEXLOAD-Audit-Status, ETag, X-APEX-Script-Save-Mode, X-APEX-Scenario-Save-Mode, X-APEX-Original-Content-Revision, Idempotent-Replayed, X-APEX-Authoring-Receipt-Version, X-Request-ID")
 	if decision.wildcard {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Del("Access-Control-Allow-Credentials")

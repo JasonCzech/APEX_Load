@@ -1131,7 +1131,12 @@ func TestGeneratedSwaggerIncludesInferredHandlerContracts(t *testing.T) {
 	if got := browser.Properties["headless"].Type; got != "boolean" {
 		t.Errorf("scenario browser headless type = %q, want boolean", got)
 	}
-	createdScenarioResponse := scenarioCreate.Responses["201"].Content["application/json"].Schema
+	// A keyed create's version 2 replay returns the original outcome instead.
+	createdScenarioUnion := scenarioCreate.Responses["201"].Content["application/json"].Schema
+	if len(createdScenarioUnion.OneOf) != 2 || createdScenarioUnion.OneOf[1].Ref != "#/components/schemas/AuthoringReceiptOutcome" {
+		t.Fatalf("scenario create response schema = %#v, want StoredScenario or AuthoringReceiptOutcome", createdScenarioUnion)
+	}
+	createdScenarioResponse := createdScenarioUnion.OneOf[0]
 	if createdScenarioResponse.Type != "object" || createdScenarioResponse.Properties["id"].Type != "string" {
 		t.Errorf("scenario create response schema = %#v, want typed StoredScenario object", createdScenarioResponse)
 	}

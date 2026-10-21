@@ -1546,6 +1546,15 @@ func (o *sqliteStoreOverlay) CreateRuntimeSecretProvisioningAttempt(a0 *storage.
 	return o.base().CreateRuntimeSecretProvisioningAttempt(a0)
 }
 
+func (o *sqliteStoreOverlay) CreateScenarioAuthoringCompletingReceipt(a0 *storage.Scenario, a1 []storage.ScenarioScript, a2 []storage.ScenarioDataPoolBinding, a3 storage.AuthoringReceiptCompletion, a4 func(*storage.ScenarioAuthoringSnapshot) (string, error)) (*storage.ScenarioAuthoringMutationResult, error) {
+	if fake, ok := o.fake.(interface {
+		CreateScenarioAuthoringCompletingReceipt(*storage.Scenario, []storage.ScenarioScript, []storage.ScenarioDataPoolBinding, storage.AuthoringReceiptCompletion, func(*storage.ScenarioAuthoringSnapshot) (string, error)) (*storage.ScenarioAuthoringMutationResult, error)
+	}); ok {
+		return fake.CreateScenarioAuthoringCompletingReceipt(a0, a1, a2, a3, a4)
+	}
+	return o.base().CreateScenarioAuthoringCompletingReceipt(a0, a1, a2, a3, a4)
+}
+
 func (o *sqliteStoreOverlay) CreateScenarioAuthoringIfAbsent(a0 *storage.Scenario, a1 []storage.ScenarioScript, a2 []storage.ScenarioDataPoolBinding) (*storage.ScenarioAuthoringMutationResult, error) {
 	if fake, ok := o.fake.(interface {
 		CreateScenarioAuthoringIfAbsent(*storage.Scenario, []storage.ScenarioScript, []storage.ScenarioDataPoolBinding) (*storage.ScenarioAuthoringMutationResult, error)
@@ -1625,6 +1634,15 @@ func (o *sqliteStoreOverlay) CreateScenarioWithDataPoolBindingsIfAbsent(a0 *stor
 		return fake.CreateScenarioWithDataPoolBindingsIfAbsent(a0, a1, a2)
 	}
 	return o.base().CreateScenarioWithDataPoolBindingsIfAbsent(a0, a1, a2)
+}
+
+func (o *sqliteStoreOverlay) CreateScriptAuthoringCompletingReceipt(a0 *dsl.Script, a1 storage.AuthoringReceiptCompletion, a2 func(*storage.ScriptAuthoringSnapshot) (string, error)) (*storage.ScriptAuthoringMutationResult, error) {
+	if fake, ok := o.fake.(interface {
+		CreateScriptAuthoringCompletingReceipt(*dsl.Script, storage.AuthoringReceiptCompletion, func(*storage.ScriptAuthoringSnapshot) (string, error)) (*storage.ScriptAuthoringMutationResult, error)
+	}); ok {
+		return fake.CreateScriptAuthoringCompletingReceipt(a0, a1, a2)
+	}
+	return o.base().CreateScriptAuthoringCompletingReceipt(a0, a1, a2)
 }
 
 func (o *sqliteStoreOverlay) CreateScriptAuthoringIfAbsent(a0 *dsl.Script) (*storage.ScriptAuthoringMutationResult, error) {
@@ -7019,6 +7037,15 @@ func (o *sqliteStoreOverlay) SchemaStatus() (storage.SchemaStatus, error) {
 		return fake.SchemaStatus()
 	}
 	return o.base().SchemaStatus()
+}
+
+func (o *sqliteStoreOverlay) ScrubExpiredAuthoringReceipts(a0 time.Time) (int64, error) {
+	if fake, ok := o.fake.(interface {
+		ScrubExpiredAuthoringReceipts(time.Time) (int64, error)
+	}); ok {
+		return fake.ScrubExpiredAuthoringReceipts(a0)
+	}
+	return o.base().ScrubExpiredAuthoringReceipts(a0)
 }
 
 func (o *sqliteStoreOverlay) SetObjectArchived(a0 string, a1 string, a2 time.Time, a3 bool) (bool, error) {

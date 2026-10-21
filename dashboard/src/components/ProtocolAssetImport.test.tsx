@@ -34,6 +34,8 @@ const apiMock = {
   importAsyncAPI: vi.fn(),
   listScripts: vi.fn(),
   createScript: vi.fn(),
+  // Keyed creates reach the createScript mock; intent tests assert the key.
+  createScriptKeyed: vi.fn(async (...args: [script: unknown, projectId?: string, folderId?: string | null, key?: string]) => ({ kind: 'created' as const, resource: await apiMock.createScript(args[0], args[1], args[2]) })),
   deleteScript: vi.fn(),
   importK6: vi.fn(),
   importCloudTest: vi.fn(),

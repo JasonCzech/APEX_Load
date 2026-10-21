@@ -41,6 +41,8 @@ const apiMock = {
   validateScenarioLoadModel: vi.fn(),
   estimateTest: vi.fn(),
   createScenario: vi.fn(),
+  // Keyed creates reach the createScenario mock; intent tests assert the key.
+  createScenarioKeyed: vi.fn(async (...args: [data: unknown, key?: string]) => ({ kind: 'created' as const, resource: await apiMock.createScenario(args[0]) })),
   getScenario: vi.fn(),
   updateScenario: vi.fn(),
   deleteScenario: vi.fn(),
@@ -1122,6 +1124,49 @@ describe('TestHub', () => {
     expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
     // Only at the revision this builder saved, so later work by others is kept.
     expect(apiMock.deleteScenarioDraft).toHaveBeenCalledWith('project-1', 'scenario-draft-1', 2)
+  })
+
+  it('checkpoints a new scenario\'s create key, retries under it and rotates it only on Save as new (AUTH-1)', async () => {
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Intent probe'))
+    await clickWizardStep('Run settings')
+
+    apiMock.createScenario.mockRejectedValueOnce(new ApiError('unknown', 503, { error: 'unknown', code: 'scenario_save_outcome_unknown' }))
+    await clickButton('Save scenario')
+    await flushPromises()
+    const key = apiMock.createScenarioKeyed.mock.calls[0][1]
+    expect(key).toMatch(/^scenario-create-/)
+    // A reload now resumes the draft with the key its unanswered create used.
+    const checkpoint = JSON.parse(window.localStorage.getItem('apexload.scenario.authoring.v1.project-1') || 'null')
+    expect(checkpoint?.createIntent).toMatchObject({ key, state: 'pending', purpose: 'scenario_create', projectId: 'project-1' })
+
+    apiMock.createScenario.mockRejectedValueOnce(new ApiError('reused', 409, { error: 'reused', code: 'idempotency_key_reused' }))
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.createScenarioKeyed.mock.calls[1][1]).toBe(key)
+    expect(container.textContent).toContain('may already have created the scenario')
+
+    apiMock.createScenario.mockResolvedValueOnce(withScenarioAuthoring({ id: 'created-as-new', project_id: 'project-1', name: 'Intent probe', duration: '1m', scripts: [], created_at: '', updated_at: '', script_count: 0 }))
+    await clickButton('Save as new')
+    await flushPromises()
+    expect(apiMock.createScenarioKeyed).toHaveBeenCalledTimes(3)
+    expect(apiMock.createScenarioKeyed.mock.calls[2][1]).not.toBe(key)
+  })
+
+  it('keeps an unanswered create key recallable when the save is refused for good (AUTH-1)', async () => {
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Recallable'))
+    await clickWizardStep('Run settings')
+    apiMock.createScenario.mockRejectedValueOnce(new ApiError('reused', 409, { error: 'reused', code: 'idempotency_key_reused' }))
+    await clickButton('Save scenario')
+    await flushPromises()
+    // A reload or another draft of the same work finds the key, not a new one.
+    const ledger = JSON.parse(window.localStorage.getItem('apexload.authoring.create-intents.v1') || '[]')
+    expect(ledger).toEqual([expect.objectContaining({ key: apiMock.createScenarioKeyed.mock.calls[0][1], purpose: 'scenario_create', state: 'pending' })])
   })
 
   it('creates a scenario from the typed form payload', async () => {
