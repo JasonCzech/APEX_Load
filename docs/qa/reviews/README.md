@@ -34,6 +34,8 @@ The themed reports preserve the original narrative of each consolidated review, 
 
 ## Completed implementation reviews
 
+[Browser stack cross-commit review — 2026-10-21](roadmap-browser-cross-commit-2026-10-21/README.md) records the keyboard aggregation bound repair and scoped validation of the completed PR stack.
+
 [Browser interaction map cohorts — 2026-10-20](roadmap-browser-map-cohorts-2026-10-20/README.md) records conservative spatial/cohort separation, report coverage and retained raw-evidence compatibility.
 
 [Browser workflow isolation and roadmap integration — 2026-10-20](roadmap-e2e-isolation-2026-10-20/README.md) records the combined precision-consent/main regression, private import-store isolation, measured bundle inventory and retained failed attempts.
