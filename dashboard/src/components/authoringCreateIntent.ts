@@ -11,7 +11,7 @@
 import { ApiError } from '../hooks/apiClient'
 import { draftFingerprint } from './scriptAuthoringSession'
 
-export type AuthoringCreatePurpose = 'script_create' | 'scenario_create'
+export type AuthoringCreatePurpose = 'script_create' | 'scenario_create' | 'test_create'
 
 export interface AuthoringCreateIntent {
   version: 1
@@ -67,7 +67,7 @@ export function isAuthoringCreateIntent(value: unknown): value is AuthoringCreat
   const intent = value as Record<string, unknown>
   return intent.version === 1
     && typeof intent.key === 'string' && /^[\x21-\x7e]{16,512}$/.test(intent.key)
-    && (intent.purpose === 'script_create' || intent.purpose === 'scenario_create')
+    && (intent.purpose === 'script_create' || intent.purpose === 'scenario_create' || intent.purpose === 'test_create')
     && typeof intent.projectId === 'string' && typeof intent.payloadDigest === 'string'
     && (intent.state === 'pending' || intent.state === 'refused')
     && (intent.uncertain === undefined || typeof intent.uncertain === 'boolean')
@@ -145,7 +145,8 @@ export function settleFailedAuthoringCreate(intent: AuthoringCreateIntent, cause
     case 'idempotency_resource_deleted': throw new AuthoringCreateNeedsNewIntent('deleted', noun)
     case 'idempotency_request_in_progress':
     case 'scenario_save_outcome_unknown':
-    case 'script_save_outcome_unknown': return uncertain
+    case 'script_save_outcome_unknown':
+    case 'test_create_outcome_unknown': return uncertain
   }
   // A 4xx answers only this request, before anything it sent could commit.
   // It proves nothing about an earlier send whose answer was lost, so a key

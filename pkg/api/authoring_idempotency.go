@@ -172,6 +172,10 @@ type authoringCreateAttempt struct {
 	// absent reads the store for the receipt's resource. It reports true only
 	// when the resource definitely does not exist.
 	absent func(id string) bool
+	// cannotHaveCreated: the receipt's caller-chosen ID already held another
+	// resource before this fresh attempt, and creates never overwrite, so
+	// this request created nothing whatever is there now.
+	cannotHaveCreated bool
 	// requestedVersion is the receipt contract the request asked for; the
 	// receipt's own OutcomeVersion (fixed by its first claim) decides replay.
 	requestedVersion int
@@ -278,7 +282,7 @@ func (attempt *authoringCreateAttempt) release() {
 		}
 		return
 	}
-	if attempt.attempted || attempt.resumed {
+	if (attempt.attempted || attempt.resumed) && !attempt.cannotHaveCreated {
 		if attempt.absent == nil || !attempt.absent(attempt.receipt.ResourceID) {
 			return
 		}
@@ -516,13 +520,13 @@ func (s *Server) authoringReceiptCredentialKey(ctx context.Context) ([]byte, err
 	return key, nil
 }
 
-// scenarioCreateReceiptFingerprint is a scenario create's request identity.
-// Runtime credential values are fingerprinted under the wrapped credential
-// key, never under the request digest's key; a request without any keeps the
-// digest it always had.
-func scenarioCreateReceiptFingerprint(req CreateScenarioRequest) (authoringReceiptFingerprint, error) {
+// runtimeCredentialReceiptFingerprint is the request identity of a create
+// whose root and group runtime settings may carry credential values. They
+// are fingerprinted under the wrapped credential key, never under the request
+// digest's key; a request without any keeps the digest it always had. rebuild
+// returns a copy of the request carrying the protected settings.
+func runtimeCredentialReceiptFingerprint(request any, root *RuntimeSettingsOverride, groups []CreateGroupEntry, rebuild func(*RuntimeSettingsOverride, []CreateGroupEntry) any) (authoringReceiptFingerprint, error) {
 	const scope = "authoring-receipt"
-	protected := req
 	credentials := map[string]string{}
 	collect := func(settings *RuntimeSettingsOverride, group int) (*RuntimeSettingsOverride, error) {
 		projected, values, _, err := protectLegacyRuntimeOverrideSecrets(scope, group, nil, settings)
@@ -534,20 +538,38 @@ func scenarioCreateReceiptFingerprint(req CreateScenarioRequest) (authoringRecei
 		}
 		return projected, nil
 	}
-	var err error
-	if protected.RuntimeSettings, err = collect(req.RuntimeSettings, -1); err != nil {
+	protectedRoot, err := collect(root, -1)
+	if err != nil {
 		return authoringReceiptFingerprint{}, err
 	}
-	protected.Groups = append([]CreateGroupEntry(nil), req.Groups...)
-	for index := range protected.Groups {
-		if protected.Groups[index].RuntimeSettings, err = collect(req.Groups[index].RuntimeSettings, index); err != nil {
+	protectedGroups := append([]CreateGroupEntry(nil), groups...)
+	for index := range protectedGroups {
+		if protectedGroups[index].RuntimeSettings, err = collect(groups[index].RuntimeSettings, index); err != nil {
 			return authoringReceiptFingerprint{}, err
 		}
 	}
 	if len(credentials) == 0 {
-		return authoringReceiptFingerprint{request: req}, nil
+		return authoringReceiptFingerprint{request: request}, nil
 	}
-	return authoringReceiptFingerprint{request: protected, credentials: credentials, legacy: req}, nil
+	return authoringReceiptFingerprint{request: rebuild(protectedRoot, protectedGroups), credentials: credentials, legacy: request}, nil
+}
+
+// scenarioCreateReceiptFingerprint is a scenario create's request identity.
+func scenarioCreateReceiptFingerprint(req CreateScenarioRequest) (authoringReceiptFingerprint, error) {
+	return runtimeCredentialReceiptFingerprint(req, req.RuntimeSettings, req.Groups, func(root *RuntimeSettingsOverride, groups []CreateGroupEntry) any {
+		protected := req
+		protected.RuntimeSettings, protected.Groups = root, groups
+		return protected
+	})
+}
+
+// testCreateReceiptFingerprint is a run create's request identity.
+func testCreateReceiptFingerprint(req CreateTestRequest) (authoringReceiptFingerprint, error) {
+	return runtimeCredentialReceiptFingerprint(req, req.RuntimeSettings, req.Groups, func(root *RuntimeSettingsOverride, groups []CreateGroupEntry) any {
+		protected := req
+		protected.RuntimeSettings, protected.Groups = root, groups
+		return protected
+	})
 }
 
 // AuthoringIdempotencyError carries a fixed code for clients deciding whether
@@ -718,6 +740,54 @@ func (s *Server) replayScenarioCreate(w http.ResponseWriter, r *http.Request, at
 		}
 	}
 	writeJSON(w, http.StatusCreated, response)
+}
+
+// replayTestCreate answers a retried run create with the run the original
+// request created, as it is now (receipt contract 1).
+func (s *Server) replayTestCreate(w http.ResponseWriter, r *http.Request, attempt *authoringCreateAttempt) {
+	test, found := s.runner.GetTest(attempt.resourceID())
+	if !found || test == nil {
+		absent := s.durableTestAbsent(attempt.resourceID())
+		if absent {
+			writeAuthoringIdempotencyError(w, http.StatusGone, "idempotency_resource_deleted", "the resource created with this Idempotency-Key was deleted and will not be recreated")
+			return
+		}
+		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_unavailable", "the original run is not yet visible on this controller; retry later")
+		return
+	}
+	if expected, scoped := authorizedProjectFromRequest(r); scoped && normalizeProjectID(test.ProjectID) != expected {
+		writeError(w, http.StatusNotFound, "test not found")
+		return
+	}
+	attempt.complete("")
+	markAuthoringReplay(w, attempt)
+	writeJSON(w, http.StatusCreated, maskManagedTest(test))
+}
+
+// durableTestAbsent reports true only when the store proves the run does not
+// exist.
+func (s *Server) durableTestAbsent(id string) bool {
+	if _, found := s.runner.GetTest(id); found {
+		return false
+	}
+	store := s.runner.testStore
+	if store == nil {
+		return true
+	}
+	_, err := store.GetTest(id)
+	return errors.Is(err, sql.ErrNoRows)
+}
+
+// durableTestPresent reports true only when a run is known to exist at id.
+func (s *Server) durableTestPresent(id string) bool {
+	if _, found := s.runner.GetTest(id); found {
+		return true
+	}
+	if s.runner.testStore == nil {
+		return false
+	}
+	record, err := s.runner.testStore.GetTest(id)
+	return err == nil && record != nil
 }
 
 // durableScenarioExists reads the store, not this replica's cache. Stores

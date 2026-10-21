@@ -45343,7 +45343,12 @@ export interface operations {
     };
   };
   "handleCreateTest": {
-    parameters?: never;
+    parameters: {
+      "header"?: {
+        "Idempotency-Key"?: string;
+        "X-APEX-Authoring-Receipt-Version"?: "1";
+      };
+    };
     requestBody: {
       content: {
         "application/json": {
@@ -46166,6 +46171,10 @@ export interface operations {
     };
     responses: {
       "201": {
+        headers: {
+          "Idempotent-Replayed"?: "true";
+          "X-APEX-Authoring-Receipt-Version"?: "1";
+        };
         content: {
           "application/json": ({
             "activity"?: ({
@@ -51368,7 +51377,10 @@ export interface operations {
       };
       "400": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            "code"?: "idempotency_key_invalid" | "idempotency_receipt_version_unsupported";
+            "error": string;
+          };
         };
       };
       "401": {
@@ -51382,13 +51394,35 @@ export interface operations {
         };
       };
       "409": {
+        headers: {
+          "Retry-After"?: string;
+        };
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            "code"?: "idempotency_key_reused" | "idempotency_key_expired" | "idempotency_request_in_progress" | "test_identity_in_use";
+            "error": string;
+          };
+        };
+      };
+      "410": {
+        content: {
+          "application/json": {
+            "code"?: "idempotency_resource_deleted";
+            "error": string;
+          };
         };
       };
       "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": {
+            "code"?: "idempotency_unavailable" | "test_create_outcome_unknown";
+            "error": string;
+          };
         };
       };
       "default": {

@@ -17,6 +17,9 @@ const (
 
 	AuthoringPurposeScriptCreate   = "script_create"
 	AuthoringPurposeScenarioCreate = "scenario_create"
+	// AuthoringPurposeTestCreate fences retries of a run create, such as a
+	// queued run's revised copy. Its receipts keep contract 1.
+	AuthoringPurposeTestCreate = "test_create"
 
 	// AuthoringReceiptOutcomeLegacy receipts record only the created resource
 	// and its revision; a replay returns the resource as it is now.
