@@ -746,9 +746,49 @@ it was issued with; any edit, save, rebaseline or change to those makes it
 stale, and the evidence summary stops reporting it as passed. Debug evidence is
 bound the same way to the fingerprint of the document the replay ran, so a
 configuration, parameter or data-source edit makes it stale too, not only an
-action edit. Secret-reference availability is reconciled against the live
-secret probe when the readiness card renders rather than bound into the
-result.
+action edit. The readiness card also reconciles secret-reference availability
+against the live secret probe as it renders; the result itself depends on
+that availability through its validation context, below.
+
+#### Validation context
+
+Both validation endpoints also return `validation_context`: the controller
+context the result depended on, which an unchanged document does not cover.
+It has an opaque `revision` and four keyed component digests:
+`capabilities` (the controller's authoring catalog and the runtime a browser
+script needs), `policy` (the project's domain feature policy and settings and
+the system script-import policy), `approvals` (whether a Java Vuser script
+needs authoring approval and, for a script with a library ID, whether its approval is
+still valid) and `secret_references` (each referenced secret, sorted and
+bounded to `secret_reference_limit` names, with its availability and a keyed
+digest of its current value; `secret_references_truncated` marks a longer
+list). No digest discloses a secret value. `contextual_findings` lists
+context-dependent findings with a fixed `cause`: `secret_unavailable`,
+`approval_required`, `approval_stale` or `capability_unavailable`. They are
+distinct from the static `issues` about the document and from execution
+admission: starting a run always rechecks authorization, approval, secrets and
+placement. (A browser runtime that is not installed is also reported among the
+`warnings`, as before.) Only the project settings validation depends on enter
+`policy` (`authoring` and `features`), and a failed read of the project or
+application secret store, the application or library assignment that scopes
+them, the project or a Java approval session is an error, never a changed
+context: validation then omits `validation_context`, and the context endpoint
+answers 503. A Key Vault fallback reports no read errors, so its outage still
+reads as an unavailable secret.
+
+`POST /api/v1/scripts/validation-context` returns the current context for a
+draft (`script`, with `project_id` and `folder_id`) or a stored script
+(`script_id`), without validating it; exactly one of the two is required. With
+`script_id`, `content_revision` names the stored revision the held result
+validated, and a newer revision answers 409
+`validation_context_revision_changed` instead of a context for content the
+result never saw. The script editor re-reads the context for the result it
+holds when the window regains focus or becomes visible and every 60 seconds
+while visible, one probe at a time and at most one every 5 seconds. A different
+revision makes the result stale like an edit does, and the readiness card says
+which components changed (for example, "project secrets changed since the
+check"). A result from a controller that reports no context stays bound to its
+document only.
 
 ### Archive editor approval handoff
 

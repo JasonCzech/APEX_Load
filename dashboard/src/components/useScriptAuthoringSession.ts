@@ -5,7 +5,8 @@ import type { ScriptAuthoringBaseline } from '../types/storedContent'
 import { getErrorMessage } from '../utils/errorUtils'
 import { admitScriptAuthoringBaseline, reapplyScriptDraft } from '../utils/scriptAuthoringRevision'
 import { formatScriptJson } from './scriptEditorJsonModel'
-import { admitValidationResponse, draftFingerprint, sameValidationBinding, validationRequestStillCurrent, type ValidationAdmission, type ValidationBinding, type ValidationEcho, type ValidationRequest } from './scriptAuthoringSession'
+import { admitValidationResponse, draftFingerprint, sameValidationBinding, validationContextChanges, validationRequestStillCurrent, type ValidationAdmission, type ValidationBinding, type ValidationEcho, type ValidationRequest } from './scriptAuthoringSession'
+import type { ScriptValidationContext } from '../types/scripts'
 
 // ResolvedScriptDraft is the one resolution of the current draft that
 // validate, save, replay and debug act on: pending data cells flushed, a dirty
@@ -77,6 +78,9 @@ interface CommonOptions {
   context: string
   document?: DocumentOptions
   navigation?: NavigationOptions
+  // Reads the controller's current validation context for the result held
+  // now (AUTH-B); omitted, results bind to their document only.
+  probeValidationContext?: (binding: ValidationBinding) => Promise<ScriptValidationContext | null>
 }
 
 // The session either owns the paired baseline, or is told the revision the
@@ -95,7 +99,12 @@ const noop = () => undefined
 // generation that drops late responses); the paired authoring baseline of a
 // stored script; whether the editor holds unsaved work; and guarded
 // navigation away from it.
-export function useScriptAuthoringSession({ initialScript, initiallyDirty: givenInitiallyDirty, resolveCurrentScript, flushPendingEdits, documentKey, contentRevision: givenRevision = '', context, baseline: baselineOptions, document: documentOptions, navigation: navigationOptions }: Options) {
+// The interval at which a held result's controller context is re-read while
+// the editor is visible (also on focus and when the page becomes visible).
+export const VALIDATION_CONTEXT_PROBE_INTERVAL_MS = 60_000
+export const VALIDATION_CONTEXT_PROBE_SPACING_MS = 5_000
+
+export function useScriptAuthoringSession({ initialScript, initiallyDirty: givenInitiallyDirty, resolveCurrentScript, flushPendingEdits, documentKey, contentRevision: givenRevision = '', context, baseline: baselineOptions, document: documentOptions, navigation: navigationOptions, probeValidationContext: probeValidationContextOption }: Options) {
   // ---- Paired baseline ----------------------------------------------------
   const [authoringBaseline, setAuthoringBaseline] = useState<ScriptAuthoringBaseline | null>(null)
   const [authoringRevisionState, setAuthoringRevisionState] = useState<AuthoringRevisionState>(baselineOptions ? 'loading' : 'ready')
@@ -222,6 +231,12 @@ export function useScriptAuthoringSession({ initialScript, initiallyDirty: given
   currentBindingRef.current = currentBinding
   const [validatedBinding, setValidatedBinding] = useState<ValidationBinding | null>(null)
   const latestRequestRef = useRef(0)
+  // The controller context the current result was validated under, and the
+  // one a later probe observed (AUTH-B). A result from a controller that
+  // reports no context binds to its document only.
+  const [validatedContext, setValidatedContext] = useState<ScriptValidationContext | null>(null)
+  const [observedContext, setObservedContext] = useState<ScriptValidationContext | null>(null)
+  const validationContextChanged = validatedBinding ? validationContextChanges(validatedContext, observedContext) : []
 
   const resolveDraft = useCallback((): ResolvedScriptDraft => {
     const { script, editGeneration } = flushPendingEdits(resolveCurrentScript())
@@ -252,6 +267,8 @@ export function useScriptAuthoringSession({ initialScript, initiallyDirty: given
   const beginValidation = useCallback((draft: ResolvedScriptDraft, stored: boolean): ValidationRequest => {
     latestRequestRef.current += 1
     setValidatedBinding(null)
+    setValidatedContext(null)
+    setObservedContext(null)
     const current = currentBindingRef.current
     return {
       requestId: latestRequestRef.current,
@@ -268,9 +285,52 @@ export function useScriptAuthoringSession({ initialScript, initiallyDirty: given
 
   // adoptValidated binds an admitted result to the document the editor holds
   // after applying it (validation may add runtime-settings metadata).
-  const adoptValidated = useCallback((request: ValidationRequest, adoptedDocumentKey: string) => {
+  const adoptValidated = useCallback((request: ValidationRequest, adoptedDocumentKey: string, context?: ScriptValidationContext | null) => {
     setValidatedBinding({ ...request.sent, fingerprint: draftFingerprint(adoptedDocumentKey) })
+    setValidatedContext(context ?? null)
+    setObservedContext(context ?? null)
   }, [])
+
+  // probeValidationContext re-reads the controller context for the result
+  // held now. A probe answer is applied only while that same result is
+  // still held: a late answer cannot judge a newer result.
+  const probeRef = useRef(probeValidationContextOption)
+  probeRef.current = probeValidationContextOption
+  const validatedBindingRef = useRef(validatedBinding)
+  validatedBindingRef.current = validatedBinding
+  // One probe at a time, and none within VALIDATION_CONTEXT_PROBE_SPACING_MS
+  // of the last: a focus and a visibility change arrive together, and each
+  // probe resolves the script's secrets on the controller.
+  const probeInFlightRef = useRef(false)
+  const lastProbeAtRef = useRef(0)
+  const probeValidationContext = useCallback(async () => {
+    const probe = probeRef.current
+    const binding = validatedBindingRef.current
+    if (!probe || !binding || !sameValidationBinding(binding, currentBindingRef.current)) return
+    if (probeInFlightRef.current || Date.now() - lastProbeAtRef.current < VALIDATION_CONTEXT_PROBE_SPACING_MS) return
+    probeInFlightRef.current = true
+    lastProbeAtRef.current = Date.now()
+    const request = latestRequestRef.current
+    try {
+      const observed = await probe(binding)
+      if (observed && request === latestRequestRef.current && validatedBindingRef.current === binding) setObservedContext(observed)
+    } catch { /* An unreachable controller leaves the last observation; a start rechecks everything. */ } finally {
+      probeInFlightRef.current = false
+    }
+  }, [])
+  useEffect(() => {
+    if (!validatedBinding || !validatedContext || !probeRef.current) return undefined
+    const visible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden'
+    const onFocus = () => { if (visible()) void probeValidationContext() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    const timer = window.setInterval(onFocus, VALIDATION_CONTEXT_PROBE_INTERVAL_MS)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+      window.clearInterval(timer)
+    }
+  }, [probeValidationContext, validatedBinding, validatedContext])
 
   const isLatestValidation = useCallback((request: ValidationRequest) => request.requestId === latestRequestRef.current, [])
 
@@ -283,9 +343,15 @@ export function useScriptAuthoringSession({ initialScript, initiallyDirty: given
   const invalidateValidation = useCallback(() => {
     latestRequestRef.current += 1
     setValidatedBinding(null)
+    setValidatedContext(null)
+    setObservedContext(null)
   }, [])
 
-  const clearValidatedBinding = useCallback(() => setValidatedBinding(null), [])
+  const clearValidatedBinding = useCallback(() => {
+    setValidatedBinding(null)
+    setValidatedContext(null)
+    setObservedContext(null)
+  }, [])
 
   // ---- Navigation ---------------------------------------------------------
   const navigationRef = useRef(navigationOptions)
@@ -316,7 +382,12 @@ export function useScriptAuthoringSession({ initialScript, initiallyDirty: given
   return {
     currentBinding,
     validatedBinding,
-    validationIsCurrent: sameValidationBinding(validatedBinding, currentBinding),
+    validationIsCurrent: sameValidationBinding(validatedBinding, currentBinding) && validationContextChanged.length === 0,
+    // Components of the controller context that changed since the result
+    // was validated; non-empty means the result is stale for that reason.
+    validationContextChanged,
+    validatedContext,
+    probeValidationContext,
     resolveDraft,
     beginValidation,
     admitValidation,

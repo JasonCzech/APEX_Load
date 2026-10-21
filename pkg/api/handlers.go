@@ -1250,12 +1250,80 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 	}
 	if err == nil && found && durable != nil && durable.Script != nil &&
 		durable.ID == script.ID && durable.ProjectID == script.ProjectID && durable.ContentRevision != "" {
-		response := buildScriptValidationResponse(id, durable.Script, s.runner.secretResolverForScript(durable.Script))
+		resolver := s.runner.secretResolverForScript(durable.Script)
+		response := buildScriptValidationResponse(id, durable.Script, resolver)
 		response.ValidatedContentRevision = durable.ContentRevision
+		s.attachValidationContext(r, &response, durable.ProjectID, durable.Script, resolver)
 		writeJSON(w, http.StatusOK, response)
 		return
 	}
-	writeJSON(w, http.StatusOK, buildScriptValidationResponse(id, script.Script, s.runner.secretResolverForScript(script.Script)))
+	resolver := s.runner.secretResolverForScript(script.Script)
+	response := buildScriptValidationResponse(id, script.Script, resolver)
+	s.attachValidationContext(r, &response, script.ProjectID, script.Script, resolver)
+	writeJSON(w, http.StatusOK, response)
+}
+
+// handleValidationContext answers the current validation context for a
+// draft or stored script, without validating it, so an editor can tell
+// whether a result it holds still describes the context it depended on.
+func (s *Server) handleValidationContext(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		ProjectID string      `json:"project_id,omitempty"`
+		FolderID  *string     `json:"folder_id,omitempty"`
+		ScriptID  string      `json:"script_id,omitempty"`
+		Script    *dsl.Script `json:"script,omitempty"`
+		// ContentRevision, with script_id, is the stored revision the held
+		// result validated; a newer one answers 409 rather than a context
+		// computed for content the result never saw.
+		ContentRevision string `json:"content_revision,omitempty"`
+	}
+	if !decodeJSONBody(w, r, &request) {
+		return
+	}
+	var script *dsl.Script
+	projectID := request.ProjectID
+	switch {
+	case request.Script != nil && strings.TrimSpace(request.ScriptID) == "":
+		script = request.Script
+		if request.ProjectID != "" {
+			script.ProjectID = request.ProjectID
+		}
+		if request.FolderID != nil {
+			script.FolderID = request.FolderID
+		}
+		projectID = script.ProjectID
+	case request.Script == nil && strings.TrimSpace(request.ScriptID) != "":
+		stored, found, err := s.runner.GetScriptAuthoringDurable(request.ScriptID)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "the script could not be read")
+			return
+		}
+		if !found || stored == nil || stored.Script == nil {
+			writeError(w, http.StatusNotFound, "script not found")
+			return
+		}
+		if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+			return
+		}
+		if revision := strings.TrimSpace(request.ContentRevision); revision != "" && revision != stored.ContentRevision {
+			writeJSON(w, http.StatusConflict, AuthoringIdempotencyError{Error: "the stored script changed since the result was validated", Code: "validation_context_revision_changed"})
+			return
+		}
+		script, projectID = stored.Script, stored.ProjectID
+	default:
+		writeError(w, http.StatusBadRequest, "exactly one of script and script_id is required")
+		return
+	}
+	if authorized, scoped := authorizedProjectFromRequest(r); scoped && normalizeProjectID(projectID) != authorized {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	validation, err := s.buildValidationContext(r.Context(), projectID, script, s.runner.secretResolverForScript(script))
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "the validation context is unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, validation)
 }
 
 // maxValidationFingerprintBytes bounds the opaque draft fingerprint a client
@@ -1301,13 +1369,15 @@ func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Reques
 		script.FolderID = wrapper.FolderID
 	}
 
+	resolver := s.runner.secretResolverForScript(script)
 	response := buildDraftScriptValidationResponseWithVariables(
 		"",
 		script,
 		wrapper.Variables,
-		s.runner.secretResolverForScript(script),
+		resolver,
 	)
 	response.ValidatedFingerprint = wrapper.Fingerprint
+	s.attachValidationContext(r, &response, script.ProjectID, script, resolver)
 	writeJSON(w, http.StatusOK, response)
 }
 

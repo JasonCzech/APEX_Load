@@ -4696,6 +4696,11 @@ paths:
                         type: string
                       validated_fingerprint:
                         type: string
+                      validation_context:
+                        type: object
+                        description: 'Go type: ValidationContext'
+                        additionalProperties: true
+                        nullable: true
                       warnings:
                         type: array
                         items:
@@ -24497,6 +24502,11 @@ paths:
                         type: string
                       validated_fingerprint:
                         type: string
+                      validation_context:
+                        type: object
+                        description: 'Go type: ValidationContext'
+                        additionalProperties: true
+                        nullable: true
                       warnings:
                         type: array
                         items:
@@ -252413,6 +252423,11 @@ paths:
                     type: string
                   validated_fingerprint:
                     type: string
+                  validation_context:
+                    type: object
+                    description: 'Go type: ValidationContext'
+                    additionalProperties: true
+                    nullable: true
                   warnings:
                     type: array
                     items:
@@ -345390,6 +345405,11 @@ paths:
                     type: string
                   validated_fingerprint:
                     type: string
+                  validation_context:
+                    type: object
+                    description: 'Go type: ValidationContext'
+                    additionalProperties: true
+                    nullable: true
                   warnings:
                     type: array
                     items:
@@ -345429,6 +345449,2419 @@ paths:
       tags:
         - Scripts
       x-handler: handleValidateDraftScript
+  /api/v1/scripts/validation-context:
+    post:
+      summary: Validation Context
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: scripts:write'
+      operationId: handleValidationContext
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content_revision:
+                  type: string
+                folder_id:
+                  type: string
+                  nullable: true
+                project_id:
+                  type: string
+                script:
+                  type: object
+                  properties:
+                    actions:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          assertions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                case_insensitive:
+                                  type: boolean
+                                expected: {}
+                                legacy_html_check:
+                                  type: boolean
+                                max:
+                                  type: integer
+                                  format: int64
+                                min:
+                                  type: integer
+                                  format: int64
+                                source:
+                                  type: string
+                                type:
+                                  type: string
+                                value:
+                                  type: string
+                          attribution:
+                            type: object
+                            properties:
+                              hierarchy_path:
+                                type: string
+                              page_name:
+                                type: string
+                            nullable: true
+                          auth:
+                            type: object
+                            properties:
+                              domain:
+                                type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
+                              password:
+                                type: string
+                              token:
+                                type: string
+                              type:
+                                type: string
+                              username:
+                                type: string
+                            nullable: true
+                          body:
+                            type: string
+                          body_encoding:
+                            type: string
+                          body_file:
+                            type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
+                          capture:
+                            type: object
+                            properties:
+                              full_page:
+                                type: boolean
+                              html:
+                                type: boolean
+                              screenshot:
+                                type: boolean
+                            nullable: true
+                          control:
+                            type: object
+                            properties:
+                              branches:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ParallelBranch'
+                                  additionalProperties: true
+                              cases:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: SwitchCase'
+                                  additionalProperties: true
+                              concurrency:
+                                type: integer
+                                format: int64
+                              condition:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              count:
+                                type: integer
+                                format: int64
+                              default:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: Action'
+                                  additionalProperties: true
+                              do_while:
+                                type: boolean
+                              else:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: Action'
+                                  additionalProperties: true
+                              fail_fast:
+                                type: boolean
+                              for_each:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              max_iterations:
+                                type: integer
+                                format: int64
+                              steps:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: Action'
+                                  additionalProperties: true
+                            nullable: true
+                          extractors:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                convert:
+                                  type: string
+                                default_value:
+                                  type: string
+                                  nullable: true
+                                dfes:
+                                  type: array
+                                  items:
+                                    type: string
+                                expression:
+                                  type: string
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                                on_miss:
+                                  type: string
+                                save_length:
+                                  type: integer
+                                  format: int64
+                                save_offset:
+                                  type: integer
+                                  format: int64
+                                scope:
+                                  type: object
+                                  description: 'Go type: ExtractorScope'
+                                  additionalProperties: true
+                                  nullable: true
+                                source:
+                                  type: string
+                                type:
+                                  type: string
+                          header_list:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          headers:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version; auto+h3 upgrades to an advertised HTTP/3 alternative; 3 requires HTTP/3 with no fallback. The HTTP/3 policies always save but run only where HTTP/3 execution is enabled.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
+                              - auto+h3
+                              - "3"
+                          max_redirects:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          metadata:
+                            type: object
+                            additionalProperties: {}
+                          method:
+                            type: string
+                          name:
+                            type: string
+                          object_ref:
+                            type: string
+                          pacing_ids:
+                            type: array
+                            items:
+                              type: string
+                          params:
+                            type: object
+                            additionalProperties: {}
+                          selector:
+                            type: string
+                          soap:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              body_mode:
+                                type: string
+                              operation:
+                                type: string
+                            nullable: true
+                          sync:
+                            type: object
+                            properties:
+                              stable_ms:
+                                type: integer
+                                format: int64
+                              timeout_ms:
+                                type: integer
+                                format: int64
+                              type:
+                                type: string
+                              value:
+                                type: string
+                            nullable: true
+                          target:
+                            type: string
+                          think_time:
+                            type: object
+                            properties:
+                              force:
+                                type: boolean
+                              ignore:
+                                type: boolean
+                              limit_ms:
+                                type: number
+                                format: double
+                              max_ms:
+                                type: number
+                                format: double
+                              max_percent:
+                                type: number
+                                format: double
+                              mean_ms:
+                                type: number
+                                format: double
+                              min_ms:
+                                type: number
+                                format: double
+                              min_percent:
+                                type: number
+                                format: double
+                              multiplier:
+                                type: number
+                                format: double
+                              std_ms:
+                                type: number
+                                format: double
+                              type:
+                                type: string
+                          think_time_after:
+                            type: boolean
+                          timeout_ms:
+                            type: integer
+                            format: int64
+                          type:
+                            type: string
+                          value:
+                            type: string
+                          wait_for:
+                            type: object
+                            properties:
+                              timeout_ms:
+                                type: integer
+                                format: int64
+                              type:
+                                type: string
+                              value:
+                                type: string
+                            nullable: true
+                    archived_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    config:
+                      type: object
+                      properties:
+                        appium:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties: {}
+                            element_timeout_ms:
+                              type: integer
+                              format: int64
+                            server_url:
+                              type: string
+                            session_timeout_ms:
+                              type: integer
+                              format: int64
+                        base_url:
+                          type: string
+                        browser:
+                          type: object
+                          properties:
+                            available_screen_height:
+                              type: integer
+                              format: int64
+                            available_screen_width:
+                              type: integer
+                              format: int64
+                            cache_content_urls:
+                              type: boolean
+                              nullable: true
+                            cache_enabled:
+                              type: boolean
+                              nullable: true
+                            capture_document_metrics:
+                              type: boolean
+                              nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
+                            capture_screenshots:
+                              type: string
+                            check_newer_versions:
+                              type: boolean
+                              nullable: true
+                            client_certificates:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            client_metrics:
+                              type: boolean
+                              nullable: true
+                            device_profile:
+                              type: string
+                            download_resources:
+                              type: string
+                            engine:
+                              type: string
+                            ept_calibration:
+                              type: boolean
+                              nullable: true
+                            experience_canary:
+                              type: boolean
+                            geolocation:
+                              type: object
+                              properties:
+                                accuracy:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                latitude:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                longitude:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                            har_artifact_dir:
+                              type: string
+                            har_capture:
+                              type: string
+                            har_capture_policy:
+                              type: string
+                            har_sla_threshold_ms:
+                              type: integer
+                              format: int64
+                            headless:
+                              type: boolean
+                              nullable: true
+                            http_credentials:
+                              type: object
+                              properties:
+                                origin:
+                                  type: string
+                                password:
+                                  type: string
+                                send:
+                                  type: string
+                                username:
+                                  type: string
+                            locale:
+                              type: string
+                            new_user_per_iteration:
+                              type: boolean
+                              nullable: true
+                            orientation:
+                              type: string
+                            proxy:
+                              type: object
+                              properties:
+                                bypass:
+                                  type: string
+                                password:
+                                  type: string
+                                server:
+                                  type: string
+                                username:
+                                  type: string
+                            quic:
+                              type: string
+                            review_policy:
+                              type: object
+                              properties:
+                                allow_review_required:
+                                  type: boolean
+                                allow_reviewed_javascript:
+                                  type: boolean
+                            session:
+                              type: object
+                              properties:
+                                identities:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BrowserIdentity'
+                                    additionalProperties: true
+                                jwt:
+                                  type: object
+                                  description: 'Go type: BrowserSessionJWT'
+                                  additionalProperties: true
+                                  nullable: true
+                                preflight_url:
+                                  type: string
+                                start_gap_ms:
+                                  type: integer
+                                  format: int64
+                                strategy:
+                                  type: string
+                              nullable: true
+                            slow_mo_ms:
+                              type: integer
+                              format: int64
+                            storage_state:
+                              type: string
+                            system_language:
+                              type: string
+                            timezone:
+                              type: string
+                            touch_mode:
+                              type: boolean
+                              nullable: true
+                            traceparent:
+                              type: boolean
+                              nullable: true
+                            user_agent:
+                              type: string
+                            viewport:
+                              type: object
+                              properties:
+                                height:
+                                  type: integer
+                                  format: int64
+                                width:
+                                  type: integer
+                                  format: int64
+                        browser_emulation:
+                          type: object
+                          properties:
+                            browser_type:
+                              type: string
+                            browser_version:
+                              type: string
+                            cache:
+                              type: object
+                              properties:
+                                cache_content_urls:
+                                  type: boolean
+                                  nullable: true
+                                check_newer_versions:
+                                  type: boolean
+                                  nullable: true
+                                clear_cache_for_new_user:
+                                  type: boolean
+                                  nullable: true
+                                download_non_html_resources:
+                                  type: boolean
+                                  nullable: true
+                                new_user_each_iteration:
+                                  type: boolean
+                                  nullable: true
+                                simulate_cache:
+                                  type: boolean
+                                  nullable: true
+                                simulate_prefetch:
+                                  type: boolean
+                                  nullable: true
+                              nullable: true
+                            custom_user_agent:
+                              type: string
+                            language:
+                              type: string
+                            mode:
+                              type: string
+                            platform:
+                              type: string
+                          nullable: true
+                        bruno:
+                          type: object
+                          properties:
+                            bundle_ref:
+                              type: string
+                            bundle_sha256:
+                              type: string
+                            compatibility_version:
+                              type: string
+                            default_environment:
+                              type: string
+                            default_global_environment:
+                              type: string
+                            dependency_snapshot_ref:
+                              type: string
+                            limits:
+                              type: object
+                              properties:
+                                default_stream_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                max_jumps:
+                                  type: integer
+                                  format: int64
+                                max_output_bytes:
+                                  type: integer
+                                  format: int64
+                                max_parallel_requests:
+                                  type: integer
+                                  format: int64
+                                max_run_request_depth:
+                                  type: integer
+                                  format: int64
+                            manifest_sha256:
+                              type: string
+                            persist_session_across_iterations:
+                              type: boolean
+                            runner_profile:
+                              type: string
+                            sandbox:
+                              type: string
+                            secret_bindings:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            source_format:
+                              type: string
+                            source_revision:
+                              type: string
+                        database:
+                          type: object
+                          properties:
+                            conn_max_lifetime_ms:
+                              type: integer
+                              format: int64
+                            driver:
+                              type: string
+                            dsn:
+                              type: string
+                            dsn_secret:
+                              type: string
+                            max_idle_conns:
+                              type: integer
+                              format: int64
+                            max_open_conns:
+                              type: integer
+                              format: int64
+                            max_rows:
+                              type: integer
+                              format: int64
+                            query_timeout_ms:
+                              type: integer
+                              format: int64
+                            read_only:
+                              type: boolean
+                            rollback_on_teardown:
+                              type: boolean
+                        error_handling:
+                          type: object
+                          properties:
+                            continue_on_error:
+                              type: boolean
+                              nullable: true
+                            fail_transaction_on_error_message:
+                              type: boolean
+                              nullable: true
+                            max_retries:
+                              type: integer
+                              format: int64
+                            retry_backoff:
+                              type: string
+                            retry_delay_ms:
+                              type: integer
+                              format: int64
+                            snapshot_on_error:
+                              type: boolean
+                        eventhubs:
+                          type: object
+                          properties:
+                            auth_type:
+                              type: string
+                            checkpoint_container_url:
+                              type: string
+                            connection_string:
+                              type: string
+                            connection_string_secret:
+                              type: string
+                            consumer_group:
+                              type: string
+                            consumer_mode:
+                              type: string
+                            event_hub:
+                              type: string
+                            mock:
+                              type: boolean
+                            namespace:
+                              type: string
+                            observe_partition_tail:
+                              type: boolean
+                            owner_level:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            partition_id:
+                              type: string
+                            partition_key:
+                              type: string
+                            processor_max_partitions:
+                              type: integer
+                              format: int64
+                            start_position:
+                              type: string
+                            tail_poll_interval_ms:
+                              type: integer
+                              format: int64
+                            timeout_ms:
+                              type: integer
+                              format: int64
+                        grpc:
+                          type: object
+                          properties:
+                            authority:
+                              type: string
+                            max_recv_msg_size:
+                              type: integer
+                              format: int64
+                            metadata:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            plain_text:
+                              type: boolean
+                            proto_files:
+                              type: array
+                              items:
+                                type: string
+                            timeout_ms:
+                              type: integer
+                              format: int64
+                            use_reflection:
+                              type: boolean
+                        http:
+                          type: object
+                          properties:
+                            accept_encoding:
+                              type: string
+                            accept_language:
+                              type: string
+                            aura_recorded_failures:
+                              type: string
+                            auth:
+                              type: object
+                              properties:
+                                domain:
+                                  type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
+                                password:
+                                  type: string
+                                token:
+                                  type: string
+                                type:
+                                  type: string
+                                username:
+                                  type: string
+                            cache_enabled:
+                              type: boolean
+                              nullable: true
+                            cache_excluded_mime_types:
+                              type: array
+                              items:
+                                type: string
+                            cache_max_unused_iterations:
+                              type: integer
+                              format: int64
+                            challenge_delay_ms:
+                              type: integer
+                              format: int64
+                            clear_cookies_per_iteration:
+                              type: boolean
+                              nullable: true
+                            connect_timeout_ms:
+                              type: integer
+                              format: int64
+                            content_check_error_limit:
+                              type: integer
+                              format: int64
+                            cookies_enabled:
+                              type: boolean
+                              nullable: true
+                            default_header_list:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: HeaderEntry'
+                                additionalProperties: true
+                            default_headers:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            dns_cache:
+                              type: boolean
+                              nullable: true
+                            fail_noncritical_resources:
+                              type: boolean
+                              nullable: true
+                            html_excluded_mime_types:
+                              type: array
+                              items:
+                                type: string
+                            html_parse_mode:
+                              type: string
+                            http_errors_as_warnings:
+                              type: boolean
+                              nullable: true
+                            idle_timeout_ms:
+                              type: integer
+                              format: int64
+                            ip_version:
+                              type: string
+                            keep_alive:
+                              type: boolean
+                              nullable: true
+                            legacy_html_checks:
+                              type: boolean
+                              nullable: true
+                            max_conns_per_host:
+                              type: integer
+                              format: int64
+                            max_idle_conns:
+                              type: integer
+                              format: int64
+                            max_meta_refresh:
+                              type: integer
+                              format: int64
+                            max_redirects:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            page_timeout_ms:
+                              type: integer
+                              format: int64
+                            proxy:
+                              type: object
+                              properties:
+                                no_proxy:
+                                  type: array
+                                  items:
+                                    type: string
+                                pac_url:
+                                  type: string
+                                password:
+                                  type: string
+                                url:
+                                  type: string
+                                username:
+                                  type: string
+                            proxy_mode:
+                              type: string
+                            quic:
+                              type: object
+                              properties:
+                                alt_svc_cache:
+                                  type: string
+                                broken_ttl_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                handshake_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                keep_alive_ms:
+                                  type: integer
+                                  format: int64
+                                max_idle_timeout_ms:
+                                  type: integer
+                                  format: int64
+                              nullable: true
+                            receive_buffer_bytes:
+                              type: integer
+                              format: int64
+                            request_timeout_ms:
+                              type: integer
+                              format: int64
+                            resource_timeout_as_warning:
+                              type: boolean
+                              nullable: true
+                            tls:
+                              type: object
+                              properties:
+                                ca_cert_file:
+                                  type: string
+                                client_cert_file:
+                                  type: string
+                                client_key_file:
+                                  type: string
+                                insecure_skip_verify:
+                                  type: boolean
+                                max_version:
+                                  type: string
+                                min_version:
+                                  type: string
+                            tls_timeout_ms:
+                              type: integer
+                              format: int64
+                            traceparent:
+                              type: boolean
+                              nullable: true
+                            traceparent_sampled:
+                              type: boolean
+                              nullable: true
+                            user_agent:
+                              type: string
+                            version:
+                              type: string
+                        java_http:
+                          type: object
+                          properties:
+                            accept:
+                              type: string
+                            body_encoding:
+                              type: string
+                            codec:
+                              type: string
+                            content_type:
+                              type: string
+                            extractor_type:
+                              type: string
+                            helper_mode:
+                              type: string
+                            object_schema:
+                              type: string
+                            preserve_binary_result:
+                              type: boolean
+                            request_mapping:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            response_mapping:
+                              type: object
+                              additionalProperties:
+                                type: string
+                        java_vuser:
+                          type: object
+                          properties:
+                            action_timeout_ms:
+                              type: integer
+                              format: int64
+                            additional_vm_parameters:
+                              type: array
+                              items:
+                                type: string
+                            classpath:
+                              type: array
+                              items:
+                                type: string
+                            classpath_assets:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            dedicated_class_loader:
+                              type: boolean
+                              nullable: true
+                            enabled:
+                              type: boolean
+                            harness_jar:
+                              type: string
+                            jdk_home:
+                              type: string
+                            jdk_selection:
+                              type: string
+                            jvm_sharing:
+                              type: string
+                            max_processes:
+                              type: integer
+                              format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
+                            runner_command:
+                              type: string
+                            skip_parameter_evaluation:
+                              type: boolean
+                              nullable: true
+                            startup_timeout_ms:
+                              type: integer
+                              format: int64
+                            use_xbootclasspath:
+                              type: boolean
+                              nullable: true
+                            vusers_per_jvm:
+                              type: integer
+                              format: int64
+                            work_dir:
+                              type: string
+                        jmeter:
+                          type: object
+                          properties:
+                            configuration_id:
+                              type: string
+                            context_confirmed:
+                              type: boolean
+                            producer_lifecycle:
+                              type: string
+                            profile:
+                              type: string
+                            sample_timing:
+                              type: string
+                            source_group_id:
+                              type: string
+                            source_plan_id:
+                              type: string
+                            timezone:
+                              type: string
+                          nullable: true
+                        jms:
+                          type: object
+                          properties:
+                            acknowledgement:
+                              type: string
+                            broker_url:
+                              type: string
+                            client_id:
+                              type: string
+                            delivery_mode:
+                              type: string
+                            destination:
+                              type: string
+                            destination_type:
+                              type: string
+                            message_vpn:
+                              type: string
+                            mock:
+                              type: boolean
+                            password:
+                              type: string
+                            properties:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            provider:
+                              type: string
+                            reply_to:
+                              type: string
+                            subscription:
+                              type: string
+                            timeout_ms:
+                              type: integer
+                              format: int64
+                            tls:
+                              type: object
+                              properties:
+                                ca_cert_secret:
+                                  type: string
+                                insecure_skip_verify:
+                                  type: boolean
+                                trust_store_ref:
+                                  type: string
+                              nullable: true
+                            username:
+                              type: string
+                        kafka:
+                          type: object
+                          properties:
+                            acks:
+                              type: string
+                            auto_offset_reset:
+                              type: string
+                            brokers:
+                              type: array
+                              items:
+                                type: string
+                            client_id:
+                              type: string
+                            compression:
+                              type: string
+                            consumer_group:
+                              type: string
+                            consumer_transactions:
+                              type: boolean
+                            idempotence:
+                              type: string
+                            isolation_level:
+                              type: string
+                            max_message_bytes:
+                              type: integer
+                              format: int64
+                            mock:
+                              type: boolean
+                            oauth:
+                              type: object
+                              properties:
+                                authentication_method:
+                                  type: string
+                                client_id:
+                                  type: string
+                                client_secret_ref:
+                                  type: string
+                                mode:
+                                  type: string
+                                scope:
+                                  type: string
+                                token_url:
+                                  type: string
+                              nullable: true
+                            oauth_scope:
+                              type: string
+                            partition_strategy:
+                              type: string
+                            partitions:
+                              type: integer
+                              format: int64
+                            producer:
+                              type: object
+                              properties:
+                                admission_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                batch_bytes:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                buffer_bytes:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                delivery_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                linger_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                request_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                retries:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                              nullable: true
+                            profile:
+                              type: string
+                            properties:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            sasl_mechanism:
+                              type: string
+                            sasl_password:
+                              type: string
+                            sasl_password_secret:
+                              type: string
+                            sasl_username:
+                              type: string
+                            schema:
+                              type: string
+                            schema_id:
+                              type: integer
+                              format: int64
+                            schema_registry_url:
+                              type: string
+                            security_protocol:
+                              type: string
+                            serialization:
+                              type: string
+                            subject:
+                              type: string
+                            timeout_ms:
+                              type: integer
+                              format: int64
+                            tls:
+                              type: object
+                              properties:
+                                ca_cert_file:
+                                  type: string
+                                client_cert_file:
+                                  type: string
+                                client_key_file:
+                                  type: string
+                                insecure_skip_verify:
+                                  type: boolean
+                                max_version:
+                                  type: string
+                                min_version:
+                                  type: string
+                              nullable: true
+                            topic:
+                              type: string
+                            transactional_id:
+                              type: string
+                        log:
+                          type: object
+                          properties:
+                            error_buffer_bytes:
+                              type: integer
+                              format: int64
+                            extended_options:
+                              type: array
+                              items:
+                                type: string
+                            level:
+                              type: string
+                            max_response_bytes:
+                              type: integer
+                              format: int64
+                            on_error_only:
+                              type: boolean
+                            redact_run_evidence:
+                              type: boolean
+                              nullable: true
+                        native_services:
+                          type: object
+                          properties:
+                            live_tables:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                          nullable: true
+                        network:
+                          type: object
+                          properties:
+                            address:
+                              type: string
+                            base_dn:
+                              type: string
+                            from:
+                              type: string
+                            host:
+                              type: string
+                            password:
+                              type: string
+                            port:
+                              type: integer
+                              format: int64
+                            subprotocol:
+                              type: string
+                            timeout_ms:
+                              type: integer
+                              format: int64
+                            tls:
+                              type: boolean
+                            to:
+                              type: array
+                              items:
+                                type: string
+                            username:
+                              type: string
+                        observability:
+                          type: object
+                          properties:
+                            external_metrics:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            trace_carrier:
+                              type: string
+                        pacing:
+                          type: object
+                          properties:
+                            delay_ms:
+                              type: integer
+                              format: int64
+                            interval_ms:
+                              type: integer
+                              format: int64
+                            max_delay_ms:
+                              type: integer
+                              format: int64
+                            max_interval_ms:
+                              type: integer
+                              format: int64
+                            min_delay_ms:
+                              type: integer
+                              format: int64
+                            min_interval_ms:
+                              type: integer
+                              format: int64
+                            tps:
+                              type: number
+                              format: double
+                            type:
+                              type: string
+                        results:
+                          type: object
+                          properties:
+                            csv_exports:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            message_detail:
+                              type: object
+                              properties:
+                                include_resources:
+                                  type: boolean
+                                  nullable: true
+                                max_item_bytes:
+                                  type: integer
+                                  format: int64
+                                max_items:
+                                  type: integer
+                                  format: int64
+                                max_total_bytes:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                sample_rate:
+                                  type: number
+                                  format: double
+                              nullable: true
+                            property_analytics:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              properties:
+                                max_fallback_ratio:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                max_quic_failure_ratio:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                min_samples:
+                                  type: integer
+                                  format: int64
+                              nullable: true
+                        run_logic:
+                          type: object
+                          properties:
+                            action_sequence:
+                              type: array
+                              items:
+                                type: string
+                            auto_transactions:
+                              type: string
+                            block_scheduling:
+                              type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            global_iterations:
+                              type: integer
+                              format: int64
+                            iterations:
+                              type: integer
+                              format: int64
+                            max_in_flight:
+                              type: integer
+                              format: int64
+                            max_transactions:
+                              type: integer
+                              format: int64
+                            termination_mode:
+                              type: string
+                            workload_model:
+                              type: string
+                        sampler_schedules:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              segments:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: SamplerRateSegment'
+                                  additionalProperties: true
+                        sapgui:
+                          type: object
+                          properties:
+                            auto_logon:
+                              type: boolean
+                            client:
+                              type: string
+                            connection_string:
+                              type: string
+                            language:
+                              type: string
+                            password:
+                              type: string
+                            session_behavior:
+                              type: string
+                            sync_timeout_ms:
+                              type: integer
+                              format: int64
+                            username:
+                              type: string
+                        soap:
+                          type: object
+                          properties:
+                            fault_handling:
+                              type: object
+                              properties:
+                                fail_on_fault:
+                                  type: boolean
+                            namespaces:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            version:
+                              type: string
+                            ws_security:
+                              type: object
+                              properties:
+                                timestamp:
+                                  type: object
+                                  description: 'Go type: SOAPTimestampConfig'
+                                  additionalProperties: true
+                                  nullable: true
+                                username_token:
+                                  type: object
+                                  description: 'Go type: SOAPUsernameTokenConfig'
+                                  additionalProperties: true
+                                  nullable: true
+                              nullable: true
+                        think_time:
+                          type: object
+                          properties:
+                            force:
+                              type: boolean
+                            ignore:
+                              type: boolean
+                            limit_ms:
+                              type: number
+                              format: double
+                            max_ms:
+                              type: number
+                              format: double
+                            max_percent:
+                              type: number
+                              format: double
+                            mean_ms:
+                              type: number
+                              format: double
+                            min_ms:
+                              type: number
+                              format: double
+                            min_percent:
+                              type: number
+                              format: double
+                            multiplier:
+                              type: number
+                              format: double
+                            std_ms:
+                              type: number
+                              format: double
+                            type:
+                              type: string
+                        web_runtime:
+                          type: object
+                          properties:
+                            additional_attributes:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            content_checks:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            data_formatting:
+                              type: object
+                              properties:
+                                auto_detect:
+                                  type: boolean
+                                chain:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DFETransform'
+                                    additionalProperties: true
+                            download_filters:
+                              type: object
+                              properties:
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
+                                mode:
+                                  type: string
+                            network_profiles:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            network_simulation:
+                              type: object
+                              properties:
+                                bandwidth_kbps:
+                                  type: integer
+                                  format: int64
+                                jitter_ms:
+                                  type: integer
+                                  format: int64
+                                latency_ms:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                packet_loss_pct:
+                                  type: number
+                                  format: double
+                                preset:
+                                  type: string
+                            source_ips:
+                              type: array
+                              items:
+                                type: string
+                            streaming:
+                              type: object
+                              properties:
+                                bandwidth_estimation:
+                                  type: string
+                                buffer_size_seconds:
+                                  type: integer
+                                  format: int64
+                                fixed_bitrate_kbps:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                        websocket:
+                          type: object
+                          properties:
+                            callback_interval_ms:
+                              type: integer
+                              format: int64
+                            compression:
+                              type: boolean
+                            max_message_size:
+                              type: integer
+                              format: int64
+                            origin:
+                              type: string
+                            read_timeout_ms:
+                              type: integer
+                              format: int64
+                            reconnect:
+                              type: boolean
+                            subprotocol:
+                              type: string
+                            write_timeout_ms:
+                              type: integer
+                              format: int64
+                    created_at:
+                      type: string
+                      format: date-time
+                    data_sources:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          columns:
+                            type: array
+                            items:
+                              type: string
+                          content_type:
+                            type: string
+                          delimiter:
+                            type: string
+                          encoding:
+                            type: string
+                          file_name:
+                            type: string
+                          first_row_header:
+                            type: boolean
+                          inline_data:
+                            type: string
+                          name:
+                            type: string
+                          path:
+                            type: string
+                          staged_asset:
+                            type: string
+                          storage_ref:
+                            type: string
+                          strategy:
+                            type: string
+                          type:
+                            type: string
+                    folder_id:
+                      type: string
+                      nullable: true
+                    generated_by:
+                      type: string
+                    generated_from:
+                      type: string
+                    goal_config:
+                      type: object
+                      properties:
+                        max_avg_server_processing_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        max_avg_transfer_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        max_error_count:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        max_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        max_vusers:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        min_vusers:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        p95_latency_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        sla_breach_window:
+                          type: string
+                        stop_on_max_errors:
+                          type: boolean
+                        stop_on_sla_breach:
+                          type: boolean
+                        target_average_tps:
+                          type: number
+                          format: double
+                          nullable: true
+                        transaction_rules:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              comparator:
+                                type: string
+                              group:
+                                type: string
+                              iterations:
+                                type: string
+                              metric:
+                                type: string
+                              population:
+                                type: string
+                              protocol:
+                                type: string
+                              severity:
+                                type: string
+                              threshold:
+                                type: number
+                                format: double
+                              transaction:
+                                type: string
+                      nullable: true
+                    id:
+                      type: string
+                    init:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          assertions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                case_insensitive:
+                                  type: boolean
+                                expected: {}
+                                legacy_html_check:
+                                  type: boolean
+                                max:
+                                  type: integer
+                                  format: int64
+                                min:
+                                  type: integer
+                                  format: int64
+                                source:
+                                  type: string
+                                type:
+                                  type: string
+                                value:
+                                  type: string
+                          attribution:
+                            type: object
+                            properties:
+                              hierarchy_path:
+                                type: string
+                              page_name:
+                                type: string
+                            nullable: true
+                          auth:
+                            type: object
+                            properties:
+                              domain:
+                                type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
+                              password:
+                                type: string
+                              token:
+                                type: string
+                              type:
+                                type: string
+                              username:
+                                type: string
+                            nullable: true
+                          body:
+                            type: string
+                          body_encoding:
+                            type: string
+                          body_file:
+                            type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
+                          capture:
+                            type: object
+                            properties:
+                              full_page:
+                                type: boolean
+                              html:
+                                type: boolean
+                              screenshot:
+                                type: boolean
+                            nullable: true
+                          control:
+                            type: object
+                            properties:
+                              branches:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ParallelBranch'
+                                  additionalProperties: true
+                              cases:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: SwitchCase'
+                                  additionalProperties: true
+                              concurrency:
+                                type: integer
+                                format: int64
+                              condition:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              count:
+                                type: integer
+                                format: int64
+                              default:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: Action'
+                                  additionalProperties: true
+                              do_while:
+                                type: boolean
+                              else:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: Action'
+                                  additionalProperties: true
+                              fail_fast:
+                                type: boolean
+                              for_each:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              max_iterations:
+                                type: integer
+                                format: int64
+                              steps:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: Action'
+                                  additionalProperties: true
+                            nullable: true
+                          extractors:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                convert:
+                                  type: string
+                                default_value:
+                                  type: string
+                                  nullable: true
+                                dfes:
+                                  type: array
+                                  items:
+                                    type: string
+                                expression:
+                                  type: string
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                                on_miss:
+                                  type: string
+                                save_length:
+                                  type: integer
+                                  format: int64
+                                save_offset:
+                                  type: integer
+                                  format: int64
+                                scope:
+                                  type: object
+                                  description: 'Go type: ExtractorScope'
+                                  additionalProperties: true
+                                  nullable: true
+                                source:
+                                  type: string
+                                type:
+                                  type: string
+                          header_list:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          headers:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version; auto+h3 upgrades to an advertised HTTP/3 alternative; 3 requires HTTP/3 with no fallback. The HTTP/3 policies always save but run only where HTTP/3 execution is enabled.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
+                              - auto+h3
+                              - "3"
+                          max_redirects:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          metadata:
+                            type: object
+                            additionalProperties: {}
+                          method:
+                            type: string
+                          name:
+                            type: string
+                          object_ref:
+                            type: string
+                          pacing_ids:
+                            type: array
+                            items:
+                              type: string
+                          params:
+                            type: object
+                            additionalProperties: {}
+                          selector:
+                            type: string
+                          soap:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              body_mode:
+                                type: string
+                              operation:
+                                type: string
+                            nullable: true
+                          sync:
+                            type: object
+                            properties:
+                              stable_ms:
+                                type: integer
+                                format: int64
+                              timeout_ms:
+                                type: integer
+                                format: int64
+                              type:
+                                type: string
+                              value:
+                                type: string
+                            nullable: true
+                          target:
+                            type: string
+                          think_time:
+                            type: object
+                            properties:
+                              force:
+                                type: boolean
+                              ignore:
+                                type: boolean
+                              limit_ms:
+                                type: number
+                                format: double
+                              max_ms:
+                                type: number
+                                format: double
+                              max_percent:
+                                type: number
+                                format: double
+                              mean_ms:
+                                type: number
+                                format: double
+                              min_ms:
+                                type: number
+                                format: double
+                              min_percent:
+                                type: number
+                                format: double
+                              multiplier:
+                                type: number
+                                format: double
+                              std_ms:
+                                type: number
+                                format: double
+                              type:
+                                type: string
+                          think_time_after:
+                            type: boolean
+                          timeout_ms:
+                            type: integer
+                            format: int64
+                          type:
+                            type: string
+                          value:
+                            type: string
+                          wait_for:
+                            type: object
+                            properties:
+                              timeout_ms:
+                                type: integer
+                                format: int64
+                              type:
+                                type: string
+                              value:
+                                type: string
+                            nullable: true
+                    metadata:
+                      type: object
+                      properties:
+                        import:
+                          type: object
+                          properties:
+                            inputs:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                            preserved:
+                              type: object
+                              additionalProperties: {}
+                            source:
+                              type: string
+                            source_script_name:
+                              type: string
+                          nullable: true
+                        runtime_policy:
+                          type: object
+                          properties:
+                            allowed_target_hosts:
+                              type: array
+                              items:
+                                type: string
+                          nullable: true
+                      nullable: true
+                    name:
+                      type: string
+                    parameters:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          auto_allocate:
+                            type: boolean
+                          block_size:
+                            type: integer
+                            format: int64
+                          charset:
+                            type: string
+                          column:
+                            type: string
+                          data_source:
+                            type: string
+                          end:
+                            type: integer
+                            format: int64
+                          format:
+                            type: string
+                          format_dialect:
+                            type: string
+                          length:
+                            type: integer
+                            format: int64
+                          max:
+                            type: integer
+                            format: int64
+                          min:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          offset_seconds:
+                            type: integer
+                            format: int64
+                          on_exhaustion:
+                            type: string
+                          pad_char:
+                            type: string
+                          pad_width:
+                            type: integer
+                            format: int64
+                          random_algorithm:
+                            type: string
+                          same_line_as:
+                            type: string
+                          scope:
+                            type: string
+                          scope_id:
+                            type: string
+                          seed:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          selection:
+                            type: string
+                          start:
+                            type: integer
+                            format: int64
+                          start_row:
+                            type: integer
+                            format: int64
+                          step:
+                            type: integer
+                            format: int64
+                          timezone:
+                            type: string
+                          type:
+                            type: string
+                          update:
+                            type: string
+                          value_for_each_vuser:
+                            type: boolean
+                          values:
+                            type: array
+                            items:
+                              type: string
+                    project_id:
+                      type: string
+                    protocol:
+                      type: string
+                    ref_key:
+                      type: string
+                    teardown:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          assertions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                case_insensitive:
+                                  type: boolean
+                                expected: {}
+                                legacy_html_check:
+                                  type: boolean
+                                max:
+                                  type: integer
+                                  format: int64
+                                min:
+                                  type: integer
+                                  format: int64
+                                source:
+                                  type: string
+                                type:
+                                  type: string
+                                value:
+                                  type: string
+                          attribution:
+                            type: object
+                            properties:
+                              hierarchy_path:
+                                type: string
+                              page_name:
+                                type: string
+                            nullable: true
+                          auth:
+                            type: object
+                            properties:
+                              domain:
+                                type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
+                              password:
+                                type: string
+                              token:
+                                type: string
+                              type:
+                                type: string
+                              username:
+                                type: string
+                            nullable: true
+                          body:
+                            type: string
+                          body_encoding:
+                            type: string
+                          body_file:
+                            type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
+                          capture:
+                            type: object
+                            properties:
+                              full_page:
+                                type: boolean
+                              html:
+                                type: boolean
+                              screenshot:
+                                type: boolean
+                            nullable: true
+                          control:
+                            type: object
+                            properties:
+                              branches:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ParallelBranch'
+                                  additionalProperties: true
+                              cases:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: SwitchCase'
+                                  additionalProperties: true
+                              concurrency:
+                                type: integer
+                                format: int64
+                              condition:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              count:
+                                type: integer
+                                format: int64
+                              default:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: Action'
+                                  additionalProperties: true
+                              do_while:
+                                type: boolean
+                              else:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: Action'
+                                  additionalProperties: true
+                              fail_fast:
+                                type: boolean
+                              for_each:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              max_iterations:
+                                type: integer
+                                format: int64
+                              steps:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: Action'
+                                  additionalProperties: true
+                            nullable: true
+                          extractors:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                convert:
+                                  type: string
+                                default_value:
+                                  type: string
+                                  nullable: true
+                                dfes:
+                                  type: array
+                                  items:
+                                    type: string
+                                expression:
+                                  type: string
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                                on_miss:
+                                  type: string
+                                save_length:
+                                  type: integer
+                                  format: int64
+                                save_offset:
+                                  type: integer
+                                  format: int64
+                                scope:
+                                  type: object
+                                  description: 'Go type: ExtractorScope'
+                                  additionalProperties: true
+                                  nullable: true
+                                source:
+                                  type: string
+                                type:
+                                  type: string
+                          header_list:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          headers:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          http_version:
+                            type: string
+                            description: Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version; auto+h3 upgrades to an advertised HTTP/3 alternative; 3 requires HTTP/3 with no fallback. The HTTP/3 policies always save but run only where HTTP/3 execution is enabled.
+                            enum:
+                              - auto
+                              - "1.1"
+                              - "2"
+                              - auto+h3
+                              - "3"
+                          max_redirects:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          metadata:
+                            type: object
+                            additionalProperties: {}
+                          method:
+                            type: string
+                          name:
+                            type: string
+                          object_ref:
+                            type: string
+                          pacing_ids:
+                            type: array
+                            items:
+                              type: string
+                          params:
+                            type: object
+                            additionalProperties: {}
+                          selector:
+                            type: string
+                          soap:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              body_mode:
+                                type: string
+                              operation:
+                                type: string
+                            nullable: true
+                          sync:
+                            type: object
+                            properties:
+                              stable_ms:
+                                type: integer
+                                format: int64
+                              timeout_ms:
+                                type: integer
+                                format: int64
+                              type:
+                                type: string
+                              value:
+                                type: string
+                            nullable: true
+                          target:
+                            type: string
+                          think_time:
+                            type: object
+                            properties:
+                              force:
+                                type: boolean
+                              ignore:
+                                type: boolean
+                              limit_ms:
+                                type: number
+                                format: double
+                              max_ms:
+                                type: number
+                                format: double
+                              max_percent:
+                                type: number
+                                format: double
+                              mean_ms:
+                                type: number
+                                format: double
+                              min_ms:
+                                type: number
+                                format: double
+                              min_percent:
+                                type: number
+                                format: double
+                              multiplier:
+                                type: number
+                                format: double
+                              std_ms:
+                                type: number
+                                format: double
+                              type:
+                                type: string
+                          think_time_after:
+                            type: boolean
+                          timeout_ms:
+                            type: integer
+                            format: int64
+                          type:
+                            type: string
+                          value:
+                            type: string
+                          wait_for:
+                            type: object
+                            properties:
+                              timeout_ms:
+                                type: integer
+                                format: int64
+                              type:
+                                type: string
+                              value:
+                                type: string
+                            nullable: true
+                    updated_at:
+                      type: string
+                      format: date-time
+                    version:
+                      type: string
+                  nullable: true
+                script_id:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  components:
+                    type: object
+                    description: 'Go type: ValidationContextComponents'
+                    additionalProperties: true
+                  contextual_findings:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: ValidationContextFinding'
+                      additionalProperties: true
+                  revision:
+                    type: string
+                  secret_reference_limit:
+                    type: integer
+                    format: int64
+                  secret_references_truncated:
+                    type: boolean
+                  version:
+                    type: integer
+                    format: int64
+                required:
+                  - components
+                  - revision
+                  - secret_reference_limit
+                  - version
+                nullable: true
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: scripts:write'
+      tags:
+        - Scripts
+      x-handler: handleValidationContext
   /api/v1/scripts/web-api/support-matrix:
     get:
       summary: Web API Execution Support Matrix

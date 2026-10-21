@@ -69,6 +69,7 @@ const apiMock = {
   createAuthoringSession: vi.fn(),
   validateScript: vi.fn(),
   validateDraftScript: vi.fn(),
+  getScriptValidationContext: vi.fn(),
   replayDraftScript: vi.fn(),
   replayScript: vi.fn(),
   startDraftBrowserReplaySession: vi.fn(),
@@ -7466,6 +7467,34 @@ describe('ScriptEditor', () => {
     expect(readinessCard?.textContent).toContain('browser action 1 is missing a selector for browser_click')
     expect(readinessCard?.textContent).toContain('WebKit device profile requires the WebKit engine.')
     expect(container.querySelector('.editor-feedback-strip')?.textContent || '').not.toContain('browser action 1 is missing a selector')
+  })
+
+  it('clears a readiness result whose controller context changed and says why (AUTH-B)', async () => {
+    const context = (secrets: string) => ({ version: 1, revision: `vctx1:${secrets}`, secret_reference_limit: 256, components: { capabilities: 'c', policy: 'p', approvals: 'a', secret_references: secrets } })
+    // Each focus probe is spaced past the minimum interval.
+    let clock = Date.now()
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => (clock += 10_000))
+    apiMock.validateDraftScript.mockResolvedValueOnce({ script_id: '', valid: true, issues: [], warnings: [], validation_context: context('secrets-a') })
+    apiMock.getScriptValidationContext.mockResolvedValue(context('secrets-a'))
+    await act(async () => { root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />) })
+    await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushReact()
+    expect(findReadinessCard(container)?.textContent).toContain('Script validation passed.')
+
+    // An unchanged context keeps the result.
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    await flushReact()
+    expect(apiMock.getScriptValidationContext).toHaveBeenCalledWith(expect.objectContaining({ project_id: 'project-1', script: expect.objectContaining({ name: initialScript.name }) }))
+    expect(findReadinessCard(container)?.textContent).toContain('Script validation passed.')
+
+    // A rebound project secret makes it stale, with the reason shown.
+    apiMock.getScriptValidationContext.mockResolvedValue(context('secrets-b'))
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    await flushReact()
+    const card = findReadinessCard(container)?.textContent || ''
+    expect(card).not.toContain('Script validation passed.')
+    expect(card).toContain('Readiness results no longer apply: project secrets changed since the check. Recheck readiness.')
+    now.mockRestore()
   })
 
   it('validates a draft script before save', async () => {
