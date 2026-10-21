@@ -190,10 +190,12 @@ func (b *Bridge) health(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]any{"status": "healthy", "version": build.Version, "display_version": build.DisplayVersion, "commit": build.Commit, "revision": build.Revision, "environment": build.Environment, "build_time": build.BuildTime, "ws_clients": b.hub.ClientCount(), "test_count": 0, "capacity_availability": map[string]any{"source": "configured", "configured_available_generators": 1, "effective_available_generators": 1, "live_available_generators": nil, "reserved_generators": 0, "shared_available_generators": 0, "warnings": nil}})
 }
 func (s *Service) HandleGetBrowserReplaySession(w http.ResponseWriter, r *http.Request) {
-	session, ok := s.Replay.GetForProject(r.PathValue("session_id"), s.authorizedProject(r, ""))
-	if !ok {
-		s.writeError(w, http.StatusNotFound, "browser replay session not found")
+	session, err := s.ReplaySessionFor(r.Context(), r.PathValue("session_id"), s.authorizedProject(r, ""))
+	w.Header().Set("Cache-Control", "no-store")
+	if err != nil {
+		s.WriteRetainedReplayError(w, err)
 		return
 	}
+	writeReplayDurabilityHeader(w, session)
 	WriteJSON(w, http.StatusOK, map[string]any{"session": session})
 }

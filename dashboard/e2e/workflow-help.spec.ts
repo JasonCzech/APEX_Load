@@ -154,6 +154,9 @@ test('HAR ownership help distinguishes caller waits from capture finalization an
   await expect(article).toContainText('native_capture_failed')
   await expect(article).toContainText('native_owner_unretired')
   await expect(article).toContainText('native_omission_count_limit')
+  await expect(article).toContainText('X-APEXLoad-Replay-Durability')
+  await expect(article).toContainText('never falls back to synthetic evidence')
+  await expect(article).toContainText('Cache eviction does not free a durable replay ID')
   await expect(article).toContainText('does not release a writer')
   await page.goto('/#/docs?guide=user-guide&article=browser-har-ownership&section=outstanding-request-limit')
   await expect(article.locator('#outstanding-request-limit')).toBeFocused()
@@ -165,6 +168,10 @@ test('HAR ownership help distinguishes caller waits from capture finalization an
   await article.getByText('native_owner_unretired', { exact: true }).scrollIntoViewIfNeeded()
   await expect(article.getByText('native_owner_unretired', { exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('har-capture-omissions-help.png'), animations: 'disabled' })
+  const durability = article.getByText('X-APEXLoad-Replay-Durability', { exact: true })
+  await durability.scrollIntoViewIfNeeded()
+  await expect(durability).toBeInViewport()
+  await page.screenshot({ path: testInfo.outputPath('har-replay-durability-help.png'), animations: 'disabled' })
 })
 
 test('legacy URLs, generated API search and contextual guidance reach the right articles', async ({ page }) => {

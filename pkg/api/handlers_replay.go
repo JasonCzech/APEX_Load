@@ -732,6 +732,9 @@ func (s *Server) activatePendingReplaySessionID(executionCtx context.Context, se
 		detachLeadership()
 		lifecycleState = "released"
 	}
+	if leaseStore != nil && s.replayArtifacts != nil {
+		leaseSignal.artifactPublisher = &boundReplayArtifactPublisher{runtime: s.replayArtifacts, id: sessionID, project: projectID, owner: ownerToken}
+	}
 	return sessionID, release, leaseSignal, nil
 }
 

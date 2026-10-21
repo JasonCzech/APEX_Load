@@ -404,9 +404,34 @@ administrator) access to the project.
   what the HAR is (`har.json`, written last: fidelity, capture mode,
   completeness, entries, SHA-256 and bytes of the HAR as streamed). Both
   need editor access to the replay's project; at most four replay HAR
-  downloads run at once (503 with `Retry-After` beyond that). Replay HARs
-  live with the controller process that ran the replay: they are not
-  durable across a restart and not reachable from another replica.
+  downloads run at once (503 with `Retry-After` beyond that).
+
+  Controllers backed by SQLite or PostgreSQL also publish a joined native HAR
+  and its terminal report through the configured archive backend. Publication
+  reserves an immutable generation before writing and keeps downloads pending
+  until it resolves. Published status and downloads can recover after a restart
+  with the same database and artifact source; another replica needs that same
+  source, not merely an identical filesystem path on an independent disk.
+  This does not qualify multi-host shared-storage behavior. Local-only bridges
+  and stores without the receipt capability retain their process-local lifetime.
+
+  `X-APEXLoad-Replay-Durability` distinguishes `local_only`, `pending`, `durable`
+  and `unavailable` independently of replay success. A published native receipt
+  never falls back to synthetic evidence if its bytes become unavailable:
+  downloads return 503. Status polling verifies only the bounded terminal report
+  and does not claim that the HAR is currently readable. Downloads verify both
+  complete objects and recheck current project/receipt authority before serving.
+  Current project authorization still applies after restart; viewers may inspect
+  status, while native HAR and evidence ZIP downloads require editor access.
+
+  Native retention is at most two hours, bounded by the terminal lease. Receipt
+  admission includes staging and cleanup-pending generations: 250 receipts and
+  8 GiB globally, 100 receipts and 2 GiB per project. Each controller admits two
+  publications and four retained reads at once. Cache eviction does not free a
+  durable replay ID. Cleanup releases its reservation only after deleting the
+  exact joined generation; expired or ambiguous writers are never reclaimed
+  merely because their process disappeared. Failed publication can leave a
+  local copy available for its existing lifetime, without claiming durability.
 
 The dashboard lists a run's HARs above the retained resource inspector, with
 a download per HAR and an archive download with its native HARs; each

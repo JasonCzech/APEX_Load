@@ -34,6 +34,7 @@ func replaySessionProjectMatches(actualProjectID, expectedProjectID string) bool
 type replaySessionIDReserver func(context.Context, string, string) (sessionID string, release func(), leaseSignal *replaySessionLeaseSignal, err error)
 
 type replaySessionLeaseSignal struct {
+	artifactPublisher   recordbridge.TerminalReplayArtifactPublisher
 	once                sync.Once
 	done                chan struct{}
 	mu                  sync.RWMutex
@@ -235,3 +236,11 @@ func (s *replaySessionLeaseSignal) RetainForTerminal(ttl time.Duration) error {
 }
 func (s *replaySessionLeaseSignal) ReleaseRetainedID() { s.releaseRetainedID() }
 func (s *replaySessionLeaseSignal) ReleaseAll()        { s.releaseAll() }
+
+// ReplayArtifactPublisher is fixed before this private lease is handed out.
+func (s *replaySessionLeaseSignal) ReplayArtifactPublisher() recordbridge.TerminalReplayArtifactPublisher {
+	if s == nil {
+		return nil
+	}
+	return s.artifactPublisher
+}

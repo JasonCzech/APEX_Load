@@ -244,13 +244,19 @@ func applyBrowserReplayOverrides(script *dsl.Script, req BrowserReplayStartReque
 	return recordbridge.ApplyBrowserReplayOverrides(script, recordbridge.BrowserReplayStartRequest{Browser: req.Browser})
 }
 
+// OpenAPI-Responses: 404, 503
 func (s *Server) handleGetBrowserReplaySession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("session_id")
 	authorizedProjectID, _ := authorizedProjectFromRequest(r)
-	session, ok := s.browserReplay.GetForProject(sessionID, authorizedProjectID)
-	if !ok {
-		writeError(w, http.StatusNotFound, "browser replay session not found")
+	service := s.recordingHTTPService()
+	session, err := service.ReplaySessionFor(r.Context(), sessionID, authorizedProjectID)
+	w.Header().Set("Cache-Control", "no-store")
+	if err != nil {
+		service.WriteRetainedReplayError(w, err)
 		return
+	}
+	if durability := session.ArtifactDurability(); durability != "" {
+		w.Header().Set("X-APEXLoad-Replay-Durability", durability)
 	}
 	writeJSON(w, http.StatusOK, BrowserReplaySessionResponse{Session: session})
 }

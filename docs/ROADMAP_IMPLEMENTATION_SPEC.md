@@ -244,6 +244,8 @@ The [rendered native waterfall/cache qualification](qa/reviews/roadmap-browser-n
 
 ### BE-B — HAR durability and real import/replay workflows
 
+The [controller replay recovery activation](qa/reviews/roadmap-browser-replay-http-2026-10-21/README.md) wires the receipt-backed runtime into admission, authorized recovery reads and exact lifecycle cleanup. It supersedes the wiring-pending statements in the historical foundation records below. Deterministic restart tests preserve native bytes and project authorization; native crash, multi-host, live cloud and external journey qualification remain open.
+
 The [bounded replay recovery runtime](qa/reviews/roadmap-browser-replay-runtime-2026-10-21/README.md) composes scoped receipt rechecks, verified readers, admission limits and exact cleanup with progress past foreign-volume receipts. Server admission, recovered HTTP authorization and lifecycle wiring remain open.
 
 The [retained replay read contract](qa/reviews/roadmap-browser-replay-read-contract-2026-10-21/README.md) verifies bounded status reports separately from complete native downloads, preserves historical evidence during terminal reconstruction and refuses synthetic fallback for durable-native snapshots. Controller authorization and runtime wiring remain open.

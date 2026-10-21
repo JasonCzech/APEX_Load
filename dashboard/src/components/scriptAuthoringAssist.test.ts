@@ -665,3 +665,54 @@ describe('scriptBaseURLError', () => {
     expect(scriptBaseURLError(script('broker:9092', 'kafka'))).toBe('')
   })
 })
+
+describe('browser locator authoring validation', () => {
+  afterEach(() => setCachedDslActionCatalog(null))
+
+  const issuesFor = (action: Partial<ScriptDefinition['actions'][number]> & { type: string }) => collectAuthoringIssues({
+    ...importedScript, protocol: 'browser', parameters: [], data_sources: [],
+    actions: [{ target: '', ...action, name: 'Recorded step' }],
+  }).filter(issue => issue.severity === 'error')
+
+  it.each(['browser_ws_wait', 'browser_ws_assert', 'browser_back', 'browser_forward',
+    'browser_reload', 'browser_scroll', 'browser_wait_response', 'browser_handle_dialog',
+    'browser_set_geolocation', 'browser_switch_window', 'browser_press_key'])('does not invent an element locator requirement for %s', type => {
+    expect(issuesFor({ type })).toEqual([])
+  })
+
+  it('accepts repository bindings and wait conditions while retaining element checks', () => {
+    expect(issuesFor({ type: 'browser_click' })).toHaveLength(1)
+    expect(issuesFor({ type: 'browser_click', object_ref: 'checkout' })).toEqual([])
+    expect(issuesFor({ type: 'browser_click', selector: '#checkout' })).toEqual([])
+    expect(issuesFor({ type: 'browser_wait', wait_for: { type: 'network_idle' } })).toEqual([])
+    expect(issuesFor({ type: 'browser_wait' })).toHaveLength(1)
+    expect(issuesFor({ type: 'browser_wait' })[0].message).toBe('browser_wait needs wait_for, a selector, or a target.')
+    expect(issuesFor({ type: 'browser_click' })[0].message).toBe('browser_click needs a selector, target, or object reference.')
+    expect(issuesFor({ type: 'browser_navigate', selector: 'https://example.test' })).toEqual([])
+    expect(issuesFor({ type: 'browser_navigate' })).toHaveLength(1)
+    expect(issuesFor({ type: 'browser_navigate', object_ref: 'not-a-navigation-target' })).toHaveLength(1)
+    expect(issuesFor({ type: 'browser_click', object_ref: '   ' })).toHaveLength(1)
+  })
+
+  it('uses loaded catalog locator alternatives', () => {
+    setCachedDslActionCatalog({ protocols: ['browser'], common_fields: [], actions: [{
+      type: 'browser_click', protocols: ['browser'], summary: 'Click',
+      require_one_of: [['target', 'selector', 'object_ref']],
+    }, { type: 'browser_ws_wait', protocols: ['browser'], summary: 'Wait for a socket' }] })
+    expect(issuesFor({ type: 'browser_click' })).toHaveLength(1)
+    expect(issuesFor({ type: 'browser_click', object_ref: 'checkout' })).toEqual([])
+    expect(issuesFor({ type: 'browser_ws_wait' })).toEqual([])
+  })
+})
+
+
+it('checks nested browser locator alternatives without requiring WebSocket targets', () => {
+  setCachedDslActionCatalog(null)
+  const nested = (action: Partial<ScriptDefinition['actions'][number]> & { type: string }) => collectAuthoringIssues({
+    ...importedScript, protocol: 'browser', parameters: [], data_sources: [],
+    actions: [{ name: 'Loop', type: 'control_loop', target: '', control: { count: 1, steps: [{ name: 'Nested step', target: '', ...action }] } }],
+  }).filter(issue => issue.severity === 'error')
+  expect(nested({ type: 'browser_ws_wait' })).toEqual([])
+  expect(nested({ type: 'browser_click', object_ref: 'checkout' })).toEqual([])
+  expect(nested({ type: 'browser_click' })).toHaveLength(1)
+})

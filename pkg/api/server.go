@@ -95,20 +95,23 @@ type Server struct {
 	// controller process. Transitions into or out of Local Test Login are held at
 	// this snapshot until restart so saving the restart-required setting cannot
 	// strand the current operator before fixtures have been initialized.
-	authRuntimeMu             sync.RWMutex
-	startupAuthSettings       AuthSettings
-	startupAuthSettingsSet    bool
-	localAuthGenerationMu     sync.RWMutex
-	localAuthGeneration       string
-	settingsService           systemSettingsService
-	archiveService            archiveService
-	schedulingService         schedulingService
-	executionPlanService      executionPlanService
-	objectRepositoryService   objectRepositoryService
-	correlationRulesetService correlationRulesetService
-	scheduler                 *scenarioScheduler
-	browserReplay             *BrowserReplayManager
-	scriptDebug               *ScriptDebugManager
+	authRuntimeMu               sync.RWMutex
+	startupAuthSettings         AuthSettings
+	startupAuthSettingsSet      bool
+	localAuthGenerationMu       sync.RWMutex
+	localAuthGeneration         string
+	settingsService             systemSettingsService
+	archiveService              archiveService
+	schedulingService           schedulingService
+	executionPlanService        executionPlanService
+	objectRepositoryService     objectRepositoryService
+	correlationRulesetService   correlationRulesetService
+	scheduler                   *scenarioScheduler
+	replayArtifacts             *replayArtifactRuntime
+	replayArtifactCleanupCancel context.CancelFunc
+	replayArtifactCleanupDone   chan struct{}
+	browserReplay               *BrowserReplayManager
+	scriptDebug                 *ScriptDebugManager
 	// replaySessionReservations owns the caller-visible progress-stream ID
 	// namespace across classic, browser, and script-debug replay modes. Entries
 	// track active ownership or a retained terminal-ID tombstone; owner tokens
@@ -601,6 +604,7 @@ func NewServer(cfg ServerConfig) *Server {
 		correlationRulesetService:   newTestRunnerCorrelationRulesetService(runner, cfg.Store),
 		scheduler:                   scheduler,
 		browserReplay:               NewBrowserReplayManager(hub),
+		replayArtifacts:             newReplayArtifactRuntime(cfg.Store, currentArchiveBackend()),
 		scriptDebug:                 NewScriptDebugManager(hub),
 		replaySessionReservations:   make(map[string]replaySessionReservation),
 		replaySessionLeaseTTL:       defaultReplaySessionLeaseTTL,
@@ -919,7 +923,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		s.cache,
 		browserReplaySessionViewAccess.GlobalRoles,
 		browserReplaySessionViewAccess.ProjectRoles,
-		resolveBrowserReplaySessionProjectID(s.browserReplay),
+		resolveBrowserReplaySessionProjectID(s.browserReplay, s.replayArtifacts),
 		withAuthAuditRecorder(s),
 		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
@@ -929,7 +933,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		s.cache,
 		browserReplaySessionEditAccess.GlobalRoles,
 		browserReplaySessionEditAccess.ProjectRoles,
-		resolveBrowserReplaySessionProjectID(s.browserReplay),
+		resolveBrowserReplaySessionProjectID(s.browserReplay, s.replayArtifacts),
 		withAuthAuditRecorder(s),
 		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
@@ -1322,9 +1326,9 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/ai/drafts", cors(log(auth(http.HandlerFunc(s.handleAIDraftGeneration)))))
 	s.mux.Handle("POST /api/v1/ai/repairs", cors(log(auth(http.HandlerFunc(s.handleAIRepairSuggestions)))))
 	s.mux.Handle("POST /api/v1/ai/explain", cors(log(auth(http.HandlerFunc(s.handleAIExplain)))))
-	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}", cors(log(browserReplaySessionViewAuth(http.HandlerFunc(s.handleGetBrowserReplaySession)))))
-	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}/har", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleDownloadBrowserReplayHAR)))))
-	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}/evidence", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleDownloadBrowserReplayEvidence)))))
+	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}", cors(log(browserReplaySessionViewAuth(s.bindBrowserReplayReadProject(http.HandlerFunc(s.handleGetBrowserReplaySession))))))
+	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}/har", cors(log(browserReplaySessionEditAuth(s.bindBrowserReplayReadProject(http.HandlerFunc(s.handleDownloadBrowserReplayHAR))))))
+	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}/evidence", cors(log(browserReplaySessionEditAuth(s.bindBrowserReplayReadProject(http.HandlerFunc(s.handleDownloadBrowserReplayEvidence))))))
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/pause", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handlePauseBrowserReplaySession)))))
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/resume", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleResumeBrowserReplaySession)))))
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/stop", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleStopBrowserReplaySession)))))
@@ -1745,6 +1749,7 @@ func (s *Server) Start() (startErr error) {
 	s.startTimeslotRetentionCadence()
 	s.startScheduleOccurrenceRetentionCadence()
 	s.startArchiveCleanupRetry()
+	s.startReplayArtifactCleanup()
 	s.startArchiveFinalizationRetry()
 	s.startProviderMonitoring()
 	s.startRCAAnalysisWorker()
@@ -1829,6 +1834,7 @@ func (s *Server) startBridge() error {
 	s.launchBackground(s.hub.Run)
 	s.startReplayRetentionJanitors()
 	s.startArchiveCleanupRetry()
+	s.startReplayArtifactCleanup()
 	listener, err := net.Listen("tcp", s.httpServer.Addr)
 	if err != nil {
 		return err
@@ -2377,6 +2383,17 @@ func (s *Server) shutdown(ctx context.Context) error {
 	if s.sourceSecretCleanupCancel != nil {
 		s.sourceSecretCleanupCancel()
 		s.sourceSecretCleanupCancel = nil
+	}
+	if s.replayArtifactCleanupCancel != nil {
+		s.replayArtifactCleanupCancel()
+		s.replayArtifactCleanupCancel = nil
+		if s.replayArtifactCleanupDone != nil {
+			select {
+			case <-s.replayArtifactCleanupDone:
+			case <-ctx.Done():
+			}
+			s.replayArtifactCleanupDone = nil
+		}
 	}
 	if s.archiveCleanupCancel != nil {
 		s.archiveCleanupCancel()
