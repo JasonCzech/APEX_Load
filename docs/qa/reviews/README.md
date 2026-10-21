@@ -1,5 +1,7 @@
 # QA Review Records
 
+- [Bounded replay recovery runtime](roadmap-browser-replay-runtime-2026-10-21/README.md) — project-scoped receipt rechecks, bounded reader/writer admission and exact cleanup retries.
+
 - [Retained replay read contract](roadmap-browser-replay-read-contract-2026-10-21/README.md) — bounded report polling, exact terminal reconstruction and native fallback refusal.
 
 - [Filesystem replay source identity](roadmap-browser-replay-volume-identity-2026-10-21/README.md) — persisted namespace identity and held-root operations prevent same-path volume substitution.

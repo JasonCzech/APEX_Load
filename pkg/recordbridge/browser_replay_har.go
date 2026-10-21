@@ -274,20 +274,28 @@ func (m *BrowserReplayManager) sweepReplayHARs() {
 // replayHAR is a replay's downloadable HAR: a native copy (streamed from
 // file) or a synthetic one (bounded by the report's retained entries).
 type ReplayHAR struct {
-	file     *os.File
-	size     int64
-	data     []byte
-	Fidelity string
-	Summary  *harsynth.Summary
+	stream      io.Reader
+	closeStream func()
+	file        *os.File
+	size        int64
+	data        []byte
+	Fidelity    string
+	Summary     *harsynth.Summary
 }
 
 func (h ReplayHAR) Close() {
+	if h.closeStream != nil {
+		h.closeStream()
+	}
 	if h.file != nil {
 		_ = h.file.Close()
 	}
 }
 
 func (h ReplayHAR) Reader() io.Reader {
+	if h.stream != nil {
+		return h.stream
+	}
 	if h.file != nil {
 		return h.file
 	}
@@ -295,7 +303,7 @@ func (h ReplayHAR) Reader() io.Reader {
 }
 
 func (h ReplayHAR) Length() int64 {
-	if h.file != nil {
+	if h.file != nil || h.stream != nil {
 		return h.size
 	}
 	return int64(len(h.data))

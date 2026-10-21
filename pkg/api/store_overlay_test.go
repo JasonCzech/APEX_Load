@@ -393,6 +393,15 @@ func (o *sqliteStoreOverlay) BeginManagementPoll(a0 string, a1 string, a2 string
 	return o.base().BeginManagementPoll(a0, a1, a2, a3, a4, a5)
 }
 
+func (o *sqliteStoreOverlay) BeginReplayArtifactReceipt(a0 context.Context, a1 storage.ReplayArtifactSpec, a2 string, a3 time.Duration, a4 storage.ReplayArtifactLimits) error {
+	if fake, ok := o.fake.(interface {
+		BeginReplayArtifactReceipt(context.Context, storage.ReplayArtifactSpec, string, time.Duration, storage.ReplayArtifactLimits) error
+	}); ok {
+		return fake.BeginReplayArtifactReceipt(a0, a1, a2, a3, a4)
+	}
+	return o.base().BeginReplayArtifactReceipt(a0, a1, a2, a3, a4)
+}
+
 func (o *sqliteStoreOverlay) BindCapacityReservationToTest(a0 string, a1 string, a2 time.Time) (storage.CapacityBindingResult, error) {
 	if fake, ok := o.fake.(interface {
 		BindCapacityReservationToTest(string, string, time.Time) (storage.CapacityBindingResult, error)
@@ -733,6 +742,24 @@ func (o *sqliteStoreOverlay) ClaimRendezvous(a0 context.Context, a1 string, a2 s
 		return fake.ClaimRendezvous(a0, a1, a2, a3, a4)
 	}
 	return o.base().ClaimRendezvous(a0, a1, a2, a3, a4)
+}
+
+func (o *sqliteStoreOverlay) ClaimReplayArtifactCleanup(a0 context.Context, a1 int) ([]storage.ReplayArtifactReceipt, error) {
+	if fake, ok := o.fake.(interface {
+		ClaimReplayArtifactCleanup(context.Context, int) ([]storage.ReplayArtifactReceipt, error)
+	}); ok {
+		return fake.ClaimReplayArtifactCleanup(a0, a1)
+	}
+	return o.base().ClaimReplayArtifactCleanup(a0, a1)
+}
+
+func (o *sqliteStoreOverlay) ClaimReplayArtifactCleanupAfter(a0 context.Context, a1 string, a2 int) ([]storage.ReplayArtifactReceipt, error) {
+	if fake, ok := o.fake.(interface {
+		ClaimReplayArtifactCleanupAfter(context.Context, string, int) ([]storage.ReplayArtifactReceipt, error)
+	}); ok {
+		return fake.ClaimReplayArtifactCleanupAfter(a0, a1, a2)
+	}
+	return o.base().ClaimReplayArtifactCleanupAfter(a0, a1, a2)
 }
 
 func (o *sqliteStoreOverlay) ClaimReverseGeneratorIdentity(a0 string, a1 string) (bool, error) {
@@ -2753,6 +2780,15 @@ func (o *sqliteStoreOverlay) FinishConfluencePublication(a0 string, a1 string, a
 	return o.base().FinishConfluencePublication(a0, a1, a2, a3, a4, a5)
 }
 
+func (o *sqliteStoreOverlay) FinishReplayArtifactCleanup(a0 context.Context, a1 string, a2 string, a3 string) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		FinishReplayArtifactCleanup(context.Context, string, string, string) (bool, error)
+	}); ok {
+		return fake.FinishReplayArtifactCleanup(a0, a1, a2, a3)
+	}
+	return o.base().FinishReplayArtifactCleanup(a0, a1, a2, a3)
+}
+
 func (o *sqliteStoreOverlay) FinishTelemetryNotificationDelivery(a0 context.Context, a1 storage.TelemetryNotificationDelivery, a2 string, a3 time.Time) (bool, error) {
 	if fake, ok := o.fake.(interface {
 		FinishTelemetryNotificationDelivery(context.Context, storage.TelemetryNotificationDelivery, string, time.Time) (bool, error)
@@ -3600,6 +3636,15 @@ func (o *sqliteStoreOverlay) GetRelease(a0 string) (*storage.Release, error) {
 	return o.base().GetRelease(a0)
 }
 
+func (o *sqliteStoreOverlay) GetReplayArtifactReceipt(a0 context.Context, a1 string, a2 string) (*storage.ReplayArtifactReceipt, error) {
+	if fake, ok := o.fake.(interface {
+		GetReplayArtifactReceipt(context.Context, string, string) (*storage.ReplayArtifactReceipt, error)
+	}); ok {
+		return fake.GetReplayArtifactReceipt(a0, a1, a2)
+	}
+	return o.base().GetReplayArtifactReceipt(a0, a1, a2)
+}
+
 func (o *sqliteStoreOverlay) GetRepositoryCategory(a0 string) (*storage.RepositoryCategory, error) {
 	if fake, ok := o.fake.(interface {
 		GetRepositoryCategory(string) (*storage.RepositoryCategory, error)
@@ -4040,6 +4085,15 @@ func (o *sqliteStoreOverlay) IsMonitorArtifactReferenced(a0 string, a1 string) (
 		return fake.IsMonitorArtifactReferenced(a0, a1)
 	}
 	return o.base().IsMonitorArtifactReferenced(a0, a1)
+}
+
+func (o *sqliteStoreOverlay) JoinReplayArtifactWriter(a0 context.Context, a1 string, a2 string, a3 string, a4 string) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		JoinReplayArtifactWriter(context.Context, string, string, string, string) (bool, error)
+	}); ok {
+		return fake.JoinReplayArtifactWriter(a0, a1, a2, a3, a4)
+	}
+	return o.base().JoinReplayArtifactWriter(a0, a1, a2, a3, a4)
 }
 
 func (o *sqliteStoreOverlay) LastThresholdEvaluation(a0 string) (*time.Time, error) {
@@ -5347,6 +5401,15 @@ func (o *sqliteStoreOverlay) LoadTelemetryCheckpoint(a0 string, a1 string, a2 st
 	return o.base().LoadTelemetryCheckpoint(a0, a1, a2, a3)
 }
 
+func (o *sqliteStoreOverlay) LookupReplayArtifactScope(a0 context.Context, a1 string) (*storage.ReplayArtifactScope, error) {
+	if fake, ok := o.fake.(interface {
+		LookupReplayArtifactScope(context.Context, string) (*storage.ReplayArtifactScope, error)
+	}); ok {
+		return fake.LookupReplayArtifactScope(a0, a1)
+	}
+	return o.base().LookupReplayArtifactScope(a0, a1)
+}
+
 func (o *sqliteStoreOverlay) MarkArchiveCleanupJobFailed(a0 string, a1 error, a2 time.Time) error {
 	if fake, ok := o.fake.(interface {
 		MarkArchiveCleanupJobFailed(string, error, time.Time) error
@@ -5598,6 +5661,15 @@ func (o *sqliteStoreOverlay) PublishProjectLiveTableCheckpoint(a0 context.Contex
 		return fake.PublishProjectLiveTableCheckpoint(a0, a1, a2, a3, a4)
 	}
 	return o.base().PublishProjectLiveTableCheckpoint(a0, a1, a2, a3, a4)
+}
+
+func (o *sqliteStoreOverlay) PublishReplayArtifactReceipt(a0 context.Context, a1 string, a2 string, a3 string, a4 string) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		PublishReplayArtifactReceipt(context.Context, string, string, string, string) (bool, error)
+	}); ok {
+		return fake.PublishReplayArtifactReceipt(a0, a1, a2, a3, a4)
+	}
+	return o.base().PublishReplayArtifactReceipt(a0, a1, a2, a3, a4)
 }
 
 func (o *sqliteStoreOverlay) PublishRunEvidenceReceipts(a0 string) (int64, error) {
