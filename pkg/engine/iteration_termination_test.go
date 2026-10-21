@@ -21,7 +21,9 @@ func TestIterationTerminationCompletesTenThousandRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// This asserts complete iteration accounting, not a throughput deadline.
+	// Shared race-detector runners need headroom while keeping the wait bounded.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	if _, err := e.Run(ctx); err != nil {
 		t.Fatal(err)
