@@ -109,6 +109,7 @@ browser_pid=""
 output_root="${APEXLOAD_E2E_OUTPUT_ROOT:-test-results}"
 if [[ "$output_root" != /* ]]; then output_root="$repo_root/dashboard/$output_root"; fi
 
+# shellcheck disable=SC2329 # Invoked indirectly by the EXIT trap below.
 cleanup() {
   local code=$?
   trap - EXIT INT TERM
