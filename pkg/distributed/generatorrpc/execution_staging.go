@@ -1149,8 +1149,13 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			}
 		}
 	}
-	if request.GetBrowserInteractionEvidenceVersion() == 2 && !dsl.BrowserInteractionCaptureRequested(&script) {
-		return nil, status.Error(codes.InvalidArgument, "interaction evidence v2 requires browser interaction capture")
+	if protocol.BrowserInteractionHasDispatch(int(request.GetBrowserInteractionEvidenceVersion())) && !dsl.BrowserInteractionCaptureRequested(&script) {
+		return nil, status.Errorf(codes.InvalidArgument, "interaction evidence v%d requires browser interaction capture", request.GetBrowserInteractionEvidenceVersion())
+	}
+	if request.GetBrowserInteractionEvidenceVersion() == 3 {
+		if _, ok := instance.(protocol.BrowserInteractionEvidenceV3Provider); !ok {
+			return nil, status.Error(codes.FailedPrecondition, "runtime does not support browser interaction evidence v3")
+		}
 	}
 	if source := request.GetBrowserAuthoredDefinition(); source != nil {
 		runtimeSource := engine.BrowserOriginalAuthoredDefinition(&script)

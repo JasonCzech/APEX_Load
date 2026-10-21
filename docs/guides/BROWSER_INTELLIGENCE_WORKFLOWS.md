@@ -569,3 +569,39 @@ Run drafts, held runs, delayed starts and revised queued copies retain the selec
 Creation checks the selected revision and project. Admission resolves the same immutable revision again and computes its digest on the server. A later edit does not change the chosen revision. A policy deletion visible when admission resolves the selection refuses the start; it cannot silently replace the selection with a default. Already admitted runs retain their historical policy pins and findings. Policy resolution and the admission write use the existing run-identity and execution-ownership fences.
 
 The archive's `provenance.policy_pins` identifies an explicit selection with `source: run_selection`. A default uses `source: project_default`. The selected revision and current tombstone are read in one database snapshot. A concurrent deletion after that read follows the same admission boundary as existing default policies. Historical policy reads remain available after deletion for authorized inspection.
+
+
+## Observed post-action wait clocks
+
+Raw browser interaction evidence version 3 retains a supported Sync wait's actual host-side start, effective deadline, observed return and monotonic elapsed duration. These clocks are separate from native gesture dispatch and later diagnostic capture. After-action delay or cancellation during capture cannot rewrite a result already observed at the wait boundary. A parent context may shorten the effective deadline; cancellation, invalid or missing clocks, and a success first observed after its deadline do not establish a satisfied authored deadline.
+
+The controller negotiates `browser_interaction_evidence_v3` with a fresh generator heartbeat and an exact traffic-free staging acknowledgement. Older generators keep their negotiated version-2 evidence. Historical version-1/version-2 records never receive invented clocks. The raw evidence version is separate from interaction analysis version 3; repeat and retry windows continue to use native dispatch time, with unchanged population exclusions.
+
+This receipt covers the runtime's declared post-action Sync waits. It does not claim composition of assertion, dialog, download, navigation and state outcomes, authored page identity, actual-device qualification or an independent target clock. Retained raw evidence preserves clock and outcome together through archive serialization. Browser and mobile-emulation cohorts retain their existing native-versus-synthetic dispatch limitations.
+
+
+## Separate browser cohorts in saved panels
+
+For a completed run, open **Performance** in its report. In Create project analytics panel, choose Archived browser documents and enable **Show separate browser cohorts**. Set a maximum of 1–20 series and retain exact engine, profile, frame, lifecycle, group, region or cohort filters when needed. A selection exceeding the limit fails explicitly. Each tuple has at most 1,000 time buckets; the combined result has at most 20,000 buckets.
+
+These panels save query version 3 with `browser_tuple_mode: separate`. Their versioned result keeps each complete measurement tuple separate, with its own runtime cohort digest, final-document counts, missing buckets and CSV export. Progress snapshots and excluded/censored measurements never enter the percentiles. The legacy bucket array is empty, so an older consumer cannot mistake the result for a pooled distribution. Queries saved before this option retain their single-tuple behavior.
+
+A comparison pairs exact tuple identities and reports missing current/baseline tuples or unavailable workload/coverage compatibility. It does not produce an overall pooled verdict or establish a baseline anomaly. Derived multi-tuple calculations remain unavailable; select one exact tuple to use the existing derivations. Saved comparison panels still resolve their input runs through the existing project authorization; immutable comparison-to-panel input pinning remains separate work.
+
+
+## Supported authored navigation page receipts
+
+Archived document evidence includes a separate **Authored browser pages** view when the runtime retained page-binding receipts. A receipt joins the original structural navigation step to the response actually returned by that command and the observed native document/lifecycle. Repeated executions of that step share an authored page ID while retaining distinct runtime document IDs; duplicate display names do not merge structural steps. Final document measurements are not rewritten when the navigation command later returns.
+
+Version 1 supports explicit Chromium navigation/reload/new-window responses whose existing CDP loader join proves the document. Version 2 supports Chromium and WebKit when the exact native navigation request and sequence remain unchanged around a bounded document/lifecycle identity observation. Canceled reads, stale requests or source generations cannot acquire a binding. Redirects rely on the returned native request rather than URL equality. History/BFCache, same-document/SPA and click-created popup cases without that proof remain unavailable; no page ID is guessed for them or for historical records. Binding a page does not establish equivalent runtime state, journey success, baseline compatibility or actual-device qualification.
+
+The report retains at most 1,024 distinct document/lifecycle bindings, reports malformed/source-mismatched/conflicting and dropped receipts, and never readmits a conflicting identity within that retained set. Counts describe retained receipts, not every page issued. The dashboard displays at most 256 bindings; CSV exports all retained bindings. Original source/structure digests, structural step, native request, source generation and document/lifecycle remain inspectable.
+
+
+## Reading native waterfall and cache evidence
+
+The retained resource inspector draws request phases only when a native document join and document-relative start are available. A missing join leaves the waterfall unavailable; URLs and action timestamps cannot fill it in. Request phases are not cross-host clock synchronization or server-processing measurements.
+
+Each response has its own cache availability. Chromium can expose an observed cache hit; a cached response must not claim a negotiated network protocol. WebKit may expose neither a cache decision nor a document join, even when an independent fixture can count requests. The inspector preserves these unavailable states. At narrow widths, scroll the retained resource table horizontally to reach the inspection column.
+
+Controlled local fixtures reconcile the rendered native waterfall with server receive/finish observations and native HAR timing. They use absolute navigation URLs without a script base URL so the controller's separate HTTP latency probe is not configured. These fixtures qualify only their recorded host/engine/emulation cohorts, not actual devices, remote clock synchronization or reference-host performance.

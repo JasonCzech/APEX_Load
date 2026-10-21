@@ -15,9 +15,10 @@ export interface DashboardDefinitionPanel {
 }
 
 // The query semantics a panel is saved under (query_version).
-export const ANALYTICS_QUERY_VERSION = 2
+export const ANALYTICS_QUERY_VERSION = 3
 
 export interface DashboardAnalyticsQuery {
+  browser_tuple_mode?: 'separate'
   query_version?: number
   live_bucket_mode?: 'source' | 'merged'
   evidence_mode?: 'live' | 'archive'

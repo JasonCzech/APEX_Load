@@ -1779,6 +1779,27 @@ export interface operations {
                 "current"?: Record<string, unknown>;
               }) | null;
             }) | null;
+            "browser_authored_pages"?: ({
+              "bindings"?: Array<({
+                "association"?: string;
+                "authored_step"?: (Record<string, unknown>) | null;
+                "document_id"?: string;
+                "lifecycle_id"?: string;
+                "navigation_sequence"?: number;
+                "observed_at"?: string;
+                "page_id"?: string;
+                "reason"?: string;
+                "request_id"?: string;
+                "source_generation"?: string;
+                "state"?: string;
+                "version"?: number;
+              }) | null>;
+              "dropped"?: number;
+              "incomplete"?: boolean;
+              "receipt_records"?: number;
+              "unavailable"?: Record<string, number>;
+              "version"?: number;
+            }) | null;
             "browser_by_device"?: Record<string, ({
               "avg_blocking_resources"?: number;
               "avg_browser_process_cpu_pct"?: number;
@@ -78135,6 +78156,33 @@ export interface operations {
                 "current": Record<string, unknown>;
               }) | null;
             }) | null;
+            "browser_authored_pages"?: ({
+              "bindings": Array<({
+                "association"?: string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
+                "document_id"?: string;
+                "lifecycle_id"?: string;
+                "navigation_sequence"?: number;
+                "observed_at": string;
+                "page_id"?: string;
+                "reason"?: string;
+                "request_id"?: string;
+                "source_generation"?: string;
+                "state": string;
+                "version": number;
+              }) | null>;
+              "dropped": number;
+              "incomplete": boolean;
+              "receipt_records": number;
+              "unavailable"?: Record<string, number>;
+              "version": number;
+            }) | null;
             "browser_by_device"?: Record<string, ({
               "avg_blocking_resources"?: number;
               "avg_browser_process_cpu_pct"?: number;
@@ -108356,6 +108404,7 @@ export interface operations {
       content: {
         "application/json": {
           "aggregation"?: string;
+          "browser_tuple_mode"?: string;
           "bucket_seconds"?: number;
           "comparison_run_id"?: string;
           "derivation"?: ({
@@ -108396,6 +108445,16 @@ export interface operations {
           "application/json": {
             "added": Array<string>;
             "baseline"?: ({
+              "browser_tuples"?: ({
+                "tuples": Array<{
+                  "buckets": Array<Record<string, unknown>>;
+                  "cohort_digest": string;
+                  "id": string;
+                  "label": string;
+                  "measurement": Record<string, unknown>;
+                }>;
+                "version": number;
+              }) | null;
               "buckets": Array<{
                 "count": number;
                 "from": string;
@@ -108411,8 +108470,23 @@ export interface operations {
               "unit"?: string;
               "warnings": Array<string>;
             }) | null;
+            "browser_tuple_comparisons"?: Array<{
+              "reason"?: string;
+              "status": string;
+              "tuple_id": string;
+            }>;
             "comparable": boolean;
             "current": {
+              "browser_tuples"?: ({
+                "tuples": Array<{
+                  "buckets": Array<Record<string, unknown>>;
+                  "cohort_digest": string;
+                  "id": string;
+                  "label": string;
+                  "measurement": Record<string, unknown>;
+                }>;
+                "version": number;
+              }) | null;
               "buckets": Array<{
                 "count": number;
                 "from": string;
@@ -108483,6 +108557,7 @@ export interface operations {
       content: {
         "application/json": {
           "aggregation"?: string;
+          "browser_tuple_mode"?: string;
           "bucket_seconds"?: number;
           "comparison_run_id"?: string;
           "derivation"?: ({
@@ -109256,6 +109331,7 @@ export interface operations {
               "kind"?: string;
               "query"?: ({
                 "aggregation"?: string;
+                "browser_tuple_mode"?: string;
                 "bucket_seconds"?: number;
                 "comparison_run_id"?: string;
                 "derivation"?: (Record<string, unknown>) | null;

@@ -200,7 +200,7 @@ func (b *Browser) openAdmittedBrowserContext(ctx context.Context) error {
 		b.interactions.documents = nil
 		b.mu.Unlock()
 		observer := browserInteractionObserver(browserInteractionGlobal(generation))
-		if b.interactionVersion == protocol.BrowserInteractionVersion2 {
+		if protocol.BrowserInteractionHasDispatch(b.interactionVersion) {
 			observer = browserInteractionObserverV2(browserInteractionGlobal(generation), finalizer)
 		}
 		if err := browserContext.AddInitScript(playwright.Script{Content: playwright.String(observer)}); err != nil {

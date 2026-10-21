@@ -72,7 +72,7 @@ func TestBrowserInteractionVersionLegacyAndStaleNegotiation(t *testing.T) {
 		valid    bool
 		output   int
 	}{
-		{0, false, true, 1}, {1, false, true, 1}, {2, false, false, 2}, {2, true, true, 2}, {3, true, false, 1},
+		{0, false, true, 1}, {1, false, true, 1}, {2, false, false, 2}, {2, true, true, 2}, {3, true, true, 3}, {3, false, false, 3}, {4, true, false, 1},
 	} {
 		q := &pb.WorkAssignment{BrowserInteractionEvidenceVersion: tc.version, PrepareOnly: tc.prepared}
 		if (validateBrowserInteractionVersion(q) == nil) != tc.valid || assignedBrowserInteractionVersion(q) != tc.output {
@@ -93,7 +93,7 @@ func TestBrowserInteractionVersionStagesExactOutputWithoutTargetTraffic(t *testi
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); w.WriteHeader(200) }))
 	defer target.Close()
 	service := newIsolatedService(t, 10, WithExecution())
-	for _, version := range []uint32{0, 1, 2} {
+	for _, version := range []uint32{0, 1, 2, 3} {
 		id := fmt.Sprintf("interaction-version-%d", version)
 		script := fmt.Sprintf("{\"name\":\"versioned\",\"protocol\":\"browser\",\"config\":{\"base_url\":%q,\"browser\":{\"capture_interactions\":true}},\"actions\":[{\"name\":\"open\",\"type\":\"browser_navigate\",\"target\":\"/\"}]}", target.URL)
 		q := &pb.WorkAssignment{TestId: id, GroupName: "web", ScriptId: id, ScriptContent: []byte(script), VuserCount: 1, PrepareOnly: true, BrowserInteractionEvidenceVersion: version}

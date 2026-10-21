@@ -13,19 +13,19 @@ func validateBrowserInteractionVersion(request *pb.WorkAssignment) error {
 	switch request.GetBrowserInteractionEvidenceVersion() {
 	case 0, 1:
 		return nil
-	case 2:
+	case 2, 3:
 		if request.GetPrepareOnly() {
 			return nil
 		}
-		return status.Error(codes.FailedPrecondition, "interaction evidence v2 requires traffic-free staging")
+		return status.Errorf(codes.FailedPrecondition, "interaction evidence v%d requires traffic-free staging", request.GetBrowserInteractionEvidenceVersion())
 	default:
 		return status.Error(codes.InvalidArgument, "unsupported browser interaction evidence version")
 	}
 }
 
 func assignedBrowserInteractionVersion(request *pb.WorkAssignment) int {
-	if request.GetBrowserInteractionEvidenceVersion() == 2 {
-		return protocol.BrowserInteractionVersion2
+	if protocol.BrowserInteractionHasDispatch(int(request.GetBrowserInteractionEvidenceVersion())) {
+		return int(request.GetBrowserInteractionEvidenceVersion())
 	}
 	return protocol.BrowserInteractionVersion
 }
@@ -38,6 +38,7 @@ func (c *Client) observeBrowserInteractionVersion(pong *pb.HeartbeatPong) {
 	c.connection.mu.Lock()
 	c.connection.browserOriginalSource = pong != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserOriginalSourceV1+"+"+FeaturePreparationV1)
 	c.connection.browserInteractionV2 = available
+	c.connection.browserInteractionV3 = pong != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserInteractionEvidenceV3+"+"+FeatureBrowserInteractionEvidenceV2+"+"+FeaturePreparationV1)
 	c.connection.browserInteractionObserved = time.Now()
 	c.connection.mu.Unlock()
 }
@@ -50,4 +51,14 @@ func (c *Client) browserInteractionVersionNegotiated() bool {
 	defer c.connection.mu.Unlock()
 	age := time.Since(c.connection.browserInteractionObserved)
 	return c.connection.browserInteractionV2 && age >= 0 && age <= 30*time.Second
+}
+
+func (c *Client) browserOutcomeClocksNegotiated() bool {
+	if c.connection == nil {
+		return false
+	}
+	c.connection.mu.Lock()
+	defer c.connection.mu.Unlock()
+	age := time.Since(c.connection.browserInteractionObserved)
+	return c.connection.browserInteractionV3 && age >= 0 && age <= 30*time.Second
 }

@@ -1,3 +1,4 @@
+import BrowserTupleArchivePanel, { type BrowserTupleResult } from './BrowserTupleArchivePanel'
 import { browserDocumentPanelMetrics, nativePopulationMetrics, nativeJavaHTTPMetrics } from './nativeAnalyticsModel'
 import { useEffect, useState } from 'react'
 import { Line, LineChart, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
@@ -7,8 +8,8 @@ import ExportableChart from './ExportableChart'
 import TransactionBucketInspector from './TransactionBucketInspector'
 
 interface Bucket { from: string; to: string; offset_seconds: number; count: number; value: number | null; reason?: string }
-interface Series { run_id: string; unit?: string; java_http_compression?: string; buckets: Bucket[]; warnings: string[]; identities: string[] }
-interface Result { current: Series; baseline?: Series; comparable: boolean; warnings: string[]; added: string[]; removed: string[]; derivation?: { operation: string } }
+interface Series { browser_tuples?: BrowserTupleResult; excluded?: Record<string, number>; run_id: string; unit?: string; java_http_compression?: string; buckets: Bucket[]; warnings: string[]; identities: string[] }
+interface Result { browser_tuple_comparisons?: { tuple_id: string; status: string; reason?: string }[]; current: Series; baseline?: Series; comparable: boolean; warnings: string[]; added: string[]; removed: string[]; derivation?: { operation: string } }
 
 // missingLabel names why a bucket has no value, when the server says.
 const missingLabel = (bucket?: Pick<Bucket, 'reason'>) => bucket?.reason ? `Missing (${bucket.reason.replace(/_/g, ' ')})` : 'Missing'
@@ -43,6 +44,7 @@ export default function ArchivedNativePanel({ panel, testId }: { panel: Dashboar
   // derivation, so the raw baseline is not plotted beside it.
   const derived = result.derivation?.operation
   const unit = result.current.unit || nativePopulationMetrics[metric]?.unit || browserDocumentPanelMetrics[metric]?.unit || nativeJavaHTTPMetrics[metric]?.unit || 'observations'
+  if (documents && panel.query?.browser_tuple_mode === 'separate') return <BrowserTupleArchivePanel panel={panel} unit={unit} current={result.current} baseline={result.baseline} comparisons={result.browser_tuple_comparisons} warnings={result.warnings} />
   const baseline = derived ? undefined : result.baseline
   const basis = javaHTTP ? 'Representation measurements use their own observed counts; paired ratios divide sums from the same samples. Percentiles use nearest-rank raw measurements. Raw transaction drill-down is unavailable for this measurement population.' : documents ? 'Each document counts once at its final measurement; percentiles are bucket estimates (the upper bound of the histogram bucket holding them).' : messages ? 'Each received message counts once.' : 'Latency percentiles use nearest-rank raw observations.'
   const rows = result.current.buckets.map((bucket, i) => ({ ...bucket, reason: bucket.reason || (javaHTTP && bucket.value == null ? 'measurement_unavailable' : undefined), baseline: baseline?.buckets[i]?.value ?? null, baselineCount: baseline?.buckets[i]?.count, baselineReason: baseline?.buckets[i]?.reason || (javaHTTP && baseline?.buckets[i]?.value == null ? 'measurement_unavailable' : undefined) }))

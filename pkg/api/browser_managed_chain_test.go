@@ -190,6 +190,24 @@ func browserManagedAuthorReplayRunArchiveHARChain(t *testing.T, browserEngine, p
 	native := manifest.BrowserHARArtifacts[0]
 	var report RunArchiveReport
 	documentsReply := call("GET", base+"/report", nil, harViewer, 200, &report)
+	if report.BrowserAuthoredPages == nil || report.BrowserAuthoredPages.ReceiptRecords != 1 || report.BrowserAuthoredPages.Incomplete {
+		t.Fatalf("authored page report unavailable: %+v", report.BrowserAuthoredPages)
+	}
+	if len(report.BrowserAuthoredPages.Bindings) != 1 {
+		t.Fatal("native page binding missing", report.BrowserAuthoredPages)
+	}
+	pageBinding := report.BrowserAuthoredPages.Bindings[0]
+	if !pageBinding.Valid() || pageBinding.AuthoredStep.StepPath != "actions[0]" {
+		t.Fatal(pageBinding)
+	}
+	if browserEngine == "webkit" && (pageBinding.Version != 2 || pageBinding.Association != "native_navigation_commit" || pageBinding.NavigationSequence == 0) {
+		t.Fatal("WebKit missing native commit proof", pageBinding)
+	}
+	replayBytes, _ := json.Marshal(terminal.FinalReport.Events[0].ProtocolEvidence[protocol.BrowserAuthoredPageEvidenceKey])
+	replayBinding, err := protocol.DecodeBrowserAuthoredPageBinding(replayBytes)
+	if err != nil || replayBinding.PageID != pageBinding.PageID || replayBinding.DocumentID == pageBinding.DocumentID {
+		t.Fatal("replay/load page definition and runtime identity conflated", err)
+	}
 	if report.BrowserDocumentEvidenceTruncated {
 		t.Fatal("fixture document report is truncated")
 	}
@@ -284,6 +302,9 @@ func browserManagedAuthorReplayRunArchiveHARChain(t *testing.T, browserEngine, p
 	matches := 0
 	if _, err := forEachBrowserInteractionRecord(filepath.Join(archiveRecord.ArchivePath, manifest.BrowserInteractionsFile), func(e *protocol.BrowserInteractionEvidence) error {
 		for _, interaction := range e.Interactions {
+			if interaction.Version != protocol.BrowserInteractionVersion3 || !interaction.Outcome.Clock.Valid() || interaction.Outcome.Clock.ObservedAt.After(interaction.CapturedAt) || interaction.Outcome.Observed != protocol.InteractionOutcomeMet {
+				t.Fatalf("archive lost observed wait clock/result: %+v", interaction.Outcome)
+			}
 			if !reflect.DeepEqual(interaction.AuthoredStep, replayStep) {
 				t.Fatalf("managed/replay original step mismatch: managed=%+v replay=%+v", interaction.AuthoredStep, replayStep)
 			}

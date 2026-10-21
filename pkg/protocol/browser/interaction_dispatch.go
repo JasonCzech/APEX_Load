@@ -33,10 +33,10 @@ type browserInteractionDispatchPage struct {
 }
 
 func (b *Browser) enrichBrowserInteractionDispatch(i *protocol.BrowserInteraction, action *protocol.Action, page browserInteractionPage, start *browserInteractionStart) {
-	if b.interactionVersion != protocol.BrowserInteractionVersion2 {
+	if !protocol.BrowserInteractionHasDispatch(b.interactionVersion) {
 		return
 	}
-	i.Version = protocol.BrowserInteractionVersion2
+	i.Version = b.interactionVersion
 	i.AuthoredStep = action.BrowserAuthoredStep.Clone()
 	if i.AuthoredStep != nil {
 		i.Execution = action.BrowserActionExecution.Clone()
@@ -165,3 +165,5 @@ func browserInteractionObserverV2(name, finalizer string) string {
 }
 
 func (*Browser) SupportsBrowserInteractionEvidenceV2() {}
+
+func (*Browser) SupportsBrowserInteractionEvidenceV3() {}

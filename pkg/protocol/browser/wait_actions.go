@@ -227,12 +227,25 @@ func waitActionUsesActionSelector(action *protocol.Action) bool {
 }
 
 func (b *Browser) runPostActionSync(ctx context.Context, action *protocol.Action) error {
+	return b.runPostActionSyncWithClock(ctx, action, nil)
+}
+
+func (b *Browser) runPostActionSyncWithClock(ctx context.Context, action *protocol.Action, clock *protocol.BrowserOutcomeClock) error {
 	sync := browserSyncPolicy(action)
 	if sync == nil {
 		return nil
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, b.waitTimeout(sync.TimeoutMs))
+	started := time.Now()
+	budget := b.waitTimeout(sync.TimeoutMs)
+	waitCtx, cancel := context.WithDeadline(ctx, started.Add(budget))
 	defer cancel()
+	if clock != nil && supportedBrowserOutcomeWait(sync.Type) {
+		deadline, _ := waitCtx.Deadline()
+		defer func() {
+			observed := time.Now()
+			*clock = protocol.BrowserOutcomeClock{Version: 1, StartedAt: started.UTC(), DeadlineAt: deadline.UTC(), ObservedAt: observed.UTC(), BudgetMS: int(budget / time.Millisecond), ElapsedMS: float64(observed.Sub(started)) / float64(time.Millisecond)}
+		}()
+	}
 	syncType := strings.ToLower(strings.TrimSpace(sync.Type))
 	if syncType == "" {
 		syncType = "network_idle"

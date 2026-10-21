@@ -43,7 +43,7 @@ func (b *Browser) applyConfig(config map[string]any) error {
 		default:
 			return fmt.Errorf("browser interaction evidence version must be numeric")
 		}
-		if value != 1 && value != 2 {
+		if value != 1 && value != 2 && value != 3 {
 			return fmt.Errorf("unsupported browser interaction evidence version")
 		}
 	}

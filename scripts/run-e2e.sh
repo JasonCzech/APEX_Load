@@ -152,6 +152,8 @@ go build -trimpath -o "$controller_bin" ./cmd/controller
 start_controller() {
   require_free_port
   echo "Starting controller on ${base_url} (profile=$profile, throwaway DB in $workdir)..." >&2
+  mkdir -p "$workdir/runtime-tmp"
+  TMPDIR="$workdir/runtime-tmp" \
   APEXLOAD_ADDR="127.0.0.1:${port}" \
     APEXLOAD_DB="$workdir/apexload-e2e.db" \
     APEXLOAD_ARCHIVE_DIR="$workdir/archives" \

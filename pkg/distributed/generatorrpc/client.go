@@ -33,6 +33,8 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
+	// PreferBrowserOutcomeClocks upgrades implicit controller requests only after fresh capability negotiation.
+	PreferBrowserOutcomeClocks        bool
 	BrowserAuthoredDefinition         protocol.BrowserAuthoredDefinition
 	BrowserInteractionEvidenceVersion uint32
 	RendezvousConfigJSON              []byte
@@ -699,6 +701,7 @@ type Client struct {
 type sharedClientConnection struct {
 	browserOriginalSource      bool
 	browserInteractionV2       bool
+	browserInteractionV3       bool
 	browserInteractionObserved time.Time
 	runtimeResources           bool
 	runtimeResourcesObserved   time.Time
@@ -1011,10 +1014,16 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 			request.BrowserAuthoredDefinition = nil
 		}
 	}
-	if request.GetBrowserInteractionEvidenceVersion() > 2 {
+	if assignment.PreferBrowserOutcomeClocks && request.GetBrowserInteractionEvidenceVersion() == 2 && c.browserOutcomeClocksNegotiated() {
+		request.BrowserInteractionEvidenceVersion = 3
+	}
+	if request.GetBrowserInteractionEvidenceVersion() > 3 {
 		return AssignmentResult{}, fmt.Errorf("unsupported browser interaction evidence version")
 	}
-	if request.GetBrowserInteractionEvidenceVersion() == 2 {
+	if request.GetBrowserInteractionEvidenceVersion() == 3 && !c.browserOutcomeClocksNegotiated() {
+		return AssignmentResult{}, fmt.Errorf("browser_interaction_v3_capability_not_negotiated")
+	}
+	if protocol.BrowserInteractionHasDispatch(int(request.GetBrowserInteractionEvidenceVersion())) {
 		if !c.browserInteractionVersionNegotiated() {
 			return AssignmentResult{}, fmt.Errorf("browser_interaction_v2_capability_not_negotiated")
 		}
@@ -1036,8 +1045,8 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 	if err == nil && ack.GetAccepted() && request.BrowserAuthoredDefinition != nil && !proto.Equal(request.BrowserAuthoredDefinition, ack.GetBrowserAuthoredDefinition()) {
 		return AssignmentResult{}, fmt.Errorf("browser_original_source_negotiation_failed")
 	}
-	if err == nil && ack.GetAccepted() && request.GetBrowserInteractionEvidenceVersion() == 2 && ack.GetBrowserInteractionEvidenceVersion() != 2 {
-		return AssignmentResult{}, fmt.Errorf("browser_interaction_v2_negotiation_failed")
+	if err == nil && ack.GetAccepted() && protocol.BrowserInteractionHasDispatch(int(request.GetBrowserInteractionEvidenceVersion())) && ack.GetBrowserInteractionEvidenceVersion() != request.GetBrowserInteractionEvidenceVersion() {
+		return AssignmentResult{}, fmt.Errorf("browser_interaction_v%d_negotiation_failed", request.GetBrowserInteractionEvidenceVersion())
 	}
 	if err == nil && ack.GetAccepted() && request.RuntimeResourceClaim != nil && !ValidRuntimeResourceAdmission(request.RuntimeResourceClaim, ack.GetRuntimeResourceAdmission()) {
 		return AssignmentResult{}, fmt.Errorf("runtime_resource_negotiation_failed")
