@@ -4,6 +4,8 @@ import "github.com/jasonczech/apexload/pkg/internal/importreview"
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -406,28 +408,41 @@ func (tr *TestRunner) restoreJavaVuserAuthoringApprovalForUpdate(candidate, curr
 }
 
 func (tr *TestRunner) javaVuserApprovalConflict(script *dsl.Script) string {
+	conflict, err := tr.javaVuserApprovalState(script)
+	if err != nil {
+		return "Java Vuser authoring approval is missing or stale; review and approve the current script revision"
+	}
+	return conflict
+}
+
+// javaVuserApprovalState is javaVuserApprovalConflict that reports a failed
+// authoring-session read as an error rather than as a stale approval.
+func (tr *TestRunner) javaVuserApprovalState(script *dsl.Script) (string, error) {
 	if script == nil {
-		return "Java Vuser scripts must be approved through an authoring session before launch"
+		return "Java Vuser scripts must be approved through an authoring session before launch", nil
 	}
 	evidence, ok := readJavaVuserAuthoringApproval(script)
 	if !ok {
-		return "Java Vuser scripts must be approved through an authoring session before launch"
+		return "Java Vuser scripts must be approved through an authoring session before launch", nil
 	}
 	if evidence.ContentHash != hashLibraryScript(script) {
-		return "Java Vuser authoring approval is missing or stale; review and approve the current script revision"
+		return "Java Vuser authoring approval is missing or stale; review and approve the current script revision", nil
 	}
 	reader, ok := tr.scriptStore.(authoringSessionReader)
 	if !ok {
-		return "Java Vuser authoring approval cannot be verified by the configured store"
+		return "Java Vuser authoring approval cannot be verified by the configured store", nil
 	}
 	session, err := reader.GetAuthoringSession(evidence.SessionID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
 	if err != nil || session == nil || session.Status != "approved" || normalizeProjectID(session.ProjectID) != normalizeProjectID(script.ProjectID) {
-		return "Java Vuser authoring approval is missing or stale; review and approve the current script revision"
+		return "Java Vuser authoring approval is missing or stale; review and approve the current script revision", nil
 	}
 	if strings.TrimSpace(fmt.Sprint(session.ReviewState["approved_script_id"])) != strings.TrimSpace(script.ID) {
-		return "Java Vuser authoring approval does not match this stored script"
+		return "Java Vuser authoring approval does not match this stored script", nil
 	}
-	return ""
+	return "", nil
 }
 
 func (tr *TestRunner) javaVuserRunnerAvailableLocked(requiresPersistentLifecycle bool) bool {

@@ -139,6 +139,7 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 		MaxBodyBytes:  131072,
 	}),
 	routeAuth(http.MethodPost, "/api/v1/scripts/validate", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveScriptCreateProjectID}),
+	routeAuth(http.MethodPost, "/api/v1/scripts/validation-context", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveScriptCreateProjectID}),
 	routeAuth(http.MethodPost, "/api/v1/scripts/secret-bindings/apply", editorProjectAccess(resolveScriptCreateProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/repairs/preview", editorProjectAccess(resolveScriptCreateProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/repairs/apply", editorProjectAccess(resolveScriptCreateProjectID)),

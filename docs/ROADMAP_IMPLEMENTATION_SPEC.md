@@ -144,6 +144,8 @@ Reuse current receipts, 24-hour retry lifetime, deletion/expiry tombstones and e
 
 ### AUTH-B — Contextual validation revisions
 
+The [validation context slice](qa/reviews/roadmap-validation-context-2026-10-21/README.md) binds script validation results to keyed capability, policy, approval and secret-reference digests, returns contextual findings separately from static issues, and lets the script editor re-read the context so a policy, capability, approval or secret change makes a held result stale with a stated reason. Read failures never count as changes. Both-profile browser coverage of the stale notice and a scenario-level context remain open.
+
 Extend the current content fingerprint and observed revision binding with bounded capability, policy, approval and secret-reference availability revisions. A changed context invalidates the corresponding validation result. Keep static findings distinct from contextual cause codes and from execution admission. Start always rechecks current authorization, approval, secrets and placement.
 
 Preserve strong ETags, durable `If-Match`, strict project policy, foreign-resource 404 behavior and Load/Diff/Reapply. A late result cannot adopt a newer edit, project/resource switch or changed source session. Resolve pending cells/JSON once; validate, save, replay and debug use that exact canonical document and fingerprint.

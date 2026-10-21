@@ -26,6 +26,44 @@ type ScriptValidationResponse struct {
 	// ValidatedContentRevision is the stored script revision a stored-script
 	// validation read, when the store keeps durable revisions.
 	ValidatedContentRevision string `json:"validated_content_revision,omitempty"`
+	// ValidationContext is the controller context the result depended on.
+	// Issues and Warnings are static findings about the document; a change
+	// to this context invalidates the result even for an unchanged document.
+	ValidationContext *ValidationContext `json:"validation_context,omitempty"`
+}
+
+// ValidationContext identifies the controller context one validation result
+// depended on: capabilities, policy, approvals and secret-reference
+// availability. Revision changes whenever any component does; components
+// name which one changed. All values are opaque keyed digests.
+type ValidationContext struct {
+	Version    int                         `json:"version"`
+	Revision   string                      `json:"revision"`
+	Components ValidationContextComponents `json:"components"`
+	// Findings are contextual: they depend on the context, not on the
+	// document, and are distinct from static issues and from execution
+	// admission, which a start always rechecks.
+	Findings []ValidationContextFinding `json:"contextual_findings,omitempty"`
+	// SecretReferencesTruncated: only the first SecretReferenceLimit
+	// referenced secret names (sorted) entered the secret component.
+	SecretReferencesTruncated bool `json:"secret_references_truncated,omitempty"`
+	SecretReferenceLimit      int  `json:"secret_reference_limit"`
+}
+
+type ValidationContextComponents struct {
+	Capabilities     string `json:"capabilities"`
+	Policy           string `json:"policy"`
+	Approvals        string `json:"approvals"`
+	SecretReferences string `json:"secret_references"`
+}
+
+// ValidationContextFinding is one contextual finding. Cause is a fixed code:
+// secret_unavailable, approval_required, approval_stale or
+// capability_unavailable.
+type ValidationContextFinding struct {
+	Cause   string `json:"cause"`
+	Subject string `json:"subject,omitempty"`
+	Detail  string `json:"detail"`
 }
 
 func BuildScriptValidationResponse(scriptID string, script *dsl.Script, resolvers ...engine.SecretResolver) ScriptValidationResponse {

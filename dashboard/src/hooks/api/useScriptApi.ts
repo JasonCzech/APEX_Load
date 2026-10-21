@@ -29,7 +29,7 @@ import type {
   ScriptDebugStepMode,
 } from '../../types/replay'
 import { type AuthoringTemplate } from '../../types'
-import { type CorrelationDiagnoseResponse, type CorrelationStep, type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
+import { type CorrelationDiagnoseResponse, type CorrelationStep, type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationContext, type ScriptValidationResponse } from '../../types/scripts'
 import { type CloneScriptDraftResponse, type DiscardImportSecretSessionRequest, type MigrateImportSecretsRequest, type MigrateImportSecretsResponse, type RebindScriptSecretReferenceResponse, type ScriptSecretStatus } from '../../types/secrets'
 import { type BrunoInspectResponse, type ImportSourceRevision, type BrunoSupportMatrixResponse, type CommitBrunoImportRequest, type CommitBrunoImportResponse } from '../../types/scriptImports'
 import { downloadFilenameFromDisposition } from '../../utils/fileUtils'
@@ -505,6 +505,15 @@ export function useScriptApi() {
   const validateDraftScript = useCallback(
     (script: ScriptDefinition, projectId?: string, folderId?: string | null, variables?: Record<string, string>, options?: { fingerprint?: string }) =>
       request<ScriptValidationResponse>('/scripts/validate', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId, variables, ...(options?.fingerprint ? { fingerprint: options.fingerprint } : {}) }) }),
+    [],
+  )
+
+  // The controller's current validation context for a draft or a stored
+  // script (AUTH-B): a result validated under another revision is stale.
+  const getScriptValidationContext = useCallback(
+    (body: { project_id?: string; folder_id?: string | null; script?: ScriptDefinition; script_id?: string; content_revision?: string }) =>
+      // Bounded, so a stalled probe cannot hold off every later one.
+      request<ScriptValidationContext>('/scripts/validation-context', { method: 'POST', body: JSON.stringify(body), timeoutMs: 30_000 }),
     [],
   )
 
@@ -1663,6 +1672,7 @@ export function useScriptApi() {
       migrateImportSecrets,
       discardImportSecretSession,
       validateDraftScript,
+      getScriptValidationContext,
       listAuthoringCapabilities,
       listAuthoringTemplates,
       listAuthoringComponents,
@@ -1790,6 +1800,7 @@ export function useScriptApi() {
       migrateImportSecrets,
       discardImportSecretSession,
       validateDraftScript,
+      getScriptValidationContext,
       listAuthoringCapabilities,
       listAuthoringTemplates,
       listAuthoringComponents,

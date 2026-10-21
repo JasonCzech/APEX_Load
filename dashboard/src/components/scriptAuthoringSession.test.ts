@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { admitValidationResponse, draftFingerprint, sameValidationBinding, validationContextKey, type ValidationBinding, type ValidationRequest } from './scriptAuthoringSession'
+import { admitValidationResponse, describeValidationContextChanges, draftFingerprint, sameValidationBinding, validationContextChanges, validationContextKey, type ValidationBinding, type ValidationRequest } from './scriptAuthoringSession'
+import type { ScriptValidationContext } from '../types/scripts'
 
 const binding = (overrides: Partial<ValidationBinding> = {}): ValidationBinding => ({ fingerprint: draftFingerprint('{"name":"a"}'), contentRevision: `scr-v1-${'a'.repeat(64)}`, context: '["p",null,null]', ...overrides })
 const request = (overrides: Partial<ValidationRequest> = {}): ValidationRequest => ({ requestId: 3, sent: binding(), issuedAgainst: binding(), stored: false, ...overrides })
@@ -64,5 +65,25 @@ describe('script authoring session binding', () => {
     expect(admitValidationResponse(3, stored, { validated_fingerprint: sent.fingerprint }, sent)).toBe('unbound')
     const unsaved = request({ stored: true, sent: binding({ contentRevision: '' }) })
     expect(admitValidationResponse(3, unsaved, { validated_content_revision: '' }, unsaved.sent)).toBe('unbound')
+  })
+})
+
+describe('validation context changes (AUTH-B)', () => {
+  const context = (secrets: string, policy: string, revision = `vctx1:${secrets}:${policy}`): ScriptValidationContext => ({
+    version: 1, revision, secret_reference_limit: 256,
+    components: { capabilities: 'c', policy, approvals: 'a', secret_references: secrets },
+  })
+  it('names exactly the components that changed', () => {
+    expect(validationContextChanges(context('s1', 'p1'), context('s1', 'p1'))).toEqual([])
+    expect(validationContextChanges(context('s1', 'p1'), context('s2', 'p1'))).toEqual(['secret_references'])
+    expect(validationContextChanges(context('s1', 'p1'), context('s2', 'p2'))).toEqual(['policy', 'secret_references'])
+    expect(describeValidationContextChanges(['policy', 'secret_references'])).toBe('project or domain policy, project secrets')
+  })
+  it('treats a changed revision with identical components as a change of every component', () => {
+    expect(validationContextChanges(context('s1', 'p1', 'vctx1:old'), context('s1', 'p1', 'vctx2:new'))).toHaveLength(4)
+  })
+  it('reports nothing without both contexts', () => {
+    expect(validationContextChanges(null, context('s1', 'p1'))).toEqual([])
+    expect(validationContextChanges(context('s1', 'p1'), null)).toEqual([])
   })
 })

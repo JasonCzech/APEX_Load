@@ -233,7 +233,7 @@ import {
   useScriptJsonNavigationController,
 } from './useScriptJsonAuthoringController'
 import { useScriptAuthoringSession, type ResolvedScriptDraft } from './useScriptAuthoringSession'
-import { draftFingerprint, scriptSaveAvailability, validationContextKey } from './scriptAuthoringSession'
+import { describeValidationContextChanges, draftFingerprint, scriptSaveAvailability, validationContextKey } from './scriptAuthoringSession'
 import { CatalogFieldDraftContext, useCatalogFieldDrafts } from './catalogFieldDrafts'
 import {
   buildBrowserHTTPConversionReview,
@@ -1551,6 +1551,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const editorResourceScopeVersionRef = useRef(0)
   // The create intent belongs to the draft this editor opened in its project
   // (AUTH-1): a folder change or a retry keeps it; another draft does not.
+  // Whether the held validation result attests the stored script (by ID)
+  // rather than a submitted draft.
+  const validatedStoredRef = useRef(false)
   const createIntentRef = useRef<{ draft: unknown; projectId: string | undefined; intent: AuthoringCreateIntent | null; fresh: boolean }>({ draft: initialScript, projectId, intent: null, fresh: false })
   if (createIntentRef.current.draft !== initialScript || createIntentRef.current.projectId !== projectId) {
     createIntentRef.current = { draft: initialScript, projectId, intent: null, fresh: false }
@@ -1597,6 +1600,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     validatedBinding,
     currentBinding: currentValidationBinding,
     validationIsCurrent: validationResultIsCurrent,
+    validationContextChanged,
     authoringBaseline,
     authoringRevisionState,
     authoringRevisionReason,
@@ -1617,6 +1621,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     flushPendingEdits,
     documentKey: validationDocumentKey,
     context: validationContext,
+    // The held result is re-checked against the controller's context: a
+    // stored-script result by its ID, a draft result with the document it
+    // validated (the rendered one, since the binding is still current).
+    probeValidationContext: binding => validatedStoredRef.current && scriptId
+      ? api.getScriptValidationContext({ project_id: projectId, script_id: scriptId, content_revision: binding.contentRevision })
+      : api.getScriptValidationContext({ project_id: projectId, folder_id: folderId, script: currentAuthoringSourceRef.current.script }),
     baseline: {
       scriptId: scriptId || undefined,
       projectId,
@@ -3215,7 +3225,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         authoring_health: res.authoring_health,
       })
       const validatedDocumentKey = formatScriptJson(validationScript)
-      adoptValidated(request, validatedDocumentKey)
+      validatedStoredRef.current = stored
+      adoptValidated(request, validatedDocumentKey, res.validation_context ?? null)
       // Validation can only add derived metadata (an import's runtime
       // settings parity): debug evidence for the document it validated still
       // describes the committed one.
@@ -3996,13 +4007,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     ? (projectProbeIsUnavailable || typeof api.getProjectSecretStatuses !== 'function' ? 'unavailable' : 'checking')
     : undefined
 
+  const validationContextChangeLabel = describeValidationContextChanges(validationContextChanged)
   useEffect(() => {
     if (validatedBinding === null || validationResultIsCurrent) return
     setValidationReplayPreflight(null)
     setValidationEvidence(null)
     clearValidatedBinding()
-    setValidationSidebarResult(null)
-  }, [clearValidatedBinding, validatedBinding, validationResultIsCurrent])
+    // A result made stale by the controller context (not by an edit) says
+    // why, so the author knows to recheck rather than look for a change.
+    setValidationSidebarResult(validationContextChangeLabel
+      ? { tone: 'warning', message: `Readiness results no longer apply: ${validationContextChangeLabel} changed since the check. Recheck readiness.`, warnings: [], issues: [] }
+      : null)
+  }, [clearValidatedBinding, validatedBinding, validationContextChangeLabel, validationResultIsCurrent])
   const replayFailingEventIndex = replayReport?.events.findIndex(event => !event.success) ?? -1
   const replayFailingEvent = replayReport && replayFailingEventIndex >= 0 ? replayReport.events[replayFailingEventIndex] : null
   const replayVariableTimeline = replayReport
