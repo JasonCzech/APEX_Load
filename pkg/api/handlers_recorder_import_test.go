@@ -47,6 +47,7 @@ type recorderImportResponse struct {
 
 func TestHandleImportRecorderChromeJSON(t *testing.T) {
 	server := NewServer(ServerConfig{})
+	closeBatchTestServer(t, server)
 	payload := map[string]any{
 		"name":    "Recorder Import",
 		"content": chromeRecorderFixture,
@@ -99,6 +100,7 @@ func TestHandleImportRecorderChromeJSON(t *testing.T) {
 
 func TestHandleImportRecorderStepMappingDispositions(t *testing.T) {
 	server := NewServer(ServerConfig{})
+	closeBatchTestServer(t, server)
 	fixture := `{
   "title": "Review",
   "steps": [
@@ -158,6 +160,7 @@ func TestHandleImportRecorderStepMappingDispositions(t *testing.T) {
 
 func TestHandleImportRecorderPlaywrightMultipart(t *testing.T) {
 	server := NewServer(ServerConfig{})
+	closeBatchTestServer(t, server)
 	script := "await page.goto('https://shop.example/');\nawait page.getByTestId('go').click();\n"
 
 	body := &bytes.Buffer{}
@@ -194,6 +197,7 @@ func TestHandleImportRecorderPlaywrightMultipart(t *testing.T) {
 
 func TestHandleImportRecorderRawBody(t *testing.T) {
 	server := NewServer(ServerConfig{})
+	closeBatchTestServer(t, server)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/recorder?filename=flow.json", strings.NewReader(chromeRecorderFixture))
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)
@@ -211,6 +215,7 @@ func TestHandleImportRecorderRawBody(t *testing.T) {
 
 func TestHandleImportRecorderValidateAndReplayRoutes(t *testing.T) {
 	server := NewServer(ServerConfig{})
+	closeBatchTestServer(t, server)
 	payload := map[string]any{
 		"name":    "Recorder Import",
 		"content": chromeRecorderFixture,
@@ -256,6 +261,7 @@ func TestHandleImportRecorderValidateAndReplayRoutes(t *testing.T) {
 
 func TestHandleImportRecorderErrors(t *testing.T) {
 	server := NewServer(ServerConfig{})
+	closeBatchTestServer(t, server)
 	tests := []struct {
 		name        string
 		contentType string
