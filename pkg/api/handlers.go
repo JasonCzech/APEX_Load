@@ -50,7 +50,40 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	req.creationActor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
 
+	// An Idempotency-Key makes a run create (such as a queued run's revised
+	// copy) retry-safe under receipt contract 1: a retry returns the run the
+	// first attempt created, as it is now.
+	receipt, ok := s.claimTestCreate(w, r, &req)
+	if !ok {
+		return
+	}
+	defer receipt.release()
+	receipt.markAttempted()
 	test, err := s.runner.CreateTest(req)
+	if err != nil && errors.Is(err, errTestIdentityCollision) && receipt.adoptsExisting() {
+		// An earlier attempt with this key created the run, but its response
+		// (and receipt completion) was lost.
+		s.replayTestCreate(w, r, receipt)
+		return
+	}
+	if err != nil && receipt != nil {
+		if errors.Is(err, errTestIdentityCollision) {
+			// A caller-chosen run ID is never adopted: nothing proves the
+			// run there is this key's.
+			writeAuthoringIdempotencyError(w, http.StatusConflict, "test_identity_in_use", "a run with requested_test_id already exists; read it by that ID before creating another")
+			return
+		}
+		if receipt.derivedID && !s.durableTestAbsent(receipt.resourceID()) {
+			// The key fixed this run's ID, so a run there (or an unreadable
+			// store) means the failure may have followed the commit: answer
+			// as unknown so the client keeps the key, never as a refusal it
+			// may rotate, and let its retry resume the receipt at once. A
+			// caller-chosen ID proves nothing and keeps the original error.
+			receipt.outcomeUnknown = true
+			writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "test_create_outcome_unknown", "the run create's outcome is unknown; retry with the same Idempotency-Key, which returns the run if it was created")
+			return
+		}
+	}
 	if err != nil {
 		if errors.Is(err, errServiceAccountRuntimeSecretWrite) {
 			writeError(w, http.StatusForbidden, err.Error())
@@ -63,9 +96,58 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	receipt.complete("")
 	s.recordAuditEvent(r, "test.create", "success", "test", test.ID, test.ProjectID, map[string]any{"name": test.Name, "status": test.Status})
-
+	markAuthoringReceiptVersion(w, receipt)
 	writeJSON(w, http.StatusCreated, maskManagedTest(test))
+}
+
+// claimTestCreate claims a run create's Idempotency-Key, if any, and fixes
+// the run ID to the receipt's. ok is false when a response was written: a
+// refusal, or the replay of an earlier attempt's run.
+func (s *Server) claimTestCreate(w http.ResponseWriter, r *http.Request, req *CreateTestRequest) (*authoringCreateAttempt, bool) {
+	if len(r.Header.Values("Idempotency-Key")) > 0 {
+		if version, valid := authoringReceiptVersionRequested(r); valid && version != storage.AuthoringReceiptOutcomeLegacy {
+			writeAuthoringIdempotencyError(w, http.StatusBadRequest, "idempotency_receipt_version_unsupported", "run creates support receipt contract 1 only")
+			return nil, false
+		}
+	}
+	fingerprint, err := testCreateReceiptFingerprint(*req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return nil, false
+	}
+	projectID := normalizeProjectID(req.ProjectID)
+	if authorized, scoped := authorizedProjectFromRequest(r); scoped {
+		projectID = authorized
+	}
+	attempt, outcome := s.claimAuthoringCreate(w, r, storage.AuthoringPurposeTestCreate, "test", projectID, req.RequestedTestID, fingerprint)
+	switch outcome {
+	case authoringCreateHandled:
+		return nil, false
+	case authoringCreateReplay:
+		s.replayTestCreate(w, r, attempt)
+		return nil, false
+	}
+	if attempt == nil {
+		return nil, true
+	}
+	attempt.absent = s.durableTestAbsent
+	if strings.TrimSpace(req.RequestedTestID) == "" {
+		req.RequestedTestID = attempt.resourceID()
+	} else if !attempt.derivedID && !attempt.resumed && s.durableTestPresent(attempt.resourceID()) {
+		// Run creates never overwrite: whatever this attempt does, the run
+		// already at the caller's ID is not its creation.
+		attempt.cannotHaveCreated = true
+	}
+	if attempt.adoptsExisting() {
+		if _, found := s.runner.GetTest(attempt.resourceID()); found {
+			s.replayTestCreate(w, r, attempt)
+			attempt.release()
+			return nil, false
+		}
+	}
+	return attempt, true
 }
 
 func (s *Server) handleEstimateTest(w http.ResponseWriter, r *http.Request) {

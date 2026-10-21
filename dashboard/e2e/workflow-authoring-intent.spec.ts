@@ -1,5 +1,5 @@
 import type { APIRequestContext } from '@playwright/test'
-import { test, expect, login } from './support/workflow'
+import { test, expect, login, seedScript, json, idOf } from './support/workflow'
 import { createWorkspace, scopeQuery, type Workspace } from './support/workspace'
 
 // AUTH-1 (docs/ROADMAP_IMPLEMENTATION_SPEC.md#auth-a--durable-user-intent-and-explicit-receipt-semantics):
@@ -89,4 +89,53 @@ test('[AUTH-1] a scenario create whose response was lost replays after a reload 
   expect(replayed).toEqual([sentKeys[0]])
   await expect(page.locator('.scenario-save-notice')).toContainText('had already been saved')
   expect(await scenariosNamed(request, workspace, name)).toBe(1)
+})
+
+test('[AUTH-1] a queued revised copy whose response was lost replays instead of queueing another', async ({ page, target, trackRun }) => {
+  test.setTimeout(120_000)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const script = await seedScript(request, workspace, 'Intent_Copy_HTTP', target.url)
+  const sourceId = idOf(await json(await request.post('/api/v1/tests', { data: {
+    name: 'Intent copy source', project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId,
+    duration: '1m', groups: [{ name: 'orders', script_id: script, vusers: 1 }],
+  } })))
+  trackRun(sourceId)
+  await page.goto(`/#/command-center/${sourceId}?${scopeQuery(workspace)}`)
+  await page.reload()
+  await page.getByRole('button', { name: 'Create revised queued copy', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Create revised queued run', exact: true })
+  const name = 'Intent revised copy'
+  await dialog.getByLabel('Scenario Name', { exact: true }).fill(name)
+
+  // The controller queues the copy; the browser never sees the answer.
+  const sentKeys: string[] = []
+  await page.route('**/api/v1/tests', async route => {
+    if (route.request().method() !== 'POST') return route.continue()
+    sentKeys.push(route.request().headers()['idempotency-key'] ?? '')
+    const committed = await route.fetch()
+    expect(committed.status()).toBe(201)
+    trackRun(idOf(await committed.json()))
+    await route.abort('failed')
+  })
+  const create = dialog.getByRole('button', { name: /^Create revised copy \(\d+ groups?\)$/ })
+  await create.click()
+  await expect(dialog.locator('.form-error')).toBeVisible()
+  await page.unroute('**/api/v1/tests')
+
+  const answer = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/tests')
+  await create.click()
+  const response = await answer
+  expect(response.status()).toBe(201)
+  expect(response.headers()['idempotent-replayed']).toBe('true')
+  expect(sentKeys).toHaveLength(1)
+  expect(sentKeys[0]).toMatch(/^test-create-/)
+  expect(response.request().headers()['idempotency-key']).toBe(sentKeys[0])
+  await expect(dialog.getByRole('status')).toContainText('no new run was queued')
+  const runs: unknown = await json(await request.get(`/api/v1/tests?project_id=${encodeURIComponent(workspace.projectId)}`))
+  const items = Array.isArray(runs) ? runs : (runs as { tests?: unknown[] }).tests ?? []
+  expect(items.filter(item => (item as { name?: string }).name === name)).toHaveLength(1)
+  const source = await json(await request.get(`/api/v1/tests/${sourceId}`))
+  expect(source.name).toBe('Intent copy source')
+  expect(target.count()).toBe(0)
 })

@@ -373808,12 +373808,35 @@ paths:
                   - status
                   - total_vusers
                 nullable: true
+          headers:
+            Idempotent-Replayed:
+              description: true when the response returns the run an earlier request with the same Idempotency-Key created, as it is now.
+              schema:
+                type: string
+                enum:
+                  - "true"
+            X-APEX-Authoring-Receipt-Version:
+              description: On a keyed create, the receipt contract that applied (always 1 here).
+              schema:
+                type: string
+                enum:
+                  - "1"
         "400":
-          description: Bad Request
+          description: Bad Request Idempotency outcomes carry a code; other failures keep the generic error body.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_key_invalid
+                      - idempotency_receipt_version_unsupported
+                  error:
+                    type: string
+                required:
+                  - error
         "401":
           description: Authentication required or invalid.
           content:
@@ -373827,20 +373850,83 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
-          description: Conflict
+          description: Conflict Idempotency outcomes carry a code; other failures keep the generic error body.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_key_reused
+                      - idempotency_key_expired
+                      - idempotency_request_in_progress
+                      - test_identity_in_use
+                  error:
+                    type: string
+                required:
+                  - error
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying idempotency_request_in_progress.
+              schema:
+                type: string
+        "410":
+          description: Gone Idempotency outcomes carry a code; other failures keep the generic error body.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_resource_deleted
+                  error:
+                    type: string
+                required:
+                  - error
         "413":
           description: Request Entity Too Large
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable Idempotency outcomes carry a code; other failures keep the generic error body.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_unavailable
+                      - test_create_outcome_unknown
+                  error:
+                    type: string
+                required:
+                  - error
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: 'Optional retry key (16-512 visible ASCII characters), scoped to project, caller and create kind. The same key and request return the run the first request created, as it is now, for 24 hours with Idempotent-Replayed: true (the run ID is fixed by the key; with a caller-supplied requested_test_id an unconfirmed earlier attempt is never adopted, and an existing run there answers 409 test_identity_in_use, so read it by that ID); a create whose outcome cannot be confirmed answers 503 test_create_outcome_unknown and must be retried with the same key; a changed request returns 409 idempotency_key_reused, an expired key 409 idempotency_key_expired, a deleted run 410 idempotency_resource_deleted (it is never recreated), and an in-flight duplicate 409 idempotency_request_in_progress with Retry-After. Controllers without durable receipts refuse the key with 503 idempotency_unavailable. A key is kept while an earlier attempt may have committed; it is released for a corrected request only when the create was refused before running or a durable read proves no run was created.'
+          required: false
+          schema:
+            type: string
+        - name: X-APEX-Authoring-Receipt-Version
+          in: header
+          description: Receipt contract for a keyed create; ignored without Idempotency-Key. Only 1 (also the default) is supported here; 2 is refused with 400 idempotency_receipt_version_unsupported.
+          required: false
+          schema:
+            type: string
+            enum:
+              - "1"
       tags:
         - Tests
       x-handler: handleCreateTest

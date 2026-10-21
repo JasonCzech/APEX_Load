@@ -565,6 +565,20 @@ acknowledgement was lost returns 503 `scenario_save_outcome_unknown`: retry it
 with the same key, which adopts the scenario if it committed. Controllers
 without durable receipts refuse a key with 503 `idempotency_unavailable`.
 
+`POST /api/v1/tests` (a run create, including a queued run's revised copy)
+accepts the same key under receipt contract 1 only: the key fixes the run ID,
+a retry returns the run the first attempt created as it is now, a deleted run
+answers 410 and is never recreated, and `X-APEX-Authoring-Receipt-Version: 2`
+is refused with 400 `idempotency_receipt_version_unsupported`. A create whose
+outcome cannot be confirmed answers 503 `test_create_outcome_unknown`: retry
+it with the same key. With a caller-supplied `requested_test_id` an
+unconfirmed earlier attempt is never adopted; an existing run there answers
+409 `test_identity_in_use`, so read it by that ID. Deleting a run tombstones
+its keys in the same transaction. Before this contract, a key on a run create
+held only the generic 15-minute duplicate-request fence (any key length,
+409 `duplicate idempotency key`); it now follows the receipt rules above,
+including the 16-character minimum and the 24-hour replay.
+
 #### Receipt contract version 2
 
 The contract above is receipt version 1. A keyed create may send
@@ -606,12 +620,13 @@ whole database could test guesses of those values offline; configure key
 wrapping to close that. Receipts claimed under the earlier digest still
 recognize their own retries.
 
-The dashboard gives every new script and scenario draft its own intent key and
-sends it under version 2 (falling back to version 1 only on that explicit
+The dashboard gives every new script and scenario draft, and every queued
+run's revised copy (under contract 1), its own intent key, and sends script
+and scenario keys under version 2 (falling back to version 1 only on that explicit
 refusal). The key is kept after a lost response, a timeout or a server failure,
 so the next save replays rather than duplicates; it is replaced only after a
 definitive refusal and a changed draft. A scenario draft's key is part of its
-browser checkpoint, so a reload keeps it. A new script draft is not
+browser checkpoint, so a reload keeps it. A new script draft or revised copy is not
 checkpointed: its key survives a reload only for the same unchanged draft,
 through a local record of keys whose outcome is still unknown (no draft
 content is kept there). When the controller will not create with the key (a

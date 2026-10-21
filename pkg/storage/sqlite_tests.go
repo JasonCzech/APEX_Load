@@ -1798,6 +1798,10 @@ func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
 	if err := recordDeletedTestIdentitiesTx(tx, `WHERE id = ?`, id); err != nil {
 		return err
 	}
+	// A retry of the keyed create that made this run must never recreate it.
+	if err := renewAuthoringMutationReceiptTombstones(tx, "test", id, "deleted", time.Now()); err != nil {
+		return err
+	}
 	if err := queueAnalysisCleanupTx(tx, "monitor", projectID, id); err != nil {
 		return err
 	}
