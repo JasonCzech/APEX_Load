@@ -1,5 +1,7 @@
 # QA Review Records
 
+- [Filesystem replay source identity](roadmap-browser-replay-volume-identity-2026-10-21/README.md) — persisted namespace identity and held-root operations prevent same-path volume substitution.
+
 - [Replay recovery scope and cleanup pagination](roadmap-browser-replay-recovery-storage-2026-10-21/README.md) — internal authorization metadata and bounded traversal past foreign-backend receipts.
 
 - [Lease-bound replay artifact publisher](roadmap-browser-replay-publisher-2026-10-21/README.md) — immutable receipt admission, verified writer completion and owner-fenced publication.

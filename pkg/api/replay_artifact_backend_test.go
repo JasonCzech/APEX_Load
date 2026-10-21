@@ -221,6 +221,9 @@ func TestReplayArtifactBackendFilesystemRefusesForeignGeneration(t *testing.T) {
 func TestReplayArtifactBackendFilesystemRejectsSymlink(t *testing.T) {
 	b, spec, har, report := replayBackendFixture(t, false)
 	foreign := t.TempDir()
+	if err := os.RemoveAll(filepath.Join(b.backend.LocalRoot, archiveReplayDirectory)); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Symlink(foreign, filepath.Join(b.backend.LocalRoot, archiveReplayDirectory)); err != nil {
 		t.Skip(err)
 	}

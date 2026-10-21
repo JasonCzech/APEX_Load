@@ -121,7 +121,7 @@ func TestReplayArtifactPublisherRefusesBeforeReservation(t *testing.T) {
 			if !errors.Is(err, sql.ErrNoRows) || receipt != nil {
 				t.Fatal("refusal published", receipt, err)
 			}
-			if _, err := os.Stat(filepath.Join(p.backend.backend.LocalRoot, archiveReplayDirectory)); !os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(p.backend.backend.LocalRoot, archiveReplayDirectory, "v1")); !os.IsNotExist(err) {
 				t.Fatal("refusal wrote bytes", err)
 			}
 		})
