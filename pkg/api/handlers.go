@@ -790,7 +790,7 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	// the receipt like any other create.
 	var receipt *authoringCreateAttempt
 	if !credentialPreservingImportClaimsAttestation(script) {
-		attempt, outcome := s.claimAuthoringCreate(w, r, storage.AuthoringPurposeScriptCreate, "script", script.ProjectID, script.ID, scriptCreateFingerprint(wrapper))
+		attempt, outcome := s.claimAuthoringCreate(w, r, storage.AuthoringPurposeScriptCreate, "script", script.ProjectID, script.ID, authoringReceiptFingerprint{request: scriptCreateFingerprint(wrapper)})
 		switch outcome {
 		case authoringCreateHandled:
 			return
@@ -955,9 +955,17 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		)
 	} else {
 		receipt.markAttempted()
-		stored, err = s.runner.CreateScriptAuthoringDurable(script)
+		if receipt.originalOutcome() {
+			stored, err = s.runner.CreateScriptAuthoringDurableCompletingReceipt(script, receipt.completion())
+			receipt.completedInTransaction = err == nil
+		} else {
+			stored, err = s.runner.CreateScriptAuthoringDurable(script)
+		}
 	}
 	if err != nil {
+		if writeAuthoringReceiptCreateError(w, err) {
+			return
+		}
 		if errors.Is(err, errScriptAuthoringAlreadyExists) {
 			if receipt.adoptsExisting() {
 				s.replayScriptCreate(w, r, receipt)
@@ -999,6 +1007,7 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	}
 	receipt.complete(stored.ContentRevision)
 	s.recordAuditEvent(r, "script.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": disclosureSafeScriptName(stored.Name, stored.Script), "folder_id": stored.FolderID})
+	markAuthoringReceiptVersion(w, receipt)
 	writeJSON(w, http.StatusCreated, viewStoredScript(stored))
 }
 

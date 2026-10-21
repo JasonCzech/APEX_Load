@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ScenarioFormState } from '../types/scenarioAuthoring'
 import { assertDraftHasNoInlineCredentials, clearScenarioAuthoringDraft, migrateScenarioAuthoringDraft, parseScenarioAuthoringDraft, readScenarioAuthoringDraft, saveScenarioAuthoringDraft, scenarioAuthoringDraftFromScripts, type ScenarioAuthoringDraft } from './scenarioAuthoringDraft'
+import { nextAuthoringCreateIntent } from './authoringCreateIntent'
 const draft = (): ScenarioAuthoringDraft => ({ version: 3, projectId: 'project-a', savedAt: '2026-09-12T12:00:00Z', editingId: null, editingUpdatedAt: '', form: { name: '', duration: '', start_delay: '', scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false, groups: [{ name: '', script_id: '', stages: [], vusers: 0, ramp_up: '', ramp_down: '', initialization: 'at_runtime' }] } as ScenarioFormState, source: 'existing', startChoice: 'existing', shapeId: '', templateId: '', cloneId: '', step: 'source', visited: 1 })
 afterEach(() => { localStorage.clear(); vi.restoreAllMocks() })
 const flatMirrors = () => ({ runtime_pacing_type: '', runtime_ignore_think_time: false, runtime_log_level: '', runtime_auto_transactions: '', assignment_mode: 'auto', assignment_targets: [] as string[] })
@@ -12,6 +13,19 @@ describe('explicit scenario authoring checkpoints', () => {
     expect(readScenarioAuthoringDraft('project-b')).toBeNull()
     clearScenarioAuthoringDraft('project-a')
     expect(readScenarioAuthoringDraft('project-a')).toBeNull()
+  })
+  it('keeps a new scenario\'s create intent through a reload and drops one that does not belong to it (AUTH-1)', () => {
+    const intent = nextAuthoringCreateIntent(null, 'scenario_create', 'project-a', 'digest')
+    saveScenarioAuthoringDraft({ ...draft(), createIntent: intent })
+    expect(readScenarioAuthoringDraft('project-a')?.createIntent).toEqual(intent)
+    for (const foreign of [
+      { ...draft(), createIntent: { ...intent, projectId: 'project-b' } },
+      { ...draft(), createIntent: { ...intent, purpose: 'script_create' } },
+      { ...draft(), createIntent: { ...intent, key: 'short' } },
+      { ...draft(), editingId: 'scenario-1', createIntent: intent },
+    ]) {
+      expect(parseScenarioAuthoringDraft(JSON.parse(JSON.stringify(foreign)), 'project-a')?.createIntent).toBeUndefined()
+    }
   })
   it('does not announce success when storage is unavailable', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Quota exceeded') })

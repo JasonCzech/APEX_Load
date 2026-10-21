@@ -213,6 +213,8 @@ type Server struct {
 	clusterClients                    *clusterClientCache
 	clusterScalers                    clusterScalerResolver
 	clusterSecretWrapper              keywrap.KeyWrapper
+	receiptCredentialKeyMu            sync.Mutex
+	receiptCredentialKey              []byte
 	clusterProbes                     *clusterProbeThrottle
 	fleetProvisioningMu               sync.Mutex
 	fleetProvisioningActive           map[string]string
@@ -299,6 +301,7 @@ type Server struct {
 	brunoArtifactWrapper            keywrap.KeyWrapper
 	brunoSessionCleanupCancel       context.CancelFunc
 	grafanaSessionCleanupCancel     context.CancelFunc
+	receiptOutcomeCleanupCancel     context.CancelFunc
 	projectSecretStore              secretstore.Store
 	applicationSecretStore          secretstore.Store
 	protectedSourceSessions         *secretstore.ProtectedSourceSessionStore
@@ -1731,6 +1734,7 @@ func (s *Server) Start() (startErr error) {
 	s.startBrowserRecordingRetentionJanitor()
 	s.startBrunoImportSessionJanitor()
 	s.startGrafanaImportSessionJanitor()
+	s.startAuthoringReceiptOutcomeJanitor()
 	s.startProtectedSourceSecretSessionJanitor()
 	s.startCacheFanout()
 	s.startGeneratorDiscovery()
@@ -2373,6 +2377,10 @@ func (s *Server) shutdown(ctx context.Context) error {
 	if s.grafanaSessionCleanupCancel != nil {
 		s.grafanaSessionCleanupCancel()
 		s.grafanaSessionCleanupCancel = nil
+	}
+	if s.receiptOutcomeCleanupCancel != nil {
+		s.receiptOutcomeCleanupCancel()
+		s.receiptOutcomeCleanupCancel = nil
 	}
 	if s.sourceSecretCleanupCancel != nil {
 		s.sourceSecretCleanupCancel()

@@ -565,6 +565,59 @@ acknowledgement was lost returns 503 `scenario_save_outcome_unknown`: retry it
 with the same key, which adopts the scenario if it committed. Controllers
 without durable receipts refuse a key with 503 `idempotency_unavailable`.
 
+#### Receipt contract version 2
+
+The contract above is receipt version 1. A keyed create may send
+`X-APEX-Authoring-Receipt-Version: 2`. The create, its group and data-pool
+bindings and the completed receipt then commit in one transaction, together
+with the original outcome: the resource ID, project, content revision and
+creation time, and the disclosure-safe authoring projection the create
+committed. A version 2 retry with the same key returns that recorded
+`AuthoringReceiptOutcome` unchanged (`Idempotent-Replayed: true`, no `ETag`),
+never the resource as it is now: read the current authoring projection before
+editing it. A projection that would bring the outcome near its 4 MiB bound
+(more than 4 MiB less 64 KiB) is omitted, and `authoring_projection_omitted`
+names why. A deleted resource still returns 410, and the outcome is never
+refreshed from the current resource. The stored outcome is cleared once the
+resource's delete commits. Once a key can no longer replay, its receipt's
+request digest and outcome are both scrubbed; the receipt still answers the
+key as expired or deleted.
+
+A `201` to a keyed create carries `X-APEX-Authoring-Receipt-Version` with the
+contract that applied (error responses carry none). A key keeps the contract
+it was first claimed under: a version 2 retry of a version 1 key replays the
+resource as it is now (echo `1`), so a legacy receipt is never reissued as a
+new create, and so do a version 1 retry of a version 2 key and a version 2
+receipt that an older controller completed without an outcome during a
+rolling upgrade (a version 2 receipt such a controller left pending, with its
+resource created, is adopted the same way). Any value other than `1` or `2` is refused with 400
+`idempotency_receipt_version_unsupported`, and a controller whose store cannot
+complete receipts atomically refuses version 2 with 503
+`idempotency_receipt_version_unavailable` before claiming the key.
+
+Keys and requests are stored only as keyed digests, under a key kept in the
+settings table. Where a key wrapper is configured (`APEXLOAD_WRAPPING_*`),
+credential values never enter that digest: a scenario create's runtime
+credential values are fingerprinted under a second per-deployment key stored
+only wrapped, and the request digest covers that fingerprint with references
+in their place. Without a configured wrapper (a project secret store that does
+not use one), the digest covers the raw request as before, so a reader of the
+whole database could test guesses of those values offline; configure key
+wrapping to close that. Receipts claimed under the earlier digest still
+recognize their own retries.
+
+The dashboard gives every new script and scenario draft its own intent key and
+sends it under version 2 (falling back to version 1 only on that explicit
+refusal). The key is kept after a lost response, a timeout or a server failure,
+so the next save replays rather than duplicates; it is replaced only after a
+definitive refusal and a changed draft. A scenario draft's key is part of its
+browser checkpoint, so a reload keeps it. A new script draft is not
+checkpointed: its key survives a reload only for the same unchanged draft,
+through a local record of keys whose outcome is still unknown (no draft
+content is kept there). When the controller will not create with the key (a
+changed draft, an expired key or a deleted original), the editor keeps the
+draft and offers **Save as new**, the only action that creates another object.
+
 ### Scenario authoring revisions
 
 `GET /api/v1/scenarios/{id}?view=authoring` returns the scenario's authoring

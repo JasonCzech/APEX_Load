@@ -1,31 +1,58 @@
 import type { ApiServices } from '../hooks/ApiProvider'
 import { ApiError } from '../hooks/apiClient'
-import type { ScenarioAuthoringBaseline } from '../types/storedContent'
+import type { ScenarioAuthoringBaseline, StoredScenario } from '../types/storedContent'
 import type { ScenarioDraftSave } from '../types/scenarioDrafts'
 import { scenarioBaselineFromRead } from '../utils/scenarioAuthoringRevision'
 import type { ScenarioAuthoringDraft } from './scenarioAuthoringDraft'
+import { authoringPayloadDigest, nextAuthoringCreateIntent, sendUnderAuthoringCreateIntent, startingAuthoringCreateIntent, type AuthoringCreateIntent } from './authoringCreateIntent'
 
-type ScenarioPersistence = Pick<ApiServices, 'createScenario' | 'updateScenario' | 'getScenario' | 'createScenarioDraft' | 'updateScenarioDraft'>
+type ScenarioPersistence = Pick<ApiServices, 'createScenarioKeyed' | 'updateScenario' | 'getScenario' | 'createScenarioDraft' | 'updateScenarioDraft'>
+
+/** The builder's draft-owned create intent: read before a create, replaced after it. */
+export interface ScenarioCreateIntentOwner {
+  current: AuthoringCreateIntent | null
+  update: (next: AuthoringCreateIntent | null) => void
+  // fresh: an explicit new intent (Save as new) starts a new key.
+  fresh?: boolean
+}
 
 /** Persists one reviewed scenario snapshot; publication remains scope-owned. */
 export async function persistScenarioAuthoringDraft(
   input: {
     editingId: string | null
     projectId?: string
-    payload: Parameters<ScenarioPersistence['createScenario']>[0]
+    payload: Parameters<ScenarioPersistence['createScenarioKeyed']>[0]
     baseline: ScenarioAuthoringBaseline | null
+    createIntent: ScenarioCreateIntentOwner
   },
-  ports: { api: Pick<ScenarioPersistence, 'createScenario' | 'updateScenario'>; isCurrent: () => boolean },
+  ports: { api: Pick<ScenarioPersistence, 'createScenarioKeyed' | 'updateScenario' | 'getScenario'>; isCurrent: () => boolean },
 ) {
   if (input.editingId && !input.baseline) throw new Error('A current scenario baseline is required before saving this draft.')
-  const saved = input.editingId
-    ? await ports.api.updateScenario(input.editingId, input.payload, input.baseline!)
-    : await ports.api.createScenario(input.payload)
-  if (!ports.isCurrent()) return { kind: 'superseded' } as const
+  if (input.editingId) {
+    const saved = await ports.api.updateScenario(input.editingId, input.payload, input.baseline!)
+    if (!ports.isCurrent()) return { kind: 'superseded' } as const
+    return pairedScenarioSave(saved, input.projectId, false)
+  }
+  const projectId = input.projectId || ''
+  const digest = authoringPayloadDigest(input.payload)
+  const intent = nextAuthoringCreateIntent(startingAuthoringCreateIntent(input.createIntent.current, 'scenario_create', projectId, digest, Date.now(), input.createIntent.fresh), 'scenario_create', projectId, digest)
+  return sendUnderAuthoringCreateIntent(intent, input.createIntent, 'scenario',
+    key => ports.api.createScenarioKeyed(input.payload, key),
+    async outcome => {
+      // The original outcome names the scenario; edit from its current state.
+      const saved = outcome.kind === 'replayed-original' ? await ports.api.getScenario(outcome.outcome.resource_id) : outcome.resource
+      const value = !saved?.id ? { kind: 'incomplete' } as const
+        : !ports.isCurrent() ? { kind: 'superseded' } as const
+          : pairedScenarioSave(saved, input.projectId, outcome.kind !== 'created')
+      return { done: value.kind === 'saved', value }
+    })
+}
+
+function pairedScenarioSave(saved: StoredScenario, projectId: string | undefined, replayed: boolean) {
   if (!saved?.id) return { kind: 'incomplete' } as const
   let baseline: ScenarioAuthoringBaseline | null = null
-  try { baseline = scenarioBaselineFromRead(saved, input.projectId) } catch { /* Legacy create responses may lack a paired baseline. */ }
-  return { kind: 'saved', saved, baseline } as const
+  try { baseline = scenarioBaselineFromRead(saved, projectId) } catch { /* Legacy create responses may lack a paired baseline. */ }
+  return { kind: 'saved', saved, baseline, replayed } as const
 }
 
 /** A deleted project draft may be recreated; a conflicting revision never is. */

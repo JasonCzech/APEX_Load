@@ -62,6 +62,8 @@ const apiMock = {
   createProjectSecrets: vi.fn(),
   rebindScriptSecretReference: vi.fn(),
   createScript: vi.fn(),
+  // Keyed creates reach the createScript mock; intent tests assert the key.
+  createScriptKeyed: vi.fn(async (...args: [script: unknown, projectId?: string, folderId?: string | null, key?: string]) => ({ kind: 'created' as const, resource: await apiMock.createScript(args[0], args[1], args[2]) })),
   updateScript: vi.fn(),
   downloadScript: vi.fn(),
   createAuthoringSession: vi.fn(),
@@ -8130,6 +8132,36 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Executed: Run Logic')
     expect(container.textContent).toContain('Partial: Logging')
     expect(container.textContent).toContain('No imported runtime settings matched the selected block statuses: blocked.')
+  })
+
+  it('retries a create under its draft-owned key and creates another script only on an explicit Save as new (AUTH-1)', async () => {
+    window.localStorage.clear()
+    apiMock.createScript.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} initiallyDirty projectId="project-1" />)
+    })
+    const save = () => container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')!
+    await act(async () => { save().click() })
+    await flushReact()
+    const key = apiMock.createScriptKeyed.mock.calls[0][3]
+    expect(key).toMatch(/^script-create-/)
+    expect(container.textContent).not.toContain('Save as new')
+
+    // The retry presents the same key; the controller refuses it because the
+    // earlier attempt may have created a script from a different draft.
+    apiMock.createScriptKeyed.mockRejectedValueOnce(new ApiError('reused', 409, { error: 'reused', code: 'idempotency_key_reused' }))
+    await act(async () => { save().click() })
+    await flushReact()
+    expect(apiMock.createScriptKeyed.mock.calls[1][3]).toBe(key)
+    expect(container.textContent).toContain('may already have created the script')
+    const saveAsNew = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save as new')!
+    expect(saveAsNew).toBeTruthy()
+
+    apiMock.createScript.mockResolvedValueOnce(savedAuthoringFixture(initialScript, 'created-as-new'))
+    await act(async () => { saveAsNew.click() })
+    await flushReact()
+    expect(apiMock.createScriptKeyed).toHaveBeenCalledTimes(3)
+    expect(apiMock.createScriptKeyed.mock.calls[2][3]).not.toBe(key)
   })
 
   it('deduplicates rapid saves before React commits the pending state', async () => {

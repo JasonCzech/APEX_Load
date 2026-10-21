@@ -442,9 +442,22 @@ func cloneScenarioAuthoringInput(scenario *Scenario, scripts []ScenarioScript, p
 	return cloned.Scenario, cloned.Scripts, cloned.Pools, nil
 }
 func (s *SQLiteStore) CreateScenarioAuthoringIfAbsent(input *Scenario, groups []ScenarioScript, pools []ScenarioDataPoolBinding) (*ScenarioAuthoringMutationResult, error) {
-	return s.createScenarioAuthoringIfAbsent(input, groups, pools, nil)
+	return s.createScenarioAuthoringIfAbsent(input, groups, pools, nil, nil, nil)
 }
-func (s *SQLiteStore) createScenarioAuthoringIfAbsent(input *Scenario, groups []ScenarioScript, pools []ScenarioDataPoolBinding, admission *ScenarioSourceAdmission) (*ScenarioAuthoringMutationResult, error) {
+
+// CreateScenarioAuthoringCompletingReceipt creates a scenario with its group
+// and data-pool bindings and completes the caller's original-outcome receipt
+// in the same transaction, with the outcome rendered from the snapshot that
+// transaction read. An existing ID is not applied and leaves the receipt
+// pending.
+func (s *SQLiteStore) CreateScenarioAuthoringCompletingReceipt(input *Scenario, groups []ScenarioScript, pools []ScenarioDataPoolBinding, completion AuthoringReceiptCompletion, outcome func(*ScenarioAuthoringSnapshot) (string, error)) (*ScenarioAuthoringMutationResult, error) {
+	if outcome == nil {
+		return nil, errors.New("authoring receipt outcome renderer is required")
+	}
+	return s.createScenarioAuthoringIfAbsent(input, groups, pools, nil, &completion, outcome)
+}
+
+func (s *SQLiteStore) createScenarioAuthoringIfAbsent(input *Scenario, groups []ScenarioScript, pools []ScenarioDataPoolBinding, admission *ScenarioSourceAdmission, completion *AuthoringReceiptCompletion, outcome func(*ScenarioAuthoringSnapshot) (string, error)) (*ScenarioAuthoringMutationResult, error) {
 	scenario, groups, pools, err := cloneScenarioAuthoringInput(input, groups, pools)
 	if err != nil {
 		return nil, err
@@ -496,6 +509,15 @@ func (s *SQLiteStore) createScenarioAuthoringIfAbsent(input *Scenario, groups []
 	}
 	if snapshot.ProjectID != project {
 		return nil, ErrScenarioAuthoringNotFound
+	}
+	if completion != nil && applied {
+		rendered, renderErr := outcome(snapshot)
+		if renderErr != nil {
+			return nil, renderErr
+		}
+		if err := completeAuthoringReceiptTx(tx, completion, snapshot.ContentRevision, rendered); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrScenarioAuthoringOutcomeUnknown, err)

@@ -1,14 +1,19 @@
 package api
 
 import (
+	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/keywrap"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -16,12 +21,115 @@ const (
 	authoringReceiptDigestKeySetting = "security.authoring_receipt_digest_hmac_key.v1"
 	authoringReceiptKeyDomain        = "apexload:authoring-receipt:key:v1"
 	authoringReceiptRequestDomain    = "apexload:authoring-receipt:request:v1"
+	// Credential values a create carries are fingerprinted under their own
+	// key, stored only wrapped by the deployment's key wrapper (the one the
+	// project secret store needs to accept those credentials at all), so a
+	// database reader cannot test guesses of them offline.
+	authoringReceiptCredentialKeySetting = "security.authoring_receipt_credential_hmac_key.v1"
+	authoringReceiptCredentialKeyAAD     = "apexload:authoring-receipt:credential-key:v1"
+	authoringReceiptCredentialDomain     = "apexload:authoring-receipt:credentials:v1"
+	authoringReceiptCredentialKeyBytes   = 32
 	// authoringReceiptRetention is how long a key is guaranteed to replay.
 	authoringReceiptRetention = 24 * time.Hour
 	// authoringReceiptLease bounds how long a crashed request holds its key
 	// before a retry may resume the create.
 	authoringReceiptLease = 2 * time.Minute
+	// authoringReceiptVersionHeader negotiates the replay contract of a keyed
+	// create. Absent or "1" is the legacy contract (a replay returns the
+	// resource as it is now); "2" completes the receipt in the create's own
+	// transaction and a replay returns the original outcome. Responses to a
+	// keyed create echo the contract that applied.
+	authoringReceiptVersionHeader = "X-APEX-Authoring-Receipt-Version"
+	// authoringReceiptOutcomeHeadroom keeps the outcome envelope's own fields
+	// inside the stored-outcome bound when a projection is near it.
+	authoringReceiptOutcomeHeadroom = 64 << 10
 )
+
+// errAuthoringReceiptCreateUnsupported: the store cannot create a resource and
+// complete an original-outcome receipt in one transaction.
+var errAuthoringReceiptCreateUnsupported = errors.New("original-outcome authoring receipts are unavailable on this store")
+
+// errAuthoringReceiptCredentialKeyUnavailable: no key wrapper is configured
+// to protect credential fingerprints.
+var errAuthoringReceiptCredentialKeyUnavailable = errors.New("credential fingerprints require a configured key wrapper")
+
+// authoringReceiptFingerprint is the request identity an Idempotency-Key
+// binds. request is the caller's exact input before server-side
+// normalization, with credential values replaced by references; credentials
+// holds those values. legacy, when set, is the input as the digest covered
+// it before credential values were fingerprinted separately.
+type authoringReceiptFingerprint struct {
+	request     any
+	credentials map[string]string
+	legacy      any
+}
+
+// legacyOrRequest is the input the request digest covered before credential
+// values were fingerprinted separately.
+func (fingerprint authoringReceiptFingerprint) legacyOrRequest() any {
+	if fingerprint.legacy != nil {
+		return fingerprint.legacy
+	}
+	return fingerprint.request
+}
+
+// AuthoringReceiptOutcome is the original outcome of a create made under the
+// version 2 receipt contract, as committed in the create's own transaction. A
+// replay returns it unchanged; it is not the resource's current state, which
+// a client reads separately before editing.
+type AuthoringReceiptOutcome struct {
+	ReceiptVersion  int       `json:"receipt_version"`
+	ResourceType    string    `json:"resource_type"`
+	ResourceID      string    `json:"resource_id"`
+	ProjectID       string    `json:"project_id"`
+	ContentRevision string    `json:"content_revision"`
+	CreatedAt       time.Time `json:"created_at"`
+	// AuthoringProjection is the disclosure-safe authoring projection the
+	// create committed, omitted (with ProjectionOmitted naming why) when it
+	// exceeds the stored-outcome bound.
+	AuthoringProjection json.RawMessage `json:"authoring_projection,omitempty"`
+	ProjectionOmitted   string          `json:"authoring_projection_omitted,omitempty"`
+}
+
+// renderAuthoringReceiptOutcome renders one original outcome. The projection
+// is the same disclosure-safe authoring view a reader is served, so the
+// receipt never stores credentials the projection masks.
+func renderAuthoringReceiptOutcome(resourceType, id, projectID, revision string, createdAt time.Time, projection any) (string, error) {
+	outcome := AuthoringReceiptOutcome{
+		ReceiptVersion: storage.AuthoringReceiptOutcomeOriginal, ResourceType: resourceType, ResourceID: id,
+		ProjectID: normalizeProjectID(projectID), ContentRevision: revision, CreatedAt: createdAt.UTC(),
+	}
+	body, err := json.Marshal(projection)
+	if err != nil {
+		return "", err
+	}
+	if len(body) > storage.MaxAuthoringReceiptOutcomeBytes-authoringReceiptOutcomeHeadroom {
+		outcome.ProjectionOmitted = "exceeds_receipt_outcome_bound"
+	} else {
+		outcome.AuthoringProjection = body
+	}
+	encoded, err := json.Marshal(outcome)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+func renderScriptReceiptOutcome(snapshot *storage.ScriptAuthoringSnapshot) (string, error) {
+	stored, err := storedScriptFromAuthoringSnapshot(snapshot)
+	if err != nil {
+		return "", err
+	}
+	return renderAuthoringReceiptOutcome("script", stored.ID, stored.ProjectID, stored.ContentRevision, stored.CreatedAt, stored.AuthoringProjection)
+}
+
+func renderScenarioReceiptOutcome(snapshot *storage.ScenarioAuthoringSnapshot) (string, error) {
+	projection, err := buildScenarioAuthoringProjection(snapshot)
+	if err != nil {
+		return "", err
+	}
+	return renderAuthoringReceiptOutcome("scenario", snapshot.Scenario.ID, snapshot.ProjectID, snapshot.ContentRevision, snapshot.Scenario.CreatedAt, projection)
+}
 
 // authoringCreateOutcome says what the handler should do after claiming.
 type authoringCreateOutcome int
@@ -55,12 +163,61 @@ type authoringCreateAttempt struct {
 	// durable read proves the resource absent.
 	attempted bool
 	completed bool
+	// completedInTransaction: the create completed an original-outcome
+	// receipt in its own transaction, so there is nothing left to complete.
+	completedInTransaction bool
 	// outcomeUnknown keeps the receipt whatever a read shows: a commit whose
 	// acknowledgement was lost may still become visible.
 	outcomeUnknown bool
 	// absent reads the store for the receipt's resource. It reports true only
 	// when the resource definitely does not exist.
 	absent func(id string) bool
+	// requestedVersion is the receipt contract the request asked for; the
+	// receipt's own OutcomeVersion (fixed by its first claim) decides replay.
+	requestedVersion int
+}
+
+// originalOutcome reports whether the receipt completes inside the create's
+// own transaction and replays its stored original outcome.
+func (attempt *authoringCreateAttempt) originalOutcome() bool {
+	return attempt != nil && attempt.receipt != nil && attempt.receipt.OutcomeVersion == storage.AuthoringReceiptOutcomeOriginal
+}
+
+// answersOriginal reports whether this request runs under the version 2
+// contract: the receipt was claimed under it and the request asks for it.
+func (attempt *authoringCreateAttempt) answersOriginal() bool {
+	return attempt.originalOutcome() && attempt.requestedVersion == storage.AuthoringReceiptOutcomeOriginal
+}
+
+// replaysOriginal reports whether a replay returns the stored original
+// outcome. A legacy client retrying a version 2 key keeps its legacy replay,
+// and so does a version 2 receipt completed without an outcome (by a
+// controller that predates the contract, during a rolling upgrade).
+func (attempt *authoringCreateAttempt) replaysOriginal() bool {
+	return attempt.answersOriginal() && attempt.receipt.State == storage.AuthoringReceiptComplete && attempt.receipt.OriginalOutcome != ""
+}
+
+// completion binds the create's transaction to this request's reservation.
+func (attempt *authoringCreateAttempt) completion() storage.AuthoringReceiptCompletion {
+	return storage.AuthoringReceiptCompletion{ReceiptID: attempt.receipt.ID, OwnerToken: attempt.ownerToken, Now: time.Now().UTC()}
+}
+
+// markAuthoringReceiptVersion echoes the receipt contract that applied to the
+// keyed create this request performed: 2 when its transaction recorded the
+// original outcome for a request that asked for it.
+func markAuthoringReceiptVersion(w http.ResponseWriter, attempt *authoringCreateAttempt) {
+	if attempt == nil {
+		return
+	}
+	setAuthoringReceiptVersion(w, attempt.answersOriginal())
+}
+
+func setAuthoringReceiptVersion(w http.ResponseWriter, original bool) {
+	if original {
+		w.Header().Set(authoringReceiptVersionHeader, "2")
+		return
+	}
+	w.Header().Set(authoringReceiptVersionHeader, "1")
 }
 
 func (attempt *authoringCreateAttempt) resourceID() string {
@@ -85,6 +242,9 @@ func (attempt *authoringCreateAttempt) complete(revision string) {
 		return
 	}
 	attempt.completed = true
+	if attempt.completedInTransaction {
+		return
+	}
 	done, err := attempt.store.CompleteAuthoringMutationReceipt(attempt.receipt.ID, attempt.ownerToken, revision, time.Now().UTC())
 	if err != nil || !done {
 		slog.Warn("authoring create receipt not completed; a retry will adopt the created resource", "purpose", attempt.receipt.Purpose, "resource_id", attempt.receipt.ResourceID, "error", err)
@@ -129,7 +289,11 @@ func (attempt *authoringCreateAttempt) release() {
 }
 
 // adoptsExisting reports whether an object already stored under the
-// receipt's ID must be this request's own earlier, unconfirmed create.
+// receipt's ID must be this request's own earlier, unconfirmed create. The ID
+// is derived from the keyed digest, so nothing else can be there. A pending
+// original-outcome receipt names such an object only when a controller that
+// predates the contract created it during a rolling upgrade; adopting it
+// completes the receipt without an outcome, and replays stay legacy.
 func (attempt *authoringCreateAttempt) adoptsExisting() bool {
 	return attempt != nil && attempt.derivedID && attempt.resumed
 }
@@ -143,13 +307,19 @@ func authoringReceiptActor(r *http.Request, s *Server) string {
 	return actorType + ":" + actorSubject
 }
 
-// claimAuthoringCreate claims the request's Idempotency-Key, if any. request
-// must be the caller's exact input before server-side normalization, with any
-// caller-chosen resource ID included; requestedID is that ID or "".
-func (s *Server) claimAuthoringCreate(w http.ResponseWriter, r *http.Request, purpose, resourceType, projectID, requestedID string, request any) (*authoringCreateAttempt, authoringCreateOutcome) {
+// claimAuthoringCreate claims the request's Idempotency-Key, if any. The
+// fingerprint must describe the caller's exact input before server-side
+// normalization, with any caller-chosen resource ID included; requestedID is
+// that ID or "".
+func (s *Server) claimAuthoringCreate(w http.ResponseWriter, r *http.Request, purpose, resourceType, projectID, requestedID string, request authoringReceiptFingerprint) (*authoringCreateAttempt, authoringCreateOutcome) {
 	raw := r.Header.Get("Idempotency-Key")
 	if strings.TrimSpace(raw) == "" && len(r.Header.Values("Idempotency-Key")) == 0 {
 		return nil, authoringCreateProceed
+	}
+	requestedVersion, versionOK := authoringReceiptVersionRequested(r)
+	if !versionOK {
+		writeAuthoringIdempotencyError(w, http.StatusBadRequest, "idempotency_receipt_version_unsupported", "X-APEX-Authoring-Receipt-Version must be 1 or 2")
+		return nil, authoringCreateHandled
 	}
 	if len(r.Header.Values("Idempotency-Key")) != 1 {
 		writeAuthoringIdempotencyError(w, http.StatusBadRequest, "idempotency_key_invalid", "exactly one Idempotency-Key header is required")
@@ -166,13 +336,17 @@ func (s *Server) claimAuthoringCreate(w http.ResponseWriter, r *http.Request, pu
 		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_unavailable", "durable idempotent creates are unavailable on this controller; retry without Idempotency-Key only if a duplicate is acceptable")
 		return nil, authoringCreateHandled
 	}
+	if _, atomic := s.store.(storage.AuthoringReceiptCreateStore); requestedVersion == storage.AuthoringReceiptOutcomeOriginal && !atomic {
+		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_receipt_version_unavailable", "original-outcome receipts are unavailable on this controller; retry with receipt version 1 for a replay of the current resource")
+		return nil, authoringCreateHandled
+	}
 	identity, err := s.authoringReceiptIdentity(r, purpose, projectID, key, requestedID, request)
 	if err != nil {
 		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_unavailable", "idempotency receipts are unavailable")
 		return nil, authoringCreateHandled
 	}
 	owner := uuid.NewString()
-	identity.ResourceType, identity.OwnerToken = resourceType, owner
+	identity.ResourceType, identity.OwnerToken, identity.OutcomeVersion = resourceType, owner, requestedVersion
 	claim, err := store.ClaimAuthoringMutationReceipt(identity.AuthoringMutationReceiptClaimInput, time.Now().UTC(), authoringReceiptLease)
 	switch {
 	case errors.Is(err, storage.ErrAuthoringReceiptConflict):
@@ -192,12 +366,33 @@ func (s *Server) claimAuthoringCreate(w http.ResponseWriter, r *http.Request, pu
 		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_unavailable", "idempotency receipts are unavailable")
 		return nil, authoringCreateHandled
 	}
-	attempt := &authoringCreateAttempt{store: store, receipt: claim.Receipt, ownerToken: owner, derivedID: identity.derivedID, resumed: !claim.Created && !claim.Replay}
+	attempt := &authoringCreateAttempt{store: store, receipt: claim.Receipt, ownerToken: owner, derivedID: identity.derivedID, resumed: !claim.Created && !claim.Replay, requestedVersion: requestedVersion}
 	if claim.Replay {
 		attempt.completed = true
 		return attempt, authoringCreateReplay
 	}
 	return attempt, authoringCreateProceed
+}
+
+// authoringReceiptVersionRequested reads the requested receipt contract:
+// legacy when absent. Anything but exactly one "1" or "2" is refused, so an
+// unknown later contract is never served as an older one.
+func authoringReceiptVersionRequested(r *http.Request) (int, bool) {
+	values := r.Header.Values(authoringReceiptVersionHeader)
+	if len(values) == 0 {
+		return storage.AuthoringReceiptOutcomeLegacy, true
+	}
+	if len(values) != 1 {
+		return 0, false
+	}
+	switch strings.TrimSpace(values[0]) {
+	case "1":
+		return storage.AuthoringReceiptOutcomeLegacy, true
+	case "2":
+		return storage.AuthoringReceiptOutcomeOriginal, true
+	default:
+		return 0, false
+	}
 }
 
 type authoringReceiptIdentity struct {
@@ -208,10 +403,14 @@ type authoringReceiptIdentity struct {
 // authoringReceiptIdentity computes the keyed digests and the fixed resource
 // ID for one key. Digests are HMACs under a per-deployment key kept in the
 // settings table, so a receipt row alone cannot be used to test guesses of a
-// key or request body. The key is not wrapped: a reader of the whole database
-// holds both, and could test guesses offline (including runtime credentials
-// entered with a scenario create, which the digest covers).
-func (s *Server) authoringReceiptIdentity(r *http.Request, purpose, projectID, key, requestedID string, request any) (authoringReceiptIdentity, error) {
+// key or request body. That key is not wrapped, so where a key wrapper is
+// configured credential values never enter its digest: they are fingerprinted
+// under a second key stored only wrapped (authoringReceiptCredentialKey), and
+// the request digest covers that fingerprint and the request with references
+// in their place. Without a wrapper (a project secret store that does not use
+// one) the digest covers the raw request as before this scheme, and a reader
+// of the whole database could test guesses of those values offline.
+func (s *Server) authoringReceiptIdentity(r *http.Request, purpose, projectID, key, requestedID string, request authoringReceiptFingerprint) (authoringReceiptIdentity, error) {
 	digestKey, err := s.persistentDigestKey(authoringReceiptDigestKeySetting, "authoring receipt")
 	if err != nil {
 		return authoringReceiptIdentity{}, err
@@ -222,19 +421,133 @@ func (s *Server) authoringReceiptIdentity(r *http.Request, purpose, projectID, k
 	if err != nil {
 		return authoringReceiptIdentity{}, err
 	}
-	requestDigest, err := directImportHMAC(digestKey, authoringReceiptRequestDomain, request)
+	var requestDigest, legacyDigest string
+	if len(request.credentials) == 0 {
+		requestDigest, err = directImportHMAC(digestKey, authoringReceiptRequestDomain, request.request)
+	} else if credentialKey, keyErr := s.authoringReceiptCredentialKey(r.Context()); errors.Is(keyErr, errAuthoringReceiptCredentialKeyUnavailable) {
+		requestDigest, err = directImportHMAC(digestKey, authoringReceiptRequestDomain, request.legacyOrRequest())
+	} else if keyErr != nil {
+		return authoringReceiptIdentity{}, keyErr
+	} else {
+		credentials, digestErr := directImportHMAC(credentialKey, authoringReceiptCredentialDomain, request.credentials)
+		if digestErr != nil {
+			return authoringReceiptIdentity{}, digestErr
+		}
+		requestDigest, err = directImportHMAC(digestKey, authoringReceiptRequestDomain, struct {
+			Request     any    `json:"request"`
+			Credentials string `json:"credentials"`
+		}{request.request, credentials})
+		if err == nil {
+			// Receipts claimed before credential values were fingerprinted
+			// separately (or while no wrapper was configured) still
+			// recognize their own retries.
+			legacyDigest, err = directImportHMAC(digestKey, authoringReceiptRequestDomain, request.legacyOrRequest())
+		}
+	}
 	if err != nil {
 		return authoringReceiptIdentity{}, err
 	}
 	identity := authoringReceiptIdentity{AuthoringMutationReceiptClaimInput: storage.AuthoringMutationReceiptClaimInput{
 		ProjectID: projectID, Actor: actor, Purpose: purpose, KeyHash: keyHash, RequestDigest: requestDigest,
-		ResourceID: strings.TrimSpace(requestedID), Retention: authoringReceiptRetention,
+		LegacyRequestDigest: legacyDigest, ResourceID: strings.TrimSpace(requestedID), Retention: authoringReceiptRetention,
 	}}
 	if identity.ResourceID == "" {
 		identity.derivedID = true
 		identity.ResourceID = uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload:authoring-create:"+keyHash)).String()
 	}
 	return identity, nil
+}
+
+// authoringReceiptCredentialKey returns the key credential values are
+// fingerprinted under. It is generated once per deployment and kept in the
+// settings table only wrapped by the configured key wrapper; without one,
+// credential-bearing creates cannot be keyed.
+func (s *Server) authoringReceiptCredentialKey(ctx context.Context) ([]byte, error) {
+	s.receiptCredentialKeyMu.Lock()
+	defer s.receiptCredentialKeyMu.Unlock()
+	if len(s.receiptCredentialKey) == authoringReceiptCredentialKeyBytes {
+		return s.receiptCredentialKey, nil
+	}
+	wrapper := s.clusterSecretWrapper
+	cas, supported := s.store.(settingsCompareAndSwapper)
+	if wrapper == nil || s.store == nil || !supported {
+		return nil, errAuthoringReceiptCredentialKeyUnavailable
+	}
+	aad := []byte(authoringReceiptCredentialKeyAAD)
+	raw, err := s.store.GetSetting(authoringReceiptCredentialKeySetting)
+	if err != nil {
+		return nil, fmt.Errorf("load authoring receipt credential key: %w", err)
+	}
+	if strings.TrimSpace(raw) == "" {
+		generated := make([]byte, authoringReceiptCredentialKeyBytes)
+		if _, err := rand.Read(generated); err != nil {
+			return nil, fmt.Errorf("generate authoring receipt credential key: %w", err)
+		}
+		wrapped, err := wrapper.WrapKey(ctx, generated, aad)
+		clear(generated)
+		if err != nil {
+			return nil, fmt.Errorf("wrap authoring receipt credential key: %w", err)
+		}
+		encoded, err := json.Marshal(wrapped)
+		if err != nil {
+			return nil, err
+		}
+		// Whichever replica wins the swap defines the key; every replica,
+		// this one included, then unwraps the stored value.
+		if _, err := cas.CompareAndSwapSetting(authoringReceiptCredentialKeySetting, "", string(encoded)); err != nil {
+			return nil, fmt.Errorf("initialize authoring receipt credential key: %w", err)
+		}
+		if raw, err = s.store.GetSetting(authoringReceiptCredentialKeySetting); err != nil {
+			return nil, fmt.Errorf("reload authoring receipt credential key: %w", err)
+		}
+	}
+	var wrapped keywrap.WrappedKey
+	if err := json.Unmarshal([]byte(raw), &wrapped); err != nil {
+		return nil, errors.New("authoring receipt credential key is invalid")
+	}
+	key, err := wrapper.UnwrapKey(ctx, wrapped, aad)
+	if err != nil {
+		return nil, fmt.Errorf("unwrap authoring receipt credential key: %w", err)
+	}
+	if len(key) != authoringReceiptCredentialKeyBytes {
+		return nil, errors.New("authoring receipt credential key is invalid")
+	}
+	s.receiptCredentialKey = key
+	return key, nil
+}
+
+// scenarioCreateReceiptFingerprint is a scenario create's request identity.
+// Runtime credential values are fingerprinted under the wrapped credential
+// key, never under the request digest's key; a request without any keeps the
+// digest it always had.
+func scenarioCreateReceiptFingerprint(req CreateScenarioRequest) (authoringReceiptFingerprint, error) {
+	const scope = "authoring-receipt"
+	protected := req
+	credentials := map[string]string{}
+	collect := func(settings *RuntimeSettingsOverride, group int) (*RuntimeSettingsOverride, error) {
+		projected, values, _, err := protectLegacyRuntimeOverrideSecrets(scope, group, nil, settings)
+		if err != nil {
+			return nil, err
+		}
+		for name, value := range values {
+			credentials[name] = value
+		}
+		return projected, nil
+	}
+	var err error
+	if protected.RuntimeSettings, err = collect(req.RuntimeSettings, -1); err != nil {
+		return authoringReceiptFingerprint{}, err
+	}
+	protected.Groups = append([]CreateGroupEntry(nil), req.Groups...)
+	for index := range protected.Groups {
+		if protected.Groups[index].RuntimeSettings, err = collect(req.Groups[index].RuntimeSettings, index); err != nil {
+			return authoringReceiptFingerprint{}, err
+		}
+	}
+	if len(credentials) == 0 {
+		return authoringReceiptFingerprint{request: req}, nil
+	}
+	return authoringReceiptFingerprint{request: protected, credentials: credentials, legacy: req}, nil
 }
 
 // AuthoringIdempotencyError carries a fixed code for clients deciding whether
@@ -253,6 +566,9 @@ func writeAuthoringIdempotencyError(w http.ResponseWriter, status int, code, mes
 // the revision the original create produced.
 func markAuthoringReplay(w http.ResponseWriter, attempt *authoringCreateAttempt) {
 	w.Header().Set("Idempotent-Replayed", "true")
+	if attempt != nil {
+		setAuthoringReceiptVersion(w, attempt.replaysOriginal())
+	}
 	if attempt != nil && attempt.receipt != nil && attempt.receipt.ResourceRevision != "" {
 		w.Header().Set("X-APEX-Original-Content-Revision", attempt.receipt.ResourceRevision)
 	}
@@ -286,9 +602,62 @@ func (s *Server) tombstoneAuthoringReceipts(resourceType, resourceID string) (fu
 	}, nil
 }
 
+// writeAuthoringReceiptCreateError answers the two failures of a create that
+// completes its receipt in its own transaction. Either way nothing committed.
+func writeAuthoringReceiptCreateError(w http.ResponseWriter, err error) bool {
+	switch {
+	case errors.Is(err, storage.ErrAuthoringReceiptLost):
+		// Another attempt resumed the reservation after this one's lease
+		// expired; its own outcome decides what a retry sees.
+		w.Header().Set("Retry-After", "2")
+		writeAuthoringIdempotencyError(w, http.StatusConflict, "idempotency_request_in_progress", "a request with this Idempotency-Key took over the create; retry to see its outcome")
+		return true
+	case errors.Is(err, errAuthoringReceiptCreateUnsupported):
+		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_receipt_version_unavailable", "original-outcome receipts are unavailable on this controller; retry with receipt version 1 for a replay of the current resource")
+		return true
+	}
+	return false
+}
+
+// replayOriginalAuthoringOutcome answers a retried version 2 create with the
+// outcome its own transaction recorded. The resource must still exist and
+// remain in the caller's project: a deleted original is never returned, and
+// the outcome is never refreshed from the current resource.
+func (s *Server) replayOriginalAuthoringOutcome(w http.ResponseWriter, r *http.Request, attempt *authoringCreateAttempt, exists func(string) (bool, error)) {
+	var outcome AuthoringReceiptOutcome
+	if err := json.Unmarshal([]byte(attempt.receipt.OriginalOutcome), &outcome); err != nil || outcome.ReceiptVersion != storage.AuthoringReceiptOutcomeOriginal ||
+		outcome.ResourceID != attempt.resourceID() || outcome.ResourceType != attempt.receipt.ResourceType {
+		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_unavailable", "the original outcome could not be read; retry later")
+		return
+	}
+	if expected, scoped := authorizedProjectFromRequest(r); (scoped && normalizeProjectID(outcome.ProjectID) != expected) ||
+		normalizeProjectID(outcome.ProjectID) != normalizeProjectID(attempt.receipt.ProjectID) {
+		writeError(w, http.StatusNotFound, outcome.ResourceType+" not found")
+		return
+	}
+	found, err := exists(outcome.ResourceID)
+	if err != nil {
+		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_unavailable", "the original "+outcome.ResourceType+" could not be read; retry later")
+		return
+	}
+	if !found {
+		writeAuthoringIdempotencyError(w, http.StatusGone, "idempotency_resource_deleted", "the resource created with this Idempotency-Key was deleted and will not be recreated")
+		return
+	}
+	markAuthoringReplay(w, attempt)
+	writeJSON(w, http.StatusCreated, outcome)
+}
+
 // replayScriptCreate answers a retried or resumed script create with the
 // script the original request created.
 func (s *Server) replayScriptCreate(w http.ResponseWriter, r *http.Request, attempt *authoringCreateAttempt) {
+	if attempt.replaysOriginal() {
+		s.replayOriginalAuthoringOutcome(w, r, attempt, func(id string) (bool, error) {
+			stored, found, err := s.runner.GetScriptAuthoringDurable(id)
+			return found && stored != nil, err
+		})
+		return
+	}
 	stored, found, err := s.runner.GetScriptAuthoringDurable(attempt.resourceID())
 	if err != nil {
 		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_unavailable", "the original script could not be read; retry later")
@@ -312,6 +681,10 @@ func (s *Server) replayScriptCreate(w http.ResponseWriter, r *http.Request, atte
 // scenario the original request created. Existence is decided by a durable
 // read, so a replica whose cache has not caught up answers 503, never 410.
 func (s *Server) replayScenarioCreate(w http.ResponseWriter, r *http.Request, attempt *authoringCreateAttempt) {
+	if attempt.replaysOriginal() {
+		s.replayOriginalAuthoringOutcome(w, r, attempt, s.durableScenarioExists)
+		return
+	}
 	exists, err := s.durableScenarioExists(attempt.resourceID())
 	if err != nil {
 		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_unavailable", "the original scenario could not be read; retry later")

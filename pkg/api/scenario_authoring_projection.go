@@ -367,6 +367,20 @@ func attachScenarioAuthoringValidator(w http.ResponseWriter, response, scenario 
 // errScenarioConcurrentChange. Stores without durable revisions keep the
 // ordinary create and return no snapshot.
 func (tr *TestRunner) CreateScenarioAuthoringDurable(id string, req CreateScenarioRequest) (*StoredScenario, *storage.ScenarioAuthoringSnapshot, error) {
+	return tr.createScenarioAuthoringDurable(id, req, nil)
+}
+
+// CreateScenarioAuthoringDurableCompletingReceipt creates the scenario under
+// the receipt's fixed ID and completes the caller's original-outcome receipt
+// in the create transaction.
+func (tr *TestRunner) CreateScenarioAuthoringDurableCompletingReceipt(id string, req CreateScenarioRequest, receipt storage.AuthoringReceiptCompletion) (*StoredScenario, *storage.ScenarioAuthoringSnapshot, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, nil, errAuthoringReceiptCreateUnsupported
+	}
+	return tr.createScenarioAuthoringDurable(id, req, &receipt)
+}
+
+func (tr *TestRunner) createScenarioAuthoringDurable(id string, req CreateScenarioRequest, receipt *storage.AuthoringReceiptCompletion) (*StoredScenario, *storage.ScenarioAuthoringSnapshot, error) {
 	tr.scenarioMutationMu.Lock()
 	defer tr.scenarioMutationMu.Unlock()
 	tr.mu.Lock()
@@ -377,6 +391,10 @@ func (tr *TestRunner) CreateScenarioAuthoringDurable(id string, req CreateScenar
 		id = uuid.New().String()
 	}
 	store, supported := tr.scenarioStore.(storage.ScenarioAuthoringStore)
+	receiptStore, receiptSupported := tr.scenarioStore.(storage.AuthoringReceiptCreateStore)
+	if receipt != nil && (!supported || !receiptSupported) {
+		return nil, nil, errAuthoringReceiptCreateUnsupported
+	}
 	if !supported {
 		if !createOnly {
 			stored, err := tr.storeScenarioLocked(id, req)
@@ -388,7 +406,13 @@ func (tr *TestRunner) CreateScenarioAuthoringDurable(id string, req CreateScenar
 	var committed *storage.ScenarioAuthoringSnapshot
 	// The writer runs with tr.mu released, like every scenario persistence.
 	stored, err := tr.storeScenarioLockedWithWriter(id, req, func(scenario *storage.Scenario, scripts []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding) error {
-		snapshot, writeErr := createScenarioAuthoringAggregate(store, scenario, scripts, pools)
+		var snapshot *storage.ScenarioAuthoringSnapshot
+		var writeErr error
+		if receipt != nil {
+			snapshot, writeErr = createScenarioAuthoringAggregateCompletingReceipt(receiptStore, scenario, scripts, pools, *receipt)
+		} else {
+			snapshot, writeErr = createScenarioAuthoringAggregate(store, scenario, scripts, pools)
+		}
 		if writeErr != nil {
 			return writeErr
 		}
@@ -405,6 +429,18 @@ func (tr *TestRunner) CreateScenarioAuthoringDurable(id string, req CreateScenar
 // snapshot its transaction read. An existing ID is a concurrent change.
 func createScenarioAuthoringAggregate(store storage.ScenarioAuthoringStore, scenario *storage.Scenario, scripts []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding) (*storage.ScenarioAuthoringSnapshot, error) {
 	result, err := store.CreateScenarioAuthoringIfAbsent(scenario, scripts, pools)
+	return scenarioCreateAggregateResult(result, err)
+}
+
+// createScenarioAuthoringAggregateCompletingReceipt is
+// createScenarioAuthoringAggregate whose transaction also completes the
+// caller's original-outcome receipt.
+func createScenarioAuthoringAggregateCompletingReceipt(store storage.AuthoringReceiptCreateStore, scenario *storage.Scenario, scripts []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding, receipt storage.AuthoringReceiptCompletion) (*storage.ScenarioAuthoringSnapshot, error) {
+	result, err := store.CreateScenarioAuthoringCompletingReceipt(scenario, scripts, pools, receipt, renderScenarioReceiptOutcome)
+	return scenarioCreateAggregateResult(result, err)
+}
+
+func scenarioCreateAggregateResult(result *storage.ScenarioAuthoringMutationResult, err error) (*storage.ScenarioAuthoringSnapshot, error) {
 	if err != nil {
 		return nil, err
 	}

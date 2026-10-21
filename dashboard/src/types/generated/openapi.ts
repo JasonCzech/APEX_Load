@@ -24,6 +24,16 @@ export interface components {
       "version": string;
       [key: string]: unknown;
     };
+    "AuthoringReceiptOutcome": {
+      "authoring_projection"?: Record<string, unknown>;
+      "authoring_projection_omitted"?: "exceeds_receipt_outcome_bound";
+      "content_revision": string;
+      "created_at": string;
+      "project_id": string;
+      "receipt_version": number;
+      "resource_id": string;
+      "resource_type": "script" | "scenario";
+    };
     "AuthoringSessionCreateRequest": {
       "draft"?: Record<string, unknown>;
       "folder_id"?: (string) | null;
@@ -41047,6 +41057,7 @@ export interface operations {
     parameters: {
       "header"?: {
         "Idempotency-Key"?: string;
+        "X-APEX-Authoring-Receipt-Version"?: "1" | "2";
       };
     };
     requestBody: {
@@ -41842,10 +41853,11 @@ export interface operations {
         headers: {
           "ETag"?: string;
           "Idempotent-Replayed"?: "true";
+          "X-APEX-Authoring-Receipt-Version"?: "1" | "2";
           "X-APEX-Original-Content-Revision"?: string;
         };
         content: {
-          "application/json": ({
+          "application/json": (({
             "activity"?: ({
               "creator"?: ({
                 "action": string;
@@ -42923,13 +42935,13 @@ export interface operations {
             }) | null;
             "updated_at": string;
             "workload_shape_id"?: string;
-          }) | null;
+          }) | null | components["schemas"]["AuthoringReceiptOutcome"]);
         };
       };
       "400": {
         content: {
           "application/json": {
-            "code"?: "idempotency_key_invalid";
+            "code"?: "idempotency_key_invalid" | "idempotency_receipt_version_unsupported";
             "error": string;
           };
         };
@@ -42971,7 +42983,7 @@ export interface operations {
       "503": {
         content: {
           "application/json": {
-            "code"?: "idempotency_unavailable" | "scenario_save_outcome_unknown";
+            "code"?: "idempotency_unavailable" | "idempotency_receipt_version_unavailable" | "scenario_save_outcome_unknown";
             "error": string;
             "ref"?: string;
           };
@@ -43213,6 +43225,7 @@ export interface operations {
     parameters: {
       "header"?: {
         "Idempotency-Key"?: string;
+        "X-APEX-Authoring-Receipt-Version"?: "1" | "2";
       };
     };
     requestBody: {
@@ -44141,10 +44154,11 @@ export interface operations {
       "201": {
         headers: {
           "Idempotent-Replayed"?: "true";
+          "X-APEX-Authoring-Receipt-Version"?: "1" | "2";
           "X-APEX-Original-Content-Revision"?: string;
         };
         content: {
-          "application/json": ({
+          "application/json": (({
             "activity"?: ({
               "creator"?: ({
                 "action": string;
@@ -45178,13 +45192,13 @@ export interface operations {
               "version": string;
             }) | null;
             "version": string;
-          }) | null;
+          }) | null | components["schemas"]["AuthoringReceiptOutcome"]);
         };
       };
       "400": {
         content: {
           "application/json": {
-            "code"?: "idempotency_key_invalid";
+            "code"?: "idempotency_key_invalid" | "idempotency_receipt_version_unsupported";
             "error": string;
           };
         };
@@ -45236,7 +45250,7 @@ export interface operations {
       "503": {
         content: {
           "application/json": {
-            "code"?: "idempotency_unavailable";
+            "code"?: "idempotency_unavailable" | "idempotency_receipt_version_unavailable";
             "error": string;
           };
         };

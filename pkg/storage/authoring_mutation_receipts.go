@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 const (
@@ -16,6 +17,14 @@ const (
 
 	AuthoringPurposeScriptCreate   = "script_create"
 	AuthoringPurposeScenarioCreate = "scenario_create"
+
+	// AuthoringReceiptOutcomeLegacy receipts record only the created resource
+	// and its revision; a replay returns the resource as it is now.
+	AuthoringReceiptOutcomeLegacy = 1
+	// AuthoringReceiptOutcomeOriginal receipts complete in the create's own
+	// transaction and keep the disclosure-safe original outcome, which a
+	// replay returns instead of the current resource.
+	AuthoringReceiptOutcomeOriginal = 2
 )
 
 var (
@@ -23,6 +32,10 @@ var (
 	ErrAuthoringReceiptBusy       = errors.New("idempotent request is already in progress")
 	ErrAuthoringReceiptExpired    = errors.New("idempotency key has expired")
 	ErrAuthoringReceiptTombstoned = errors.New("the resource created with this idempotency key was deleted")
+	// ErrAuthoringReceiptLost means the create's transaction no longer held
+	// the pending receipt it claimed (another attempt resumed it, or it was
+	// tombstoned), so the create was rolled back.
+	ErrAuthoringReceiptLost = errors.New("idempotency receipt is no longer held by this request")
 )
 
 // AuthoringMutationReceipt fences retries of an ordinary authoring create.
@@ -39,14 +52,20 @@ type AuthoringMutationReceipt struct {
 	ResourceType     string
 	ResourceID       string
 	ResourceRevision string
-	State            string
-	OwnerToken       string
-	LeaseExpiresAt   *time.Time
-	ExpiresAt        time.Time
-	TombstonedAt     *time.Time
-	TombstoneReason  string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// OutcomeVersion is the replay contract the receipt was claimed under.
+	OutcomeVersion int
+	// OriginalOutcome is the disclosure-safe original outcome of an
+	// AuthoringReceiptOutcomeOriginal receipt, written in the create's own
+	// transaction; empty for legacy receipts and pending ones.
+	OriginalOutcome string
+	State           string
+	OwnerToken      string
+	LeaseExpiresAt  *time.Time
+	ExpiresAt       time.Time
+	TombstonedAt    *time.Time
+	TombstoneReason string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type AuthoringMutationReceiptClaimInput struct {
@@ -58,6 +77,14 @@ type AuthoringMutationReceiptClaimInput struct {
 	ResourceType  string
 	ResourceID    string
 	OwnerToken    string
+	// OutcomeVersion selects the replay contract; zero claims a legacy
+	// receipt. Only the first claim records it: a later claim under another
+	// version finds the receipt as first claimed.
+	OutcomeVersion int
+	// LegacyRequestDigest, when set, is the same request's digest under an
+	// earlier digest scheme. An existing receipt that recorded it is the
+	// same request, so a scheme change never turns a retry into a conflict.
+	LegacyRequestDigest string
 	// Retention is how long the key is guaranteed to replay; after it a retry
 	// is refused rather than treated as a new request.
 	Retention time.Duration
@@ -85,10 +112,52 @@ type AuthoringMutationReceiptStore interface {
 	RenewAuthoringMutationReceiptTombstones(resourceType, resourceID, reason string, now time.Time) error
 }
 
-var _ AuthoringMutationReceiptStore = (*SQLiteStore)(nil)
+// AuthoringReceiptCreateStore creates a script or scenario and completes an
+// original-outcome receipt in one transaction. Stores without it cannot offer
+// the original-outcome replay contract.
+type AuthoringReceiptCreateStore interface {
+	CreateScriptAuthoringCompletingReceipt(*dsl.Script, AuthoringReceiptCompletion, func(*ScriptAuthoringSnapshot) (string, error)) (*ScriptAuthoringMutationResult, error)
+	CreateScenarioAuthoringCompletingReceipt(*Scenario, []ScenarioScript, []ScenarioDataPoolBinding, AuthoringReceiptCompletion, func(*ScenarioAuthoringSnapshot) (string, error)) (*ScenarioAuthoringMutationResult, error)
+	ScrubExpiredAuthoringReceipts(now time.Time) (int64, error)
+}
+
+// ScrubExpiredAuthoringReceipts clears the request digest and stored original
+// outcome of every receipt past its replay lifetime. Neither is used again: a
+// claim answers such a key as deleted or expired without comparing requests
+// or reading an outcome, and the row itself keeps refusing the key. An empty
+// request digest marks a scrubbed receipt (a claim never records one).
+func (s *SQLiteStore) ScrubExpiredAuthoringReceipts(now time.Time) (int64, error) {
+	result, err := s.db.Exec(`UPDATE authoring_mutation_receipts SET request_digest = '', original_outcome = '', updated_at = ?
+		WHERE request_digest <> '' AND expires_at <= ?`, now.UTC(), now.UTC())
+	if err != nil {
+		return 0, fmt.Errorf("scrub expired authoring receipts: %w", err)
+	}
+	return result.RowsAffected()
+}
+
+var (
+	_ AuthoringMutationReceiptStore = (*SQLiteStore)(nil)
+	_ AuthoringReceiptCreateStore   = (*SQLiteStore)(nil)
+)
 
 const authoringReceiptColumns = `id, project_id, actor, purpose, key_hash, request_digest, resource_type, resource_id,
-	resource_revision, state, owner_token, lease_expires_at, expires_at, tombstoned_at, tombstone_reason, created_at, updated_at`
+	resource_revision, COALESCE(outcome_version, 1), COALESCE(original_outcome, ''), state, owner_token, lease_expires_at, expires_at,
+	tombstoned_at, tombstone_reason, created_at, updated_at`
+
+// MaxAuthoringReceiptOutcomeBytes bounds a stored original outcome. Callers
+// render an outcome that omits a larger projection (and says so); a replay
+// never substitutes the current resource for it.
+const MaxAuthoringReceiptOutcomeBytes = 4 << 20
+
+// AuthoringReceiptCompletion completes a claimed original-outcome receipt
+// inside the create's own transaction, with an outcome rendered from the state
+// that transaction read. When the receipt is no longer the caller's pending
+// reservation the whole create rolls back with ErrAuthoringReceiptLost.
+type AuthoringReceiptCompletion struct {
+	ReceiptID  string
+	OwnerToken string
+	Now        time.Time
+}
 
 func (s *SQLiteStore) ClaimAuthoringMutationReceipt(in AuthoringMutationReceiptClaimInput, now time.Time, lease time.Duration) (_ *AuthoringMutationReceiptClaim, resultErr error) {
 	in.ProjectID = normalizeProjectID(strings.TrimSpace(in.ProjectID))
@@ -97,6 +166,13 @@ func (s *SQLiteStore) ClaimAuthoringMutationReceipt(in AuthoringMutationReceiptC
 	}
 	if in.Actor == "" || in.Purpose == "" || in.KeyHash == "" || in.RequestDigest == "" || in.ResourceType == "" || in.ResourceID == "" || in.OwnerToken == "" {
 		return nil, errors.New("authoring receipt requires actor, purpose, key hash, request digest, resource and owner token")
+	}
+	switch in.OutcomeVersion {
+	case 0:
+		in.OutcomeVersion = AuthoringReceiptOutcomeLegacy
+	case AuthoringReceiptOutcomeLegacy, AuthoringReceiptOutcomeOriginal:
+	default:
+		return nil, fmt.Errorf("authoring receipt outcome version %d is unsupported", in.OutcomeVersion)
 	}
 	if lease <= 0 || in.Retention <= 0 {
 		return nil, errors.New("authoring receipt lease and retention must be positive")
@@ -114,10 +190,10 @@ func (s *SQLiteStore) ClaimAuthoringMutationReceipt(in AuthoringMutationReceiptC
 	}()
 	insert, err := tx.Exec(`INSERT OR IGNORE INTO authoring_mutation_receipts (
 		id, project_id, actor, purpose, key_hash, request_digest, resource_type, resource_id,
-		resource_revision, state, owner_token, lease_expires_at, expires_at, tombstoned_at, tombstone_reason, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, NULL, '', ?, ?)`,
+		resource_revision, outcome_version, original_outcome, state, owner_token, lease_expires_at, expires_at, tombstoned_at, tombstone_reason, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, '', ?, ?, ?, ?, NULL, '', ?, ?)`,
 		uuid.NewString(), in.ProjectID, in.Actor, in.Purpose, in.KeyHash, in.RequestDigest, in.ResourceType, in.ResourceID,
-		AuthoringReceiptPending, in.OwnerToken, leaseExpiresAt, now.Add(in.Retention), now, now)
+		in.OutcomeVersion, AuthoringReceiptPending, in.OwnerToken, leaseExpiresAt, now.Add(in.Retention), now, now)
 	if err != nil {
 		return nil, fmt.Errorf("reserve authoring receipt: %w", err)
 	}
@@ -142,13 +218,19 @@ func (s *SQLiteStore) ClaimAuthoringMutationReceipt(in AuthoringMutationReceiptC
 	}
 	// Refusals are ordered so a deleted resource is reported even after the
 	// key expires, and a changed request never learns about the original.
-	if receipt.RequestDigest != in.RequestDigest || receipt.ResourceType != in.ResourceType {
+	// A scrubbed receipt has no request to compare; it can only be deleted
+	// or expired, and is answered as such below.
+	scrubbed := receipt.RequestDigest == ""
+	sameRequest := scrubbed || receipt.RequestDigest == in.RequestDigest || (strings.TrimSpace(in.LegacyRequestDigest) != "" && receipt.RequestDigest == strings.TrimSpace(in.LegacyRequestDigest))
+	if !sameRequest || receipt.ResourceType != in.ResourceType {
 		return nil, ErrAuthoringReceiptConflict
 	}
 	if receipt.TombstonedAt != nil {
 		return nil, ErrAuthoringReceiptTombstoned
 	}
-	if !now.Before(receipt.ExpiresAt) {
+	// A scrubbed receipt is expired whatever this replica's clock says: the
+	// scrub ran by another clock, and it no longer holds a request to match.
+	if scrubbed || !now.Before(receipt.ExpiresAt) {
 		return nil, ErrAuthoringReceiptExpired
 	}
 	if receipt.State == AuthoringReceiptComplete {
@@ -171,6 +253,41 @@ func (s *SQLiteStore) ClaimAuthoringMutationReceipt(in AuthoringMutationReceiptC
 	}
 	receipt.OwnerToken, receipt.LeaseExpiresAt, receipt.UpdatedAt = in.OwnerToken, &leaseExpiresAt, now
 	return commit(&AuthoringMutationReceiptClaim{Receipt: receipt})
+}
+
+// completeAuthoringReceiptTx completes the caller's pending original-outcome
+// receipt inside a create transaction. Zero rows means the reservation is no
+// longer this request's, and the create must roll back.
+func completeAuthoringReceiptTx(tx *storeTx, completion *AuthoringReceiptCompletion, resourceRevision, outcome string) error {
+	if completion == nil {
+		return nil
+	}
+	id, owner := strings.TrimSpace(completion.ReceiptID), strings.TrimSpace(completion.OwnerToken)
+	if id == "" || owner == "" {
+		return errors.New("authoring receipt completion requires id and owner token")
+	}
+	if len(outcome) > MaxAuthoringReceiptOutcomeBytes {
+		return fmt.Errorf("authoring receipt outcome exceeds %d bytes", MaxAuthoringReceiptOutcomeBytes)
+	}
+	now := completion.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	result, err := tx.Exec(`UPDATE authoring_mutation_receipts
+		SET state = ?, owner_token = '', lease_expires_at = NULL, resource_revision = ?, original_outcome = ?, updated_at = ?
+		WHERE id = ? AND state = ? AND owner_token = ? AND tombstoned_at IS NULL AND COALESCE(outcome_version, 1) = ?`,
+		AuthoringReceiptComplete, strings.TrimSpace(resourceRevision), outcome, now.UTC(), id, AuthoringReceiptPending, owner, AuthoringReceiptOutcomeOriginal)
+	if err != nil {
+		return fmt.Errorf("complete authoring receipt: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("inspect authoring receipt completion: %w", err)
+	}
+	if rows != 1 {
+		return ErrAuthoringReceiptLost
+	}
+	return nil
 }
 
 func (s *SQLiteStore) CompleteAuthoringMutationReceipt(id, ownerToken, resourceRevision string, now time.Time) (bool, error) {
@@ -289,7 +406,9 @@ func renewAuthoringMutationReceiptTombstones(db interface {
 	if resourceType == "" || resourceID == "" {
 		return errors.New("authoring receipt tombstone renewal requires resource type and id")
 	}
-	_, err := db.Exec(`UPDATE authoring_mutation_receipts SET tombstoned_at = ?, tombstone_reason = ?, owner_token = '', lease_expires_at = NULL, updated_at = ?
+	// The delete committed (or may have): the stored original outcome is
+	// never served for a deleted resource, so it is not kept either.
+	_, err := db.Exec(`UPDATE authoring_mutation_receipts SET tombstoned_at = ?, tombstone_reason = ?, owner_token = '', lease_expires_at = NULL, original_outcome = '', updated_at = ?
 		WHERE resource_type = ? AND resource_id = ?`,
 		now.UTC(), strings.TrimSpace(reason), now.UTC(), resourceType, resourceID)
 	if err != nil {
@@ -302,7 +421,7 @@ func scanAuthoringMutationReceipt(row scanner) (*AuthoringMutationReceipt, error
 	var receipt AuthoringMutationReceipt
 	var leaseExpiresAt, tombstonedAt sql.NullTime
 	if err := row.Scan(&receipt.ID, &receipt.ProjectID, &receipt.Actor, &receipt.Purpose, &receipt.KeyHash, &receipt.RequestDigest,
-		&receipt.ResourceType, &receipt.ResourceID, &receipt.ResourceRevision, &receipt.State, &receipt.OwnerToken,
+		&receipt.ResourceType, &receipt.ResourceID, &receipt.ResourceRevision, &receipt.OutcomeVersion, &receipt.OriginalOutcome, &receipt.State, &receipt.OwnerToken,
 		&leaseExpiresAt, &receipt.ExpiresAt, &tombstonedAt, &receipt.TombstoneReason, &receipt.CreatedAt, &receipt.UpdatedAt); err != nil {
 		return nil, err
 	}

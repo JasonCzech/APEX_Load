@@ -30,6 +30,7 @@ import { actionBreadcrumb, dedupeAuthorIssues, insertAuthorAction, remapInserted
 import { captureScript, type DebugRunRecord } from './debuggerExperience'
 import { withMappingReviewState } from './sourceMappingReviewState'
 import { persistScriptAuthoringDraft } from './scriptAuthoringWorkflow'
+import { AuthoringCreateNeedsNewIntent, forgetAuthoringCreateIntent, type AuthoringCreateIntent } from './authoringCreateIntent'
 import { ActionBodyWorkspace } from './ActionBodyWorkspace'
 import { debugContinuesAfterFailure, debugRunIdError, parameterUsageLabel } from './scriptSidebarModel'
 import { DatasetChangeReview, type DatasetChange } from './DatasetChangeReview'
@@ -1548,6 +1549,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }, [editorOwnsSavedEcho, sandboxSeedScope, setReplayOptions])
   const editorResourceScopeRef = useRef({ projectId, folderId, scriptId, initialScript })
   const editorResourceScopeVersionRef = useRef(0)
+  // The create intent belongs to the draft this editor opened in its project
+  // (AUTH-1): a folder change or a retry keeps it; another draft does not.
+  const createIntentRef = useRef<{ draft: unknown; projectId: string | undefined; intent: AuthoringCreateIntent | null; fresh: boolean }>({ draft: initialScript, projectId, intent: null, fresh: false })
+  if (createIntentRef.current.draft !== initialScript || createIntentRef.current.projectId !== projectId) {
+    createIntentRef.current = { draft: initialScript, projectId, intent: null, fresh: false }
+  }
+  // The intent owner whose key the controller refused for good; Save as new
+  // applies to that draft only.
+  const [refusedIntentOwner, setRefusedIntentOwner] = useState<object | null>(null)
+  const createNeedsNewIntent = refusedIntentOwner !== null && refusedIntentOwner === createIntentRef.current
   if (
     editorResourceScopeRef.current.projectId !== projectId
     || editorResourceScopeRef.current.folderId !== folderId
@@ -3020,7 +3031,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       && saveRequestRef.current === requestID
     )
     saveInFlightScopeRef.current = requestResourceScope
-    setError(''); setSuccess(''); setWarnings([]); setSaving(true)
+    const intentOwner = createIntentRef.current
+    setError(''); setSuccess(''); setWarnings([]); setSaving(true); setRefusedIntentOwner(null)
     setValidationEvidence(null)
     clearValidatedBinding()
     setValidationReplayPreflight(null)
@@ -3037,6 +3049,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       const persisted = await persistScriptAuthoringDraft({
         scriptId, projectId, folderId, baseline: authoringBaseline,
         draft: normalizedDraft, importBaseline: importBaselineScript || initialScript || null,
+        createIntent: { current: intentOwner.intent, fresh: intentOwner.fresh, update: next => { intentOwner.intent = next; intentOwner.fresh = false } },
       }, { api, isCurrent: requestIsCurrent })
       if (persisted.kind === 'superseded') return persisted.saved
       if (persisted.kind === 'invalid') { setShowAuthorProblems(true); return false }
@@ -3072,7 +3085,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       markSaved()
       const persistedSecretNames = new Set(scriptSecretReferenceSummaries(savedDefinition).map(binding => binding.name))
       pendingCreatedSecretNamesRef.current = pendingCreatedSecretNamesRef.current.filter(name => !persistedSecretNames.has(name))
-      setSuccess('Script saved successfully!')
+      setSuccess(persisted.replayed ? 'This draft had already been saved by an earlier attempt; the saved script is opening.' : 'Script saved successfully!')
       if (scriptId) {
         await refreshScriptSecretStatus()
         if (!requestIsCurrent()) return true
@@ -3101,6 +3114,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           ? 'The authored script or its placement changed since this editor loaded. Your draft was not saved. Load the current baseline, inspect the diff, and explicitly reapply or reload.'
           : 'We could not confirm whether this save reached the server. Your draft is kept here. Load the current version to compare it with your draft, then reapply your changes.')
       }
+      if (e instanceof AuthoringCreateNeedsNewIntent) setRefusedIntentOwner(intentOwner)
       const baseMessage = scriptSaveFailedOnServer(e)
         ? `Saving failed on the server; your draft is kept here. Choose Save to try again. Server detail: ${getErrorMessage(e, 'none given')}`
         : getErrorMessage(e, 'Failed to save script')
@@ -7238,7 +7252,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       )}
       {(error || warnings.length > 0 || success) && (
         <div className="editor-feedback-strip">
-          {error && <div className="editor-toast error">{error}</div>}
+          {error && <div className="editor-toast error">
+            {error}
+            {createNeedsNewIntent && !scriptId && (
+              <button type="button" className="btn btn-sm btn-secondary" disabled={saving} onClick={() => {
+                // An explicit new intent: forget the old key, then create.
+                forgetAuthoringCreateIntent(createIntentRef.current.intent)
+                createIntentRef.current.intent = null
+                createIntentRef.current.fresh = true
+                setRefusedIntentOwner(null)
+                void handleSave()
+              }}>Save as new</button>
+            )}
+          </div>}
           {warnings.length > 0 && (
             <div className="editor-toast warning">
               {warnings.map((warning, index) => (

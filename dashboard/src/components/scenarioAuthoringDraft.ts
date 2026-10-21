@@ -3,6 +3,7 @@ import type { ScenarioSourceMode, ScenarioWizardStep } from './scenarioWizardUti
 import { legacyFlatFormFieldsValid, migrateLegacyFlatForm } from './scenarioAuthoringDraftV2'
 import { emptyScenarioForm, emptyScenarioGroup } from './scenarioFormModel'
 import { scenarioGroupNameAfterScriptSelection } from './scenarioGroupUtils'
+import { isAuthoringCreateIntent, type AuthoringCreateIntent } from './authoringCreateIntent'
 
 /** Authoring checkpoints are browser-local and can never be used as run payloads. */
 export interface ScenarioAuthoringDraft {
@@ -33,6 +34,13 @@ export interface ScenarioAuthoringDraft {
    * its next Save updates that draft rather than adding another.
    */
   projectDraft?: { id: string; revision: number }
+  /**
+   * In a browser checkpoint of a new scenario only: the create intent its
+   * saves send (AUTH-1), so a save retried after a reload replays the
+   * scenario an earlier attempt created instead of creating another. Never
+   * part of a project draft.
+   */
+  createIntent?: AuthoringCreateIntent
 }
 const key = (project: string) => `apexload.scenario.authoring.v1.${encodeURIComponent(project)}`
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
@@ -189,6 +197,8 @@ export function parseScenarioAuthoringDraft(parsed: unknown, project: string): S
     if (f.data_pools !== undefined && (!Array.isArray(f.data_pools) || !f.data_pools.every(binding => record(binding) && typeof binding.pool_id === 'string' && typeof binding.alias === 'string' && (binding.access_mode === 'live' ? ['manual', 'next', 'pop', 'lease'] : ['sequential', 'random', 'unique']).includes(String(binding.selection_strategy))))) return null
     if (['runtime_settings', 'goal_config', 'traffic_profile', 'assignment'].some(name => f[name] !== undefined && !record(f[name]))) return null
     assertDraftHasNoInlineCredentials(f)
+    // An intent belongs to a new scenario in this project; anything else is dropped.
+    if (d.createIntent !== undefined && !(d.editingId === null && isAuthoringCreateIntent(d.createIntent) && d.createIntent.purpose === 'scenario_create' && d.createIntent.projectId === project)) delete d.createIntent
     const link = d.projectDraft
     if (link !== undefined && !(record(link) && typeof link.id === 'string' && link.id && Number.isInteger(link.revision) && (link.revision as number) > 0)) delete d.projectDraft
     // A recorded baseline that does not look like one is dropped: the draft
