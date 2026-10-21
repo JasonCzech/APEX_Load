@@ -34,6 +34,8 @@ The themed reports preserve the original narrative of each consolidated review, 
 
 ## Completed implementation reviews
 
+[Immutable replay artifact backend — 2026-10-21](roadmap-browser-replay-backend-2026-10-21/README.md) records bounded HAR/report transport, namespace isolation and exact-generation cleanup; runtime recovery wiring remains open.
+
 [Browser stack cross-commit review — 2026-10-21](roadmap-browser-cross-commit-2026-10-21/README.md) records the keyboard aggregation bound repair and scoped validation of the completed PR stack.
 
 [Browser interaction map cohorts — 2026-10-20](roadmap-browser-map-cohorts-2026-10-20/README.md) records conservative spatial/cohort separation, report coverage and retained raw-evidence compatibility.
