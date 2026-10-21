@@ -322,6 +322,9 @@ func (m *BrowserReplayManager) ReplayHARFor(session *BrowserReplaySession) (Repl
 			return ReplayHAR{}, false, err
 		}
 	}
+	if session.ArtifactDurability() == "durable" {
+		return ReplayHAR{}, false, ErrRetainedReplayUnavailable
+	}
 	if session.FinalReport == nil {
 		return ReplayHAR{}, false, nil
 	}

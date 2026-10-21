@@ -244,6 +244,8 @@ The [rendered native waterfall/cache qualification](qa/reviews/roadmap-browser-n
 
 ### BE-B — HAR durability and real import/replay workflows
 
+The [retained replay read contract](qa/reviews/roadmap-browser-replay-read-contract-2026-10-21/README.md) verifies bounded status reports separately from complete native downloads, preserves historical evidence during terminal reconstruction and refuses synthetic fallback for durable-native snapshots. Controller authorization and runtime wiring remain open.
+
 The [filesystem replay source identity fix](qa/reviews/roadmap-browser-replay-volume-identity-2026-10-21/README.md) binds receipts to a persisted namespace identity and holds the opened root during I/O. Same-path replacement cannot acknowledge another volume's cleanup; path-only historical receipts remain preserved and unavailable rather than adopted. This is a prerequisite fix, not multi-host qualification.
 
 The [recovery storage slice](qa/reviews/roadmap-browser-replay-recovery-storage-2026-10-21/README.md) adds validated authorization scope metadata and bounded cleanup keyset traversal across backend configurations. It does not replace project authorization or verified artifact reads; controller recovery wiring remains open.

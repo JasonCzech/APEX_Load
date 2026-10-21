@@ -34,7 +34,7 @@ type replayArtifactPublisher struct {
 func (p *replayArtifactPublisher) Publish(ctx context.Context, session *recordbridge.BrowserReplaySession, har io.ReadSeeker, size int64) error {
 	if p == nil || p.store == nil || p.backend == nil || session == nil || har == nil ||
 		session.ID != p.session || session.ProjectID != p.project || p.owner == "" ||
-		!recordbridge.ReplaySessionStatusTerminal(session.Status) || session.CompletedAt == nil || session.FinalReport == nil || session.FinalReport.ReplaySessionID != p.session || size <= 0 || size > 256<<20 {
+		!recordbridge.ReplaySessionStatusTerminal(session.Status) || session.CompletedAt == nil || session.CompletedAt.IsZero() || session.FinalReport == nil || session.FinalReport.ReplaySessionID != p.session || size <= 0 || size > 256<<20 {
 		return errors.New("invalid terminal replay publication")
 	}
 	if err := ctx.Err(); err != nil {

@@ -1,5 +1,7 @@
 # QA Review Records
 
+- [Retained replay read contract](roadmap-browser-replay-read-contract-2026-10-21/README.md) — bounded report polling, exact terminal reconstruction and native fallback refusal.
+
 - [Filesystem replay source identity](roadmap-browser-replay-volume-identity-2026-10-21/README.md) — persisted namespace identity and held-root operations prevent same-path volume substitution.
 
 - [Replay recovery scope and cleanup pagination](roadmap-browser-replay-recovery-storage-2026-10-21/README.md) — internal authorization metadata and bounded traversal past foreign-backend receipts.

@@ -81,7 +81,7 @@ func TestReplayArtifactPublisherRoundTripAndNoOverwrite(t *testing.T) {
 }
 
 func TestReplayArtifactPublisherRefusesBeforeReservation(t *testing.T) {
-	for _, scenario := range []string{"session", "project", "active", "report", "report-identity", "report-size", "completion", "length", "overflow", "canceled", "owner", "capacity"} {
+	for _, scenario := range []string{"session", "project", "active", "report", "report-identity", "report-size", "completion", "zero-completion", "length", "overflow", "canceled", "owner", "capacity"} {
 		t.Run(scenario, func(t *testing.T) {
 			p, store, session, har := replayPublisherFixture(t)
 			size := int64(len(har))
@@ -102,6 +102,8 @@ func TestReplayArtifactPublisherRefusesBeforeReservation(t *testing.T) {
 				session.FinalReport.Error = strings.Repeat("x", 16<<20)
 			case "completion":
 				session.CompletedAt = nil
+			case "zero-completion":
+				session.CompletedAt = &time.Time{}
 			case "length":
 				size++
 			case "overflow":
