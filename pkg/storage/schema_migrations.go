@@ -100,6 +100,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 71, Name: "deleted-test-identities", Fingerprint: "eb3e5fd1f6988061c86d0c4c50dee89c0c3853732dddd91c1439e9cc43f0fd5c"},
 	{Version: 72, Name: "browser-acceptance-dependency-pins", Fingerprint: "8738458dd436ce260ff34e9f7640762e22b1df5cad6c02a38884bd91e81a363d"},
 	{Version: 73, Name: "run-analysis-policy-selections", Fingerprint: "c930085449d7bd3b0eec530963d9cea06b50b9c27090a2c91259f93f8e7abd4a"},
+	{Version: 74, Name: "replay-artifact-retention-receipts", Fingerprint: "14cc8a74dc9d9fdc2091cb8da3c42d6b69e6286d4c3613e821403dfe48f28196"},
 }
 
 type SchemaMigrationRecord struct {

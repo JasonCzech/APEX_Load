@@ -430,6 +430,17 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 			expires_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS replay_artifact_receipts (
+            session_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            generation TEXT NOT NULL UNIQUE,
+            owner_token TEXT NOT NULL,
+            state TEXT NOT NULL CHECK (state IN ('staging','ready','cleanup')),
+            spec_json TEXT NOT NULL,
+            reserved_bytes BIGINT NOT NULL CHECK (reserved_bytes > 0),
+            writer_joined INTEGER NOT NULL CHECK (writer_joined IN (0,1)),
+            expires_at DATETIME NOT NULL
+        )`,
 		`CREATE TABLE IF NOT EXISTS deployment_leases (
 			name TEXT PRIMARY KEY,
 			owner_id TEXT NOT NULL,
@@ -2339,6 +2350,8 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_scenario_schedule_occurrences_retention ON scenario_schedule_occurrences(planned_at, status)`, "idx_scenario_schedule_occurrences_retention"},
 	{`CREATE INDEX IF NOT EXISTS idx_replay_session_leases_state_expiry ON replay_session_leases(state, expires_at)`, "idx_replay_session_leases_state_expiry"},
 	{`CREATE INDEX IF NOT EXISTS idx_replay_session_leases_project_state_expiry ON replay_session_leases(project_id, state, expires_at)`, "idx_replay_session_leases_project_state_expiry"},
+	{`CREATE INDEX IF NOT EXISTS idx_replay_artifact_receipts_project ON replay_artifact_receipts(project_id)`, "idx_replay_artifact_receipts_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_replay_artifact_receipts_cleanup ON replay_artifact_receipts(writer_joined,expires_at,session_id)`, "idx_replay_artifact_receipts_cleanup"},
 	{`CREATE INDEX IF NOT EXISTS idx_replay_session_leases_expiry ON replay_session_leases(expires_at)`, "idx_replay_session_leases_expiry"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_cluster_connections_name ON cluster_connections(name)`, "idx_cluster_connections_name"},
 	{`CREATE INDEX IF NOT EXISTS idx_fleet_pools_cluster ON fleet_pools(cluster_id)`, "idx_fleet_pools_cluster"},

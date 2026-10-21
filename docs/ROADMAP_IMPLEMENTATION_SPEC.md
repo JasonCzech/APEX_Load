@@ -244,6 +244,8 @@ The [rendered native waterfall/cache qualification](qa/reviews/roadmap-browser-n
 
 ### BE-B — HAR durability and real import/replay workflows
 
+The [replay receipt storage foundation](qa/reviews/roadmap-browser-replay-receipts-2026-10-21/README.md) adds bounded immutable artifact reservations, terminal-owner publication fences, restart-readable metadata and exact-generation cleanup tombstones. Controller/backend publication and restart downloads remain open; this foundation alone does not establish durable HAR delivery.
+
 The [capture omission slice](qa/reviews/roadmap-browser-har-omissions-2026-10-20/README.md) retains pre-artifact native capture failures through local/distributed archives and their existing HAR listing. Physical ownership and replay durability remain separate.
 
 Complete the remaining native HAR ownership cases: real Linux crash measurement, replacement-container reclamation boundaries, mixed-version transfer capability and HA source-cache omissions. Foreign writer state remains retained until proof allows reclamation. Move replay HAR ownership/durability through the existing artifact/receipt path so a process-local cache is not its only lifetime owner. Preserve bounded scrub/ZIP generation, native-versus-synthetic disclosure and independent download authorization.
