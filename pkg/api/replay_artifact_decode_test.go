@@ -14,7 +14,7 @@ import (
 
 func TestDecodeRetainedReplayReport(t *testing.T) {
 	now := time.Now().UTC()
-	session := &recordbridge.BrowserReplaySession{ID: "replay", ProjectID: "project", Status: recordbridge.BrowserReplayCompleted, CompletedAt: &now, FinalReport: &engine.ReplayReport{ReplaySessionID: "replay", Success: true, Events: []engine.ReplayActionEvent{{ProtocolEvidence: map[string]any{"sequence": json.Number("9007199254740993")}}}}}
+	session := &recordbridge.BrowserReplaySession{ID: "replay", ProjectID: "project", Status: recordbridge.BrowserReplayCompleted, CompletedAt: &now, FinalReport: &engine.ReplayReport{ReplaySessionID: "replay", Success: true, NativeHARCaptureOmissions: map[string]int64{"native_capture_failed": 2}, Events: []engine.ReplayActionEvent{{ProtocolEvidence: map[string]any{"sequence": json.Number("9007199254740993")}}}}}
 	report, err := json.Marshal(struct {
 		Session *recordbridge.BrowserReplaySession `json:"session"`
 	}{session})

@@ -64529,6 +64529,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -87508,6 +87509,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -88233,6 +88235,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -110292,6 +110295,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -111104,6 +111108,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -111834,6 +111839,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -149560,6 +149566,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -150372,6 +150379,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -151102,6 +151110,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -158018,6 +158027,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -159553,6 +159563,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -161272,6 +161283,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -162901,6 +162913,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -164531,6 +164544,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -166160,6 +166174,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -167015,6 +167030,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -167754,6 +167770,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -168471,6 +168488,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -169327,6 +169345,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -170052,6 +170071,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -186095,6 +186115,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -186834,6 +186855,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -187573,6 +187595,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -188312,6 +188335,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -192953,6 +192977,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;

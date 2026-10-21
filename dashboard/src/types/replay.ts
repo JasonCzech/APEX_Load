@@ -194,6 +194,8 @@ export interface BrowserReplayEvent {
 }
 
 export interface BrowserReplayReport {
+  /** Bounded capture failures; absence does not establish native capture coverage. */
+  native_har_capture_omissions?: Record<string, number>
   runtime_evidence_unavailable?: boolean
   dropped_event_count?: number
   truncated_event_evidence_count?: number

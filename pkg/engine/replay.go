@@ -162,6 +162,9 @@ const (
 )
 
 type ReplayReport struct {
+	// NativeHARCaptureOmissions retains bounded capture failures reported after
+	// teardown. Absence does not prove that native capture was requested or met.
+	NativeHARCaptureOmissions   map[string]int64          `json:"native_har_capture_omissions,omitempty"`
 	RuntimeEvidenceUnavailable  bool                      `json:"runtime_evidence_unavailable,omitempty"`
 	Stopped                     bool                      `json:"stopped,omitempty"`
 	ReplaySessionID             string                    `json:"replay_session_id,omitempty"`
@@ -665,10 +668,16 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		EventIndex: -1,
 		Report:     cloneReplayReport(report),
 	})
-	if collectsHAR {
+	omissionProvider, capturesOmissions := proto.(protocol.BrowserHARCaptureOmissionProvider)
+	if collectsHAR || capturesOmissions {
 		teardownProtocol()
-		if provider, ok := proto.(protocol.BrowserHARArtifactProvider); ok {
-			report.harArtifacts = takeBrowserHARArtifacts(provider)
+		if collectsHAR {
+			if provider, ok := proto.(protocol.BrowserHARArtifactProvider); ok {
+				report.harArtifacts = takeBrowserHARArtifacts(provider)
+			}
+		}
+		if capturesOmissions {
+			report.NativeHARCaptureOmissions = takeBrowserHARCaptureOmissions(omissionProvider)
 		}
 	}
 	reported = true

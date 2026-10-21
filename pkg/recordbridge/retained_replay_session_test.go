@@ -93,3 +93,24 @@ func TestRestoreRetainedReplayPreservesHistoricalEvidence(t *testing.T) {
 		t.Fatal("historical evidence silently truncated")
 	}
 }
+
+func TestReplayCaptureOmissionOwnershipAndRecovery(t *testing.T) {
+	now := time.Now().UTC()
+	source := &engine.ReplayReport{ReplaySessionID: "replay", NativeHARCaptureOmissions: map[string]int64{"native_capture_failed": 2}}
+	copy := CloneBrowserReplayReport(source)
+	copy.NativeHARCaptureOmissions["native_capture_failed"] = 8
+	if source.NativeHARCaptureOmissions["native_capture_failed"] != 2 {
+		t.Fatal("clone aliases capture omissions")
+	}
+	restored, err := RestoreRetainedReplaySession(&BrowserReplaySession{ID: "replay", ProjectID: "project", Status: BrowserReplayCompleted, CompletedAt: &now, FinalReport: source}, "replay", "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.FinalReport.NativeHARCaptureOmissions["native_capture_failed"] != 2 {
+		t.Fatal("recovery dropped omissions")
+	}
+	restored.FinalReport.NativeHARCaptureOmissions["native_capture_failed"] = 9
+	if source.NativeHARCaptureOmissions["native_capture_failed"] != 2 {
+		t.Fatal("recovery aliases capture omissions")
+	}
+}

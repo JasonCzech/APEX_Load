@@ -42739,6 +42739,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -44708,6 +44713,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -46720,6 +46730,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -48608,6 +48623,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -50496,6 +50516,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -147215,6 +147240,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -149339,6 +149369,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -151523,6 +151558,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -153653,6 +153693,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -155777,6 +155822,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -157906,6 +157956,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -160036,6 +160091,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -201894,6 +201954,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -204019,6 +204084,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -206205,6 +206275,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -208336,6 +208411,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -210461,6 +210541,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -212591,6 +212676,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -214722,6 +214812,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -237909,6 +238004,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -242536,6 +242636,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -249912,6 +250017,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -273333,6 +273443,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -284069,6 +284184,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:
@@ -335949,6 +336069,11 @@ paths:
                               type: string
                           group:
                             type: string
+                          native_har_capture_omissions:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           protocol:
                             type: string
                           repair_suggestions:

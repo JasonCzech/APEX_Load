@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"maps"
+
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -96,6 +98,7 @@ func cloneReplayReport(report *ReplayReport) *ReplayReport {
 		return nil
 	}
 	cloned := *report
+	cloned.NativeHARCaptureOmissions = maps.Clone(report.NativeHARCaptureOmissions)
 	cloned.FinalVariables = cloneStringMap(report.FinalVariables)
 	cloned.RuntimeProfile = *cloneReplayRuntimeProfile(&report.RuntimeProfile)
 	cloned.ArtifactManifest = cloneReplayArtifactManifest(report.ArtifactManifest)

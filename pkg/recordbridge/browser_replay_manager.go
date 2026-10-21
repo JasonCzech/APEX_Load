@@ -3,8 +3,8 @@ package recordbridge
 import (
 	"context"
 	"errors"
-	"github.com/jasonczech/apexload/pkg/internal/importreview"
 	"log/slog"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/internal/importreview"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -1332,6 +1333,7 @@ func CloneBrowserReplayReport(report *engine.ReplayReport) *engine.ReplayReport 
 		return nil
 	}
 	cloned := *report
+	cloned.NativeHARCaptureOmissions = maps.Clone(report.NativeHARCaptureOmissions)
 	cloned.FinalVariables = CloneBrowserStringMap(report.FinalVariables)
 	cloned.RuntimeProfile = CloneEngineReplayRuntimeProfile(&report.RuntimeProfile)
 	cloned.ArtifactManifest = CloneBrowserReplayArtifactManifest(report.ArtifactManifest)
