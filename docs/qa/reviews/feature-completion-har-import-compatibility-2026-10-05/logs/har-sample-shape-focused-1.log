@@ -1,5 +1,0 @@
-# github.com/jasonczech/apexload/pkg/convert/sample [github.com/jasonczech/apexload/pkg/convert/sample.test]
-pkg/convert/sample/har_sample_shape_test.go:59:21: ex.HTTPVersion.IsPresent undefined (type string has no field or method IsPresent)
-FAIL	github.com/jasonczech/apexload/pkg/convert/sample [build failed]
-ok  	github.com/jasonczech/apexload/pkg/convert/salesforce	0.349s
-FAIL

@@ -1,3 +1,0 @@
-ok  	github.com/jasonczech/apexload/pkg/engine	0.380s [no tests to run]
-ok  	github.com/jasonczech/apexload/pkg/protocol/browser	0.112s [no tests to run]
-ok  	github.com/jasonczech/apexload/pkg/distributed/generatorrpc	0.386s [no tests to run]

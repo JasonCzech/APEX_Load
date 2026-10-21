@@ -36,11 +36,11 @@ API embedded-document serving and generated lifecycle freshness passed. The
 related QA dashboard spec-file count was regenerated from 89 to 90; this changes
 an inventory count, not qualification status.
 
-See the [validation summary](evidence/validation-summary.json),
-[review rounds](evidence/review.txt), [commands](evidence/commands.txt),
-[controller hashes](evidence/browser-controller-hashes.json),
-[staged source/asset hashes](evidence/staged-source-and-asset-hashes.json) and
-[HAR comparison](evidence/external-har-comparison.json). Compressed logs retain
+See the validation summary (`evidence/validation-summary.json`),
+review rounds (`evidence/review.txt`), commands (`evidence/commands.txt`),
+controller hashes (`evidence/browser-controller-hashes.json`),
+staged source/asset hashes (`evidence/staged-source-and-asset-hashes.json`) and
+HAR comparison (`evidence/external-har-comparison.json`). Compressed logs retain
 failed fixture iterations and the superseded full cycle as well as the final
 passing cycle. Checksums cover retained evidence.
 

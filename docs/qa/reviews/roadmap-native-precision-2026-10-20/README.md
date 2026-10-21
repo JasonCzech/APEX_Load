@@ -89,17 +89,17 @@ in use by follow-up work; shared caches are not pruned during parallel activity.
 
 ## Evidence
 
-The [validation summary](evidence/validation-summary.json) distinguishes passing
+The validation summary (`evidence/validation-summary.json`) distinguishes passing
 checks, failed attempts and interrupted diagnostic runs. The
-[review rounds](evidence/source-review-rounds.json) record findings and repairs.
-The [worktree audit](evidence/worktree-audit-precision-overlap-recheck.json) records
+review rounds (`evidence/source-review-rounds.json`) record findings and repairs.
+The worktree audit (`evidence/worktree-audit-precision-overlap-recheck.json`) records
 the exact checked heads and contract search; the
-[patch-equivalence check](evidence/worktree-audit-patch-equivalence.json) identifies
+patch-equivalence check (`evidence/worktree-audit-patch-equivalence.json`) identifies
 older work already incorporated into main. The
-[HAR comparison](evidence/private-har-final-profile-comparison.json) preserves the
+HAR comparison (`evidence/private-har-final-profile-comparison.json`) preserves the
 private-capture regression result without its payload.
 
-The [final backend command](evidence/run-final-profile-validation.sh) requires the
+The final backend command (`evidence/run-final-profile-validation.sh`) requires the
 private capture and test-overlay paths from the operator. Original unsuccessful
 logs remain compressed beside successful runs. They are not acceptance evidence
-for the gates they failed. [SHA256SUMS](SHA256SUMS) covers the retained record.
+for the gates they failed. `SHA256SUMS` covers the retained record.

@@ -1,8 +1,0 @@
-{
-  "base_main_js_files": 232,
-  "base_main_gzip_bytes": 2514184,
-  "integrated_js_files": 233,
-  "integrated_gzip_bytes": 2540262,
-  "delta_bytes": 26078,
-  "note": "Comparison of committed main assets and actual integrated production assets; gzip level 9."
-}

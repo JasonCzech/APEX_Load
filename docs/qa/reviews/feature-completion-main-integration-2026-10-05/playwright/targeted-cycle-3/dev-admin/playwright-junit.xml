@@ -1,8 +1,0 @@
-<testsuites id="" name="" tests="2" failures="0" skipped="0" errors="0" time="9.328676">
-<testsuite name="command-center-details.spec.ts" timestamp="2026-10-06T08:13:06.552Z" hostname="" tests="2" failures="0" skipped="0" time="8.489" errors="0">
-<testcase name="advanced details returns to the same run without losing cockpit edits or graph mode" classname="command-center-details.spec.ts" time="4.718">
-</testcase>
-<testcase name="runtime workspace keeps essential metrics readable and settings in an opaque drawer" classname="command-center-details.spec.ts" time="3.771">
-</testcase>
-</testsuite>
-</testsuites>

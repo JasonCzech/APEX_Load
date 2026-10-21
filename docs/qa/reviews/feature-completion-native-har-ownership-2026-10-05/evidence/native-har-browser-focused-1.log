@@ -1,5 +1,0 @@
---- FAIL: TestHAROwnershipPrivateGenerationAndDurablePublication (0.04s)
-    har_working_lease_test.go:64: completed artifact is not discoverable
-FAIL
-FAIL	github.com/jasonczech/apexload/pkg/protocol/browser	1.069s
-FAIL

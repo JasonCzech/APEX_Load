@@ -1,9 +1,0 @@
-=== RUN   TestKafkaOwnedSeekActualBroker
-    owned_seek_integration_test.go:69: independent real coordinator request retried 1 times after Kafka code 15
-    owned_seek_integration_test.go:71: genuine production marker acknowledgement failed
-    owned_seek_fixture_test.go:594: independent direct oracle API counts=map[3:3 9:2 10:3 17:2 18:2 36:2]
-    owned_seek_fixture_test.go:232: genuine execution proxy joined: accepts=3 peak=3 frames=13 bytes=3017 API counts=map[0:1 3:1 17:3 18:3 22:2 36:3]
---- FAIL: TestKafkaOwnedSeekActualBroker (1.45s)
-FAIL
-FAIL	github.com/jasonczech/apexload/pkg/protocol/kafka	1.799s
-FAIL

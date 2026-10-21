@@ -1,6 +1,0 @@
-=== RUN   TestRecordingCIChangeAndTrustBoundary
-    recording_e2e_test.go:48: third_party/playwright-go/** must trigger both pull-request and main-branch coverage
---- FAIL: TestRecordingCIChangeAndTrustBoundary (0.00s)
-FAIL
-FAIL	github.com/jasonczech/apexload/scripts	0.228s
-FAIL

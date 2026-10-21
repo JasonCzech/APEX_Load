@@ -13,7 +13,7 @@ The observed process population includes shared driver/browser costs. A sampled 
 - Applied units race suite: 4 top-level tests and 15 subtests passed.
 - Full Go regression: 168 packages, 17,677 top-level tests and 17,368 subtests passed, including the actual private ZIP import through the test-only overlay.
 - The private ZIP retained its original hash and matching aggregate import result: HTTP 200, 803 requests, 476 actions and zero DSL issues. No traffic replay or converted-content persistence.
-- API/TypeScript generation, inventory, dashboard typecheck/lint/Help units/build, both Help profiles, documentation checks and evidence hashes passed. Exact source/asset/controller cohorts and the distinct combined RSS/joint draft are retained in [the evidence bundle](SHA256SUMS).
+- API/TypeScript generation, inventory, dashboard typecheck/lint/Help units/build, both Help profiles, documentation checks and evidence hashes passed. Exact source/asset/controller cohorts and the distinct combined RSS/joint draft are retained in the evidence bundle (`SHA256SUMS`).
 
 Review corrected the API and owner guide's stale CDP-attribution label to the actual shared Playwright driver OS sampler and added an explicit denominator for partial/unavailable RSS sample counts. Final applied-source and staged review: no remaining actionable findings after the recorded unit, sample-denominator and process-population corrections.
 

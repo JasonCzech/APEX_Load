@@ -1,8 +1,0 @@
-=== RUN   TestBrowserDocumentActualBlockedDrainClosesOwnedContext
-=== RUN   TestBrowserDocumentActualBlockedDrainClosesOwnedContext/chromium
-    document_actual_integration_test.go:441: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
-    document_actual_integration_test.go:474: actual native held drain physically closed and joined in 2.004721458s
---- PASS: TestBrowserDocumentActualBlockedDrainClosesOwnedContext (2.52s)
-    --- PASS: TestBrowserDocumentActualBlockedDrainClosesOwnedContext/chromium (2.52s)
-PASS
-ok  	github.com/jasonczech/apexload/pkg/protocol/browser	2.821s

@@ -75,10 +75,10 @@ jobs:
             artifact: apexload-desktop-windows-amd64
 
     steps:
-      # Committed Playwright evidence under docs/qa/reviews has paths longer
-      # than Windows' 260-character MAX_PATH once checked out. Text fixtures and
-      # golden files must also keep their committed LF endings, which the
-      # runner's default CRLF conversion would rewrite.
+      # Long paths stay enabled so deep fixture paths can't exceed Windows'
+      # 260-character MAX_PATH once checked out. Text fixtures and golden files
+      # must also keep their committed LF endings, which the runner's default
+      # CRLF conversion would rewrite.
       - name: Allow long checkout paths and keep LF line endings
         if: runner.os == 'Windows'
         shell: bash

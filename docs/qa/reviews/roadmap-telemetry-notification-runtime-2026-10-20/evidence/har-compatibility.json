@@ -1,8 +1,0 @@
-{
-  "equal_aggregate_results": true,
-  "excluded_random_fields": [
-    "script_sha256_without_id_created_at"
-  ],
-  "original_archive_sha256": "7469ebdef88a576cd3cfa5891318a4aa5afb4efe97fccb410df339fc609ddef7",
-  "comparison": "reviewed notification-runtime draft versus final applied full-suite import; no target replay or saved converted content"
-}

@@ -1,3 +1,0 @@
-wrote ../../docs/dsl.schema.json and ../../docs/DSL_ACTION_REFERENCE.md
-ok  	github.com/jasonczech/apexload/pkg/protocol/kafka	15.442s
-ok  	github.com/jasonczech/apexload/pkg/dsl	0.373s

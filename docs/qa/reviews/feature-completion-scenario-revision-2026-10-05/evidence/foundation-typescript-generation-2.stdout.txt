@@ -1,1 +1,0 @@
-wrote dashboard/src/types/generated/openapi.ts

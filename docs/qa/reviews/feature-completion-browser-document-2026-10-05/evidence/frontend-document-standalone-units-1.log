@@ -1,9 +1,0 @@
-
- RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard
-
-No test files found, exiting with code 1
-
-filter: src/components/browserDocumentEvidenceModel.test.ts, src/components/BrowserDocumentEvidencePanel.test.tsx
-include: **/*.{test,spec}.?(c|m)[jt]s?(x)
-exclude:  **/node_modules/**, **/.git/**, e2e/**, e2e-recording/**/*.spec.ts
-

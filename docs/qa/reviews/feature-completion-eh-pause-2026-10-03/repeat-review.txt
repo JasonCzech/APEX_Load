@@ -1,6 +1,0 @@
-Independent repeat review after final fixes:
-Provider shared gate, dispatcher, manual-credit transport cleanup, frozen latest/Geo-DR cursor and retained bounds: no remaining actionable findings (engine/control reviewer and root).
-Engine terminal teardown, immutable profiles, exact leases and cancelled-parent authority: no remaining actionable findings (provider reviewer and root).
-API canonical claims, nil/legacy scope, peer preflight, terminal exclusions, retries/compensation and local fail-closed stop: no remaining actionable findings (provider reviewer and root).
-Selected live run status and pending/acknowledged pause/resume browser regression: no remaining actionable findings (provider reviewer and root).
-Actual provider recovery/qualification remains open and is not inferred from these reviews.

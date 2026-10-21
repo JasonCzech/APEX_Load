@@ -1,7 +1,0 @@
-=== RUN   TestBrowserResourceGeneratorWriterSingleTransactionProjectionHeaderIsBounded
-    archive_browser_resource_projection_test.go:183: actual generator single-transaction projection entries=80 projection_bytes=34691 page_header_bytes=138804 string_statistics_bytes=138764
-    archive_browser_resource_projection_test.go:185: opaque generator resource JSON created unbounded lexical page statistics
---- FAIL: TestBrowserResourceGeneratorWriterSingleTransactionProjectionHeaderIsBounded (0.04s)
-FAIL
-FAIL	github.com/jasonczech/apexload/pkg/distributed/generatorrpc	0.568s
-FAIL

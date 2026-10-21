@@ -10,9 +10,9 @@ The meaningful regressions cover no-action idle windows, real engine pauses and 
 
 All commands used the dedicated cache `/private/tmp/apexload-feature-completion-go-cache`, `GOMAXPROCS=2`, `GOMEMLIMIT=4GiB`, and `-p 1`.
 
-- Focused `TestMessagingProgress*`: passed, 3.786 seconds, exit 0; [log](engine-progress-default.txt).
-- Targeted progress/resource/idle/final-publication race tests: passed, 6.811 seconds, exit 0; [log](engine-progress-race.txt).
-- Complete `pkg/engine` suite: passed, 36.785 seconds, exit 0; [log](engine-full.txt).
+- Focused `TestMessagingProgress*`: passed, 3.786 seconds, exit 0; log (`engine-progress-default.txt`).
+- Targeted progress/resource/idle/final-publication race tests: passed, 6.811 seconds, exit 0; log (`engine-progress-race.txt`).
+- Complete `pkg/engine` suite: passed, 36.785 seconds, exit 0; log (`engine-full.txt`).
 - Final engine whitespace check: passed.
 - Independent provider-agent engine review: clean after final registration, source identity, eviction, missing-source, group, phase eligibility, and malformed-adapter fixes.
 

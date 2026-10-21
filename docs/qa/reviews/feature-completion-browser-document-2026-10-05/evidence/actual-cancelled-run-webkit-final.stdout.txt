@@ -1,6 +1,0 @@
-=== RUN   TestBrowserDocumentActualCancelledRunCannotInventFinality
-=== RUN   TestBrowserDocumentActualCancelledRunCannotInventFinality/webkit
---- PASS: TestBrowserDocumentActualCancelledRunCannotInventFinality (0.97s)
-    --- PASS: TestBrowserDocumentActualCancelledRunCannotInventFinality/webkit (0.97s)
-PASS
-ok  	github.com/jasonczech/apexload/pkg/protocol/browser	1.124s

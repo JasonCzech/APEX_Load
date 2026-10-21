@@ -1,9 +1,0 @@
---- FAIL: TestBrowserDocumentsLiveAndFinalUseCurrentRuntimeSecretMatcher (0.00s)
-    browser_documents_test.go:242: runtime secret escaped document disclosure boundary
---- FAIL: TestBrowserDocumentsLiveAndFinalUseCurrentRuntimeSecretMatcher (0.00s)
-    browser_documents_test.go:242: runtime secret escaped document disclosure boundary
---- FAIL: TestBrowserDocumentsLiveAndFinalUseCurrentRuntimeSecretMatcher (0.00s)
-    browser_documents_test.go:242: runtime secret escaped document disclosure boundary
-FAIL
-FAIL	github.com/jasonczech/apexload/pkg/engine	0.590s
-FAIL

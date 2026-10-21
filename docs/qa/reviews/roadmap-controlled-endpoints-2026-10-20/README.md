@@ -12,8 +12,8 @@ It changes no runtime behavior or support-promotion record.
 
 ## Validation and review
 
-[Applied test and race counts](evidence/validation-counts.json), [commands](evidence/run-checks.sh),
-[runtime/library pins](evidence/runtime.txt), [source hashes](evidence/source-hashes.json)
+Applied test and race counts (`evidence/validation-counts.json`), commands (`evidence/run-checks.sh`),
+runtime/library pins (`evidence/runtime.txt`), source hashes (`evidence/source-hashes.json`)
 and [review notes](evidence/REVIEW.md) identify each cohort. Both affected protocol
 packages run in full with `-count=1`, then again with the race detector. Repository
 link/help-contract validation follows. In-app Help and embedded UI sources are
@@ -35,5 +35,5 @@ queue depth. This does not qualify production overhead, separate-host performanc
 the full query/report/baseline consumer chain, the Java JVM helper, Linux/Windows
 native behavior or real-device profiles. Those roadmap gates remain open.
 
-[Evidence checksums](evidence/SHA256SUMS) cover the retained bundle. No private HAR
+Evidence checksums (`evidence/SHA256SUMS`) cover the retained bundle. No private HAR
 or converted capture content is included; importer behavior is unchanged.

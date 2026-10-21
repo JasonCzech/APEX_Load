@@ -1,5 +1,0 @@
-Error: apexload/templates/controller.yaml:222:14
-  executing "apexload/templates/controller.yaml" at <.Values.archiveStaging.persistence.enabled>:
-    nil pointer evaluating interface {}.persistence
-
-Use --debug flag to render out invalid YAML

@@ -1,3 +1,0 @@
-signal: terminated
-FAIL	github.com/jasonczech/apexload/pkg/storage	107.094s
-FAIL

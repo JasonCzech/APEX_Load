@@ -25,8 +25,8 @@ limit was changed in this first pass. The [additional capture review](additional
 subsequently raised HAR capture uploads to 100 MiB. The recordings describe different journeys and were assessed
 independently rather than treated as a record/replay comparison pair.
 
-Machine-readable [before evidence](before.json), [after evidence](after.json),
-and [static-asset mode evidence](with-static-assets.json) contain only aggregate
+Machine-readable before evidence (`before.json`), after evidence (`after.json`),
+and static-asset mode evidence (`with-static-assets.json`) contain only aggregate
 counts, diagnostic categories, file names and digests.
 Diagnostic counts can be lower than affected-entry counts because identical
 findings at the same method/URL are deduplicated.
@@ -108,4 +108,4 @@ Validation status: affected-package tests pass with caching disabled. The full
 also pass. Initial full-suite attempts encountered disk exhaustion during
 compilation/linking; older regenerable compiler-cache archives were removed and
 the complete final-source suite was rerun successfully. See
-[validation summary](validation.json).
+validation summary (`validation.json`).

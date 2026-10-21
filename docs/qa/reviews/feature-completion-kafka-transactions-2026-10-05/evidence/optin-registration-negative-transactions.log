@@ -1,6 +1,0 @@
-=== RUN   TestKafkaTransactionsActualBroker
-    transactions_integration_test.go:23: kafka_transaction_integration requires APEXLOAD_KAFKA_TRANSACTION_FIXTURE; genuine qualification is missing
---- FAIL: TestKafkaTransactionsActualBroker (0.00s)
-FAIL
-FAIL	github.com/jasonczech/apexload/pkg/protocol/kafka	0.375s
-FAIL

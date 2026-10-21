@@ -1,8 +1,0 @@
---- FAIL: TestNativeIdentityQueryVersionCannotDowngradeCanonicalArtifacts (3.77s)
-    --- FAIL: TestNativeIdentityQueryVersionCannotDowngradeCanonicalArtifacts/historical_missing_columns (1.89s)
-        native_identity_test.go:265: explicit v2 query silently downgraded to canonical v1 [] native worker protocol invalid or excessive
-    --- FAIL: TestNativeIdentityQueryVersionCannotDowngradeCanonicalArtifacts/explicit_canonical_v1 (1.88s)
-        native_identity_test.go:265: explicit v2 query silently downgraded to canonical v1 [] native worker protocol invalid or excessive
-FAIL
-FAIL	github.com/jasonczech/apexload/pkg/analysis/duckdb	96.065s
-FAIL

@@ -8,25 +8,25 @@ Fresh screenshots were saved and inspected from a disposable local controller bu
 
 **General health: good foundation.** Create, Record and Import are distinct entry choices. The template/editor/action-block table makes supported choices discoverable. Dense choices could benefit from a task-oriented recommendation once a user selects physical browser, HTTP load or source import.
 
-![Step 1: authoring entry choices](screenshots/01-authoring-entry.jpg)
+Step 1: authoring entry choices (`screenshots/01-authoring-entry.jpg`)
 
 ### Step 2 — Choose an iPad recording profile
 
 **General health: useful desktop setup; incomplete for the requested device.** The selected `ipad_air` profile exposes viewport/device configuration, and the form says it launches controlled Chromium on this machine. There is no physical-device or installed Chrome-app selector in this view. Make “Emulated iPad on this workstation” explicit and provide a separate physical Chrome target with readiness and observed identity. The preset name alone could suggest a broader guarantee than the accompanying copy.
 
-![Step 2: iPad recording preset](screenshots/02-ipad-recording-preset.jpg)
+Step 2: iPad recording preset (`screenshots/02-ipad-recording-preset.jpg`)
 
 ### Step 3 — Inspect proxy onboarding
 
 **General health: useful desktop guidance; target-specific guidance missing.** Expanded instructions cover macOS/Windows proxy setup and the recorder CA. Add physical iPad Chrome guidance for Mac inspection, inspectability checks and manual HAR export, followed by any separately qualified device-proxy route. Show reachable proxy requirements and explicit trust cleanup where that route is chosen. No proxy settings, certificate trust or device configuration were changed in this audit.
 
-![Step 3: proxy onboarding](screenshots/03-proxy-onboarding.jpg)
+Step 3: proxy onboarding (`screenshots/03-proxy-onboarding.jpg`)
 
 ### Step 4 — Open browser debugging
 
 **General health: strong existing workspace; live behavior unverified.** Author/Debug navigation, stepping, failure breaks, variable watches, breakpoint controls, action outline and Source/Runtime/Browser Replay tabs are visible. The blank draft is idle, so this is navigation evidence. Extend the same workspace with interaction-to-Aura joins, recorded/replay diffs, authoritative pause-state values and reviewed repairs. Basic watches and the debugger already exist.
 
-![Step 4: browser replay workspace](screenshots/04-browser-replay-workspace.jpg)
+Step 4: browser replay workspace (`screenshots/04-browser-replay-workspace.jpg`)
 
 ## Design priorities
 

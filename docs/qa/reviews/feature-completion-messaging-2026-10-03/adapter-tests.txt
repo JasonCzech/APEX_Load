@@ -1,3 +1,0 @@
-ok  	github.com/jasonczech/apexload/pkg/protocol/eventhubs	0.667s
-ok  	github.com/jasonczech/apexload/pkg/protocol/kafka	15.489s
-ok  	github.com/jasonczech/apexload/pkg/protocol/jms	5.520s

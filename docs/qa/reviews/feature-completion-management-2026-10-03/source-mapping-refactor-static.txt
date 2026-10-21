@@ -1,6 +1,0 @@
-Listing tests:
-  workflow-script-sidebars.spec.ts:74:3 › Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 1800px
-  workflow-script-sidebars.spec.ts:74:3 › Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 1100px
-  workflow-script-sidebars.spec.ts:74:3 › Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 900px
-  workflow-script-sidebars.spec.ts:74:3 › Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 700px
-Total: 4 tests in 1 file

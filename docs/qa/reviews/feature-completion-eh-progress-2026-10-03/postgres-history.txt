@@ -1,7 +1,0 @@
-Disposable PostgreSQL16 migration/roundtrip fixture; one CPU,512MiB,loopback only.
-=== RUN   TestPostgresHistoryDropAvailabilityMigrationAndRoundTrip
---- PASS: TestPostgresHistoryDropAvailabilityMigrationAndRoundTrip (8.72s)
-=== RUN   TestPostgresMessagingHistoryMigrationAndRoundTrip
---- PASS: TestPostgresMessagingHistoryMigrationAndRoundTrip (19.70s)
-PASS
-ok  	github.com/jasonczech/apexload/pkg/storage	29.044s

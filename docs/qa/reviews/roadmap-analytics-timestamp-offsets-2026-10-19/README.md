@@ -20,6 +20,6 @@ Validation passed:
 
 Review added typed DATE/TIMESTAMP refusals and whitespace-before-offset coverage. The pinned parser refuses the spaced-offset fixture; it remains a rejected row rather than a guessed instant. The initial failure and failed parser-fixture expectation are retained alongside final runs. Review also registered the new tests in the generated acceptance inventory. After these fixes, the final source, test, documentation and scoped-change review found no further actionable findings.
 
-[Evidence commands and environment](evidence/commands.txt), [full Go package results](evidence/full-go-package-results.json), and [SHA-256 manifest](evidence/SHA256SUMS) identify the validation records.
+Evidence commands and environment (`evidence/commands.txt`), full Go package results (`evidence/full-go-package-results.json`), and SHA-256 manifest (`evidence/SHA256SUMS`) identify the validation records.
 
 The unavailable reference hosts and native Linux/Windows runners leave release-scale and platform gates pending. These tests exercise the installed macOS arm64 native library only. The existing decimal and other legacy goldens are compatibility tests, not qualification of the remaining revised requirements.

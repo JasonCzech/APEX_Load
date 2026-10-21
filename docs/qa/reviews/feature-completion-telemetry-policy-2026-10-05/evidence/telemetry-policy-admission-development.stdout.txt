@@ -1,6 +1,0 @@
-# github.com/jasonczech/apexload/pkg/api [github.com/jasonczech/apexload/pkg/api.test]
-pkg/api/telemetry_policy_admission_test.go:77:9: runner.SetExecutionBackend undefined (type *TestRunner has no field or method SetExecutionBackend, but does have method setExecutionBackend)
-pkg/api/telemetry_policy_admission_test.go:109:47: info.Database undefined (type "github.com/jasonczech/apexload/pkg/storage".StoreBackendInfo has no field or method Database)
-pkg/api/telemetry_policy_admission_test.go:162:11: runner.SetExecutionBackend undefined (type *TestRunner has no field or method SetExecutionBackend, but does have method setExecutionBackend)
-FAIL	github.com/jasonczech/apexload/pkg/api [build failed]
-FAIL

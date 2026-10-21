@@ -36,15 +36,15 @@ baseline. The attestation-bearing script hash is not used as an equality claim.
 No private capture or converted payload is committed. All 260 active Markdown
 files pass the documentation checker; both browser profiles exercise Help.
 
-[Validation summary](evidence/validation-summary.json),
-[review rounds](evidence/review.txt), [commands](evidence/commands.txt),
-[source and asset hashes](evidence/source-and-asset-sha256.json), and
-[HAR comparison](evidence/external-har-comparison.json) retain exact scope.
+Validation summary (`evidence/validation-summary.json`),
+review rounds (`evidence/review.txt`), commands (`evidence/commands.txt`),
+source and asset hashes (`evidence/source-and-asset-sha256.json`), and
+HAR comparison (`evidence/external-har-comparison.json`) retain exact scope.
 Historical failed runs and the corrected checks are retained as compressed logs.
-The [before-fix history prompt](evidence/history-return-1.png) and
-[its diagnostic context](evidence/history-return-1-context.txt.gz) record the
+The before-fix history prompt (`evidence/history-return-1.png`) and
+its diagnostic context (`evidence/history-return-1-context.txt.gz`) record the
 retained-review routing finding. The
-[collection assertion diagnostic](evidence/status-assertion-1-context.txt.gz)
+collection assertion diagnostic (`evidence/status-assertion-1-context.txt.gz`)
 records the test-only status update.
 
 The browser fixture explicitly models a legacy plain response by removing the
@@ -68,7 +68,7 @@ of protected imports. Existing protected-import workflows run in the full cycle.
 
 ## Cleanup
 
-[Cleanup verification](evidence/cleanup.json): session Go build/test caches and
+Cleanup verification (`evidence/cleanup.json`): session Go build/test caches and
 disposable Vite caches were cleared (approximately 2.8 GiB reclaimed). Docker
 builder prune completed with 0 B reclaimed. Test controllers and Playwright
 browsers exited; dependencies, embedded assets and source evidence are retained.

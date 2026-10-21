@@ -1,7 +1,0 @@
-=== RUN   TestBrowserResourceActualChromiumAcquisitionArchiveAndPagination
-    archive_browser_resource_actual_integration_test.go:139: actual acquisition engine=chromium browser_version=149.0.7827.55 viewport=1280x900 fixture_unique_requests=81 retained_entries=81 measured_zero_body=80 measured_service_worker_false=81
-    archive_browser_resource_actual_integration_test.go:177: actual archived resource page status422: {"error":"browser resource source is unavailable or malformed"}
---- FAIL: TestBrowserResourceActualChromiumAcquisitionArchiveAndPagination (0.64s)
-FAIL
-FAIL	github.com/jasonczech/apexload/pkg/api	2.233s
-FAIL

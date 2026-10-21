@@ -1,7 +1,0 @@
-{
-  "platform": "darwin-arm64",
-  "path": "/private/tmp/apexload-native-schema29-desktop-before-raw-role-fix-2026-10-04/apexload",
-  "bytes": 185180304,
-  "sha256": "97daf154c32a409e95c4eba6d49e81b9b3b72bf39e54be3feefe9a0669665d5b",
-  "qualification": "built successfully; invalid worker startup failed; retained original executable before successor rebuild"
-}

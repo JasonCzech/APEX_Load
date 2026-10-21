@@ -1,8 +1,0 @@
-{
-  "baseline": "roadmap-java-representations-2026-10-20/evidence/har-import-final-summary.json",
-  "excluded_randomized_fields": [
-    "script_sha256_without_id_created_at"
-  ],
-  "aggregate_fields_match": true,
-  "differences": {}
-}

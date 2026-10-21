@@ -18,7 +18,7 @@ Date: 2026-09-12. This follows the [Import From Source usability audit](../../ar
 
 **16 of 20 cases passed; 4 are blocked; no executed case failed.** The final matrix includes real Kafka and Solace round trips, three attached canonical Bruno SOAP assets, source preservation, mock messaging, and enterprise execution constraints. It does not certify every customer application or full original-tool parity.
 
-The source-backed [manifest](../import-fixture-matrix.json), [machine-readable results](import-fixture-matrix-2026-09-12/evidence/results.json), source hashes, and [reproduction runbook](#import-fixture-matrix-and-broker-runbook) provide the checked-in evidence. Per-case private logs use the paths recorded below and require the original evidence collection.
+The source-backed [manifest](../import-fixture-matrix.json) and [reproduction runbook](#import-fixture-matrix-and-broker-runbook) are checked in; the machine-readable results (`import-fixture-matrix-2026-09-12/evidence/results.json`) and source hashes are local evidence that is not tracked. Per-case private logs use the paths recorded below and require the original evidence collection.
 
 #### Matrix
 
@@ -83,7 +83,7 @@ No new customer fixture paths or cloud-provider configuration were supplied duri
 
 #### Validation and cleanup
 
-- Full Go suite passed: **105 packages**, **10,812 top-level tests passed**, 4 top-level environment-dependent skips and 11 packages without tests. See [validation record](import-fixture-matrix-2026-09-12/VALIDATION.json).
+- Full Go suite passed: **105 packages**, **10,812 top-level tests passed**, 4 top-level environment-dependent skips and 11 packages without tests. See validation record (`import-fixture-matrix-2026-09-12/VALIDATION.json`).
 - The matrix passed 16 cases without skipped tests inside those passing cases. It separately records four unavailable cases as blocked. Exit 0 never implies those gaps are covered.
 - Seven Python harness tests passed, covering empty/missing tests, skips, failures, live prerequisites, bounded timeouts, output capture and manifest references. The pinned Compose configuration validates.
 - The first full Go attempt ran out of disk space. About 8 GB of unused Docker build cache older than 24 hours was reclaimed; the full suite was rerun successfully. No source files or application data were removed.
@@ -389,7 +389,7 @@ Keep the vertical issue queue. The right pane should become a focused resolution
 
 ##### 1. Select runtime behavior differences — navigation good, resolution unclear
 
-![Runtime issue](loadrunner-issue-detail-2026-09-23/01-runtime-detail.jpg)
+Runtime issue (`loadrunner-issue-detail-2026-09-23/01-runtime-detail.jpg`)
 
 The selected state is clear and the queue remains visible. The detail pane instead offers a generic migration paragraph, aggregate counts (34 executed, 5 partial, 1 compatibility-only, 3 non-applicable), and “Script requirement / Source location unavailable.” None identifies the particular settings requiring a decision. “1 affected location” actually represents a grouped script-level diagnostic. The execution-blocker warning also appears for this nonblocking review item.
 
@@ -397,7 +397,7 @@ The selected state is clear and the queue remains visible. The detail pane inste
 
 ##### 2. Select converter warnings — poor specificity and duplicated information
 
-![Warning issue](loadrunner-issue-detail-2026-09-23/02-warning-detail.jpg)
+Warning issue (`loadrunner-issue-detail-2026-09-23/02-warning-detail.jpg`)
 
 The title is the internal key `diagnostic:warnings`. The same generic instruction appears in the introduction and Diagnostic evidence. The actual warning is available elsewhere in Conversion reference: line 28 uses `web_reg_find Search=ALL`, while replay checks the main response body only and does not reproduce the source’s full search scope.
 
@@ -405,7 +405,7 @@ The title is the internal key `diagnostic:warnings`. The same generic instructio
 
 ##### 3. Follow Open related review — destination works, context is lost
 
-![Source handoff](loadrunner-issue-detail-2026-09-23/03-source-handoff.jpg)
+Source handoff (`loadrunner-issue-detail-2026-09-23/03-source-handoff.jpg`)
 
 The warning’s button opens Source Mapping at `lr_continue_on_error`, the first selected mapping, rather than the warned line 28. It shows all 30 mappings and no warning-specific selection. The operator must rediscover the problem.
 
@@ -471,7 +471,7 @@ Implemented against the current workspace dashboard, served from Vite at http://
 - Full dev-admin browser profile: **131 passed, 6 failed, 4 skipped**. All runnable LoadRunner tests passed. Remaining failures: workspace hierarchy; project-scope/history navigation; JMeter shared review evidence; JMeter messaging preview; Source Mapping resize/restore timeout; guided workspace setup. Other tasks were also updating this shared workspace during validation.
 - Full local-auth browser profile: all 15 runnable LoadRunner tests passed; one optional private-fixture test skipped. Remaining wider workflow checks are still running.
 
-Current screenshots: [warning](loadrunner-issue-detail-2026-09-23/issue-warning.png), [runtime](loadrunner-issue-detail-2026-09-23/issue-runtime.png), [narrow layout](loadrunner-issue-detail-2026-09-23/issue-narrow.png).
+Current screenshots: warning (`loadrunner-issue-detail-2026-09-23/issue-warning.png`), runtime (`loadrunner-issue-detail-2026-09-23/issue-runtime.png`), narrow layout (`loadrunner-issue-detail-2026-09-23/issue-narrow.png`).
 
 Runtime previews are local comparisons; backend validation occurs on apply. Review decisions are session notes, not persisted approvals. Unsupported source behavior is not declared repaired by acknowledging it.
 
@@ -559,39 +559,39 @@ The top-level tabs expose their names and selected state, but their numeric badg
 
 Strengths: grouped issue queue, affected-location counts, a visible next-issue action, and a useful selected-issue pane. The global and local issue totals repeat. Long review content scrolls the tab strip away. The captured initial state leaves a large detail pane empty until selection; the linked TLS issue shows that the detail pane becomes useful once a specific task is chosen.
 
-![Review tab](loadrunner-panel-design-2026-09-23/01-review.jpg)
+Review tab (`loadrunner-panel-design-2026-09-23/01-review.jpg`)
 
 The source-to-issue link selected the intended TLS repair. It did not apply a repair.
 
-![Linked TLS repair in Review](loadrunner-panel-design-2026-09-23/01b-linked-issue.jpg)
+Linked TLS repair in Review (`loadrunner-panel-design-2026-09-23/01b-linked-issue.jpg`)
 
 ##### 2. Credentials — needs consolidation
 
 Strengths: secret values remain hidden, affected locations are grouped, and destination/current state are separated. The multiple count scopes, duplicate return links, and two introductory/header layers make the one binding needing setup harder to distinguish from preserved values.
 
-![Credentials tab](loadrunner-panel-design-2026-09-23/02-credentials.jpg)
+Credentials tab (`loadrunner-panel-design-2026-09-23/02-credentials.jpg`)
 
 ##### 3. Data & parameters — greatest information-architecture friction
 
 Strengths: a useful compact parameter table, explicit sample-value caveat, source evidence, and distinct source/allocation views. The tab badge and “Needs attention” filter describe different populations. Optional workflows below the table follow older card patterns and separate apply conventions.
 
-![Data and parameters tab](loadrunner-panel-design-2026-09-23/03-data-parameters.jpg)
+Data and parameters tab (`loadrunner-panel-design-2026-09-23/03-data-parameters.jpg`)
 
 The read-only Data sources inventory is worth keeping. It reports source files, row availability, columns, and consuming parameters.
 
-![Data sources subview](loadrunner-panel-design-2026-09-23/03b-data-sources.jpg)
+Data sources subview (`loadrunner-panel-design-2026-09-23/03b-data-sources.jpg`)
 
 Allocation repeats much of the parameter table before presenting its distinctive simulation tool. Prioritize the preview and make rule edits directly reachable.
 
-![Allocation subview](loadrunner-panel-design-2026-09-23/03c-allocation.jpg)
+Allocation subview (`loadrunner-panel-design-2026-09-23/03c-allocation.jpg`)
 
 The return-to-queue link appears between the inventory and optional substitutions, rather than in the shared tab header.
 
-![Optional substitutions position](loadrunner-panel-design-2026-09-23/03d-optional-substitutions.jpg)
+Optional substitutions position (`loadrunner-panel-design-2026-09-23/03d-optional-substitutions.jpg`)
 
 The two optional change sections use different confirmation patterns and action placements.
 
-![Substitution and parameterization workflows](loadrunner-panel-design-2026-09-23/03e-parameterization.jpg)
+Substitution and parameterization workflows (`loadrunner-panel-design-2026-09-23/03e-parameterization.jpg`)
 
 ##### 4. Runtime settings — strong comparison model, inconsistent framing
 
@@ -599,23 +599,23 @@ Strengths: source/current comparison, per-row evidence, category navigation, and
 
 Normalize display categories such as Log/Logging where their meaning warrants it, retaining original source-section names in evidence. Do not discard source provenance while simplifying navigation.
 
-![Runtime settings tab](loadrunner-panel-design-2026-09-23/04-runtime.jpg)
+Runtime settings tab (`loadrunner-panel-design-2026-09-23/04-runtime.jpg`)
 
 ##### 5. DSL Preview — useful capability, needs layout cleanup
 
 Strengths: read-only labeling, action search, section selection, word wrap, and explicit truncation disclosure. The heading scale, edge alignment, and download explanation differ from the neighboring tabs. A shared code-inspection header and compact notice would give more room to the JSON.
 
-![DSL Preview tab](loadrunner-panel-design-2026-09-23/05-dsl-preview.jpg)
+DSL Preview tab (`loadrunner-panel-design-2026-09-23/05-dsl-preview.jpg`)
 
 ##### 6. Source Mapping — valuable specialist view, too much before the code
 
 Strengths: source/destination comparison, coverage filters, explicit source-preview limitations, original/current destination choices, and a working link to the related repair. Mapping-review counts describe provenance review and should remain distinct from replay issue counts. Retain that distinction in labels rather than merging the two systems.
 
-![Source Mapping tab](loadrunner-panel-design-2026-09-23/06-source-mapping.jpg)
+Source Mapping tab (`loadrunner-panel-design-2026-09-23/06-source-mapping.jpg`)
 
 Expanded display controls and the actual comparison show the useful core experience. Consolidate the surrounding controls, and keep the common tab navigation available during long inspection sessions.
 
-![Source Mapping comparison and controls](loadrunner-panel-design-2026-09-23/06b-source-comparison.jpg)
+Source Mapping comparison and controls (`loadrunner-panel-design-2026-09-23/06b-source-comparison.jpg`)
 
 #### Duplicate-functionality decisions
 
@@ -689,12 +689,12 @@ These captures come from the final current-source browser runs, not the port-808
 
 | Tab | Current evidence |
 | --- | --- |
-| Review | [Issue workspace](loadrunner-panel-design-2026-09-23/current/review.png) |
-| Credentials | [Populated credential group](loadrunner-panel-design-2026-09-23/current/credentials.png) |
-| Data & parameters | [Desktop](loadrunner-panel-design-2026-09-23/current/data.png), [narrow populated editor](loadrunner-panel-design-2026-09-23/current/data-narrow.png) |
-| Runtime settings | [Populated runtime settings](loadrunner-panel-design-2026-09-23/current/runtime.png) |
-| DSL Preview | [DSL controls and preview](loadrunner-panel-design-2026-09-23/current/dsl.png) |
-| Source Mapping | [Comparison with wrapping actions](loadrunner-panel-design-2026-09-23/current/source.png) |
+| Review | Issue workspace (`loadrunner-panel-design-2026-09-23/current/review.png`) |
+| Credentials | Populated credential group (`loadrunner-panel-design-2026-09-23/current/credentials.png`) |
+| Data & parameters | Desktop (`loadrunner-panel-design-2026-09-23/current/data.png`), narrow populated editor (`loadrunner-panel-design-2026-09-23/current/data-narrow.png`) |
+| Runtime settings | Populated runtime settings (`loadrunner-panel-design-2026-09-23/current/runtime.png`) |
+| DSL Preview | DSL controls and preview (`loadrunner-panel-design-2026-09-23/current/dsl.png`) |
+| Source Mapping | Comparison with wrapping actions (`loadrunner-panel-design-2026-09-23/current/source.png`) |
 
 #### Source identity
 

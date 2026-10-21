@@ -41,7 +41,7 @@ Initial implementation reviews were followed by independent area reviews and a f
 
 The initial browser failures identified two regression-fixture corrections and a clipped Set empty button. An initial HAR download also returned 500 during disk pressure; the same URL and corrective reruns subsequently succeeded. The grid layout correction was independently reviewed and verified in both auth profiles.
 
-The [retained validation summary](evidence/fix-validation.txt) records commands, results, and regression names.
+The retained validation summary (`evidence/fix-validation.txt`) records commands, results, and regression names.
 
 The protocol tests use deterministic network/WebDriver fixtures. No live Appium device, PostgreSQL server, cloud deployment, or throughput benchmark was used to establish these results.
 

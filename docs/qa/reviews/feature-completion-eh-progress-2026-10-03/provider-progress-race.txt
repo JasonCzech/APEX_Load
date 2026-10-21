@@ -1,2 +1,0 @@
-ok  	github.com/jasonczech/apexload/pkg/protocol	(cached)
-ok  	github.com/jasonczech/apexload/pkg/protocol/eventhubs	1.551s

@@ -1,4 +1,0 @@
-# github.com/jasonczech/apexload/pkg/api [github.com/jasonczech/apexload/pkg/api.test]
-pkg/api/archive_browser_resource_reader.go:27:38: undefined: regexp
-FAIL	github.com/jasonczech/apexload/pkg/api [build failed]
-FAIL

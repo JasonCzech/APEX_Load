@@ -1,7 +1,0 @@
-{
-  "docs/NATIVE_ANALYTICS.md": "b152b61c210461593f3757ff2eb83ce0185573730b2d4e2dad278a6219b9da60",
-  "docs/ROADMAP_IMPLEMENTATION_SPEC.md": "df85575c7fbb47fdf2c52493b65effcf82cdd2e59fe04188d576c30716b213eb",
-  "docs/qa/ANALYTICS_ACCEPTANCE.md": "fa4b054426b9866cd7772842ccbcfb770d342da2c0d70f92a804636834e6f270",
-  "docs/qa/analytics_acceptance_test.go": "9883b6d8e1cc5dcfebefbeb9e3eef93acbe4308f54f66aa64db11e6f69a2dd1b",
-  "pkg/analysis/duckdb/native_partition_precedence_test.go": "f60b98951d9968d2ec2860bcfa4995e84e65d399ed184f41288e554fdc0737dd"
-}

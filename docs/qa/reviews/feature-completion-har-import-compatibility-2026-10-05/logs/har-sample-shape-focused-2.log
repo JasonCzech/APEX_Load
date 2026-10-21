@@ -1,6 +1,0 @@
---- FAIL: TestHARSampleShapeUsesLogicalStorageAndPreservesCaptureGaps (0.00s)
-    har_sample_shape_test.go:63: source timestamp did not retain its timezone and precision
-FAIL
-FAIL	github.com/jasonczech/apexload/pkg/convert/sample	0.371s
-ok  	github.com/jasonczech/apexload/pkg/convert/salesforce	0.336s
-FAIL

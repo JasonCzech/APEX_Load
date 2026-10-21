@@ -1,6 +1,0 @@
-{
-  "pkg/distributed/generatorrpc/execution_control.go": "b73eac435821a775ab53af33cb5f2eeb791855cacb5a414ab951e64cf7a9ba53",
-  "pkg/distributed/generatorrpc/coordinated_published_clock_test.go": "3a9a4ab7c15fb578f2e1d65646855543cbd06cc52ef7bbfd238029e5348c0e7f",
-  "docs/qa/telemetry_acceptance_test.go": "2382ccdf3cdbb3cfe651fdd294cdbead7123bcf4eb290387253cc894e833801e",
-  "scripts/run-optin-suites.sh": "e865b3bf8cc8d0f86ab55bd78bd2a6c76ffbb30beba7061f53b8ac0984ec97d5"
-}

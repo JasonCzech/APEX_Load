@@ -6,7 +6,7 @@
 
 Status: Historical index (point-in-time UX/QA reviews and feature evaluations; not current product documentation). This is the single review index. Live status for the test program is in [../STATUS.md](../STATUS.md) and [../DEFECTS.md](../DEFECTS.md).
 
-This directory holds dated reviews that still carry open items or are still cited, together with their captured evidence (screenshots, logs, JSON) in the sibling folders. Completed reviews are collected in the themed reports below and [September audits](../../archive/qa-reviews/AUDITS_2026-09.md); see [../../archive/README.md](../../archive/README.md) for everything else that was archived or removed (including how to restore deleted files from git). The whole-application review of 2026-08-02 was removed on 2026-09-24; its 11 tracked defects are in [../DEFECTS.md](../DEFECTS.md).
+This directory holds dated reviews that still carry open items or are still cited. Only the Markdown records are tracked. Captured evidence (screenshots, logs, JSON, traces) is git-ignored and stays local, so paths to it are cited as code spans rather than links. Completed reviews are collected in the themed reports below and [September audits](../../archive/qa-reviews/AUDITS_2026-09.md); see [../../archive/README.md](../../archive/README.md) for everything else that was archived or removed (including how to restore deleted files from git). The whole-application review of 2026-08-02 was removed on 2026-09-24; its 11 tracked defects are in [../DEFECTS.md](../DEFECTS.md).
 
 The themed reports preserve the original narrative of each consolidated review, including its date, scope and qualification limits.
 

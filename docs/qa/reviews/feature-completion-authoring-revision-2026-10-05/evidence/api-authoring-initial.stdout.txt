@@ -1,4 +1,0 @@
-# github.com/jasonczech/apexload/pkg/api [github.com/jasonczech/apexload/pkg/api.test]
-pkg/api/script_authoring_handlers_test.go:98:97: undefined: strPtr
-FAIL	github.com/jasonczech/apexload/pkg/api [build failed]
-FAIL

@@ -1,5 +1,0 @@
-
-> apexload-dashboard@0.1.0 typecheck
-> tsc --noEmit --pretty false -p tsconfig.json && tsc --noEmit --pretty false -p tsconfig.node.json
-
-src/components/useScriptsAuthoringState.test.tsx(61,263): error TS2741: Property 'base_url' is missing in type '{}' but required in type 'ScriptConfig'.

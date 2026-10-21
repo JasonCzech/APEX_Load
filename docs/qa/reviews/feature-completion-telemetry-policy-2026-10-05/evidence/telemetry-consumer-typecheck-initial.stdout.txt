@@ -1,5 +1,0 @@
-
-> apexload-dashboard@0.1.0 typecheck
-> tsc --noEmit --pretty false -p tsconfig.json && tsc --noEmit --pretty false -p tsconfig.node.json
-
-src/components/telemetryPolicyModel.ts(11,97): error TS2550: Property 'hasOwn' does not exist on type 'ObjectConstructor'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.

@@ -40,7 +40,7 @@ zero blocking errors and the same two pre-existing warnings.
 Both pinned local broker packages passed with no skips: Kafka 240 test results
 and JMS/Solace 318 (including subtests). The required live Kafka produce/consume
 and Solace publish tests ran, and fixture teardown succeeded. See the
-[broker receipt](broker-receipt.json). Raw logs are retained with the local task
+broker receipt (`broker-receipt.json`). Raw logs are retained with the local task
 evidence; basic interoperability does not qualify the separate transaction/seek
 or cloud-provider lanes. No recurring task was created.
 
@@ -78,7 +78,7 @@ The final integrated telemetry reference passed the unchanged 60-second,
 123,107 live successes plus eight live errors. The two-request difference is
 within the existing 20-request in-flight allowance at stop; this run does not
 prove zero loss. All 93 concurrent archive-analysis reads passed. Browser render
-P99 was 164.1 ms. See the [raw telemetry receipt](telemetry-reference.json); its
+P99 was 164.1 ms. See the raw telemetry receipt (`telemetry-reference.json`); its
 explicit measurement limitations still apply. All browser processes opened by
 this run exited.
 
@@ -96,7 +96,7 @@ the fix is paced at 500/s to avoid saturating the macOS listener backlog.
 | WebSocket | 50.35 | 29.78 | 31.98 | 16.00 |
 | Network | 41.10 | 20.52 | 32.00 | 16.02 |
 
-Raw measurements: [before](footprint-before.json), [after](footprint-after.json).
+Raw measurements: before (`footprint-before.json`), after (`footprint-after.json`).
 These are local idle footprints, not throughput or production capacity claims.
 
 Bounded synthetic correlation benchmarks (three 300 ms runs, median) changed

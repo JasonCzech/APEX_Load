@@ -1,9 +1,0 @@
---- FAIL: TestScenarioContentRevisionImmediateRootGroupPoolTriggers (0.08s)
-    scenario_content_revision_test.go:128: group stages_json did not rotate
---- FAIL: TestScenarioAuthoringReferenceAndInheritedSourceBoundary (0.06s)
-    scenario_content_revision_test.go:368: constraint failed: FOREIGN KEY constraint failed (787)
---- FAIL: TestScenarioAuthoringTwoStoreCoherenceAndCreation (0.07s)
-    scenario_content_revision_test.go:529: database is locked (5) (SQLITE_BUSY)
-FAIL
-FAIL	github.com/jasonczech/apexload/pkg/storage	0.871s
-FAIL

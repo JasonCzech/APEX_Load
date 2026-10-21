@@ -6,7 +6,7 @@ A native fixture places immutable Parquet bytes beneath conflicting timestamp, v
 
 ## Validation and review
 
-The installed native analytics suite passed 2 packages, 315 top-level tests and 782 subtests, including the contained v1/v2 precedence fixture. The generated analytics inventory, complete documentation QA package and documentation link checks passed. This test-and-guide slice changes no production or embedded Help content; the preceding committed assets remain unchanged. Exact commands, source/asset hashes and raw logs are retained in [the evidence bundle](SHA256SUMS).
+The installed native analytics suite passed 2 packages, 315 top-level tests and 782 subtests, including the contained v1/v2 precedence fixture. The generated analytics inventory, complete documentation QA package and documentation link checks passed. This test-and-guide slice changes no production or embedded Help content; the preceding committed assets remain unchanged. Exact commands, source/asset hashes and raw logs are retained in the evidence bundle (`SHA256SUMS`).
 
 The same test fails in both mapping versions against a temporary control that enables Hive inference for native preview: it observes directory timestamp 1 and value 999 in place of the physical timestamp 1700000040 and value 7. This intentionally changed control is separate from a prior-product regression failure. Its hashes and failing log are retained. Final applied-source and staged review found no remaining actionable findings.
 

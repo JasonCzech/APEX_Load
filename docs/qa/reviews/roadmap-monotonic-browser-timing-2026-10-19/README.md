@@ -13,14 +13,14 @@ The existing authenticated report, per-viewer/tab quotas, opt-in behavior, 64-sa
 ## Validation
 
 - Dashboard type checking and embedded build passed; lint passed. The existing bundle-size warning remains advisory.
-- Five focused timing, stream and help unit files passed: **57 tests** ([log](evidence/render-unit-final.log)).
-- Real live-run telemetry and searchable/reloadable narrow help workflows passed in **both auth profiles, two tests each** ([dev-admin](evidence/render-dev-admin-reviewed.log), [local-auth](evidence/render-local-auth-reviewed.log)). The browser fixture steps the callback wall clock forward by two minutes while preserving bounded monotonic intervals and the advisory stage. Unit fixtures cover both forward and backward steps.
-- Final telemetry table and narrow help screenshots were visually inspected in both profiles ([dev-admin table](evidence/dev-admin-stages.png), [local-auth table](evidence/local-auth-stages.png), [dev-admin help](evidence/dev-admin-help.png), [local-auth help](evidence/local-auth-help.png)). Missing generator measurements remain unavailable; browser timing remains explicitly advisory.
+- Five focused timing, stream and help unit files passed: **57 tests** (log (`evidence/render-unit-final.log`)).
+- Real live-run telemetry and searchable/reloadable narrow help workflows passed in **both auth profiles, two tests each** (dev-admin (`evidence/render-dev-admin-reviewed.log`), local-auth (`evidence/render-local-auth-reviewed.log`)). The browser fixture steps the callback wall clock forward by two minutes while preserving bounded monotonic intervals and the advisory stage. Unit fixtures cover both forward and backward steps.
+- Final telemetry table and narrow help screenshots were visually inspected in both profiles (dev-admin table (`evidence/dev-admin-stages.png`), local-auth table (`evidence/local-auth-stages.png`), dev-admin help (`evidence/dev-admin-help.png`), local-auth help (`evidence/local-auth-help.png`)). Missing generator measurements remain unavailable; browser timing remains explicitly advisory.
 - The generated telemetry acceptance inventory passed and was refreshed. Documentation checks passed for **253 active Markdown files**; the in-app guide ownership/fragment scan reported no findings. `git diff --check` passed.
 - Validation used Node 22.23.3 and Go 1.26.9 on macOS arm64, disposable local controllers/databases, and the maintained Playwright runner. Latest `origin/main` was integrated before builds. Browser sessions and controllers were closed by the runner. Dedicated build caches remain in use for subsequent implementation slices.
 - This slice changes dashboard timing and documentation, not Go API production behavior. The preceding [durable-cursor validation](../roadmap-durable-cursors-2026-10-19/README.md) retains the full Go-suite evidence; it is not relabelled as a new run here. Local browser checks do not qualify cross-host end-to-end latency.
 
-Raw final logs and screenshots are retained under [evidence](evidence/), with [SHA-256 hashes](evidence/SHA256SUMS).
+Raw final logs and screenshots are retained under `evidence/`, with SHA-256 hashes (`evidence/SHA256SUMS`).
 
 ## Review
 

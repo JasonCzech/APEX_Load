@@ -1,6 +1,0 @@
-# github.com/jasonczech/apexload/pkg/protocol/browser [github.com/jasonczech/apexload/pkg/protocol/browser.test]
-pkg/protocol/browser/har_capture.go:14:2: "github.com/jasonczech/apexload/pkg/scrub" imported and not used
-pkg/protocol/browser/har_capture.go:321:15: undefined: fmt
-pkg/protocol/browser/har_capture.go:326:15: undefined: fmt
-FAIL	github.com/jasonczech/apexload/pkg/protocol/browser [build failed]
-FAIL

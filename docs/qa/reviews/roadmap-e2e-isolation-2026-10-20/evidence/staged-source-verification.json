@@ -1,6 +1,0 @@
-{
-  "checked_files": 396,
-  "mismatches": [],
-  "passed": true,
-  "scope": "Validated production source/assets plus the separately verified final wrapper regression tests; documentation/evidence are reviewed separately."
-}

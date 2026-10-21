@@ -19,8 +19,8 @@ Validation:
 - Full real-adapter build profiles passed together: `eventhubs_real`, `kafka_real`, `jms_servicebus_real`, `jms_solace_real`. These runs compile the edited adapters and exercise deterministic/local fixtures. Live service acceptance was not run.
 - Partial-delivery/empty-body regressions passed in default and combined tagged profiles.
 - Focused engine/RPC bounded-retention, wire-version and mixed-peer regressions passed. Focused API messaging/native regressions passed.
-- Final focused protocol/engine/RPC race suites passed after all decoder fixes ([race log](race-tests.txt)); default repository-wide tests passed on frozen source with a dedicated temporary Go cache ([repository log](../feature-completion-catalog-2026-10-03/go-tests.txt)).
-- The final combined real-adapter build-profile repeat passed ([adapter log](adapter-tests.txt)); no live provider qualification is inferred. Documentation and generated contract checks passed.
+- Final focused protocol/engine/RPC race suites passed after all decoder fixes (race log (`race-tests.txt`)); default repository-wide tests passed on frozen source with a dedicated temporary Go cache (repository log (`../feature-completion-catalog-2026-10-03/go-tests.txt`)).
+- The final combined real-adapter build-profile repeat passed (adapter log (`adapter-tests.txt`)); no live provider qualification is inferred. Documentation and generated contract checks passed.
 - The initial repository run encountered stale generated QA inventory and source changed during compilation. Inventory was regenerated and a frozen complete run passed; the interrupted decoder-follow-up run is not counted as a pass. A subsequent shared-cache run passed API tests but lost dependency cache files during remaining builds; the dedicated-cache full repeat passed and supersedes that environmental failure.
 
 Remaining program gates include provider capability/admission matrices, management packs, user/report percentile workflows, qualified source clocks, helper semantics, restart/rebalance/provider certification and integrated acceptance. No provider support level is promoted by these component results.

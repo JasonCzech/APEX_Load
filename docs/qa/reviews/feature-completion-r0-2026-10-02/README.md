@@ -5,9 +5,9 @@ Evaluated 2026-10-02 against immutable snapshot `025d5ed9dd1078396cd89907ce90ce8
 ## Results
 
 - Final checked-addition/negative/overflow API regression tables passed with `-count=1`. Coverage includes signed boundaries, invalid contributors, lower-bound retention, unavailable zero, fleet/archive reconciliation and source nonmutation.
-- The refreshed targeted API race gate passed with `-race -count=1`, including those guards, baseline cumulative-counter/availability cases, missing/cold peers, runtime-history restoration, stream sequencing and publication fencing. Package test runtime: 2.946 seconds. [Retained race output](api-race.txt).
+- The refreshed targeted API race gate passed with `-race -count=1`, including those guards, baseline cumulative-counter/availability cases, missing/cold peers, runtime-history restoration, stream sequencing and publication fencing. Package test runtime: 2.946 seconds. Retained race output (`api-race.txt`).
 - Actual PostgreSQL migration and round-trip acceptance passed against disposable PostgreSQL 16.14 (`aarch64-unknown-linux-musl`). `TestPostgresHistoryDropAvailabilityMigrationAndRoundTrip` dropped the new availability column and current migration receipt, reopened the real store, then verified measured zero versus SQL NULL availability. It executed without skips (1.33 seconds).
-- SQLite migration/restart acceptance also passed (0.05 seconds). Combined storage test runtime: 1.788 seconds. [Retained storage output](storage-migration.txt).
+- SQLite migration/restart acceptance also passed (0.05 seconds). Combined storage test runtime: 1.788 seconds. Retained storage output (`storage-migration.txt`).
 - No prerequisite assertion failure, data race or actionable R0 source defect was found. No source code was changed by this verification task.
 
 ## Reproduction

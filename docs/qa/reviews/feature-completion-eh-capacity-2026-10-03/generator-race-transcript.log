@@ -1,6 +1,0 @@
-Tool output transcript for exec session 73796
-Workspace: /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner
-Command: GOCACHE=/private/tmp/apexload-feature-completion-go-cache GOMAXPROCS=2 GOMEMLIMIT=2GiB go test -p 1 -race -tags eventhubs_real ./pkg/distributed/generatorrpc -run '^(TestRuntimeResource|TestGracefulStopDiscardsLateStagedGroupBeforeRunningGroupDrains)' -count=1
-Exit code: 0
-Output:
-ok  	github.com/jasonczech/apexload/pkg/distributed/generatorrpc	6.206s

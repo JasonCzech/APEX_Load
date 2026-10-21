@@ -1,6 +1,6 @@
 # Native HAR ownership qualification
 
-Current composed source/test qualification: the default full Go suite, full dashboard cycle in both authentication profiles, affected API races, actual PostgreSQL cohort, SDK contract and generated-contract checks passed in the [composed review](../../../archive/qa-reviews/INTEGRATION_2026-10.md#feature-completion-composed-review-2026-10-05). That qualification is scoped; the broader feature requirements and explicitly unrun acceptance remain open. The following component checkpoint predates these composed results. Its original bytes are preserved in [the historical checkpoint](README.component-checkpoint.txt).
+Current composed source/test qualification: the default full Go suite, full dashboard cycle in both authentication profiles, affected API races, actual PostgreSQL cohort, SDK contract and generated-contract checks passed in the [composed review](../../../archive/qa-reviews/INTEGRATION_2026-10.md#feature-completion-composed-review-2026-10-05). That qualification is scoped; the broader feature requirements and explicitly unrun acceptance remain open. The following component checkpoint predates these composed results. Its original bytes are preserved in the historical checkpoint (`README.component-checkpoint.txt`).
 
 The v7 candidate preserves the qualified v6 production behavior and passes
 the refreshed documentation, provenance and packaging gates. The scoped SDK,
@@ -27,7 +27,7 @@ patch notes, explicit dependency tests and packaging checks record the subset
 and changed-file contract.
 
 The final direct source inventory is
-[candidate v7](evidence/apexload-native-har-ownership-candidate-source-v7-20261005.json).
+candidate v7 (`evidence/apexload-native-har-ownership-candidate-source-v7-20261005.json`).
 Its 135 direct inputs cover owned sources/tests, the SDK subset, module metadata
 and relevant packaging/reference files. It is not a full transitive build or
 native runtime inventory. The v6 source inventory preserves the exact behavior
@@ -93,14 +93,14 @@ The deterministic unfinished-dispatcher repeat and recording path-filter
 regressions are recorded red before their fixes. Failed compile/fixture
 attempts are explicitly distinguished from production assertion failures.
 
-The [corrected SDK independent repeat review](evidence/apexload-har-sdk-corrected-authoring-independent-review-v6-20261005.json)
-bookends all 134 direct inputs and reviews 39 relevant paths on v6. The [v7 packaging repeat
-review](evidence/apexload-har-sdk-readme-packaging-authoring-independent-review-v7-20261005.json)
+The corrected SDK independent repeat review (`evidence/apexload-har-sdk-corrected-authoring-independent-review-v6-20261005.json`)
+bookends all 134 direct inputs and reviews 39 relevant paths on v6. The v7 packaging repeat
+review (`evidence/apexload-har-sdk-readme-packaging-authoring-independent-review-v7-20261005.json`)
 finds no additional issues in the five-path documentation/provenance delta
 and bookends all 135 final direct inputs. It runs no tests;
 its scoped static result is separate from the execution receipts. Parent v5
-review retains its exact narrower scope. The [parent composed HAR/document/resource
-review](evidence/apexload-har-document-resource-composition-independent-review-v1-20261005.json)
+review retains its exact narrower scope. The parent composed HAR/document/resource
+review (`evidence/apexload-har-document-resource-composition-independent-review-v1-20261005.json`)
 finds no additional scoped issues after bookending 147 composed inputs. Its
 composition deliberately preserves the integration native test’s aggregate
 failure logging without changing assertions; it is separate from this worktree’s
@@ -120,4 +120,4 @@ Linux or Windows runtime delivery. Full BE-3, managed native archive
 transfer/export and full program completion remain open. Shared build-cache
 cleanup is deferred until the parent task's composed checks and fixes join.
 
-[Check history and failure dispositions](evidence/check-history.json).
+Check history and failure dispositions (`evidence/check-history.json`).

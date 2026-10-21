@@ -1,9 +1,0 @@
-{
-  "baseline": "docs/qa/reviews/roadmap-java-representations-2026-10-20/evidence/har-import-final-summary.json",
-  "current": "integrated-private-har-summary.json",
-  "excluded_field": "script_sha256_without_id_created_at",
-  "exclusion_reason": "Existing converter generates randomized identifiers within the executable script; compare the retained import aggregates and original source hash.",
-  "matching_aggregate_fields": 10,
-  "differing_fields": [],
-  "passed": true
-}

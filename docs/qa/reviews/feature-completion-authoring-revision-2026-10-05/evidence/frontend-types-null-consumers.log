@@ -1,5 +1,0 @@
-
-> apexload-dashboard@0.1.0 typecheck
-> tsc --noEmit --pretty false -p tsconfig.json && tsc --noEmit --pretty false -p tsconfig.node.json
-
-src/components/ScriptEditor.test.tsx(7436,21): error TS2339: Property 'body' does not exist on type '{ actions: { name: string; type: string; method: string; target: string; headers: { Authorization: string; }; }[]; archived_at?: string | undefined; id?: string | undefined; ref_key?: string | undefined; ... 15 more ...; updated_at?: string | undefined; }'.

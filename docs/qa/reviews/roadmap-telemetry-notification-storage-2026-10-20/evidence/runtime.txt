@@ -1,5 +1,0 @@
-go version go1.26.9 darwin/arm64
-Darwin arm64
-Baseline HEAD: e86de66a6c5db95fd928e5f976d8af2530bc6254
-Integrated main: 745d85a0578e1501570d3fe27204494d2fcb3636
-PostgreSQL fixture: postgres:16-alpine, disposable local container, not distributed qualification
