@@ -60,7 +60,9 @@ const (
 // outcome.
 // archive.6: admission resolves a pinned browser baseline into the frozen
 // request, and waits for baseline archive finalization before freezing it.
-const rcaArchiveAdapterVersion = "archive.6"
+// archive.7: browser baselines also require matching original authored source
+// descriptors; executable script identity alone cannot prove authored identity.
+const rcaArchiveAdapterVersion = "archive.7"
 
 // maxRCACoverageSources bounds the sources a monitor_sources coverage row
 // names.
@@ -1260,17 +1262,18 @@ type rcaBaselineArchive struct {
 	testID string
 	// coverage is the baseline's coverage as far as the read got; the
 	// comparison refines it.
-	coverage      rca.Coverage
-	record        *storage.RunArchiveRecord
-	lease         *archiveMaterializationLease
-	manifest      *RunArchiveManifest
-	currentKey    rca.WorkloadKey
-	key           rca.WorkloadKey
-	qualification rca.WorkloadQualification
-	summaries     []IntervalSummaryRecord
-	summariesErr  error
-	phases        *networkPhaseCollector
-	phasesErr     error
+	coverage        rca.Coverage
+	record          *storage.RunArchiveRecord
+	lease           *archiveMaterializationLease
+	manifest        *RunArchiveManifest
+	currentManifest *RunArchiveManifest
+	currentKey      rca.WorkloadKey
+	key             rca.WorkloadKey
+	qualification   rca.WorkloadQualification
+	summaries       []IntervalSummaryRecord
+	summariesErr    error
+	phases          *networkPhaseCollector
+	phasesErr       error
 }
 
 // comparable reports whether the baseline's series can be compared with the
@@ -1313,6 +1316,7 @@ func (s *Server) readRCABaselineArchive(ctx context.Context, manifest *RunArchiv
 		return b
 	}
 	b.manifest = baselineManifest
+	b.currentManifest = manifest
 	b.key = comparisonWorkloadKey(&baselineComparisonRun{manifest: baselineManifest}, nil, "")
 	b.currentKey = comparisonWorkloadKey(&baselineComparisonRun{manifest: manifest}, nil, "")
 	b.qualification = rca.QualifyBaseline(b.currentKey, b.key)
@@ -1397,7 +1401,7 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, b *rcaBaselineArchive,
 				coverage.Detail += "; baseline evidence: " + strings.Join(slices.Compact(slices.Sorted(slices.Values(codes))), ", ")
 			}
 			return coverage, &rca.DetectionBaseline{TestID: b.testID, Qualification: b.qualification.Status, QualificationReasons: b.qualification.Reasons,
-				ScriptChangedGroups: rca.ScriptChangedGroups(b.currentKey, b.key), DocumentsIncomplete: documentsIncomplete, Levels: evidence.Levels, Series: evidence.Series}
+				ScriptChangedGroups: rcaBrowserScriptChangedGroups(b.currentKey, b.key, b.currentManifest, b.manifest), DocumentsIncomplete: documentsIncomplete, Levels: evidence.Levels, Series: evidence.Series}
 		}
 	}
 	coverage.Status, coverage.Detail = rca.CoveragePartial, b.coverage.Detail+"; its series could not be read"

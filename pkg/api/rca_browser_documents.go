@@ -197,3 +197,28 @@ func browserCohortFields(c *protocol.BrowserRuntimeCohort) map[string]string {
 		"new_user_policy": c.NewUserPolicy, "new_user_policy_applied": strconv.FormatBool(c.NewUserPolicyApplied), "unavailable_reason": c.UnavailableReason,
 	}
 }
+
+// rcaBrowserScriptChangedGroups requires original authored identity in addition
+// to executable identity. Runtime overrides can make different original sources
+// execute alike, while equal originals do not prove equal runtime behavior.
+// Missing historical provenance remains unknown; it is never reconstructed from
+// executable digests. Only browser detection consumes this additional guard.
+func rcaBrowserScriptChangedGroups(current, candidate rca.WorkloadKey, currentManifest, candidateManifest *RunArchiveManifest) map[string]bool {
+	changed := rca.ScriptChangedGroups(current, candidate)
+	source := func(manifest *RunArchiveManifest, group string) protocol.BrowserAuthoredDefinition {
+		if manifest == nil {
+			return protocol.BrowserAuthoredDefinition{}
+		}
+		return manifest.Provenance.BrowserAuthoredSources[group]
+	}
+	for group := range current.Groups {
+		if _, exists := candidate.Groups[group]; !exists {
+			continue
+		}
+		a, b := source(currentManifest, group), source(candidateManifest, group)
+		if !a.Valid() || !b.Valid() || a != b {
+			changed[group] = true
+		}
+	}
+	return changed
+}

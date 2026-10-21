@@ -309,7 +309,12 @@ the analysis, which can be retried.
   shaping, and cache and new-user policy. Document, navigation and measurement
   IDs are lineage only, never matching keys. Each document counts once, at its
   latest retained measurement, so a republished observation adds nothing.
-  Documents become per-bucket p75 values before any comparison.
+  Documents become per-bucket p75 values before any comparison. Original
+  authored script and structure digests must also be valid and equal for the
+  group in both archives, alongside the existing executable-script checks.
+  Missing historical source provenance is not reconstructed from the executable
+  digest: new assessments leave that group's browser comparison unscored as
+  `cohort_changed`. Saved historical assessments retain their original results.
 - **Scoring.** The run's value at a level is the median of its bucket p75
   values there. It is scored with the three-sigma scorer of
   `pkg/analysis/anomaly.go` (`ThreeSigmaScore`) against the baseline's valid

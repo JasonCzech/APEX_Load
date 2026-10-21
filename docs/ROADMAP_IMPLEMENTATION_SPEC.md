@@ -288,6 +288,8 @@ Retain recommended **1–2 browser VUsers and maximum 5 per generator**. A highe
 
 ### BI-A — Qualified baseline selection and findings
 
+The [original-source qualification slice](qa/reviews/roadmap-browser-original-baseline-2026-10-21/README.md) requires matching valid retained original script and structure identities in addition to executable identity. Missing or changed source provenance leaves the affected browser group unscored in new assessments. Latest-compatible selection and clock/source-window qualification remain open.
+
 The [pinned baseline admission slice](qa/reviews/roadmap-browser-pinned-admission-2026-10-21/README.md) resolves a run's immutable `pinned_run` policy at RCA admission and freezes the selected archive digest. Explicit caller baselines remain supported; selected archives still finalizing refuse admission. Latest-compatible selection, complete clock/source qualification and browser-findings integration remain open.
 
 The [cadence qualification slice](qa/reviews/roadmap-browser-baseline-cadence-2026-10-21/README.md) leaves different or unrecorded interval cadences unscored and checks the actual measurement/runtime tuple even when series IDs match. RCA engine v4 prevents reuse of earlier qualification results while preserving historical assessments and the `browser_baseline.v1` estimator. Latest-compatible admission selection and full clock/source qualification remain open.
