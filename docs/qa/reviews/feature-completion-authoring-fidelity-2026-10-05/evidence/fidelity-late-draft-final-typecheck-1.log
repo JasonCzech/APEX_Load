@@ -1,5 +1,0 @@
-
-> apexload-dashboard@0.1.0 typecheck
-> tsc --noEmit --pretty false -p tsconfig.json && tsc --noEmit --pretty false -p tsconfig.node.json
-
-e2e/workflow-scenario-composition.spec.ts(176,10): error TS18046: 'reopened.goal_config' is of type 'unknown'.

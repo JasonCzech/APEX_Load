@@ -1,7 +1,0 @@
-{
-  "gate": "upload30-postgres-integration-race",
-  "exit_code": 0,
-  "seconds": 75.202,
-  "log": "/private/tmp/apexload-upload30-postgres-integration-race-2026-10-04.log",
-  "postgres_build_tag": "postgres_integration"
-}

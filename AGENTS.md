@@ -214,6 +214,14 @@ Before any commit, agents **must** run a code review of the changes being commit
 every finding, low severity included. Repeat the review and fix cycle until a review round
 finds no issues, and commit only then.
 
+## QA Review Records
+Review records under `docs/qa/reviews/` and `docs/archive/qa-reviews/` are Markdown only, apart from
+`import-fixture-matrix-2026-09-12/brokers.compose.yaml`, which `scripts/run-local-broker-integration.py`
+reads. Git ignores everything else there (screenshots, Playwright traces, test logs, JSON captures,
+archives). Keep raw evidence next to the record on disk or attach it to a CI run, and cite it
+in the record as a code-span path, not a Markdown link, because `scripts/check-docs.py` fails
+CI on links to untracked files. Never force-add evidence with `git add -f`.
+
 ## Dashboard Copy Conventions
 - Labels use sentence case (`src/labelCasing.test.ts` ratchets Title Case leftovers).
 - Action verbs: **Save** persists a form, **Apply** takes effect now without saving, **Create** makes a new object, **Add** appends to a list, **Cancel**/**Close** dismiss. Qualify a verb only when two savable things share a screen ("Save domain changes").

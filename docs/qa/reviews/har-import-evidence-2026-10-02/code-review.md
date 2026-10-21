@@ -35,4 +35,4 @@ replay remains outside the evidence; known source/runtime blockers are retained.
 The changes are integrated with main at `2314ab698c805f5b75ac8b984143a6389deef03b`.
 The integrated result passes the complete Go suite, dashboard checks and both
 browser auth profiles. See
-[validation results](additional-validation.json).
+validation results (`additional-validation.json`).

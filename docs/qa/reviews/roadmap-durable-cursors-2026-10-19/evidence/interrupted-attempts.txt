@@ -1,4 +1,0 @@
-These runs were deliberately stopped for review fixes; neither is a pass.
-The first was stopped to fix adoption accumulator overwrite; the second for writer/reader structural limit alignment.
-full-go-review-interrupted.jsonl: 2164639 bytes; SHA-256 ad51d78babdc0c86e236d40633d2675af750acc6bb26f0d1264a8fcbd228b16c
-full-go-bounds-review-interrupted.jsonl: 8290027 bytes; SHA-256 f9a99f465fc252a52e1e4e69accdf6d2141c41fbe51fead1afc1b10d4a9a7058

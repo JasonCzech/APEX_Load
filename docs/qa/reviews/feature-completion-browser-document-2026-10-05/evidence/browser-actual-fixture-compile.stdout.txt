@@ -1,2 +1,0 @@
-ok  	github.com/jasonczech/apexload/pkg/protocol/browser	0.202s
-ok  	github.com/jasonczech/apexload/pkg/distributed/generatorrpc	0.464s

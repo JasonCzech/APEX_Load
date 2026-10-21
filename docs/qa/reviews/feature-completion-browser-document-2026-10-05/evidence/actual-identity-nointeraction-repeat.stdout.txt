@@ -1,8 +1,0 @@
-=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
-=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
-=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
---- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (3.30s)
-    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (1.62s)
-    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (1.68s)
-PASS
-ok  	github.com/jasonczech/apexload/pkg/protocol/browser	3.536s

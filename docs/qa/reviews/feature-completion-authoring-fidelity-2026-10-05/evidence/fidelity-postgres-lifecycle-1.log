@@ -1,8 +1,0 @@
-=== RUN   TestPostgresAuthoringFidelityLifecycle
-    authoring_fidelity_postgres_integration_test.go:55: Actual PostgreSQL version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=scenario_fidelity_1791204985075015000
-2026/10/05 08:56:25 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
-2026/10/05 08:56:26 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
-    authoring_fidelity_postgres_integration_test.go:49: Owned PostgreSQL schema cleanup verified: scenario_fidelity_1791204985075015000
---- PASS: TestPostgresAuthoringFidelityLifecycle (1.19s)
-PASS
-ok  	github.com/jasonczech/apexload/pkg/api	2.835s

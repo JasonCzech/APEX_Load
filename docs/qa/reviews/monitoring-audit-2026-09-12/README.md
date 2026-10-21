@@ -161,45 +161,45 @@ Existing frontend changes and the running backend’s build identity mean source
 
 Initial narrow entry shows a large control-plane/build card ahead of readiness. The desktop view makes all three cards visible and clearly distinguishes optional Kubernetes from degraded auth mode.
 
-![01 — Initial Overview in the narrow app panel](01-overview.png)
+01 — Initial Overview in the narrow app panel (`01-overview.png`)
 
-![02 — Desktop Overview and readiness](02-overview-desktop.png)
+02 — Desktop Overview and readiness (`02-overview-desktop.png`)
 
 #### Step 2 — Fleet: partial, with useful setup handoffs
 
 Local mode and missing inventory are explicit. Pending demand lacks an affected-work drill-down; the audit sample needs a clearer scope statement.
 
-![03 — Fleet capacity and empty inventory](03-fleet.png)
+03 — Fleet capacity and empty inventory (`03-fleet.png`)
 
 #### Step 3 — Telemetry and collectors: onboarding needs repair
 
 The catalog differentiates support levels, but expanded instructions are constrained by narrow, internally scrolling cards. Registration’s checkbox layout is visibly broken.
 
-![04 — Telemetry catalog and collector empty state](04-telemetry.png)
+04 — Telemetry catalog and collector empty state (`04-telemetry.png`)
 
-![05 — Expanded OpenTelemetry and JVM instructions](05-telemetry-expanded.png)
+05 — Expanded OpenTelemetry and JVM instructions (`05-telemetry-expanded.png`)
 
-![06 — Collector registration and pack-picker alignment defect](06-register-collector.png)
+06 — Collector registration and pack-picker alignment defect (`06-register-collector.png`)
 
 #### Step 4 — Alerts and policy handoff: trust gaps, working return path
 
 Alerts does not surface the readiness advisory. The policy handoff works and shows unconfigured global thresholds; returning restores Alerts and its scope. Keyboard evidence is saved separately in `keyboard-focus-evidence.txt`.
 
-![07 — Alerts with an unexplained advisory and Clear SLA state](07-alerts.png)
+07 — Alerts with an unexplained advisory and Clear SLA state (`07-alerts.png`)
 
-![11 — Alert policy handoff with unconfigured thresholds and return link](11-alert-policy-handoff.png)
+11 — Alert policy handoff with unconfigured thresholds and return link (`11-alert-policy-handoff.png`)
 
 #### Step 5 — Schedules: useful depth, incomplete overflow and context handling
 
 Month view hides executions behind non-interactive overflow text. Week and Day switches work. Run detail exposes useful workload/context; cross-day dates and waiting status need clarity. Booking provides separate checking/reserving controls and an unsaved-change guard. Narrow layout reflows to an agenda.
 
-![08 — Calendar with continuing queued runs and hidden events](08-schedules.png)
+08 — Calendar with continuing queued runs and hidden events (`08-schedules.png`)
 
-![09 — Day agenda and queued-run details](09-schedule-details.png)
+09 — Day agenda and queued-run details (`09-schedule-details.png`)
 
-![10 — New scheduled booking form, no reservation submitted](10-new-booking.png)
+10 — New scheduled booking form, no reservation submitted (`10-new-booking.png`)
 
-![12 — Narrow schedule layout reflows into an agenda](12-schedules-narrow.png)
+12 — Narrow schedule layout reflows into an agenda (`12-schedules-narrow.png`)
 
 ## Monitoring audit remediation
 
@@ -231,7 +231,7 @@ No external Prometheus or vendor APM datasource was configured in the local envi
 
 ### Captured implementation evidence
 
-- [Telemetry layout](implemented-telemetry.png)
-- [Collector metric-pack picker](implemented-collector-picker.png)
-- [Narrow collector picker](implemented-picker-narrow.png)
-- [Calendar day view](implemented-calendar.png)
+- Telemetry layout (`implemented-telemetry.png`)
+- Collector metric-pack picker (`implemented-collector-picker.png`)
+- Narrow collector picker (`implemented-picker-narrow.png`)
+- Calendar day view (`implemented-calendar.png`)

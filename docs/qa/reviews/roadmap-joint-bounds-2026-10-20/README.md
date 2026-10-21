@@ -13,7 +13,7 @@ Received joint protobuf publications now pass cardinality, canonical-key, projec
 - Full Go suite: 168 packages, 17,684 top-level tests and 17,385 subtests passed. All production code came from the installed checkout; the only external overlay supplied the private HAR regression.
 - The attached ZIP retained its original hash and matching aggregate import result: HTTP 200, 803 requests, 476 actions and zero DSL issues. No replay or converted-content persistence.
 - Generated analytics inventory, documentation links, both Help profiles and evidence checksums passed. No dashboard source or embedded Help content changes in this slice; the committed assets were verified by hash and exercised through rebuilt controllers.
-- Exact source/asset/controller hashes, failed original-copy regressions, passing draft checks and the distinct combined RSS/joint draft are retained in [the evidence bundle](SHA256SUMS).
+- Exact source/asset/controller hashes, failed original-copy regressions, passing draft checks and the distinct combined RSS/joint draft are retained in the evidence bundle (`SHA256SUMS`).
 
 Identical focused regressions against the preceding source reproduce the unbounded distribution copies. Failed baseline evidence is retained separately from passing patched checks. Final applied-source and staged review found no remaining actionable findings after checking exact encoded-envelope accounting, canonical tuple/shape admission, explicit source refusal, copy independence, fallback compatibility and queue-loss accounting.
 

@@ -40,7 +40,7 @@ Status: implemented slices reviewed and validated; broader roadmap scope remains
 - Documentation checks and `git diff --check` passed. Native-panel screenshots were inspected and retained below.
 - Final review found no additional actionable issues in this implemented scope. Live-cloud acceptance and the broader items below are not covered by these local results.
 
-Screenshots: [dev-admin native panel](native-panel-dev-admin.png), [local-auth native panel](native-panel-local-auth.png).
+Screenshots: dev-admin native panel (`native-panel-dev-admin.png`), local-auth native panel (`native-panel-local-auth.png`).
 
 ## Remaining roadmap scope and acceptance limits
 

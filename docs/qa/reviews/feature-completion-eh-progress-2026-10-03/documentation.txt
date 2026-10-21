@@ -1,1 +1,0 @@
-Documentation checks passed for 103 active Markdown files.

@@ -38,9 +38,9 @@ no heartbeat, lease timeout or pod-name reuse is accepted as process death.
   321 dev-admin browser workflows (6 expected skips) and 260 local-auth
   workflows (1 expected skip).
 
-The [validation summary](evidence/validation-summary.json), compressed logs,
-[source hashes](evidence/source-hashes.json), controller hashes, runtime metadata
-and [review rounds](evidence/review.txt) retain the tested local cohort.
+The validation summary (`evidence/validation-summary.json`), compressed logs,
+source hashes (`evidence/source-hashes.json`), controller hashes, runtime metadata
+and review rounds (`evidence/review.txt`) retain the tested local cohort.
 [Commands and cohort notes](evidence/commands.md) distinguish each gate. The first
 broad attempt used incompatible `-trimpath` paths for source fixtures and was
 stopped; its log is preserved separately. It also exposed a stale generated QA

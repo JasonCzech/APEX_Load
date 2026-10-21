@@ -1,9 +1,0 @@
-### Ran Playwright code
-```js
-await page.getByRole('region', { name: 'Search documentation' }).getByRole('link', { name: 'Telemetry budget policy' }).click();
-```
-### Page
-- Page URL: http://127.0.0.1:18439/#/docs?guide=user-guide&article=telemetry-policy-receipts&section=telemetry-acceptance-verdicts
-- Page Title: Help & documentation | APEX Load
-### Snapshot
-- [Snapshot](.playwright-cli/page-2026-10-19T19-39-50-981Z.yml)

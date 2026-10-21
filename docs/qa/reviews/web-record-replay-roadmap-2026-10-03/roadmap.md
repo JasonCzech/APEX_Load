@@ -29,7 +29,7 @@ Existing tests were inspected, not rerun for this documentation-only assessment.
 | Login_Prod_7_18_2.zip | 40 | 74 | 8 | 0 |
 | **Total** | **409** | **504** | **31** | **25** |
 
-The [sanitized aggregate](aura-evidence.json) includes source fingerprints and method. Every observed envelope decodes; every request action has an ID and descriptor; request/response ID sets match in all 409 batches. Set equality alone does not establish unique IDs. All 409 posts contain a nonempty Aura token and context fwuid. Each is constant within each recording, which does not prove reuse across new sessions is safe.
+The sanitized aggregate (`aura-evidence.json`) includes source fingerprints and method. Every observed envelope decodes; every request action has an ID and descriptor; request/response ID sets match in all 409 batches. Set equality alone does not establish unique IDs. All 409 posts contain a nonempty Aura token and context fwuid. Each is constant within each recording, which does not prove reuse across new sessions is safe.
 
 Further source evidence:
 

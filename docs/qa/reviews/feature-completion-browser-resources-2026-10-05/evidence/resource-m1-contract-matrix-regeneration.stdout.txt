@@ -1,4 +1,0 @@
-=== RUN   TestGeneratedAPIContractMatrixIsFresh
---- PASS: TestGeneratedAPIContractMatrixIsFresh (0.07s)
-PASS
-ok  	github.com/jasonczech/apexload/pkg/api	1.538s

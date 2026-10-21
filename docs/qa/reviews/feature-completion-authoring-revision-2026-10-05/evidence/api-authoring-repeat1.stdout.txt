@@ -1,4 +1,0 @@
-# github.com/jasonczech/apexload/pkg/api [github.com/jasonczech/apexload/pkg/api.test]
-pkg/api/openapi_script_authoring.go:35:1: syntax error: unexpected EOF, expected }
-FAIL	github.com/jasonczech/apexload/pkg/api [build failed]
-FAIL

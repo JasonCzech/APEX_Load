@@ -1,8 +1,0 @@
-=== RUN   TestKafkaOwnedSeekActualBroker
-    owned_seek_integration_test.go:69: independent committed-offset oracle failed
-    owned_seek_fixture_test.go:593: independent direct oracle API counts=map[3:1 10:1 17:2 18:2 36:2]
-    owned_seek_fixture_test.go:231: genuine execution proxy joined: accepts=0 peak=0 frames=0 bytes=0 API counts=map[]
---- FAIL: TestKafkaOwnedSeekActualBroker (0.32s)
-FAIL
-FAIL	github.com/jasonczech/apexload/pkg/protocol/kafka	0.776s
-FAIL

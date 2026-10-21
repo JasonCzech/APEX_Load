@@ -18,9 +18,9 @@ empty-body execution. No customer capture was replayed.
 - Eight targeted generator DTO/API/archive propagation tests passed.
 - The [measurement inventory](../../PROTOCOL_TELEMETRY_MATRIX.md) maps the exact
   fixtures and leaves missing consumer, helper, overhead and platform gates open.
-- The [validation summary](evidence/validation-summary.json), compressed logs,
-  [test binary hashes](evidence/test-binary-hashes.json),
-  [source hashes](evidence/source-hashes.json) and [runtime](evidence/runtime.txt)
+- The validation summary (`evidence/validation-summary.json`), compressed logs,
+  test binary hashes (`evidence/test-binary-hashes.json`),
+  source hashes (`evidence/source-hashes.json`) and runtime (`evidence/runtime.txt`)
   retain the local darwin/arm64 cohort.
 
 `before-stable.log.gz` is the intentional pre-fix failing experiment.
@@ -38,7 +38,7 @@ The source and test review found no remaining issues: validation precedes HTTP
 for every body shape, supported defaults remain executable, caller ownership is
 preserved and legacy timing/snapshot fields keep their meanings. Documentation
 review maps only tested paths and retains the missing qualification gates.
-See [review rounds](evidence/review.txt). This change
+See review rounds (`evidence/review.txt`). This change
 adds no JVM helper, object footprint measurement or release performance claim.
 Native platforms, every report/query consumer and remote reference environments
 remain unqualified. Local build caches are retained for subsequent slices and

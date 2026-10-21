@@ -1,7 +1,0 @@
-{
-  "matches_previous_aggregate_evidence": true,
-  "ignored_randomized_fields": [
-    "script_sha256_without_id_created_at"
-  ],
-  "differing_keys": []
-}

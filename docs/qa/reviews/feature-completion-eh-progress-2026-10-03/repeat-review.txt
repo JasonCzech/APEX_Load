@@ -1,7 +1,0 @@
-Fresh independent repeat review, 2026-10-03
-
-Provider/runtime review: clean after retaining acquired-but-unverified current generations and counting each acquired-generation ownership loss once. Fenced checkpoint attempts remain separate operation evidence. Shared contract, engine retention/final capture, zero-action wire, source-plan and recorder paths have no remaining actionable findings. Read-only reviewer ran no tests; provider owner default/tagged/race logs accompany this record.
-
-API/archive/client review: clean after deriving expected processor archive sources from controller final and private initial admission claims. Exported legacy remote provenance cannot create expectations. Mixed/all-legacy missing progress remains source_missing; unrelated peers do not invalidate qualified evidence; released lifecycles clear expectations. Live/native project binding, exact positions, report escaping and dashboard parity were also reviewed. Read-only reviewer ran no tests; root targeted API regression/freshness/authorization suite passed.
-
-The full repository gate follows these fixes. Clean source review alone does not certify real Azure or protected recovery acceptance.

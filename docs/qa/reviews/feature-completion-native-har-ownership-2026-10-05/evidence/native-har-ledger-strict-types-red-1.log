@@ -1,8 +1,0 @@
---- FAIL: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed (0.10s)
-    --- FAIL: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/null_name (0.01s)
-        har_retirement_ledger_test.go:277: malformed ledger admitted new native work
-    --- FAIL: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/null_device (0.02s)
-        har_retirement_ledger_test.go:277: malformed ledger admitted new native work
-FAIL
-FAIL	github.com/jasonczech/apexload/pkg/protocol/browser	0.368s
-FAIL

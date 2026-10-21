@@ -1,8 +1,0 @@
-=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
-=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
-    document_actual_integration_test.go:114: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
-    document_actual_integration_test.go:168: owned target request counters: map[string]int{"/":2, "/frame":4}
---- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (1.39s)
-    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (1.39s)
-PASS
-ok  	github.com/jasonczech/apexload/pkg/protocol/browser	1.654s

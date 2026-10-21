@@ -1,8 +1,0 @@
-{"Time":"2026-10-05T23:56:56.57228-04:00","Action":"start","Package":"github.com/jasonczech/apexload/pkg/api"}
-{"Time":"2026-10-05T23:56:58.031813-04:00","Action":"run","Package":"github.com/jasonczech/apexload/pkg/api","Test":"TestGeneratedAPIContractMatrixIsFresh"}
-{"Time":"2026-10-05T23:56:58.032128-04:00","Action":"output","Package":"github.com/jasonczech/apexload/pkg/api","Test":"TestGeneratedAPIContractMatrixIsFresh","Output":"=== RUN   TestGeneratedAPIContractMatrixIsFresh\n"}
-{"Time":"2026-10-05T23:56:58.101439-04:00","Action":"output","Package":"github.com/jasonczech/apexload/pkg/api","Test":"TestGeneratedAPIContractMatrixIsFresh","Output":"--- PASS: TestGeneratedAPIContractMatrixIsFresh (0.07s)\n"}
-{"Time":"2026-10-05T23:56:58.101467-04:00","Action":"pass","Package":"github.com/jasonczech/apexload/pkg/api","Test":"TestGeneratedAPIContractMatrixIsFresh","Elapsed":0.07}
-{"Time":"2026-10-05T23:56:58.10174-04:00","Action":"output","Package":"github.com/jasonczech/apexload/pkg/api","Output":"PASS\n"}
-{"Time":"2026-10-05T23:56:58.102988-04:00","Action":"output","Package":"github.com/jasonczech/apexload/pkg/api","Output":"ok  \tgithub.com/jasonczech/apexload/pkg/api\t1.530s\n"}
-{"Time":"2026-10-05T23:56:58.103015-04:00","Action":"pass","Package":"github.com/jasonczech/apexload/pkg/api","Elapsed":1.5310000000000001}

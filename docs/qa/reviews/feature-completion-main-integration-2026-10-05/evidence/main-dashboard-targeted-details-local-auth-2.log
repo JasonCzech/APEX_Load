@@ -1,9 +1,0 @@
-Building controller...
-Starting controller on http://127.0.0.1:18472 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.lfeewCW17K)...
-ERROR: controller exited during startup
---- controller log (last 60 lines) ---
-{"time":"2026-10-06T01:21:35.742773-04:00","level":"WARN","msg":"applied TLS compatibility defaults","godebug":"tlsmlkem=0,tlssecpmlkem=0,x509negativeserial=1"}
-{"time":"2026-10-06T01:21:36.527264-04:00","level":"INFO","msg":"controller bind address resolved","addr":"127.0.0.1:18472","bind_scope":"loopback"}
-{"time":"2026-10-06T01:21:59.904516-04:00","level":"WARN","msg":"encrypted project secret store is unavailable","error":"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"}
-2026/10/06 01:22:10 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"
-{"time":"2026-10-06T01:22:10.963943-04:00","level":"ERROR","msg":"controller stopped with an error","err":"server: refresh durable system settings before startup: context deadline exceeded"}

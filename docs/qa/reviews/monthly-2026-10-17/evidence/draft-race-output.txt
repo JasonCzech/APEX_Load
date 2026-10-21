@@ -1,6 +1,0 @@
-Command: GOCACHE=/tmp/apexload-monthly-review-gocache go test ./pkg/storage -run '^TestMonthlyReviewDraftSaveDoesNotAdoptAnotherWritersRevision$' -count=1 -timeout=5m
---- FAIL: TestMonthlyReviewDraftSaveDoesNotAdoptAnotherWritersRevision (0.37s)
-    monthly_review_draft_race_test.go:47: A save returned another writer's result: revision=3 document={"form":"B"} name=Writer B; expected revision=2 document=A
-FAIL
-FAIL github.com/jasonczech/apexload/pkg/storage 1.041s
-FAIL

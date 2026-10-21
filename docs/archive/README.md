@@ -9,7 +9,7 @@ Material here is preserved for audit and design history. It is not current produ
 | Path | Status |
 | --- | --- |
 | [qa-reviews/AUDITS_2026-09.md](qa-reviews/AUDITS_2026-09.md) | Historical. One file with a section per completed September 2026 UX/QA audit (UX consistency, post-test reporting, end-to-end UX, the 2026-09-12 access, Command Center, landing dashboard, Import From Source, New Test, Results and Repository, Scenario Builder and Script/Scenario Library audits, Dashboard UX reviews, settings and execution-results reviews, Bruno/import-consistency/LoadRunner import reviews). Consolidated 2026-09-24 from 14 markdown files. Current browser coverage: [qa/E2E_SUITES.md](../qa/E2E_SUITES.md) |
-| `qa-reviews/<audit-folder>/` | Evidence only (screenshots, logs, JSON, DOM inventories) referenced from `AUDITS_2026-09.md`: `ux-consistency-2026-09-08`, `post-test-reporting-2026-09-08`, `end-to-end-ux-2026-09-09`, `access-audit-2026-09-12`, `command-center-audit-2026-09-12`, `dashboard-audit-2026-09-12`, `import-source-audit-2026-09-12`, `new-test-audit-2026-09-12`, `results-repository-audit-2026-09-12`, `scenario-builder-evaluation-2026-09-12`, `script-scenario-audit-2026-09-12`, `import-consistency-2026-09-19`, `user-settings-2026-09-09` |
+| `qa-reviews/<audit-folder>/` | Evidence only (screenshots, logs, JSON, DOM inventories) referenced from `AUDITS_2026-09.md`. Untracked since 2026-10-20 and kept only on local disk: `ux-consistency-2026-09-08`, `post-test-reporting-2026-09-08`, `end-to-end-ux-2026-09-09`, `access-audit-2026-09-12`, `command-center-audit-2026-09-12`, `dashboard-audit-2026-09-12`, `import-source-audit-2026-09-12`, `new-test-audit-2026-09-12`, `results-repository-audit-2026-09-12`, `scenario-builder-evaluation-2026-09-12`, `script-scenario-audit-2026-09-12`, `import-consistency-2026-09-19`, `user-settings-2026-09-09` |
 | [APEX_Load_DSL_Reference_Guide_v2.1.docx](APEX_Load_DSL_Reference_Guide_v2.1.docx) | Retired 2026-09-24. Hand-maintained snapshot (pinned to commit f757e96) that contradicted the code on loop caps, `pop` exhaustion, unknown action types and `fn.*()` calls. Use the generated [DSL_ACTION_REFERENCE.md](../DSL_ACTION_REFERENCE.md) and [HELP_DSL_OPERATOR_GUIDE.md](../HELP_DSL_OPERATOR_GUIDE.md) instead |
 
 ## Consolidated current documentation (2026-09-24)
@@ -86,7 +86,7 @@ Archived 2026-10-19 after their October 12 completion statements. These preserve
 
 ## October 2026 consolidation
 
-Nineteen completed scoped review narratives were merged without dropping their failed checks, residuals or acceptance limits. Their evidence folders remain under `docs/qa/reviews/` at the original paths; links in the reports resolve back to those files. Parent-feature qualification remains open wherever the records say so.
+Nineteen completed scoped review narratives were merged without dropping their failed checks, residuals or acceptance limits. Their evidence folders were under `docs/qa/reviews/` and have been untracked since 2026-10-20; the reports cite those paths as plain text, and the files exist only where the evidence was collected. Parent-feature qualification remains open wherever the records say so.
 
 | Historical record | Contents |
 | --- | --- |

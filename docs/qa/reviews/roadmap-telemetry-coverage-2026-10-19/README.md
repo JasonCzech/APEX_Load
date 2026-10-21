@@ -16,15 +16,15 @@ Retained logs normalize trailing whitespace only.
 
 Base: `4f75f1ac4e5ed198995258658c3b476597a34828` (current `origin/main`, fetched before builds and the full API suite). Local macOS arm64, Go 1.26.9, Node 22.23.3. Go used a session-specific cache, `GOMAXPROCS=3` and `-p 1` to bound compilation resources.
 
-- [Pre-fix regressions](evidence/regressions-before.log) reproduce duplicate/late collection inflation, stale retirement, unbounded coverage admission and algorithm compatibility before the implementation.
-- [Targeted telemetry tests](evidence/telemetry-after.log): `go test -p 1 -timeout=20m ./pkg/api -run '^TestTelemetry' -count=1` passed before the retention review fix. The full suite and final race check cover that fix too.
-- [Full Go suite](evidence/full-go.log): `go test -p 1 -parallel 4 -timeout=20m ./...` passed: 168 packages with tests and 10 without tests. This is the standard suite; environment-gated release qualification remains separate.
-- [Help tests](evidence/help-tests.log): `npm test -- src/helpContent.test.ts src/contextualHelp.test.ts` passed all 34 tests, including catalog loading and help-link resolution.
-- [Documentation check](evidence/docs.log): `python3 scripts/check-docs.py` passed for 250 active Markdown files. The help renderer's fragment/section ownership scan also found no errors.
-- [Acceptance inventory](evidence/inventory.log): `APEXLOAD_UPDATE_TELEMETRY_ACCEPTANCE=1 go test -p 1 ./docs/qa -run TestTelemetryAcceptanceInventory` passed. The source inventory and exact race selector include all nine new regression tests.
-- [Final dashboard build](evidence/dashboard-build-final.log): `npm run build` passed both TypeScript checks and bundling after the guide update; Vite reported the existing large-chunk advisory. Asset generation finished before the final Go race check.
+- Pre-fix regressions (`evidence/regressions-before.log`) reproduce duplicate/late collection inflation, stale retirement, unbounded coverage admission and algorithm compatibility before the implementation.
+- Targeted telemetry tests (`evidence/telemetry-after.log`): `go test -p 1 -timeout=20m ./pkg/api -run '^TestTelemetry' -count=1` passed before the retention review fix. The full suite and final race check cover that fix too.
+- Full Go suite (`evidence/full-go.log`): `go test -p 1 -parallel 4 -timeout=20m ./...` passed: 168 packages with tests and 10 without tests. This is the standard suite; environment-gated release qualification remains separate.
+- Help tests (`evidence/help-tests.log`): `npm test -- src/helpContent.test.ts src/contextualHelp.test.ts` passed all 34 tests, including catalog loading and help-link resolution.
+- Documentation check (`evidence/docs.log`): `python3 scripts/check-docs.py` passed for 250 active Markdown files. The help renderer's fragment/section ownership scan also found no errors.
+- Acceptance inventory (`evidence/inventory.log`): `APEXLOAD_UPDATE_TELEMETRY_ACCEPTANCE=1 go test -p 1 ./docs/qa -run TestTelemetryAcceptanceInventory` passed. The source inventory and exact race selector include all nine new regression tests.
+- Final dashboard build (`evidence/dashboard-build-final.log`): `npm run build` passed both TypeScript checks and bundling after the guide update; Vite reported the existing large-chunk advisory. Asset generation finished before the final Go race check.
 
-[Final race matrix](evidence/race-matrix.log): the exact telemetry fault selector from `scripts/run-optin-suites.sh`, run with `go test -race -count=1 -p 1 -parallel 4 -timeout=30m -v`, passed for `pkg/api`, `pkg/distributed/generatorrpc` and `pkg/analysis`, including all nine new regressions. No races were reported. The log retains the complete command.
+Final race matrix (`evidence/race-matrix.log`): the exact telemetry fault selector from `scripts/run-optin-suites.sh`, run with `go test -race -count=1 -p 1 -parallel 4 -timeout=30m -v`, passed for `pkg/api`, `pkg/distributed/generatorrpc` and `pkg/analysis`, including all nine new regressions. No races were reported. The log retains the complete command.
 
 ## Review
 

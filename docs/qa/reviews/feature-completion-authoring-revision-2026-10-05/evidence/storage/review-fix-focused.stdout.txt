@@ -1,5 +1,0 @@
---- FAIL: TestScriptContentRevisionRemainsOutsideExecutableAndImportJSON (0.10s)
-    script_content_revision_test.go:905: server nonce/admission intent entered executable/import JSON
-FAIL
-FAIL	github.com/jasonczech/apexload/pkg/storage	3.297s
-FAIL

@@ -1,4 +1,0 @@
-# github.com/jasonczech/apexload/pkg/api [github.com/jasonczech/apexload/pkg/api.test]
-pkg/api/archive_browser_documents_test.go:182:79: cannot use &dsl.BrowserConfig{…} (value of type *dsl.BrowserConfig) as dsl.BrowserConfig value in struct literal
-FAIL	github.com/jasonczech/apexload/pkg/api [build failed]
-FAIL

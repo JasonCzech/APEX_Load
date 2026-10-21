@@ -1,7 +1,0 @@
-First full-Go gate: generated authorization and route fixtures required refresh.
-All other packages passed. Final results are recorded separately.
-
---- FAIL: TestGeneratedAPIContractMatrixIsFresh (0.06s)
---- FAIL: TestAccessRequirementSnapshotStable (0.03s)
---- FAIL: TestUnauthenticatedAPIRoutesAreAllowlisted (0.03s)
-FAIL	github.com/jasonczech/apexload/pkg/api	513.947s

@@ -19,7 +19,7 @@ Legacy timestamp claims retain their unknown delivery outcome and suppress blind
 - Generated test-store adapter freshness, generated telemetry acceptance inventory, documentation links/invariants and whitespace checks passed. This storage-only slice changes no embedded Help source or UI behavior; the preceding recovery slice's full dashboard/Help cycle remains the applicable unchanged cohort.
 - The earlier full-suite failure (missing schema release and foreign-key bookkeeping) and separate API timeout are retained as superseded evidence, alongside the passing replacement run. Neither is relabeled as a pass.
 
-[Evidence checksums](SHA256SUMS) cover the raw compressed logs, source hashes, commands and review history. The source hashes were checked against the exact installed files after validation.
+Evidence checksums (`SHA256SUMS`) cover the raw compressed logs, source hashes, commands and review history. The source hashes were checked against the exact installed files after validation.
 
 The review fixed unsupported-version admission, obsolete rows starving the bounded queue, UTF-8 identity ambiguity, nil/empty recipient replay, a destination limit below the existing settings contract, and serialized-envelope expansion beyond the byte cap. Final review status: clean after the schema/foreign-key corrections and the final source, tests, generated adapter and evidence review.
 

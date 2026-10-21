@@ -31,41 +31,41 @@ Current-run Codex in-app browser captures support this review. Original hosts, c
 
 1. Entry and destination:
 
-![Import entry](screenshots/01-import-entry.jpg)
+Import entry (`screenshots/01-import-entry.jpg`)
 
 2. Runtime categories and an explicit unresolved source policy:
 
-![Runtime settings](screenshots/02-runtime-settings.jpg)
+Runtime settings (`screenshots/02-runtime-settings.jpg`)
 
 3. Data source counts and column/parameter mappings, with no row values:
 
-![Data sources](screenshots/03-data-sources.jpg)
+Data sources (`screenshots/03-data-sources.jpg`)
 
 4. Source coverage, full-source fingerprint and preview limit:
 
-![Source summary](screenshots/05-source-summary.jpg)
+Source summary (`screenshots/05-source-summary.jpg`)
 
 5. Inert dependency evidence (cropped before recorded host paths):
 
-![Dependency inventory](screenshots/06-dependency-inventory.jpg)
+Dependency inventory (`screenshots/06-dependency-inventory.jpg`)
 
 6. Save receipt:
 
-![Saved review receipt](screenshots/07-review-saved.jpg)
+Saved review receipt (`screenshots/07-review-saved.jpg`)
 
 7. Durable review queue and Resume:
 
-![Saved review in the Script Library](screenshots/08-library-review.jpg)
+Saved review in the Script Library (`screenshots/08-library-review.jpg`)
 
 8. Reopened authoring workbench:
 
-![Reopened authoring review](screenshots/09-resumed-review.jpg)
+Reopened authoring review (`screenshots/09-resumed-review.jpg`)
 
 9. Explicit replay gates after reopening:
 
-![Reopened readiness gates](screenshots/10-resumed-readiness.jpg)
+Reopened readiness gates (`screenshots/10-resumed-readiness.jpg`)
 
-The [sanitized saved-review verification](save-verification.json) records exact attachment hashes and typed import counts. The complete archive backups, raw database, file capability references and values remain in the private local review directory.
+The sanitized saved-review verification (`save-verification.json`) records exact attachment hashes and typed import counts. The complete archive backups, raw database, file capability references and values remain in the private local review directory.
 
 ### Design and accessibility observations
 

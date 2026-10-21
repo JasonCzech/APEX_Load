@@ -11,7 +11,7 @@ This is overflow-triggered closure, not a scheduler or a guarantee that no callb
 - SDK lifecycle race suite: 9 top-level tests and 14 subtests passed. The identical controlled load-state regression fails with only the registration fix removed; five native navigation repetitions passed on each engine.
 - Full Go suite: 168 packages, 17,654 top-level tests and 17,311 subtests passed. A test-only external overlay exercised the actual private HAR import in this same gate; all production code came from the installed checkout.
 - The attached ZIP imported successfully: HTTP 200, 803 source requests, 476 actions, 327 filtered assets, 479 assertions, 37 extractors, 43 correlations, four warnings and zero DSL issues. Aggregate fields matched the preceding compatibility cohort.
-- Type checking, lint, 34 Help units, embedded dashboard build, Help workflows in both auth profiles, generated browser inventory, documentation checks and evidence checksums passed. Exact workflow counts and source/controller hashes are retained in [the evidence bundle](SHA256SUMS).
+- Type checking, lint, 34 Help units, embedded dashboard build, Help workflows in both auth profiles, generated browser inventory, documentation checks and evidence checksums passed. Exact workflow counts and source/controller hashes are retained in the evidence bundle (`SHA256SUMS`).
 
 The private customer ZIP was exercised only through the real multipart import endpoint, without replaying traffic or saving converted content. Retained evidence contains aggregate counts and source hashes only. The matching import result does not claim byte-identical generated IDs or protected attestations.
 

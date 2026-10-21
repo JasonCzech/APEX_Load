@@ -1,6 +1,0 @@
-{
-  "scope": "capture hostnames in top-level validation logs and summaries only; not a general payload scanner",
-  "private_host_count": 14,
-  "checked_files": 81,
-  "matches": []
-}

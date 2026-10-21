@@ -1,6 +1,0 @@
-{
-  "browser_runner_sessions_exited": true,
-  "owned_controller_workdirs_removed": 2,
-  "remaining_owned_controllers": 0,
-  "scope": "Final embedded Help/analytics Playwright invocations; runner trap stops and waits for its own controller and Playwright exits after closing its browser."
-}

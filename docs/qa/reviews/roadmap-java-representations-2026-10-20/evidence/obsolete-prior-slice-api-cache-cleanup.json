@@ -1,5 +1,0 @@
-{
-  "removed": [],
-  "reclaimed_bytes": 0,
-  "scope": "Obsolete completed API test archives from earlier slices, lacking current regression; no open descriptors. Active final builds and dependencies retained."
-}

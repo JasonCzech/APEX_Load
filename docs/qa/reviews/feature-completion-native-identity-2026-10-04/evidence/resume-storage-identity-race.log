@@ -1,4 +1,0 @@
-# github.com/shoenig/go-m1cpu
-../../../../go/pkg/mod/github.com/shoenig/go-m1cpu@v0.1.6/cpu.go:75:17: warning: variable length array folded to constant array as an extension [-Wgnu-folding-constant]
-../../../../go/pkg/mod/github.com/shoenig/go-m1cpu@v0.1.6/cpu.go:77:16: warning: variable length array folded to constant array as an extension [-Wgnu-folding-constant]
-ok  	github.com/jasonczech/apexload/pkg/storage	5.985s

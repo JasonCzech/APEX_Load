@@ -1,9 +1,0 @@
-import { readFile, writeFile } from 'node:fs/promises';
-import { pathToFileURL } from 'node:url';
-const source = process.argv[2], output = process.argv[3], resultFile = process.argv[4];
-const { DEFAULT_BUNDLE_BUDGETS, DEFAULT_ROUTE_BUDGETS, inspectBundle, formatBundleReport } = await import(pathToFileURL(source + '/dashboard/scripts/check-bundle-budget.mjs'));
-const result = await inspectBundle(output, DEFAULT_BUNDLE_BUDGETS, DEFAULT_ROUTE_BUDGETS);
-const portable = { ...result, routes: result.routes.map(route => ({ ...route, entryFile: route.entryFile?.source ?? null, forbiddenAssets: route.forbiddenAssets?.map(pattern => pattern.source) ?? [] })) };
-await writeFile(resultFile, JSON.stringify({ node: process.version, executable: process.execPath, deterministicBuildTime: '1970-01-01T00:00:00.000Z', result: portable }, null, 2) + '\n', { flag: 'wx' });
-process.stdout.write(formatBundleReport(result));
-process.exitCode = result.violations.length ? 1 : 0;

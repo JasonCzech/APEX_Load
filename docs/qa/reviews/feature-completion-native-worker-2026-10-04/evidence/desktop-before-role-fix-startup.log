@@ -1,9 +1,0 @@
-Traceback (most recent call last):
-  File "/Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/scripts/test_native_worker_startup.py", line 68, in <module>
-    main()
-    ~~~~^^
-  File "/Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/scripts/test_native_worker_startup.py", line 63, in main
-    report = verify_binary(args.binary if args.binary else desktop_binary(args.desktop_build_dir))
-  File "/Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/scripts/test_native_worker_startup.py", line 41, in verify_binary
-    raise RuntimeError("native startup boundary failed: " + name + " exit=" + str(result.returncode))
-RuntimeError: native startup boundary failed: missing-inherited-handles exit=2

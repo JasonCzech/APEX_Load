@@ -26,9 +26,9 @@ The remaining original audit recommendations are unchanged. This implementation 
 
 Browser checks confirmed staged load and filter retention, Graph Wall retention, and focus restoration. Regression coverage includes the same-run navigation path and reload return, zero errors, no samples, positive errors, ties, small nonzero rates, and the return action for completed runs.
 
-![Implemented Graph Wall return](command-center-usability-2026-09-09/12-implemented-graph-return.png)
+Implemented Graph Wall return (`command-center-usability-2026-09-09/12-implemented-graph-return.png`)
 
-![Implemented advanced return action](command-center-usability-2026-09-09/13-implemented-details.png)
+Implemented advanced return action (`command-center-usability-2026-09-09/13-implemented-details.png`)
 
 ### Priority findings
 
@@ -66,49 +66,49 @@ Retain the purple accent, group colors, and established components. Reduce decor
 
 Live status, current/target load, remaining time, and intervention buttons are available. Group metrics lose visible labels, the highest-error group truncates, and stacked panels push diagnostics below the initial viewport. Small supporting text is an accessibility risk.
 
-![Narrow live run](command-center-usability-2026-09-09/01-live-narrow.png)
+Narrow live run (`command-center-usability-2026-09-09/01-live-narrow.png`)
 
 #### 2. Inspect Operations on a wide layout — usable but crowded
 
 Group colors and current/target controls help orientation. Repeated VUser values, red zero-error tiles, a large empty error panel, and a horizontally scrolling detail table compete for attention. The group button shows a clear focus outline after dismissing its menu.
 
-![Wide operations view](command-center-usability-2026-09-09/02-live-desktop.png)
+Wide operations view (`command-center-usability-2026-09-09/02-live-desktop.png`)
 
 #### 3. Open group actions — functional, weak discoverability
 
 Runtime Settings and Parameters are available in a compact menu. Escape dismisses the menu and returns focus to the group button. The closed trigger needs a visible affordance. Editing these settings was not exercised.
 
-![Group actions menu](command-center-usability-2026-09-09/03-group-menu.png)
+Group actions menu (`command-center-usability-2026-09-09/03-group-menu.png`)
 
 #### 4. Switch to Graph Wall — needs improvement
 
 Live charts, group selection, expansion controls, graph categories, and display options are present. Three-column cards truncate titles and legends. The first chart's options dominate its heading. TPS and duration adjustment disappear from the shared run shelf. Accessible chart measurement tables and named expansion/reorder controls are exposed in the accessibility tree, a useful foundation to retain.
 
-![Graph Wall](command-center-usability-2026-09-09/04-graph-wall.png)
+Graph Wall (`command-center-usability-2026-09-09/04-graph-wall.png`)
 
 #### 5. Open graph configuration — readability defect
 
 Graph selection and Reset are discoverable, and focus enters on Close. The drawer's background allows underlying content to remain visible through labels and options. This is a concrete readability problem, not a preference about visual density. Graph settings were inspected without changing them.
 
-![Graph configuration drawer](command-center-usability-2026-09-09/05-graph-configuration.png)
+Graph configuration drawer (`command-center-usability-2026-09-09/05-graph-configuration.png`)
 
 #### 6. Inspect Pause confirmation — generally clear
 
 The dialog names the run and explains the action boundary and resumability. Cancel initially receives focus. Preserve that specificity. Button contrast deserves measurement. The dialog was cancelled; pause/resume execution was not tested.
 
-![Pause confirmation](command-center-usability-2026-09-09/06-pause-confirmation.png)
+Pause confirmation (`command-center-usability-2026-09-09/06-pause-confirmation.png`)
 
 #### 7. Open Error Details and scroll — needs improvement
 
 Error patterns and evidence share one tab, which is useful. An unfiltered healthy run receives filter-related empty copy and two large blank regions. The page header overlaps the sticky run shelf. Populated signatures, evidence retrieval, and failure recovery were not tested.
 
-![Error Details and header overlap](command-center-usability-2026-09-09/07-error-details.png)
+Error Details and header overlap (`command-center-usability-2026-09-09/07-error-details.png`)
 
 #### 8. Open Infrastructure — useful detail, unclear warning context
 
 Capacity and route information are available with status text as well as color. Warning reasons are not apparent in the visible columns, and horizontal scrolling separates identity from later details. The same header overlap persists.
 
-![Infrastructure](command-center-usability-2026-09-09/08-infrastructure.png)
+Infrastructure (`command-center-usability-2026-09-09/08-infrastructure.png`)
 
 ### Follow-up: Details navigation and zero-error attribution
 
@@ -120,7 +120,7 @@ Details is a small generic action beside Notes and duration controls. It does no
 
 Source inspection confirms that `highestGroupErrorRate` chooses the first group even when every rate is zero. That is a ranking artifact, not an unhealthy group. Require actual recorded errors before attributing a group. Do not simply test the formatted percentage: a small nonzero rate can round to 0.00%, so show adequate precision or an error count in that case. For positive ties, say that multiple groups are tied or make the tie discoverable rather than implying a unique worst group.
 
-![Details entry](command-center-usability-2026-09-09/09-details-entry.png)
+Details entry (`command-center-usability-2026-09-09/09-details-entry.png`)
 
 #### 10. Follow Details to the execution workspace — confusing context switch
 
@@ -128,13 +128,13 @@ The route changes from the run's Command Center to its `/test/` workspace. In th
 
 A Back button does exist at the upper left of the action row. Its generic text, low prominence, and placement among operational actions do not clearly promise a return to this run's Command Center. This is a discoverability and orientation issue; the captured build does not lack a return control entirely. Keep the full advanced capabilities, but label the destination and give navigation its own clearly named return link. A focused details drawer could serve common inspection needs, with Advanced execution workspace available explicitly.
 
-![Details destination](command-center-usability-2026-09-09/10-details-destination.png)
+Details destination (`command-center-usability-2026-09-09/10-details-destination.png`)
 
 #### 11. Use Back — return works in the inspected path
 
 Clicking the page's Back button returned to the same run's Command Center with its application/release scope. This verifies the direct return path in this local build. It does not establish retention of Graph Wall mode, filters, scroll position, or staged load edits, nor behavior after deep links, reloads, or intermediate navigation. Those must be regression cases.
 
-![Return from Details](command-center-usability-2026-09-09/11-details-back.png)
+Return from Details (`command-center-usability-2026-09-09/11-details-back.png`)
 
 Follow-up acceptance criteria: Details announces its destination; a visible Back to Command Center action always targets the same run; keyboard focus returns to the Details trigger; the original view and draft inputs survive; zero-error runs never name a highest-error group; no-sample and real low-rate-error states remain distinct. Cover both Operations and Graph Wall entry, deep links, reloads, positive ties, and run completion while viewing details.
 
@@ -170,11 +170,11 @@ The final diff review additionally corrected VUser projections for TPS-based run
 
 Latest evidence is saved below. These are low-load HTTP smoke runs; they validate the interface and navigation rather than production-scale performance.
 
-![Operations with essential columns](command-center-usability-2026-09-09/14-clean-operations.png)
+Operations with essential columns (`command-center-usability-2026-09-09/14-clean-operations.png`)
 
-![Narrow group metrics and visible keyboard focus](command-center-usability-2026-09-09/15-clean-narrow.png)
+Narrow group metrics and visible keyboard focus (`command-center-usability-2026-09-09/15-clean-narrow.png`)
 
-![Opaque unified graph configuration](command-center-usability-2026-09-09/16-clean-graph-configuration.png)
+Opaque unified graph configuration (`command-center-usability-2026-09-09/16-clean-graph-configuration.png`)
 
 ## Load impact heatmap (2D/3D) operator-experience review
 
@@ -247,19 +247,19 @@ Use an opaque modal/drawer token, stronger text and control contrast, and a clea
 
 #### 1. 2D map — readable values, unexplained uniform shading
 
-![Step 1: 2D load impact map](heatmap-audit-2026-09-14/01-2d-map.png)
+Step 1: 2D load impact map (`heatmap-audit-2026-09-14/01-2d-map.png`)
 
 #### 2. 3D map — tiny labels and retained P95 selection
 
-![Step 2: 3D map](heatmap-audit-2026-09-14/02-3d-map.png)
+Step 2: 3D map (`heatmap-audit-2026-09-14/02-3d-map.png`)
 
 #### 3. Sample details — useful evidence behind a wide table
 
-![Step 3: P95 sample details](heatmap-audit-2026-09-14/03-cell-details.png)
+Step 3: P95 sample details (`heatmap-audit-2026-09-14/03-cell-details.png`)
 
 #### 4. Configuration — background content shows through the drawer
 
-![Step 4: Heatmap configuration](heatmap-audit-2026-09-14/04-configuration.png)
+Step 4: Heatmap configuration (`heatmap-audit-2026-09-14/04-configuration.png`)
 
 ### Limits and recommended validation
 

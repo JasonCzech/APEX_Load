@@ -1,9 +1,0 @@
-
-> apexload-dashboard@0.1.0 build
-> tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && vite build --outDir ../pkg/api/static --emptyOutDir
-
-e2e/workflow-browser-resource-evidence.spec.ts(164,9): error TS7034: Variable 'runs' implicitly has type 'any[]' in some locations where its type cannot be determined.
-e2e/workflow-browser-resource-evidence.spec.ts(180,19): error TS7005: Variable 'runs' implicitly has an 'any[]' type.
-e2e/workflow-browser-resource-evidence.spec.ts(182,28): error TS7005: Variable 'runs' implicitly has an 'any[]' type.
-e2e/workflow-browser-resource-evidence.spec.ts(182,55): error TS7005: Variable 'runs' implicitly has an 'any[]' type.
-e2e/workflow-browser-resource-evidence.spec.ts(193,108): error TS7005: Variable 'runs' implicitly has an 'any[]' type.

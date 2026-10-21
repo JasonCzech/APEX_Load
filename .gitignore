@@ -167,3 +167,16 @@ deck_build/*.pptx
 # and must never be staged.
 /.gomodcache/
 /.tmp/
+
+# QA review evidence (screenshots, Playwright traces, test logs, JSON captures,
+# archives) stays local. Only the Markdown review records are tracked; the
+# evidence once made up most of the repository's 2 GiB history. Keep raw
+# evidence beside the record on disk or attach it to a CI run instead.
+docs/qa/reviews/**
+!docs/qa/reviews/**/
+!docs/qa/reviews/**/*.md
+# Input for scripts/run-local-broker-integration.py, not evidence.
+!docs/qa/reviews/import-fixture-matrix-2026-09-12/brokers.compose.yaml
+docs/archive/qa-reviews/**
+!docs/archive/qa-reviews/**/
+!docs/archive/qa-reviews/**/*.md

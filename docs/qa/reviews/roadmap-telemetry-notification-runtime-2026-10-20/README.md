@@ -16,7 +16,7 @@ Schema release 69 appends to release 68, preserving previous fingerprints. New p
 - Applied SQLite/PostgreSQL and schema checks: 17 top-level tests and 90 subtests passed. Schema release 69 preserves earlier release fingerprints and explicitly tests both publication foreign keys.
 - Full Go suite: 168 packages, 17,671 top-level tests and 17,350 subtests passed. The test-only private-HAR overlay ran within this gate; all production source came from the installed checkout.
 - Actual private ZIP import: HTTP 200, 803 requests, 476 actions, 327 filtered assets, 479 assertions, 37 extractors, 43 correlations, four warnings and zero DSL issues; matching aggregate fields and unchanged original ZIP hash.
-- API/TypeScript generation, telemetry inventory, dashboard typecheck/lint/34 Help units/build, both Help auth profiles, documentation checks and evidence checksums passed. Exact logs, input/asset/controller hashes and original failed draft fixtures are retained in [the evidence bundle](SHA256SUMS).
+- API/TypeScript generation, telemetry inventory, dashboard typecheck/lint/34 Help units/build, both Help auth profiles, documentation checks and evidence checksums passed. Exact logs, input/asset/controller hashes and original failed draft fixtures are retained in the evidence bundle (`SHA256SUMS`).
 
 The private customer ZIP was imported through the real multipart API without replay or saved converted content. Its safe aggregate result matches the preceding compatibility cohort. Random generated script/attestation hashes are excluded from equality claims; the original ZIP hash is unchanged.
 

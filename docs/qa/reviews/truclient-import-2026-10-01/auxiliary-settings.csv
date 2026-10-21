@@ -1,2 +1,0 @@
-source_file,section,key,disposition,target_paths,source_refs,reason
-TCIEAuthenticationFilters.ini,General,FilterType,compatibility_only,,TCIEAuthenticationFilters.ini:3,Source Internet Explorer authentication filter selector and six bare allow/deny list entries remain in protected original source for compatibility review. List grammar and native browser authentication-policy equivalence are unverified; source values are omitted.

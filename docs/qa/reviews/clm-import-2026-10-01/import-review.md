@@ -15,7 +15,7 @@ The original target hosts are unreachable. Import accounting, synthetic engine t
 
 All selected runtime keys receive a disposition: 94 in Java, 127 in CMChange, 142 in C360, and 127 in KM. Accounting includes mapped, non-applicable, and compatibility-only settings; a mapped key does not establish exact vendor equivalence. Java's 94 keys comprise 20 mapped, nine compatibility-only, and 65 non-applicable entries, with zero unknown keys. All eight Java VM settings and all 17 explicit Kafka producer properties receive source-linked review evidence. Kafka support is 12 supported counterparts, three non-applicable consumer properties, one credential-binding decision, and one partial batching semantic. The Java source remains in its governed runner lane; automatic native Kafka migration is explicitly unavailable.
 
-Details and source-reference limits are in [web fidelity](web-fidelity.md) and [Kafka fidelity](kafka-fidelity.md). The complete selected-runtime checklist is available as [CSV](runtime-settings.csv) and [JSON](runtime-settings.json): 490 keys, comprising 141 mapped, 330 non-applicable, and 19 compatibility-only dispositions. It includes source locations and static mapping explanations, but no source values. Its validation-probe context predates the later save repairs; the selected runtime inventory is unchanged.
+Details and source-reference limits are in [web fidelity](web-fidelity.md) and [Kafka fidelity](kafka-fidelity.md). The complete selected-runtime checklist is available as CSV (`runtime-settings.csv`) and JSON (`runtime-settings.json`): 490 keys, comprising 141 mapped, 330 non-applicable, and 19 compatibility-only dispositions. It includes source locations and static mapping explanations, but no source values. Its validation-probe context predates the later save repairs; the selected runtime inventory is unchanged.
 
 The follow-on [TruClient review](../truclient-import-2026-10-01/import-review.md) applies the same exercise to the second attached archive. The user-requested independent review rounds and repair status are recorded in [the code review](code-review.md).
 
@@ -41,45 +41,45 @@ The initial upload reached a visible `Bad Gateway` state: source protection took
 
 1. **Choose the import source — Good.** The source catalog and importer identify ZIP/USZ projects and collections. The final entry describes independent project review before upload.
 
-   ![Final import source catalog](01-source-entry-final.png)
+   Final import source catalog (`01-source-entry-final.png`)
 
 2. **Upload and choose a destination — Good.** The original outer archive is queued with the intended project folder; import checks do not execute it.
 
-   ![Actual collection queued for review](02-collection-upload.png)
+   Actual collection queued for review (`02-collection-upload.png`)
 
 3. **Review independent projects — Good after repair.** All four members receive independent results. The initial capture shows only two rows in the short queue; that observation prompted the project selector now visible in subsequent captures. A synthetic failed-first member exposed and repaired the selector's missing fallback.
 
-   ![Independent project reviews before the selector improvement](03-independent-project-reviews.png)
+   Independent project reviews before the selector improvement (`03-independent-project-reviews.png`)
 
 4. **Inspect settings and parameters — Needs review for execution.** The Kafka panel exposes supported counterparts, protected credential binding, and partial batching semantics without advertising automatic native migration. All ten source parameters and seven embedded datasets are conserved. Java runner qualification and TLS migration are explicit preparation requirements.
 
-   ![Kafka migration decisions and persistent project selector](04-kafka-migration-decisions.png)
+   Kafka migration decisions and persistent project selector (`04-kafka-migration-decisions.png`)
 
 5. **Trace source mappings — Good, with disclosed preview limits.** CMChange shows 1,145 source mappings, zero unsupported mappings, and zero DSL actions without source origin. Its 20 captured files include seven limited or truncated previews; the visible banner explains the bounded display. Source-linked draft metadata retains mapping evidence, and the original archive stays in the private inspection area. The capture predates the readiness repair and shows a superseded CMChange blocker badge; the final saved draft has no structural gate. Mapping counts do not certify byte-for-byte runtime fidelity or complete source retention inside the saved draft.
 
-   ![Source mapping coverage and preview limit explanation](05-source-mapping.png)
+   Source mapping coverage and preview limit explanation (`05-source-mapping.png`)
 
 6. **Save the Java review — Good.** The combined project is durably saved as the named `CLM_bobpm_Kafka` authoring session. Runner, dependency, and approval requirements remain attached; no approval or execution action was taken.
 
-   ![Confirmed named Java review save](06-java-session-saved.png)
+   Confirmed named Java review save (`06-java-session-saved.png`)
 
 7. **Find and resume the Java review — Good, with discovery friction.** Script Library → Authoring review → `CLM_bobpm_Kafka` → Resume reopens the saved draft and its authoring panels. An earlier generic-name session is retained as before-change evidence. Approval readiness on the queue card concerns draft review; the resumed editor separately shows missing validation/debug evidence.
 
-   ![Named session available in the library](07-authoring-review-library.png)
+   Named session available in the library (`07-authoring-review-library.png`)
 
-   ![Saved Java project reopened in the authoring editor](08-resumed-java-review.png)
+   Saved Java project reopened in the authoring editor (`08-resumed-java-review.png`)
 
 8. **Prepare native web credentials — Failed at the captured attempt; repaired and verified.** Actual CMChange saving exposed a protected-script projection failure. Its initial error appeared only in the hidden Credentials panel; a guarded callback now reports it at the active import surface and clears it on retry. The visible error below records the failure. Exact protected body evidence now reconciles credential binding without changing executable body bytes, and the subsequent native saves complete.
 
-   ![Credential preparation error visible on the active review tab](09-visible-save-error.png)
+   Credential preparation error visible on the active review tab (`09-visible-save-error.png`)
 
 9. **Save the native drafts — Good.** The actual source produces three durably saved library scripts, with per-member Saved states and named editor links. The Java authoring review remains separate from these library-script receipts. KM and C360 retain their legacy TLS migration gates; CMChange has no structural replay gate.
 
-   ![Three native web drafts saved with independent receipts](10-native-web-drafts-saved-final.png)
+   Three native web drafts saved with independent receipts (`10-native-web-drafts-saved-final.png`)
 
 10. **Find and reopen the native drafts — Good; execution needs evidence.** Filtering Script Library to Attached VuGen projects yields all three scripts. Each reopens with “Saved: up to date”; CMChange shows zero authoring problems, and the source review gate remains in KM and C360. Two, two, and four parameters and two, two, and three datasets persist respectively. No Debug action or original-host replay was taken.
 
-   ![Completed native imports listed in their destination folder](11-native-web-library.png)
+   Completed native imports listed in their destination folder (`11-native-web-library.png`)
 
 Remaining design findings concern clarity rather than unavailable import evidence: long runner explanations repeat across runtime-property rows; the library's authoring queue is collapsed by default; and a resumed authoring session uses the generic “Create Script” page title. These are opportunities to make durable review completion easier to recognise. They do not imply the original hosts were replayed or that unresolved prerequisites were satisfied.
 

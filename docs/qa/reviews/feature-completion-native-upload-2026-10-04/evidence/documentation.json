@@ -1,9 +1,0 @@
-{
-  "command": [
-    "python3",
-    "scripts/check-docs.py"
-  ],
-  "exit_code": 0,
-  "seconds": 0.304,
-  "log": "documentation.log"
-}

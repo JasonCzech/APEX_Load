@@ -1,2 +1,0 @@
-ok  	github.com/jasonczech/apexload/pkg/engine	0.742s
-ok  	github.com/jasonczech/apexload/pkg/distributed/generatorrpc	0.504s

@@ -24,13 +24,13 @@ totals and schema migration fingerprints retain their earlier meanings.
 
 ## Validation and review
 
-- Final full Go gate: 168 packages, 17736 top-level tests and 17622 subtests passed; 33 top-level tests skipped. See [exact test counts and failures by cohort](evidence/validation-counts.json) and [final full output](evidence/final-clean-full-go.jsonl.gz). A pass here does not convert environment-gated skips to qualification.
+- Final full Go gate: 168 packages, 17736 top-level tests and 17622 subtests passed; 33 top-level tests skipped. See exact test counts and failures by cohort (`evidence/validation-counts.json`) and final full output (`evidence/final-clean-full-go.jsonl.gz`). A pass here does not convert environment-gated skips to qualification.
 - Final dashboard typecheck, lint, build and 720 unit files / 8,032 tests passed. The broad cycle passed dev-admin 329 tests (6 skipped) and local-auth 268 (1 skipped). After review fixes, the affected four Java workflows plus Help passed dev-admin 16 (1 skipped) and local-auth 17. Later screenshot-framing changes passed their two affected workflows separately in both profiles; the resulting Java evidence, independent counts, absence and help were visually reviewed.
 - Affected protocol, HTTP, Java HTTP, engine, RPC, analysis, storage and API race checks passed. Storage/API were repeated separately after linker disk exhaustion. Targeted API, native metric/unit fixtures, generated contract checks, analytics inventory, documentation QA and actual PostgreSQL migration/history tests passed.
-- The private attachment imported successfully through the real endpoint: HTTP 200, 803 requests, 476 actions, 327 filtered assets, 479 assertions, 37 extractors, 43 correlations, 4 warnings, zero DSL issues and 264 protected requirements. [Aggregate comparison](evidence/har-compatibility-final.json) matches the preceding slice exactly except the randomized script hash. Original ZIP hash is unchanged. Neither target replay nor converted private payload retention occurred; only the aggregate and compatibility harness are preserved.
+- The private attachment imported successfully through the real endpoint: HTTP 200, 803 requests, 476 actions, 327 filtered assets, 479 assertions, 37 extractors, 43 correlations, 4 warnings, zero DSL issues and 264 protected requirements. Aggregate comparison (`evidence/har-compatibility-final.json`) matches the preceding slice exactly except the randomized script hash. Original ZIP hash is unchanged. Neither target replay nor converted private payload retention occurred; only the aggregate and compatibility harness are preserved.
 
-[Commands and cohort boundaries](evidence/commands.md), [runtime versions](evidence/runtime.txt),
-[final source/asset hashes](evidence/final-source-hashes.json) and [review rounds](evidence/REVIEW.md)
+[Commands and cohort boundaries](evidence/commands.md), runtime versions (`evidence/runtime.txt`),
+final source/asset hashes (`evidence/final-source-hashes.json`) and [review rounds](evidence/REVIEW.md)
 make the repetitions distinguishable. Earlier failures remain in their own logs:
 unit-resolution and compatibility-barrel defects were corrected; archive download
 refusals were caused by the real 1 GiB free-space guard and repeated after reclaiming
@@ -52,5 +52,5 @@ production overhead, complete distributed source-window qualification, reference
 hosts, Linux/Windows native runners, real TruClient exports and multi-host recovery
 remain open. No acceptance promotion or full PROTO-A/PROTO-B closure is claimed.
 
-[Evidence checksums](evidence/SHA256SUMS) cover the retained bundle. Source manifests
+Evidence checksums (`evidence/SHA256SUMS`) cover the retained bundle. Source manifests
 exclude this evidence directory to avoid recursive hashing.

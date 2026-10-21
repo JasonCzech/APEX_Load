@@ -10,11 +10,11 @@ The archive contains a legacy TruClient Web profile, 67 XML nodes, 36 embedded o
 
 The archive produces a valid native browser authoring candidate with persistent initialization gates. Those gates block engine construction and replay preflight until the planned source profile and authentication-filter policy have been qualified. The detailed [fidelity report](truclient-fidelity.md) records the mapping and meaningful engine limits. The independent code-review loop is clean after repair and re-review. The actual archive has now been imported, saved as a named authoring session, and reopened in the isolated local dashboard.
 
-The complete value-free CFG/USP runtime checklist is available as [CSV](runtime-settings.csv) and [JSON](runtime-settings.json): 220 keys, comprising 12 mapped, 129 compatibility-only, and 79 non-applicable dispositions, with no unknown keys. Together with the CLM collection appendix, all 710 selected CFG/USP runtime keys receive an explicit disposition. A mapped disposition does not establish complete vendor equivalence.
+The complete value-free CFG/USP runtime checklist is available as CSV (`runtime-settings.csv`) and JSON (`runtime-settings.json`): 220 keys, comprising 12 mapped, 129 compatibility-only, and 79 non-applicable dispositions, with no unknown keys. Together with the CLM collection appendix, all 710 selected CFG/USP runtime keys receive an explicit disposition. A mapped disposition does not establish complete vendor equivalence.
 
-Separate [browser-profile CSV](browser-profile-settings.csv) and [JSON](browser-profile-settings.json) appendices account for 495 active `user_pref` declarations with 490 distinct keys, five identical duplicate declarations, and zero commented declarations. One CSP override record uses a key already present among those 490. The appendices contain 491 source-file/key rows, all compatibility-only. The [auxiliary CSV](auxiliary-settings.csv) and [JSON](auxiliary-settings.json) account for one authentication-filter selector, also compatibility-only. Source-browser applicability and precedence across files remain unverified; these rows are not folded into the CFG/USP count. All 712 classified runtime rows are available in the converter's runtime review: 220 CFG/USP plus 492 browser-profile/auxiliary rows. Authentication-filter list-format markers remain conservatively unparsed with a separate durable policy-review gate.
+Separate browser-profile CSV (`browser-profile-settings.csv`) and JSON (`browser-profile-settings.json`) appendices account for 495 active `user_pref` declarations with 490 distinct keys, five identical duplicate declarations, and zero commented declarations. One CSP override record uses a key already present among those 490. The appendices contain 491 source-file/key rows, all compatibility-only. The auxiliary CSV (`auxiliary-settings.csv`) and JSON (`auxiliary-settings.json`) account for one authentication-filter selector, also compatibility-only. Source-browser applicability and precedence across files remain unverified; these rows are not folded into the CFG/USP count. All 712 classified runtime rows are available in the converter's runtime review: 220 CFG/USP plus 492 browser-profile/auxiliary rows. Authentication-filter list-format markers remain conservatively unparsed with a separate durable policy-review gate.
 
-The [source-asset CSV](source-asset-inventory.csv) and [JSON](source-asset-inventory.json) reconcile all 27 ZIP entries: 25 regular files and two directories. All 67 project settings across 15 sections and 26 parameter-setting assignments across two definitions remain preserved in their separate source roles. The generated C wrapper has 44 distinct step keys matching 44 indexed XML nodes in source preorder. That correspondence establishes dispatch/order evidence, including disabled and alternative parents; it does not prove enabled replay or alternative branch selection.
+The source-asset CSV (`source-asset-inventory.csv`) and JSON (`source-asset-inventory.json`) reconcile all 27 ZIP entries: 25 regular files and two directories. All 67 project settings across 15 sections and 26 parameter-setting assignments across two definitions remain preserved in their separate source roles. The generated C wrapper has 44 distinct step keys matching 44 indexed XML nodes in source preorder. That correspondence establishes dispatch/order evidence, including disabled and alternative parents; it does not prove enabled replay or alternative branch selection.
 
 ## Browser flow evidence
 
@@ -22,31 +22,31 @@ The audit follows the actual supplied archive through the isolated local dashboa
 
 1. **Queue the source archive — Good.** Both supplied outer archives are retained in the queue with the intended save folder. The collection expands into independent projects while TruClient receives its own result.
 
-   ![Both attached archives queued in the local import flow](01-both-archives-queued.png)
+   Both attached archives queued in the local import flow (`01-both-archives-queued.png`)
 
 2. **Inspect runtime settings — Good, with category discovery friction.** All 712 imported runtime rows survive the API and durable draft. The initial HTTP category displays two additional APEX settings; selecting All categories exposes the complete table. Its 714 visible rows are presentation rows: mapped keys can share a draft field, compatibility keys can share a run-logic concept, one error-handler concept adds a non-applicable row, and four configured APEX fields add rows. The 27 unconfigured APEX defaults are hidden. These display totals do not replace the source-key appendix.
 
-   ![Complete runtime categories and mapping totals](02-runtime-all-categories.png)
+   Complete runtime categories and mapping totals (`02-runtime-all-categories.png`)
 
 3. **Account for parameters and datasets — Good.** Two table parameters and two embedded DAT assets remain present, with 26 and two available rows respectively. The capture shows file and column metadata, not customer data rows.
 
-   ![Two imported datasets and their row counts](03-data-source-accounting.png)
+   Two imported datasets and their row counts (`03-data-source-accounting.png`)
 
 4. **Trace source evidence — Good, with disclosed limits.** The review exposes 64 mappings: 39 converted and 25 needing review. Two generated initialization gates have no direct DSL source origin. Twenty of 23 eligible source files have bounded previews; three omitted files and two truncated files produce five preview-limit notices. These limits concern the display. The complete supplied archive is retained separately in the private backup; the authoring session does not contain an immutable copy of every source byte.
 
-   ![Source mapping accounting and bounded preview explanation](04-source-mapping-accounting.png)
+   Source mapping accounting and bounded preview explanation (`04-source-mapping-accounting.png`)
 
 5. **Save the review — Good; replay remains blocked.** The named `Prefetch_Wireless_Center_Sep_Truclient_v0.1` session contains 57 actions, two initialization gates, both parameters, both datasets, and all 712 runtime evidence rows. The current queue receipt separates three library scripts from one saved review session. Its one awaiting-save item is the freshly revalidated Java queue entry; that project's named authoring session was saved earlier and remains in the library.
 
-   ![Named TruClient authoring session save confirmation](05-truclient-review-saved.png)
+   Named TruClient authoring session save confirmation (`05-truclient-review-saved.png`)
 
 6. **Find the durable review — Good, with discovery friction.** Script Library → Authoring review exposes the named TruClient and Java sessions. The section is collapsed on entry. Its generic data-repair advice refers to two warning-level Unique Number wrap-policy reviews, with zero blocked data-fit checks. Both data-source bindings and all 28 rows persist; the advice does not indicate missing source data.
 
-   ![Named TruClient and Java reviews in the library](06-authoring-review-library.png)
+   Named TruClient and Java reviews in the library (`06-authoring-review-library.png`)
 
 7. **Resume the review — Good; execution needs repair and evidence.** Resume reopens the complete draft with “Saved: up to date”, the source profile gate, parameter-file review, and runtime/source panels. The editor reports seven issues for three unresolved browser-window operations and two targetless waits. These authoring checks are distinct from the converter's Go DSL validation and are not a claim that the source files were lost. The generic Create Script title makes the resumed state less obvious. Validation/debug evidence is absent; no Debug or Approve action was taken.
 
-   ![Saved TruClient draft reopened with explicit authoring issues](07-resumed-truclient-review.png)
+   Saved TruClient draft reopened with explicit authoring issues (`07-resumed-truclient-review.png`)
 
 ## Verification and limits
 

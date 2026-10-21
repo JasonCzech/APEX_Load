@@ -4,7 +4,7 @@ The three additional sources were inspected offline. Both ZIP files were bounded
 and extracted into private temporary storage; source files were unchanged. Their
 contents were treated as data, and no recorded host was contacted. Customer
 captures, URLs, credentials, cookies and payload values are excluded from the
-repository. See the [aggregate evidence](additional-evidence.json) for digests.
+repository. See the aggregate evidence (`additional-evidence.json`) for digests.
 
 ## Source results
 
@@ -81,7 +81,7 @@ versus original source IDs, Salesforce decoding/native extractors, bounded uploa
 acceptance/rejection, authorization snapshots and HAR picker limits. The picker
 checks retain the smaller limit for other formats and exercise both primary and
 comparison HAR files. Validation results are recorded in
-[the additional validation summary](additional-validation.json).
+the additional validation summary (`additional-validation.json`).
 
 The full integrated Go suite passes (117 tested packages and 6 packages without tests).
 Dashboard type checking, lint, all 4,756 unit tests across 455 files and the build

@@ -31,7 +31,12 @@ def render_lane_status(ledger: dict) -> list[str]:
             evidence = success["evidence"]
             if not evidence:
                 raise ValueError(f"missing success receipt for {name}")
-            last = f"[{at.isoformat()}]({evidence})"
+            # Review evidence other than Markdown records is git-ignored, so cite its path.
+            target = evidence.split("#", 1)[0]
+            if "reviews/" in target and not target.endswith(".md"):
+                last = f"{at.isoformat()} (`{evidence}`)"
+            else:
+                last = f"[{at.isoformat()}]({evidence})"
             if (as_of - at).days > stale_after:
                 last += " (stale)"
         elif status == "passed":

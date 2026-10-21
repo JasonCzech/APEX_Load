@@ -14,6 +14,15 @@ class LaneStatusTest(unittest.TestCase):
         self.assertIn("failed | [2026-08-01](receipt.json) (stale)", text)
         self.assertIn("passed | [2026-10-18](browser.json)", text)
 
+    def test_untracked_review_evidence_is_cited_not_linked(self):
+        data = {"as_of": "2026-10-18", "lanes": [
+            {"name": "broker", "status": "passed", "last_success": {"at": "2026-10-18T01:00:00Z", "evidence": "reviews/run/receipt.json"}},
+            {"name": "browser", "status": "passed", "last_success": {"at": "2026-10-18T01:00:00Z", "evidence": "reviews/run/README.md#scope"}},
+        ]}
+        text = "\n".join(render_lane_status(data))
+        self.assertIn("passed | 2026-10-18 (`reviews/run/receipt.json`)", text)
+        self.assertIn("passed | [2026-10-18](reviews/run/README.md#scope)", text)
+
     def test_cannot_claim_pass_without_evidence(self):
         for success in [None, {"at": "2026-10-18T00:00:00Z", "evidence": ""}, {"at": "2026-10-19T00:00:00Z", "evidence": "future.json"}]:
             with self.subTest(success=success), self.assertRaises(ValueError):

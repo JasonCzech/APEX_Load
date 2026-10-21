@@ -1,7 +1,0 @@
-
-> apexload-dashboard@0.1.0 typecheck
-> tsc --noEmit --pretty false -p tsconfig.json && tsc --noEmit --pretty false -p tsconfig.node.json
-
-src/components/ExportableChart.test.tsx(3,30): error TS2307: Cannot find module 'node:fs' or its corresponding type declarations.
-src/components/ExportableChart.test.tsx(4,31): error TS2307: Cannot find module 'node:path' or its corresponding type declarations.
-src/components/ExportableChart.test.tsx(5,31): error TS2307: Cannot find module 'node:url' or its corresponding type declarations.
