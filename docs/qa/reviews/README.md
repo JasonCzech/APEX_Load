@@ -1,5 +1,7 @@
 # QA Review Records
 
+- [Terminal replay publication port](roadmap-browser-replay-publication-port-2026-10-21/README.md) — optional lease-bound native publication, pending download gate and late-completion fences.
+
 - [Chromium browser-process loss and pool replacement](roadmap-browser-process-loss-2026-10-20/README.md) — shared desktop/mobile-emulation context censoring and independent replacement-source evidence.
 - [Native browser document failure evidence](roadmap-browser-native-failure-2026-10-20/README.md) — native page close in Chromium/WebKit and Chromium renderer crash; precise local qualification limits.
 

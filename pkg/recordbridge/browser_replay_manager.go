@@ -79,6 +79,7 @@ type BrowserReplaySession struct {
 	// workerRecordedTerminal is set when the worker records its final state
 	// (harCopy with it); a Stop makes the session terminal before that.
 	workerRecordedTerminal bool
+	artifactDurability     string
 	// workerSettled is set on snapshots only: the worker had recorded its
 	// final state, finished or been abandoned when the snapshot was taken, so
 	// harCopy is final.
@@ -480,7 +481,6 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 			}
 			session.CompletedAt = &completedAt
 			session.terminalFenceEstablished = terminalFenceEstablished
-			session.workerRecordedTerminal = true
 			if terminalFenceEstablished {
 				session.harCopy = harCopy
 			}
@@ -542,6 +542,11 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 			}
 			return
 		}
+		// Publication is synchronous and outside all manager/session locks. Only
+		// the final fence check may make this worker's artifacts downloadable.
+		if !m.publishTerminalReplayArtifacts(executionCtx, session) {
+			return
+		}
 		// Broadcast and run the completion hook only after the manager read lock
 		// is released: the self-heal hook performs multi-round-trip storage
 		// writes, and holding m.mu across them stalls every other session's
@@ -589,10 +594,10 @@ func (m *BrowserReplayManager) reconcileWorkerCancellation(workerCtx, executionC
 			return
 		}
 		live := session.Status == BrowserReplayRunning || session.Status == BrowserReplayPaused
-		if !live && (session.terminalFenceEstablished || fenceErr == nil) {
+		if !live && ((session.terminalFenceEstablished && session.artifactDurability != "pending") || fenceErr == nil) {
 			// Normal worker completion, Stop, idle cancellation, and Close all
 			// establish a terminal status before canceling the worker context.
-			// Once a terminal fence is retained, a later execution-epoch release
+			// Once terminal publication has settled, a later execution-epoch release
 			// cannot invalidate the already-fenced report.
 			return
 		}
@@ -1283,24 +1288,25 @@ func (s *BrowserReplaySession) snapshotLocked() *BrowserReplaySession {
 
 func (s *BrowserReplaySession) snapshotBaseLocked() *BrowserReplaySession {
 	return &BrowserReplaySession{
-		ID:                s.ID,
-		Mode:              s.Mode,
-		ScriptID:          s.ScriptID,
-		ProjectID:         s.ProjectID,
-		Status:            s.Status,
-		Group:             s.Group,
-		Protocol:          s.Protocol,
-		RuntimeProfile:    CloneEngineReplayRuntimeProfile(&s.RuntimeProfile),
-		Preflight:         importreview.CloneReplayPreflight(s.Preflight),
-		StartedAt:         CloneReplaySessionTime(s.StartedAt),
-		CompletedAt:       CloneReplaySessionTime(s.CompletedAt),
-		CurrentEventIndex: s.CurrentEventIndex,
-		DroppedEventCount: s.DroppedEventCount,
-		RunID:             s.RunID,
-		ContinueOnError:   s.ContinueOnError,
-		Error:             s.Error,
-		harCopy:           s.harCopy,
-		workerSettled:     s.workerRecordedTerminal || s.workerHasFinishedLocked(),
+		ID:                 s.ID,
+		Mode:               s.Mode,
+		ScriptID:           s.ScriptID,
+		ProjectID:          s.ProjectID,
+		Status:             s.Status,
+		Group:              s.Group,
+		Protocol:           s.Protocol,
+		RuntimeProfile:     CloneEngineReplayRuntimeProfile(&s.RuntimeProfile),
+		Preflight:          importreview.CloneReplayPreflight(s.Preflight),
+		StartedAt:          CloneReplaySessionTime(s.StartedAt),
+		CompletedAt:        CloneReplaySessionTime(s.CompletedAt),
+		CurrentEventIndex:  s.CurrentEventIndex,
+		DroppedEventCount:  s.DroppedEventCount,
+		RunID:              s.RunID,
+		ContinueOnError:    s.ContinueOnError,
+		Error:              s.Error,
+		harCopy:            s.harCopy,
+		artifactDurability: s.artifactDurability,
+		workerSettled:      s.workerRecordedTerminal || s.workerHasFinishedLocked(),
 	}
 }
 
