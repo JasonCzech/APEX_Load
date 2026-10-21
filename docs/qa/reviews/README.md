@@ -1,5 +1,7 @@
 # QA Review Records
 
+- [Independent documentation and roadmap review](roadmap-independent-review-2026-10-21/README.md) — expanded cross-commit independent audit and regression fixes.
+
 - [Bounded replay recovery runtime](roadmap-browser-replay-runtime-2026-10-21/README.md) — project-scoped receipt rechecks, bounded reader/writer admission and exact cleanup retries.
 
 - [Retained replay read contract](roadmap-browser-replay-read-contract-2026-10-21/README.md) — bounded report polling, exact terminal reconstruction and native fallback refusal.

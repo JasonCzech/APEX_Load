@@ -12,6 +12,7 @@ import (
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
@@ -69,6 +70,17 @@ func (s *Server) rcaBrowserBaselinePolicy(projectID string, manifest *RunArchive
 		}
 	}
 	out.Mode, out.RunID = policy.Baseline.Mode, policy.Baseline.RunID
+	if out.Mode == "pinned_run" {
+		// Stored revisions may name a reference key. Compare canonical run
+		// identities, while preserving unavailable pins for normal disclosure.
+		run, lookupErr := s.store.GetTest(out.RunID)
+		if lookupErr != nil && !errors.Is(lookupErr, sql.ErrNoRows) {
+			return nil, fmt.Errorf("the pinned baseline identity could not be read: %w", lookupErr)
+		}
+		if run != nil && normalizeProjectID(run.ProjectID) == normalizeProjectID(projectID) {
+			out.RunID = run.ID
+		}
+	}
 	return out, nil
 }
 
@@ -203,16 +215,33 @@ func browserCohortFields(c *protocol.BrowserRuntimeCohort) map[string]string {
 // execute alike, while equal originals do not prove equal runtime behavior.
 // Missing historical provenance remains unknown; it is never reconstructed from
 // executable digests. Only browser detection consumes this additional guard.
-func rcaBrowserScriptChangedGroups(current, candidate rca.WorkloadKey, currentManifest, candidateManifest *RunArchiveManifest) map[string]bool {
+func rcaBrowserScriptChangedGroups(current, candidate rca.WorkloadKey, currentManifest, candidateManifest *RunArchiveManifest, observed ...rca.Series) map[string]bool {
 	changed := rca.ScriptChangedGroups(current, candidate)
 	source := func(manifest *RunArchiveManifest, group string) protocol.BrowserAuthoredDefinition {
 		if manifest == nil {
 			return protocol.BrowserAuthoredDefinition{}
 		}
+		if manifest.InitialProvenance != nil {
+			return manifest.InitialProvenance.BrowserAuthoredSources[group]
+		}
 		return manifest.Provenance.BrowserAuthoredSources[group]
 	}
+	groups := make(map[string]bool, len(current.Groups))
 	for group := range current.Groups {
-		if _, exists := candidate.Groups[group]; !exists {
+		groups[group] = true
+	}
+	// Retained observations may have blank or foreign groups. They must not
+	// acquire identity merely because neither workload names that group.
+	for _, series := range observed {
+		if series.Kind == rca.SeriesBrowserDocument && series.Document != nil {
+			groups[series.Document.Group] = true
+		}
+	}
+	for group := range groups {
+		_, inCurrent := current.Groups[group]
+		_, inCandidate := candidate.Groups[group]
+		if strings.TrimSpace(group) == "" || !inCurrent || !inCandidate {
+			changed[group] = true
 			continue
 		}
 		a, b := source(currentManifest, group), source(candidateManifest, group)

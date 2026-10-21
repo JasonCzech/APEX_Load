@@ -31,58 +31,61 @@ const rcaAutoQueueTimeout = 2 * time.Minute
 // names.
 const maxRCAEventHypotheses = 3
 
-// autoQueueRCAAnalysis queues an automatic analysis when a run's archive is
+// autoQueueRCAAnalysisOnce queues an automatic analysis when a run's archive is
 // attached, for projects that analyze every archived run. It runs after the
 // catalog commit, so every sidecar and the final manifest are durable. A
 // refresh that left the evidence as it was (a new note, a recovered
 // publication) finds the existing analysis of identical inputs and queues
 // nothing; one that changed the evidence queues a new analysis. An archive
-// still being refreshed is skipped: the refresh attaches it again.
-func (s *Server) autoQueueRCAAnalysis(testID string) {
+// still being refreshed remains pending in the durable admission intent.
+func (s *Server) autoQueueRCAAnalysisOnce(ctx context.Context, testID string, admissions ...*storage.RCAAutoAdmission) bool {
 	if s == nil || s.runner == nil {
-		return
+		return false
 	}
 	if _, ok := s.store.(storage.RCAStore); !ok {
-		return
+		return false
 	}
 	test, ok := s.runner.GetTestSummary(testID)
 	if !ok || test == nil {
-		return
+		return false
 	}
 	project := normalizeProjectID(test.ProjectID)
-	if !projectAnalysisGates(s.store, project).RootCause.AutoAnalyze {
-		return
+	gates, err := rcaAutoAnalysisGates(s.store, project)
+	if err != nil {
+		return false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), rcaAutoQueueTimeout)
-	defer cancel()
+	if !gates.RootCause.AutoAnalyze {
+		return true
+	}
 	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, testID)
 	if !ok || record == nil {
-		return
+		return false
 	}
 	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
 		slog.Warn("the run archive could not be leased to queue its root-cause analysis", "test_id", testID, "error", err)
-		return
+		return false
 	}
 	defer lease.Release()
-	analysis, created, err := s.queueRCAAnalysis(ctx, project, testID, record, rcaAnalysisRequest{}, storage.RCAOriginAutomatic)
+	analysis, created, err := s.queueRCAAnalysis(ctx, project, testID, record, rcaAnalysisRequest{}, storage.RCAOriginAutomatic, admissions...)
 	switch {
 	case errors.Is(err, errRCAFinalizing):
-		// The refresh that holds the archive attaches it again when it ends.
+		// The durable admission worker retries after either archive settles.
 		slog.Debug("an automatic root-cause analysis waits for the archive to settle", "test_id", testID)
-		return
+		return false
 	case errors.Is(err, errRCADisabled):
 		// Analyses were turned off since the gate above was read.
 		slog.Debug("an automatic root-cause analysis was not queued: analyses are off for the project", "test_id", testID)
-		return
+		return true
 	case err != nil:
 		slog.Warn("an automatic root-cause analysis was not queued", "test_id", testID, "error", err)
-		return
+		return false
 	}
 	if created {
 		slog.Info("queued an automatic root-cause analysis", "test_id", testID, "analysis_id", analysis.ID, "revision", analysis.Revision)
 		s.wakeRCAWorker()
 	}
+	return true
 }
 
 // notificationWanted reports whether an enabled webhook subscribes to an

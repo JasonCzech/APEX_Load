@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/rca"
@@ -12,11 +13,31 @@ import (
 func TestRCABrowserOriginalSourceQualification(t *testing.T) {
 	original := protocol.BrowserAuthoredDefinition{Version: 1, ScriptSHA256: strings.Repeat("a", 64), StructureSHA256: strings.Repeat("b", 64)}
 	for _, tc := range []struct {
-		name    string
-		mutate  func(*RunArchiveManifest, *RunArchiveManifest, *rca.WorkloadKey)
-		changed bool
+		name         string
+		mutate       func(*RunArchiveManifest, *RunArchiveManifest, *rca.WorkloadKey)
+		changed      bool
+		otherChanged bool
 	}{
 		{name: "same original and executable"},
+		{name: "initial identity survives missing final", mutate: func(a, b *RunArchiveManifest, _ *rca.WorkloadKey) {
+			pa, pb := a.Provenance, b.Provenance
+			a.InitialProvenance = &pa
+			b.InitialProvenance = &pb
+			a.Provenance.BrowserAuthoredSources = nil
+			b.Provenance.BrowserAuthoredSources = nil
+		}},
+		{name: "initial mismatch wins over equal final", changed: true, mutate: func(a, b *RunArchiveManifest, _ *rca.WorkloadKey) {
+			pa, pb := a.Provenance, b.Provenance
+			a.InitialProvenance = &pa
+			b.InitialProvenance = &pb
+			d := original
+			d.ScriptSHA256 = strings.Repeat("c", 64)
+			b.InitialProvenance.BrowserAuthoredSources = map[string]protocol.BrowserAuthoredDefinition{"browser": d, "other": original}
+		}},
+		{name: "empty initial does not fall back to final", changed: true, otherChanged: true, mutate: func(a, b *RunArchiveManifest, _ *rca.WorkloadKey) {
+			a.InitialProvenance = &RunArchiveProvenance{}
+			b.InitialProvenance = &RunArchiveProvenance{}
+		}},
 		{name: "different original content", changed: true, mutate: func(_, b *RunArchiveManifest, _ *rca.WorkloadKey) {
 			d := b.Provenance.BrowserAuthoredSources["browser"]
 			d.ScriptSHA256 = strings.Repeat("c", 64)
@@ -61,8 +82,8 @@ func TestRCABrowserOriginalSourceQualification(t *testing.T) {
 			if got["browser"] != tc.changed {
 				t.Fatalf("changed groups = %v", got)
 			}
-			if a.Provenance.BrowserAuthoredSources != nil && b.Provenance.BrowserAuthoredSources != nil && got["other"] {
-				t.Fatal("unrelated group was excluded")
+			if a.Provenance.BrowserAuthoredSources != nil && b.Provenance.BrowserAuthoredSources != nil && got["other"] != tc.otherChanged {
+				t.Fatalf("unrelated group exclusion = %v, want %v", got["other"], tc.otherChanged)
 			}
 			got["browser"] = false
 			if again := rcaBrowserScriptChangedGroups(current, baseline, a, b); again["browser"] != tc.changed {
@@ -102,12 +123,68 @@ func TestRCABaselineEvidenceRequiresOriginalSourceAlongsideExecution(t *testing.
 	original := protocol.BrowserAuthoredDefinition{Version: 1, ScriptSHA256: strings.Repeat("a", 64), StructureSHA256: strings.Repeat("b", 64)}
 	for _, present := range []bool{false, true} {
 		if present {
-			read.currentManifest.Provenance.BrowserAuthoredSources = map[string]protocol.BrowserAuthoredDefinition{"checkout": original}
-			read.manifest.Provenance.BrowserAuthoredSources = map[string]protocol.BrowserAuthoredDefinition{"checkout": original}
+			read.currentManifest.InitialProvenance.BrowserAuthoredSources = map[string]protocol.BrowserAuthoredDefinition{"checkout": original}
+			read.manifest.InitialProvenance.BrowserAuthoredSources = map[string]protocol.BrowserAuthoredDefinition{"checkout": original}
 		}
 		_, evidence := server.rcaBaselineEvidence(context.Background(), read, rca.NewBudgeter(rca.DefaultBudget, nil, nil), rca.DefaultBudget)
 		if evidence == nil || evidence.ScriptChangedGroups["checkout"] == present {
 			t.Fatalf("present %v, evidence %+v", present, evidence)
 		}
+	}
+}
+
+// Valid archived observations may have blank/foreign groups. Exercise their real
+// archive projection and detector output, not only the exclusion-map helper.
+func TestRCABrowserArchivedUnassignedGroupsCannotQualify(t *testing.T) {
+	server, store := baselineTestServer(t)
+	original := protocol.BrowserAuthoredDefinition{Version: 1, ScriptSHA256: strings.Repeat("a", 64), StructureSHA256: strings.Repeat("b", 64)}
+	key := rca.WorkloadKey{Groups: map[string]rca.WorkloadGroup{"browser": {ScriptDigest: "runtime"}}}
+	for _, group := range []string{"", "foreign", "browser"} {
+		t.Run("group="+group, func(t *testing.T) {
+			var series [2][]rca.Series
+			var manifests [2]*RunArchiveManifest
+			for index, id := range []string{"current", "baseline"} {
+				record := exemplarArchiveFixture(t, server, store, id, nil)
+				var documents []d2Document
+				for i := 0; i < 36; i++ {
+					value := float64(1000 + (i%2)*40)
+					if index == 0 {
+						value += 400
+					}
+					documents = append(documents, d2Document{id: i + 1, metric: "lcp", group: group, cohort: d2Cohort("141.0"), at: exemplarFixtureStart.Add(time.Duration(i*10+1) * time.Second), value: value, final: true})
+				}
+				attachD2Documents(t, record, documents...)
+				manifest, err := loadRunArchiveManifestFromRecord(record)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// Even a claimed source descriptor cannot qualify a foreign workload group.
+				manifest.Provenance.BrowserAuthoredSources = map[string]protocol.BrowserAuthoredDefinition{"browser": original, "foreign": original, "": original}
+				manifests[index] = manifest
+				summaries, err := readAllArchiveSummariesContext(context.Background(), record)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var limits []rca.Limitation
+				series[index], limits, err = rcaBrowserDocumentSeries(context.Background(), record, manifest, summaries, -1, 0)
+				if err != nil || len(limits) != 0 || len(series[index]) != 1 {
+					t.Fatalf("archive series: %v %v %v", series[index], limits, err)
+				}
+			}
+			level := rca.LoadLevel{Start: exemplarFixtureStart, End: exemplarFixtureStart.Add(6 * time.Minute), VUsers: 5}
+			input := rca.DetectionInput{Levels: []rca.LoadLevel{level}, Series: series[0], Baseline: &rca.DetectionBaseline{TestID: "baseline", Qualification: rca.BaselineQualified, Levels: []rca.LoadLevel{level}, Series: series[1], ScriptChangedGroups: rcaBrowserScriptChangedGroups(key, key, manifests[0], manifests[1], series[1]...)}}
+			got := rca.DetectBrowserBaseline(input, rca.DefaultBrowserBaselineParams)
+			if got == nil || len(got.Results) != 1 {
+				t.Fatalf("detector: %+v", got)
+			}
+			result := got.Results[0]
+			if group == "browser" {
+				if result.State != rca.BrowserBaselineAnomaly {
+					t.Fatalf("valid control: %+v", result)
+				}
+			} else if result.State != rca.BrowserBaselineUnscored || result.Reason != rca.BrowserBaselineCohortChanged || result.Z != 0 || result.ExpectedHigh != 0 {
+				t.Fatalf("unassigned cohort scored: %+v", result)
+			}
+		})
 	}
 }

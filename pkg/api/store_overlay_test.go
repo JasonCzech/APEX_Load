@@ -323,6 +323,15 @@ func (o *sqliteStoreOverlay) AppendProjectLiveTableOperatorEntry(a0 context.Cont
 	return o.base().AppendProjectLiveTableOperatorEntry(a0, a1, a2, a3, a4)
 }
 
+func (o *sqliteStoreOverlay) AppendRCAEvidenceForAutoAdmission(a0 context.Context, a1 storage.RCAAutoAdmission, a2 []byte, a3 time.Time, a4 func(*storage.RCAEvidenceRevision) bool) (*storage.RCAEvidenceRevision, error) {
+	if fake, ok := o.fake.(interface {
+		AppendRCAEvidenceForAutoAdmission(context.Context, storage.RCAAutoAdmission, []byte, time.Time, func(*storage.RCAEvidenceRevision) bool) (*storage.RCAEvidenceRevision, error)
+	}); ok {
+		return fake.AppendRCAEvidenceForAutoAdmission(a0, a1, a2, a3, a4)
+	}
+	return o.base().AppendRCAEvidenceForAutoAdmission(a0, a1, a2, a3, a4)
+}
+
 func (o *sqliteStoreOverlay) AppendRCAEvidenceRevision(a0 string, a1 string, a2 []byte, a3 time.Time, a4 func(latest *storage.RCAEvidenceRevision) bool) (*storage.RCAEvidenceRevision, error) {
 	if fake, ok := o.fake.(interface {
 		AppendRCAEvidenceRevision(string, string, []byte, time.Time, func(latest *storage.RCAEvidenceRevision) bool) (*storage.RCAEvidenceRevision, error)
@@ -1564,6 +1573,15 @@ func (o *sqliteStoreOverlay) CreateRCAAnalysis(a0 string, a1 string, a2 string, 
 	return o.base().CreateRCAAnalysis(a0, a1, a2, a3, a4)
 }
 
+func (o *sqliteStoreOverlay) CreateRCAAnalysisForAutoAdmission(a0 context.Context, a1 storage.RCAAutoAdmission, a2 string, a3 []byte, a4 time.Time) (*storage.RCAAnalysis, bool, error) {
+	if fake, ok := o.fake.(interface {
+		CreateRCAAnalysisForAutoAdmission(context.Context, storage.RCAAutoAdmission, string, []byte, time.Time) (*storage.RCAAnalysis, bool, error)
+	}); ok {
+		return fake.CreateRCAAnalysisForAutoAdmission(a0, a1, a2, a3, a4)
+	}
+	return o.base().CreateRCAAnalysisForAutoAdmission(a0, a1, a2, a3, a4)
+}
+
 func (o *sqliteStoreOverlay) CreateRCAAnalysisWithOrigin(a0 string, a1 string, a2 string, a3 string, a4 []byte, a5 time.Time) (*storage.RCAAnalysis, bool, error) {
 	if fake, ok := o.fake.(interface {
 		CreateRCAAnalysisWithOrigin(string, string, string, string, []byte, time.Time) (*storage.RCAAnalysis, bool, error)
@@ -2672,6 +2690,15 @@ func (o *sqliteStoreOverlay) EnsurePrometheusSchema() error {
 	return o.base().EnsurePrometheusSchema()
 }
 
+func (o *sqliteStoreOverlay) EnsureRCAAutoAdmission(a0 context.Context, a1 string) (*storage.RCAAutoAdmission, error) {
+	if fake, ok := o.fake.(interface {
+		EnsureRCAAutoAdmission(context.Context, string) (*storage.RCAAutoAdmission, error)
+	}); ok {
+		return fake.EnsureRCAAutoAdmission(a0, a1)
+	}
+	return o.base().EnsureRCAAutoAdmission(a0, a1)
+}
+
 func (o *sqliteStoreOverlay) EnsureRunArchiveRefKey(a0 string, a1 string) (string, error) {
 	if fake, ok := o.fake.(interface {
 		EnsureRunArchiveRefKey(string, string) (string, error)
@@ -2778,6 +2805,15 @@ func (o *sqliteStoreOverlay) FinishConfluencePublication(a0 string, a1 string, a
 		return fake.FinishConfluencePublication(a0, a1, a2, a3, a4, a5)
 	}
 	return o.base().FinishConfluencePublication(a0, a1, a2, a3, a4, a5)
+}
+
+func (o *sqliteStoreOverlay) FinishRCAAutoAdmission(a0 context.Context, a1 storage.RCAAutoAdmission) error {
+	if fake, ok := o.fake.(interface {
+		FinishRCAAutoAdmission(context.Context, storage.RCAAutoAdmission) error
+	}); ok {
+		return fake.FinishRCAAutoAdmission(a0, a1)
+	}
+	return o.base().FinishRCAAutoAdmission(a0, a1)
 }
 
 func (o *sqliteStoreOverlay) FinishReplayArtifactCleanup(a0 context.Context, a1 string, a2 string, a3 string) (bool, error) {
@@ -5086,6 +5122,15 @@ func (o *sqliteStoreOverlay) ListProvisioningRequests(a0 string, a1 int, a2 int)
 	return o.base().ListProvisioningRequests(a0, a1, a2)
 }
 
+func (o *sqliteStoreOverlay) ListRCAAutoAdmissions(a0 context.Context, a1 string, a2 int) ([]storage.RCAAutoAdmission, string, error) {
+	if fake, ok := o.fake.(interface {
+		ListRCAAutoAdmissions(context.Context, string, int) ([]storage.RCAAutoAdmission, string, error)
+	}); ok {
+		return fake.ListRCAAutoAdmissions(a0, a1, a2)
+	}
+	return o.base().ListRCAAutoAdmissions(a0, a1, a2)
+}
+
 func (o *sqliteStoreOverlay) ListRCACritiques(a0 string, a1 string, a2 string) ([]storage.RCACritique, error) {
 	if fake, ok := o.fake.(interface {
 		ListRCACritiques(string, string, string) ([]storage.RCACritique, error)
@@ -5686,6 +5731,15 @@ func (o *sqliteStoreOverlay) QueueMonitorObjectCleanup(a0 string, a1 string, a2 
 		return fake.QueueMonitorObjectCleanup(a0, a1, a2)
 	}
 	return o.base().QueueMonitorObjectCleanup(a0, a1, a2)
+}
+
+func (o *sqliteStoreOverlay) RCAAutoAdmissionCurrent(a0 context.Context, a1 storage.RCAAutoAdmission) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		RCAAutoAdmissionCurrent(context.Context, storage.RCAAutoAdmission) (bool, error)
+	}); ok {
+		return fake.RCAAutoAdmissionCurrent(a0, a1)
+	}
+	return o.base().RCAAutoAdmissionCurrent(a0, a1)
 }
 
 func (o *sqliteStoreOverlay) ReadBrowserResourceArchiveIdentityContext(a0 context.Context, a1 string) (*storage.BrowserResourceArchiveIdentity, error) {

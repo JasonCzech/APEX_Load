@@ -46,7 +46,7 @@ func TestRCABrowserPinnedBaselineAdmission(t *testing.T) {
 	}
 	frozen := rcaAnalysisPayloadOf(row)
 	expected, status, message := server.rcaBaselineArchive(context.Background(), "rca-run", storage.DefaultProjectID, "rca-baseline")
-	if status != 0 || frozen.Request.BaselineTestID != "rca-baseline" || frozen.Inputs.Baseline != expected {
+	if status != 0 || frozen.Request.BaselineTestID != "rca-baseline" || frozen.Inputs.Baseline != expected.Digest {
 		t.Fatalf("frozen: %+v; %d %s", frozen, status, message)
 	}
 	// Editing the policy creates a new revision, never changes this run's pin.
@@ -184,4 +184,60 @@ func TestRCABrowserPinnedBaselineChangedAfterAdmission(t *testing.T) {
 		}
 	}
 	t.Fatalf("changed baseline used: %+v", payload.Assessment.Coverage)
+}
+
+func TestRCABrowserBaselineReferenceKeysUseCanonicalIdentity(t *testing.T) {
+	server, store := rcaTestServer(t)
+	ref, err := store.EnsureTestRefKey("rca-baseline", "RUN-BASELINE-ALIAS")
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentRef, err := store.EnsureTestRefKey("rca-run", "RUN-CURRENT-ALIAS")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, status, _ := server.rcaBaselineArchive(context.Background(), "rca-run", storage.DefaultProjectID, currentRef); status != http.StatusBadRequest {
+		t.Fatalf("self alias status %d", status)
+	}
+	record := server.runner.archives["rca-baseline"]
+	if err := store.SaveArchiveFinalizationJob(&storage.ArchiveFinalizationJob{TestID: "rca-baseline", ProjectID: storage.DefaultProjectID, ArchiveRecord: *record, PersistArtifacts: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, _ := server.rcaBaselineArchive(context.Background(), "rca-run", storage.DefaultProjectID, ref); status != http.StatusConflict {
+		t.Fatalf("finalizing alias status %d", status)
+	}
+	policy := e1Policy(e1LCP)
+	policy.Baseline = BrowserPolicyBaseline{Mode: "pinned_run", RunID: ref}
+	pinRCAAdmissionPolicy(t, server, saveBrowserPolicy(t, store, "web", 1, policy))
+	reply := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{})
+	if reply.Code != http.StatusConflict {
+		t.Fatalf("policy alias bypassed finalization: %d %s", reply.Code, reply.Body)
+	}
+	if err := store.DeleteArchiveFinalizationJob("rca-baseline"); err != nil {
+		t.Fatal(err)
+	}
+	reply = timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{"baseline_test_id": ref})
+	if reply.Code != http.StatusAccepted {
+		t.Fatalf("alias admission: %d %s", reply.Code, reply.Body)
+	}
+	queued := decodeRCAResponse(t, reply.Body.Bytes())
+	row, err := store.GetRCAAnalysis(storage.DefaultProjectID, "rca-run", queued.AnalysisID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rcaAnalysisPayloadOf(row).Request.BaselineTestID; got != "rca-baseline" {
+		t.Fatalf("frozen alias: %q", got)
+	}
+	manifest, err := loadRunArchiveManifestFromRecord(server.runner.archives["rca-run"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := server.rcaBrowserBaselinePolicy(storage.DefaultProjectID, manifest)
+	if err != nil || resolved == nil || resolved.RunID != "rca-baseline" {
+		t.Fatalf("policy identity: %+v %v", resolved, err)
+	}
+	repeat := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{"baseline_test_id": "rca-baseline"})
+	if repeat.Code != http.StatusOK || decodeRCAResponse(t, repeat.Body.Bytes()).AnalysisID != queued.AnalysisID {
+		t.Fatalf("canonical request differs: %d %s", repeat.Code, repeat.Body)
+	}
 }
