@@ -20,9 +20,8 @@ import (
 
 const analysisInteractionsUsage = `Usage:
   apexctl analysis interactions --run ID [--api URL] [--api-key KEY|--bearer-token TOKEN]
-Prints a finalized run's interaction patterns and heatmaps
-(browser_interaction_patterns.v1), with their coverage and what they do not
-claim.`
+Prints a finalized run's interaction patterns and heatmaps, including the
+analysis version, coverage and limitations.`
 
 const analysisHAREntryUsage = `Usage:
   apexctl analysis har-entry --run ID --request-id ID [--api URL] [--api-key KEY|--bearer-token TOKEN]

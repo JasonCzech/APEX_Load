@@ -45,6 +45,7 @@ type harOwnershipManifest struct {
 var harFinalizeCheckpoint func(stage string)
 
 type harCaptureOwner struct {
+	omissionOnce                   sync.Once
 	mu                             sync.Mutex
 	generation, path, artifactPath string
 	parent, work, root             *os.Root

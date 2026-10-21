@@ -104,10 +104,14 @@ func (b *Browser) closeWithContext(ctx context.Context) error {
 		// new_user_per_iteration tears down a later browser session.
 		b.lastHARArtifactPath = artifactPath
 		b.mu.Lock()
-		if len(b.publishedHARArtifacts) < protocol.MaxBrowserHARArtifactsPerRun {
+		omitted := len(b.publishedHARArtifacts) >= protocol.MaxBrowserHARArtifactsPerRun
+		if !omitted {
 			b.publishedHARArtifacts = append(b.publishedHARArtifacts, protocol.BrowserHARArtifact{Path: artifactPath, Generation: owner.generation, EvidenceGeneration: b.harEvidenceGeneration})
 		}
 		b.mu.Unlock()
+		if omitted {
+			b.noteHARCaptureOmission(owner, protocol.BrowserHAROmittedPublicationLimit)
+		}
 	}
 	// The next context names its own evidence generation, or none.
 	b.mu.Lock()

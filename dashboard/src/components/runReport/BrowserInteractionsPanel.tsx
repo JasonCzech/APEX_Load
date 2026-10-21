@@ -10,10 +10,12 @@ import Notice from '../ux/Notice'
 // abstract dispatch grid per compatible layout.
 
 export interface BrowserInteractionPattern {
+  authored_step?: { version: number; script_sha256: string; step_path: string; step_id: string }
   id: string; kind: string; provenance: string; route?: string; layout_revision?: string; action_id?: string; action_name?: string
   count: number; start: string; end: string; declared?: string; deadline_ms?: number; detail: string; interactions: string[]
 }
 export interface BrowserInteractionHeatmap {
+  observation?: string
   key: string; route: string; layout_revision: string; viewport_width: number; viewport_height: number; orientation: string
   engine: string; device_profile: string; device_scale_factor?: number; coordinate_space?: string
   scroll?: { min_x: number; max_x: number; min_y: number; max_y: number }
@@ -23,7 +25,7 @@ export interface BrowserInteractionHeatmap {
 export interface BrowserInteractionAnalysis {
   run_id: string; version: string; status: 'ready' | 'not_captured' | 'unavailable' | string
   thresholds: { repeat_min_gestures: number; repeat_window_ms: number; repeat_radius_px: number; heatmap_grid: number }
-  coverage: { interactions: number; records: number; dropped: number; incomplete: boolean; by_provenance: Record<string, number>; mapped: number; excluded?: Record<string, number> }
+  coverage: { pattern_eligible?: number; pattern_excluded?: Record<string, number>; interactions: number; records: number; dropped: number; incomplete: boolean; by_provenance: Record<string, number>; mapped: number; excluded?: Record<string, number> }
   patterns: BrowserInteractionPattern[]; heatmaps: BrowserInteractionHeatmap[]; notes: string[]; limitations?: string[]
 }
 
@@ -100,20 +102,24 @@ export default function BrowserInteractionsPanel({ testId }: { testId: string })
   const patterns = analysis.patterns ?? []
   const heatmaps = analysis.heatmaps ?? []
   const excluded = Object.entries(coverage.excluded || {})
+  const qualified = analysis.version === 'browser_interaction_patterns.v3'
+  const patternExcluded = Object.entries(coverage.pattern_excluded || {})
   return (
     <section className="run-report-panel" aria-label="Interaction patterns">
       <h3>Interaction patterns</h3>
       <p className="run-report-muted">
         {coverage.interactions} recorded gestures ({Object.entries(coverage.by_provenance).map(([provenance, count]) => `${count} ${provenance}`).join(', ') || 'none'}); {coverage.mapped} mapped.
         {coverage.dropped > 0 ? ` ${coverage.dropped} gestures were dropped by capture bounds or lost before the archive.` : ''}{coverage.incomplete ? ' Some interaction evidence is incomplete.' : ''}
-        {' '}A repeat is at least {thresholds.repeat_min_gestures} click, tap or check gestures within {thresholds.repeat_window_ms} ms and {thresholds.repeat_radius_px} CSS px (or with one action name, gesture kind and target when no point was dispatched).
+        {!qualified && <>{' '}A repeat is at least {thresholds.repeat_min_gestures} click, tap or check gestures within {thresholds.repeat_window_ms} ms and {thresholds.repeat_radius_px} CSS px (or with one action name, gesture kind and target when no point was dispatched).</>}
       </p>
-      {patterns.length === 0 ? <p>No pattern was found.</p> : (
+      {qualified && <p className="run-report-muted">{coverage.pattern_eligible ?? 0} {(coverage.pattern_eligible ?? 0) === 1 ? 'gesture qualifies' : 'gestures qualify'} for patterns. Repeats require the same authored step within {thresholds.repeat_window_ms} ms of native dispatch and {thresholds.repeat_radius_px} CSS px, with compatible geometry. Engine retries are separate.</p>}
+      {patternExcluded.length > 0 && <p className="run-report-muted">Excluded from patterns: {patternExcluded.map(([reason, count]) => `${count} ${label(reason)}`).join(', ')}.</p>}
+      {patterns.length === 0 ? <p>{qualified && !coverage.pattern_eligible ? 'No gestures qualified for pattern analysis.' : 'No pattern was found.'}</p> : (
         <table className="run-report-table" aria-label="Interaction patterns found">
           <thead><tr><th scope="col">Pattern</th><th scope="col">Provenance</th><th scope="col">Route</th><th scope="col">Action</th><th scope="col">Gestures</th><th scope="col">Detail</th></tr></thead>
           <tbody>{patterns.map(pattern => <tr key={pattern.id} data-pattern={pattern.kind}>
             <th scope="row">{PATTERN_LABELS[pattern.kind] || label(pattern.kind)}</th><td>{pattern.provenance}</td><td>{pattern.route || '—'}</td>
-            <td>{pattern.action_name || '—'}</td><td>{pattern.count}</td><td>{pattern.detail}</td>
+            <td>{pattern.action_name || '—'}{pattern.authored_step && <><br /><small>Step <code>{pattern.authored_step.step_path}</code></small></>}</td><td>{pattern.count}</td><td>{pattern.detail}</td>
           </tr>)}</tbody>
         </table>
       )}
@@ -121,8 +127,9 @@ export default function BrowserInteractionsPanel({ testId }: { testId: string })
         {heatmaps.map(map => <figure key={map.key} data-heatmap={map.key}>
           {map.points > 0 && <HeatmapGrid map={map} />}
           <figcaption>
-            {map.route || 'Unknown route'} · {map.viewport_width}×{map.viewport_height} {map.orientation}{map.device_scale_factor ? ` @${map.device_scale_factor}x` : ''} · {map.engine} / {map.device_profile} · layout {map.layout_revision || 'unknown'} · {map.points} pointer gestures
-            {map.scroll && (map.scroll.max_y > map.scroll.min_y || map.scroll.max_x > map.scroll.min_x) && <span className="run-report-muted"> · viewport positions at scroll offsets {scrollRange(map.scroll)}</span>}
+            {map.route || 'Unknown route'} · {map.viewport_width}×{map.viewport_height} {map.orientation}{map.device_scale_factor ? ` @${map.device_scale_factor}x` : ''} · {map.engine} / {map.device_profile || 'default'} · layout {map.layout_revision || 'unknown'} · {map.points} pointer gestures
+            {map.scroll && <span className="run-report-muted"> · recorded scroll offsets {scrollRange(map.scroll)}</span>}
+            {map.observation && <span className="run-report-muted"> · {map.observation === 'native_dispatch' ? 'native dispatch geometry' : map.observation === 'post_action' ? 'historical post-action geometry' : 'geometry observation unavailable'}</span>}
             {map.notes?.map(note => <span key={note} className="run-report-muted"> · {note}</span>)}
           </figcaption>
           {(map.targets?.length ?? 0) > 0 && <table className="run-report-table" aria-label="Keyboard targets"><thead><tr><th scope="col">Target role</th><th scope="col">Label (hashed)</th><th scope="col">Gestures</th></tr></thead>
@@ -136,10 +143,8 @@ export default function BrowserInteractionsPanel({ testId }: { testId: string })
   )
 }
 
-// The scroll offsets a map's gestures were made at, on each axis that varied.
+// Preserve ranges in older analyses and show both exact offsets in v2 maps.
 function scrollRange(scroll: NonNullable<BrowserInteractionHeatmap['scroll']>): string {
-  const parts: string[] = []
-  if (scroll.max_x > scroll.min_x) parts.push(`x ${scroll.min_x}–${scroll.max_x} px`)
-  if (scroll.max_y > scroll.min_y) parts.push(`y ${scroll.min_y}–${scroll.max_y} px`)
-  return parts.join(', ')
+  const axis = (name: string, min: number, max: number) => `${name} ${min === max ? min : `${min}–${max}`} px`
+  return `${axis('x', scroll.min_x, scroll.max_x)}, ${axis('y', scroll.min_y, scroll.max_y)}`
 }

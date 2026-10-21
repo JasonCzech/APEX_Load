@@ -33,11 +33,12 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
-	RendezvousConfigJSON  []byte
-	LiveTableBindingsJSON []byte
-	RuntimeResourceClaim  *pb.RuntimeResourceClaim
-	PrepareOnly           bool
-	JavaHost              *pb.JavaHostSelection
+	BrowserInteractionEvidenceVersion uint32
+	RendezvousConfigJSON              []byte
+	LiveTableBindingsJSON             []byte
+	RuntimeResourceClaim              *pb.RuntimeResourceClaim
+	PrepareOnly                       bool
+	JavaHost                          *pb.JavaHostSelection
 	// AdoptionGrace > 0 opts the run into HA continuity (WorkAssignment.adoption_grace).
 	AdoptionGrace         time.Duration
 	ArchiveSourceTarget   string
@@ -695,15 +696,17 @@ type Client struct {
 }
 
 type sharedClientConnection struct {
-	runtimeResources         bool
-	runtimeResourcesObserved time.Time
-	javaHostCaps             *pb.JavaHostCapabilities
-	javaHostObserved         time.Time
-	javaHostPrepared         bool
-	mu                       sync.Mutex
-	refs                     int
-	closed                   bool
-	onClose                  func()
+	browserInteractionV2       bool
+	browserInteractionObserved time.Time
+	runtimeResources           bool
+	runtimeResourcesObserved   time.Time
+	javaHostCaps               *pb.JavaHostCapabilities
+	javaHostObserved           time.Time
+	javaHostPrepared           bool
+	mu                         sync.Mutex
+	refs                       int
+	closed                     bool
+	onClose                    func()
 }
 
 type HeartbeatStream struct {
@@ -993,6 +996,15 @@ func (c *Client) claimExecutionEpoch(ctx context.Context, generation uint64, lea
 
 func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (AssignmentResult, error) {
 	request := toProtoAssignment(assignment)
+	if request.GetBrowserInteractionEvidenceVersion() > 2 {
+		return AssignmentResult{}, fmt.Errorf("unsupported browser interaction evidence version")
+	}
+	if request.GetBrowserInteractionEvidenceVersion() == 2 {
+		if !c.browserInteractionVersionNegotiated() {
+			return AssignmentResult{}, fmt.Errorf("browser_interaction_v2_capability_not_negotiated")
+		}
+		request.PrepareOnly = true
+	}
 	if err := validateJavaHostSelection(request); err != nil {
 		return AssignmentResult{}, err
 	}
@@ -1006,6 +1018,9 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 		return AssignmentResult{}, fmt.Errorf("runtime_resource_capability_not_negotiated")
 	}
 	ack, err := c.rpc.AssignWork(ctx, request)
+	if err == nil && ack.GetAccepted() && request.GetBrowserInteractionEvidenceVersion() == 2 && ack.GetBrowserInteractionEvidenceVersion() != 2 {
+		return AssignmentResult{}, fmt.Errorf("browser_interaction_v2_negotiation_failed")
+	}
 	if err == nil && ack.GetAccepted() && request.RuntimeResourceClaim != nil && !ValidRuntimeResourceAdmission(request.RuntimeResourceClaim, ack.GetRuntimeResourceAdmission()) {
 		return AssignmentResult{}, fmt.Errorf("runtime_resource_negotiation_failed")
 	}
@@ -1524,12 +1539,14 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 		if s.owner != nil {
 			s.owner.observeJavaHosts(nil)
 			s.owner.observeRuntimeResources(nil)
+			s.owner.observeBrowserInteractionVersion(nil)
 		}
 		return HeartbeatResponse{}, err
 	}
 	if s.owner != nil {
 		s.owner.observeJavaHosts(pong)
 		s.owner.observeRuntimeResources(pong)
+		s.owner.observeBrowserInteractionVersion(pong)
 	}
 	s.clockMu.Lock()
 	sentAt := s.clockSentAt
@@ -1901,53 +1918,54 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	targetDuration := resolvedPreciseDuration(assignment.TargetDuration, assignment.TargetDurationSeconds)
 	rampUp := resolvedPreciseDuration(assignment.RampUp, int64(assignment.RampUpSeconds))
 	return &pb.WorkAssignment{PrepareOnly: assignment.PrepareOnly,
-		RendezvousConfigJson:      append([]byte(nil), assignment.RendezvousConfigJSON...),
-		LiveTableBindingsJson:     append([]byte(nil), assignment.LiveTableBindingsJSON...),
-		RuntimeResourceClaim:      CloneRuntimeResourceClaim(assignment.RuntimeResourceClaim),
-		SourcePlan:                assignment.SourcePlan,
-		JavaHost:                  cloneJavaHostSelection(assignment.JavaHost),
-		TestId:                    assignment.TestID,
-		ExecutionGeneration:       assignment.ExecutionGeneration,
-		ScenarioId:                assignment.ScenarioID,
-		RunCorrelationOrigins:     append([]string(nil), assignment.RunCorrelationOrigins...),
-		JointEvidenceProjection:   jointProjectionToProto(assignment.JointEvidenceProjection),
-		CorrelationCarriers:       append([]string(nil), assignment.CorrelationCarriers...),
-		CorrelationTestName:       assignment.CorrelationTestName,
-		ThroughputCapEnabled:      assignment.ThroughputCapEnabled,
-		ThroughputCapTps:          assignment.ThroughputCapTPS,
-		RequireTestExecutionLease: assignment.RequireTestExecutionLease,
-		AdoptionGrace:             preciseDurationProto(assignment.AdoptionGrace, 0),
-		GroupName:                 assignment.GroupName,
-		TargetDurationSeconds:     compatibilityDurationSeconds(targetDuration),
-		TargetDuration:            preciseDurationProto(targetDuration, 0),
-		TerminationMode:           assignment.TerminationMode,
-		DurationOffset:            preciseDurationProto(assignment.DurationOffset, 0),
-		ScriptId:                  assignment.ScriptID,
-		ExpectedScriptHash:        assignment.ExpectedScriptHash,
-		ScriptContent:             assignment.ScriptContent,
-		VuserCount:                assignment.VUserCount,
-		RampUpSeconds:             compatibilityDurationSecondsInt32(rampUp),
-		RampUp:                    preciseDurationProto(rampUp, 0),
-		RampDown:                  preciseDurationProto(assignment.RampDown, 0),
-		InitStrategy:              assignment.InitStrategy,
-		PreBaseline:               preciseDurationProto(assignment.PreBaseline, 0),
-		PostBaseline:              preciseDurationProto(assignment.PostBaseline, 0),
-		ShardOrdinal:              assignment.ShardOrdinal,
-		ShardCount:                assignment.ShardCount,
-		VuserIdOffset:             assignment.VUserIDOffset,
-		ParameterPopulation:       assignment.ParameterPopulation,
-		ParameterOffset:           assignment.ParameterOffset,
-		StartPaused:               assignment.StartPaused,
-		Environment:               environment,
-		DataFiles:                 dataFiles,
-		RedactionRules:            redactionRulesToProto(assignment.RedactionRules),
-		SecretBundle:              cloneSecretBundle(assignment.SecretBundle),
-		SecretBundleId:            assignment.SecretBundleID,
-		RunSupervisionToken:       append([]byte(nil), assignment.RunSupervisionToken...),
-		ArchiveSourceTarget:       assignment.ArchiveSourceTarget,
-		Region:                    assignment.Region,
-		StartOffset:               preciseDurationProto(assignment.StartOffset, 0),
-		MessageDetailMaxItems:     int32(partitionAssignmentInt(assignment.MessageDetailMaxItems, assignment.ShardCount, assignment.ShardOrdinal)),
+		BrowserInteractionEvidenceVersion: assignment.BrowserInteractionEvidenceVersion,
+		RendezvousConfigJson:              append([]byte(nil), assignment.RendezvousConfigJSON...),
+		LiveTableBindingsJson:             append([]byte(nil), assignment.LiveTableBindingsJSON...),
+		RuntimeResourceClaim:              CloneRuntimeResourceClaim(assignment.RuntimeResourceClaim),
+		SourcePlan:                        assignment.SourcePlan,
+		JavaHost:                          cloneJavaHostSelection(assignment.JavaHost),
+		TestId:                            assignment.TestID,
+		ExecutionGeneration:               assignment.ExecutionGeneration,
+		ScenarioId:                        assignment.ScenarioID,
+		RunCorrelationOrigins:             append([]string(nil), assignment.RunCorrelationOrigins...),
+		JointEvidenceProjection:           jointProjectionToProto(assignment.JointEvidenceProjection),
+		CorrelationCarriers:               append([]string(nil), assignment.CorrelationCarriers...),
+		CorrelationTestName:               assignment.CorrelationTestName,
+		ThroughputCapEnabled:              assignment.ThroughputCapEnabled,
+		ThroughputCapTps:                  assignment.ThroughputCapTPS,
+		RequireTestExecutionLease:         assignment.RequireTestExecutionLease,
+		AdoptionGrace:                     preciseDurationProto(assignment.AdoptionGrace, 0),
+		GroupName:                         assignment.GroupName,
+		TargetDurationSeconds:             compatibilityDurationSeconds(targetDuration),
+		TargetDuration:                    preciseDurationProto(targetDuration, 0),
+		TerminationMode:                   assignment.TerminationMode,
+		DurationOffset:                    preciseDurationProto(assignment.DurationOffset, 0),
+		ScriptId:                          assignment.ScriptID,
+		ExpectedScriptHash:                assignment.ExpectedScriptHash,
+		ScriptContent:                     assignment.ScriptContent,
+		VuserCount:                        assignment.VUserCount,
+		RampUpSeconds:                     compatibilityDurationSecondsInt32(rampUp),
+		RampUp:                            preciseDurationProto(rampUp, 0),
+		RampDown:                          preciseDurationProto(assignment.RampDown, 0),
+		InitStrategy:                      assignment.InitStrategy,
+		PreBaseline:                       preciseDurationProto(assignment.PreBaseline, 0),
+		PostBaseline:                      preciseDurationProto(assignment.PostBaseline, 0),
+		ShardOrdinal:                      assignment.ShardOrdinal,
+		ShardCount:                        assignment.ShardCount,
+		VuserIdOffset:                     assignment.VUserIDOffset,
+		ParameterPopulation:               assignment.ParameterPopulation,
+		ParameterOffset:                   assignment.ParameterOffset,
+		StartPaused:                       assignment.StartPaused,
+		Environment:                       environment,
+		DataFiles:                         dataFiles,
+		RedactionRules:                    redactionRulesToProto(assignment.RedactionRules),
+		SecretBundle:                      cloneSecretBundle(assignment.SecretBundle),
+		SecretBundleId:                    assignment.SecretBundleID,
+		RunSupervisionToken:               append([]byte(nil), assignment.RunSupervisionToken...),
+		ArchiveSourceTarget:               assignment.ArchiveSourceTarget,
+		Region:                            assignment.Region,
+		StartOffset:                       preciseDurationProto(assignment.StartOffset, 0),
+		MessageDetailMaxItems:             int32(partitionAssignmentInt(assignment.MessageDetailMaxItems, assignment.ShardCount, assignment.ShardOrdinal)),
 		// The per-item ceiling applies independently on every generator. Only the
 		// run-wide item count and total-byte budget are partitioned among shards.
 		MessageDetailMaxItemBytes:    assignment.MessageDetailMaxItemBytes,

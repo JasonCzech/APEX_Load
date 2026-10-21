@@ -18,6 +18,10 @@ import (
 // that request-sized transient allocation.
 func workAssignmentFingerprint(assignment *pb.WorkAssignment) [sha256.Size]byte {
 	h := sha256.New()
+	if v := assignment.GetBrowserInteractionEvidenceVersion(); v != 0 {
+		fingerprintWriteString(h, "browser-interaction-version")
+		fingerprintWriteUint64(h, uint64(v))
+	}
 	if assignment.GetArchiveSourceTarget() != "" {
 		fingerprintWriteString(h, "archive-source-target-v1")
 		fingerprintWriteString(h, assignment.GetArchiveSourceTarget())

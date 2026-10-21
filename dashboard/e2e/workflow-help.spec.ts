@@ -151,6 +151,10 @@ test('HAR ownership help distinguishes caller waits from capture finalization an
   await expect(article).toContainText('1,024 outstanding issued requests')
   await expect(article).toContainText('har_in_flight')
   await expect(article).toContainText('document observations censored')
+  await expect(article).toContainText('native_capture_failed')
+  await expect(article).toContainText('native_owner_unretired')
+  await expect(article).toContainText('native_omission_count_limit')
+  await expect(article).toContainText('does not release a writer')
   await page.goto('/#/docs?guide=user-guide&article=browser-har-ownership&section=outstanding-request-limit')
   await expect(article.locator('#outstanding-request-limit')).toBeFocused()
   await page.reload()
@@ -158,6 +162,9 @@ test('HAR ownership help distinguishes caller waits from capture finalization an
   await page.setViewportSize({ width: 760, height: 900 })
   expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('har-finalization-budget-help.png'), animations: 'disabled' })
+  await article.getByText('native_owner_unretired', { exact: true }).scrollIntoViewIfNeeded()
+  await expect(article.getByText('native_owner_unretired', { exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('har-capture-omissions-help.png'), animations: 'disabled' })
 })
 
 test('legacy URLs, generated API search and contextual guidance reach the right articles', async ({ page }) => {
@@ -375,4 +382,29 @@ test('evacuation intervention help retains its proof requirements across reload 
   await page.setViewportSize({ width: 760, height: 900 })
   expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('evacuation-intervention-narrow.png'), animations: 'disabled' })
+})
+
+// The browser map contract is an embedded Help source, not an external page.
+test('browser intelligence Help preserves the map cohort contract', async ({ page }) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('fractional offsets')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Browser intelligence workflows', exact: true }).click()
+  await expect(page).toHaveURL(/article=browser-intelligence/)
+  await expect(page.locator('.guide-markdown-article')).toContainText('browser_interaction_patterns.v2')
+  await expect(page.locator('.guide-markdown-article')).toContainText('dispatch-time geometry')
+  await page.reload()
+  await expect(page.locator('.guide-markdown-article')).toContainText('engine_profile_unknown')
+})
+
+
+test('browser Help distinguishes qualified native dispatch from historical evidence', async ({ page }) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('native dispatch')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Browser intelligence workflows', exact: true }).click()
+  const article = page.locator('.guide-markdown-article')
+  await expect(article).toContainText('browser_interaction_patterns.v3')
+  await expect(article).toContainText('pattern_eligible')
+  await expect(article).toContainText('logical invocation')
+  await page.reload()
+  await expect(article).toContainText('historical maps')
+  await page.setViewportSize({ width: 760, height: 900 })
+  expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
 })

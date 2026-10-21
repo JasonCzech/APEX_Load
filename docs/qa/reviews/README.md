@@ -1,5 +1,8 @@
 # QA Review Records
 
+- [Chromium browser-process loss and pool replacement](roadmap-browser-process-loss-2026-10-20/README.md) — shared desktop/mobile-emulation context censoring and independent replacement-source evidence.
+- [Native browser document failure evidence](roadmap-browser-native-failure-2026-10-20/README.md) — native page close in Chromium/WebKit and Chromium renderer crash; precise local qualification limits.
+
 - [Roadmap HAR finalization budget (2026-10-19)](roadmap-har-finalization-budget-2026-10-19/README.md) — shared publication deadline, explicit exhaustion and retained physical ownership.
 
 - [Roadmap browser baseline qualification guards (2026-10-19)](roadmap-browser-baseline-qualification-2026-10-19/README.md) — effect floors and known document-loss refusal.
@@ -30,6 +33,8 @@ The themed reports preserve the original narrative of each consolidated review, 
 | [evaluations-2026.md](evaluations-2026.md) | 2026-07-30, 2026-09-22 | Data Pools roadmap (Tier B/C) open; LoadRunner runtime-settings evaluations complete | Data Pools API and UX evaluation, LoadRunner runtime-settings import evaluations for `ACME_RCI` and `ACME_IAO`. Current importer behavior: [../../IMPORT_FIDELITY_AND_REPAIRS.md](../../IMPORT_FIDELITY_AND_REPAIRS.md) |
 
 ## Completed implementation reviews
+
+[Browser interaction map cohorts — 2026-10-20](roadmap-browser-map-cohorts-2026-10-20/README.md) records conservative spatial/cohort separation, report coverage and retained raw-evidence compatibility.
 
 [Browser workflow isolation and roadmap integration — 2026-10-20](roadmap-e2e-isolation-2026-10-20/README.md) records the combined precision-consent/main regression, private import-store isolation, measured bundle inventory and retained failed attempts.
 

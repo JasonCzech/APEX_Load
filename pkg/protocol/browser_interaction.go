@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"math"
 	"strings"
 	"time"
@@ -16,7 +17,8 @@ import (
 // sanitized label, never a value), the viewport, scroll and device scale,
 // a structural layout revision, the sanitized route, the declared outcome
 // and the observed result, and the gesture's provenance. Capture reads the
-// page once after the action's own wait and adds no target traffic.
+// page after the action's own wait. V2 also captures a native-event clock
+// and geometry, independently of that later read. Neither adds target traffic.
 const (
 	BrowserInteractionVersion             = 1
 	MaxBrowserInteractionsPerDocument     = 1024
@@ -33,7 +35,8 @@ const (
 	InteractionOutcomeMet         = "met"
 	InteractionOutcomeMissed      = "missed"
 	// InteractionOutcomeNotReached: the gesture failed before its declared
-	// outcome was waited for.
+	// outcome was waited for, or v2 could not evaluate it (cancellation, page
+	// loss, invalid selector or unsupported wait).
 	InteractionOutcomeNotReached = "not_reached"
 )
 
@@ -93,6 +96,11 @@ type BrowserInteractionOutcome struct {
 }
 
 type BrowserInteraction struct {
+	Execution                 *BrowserActionExecution     `json:"execution,omitempty"`
+	AuthoredStep              *BrowserAuthoredStep        `json:"authored_step,omitempty"`
+	Dispatch                  *BrowserInteractionDispatch `json:"dispatch,omitempty"`
+	DispatchUnavailableReason string                      `json:"dispatch_unavailable_reason,omitempty"`
+
 	Version           int                       `json:"version"`
 	SourceGeneration  string                    `json:"source_generation"`
 	InteractionID     string                    `json:"interaction_id"`
@@ -134,7 +142,7 @@ func browserInteractionFinite(v, limit float64) bool {
 
 // Valid checks one interaction record.
 func (i BrowserInteraction) Valid() bool {
-	if i.Version != BrowserInteractionVersion || !BrowserEvidenceGeneration(i.SourceGeneration) || !browserEvidenceID(i.InteractionID, i.SourceGeneration, false) || !browserEvidenceID(i.ActionID, i.SourceGeneration, true) || !browserEvidenceID(i.DocumentID, i.SourceGeneration, true) || !browserEvidenceText(i.ActionName, 256) || !browserInteractionKinds[i.Kind] {
+	if !browserInteractionV2FieldsValid(i) || !BrowserEvidenceGeneration(i.SourceGeneration) || !browserEvidenceID(i.InteractionID, i.SourceGeneration, false) || !browserEvidenceID(i.ActionID, i.SourceGeneration, true) || !browserEvidenceID(i.DocumentID, i.SourceGeneration, true) || !browserEvidenceText(i.ActionName, 256) || !browserInteractionKinds[i.Kind] {
 		return false
 	}
 	if i.FrameScope != "main_frame" && i.FrameScope != "child_frame" {
@@ -222,14 +230,14 @@ func browserInteractionToken(s string) bool {
 
 // Clone returns a deep copy, or nil when the evidence is malformed.
 func (e *BrowserInteractionEvidence) Clone() *BrowserInteractionEvidence {
-	if e == nil || e.Version != BrowserInteractionVersion || !BrowserEvidenceGeneration(e.SourceGeneration) || len(e.Interactions) > MaxBrowserInteractionsPerEvidence || e.Dropped < 0 || e.Dropped > 1e12 {
+	if e == nil || (e.Version != BrowserInteractionVersion && e.Version != BrowserInteractionVersion2) || !BrowserEvidenceGeneration(e.SourceGeneration) || len(e.Interactions) > MaxBrowserInteractionsPerEvidence || e.Dropped < 0 || e.Dropped > 1e12 {
 		return nil
 	}
 	out := *e
 	out.Interactions = make([]BrowserInteraction, len(e.Interactions))
 	seen := make(map[string]bool, len(e.Interactions))
 	for n, i := range e.Interactions {
-		if !i.Valid() || i.SourceGeneration != e.SourceGeneration || seen[i.InteractionID] {
+		if i.Version != e.Version || !i.Valid() || i.SourceGeneration != e.SourceGeneration || seen[i.InteractionID] {
 			return nil
 		}
 		seen[i.InteractionID] = true
@@ -237,6 +245,12 @@ func (e *BrowserInteractionEvidence) Clone() *BrowserInteractionEvidence {
 		if i.Target != nil {
 			target := *i.Target
 			i.Target = &target
+		}
+		i.Execution = i.Execution.Clone()
+		i.AuthoredStep = i.AuthoredStep.Clone()
+		if i.Dispatch != nil {
+			dispatch := *i.Dispatch
+			i.Dispatch = &dispatch
 		}
 		out.Interactions[n] = i
 	}
@@ -283,6 +297,9 @@ func DecodeBrowserInteractionEvidence(raw []byte) (*BrowserInteractionEvidence, 
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&e); err != nil {
+		return nil, errBrowserInteractionMalformed
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
 		return nil, errBrowserInteractionMalformed
 	}
 	cloned := e.Clone()

@@ -36,6 +36,17 @@ func (b *Browser) applyConfig(config map[string]any) error {
 			return fmt.Errorf("browser_runtime_new_user_policy is unsupported")
 		}
 	}
+	if raw, present := config["browser_interaction_evidence_version"]; present {
+		value := protocol.ConfigFloat(config, "browser_interaction_evidence_version")
+		switch raw.(type) {
+		case int, float64:
+		default:
+			return fmt.Errorf("browser interaction evidence version must be numeric")
+		}
+		if value != 1 && value != 2 {
+			return fmt.Errorf("unsupported browser interaction evidence version")
+		}
+	}
 	b.applyDefaultConfig()
 	b.applyConfigOverrides(config)
 	if err := b.configureStorageState(config); err != nil {
@@ -74,6 +85,7 @@ func (b *Browser) applyConfig(config map[string]any) error {
 }
 
 func (b *Browser) applyDefaultConfig() {
+	b.interactionVersion = protocol.BrowserInteractionVersion
 	b.storageState = nil
 	b.documentMetricsEnabled = false
 	b.newUserPolicy = "persistent_context"
@@ -138,6 +150,9 @@ func (b *Browser) applyDefaultConfig() {
 func (b *Browser) applyConfigOverrides(config map[string]any) {
 	b.documentMetricsEnabled, _ = config["browser_capture_document_metrics"].(bool)
 	b.interactionsEnabled, _ = config["browser_capture_interactions"].(bool)
+	if _, present := config["browser_interaction_evidence_version"]; present {
+		b.interactionVersion = protocol.ConfigInt(config, "browser_interaction_evidence_version")
+	}
 	if policy, present := config["browser_runtime_new_user_policy"].(string); present {
 		b.newUserPolicy = policy
 	}

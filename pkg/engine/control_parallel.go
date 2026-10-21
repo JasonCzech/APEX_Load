@@ -164,6 +164,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 	}
 	branchVU := &VUser{
 		correlation:                  vu.correlation,
+		browserInteractionVersion:    vu.browserInteractionVersion,
 		ID:                           vu.ID,
 		sourceSamplers:               vu.sourceSamplers,
 		sourceParameters:             vu.sourceParameters,
@@ -173,6 +174,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		RunID:                        vu.RunID,
 		Proto:                        instance,
 		Script:                       vu.Script,
+		browserAuthoredSource:        vu.browserAuthoredSource,
 		Metrics:                      vu.Metrics,
 		ResultSink:                   sink,
 		Variables:                    variables,
@@ -217,6 +219,9 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		return
 	}
 	config := vuserProtoConfig(buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", branchVU.secretResolver()), vu.ID)
+	if vu.browserInteractionVersion != 0 {
+		config["browser_interaction_evidence_version"] = vu.browserInteractionVersion
+	}
 	if vu.sourceSamplers != nil {
 		vu.sourceSamplers.bindProtocolConfig(config, vu.Script)
 	}

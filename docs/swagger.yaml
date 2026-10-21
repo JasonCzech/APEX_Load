@@ -392303,6 +392303,14 @@ paths:
                       mapped:
                         type: integer
                         format: int64
+                      pattern_eligible:
+                        type: integer
+                        format: int64
+                      pattern_excluded:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
                       records:
                         type: integer
                         format: int64
@@ -392355,6 +392363,8 @@ paths:
                           type: array
                           items:
                             type: string
+                        observation:
+                          type: string
                         orientation:
                           type: string
                         points:
@@ -392440,6 +392450,24 @@ paths:
                           type: string
                         action_name:
                           type: string
+                        authored_step:
+                          type: object
+                          properties:
+                            script_sha256:
+                              type: string
+                            step_id:
+                              type: string
+                            step_path:
+                              type: string
+                            version:
+                              type: integer
+                              format: int64
+                          required:
+                            - script_sha256
+                            - step_id
+                            - step_path
+                            - version
+                          nullable: true
                         count:
                           type: integer
                           format: int64

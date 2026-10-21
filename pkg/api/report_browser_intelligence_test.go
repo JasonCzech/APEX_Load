@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 func browserIntelligenceReportFixture() *ReportBrowserIntelligence {
@@ -199,6 +200,44 @@ func TestReportCSVCellsAreSpreadsheetSafe(t *testing.T) {
 	for value, want := range map[string]string{"-12.5": "-12.5", "+3": "+3", "-": "'-", "@sum": "'@sum", "Checkout": "Checkout"} {
 		if got := reportCSVSafeCell(value); got != want {
 			t.Errorf("reportCSVSafeCell(%q) = %q, want %q", value, got, want)
+		}
+	}
+}
+
+func TestBrowserInteractionCohortsSurviveReportFormats(t *testing.T) {
+	report := consistencyMatrixReport()
+	report.BrowserIntelligence = browserIntelligenceReportFixture()
+	analysis := report.BrowserIntelligence.Interactions
+	analysis.Version = browserInteractionAnalysisVersion
+	analysis.Coverage.Excluded = map[string]int64{"engine_profile_unknown": 2, "layout_unknown": 1}
+	first := analysis.Heatmaps[0]
+	first.DeviceScaleFactor = 2
+	first.Scroll = &BrowserInteractionScroll{MinY: 0.25, MaxY: 0.25}
+	second := first
+	second.Scroll = &BrowserInteractionScroll{MinY: 100, MaxY: 100}
+	analysis.Heatmaps = []BrowserInteractionHeatmap{first, second}
+	rendered := renderBrowserIntelligenceSections(t, report)[reportSectionInteractionMap]
+	for index, format := range []string{"HTML", "PDF", "CSV"} {
+		for _, want := range []string{"browser_interaction_patterns.v2", "@2x", "recorded scroll x 0–0 px, y 0.25–0.25 px", "recorded scroll x 0–0 px, y 100–100 px", "Not mapped: 2 engine_profile_unknown.", "Not mapped: 1 layout_unknown."} {
+			if !strings.Contains(rendered[index], want) {
+				t.Errorf("%s lacks %q", format, want)
+			}
+		}
+	}
+}
+
+func TestBrowserInteractionV3QualificationSurvivesReportFormats(t *testing.T) {
+	report := consistencyMatrixReport()
+	report.BrowserIntelligence = browserIntelligenceReportFixture()
+	first, second, third := v3Interaction(1, 0), v3Interaction(2, time.Second/2), v3Interaction(3, time.Second)
+	result := analyzeV3(first, second, third, e4Tap(4, 0, 100, 100))
+	report.BrowserIntelligence.Interactions = &result
+	rendered := renderBrowserIntelligenceSections(t, report)[reportSectionInteractionMap]
+	for index, format := range []string{"HTML", "PDF", "CSV"} {
+		for _, want := range []string{"browser_interaction_patterns.v3", "Pattern-eligible gestures: 3.", "Excluded from patterns: 1 legacy_identity_unavailable.", "native dispatch geometry", "historical post-action geometry", first.AuthoredStep.StepID, first.AuthoredStep.ScriptSHA256} {
+			if !strings.Contains(rendered[index], want) {
+				t.Errorf("%s lacks %q", format, want)
+			}
 		}
 	}
 }

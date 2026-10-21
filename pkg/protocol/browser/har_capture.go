@@ -352,6 +352,9 @@ func (b *Browser) finalizeHARCaptureContext(ctx context.Context) (string, error)
 	b.mu.Unlock()
 	owner.startFinish(keep, redactor)
 	path, err := owner.waitFinish(ctx)
+	if keep && err != nil {
+		b.reportHARFinalizationFailure(owner, err)
+	}
 	b.mu.Lock()
 	if b.harOwner == owner && owner.retiredSuccessfully() {
 		b.harOwner = nil

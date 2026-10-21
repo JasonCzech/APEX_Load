@@ -897,7 +897,7 @@ func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool
 		return flowTeardown, false
 	}
 	defer releasePause()
-	resolved := run.vu.resolveAction(action)
+	resolved := run.vu.resolveBrowserAuthoredAction(action, actionRef)
 	var actionTxStart time.Time
 	if run.actionTxMode && !run.claimActionTransaction() {
 		return flowTeardown, false

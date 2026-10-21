@@ -26,7 +26,7 @@ func TestBrowserInteractionCaptureIsItsOwnRuntimeFeature(t *testing.T) {
 	yes := true
 	script := &Script{Protocol: "browser"}
 	script.Config.Browser.CaptureInteractions = &yes
-	if got := RequiredBrowserRuntimeFeatures(script); len(got) != 1 || got[0] != FeatureBrowserInteractionEvidenceV1 {
+	if got := RequiredBrowserRuntimeFeatures(script); len(got) != 1 || got[0] != FeatureBrowserInteractionEvidenceV2 {
 		t.Fatalf("features %v", got)
 	}
 	if BrowserDocumentCaptureRequested(script) || !BrowserInteractionCaptureRequested(script) {

@@ -195,11 +195,15 @@ func (b *Browser) openAdmittedBrowserContext(ctx context.Context) error {
 	}
 	if b.interactionsEnabled {
 		b.mu.Lock()
-		generation := b.evidence.generation
+		generation, finalizer := b.evidence.generation, b.evidence.finalizer
 		// Document bounds belong to this context's documents.
 		b.interactions.documents = nil
 		b.mu.Unlock()
-		if err := browserContext.AddInitScript(playwright.Script{Content: playwright.String(browserInteractionObserver(browserInteractionGlobal(generation)))}); err != nil {
+		observer := browserInteractionObserver(browserInteractionGlobal(generation))
+		if b.interactionVersion == protocol.BrowserInteractionVersion2 {
+			observer = browserInteractionObserverV2(browserInteractionGlobal(generation), finalizer)
+		}
+		if err := browserContext.AddInitScript(playwright.Script{Content: playwright.String(observer)}); err != nil {
 			b.stopRequestPolicyWaiters()
 			return b.failBrowserContextInitialization(browserContext, err)
 		}

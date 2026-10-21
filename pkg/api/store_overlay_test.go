@@ -2513,6 +2513,15 @@ func (o *sqliteStoreOverlay) DeleteUserRoleBindingGuardLastAdmin(a0 string) (boo
 	return o.base().DeleteUserRoleBindingGuardLastAdmin(a0)
 }
 
+func (o *sqliteStoreOverlay) DeletedTestProject(a0 string) (string, bool, error) {
+	if fake, ok := o.fake.(interface {
+		DeletedTestProject(string) (string, bool, error)
+	}); ok {
+		return fake.DeletedTestProject(a0)
+	}
+	return o.base().DeletedTestProject(a0)
+}
+
 func (o *sqliteStoreOverlay) DetachOrphanProjectLiveTableAttachments(a0 context.Context, a1 string, a2 string, a3 storage.LiveTableExecutionTerm) error {
 	if fake, ok := o.fake.(interface {
 		DetachOrphanProjectLiveTableAttachments(context.Context, string, string, storage.LiveTableExecutionTerm) error

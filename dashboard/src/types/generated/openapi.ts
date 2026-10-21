@@ -74371,6 +74371,8 @@ export interface operations {
               "incomplete": boolean;
               "interactions": number;
               "mapped": number;
+              "pattern_eligible"?: number;
+              "pattern_excluded"?: Record<string, number>;
               "records": number;
             };
             "heatmaps": Array<{
@@ -74385,6 +74387,7 @@ export interface operations {
               "key": string;
               "layout_revision": string;
               "notes"?: Array<string>;
+              "observation"?: string;
               "orientation": string;
               "points": number;
               "route": string;
@@ -74408,6 +74411,12 @@ export interface operations {
             "patterns": Array<{
               "action_id"?: string;
               "action_name"?: string;
+              "authored_step"?: ({
+                "script_sha256": string;
+                "step_id": string;
+                "step_path": string;
+                "version": number;
+              }) | null;
               "count": number;
               "deadline_ms"?: number;
               "declared"?: string;

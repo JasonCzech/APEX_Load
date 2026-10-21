@@ -10,10 +10,55 @@ evidence is separate work.
 
 Set `config.browser.capture_interactions: true` on a browser script. A
 distributed run then requires generators that advertise
-`browser_interaction_evidence_v1`; older generators are not selected. Document
-metric capture (`capture_document_metrics`) is a separate opt-in.
+`browser_interaction_evidence_v2` and traffic-free preparation. The controller
+requires a fresh capability and an exact v2 acknowledgement before commit;
+older generators are not selected for this explicit request. New generators
+still emit v1 for legacy assignments. Document metric capture
+(`capture_document_metrics`) remains a separate opt-in; enable it to retain
+joined document/lifecycle and engine/profile evidence for qualified analysis.
+
+## Versioned identity and native dispatch
+
+New engine-managed capture uses raw interaction version 2. It retains the
+exact pre-interpolation script SHA-256, canonical structural step path and
+domain-separated step ID. Duplicate action names remain distinct; load and
+replay share this identity. An engine-owned logical invocation and attempt
+number distinguish retries from a new execution of the same step. Imported
+action JSON cannot set either binding. Direct protocol clients without an
+engine binding keep authored identity unavailable.
+
+When observed, `dispatch` records the first relevant trusted native input
+event's `timeStamp`, the document's `performance.timeOrigin`, their UTC
+projection, and joined document/lifecycle IDs. Viewport, scroll, route,
+layout and the first map point describe that event, before target handlers.
+`captured_at` remains the later post-action capture time. Keyboard/form
+targets use the observed event target; input values are never retained. V2
+reads at most 128 UTF-16 code units before label normalization, and visits at
+most 64 nodes of an associated label before taking the final 64-character
+normalized prefix. Role/type/tag tokens are bounded before processing.
+
+Missing native events, synthetic touch, untransformed child frames, lost
+pages or unavailable document joins carry an explicit
+`dispatch_unavailable_reason`; capture time never substitutes for dispatch.
+A navigation can lose its event before the drain and remains unavailable.
+The declared outcome still covers the authored `sync` only: cancellation,
+page closure, invalid selectors and unsupported wait types remain
+`not_reached`; only a supported evaluated wait can report `met` or an
+observed timeout `missed`. Assertions, dialogs and download outcome binding
+remain separate work.
+
+Raw v1 remains readable and keeps its original post-action geometry and
+capture clock. It receives no invented step, invocation or dispatch data.
+The shared sidecar/inventory wrapper remains `browser_interactions_v1`;
+each validated record declares its own raw version. Mixed records are
+preserved through the same digest/receipt path. Pattern analysis versions
+are separate from these raw versions; see the
+[intelligence workflow](BROWSER_INTELLIGENCE_WORKFLOWS.md#patterns-and-heatmaps).
 
 ## What one interaction records
+
+The common fields and historical v1 behavior follow; v2 overrides observation
+time, geometry, target and outcome qualification as described above.
 
 Each gesture action (`browser_click`, `browser_dblclick`, `browser_tap`,
 `browser_long_press`, `browser_swipe`, `browser_hover`,

@@ -111,6 +111,7 @@ func browserDocumentBootstrap(binding, finalizer, loader string, metrics, resour
    terminal=true;await send('end','','final','',nextBoundary);
   })();return finishReceipt;
  };
+ Object.defineProperty(finish,'identity',{value:()=>({document_token:documentToken,lifecycle_token:lifecycleToken}),configurable:false});
  Object.defineProperty(globalThis,finalizer,{value:finish,configurable:false});
  addEventListener('keydown',event=>{if(event.isTrusted){firstInput=true;boundary='first_input';if(enabled)queueMicrotask(()=>void finalizeLCP('first_input'))}},{capture:true});
  addEventListener('click',event=>{if(event.isTrusted){firstInput=true;boundary='first_input';if(enabled)queueMicrotask(()=>void finalizeLCP('first_input'))}},{capture:true});
