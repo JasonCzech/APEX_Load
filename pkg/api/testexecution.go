@@ -5288,6 +5288,26 @@ func (tr *TestRunner) failClosedUncertainPauseControl(test *ManagedTest, expecte
 }
 
 func (tr *TestRunner) runTest(test *ManagedTest) {
+	// Registration and shutdown admission share mu. A goroutine scheduled
+	// after shutdown cannot escape an earlier empty-worker snapshot.
+	tr.mu.RLock()
+	if tr.shuttingDown {
+		tr.mu.RUnlock()
+		return
+	}
+	tr.executionWorkerMu.Lock()
+	if tr.executionWorkerChanged == nil {
+		tr.executionWorkerChanged = make(chan struct{})
+	}
+	tr.executionWorkers++
+	tr.executionWorkerMu.Unlock()
+	tr.mu.RUnlock()
+	defer tr.finishExecutionWorker()
+	// Keep the ownership defer outside the driver's panic recovery/finalizers.
+	tr.runOwnedTestDriver(test)
+}
+
+func (tr *TestRunner) runOwnedTestDriver(test *ManagedTest) {
 	// The run driver owns its own goroutine, so an unrecovered panic anywhere in
 	// the local execution path (engine build, archive writer, metrics broadcast,
 	// backend dispatch) terminates the controller process and takes every other
