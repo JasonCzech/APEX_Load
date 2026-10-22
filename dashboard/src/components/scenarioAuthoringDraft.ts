@@ -109,6 +109,10 @@ export function migrateScenarioAuthoringDraft(value: Record<string, unknown>): R
 
 // Refuse to persist inline credentials rather than silently dropping authored
 // settings. Project-secret references are safe to retain and resolve at launch.
+// A project-secret reference, with the spacing the runtime accepts
+// ({{ secret.NAME }}).
+const SECRET_REFERENCE = /^\s*\{\{\s*secret\.[\w.-]+\s*\}\}\s*$/
+
 export function assertDraftHasNoInlineCredentials(value: unknown): void {
   const stack: unknown[] = [value]
   let count = 0
@@ -119,11 +123,11 @@ export function assertDraftHasNoInlineCredentials(value: unknown): void {
     if (!record(item)) continue
     for (const [name, child] of Object.entries(item)) {
       if (child == null || child === '') continue
-      const reference = typeof child === 'string' && /^\{\{secret\.[\w.-]+\}\}$/.test(child)
+      const reference = typeof child === 'string' && SECRET_REFERENCE.test(child)
       if (/^(env|headers|extra_http_headers|cookies|storage_state|additional_vm_parameters|password|token|authorization|client_secret|private_key)$/i.test(name)
         && !reference && (typeof child !== 'object' || Object.keys(child).length > 0)) {
         // Environment maps containing only named secret references are retained.
-        if (name === 'env' && record(child) && Object.values(child).every(v => typeof v === 'string' && /^\{\{secret\.[\w.-]+\}\}$/.test(v))) continue
+        if (name === 'env' && record(child) && Object.values(child).every(v => typeof v === 'string' && SECRET_REFERENCE.test(v))) continue
         throw new Error('This draft contains inline runtime credentials or environment values. Use project-secret references before saving; your edits remain here.')
       }
       if (typeof child === 'string' && /^https?:\/\//i.test(child)) {

@@ -731,7 +731,7 @@ func (s *Server) replayScenarioCreate(w http.ResponseWriter, r *http.Request, at
 	}
 	attempt.complete("")
 	markAuthoringReplay(w, attempt)
-	response := maskStoredScenario(scenario)
+	response := maskStoredScenarioForEditor(scenario)
 	// The replay carries the current validator only when this replica's copy
 	// is the durable state; otherwise the client reads view=authoring first.
 	if reader, supported := s.store.(storage.ScenarioAuthoringStore); s.store != nil && supported {

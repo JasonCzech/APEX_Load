@@ -150,7 +150,7 @@ func buildScenarioAuthoringProjection(snapshot *storage.ScenarioAuthoringSnapsho
 		Assignment:      decodeStoredGeneratorAssignment(scenario.Assignment),
 		GoalConfig:      decodeStoredGoalConfig(scenario.GoalConfig),
 		TrafficProfile:  decodeStoredTrafficProfile(scenario.TrafficProfile),
-		RuntimeSettings: maskRuntimeSettings(decodeStoredRuntimeSettings(scenario.RuntimeSettings)),
+		RuntimeSettings: maskRuntimeSettingsForEditor(decodeStoredRuntimeSettings(scenario.RuntimeSettings)),
 		Groups:          make([]ScenarioAuthoringGroup, 0, len(groups)),
 		DataPools:       make([]ScenarioAuthoringDataPoolBinding, 0, len(snapshot.DataPools)),
 	}
@@ -160,7 +160,7 @@ func buildScenarioAuthoringProjection(snapshot *storage.ScenarioAuthoringSnapsho
 			RampUp: group.RampUp, RampDown: group.RampDown, StartOffset: group.StartOffset,
 			Stages: cloneLoadStages(group.Stages), Iterations: cloneIntPtr(group.Iterations),
 			Initialization:               group.Initialization,
-			RuntimeSettings:              maskRuntimeSettings(decodeStoredRuntimeSettings(group.RuntimeSettings)),
+			RuntimeSettings:              maskRuntimeSettingsForEditor(decodeStoredRuntimeSettings(group.RuntimeSettings)),
 			Assignment:                   decodeStoredGeneratorAssignment(group.Assignment),
 			TransactionResponseTimeSLAMs: cloneFloat64Ptr(group.TransactionResponseTimeSLAMs),
 		})

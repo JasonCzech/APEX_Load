@@ -92,7 +92,7 @@ Every script import route that accepts a POST has a row; a route without one fai
 
 ## AUTH-2 rows
 
-Each row's Playwright tests exist, run in the local-auth profile, are not ignored by the default profile, and do not skip by profile; each named Go test exists. The proofs show that each entry point opens, saves and reopens what it should; they do not each prove every AUTH-2 property (see the deviations in the spec).
+Each row's Playwright tests exist, run in the local-auth profile, are not ignored by the default profile, and do not skip by profile; each named Go test exists. The proofs show that each entry point opens, saves and reopens what it should; the properties section below holds each row to every AUTH-2 property.
 
 | AUTH-2 row | Playwright | Go |
 | --- | --- | --- |
@@ -105,3 +105,142 @@ Each row's Playwright tests exist, run in the local-auth profile, are not ignore
 | Scenario library wizard and compact modal | `workflow-scenario-composition.spec.ts`: scenario rename and reopen retain Results, WebSocket, named shape and group timing intent<br>`workflow-scenario-composition.spec.ts`: scenario prerequisite saves retain archive siblings and later editor changes<br>`workflow-scenario-data.spec.ts` (all tests) | — |
 | New run | `workflow-new-test.spec.ts`: New Test saves drafts without execution, retains both tabs and validates recurring triggers | — |
 | Queued revision and execution overview | `workflow-new-test.spec.ts`: actual held-run serialization and an API-seeded queued copy preserve complete authored intent<br>`workflow-new-test.spec.ts`: queued-copy preserves source capture IDs and durably clears the last authored goal | — |
+
+## AUTH-2 properties
+
+Every row proves each property with a named test (`TestLifecycleParityPropertiesAreProven`): a Go test in `pkg/api` outside a build-tagged file that cannot skip itself, a Vitest test under `dashboard/src` in a file that skips, focuses or conditions no test, or a Playwright test that runs in both e2e profiles. A shared cell defers to the row whose canonical owner proves the property directly; an open cell records the gap.
+
+| AUTH-2 row | Ownership and destination | Warnings and provenance | Secret references | Capability and policy gates | Pending edits | Dirty navigation | Delayed replies | Exact resolved payload | Durable reopen |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Direct JSON and structured editor | 3 | 2 | 1 | 2 | 1 | 1 | 1 | 1 | 2 |
+| Template/component/clone | 3 | 3 | 3 | 2 | shared | shared | 1 | 2 | 1 |
+| Every import launcher | 3 | 3 | 2 | 1 | 2 | 1 | 1 | 1 | 1 |
+| Multi-script imports | 2 | 1 | 2 | 2 | 2 | 1 | 1 | 2 | 2 |
+| Recording | 2 | 2 | 2 | 3 | 1 | 2 | 1 | 2 | 1 |
+| Classic replay/debug/browser replay | 2 | 2 | 2 | 1 | 1 | shared | 2 | 1 | 1 |
+| Scenario library wizard and compact modal | 1 | 1 | 3 | 2 | 2 | 1 | 1 | 1 | 2 |
+| New run | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 2 |
+| Queued revision and execution overview | 1 | 2 | 1 | 2 | 1 | 1 | 2 | 1 | 1 |
+
+### Direct JSON and structured editor
+
+- Ownership and destination: `components/ScriptEditor.test.tsx`: carries the editor folder onto the authoring session; `components/ScriptEditor.test.tsx`: does not let an older save response overwrite a newly opened project document; `TestScriptAuthoringAPIConditionedSaveAndStalePlacement`
+- Warnings and provenance: `components/ScriptEditor.test.tsx`: keeps created-name provenance within the actual editor resource; `components/ScriptEditor.test.tsx`: refreshes imported runtime parity metadata from validation responses
+- Secret references: `components/ScriptEditor.test.tsx`: loads stored secret status, opens script bindings, and refreshes it after save
+- Capability and policy gates: `components/ScriptEditor.test.tsx`: queues a new runner-backed Java Vuser script for approval instead of creating it; `components/ScriptEditor.test.tsx`: clears a readiness result whose controller context changed and says why (AUTH-B)
+- Pending edits: `components/ScriptEditor.test.tsx`: retains a focused cell typed during save through canonical parent echo and the next save
+- Dirty navigation: `components/ScriptEditor.test.tsx`: guards dirty editor close and clears the guard after a successful save
+- Delayed replies: `components/ScriptEditor.test.tsx`: ignores a validation response when the editable draft changes in flight
+- Exact resolved payload: `components/ScriptEditor.test.tsx`: validates the resolved draft with unblurred data cells and binds the result to it
+- Durable reopen: `workflow-script-editor.spec.ts`: authored script goals survive an unrelated editor save and canonical reopen; `workflow-script-editor.spec.ts`: two editors preserve stale drafts and require explicit revision review before reapply
+
+### Template/component/clone
+
+- Ownership and destination: `components/ScriptsPage.test.tsx`: models a new draft from an existing saved script without editing the original; `workflow-lifecycle-template.spec.ts`: a starter template opens an independent draft that saves, reopens and leaves the template unchanged; `TestLibrarySyncLinkCreatesIndependentAssetsAcrossDestinationProjects`
+- Warnings and provenance: `TestCloneDraftKeepsSourceImportProvenance`; `components/scriptAuthoringAssist.test.ts`: keeps import provenance on the edited script when a component is inserted; `TestLibraryImportKeepsScriptImportProvenance`
+- Secret references: `components/ScriptsPage.test.tsx`: optionally migrates recoverable source credentials while always applying safe references; `TestCloneDraftSourceMigrationIsPolicyGatedAndSingleUse`; `TestScriptSecretReferenceLifecycleKeepsNamesAuthoritative`
+- Capability and policy gates: `TestScriptBuilderRoutesRetainStaticDomainFeatures`; `components/ScriptsPage.test.tsx`: keeps policy retry visible when initial authoring capabilities fail
+- Pending edits: shared with Direct JSON and structured editor: its drafts open in the shared script editor, which owns this property
+- Dirty navigation: shared with Direct JSON and structured editor: its drafts open in the shared script editor, which owns this property
+- Delayed replies: `components/ScriptsPage.test.tsx`: ignores a late Model Existing response after authoring navigation
+- Exact resolved payload: `workflow-lifecycle-template.spec.ts`: a starter template opens an independent draft that saves, reopens and leaves the template unchanged; `components/scriptAuthoringAssist.test.ts`: inserts reusable authoring components into the editable script
+- Durable reopen: `workflow-lifecycle-template.spec.ts`: a starter template opens an independent draft that saves, reopens and leaves the template unchanged
+
+### Every import launcher
+
+- Ownership and destination: `components/SampleScriptImport.test.tsx`: passes the active project id into sample conversion previews; `components/ProtocolAssetImport.test.tsx`: requires project scope before HAR inspection and explains the disabled action; `workflow-import-source.spec.ts`: JMeter review uses the shared six tabs and retains project scope during upload
+- Warnings and provenance: `components/ProtocolAssetImport.test.tsx`: renders import diagnostics returned by protocol asset converters; `components/ScriptImportReview.test.tsx`: keeps conversion notes informational and blockers distinct from unsupported features; `workflow-jmeter-fidelity.spec.ts`: JMeter fidelity review retains blockers and regenerates explicit timestamp and name repairs
+- Secret references: `components/SampleScriptImport.test.tsx`: stores sample authentication options as governed secret references; `components/ScriptImportReview.test.tsx`: never places imported credential values in the generated preview DOM
+- Capability and policy gates: `TestDisabledImportFeatureBlocksGlobalAdminPathAfterRBAC`
+- Pending edits: `components/ScriptImportReview.test.tsx`: preserves edited credential names and write-only values after applying parameterization; `components/ProtocolAssetImport.test.tsx`: invalidates the protected OpenAPI candidate after an arbitrary runtime edit
+- Dirty navigation: `components/ProtocolAssetImport.test.tsx`: asks before leaving an unsaved import review and lets a saved one go
+- Delayed replies: `components/SampleScriptImport.test.tsx`: keeps a newer conversion when an older credential application resolves late
+- Exact resolved payload: `components/ProtocolAssetImport.test.tsx`: keeps the OpenAPI protected candidate while forwarding credential and parameterization overrides
+- Durable reopen: `TestProtectedImportReplaceRetainsRevisionAndDeleteCleansHTTPSource`
+
+### Multi-script imports
+
+- Ownership and destination: `components/EnterpriseArchiveImport.test.tsx`: does not attach a stale upload result after switching projects; `TestHandleSaveEnterpriseArchiveImportCommitsBatchToSelectedFolder`
+- Warnings and provenance: `components/EnterpriseArchiveImport.test.tsx`: saves uploaded JAR provenance in the authoring draft and changes save identity after removal
+- Secret references: `components/EnterpriseArchiveImport.test.tsx`: prepares credentialed generated lanes before one atomic enterprise batch save; `TestHandleSaveEnterpriseArchiveImportRestartRecoversCommittedCredentialedBatch`
+- Capability and policy gates: `components/EnterpriseArchiveImport.test.tsx`: keeps a fidelity-blocked combined Java Vuser draft in review instead of offering approval; `workflow-archive-approval-handoff.spec.ts`: Legacy archive editor returns a durable approval receipt
+- Pending edits: `components/EnterpriseArchiveImport.test.tsx`: saves an inline credential edit from validation without reconverting the source archive; `workflow-archive-approval-handoff.spec.ts`: Legacy archive editor retains later edits while queueing approval
+- Dirty navigation: `workflow-archive-approval-handoff.spec.ts`: Legacy archive editor returns a durable approval receipt
+- Delayed replies: `components/EnterpriseArchiveImport.test.tsx`: does not publish a late credential result after the selected generated script changes
+- Exact resolved payload: `components/EnterpriseArchiveImport.test.tsx`: saves the credential-bound combined Java draft instead of the stale redacted review; `TestHandleSaveEnterpriseArchiveImportReplaysExactCommittedBatch`
+- Durable reopen: `TestHandleSaveEnterpriseArchiveImportRestartRecoversCommittedCredentialedBatch`; `workflow-archive-approval-handoff.spec.ts`: Legacy archive editor returns a durable approval receipt
+
+### Recording
+
+- Ownership and destination: `TestHandleConvertBrowserRecordingPersistsEveryScriptInSelectedFolder`; `TestBridgedBrowserImportUsesResolverProjectWhenWrapperOmitsProject`
+- Warnings and provenance: `TestHandleConvertBrowserRecordingStampsProvenance`; `components/BrowserRecorderControlPanel.test.tsx`: shows live agent-reported environment and retains browser and HTTP receipts in scoped output reviews
+- Secret references: `components/BrowserRecorderControlPanel.test.tsx`: prompts for optional credentials and saves a configure-later reference; `TestHandleConvertBrowserRecordingAtomicallyAppliesExplicitSecretBinding`
+- Capability and policy gates: `TestBrowserRecorderAttestationUsesRecordingWorkflowFeature`; `TestBridgedBrowserImportRejectsNonBrowserProtocol`; `components/BrowserRecorderControlPanel.test.tsx`: live-disables credential and parameterization controls when a preserved browser draft expires
+- Pending edits: `components/BrowserRecorderControlPanel.test.tsx`: keeps an operator rename through a late refresh that changes the recording environment, and saves it
+- Dirty navigation: `components/BrowserRecorderControlPanel.test.tsx`: asks before leaving an unsaved recording review and lets a saved one go; `components/BrowserRecorderControlPanel.test.tsx`: asks before dismissing an unsaved recording review and dismisses a saved one directly
+- Delayed replies: `components/BrowserRecorderControlPanel.test.tsx`: ignores a late response from the previously selected recording session
+- Exact resolved payload: `components/BrowserRecorderControlPanel.test.tsx`: applies preview parameterization to the browser script that is saved; `TestHandleConvertBrowserRecordingAppliesReviewedParameterizationAtomically`
+- Durable reopen: `TestHandleConvertBrowserRecordingReplaysCompletedReceiptAfterRestart`
+
+### Classic replay/debug/browser replay
+
+- Ownership and destination: `components/ScriptEditor.test.tsx`: does not let an older replay start response attach to a newly opened project document; `components/ScriptEditor.test.tsx`: keeps tracking an acknowledged stop until the final WebSocket event arrives
+- Warnings and provenance: `components/ScriptEditor.test.tsx`: renders replay validation warnings returned on failed browser replay start; `TestLifecycleParityStaticFindingsMatchAcrossEntryPoints`
+- Secret references: `components/ScriptEditor.test.tsx`: keeps Save available but fails replay closed while required-secret status is unknown or unavailable; `TestTransientReplayRefusesAMaskedRecordedResourceURL`
+- Capability and policy gates: `TestBrowserCompatibilityMatrixParityAcrossValidationAndReplayEndpoints`
+- Pending edits: `components/ScriptEditor.test.tsx`: requires a new replay after actions change even when the edited draft revalidates
+- Dirty navigation: shared with Direct JSON and structured editor: replay and debug run inside the shared script editor, whose guard covers them
+- Delayed replies: `components/ScriptEditor.test.tsx`: reconciles terminal evidence by trusted GET after an early unbound WebSocket and stale running start response; `workflow-script-session.spec.ts`: a validation that returns after an edit is ignored and the next one binds to the edited draft
+- Exact resolved payload: `components/ScriptEditor.test.tsx`: debugs the resolved draft with an unblurred data cell rather than an earlier copy
+- Durable reopen: `workflow-debugger-experience.spec.ts`: debugger captures successful evidence, diagnoses runtime failure, repairs a draft and retains protocol-correct history
+
+### Scenario library wizard and compact modal
+
+- Ownership and destination: `components/TestHub.test.tsx`: resets a pristine scenario edit before authoring in a different project
+- Warnings and provenance: `components/TestHub.test.tsx`: applies workload templates and renders load-model validation findings
+- Secret references: `TestScenarioSecretReferencesSurviveSaveAndReload`; `TestMaskRuntimeSettingsForEditorShowsOnlyProjectSecretReferences`; `components/scenarioAssembly.test.ts`: keeps the project-secret references of a reopened scenario through the builder checkpoint and save
+- Capability and policy gates: `components/TestHub.test.tsx`: converts a newly disabled selected shape to Custom Workload; `TestLibraryScenarioPreservesAndEnforcesWorkloadShapeIdentity`
+- Pending edits: `components/TestHub.test.tsx`: retains a scenario script review with later edits and returns after a finished save; `workflow-scenario-composition.spec.ts`: scenario prerequisite saves retain archive siblings and later editor changes
+- Dirty navigation: `components/TestHub.test.tsx`: keeps a saved project draft when later unsaved edits are discarded
+- Delayed replies: `components/TestHub.test.tsx`: does not attach a late data-pool result to a replacement draft
+- Exact resolved payload: `components/TestHub.test.tsx`: creates a scenario from the typed form payload
+- Durable reopen: `workflow-scenario-composition.spec.ts`: scenario rename and reopen retain Results, WebSocket, named shape and group timing intent; `components/TestHub.test.tsx`: autosaves builder progress so a reload offers to resume it
+
+### New run
+
+- Ownership and destination: `components/NewTestPage.test.tsx`: waits for a project scope and ignores scenarios returned from the previous project
+- Warnings and provenance: `components/NewTestPage.test.tsx`: says beside Start now why a run larger than the project cap can never start, without offering a queue
+- Secret references: `TestStartTestRequiresConfiguredStaticSecretsWithoutInvalidatingSavedScript`
+- Capability and policy gates: `components/NewTestPage.test.tsx`: surfaces governed schedule policies and approval actions
+- Pending edits: `components/NewTestPage.test.tsx`: saves a local draft with pending group edits without creating or starting a test
+- Dirty navigation: `components/NewTestPage.test.tsx`: guards scenario row changes that would discard dirty launch overrides
+- Delayed replies: `components/NewTestPage.test.tsx`: does not replace a release choice when assignment suggestions arrive late
+- Exact resolved payload: `components/NewTestPage.test.tsx`: carries the untouched error handling half into the group override payload
+- Durable reopen: `workflow-new-test.spec.ts`: New Test saves drafts without execution, retains both tabs and validates recurring triggers; `components/NewTestPage.test.tsx`: restores a saved run draft after unmount without executing or modifying a schedule
+
+### Queued revision and execution overview
+
+- Ownership and destination: `TestQueuedRunRevisionRejectsNonQueuedAndCrossProjectSources`
+- Warnings and provenance: `components/CreateTestModal.test.tsx`: preserves hierarchy provenance and the data-pool snapshot on a queued-run revision; `workflow-new-test.spec.ts`: queued-copy preserves source capture IDs and durably clears the last authored goal
+- Secret references: `TestRevisionSourceGroupIndexPreventsCredentialSwap`
+- Capability and policy gates: `components/CommandCenterQueuedRevision.test.tsx`: does not mount a late lazy editor after permission retirement; `components/CreateTestModal.test.tsx`: blocks aggregate staged demand above the backend one-million VUser limit
+- Pending edits: `components/CreateTestModal.test.tsx`: retains an editable late draft and guard when the submitted snapshot succeeds
+- Dirty navigation: `components/CreateTestModal.test.tsx`: prompts before closing a dirty queued-run draft
+- Delayed replies: `components/CommandCenterQueuedRevision.test.tsx`: retires planned settings across project ABA and fences late callbacks from a former modal; `components/CreateTestModal.test.tsx`: clears capture IDs only on a real project change and ignores old project list completions
+- Exact resolved payload: `components/CreateTestModal.test.tsx`: submits the complete queued-copy snapshot after an actual unrelated name edit
+- Durable reopen: `workflow-new-test.spec.ts`: actual held-run serialization and an API-seeded queued copy preserve complete authored intent
+
+## Script producers
+
+`TestLifecycleParityScriptProducersAreInventoried` walks `pkg/api` up from every call that adds a library script (the store methods that reach a script insert and the runner's create cores) through every call and reference, including package-level initializers, to the route handlers that reach it. A route registration's references to handlers are bindings, not calls; a handler another handler calls is followed too. Each such route is an import route above or has a row here, and each proof is a `pkg/api` test that requests the route with its method. The walk also classifies every `pkg/storage` script insert and the store methods that reach one (through calls and references), the callers of the `SaveScript` upsert, and every production call outside the two packages (their subpackages included) to a store entry point or to an exported function the walk reached.
+
+| Route | AUTH-2 row | Proof | Note |
+| --- | --- | --- | --- |
+| `POST /api/v1/browser-recorder/sessions/{id}/convert` | Recording | `TestHandleConvertBrowserRecordingStoresScript` | — |
+| `POST /api/v1/integrations/github/sync-jobs` | Every import launcher | `TestGitHubImportSyncJobRouteCreatesTheScript` | — |
+| `POST /api/v1/library/import` | Template/component/clone | `TestLibraryExportImportScenarioIncludesScriptDependency` | — |
+| `POST /api/v1/library/import/archive` | Template/component/clone | `TestLibraryArchiveImportRefusesScriptItems` | reaches the library import but refuses every item other than a result |
+| `POST /api/v1/library/remotes/{id}/pull` | Template/component/clone | `TestLibraryRemotePullAndPushScriptBetweenControllers` | — |
+| `POST /api/v1/recorder/{id}/convert` | Recording | `TestHandleConvertRecordingPersistsBaseline` | — |
+| `POST /api/v1/scripts` | Direct JSON and structured editor | `TestCloneDraftKeepsSourceImportProvenance`, `TestIdempotentScriptCreateAdoptsAnUnconfirmedEarlierCreate` | — |
+| `POST /api/v1/scripts/authoring/sessions/{id}/approve` | Multi-script imports | `TestApproveAuthoringSessionPromotesDraftToScriptLibrary` | — |

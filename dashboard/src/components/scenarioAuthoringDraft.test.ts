@@ -37,6 +37,8 @@ describe('explicit scenario authoring checkpoints', () => {
   })
   it('retains project-secret references', () => {
     expect(() => assertDraftHasNoInlineCredentials({ env: { KEY: '{{secret.api_key}}' } })).not.toThrow()
+    expect(() => assertDraftHasNoInlineCredentials({ env: { KEY: '{{ secret.api_key }}', OTHER: ' {{secret.other}} ' }, token: '{{ secret.token }}' })).not.toThrow()
+    expect(() => assertDraftHasNoInlineCredentials({ env: { KEY: 'Bearer {{secret.api_key}}' } })).toThrow()
   })
   it('upgrades six-step checkpoints to the scripts-first step order', () => {
     // Version 1 and 2 forms carried the flat runtime mirrors.

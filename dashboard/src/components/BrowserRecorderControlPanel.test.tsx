@@ -4,6 +4,8 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useNavigationGuardRunner } from '../hooks/NavigationGuardProvider'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 import { blockerTitle } from './replayReadinessIssues'
 import BrowserRecorderControlPanel from './BrowserRecorderControlPanel'
 
@@ -436,6 +438,71 @@ describe('BrowserRecorderControlPanel', () => {
       expect(container.textContent).toContain('Previous recording verification')
       expect(container.textContent).toContain('Conversion changed')
     } finally { vi.useRealTimers() }
+  })
+
+  it('keeps an operator rename through a late refresh that changes the recording environment, and saves it', async () => {
+    vi.useFakeTimers()
+    try {
+      const environment = { version: 1, observation_source: 'local_recorder', engine: 'chromium', emulated: false, physical_device_qualification: 'unverified' }
+      let finishRefresh!: (value: unknown) => void
+      apiMock.getBrowserRecording.mockResolvedValueOnce({ session: { ...recordingSession, recording_environment: environment } }).mockImplementationOnce(() => new Promise(resolve => { finishRefresh = resolve }))
+      apiMock.stopBrowserRecording.mockResolvedValue({ session: { ...stoppedSession, recording_environment: environment } })
+      await renderPanel()
+      await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
+      expect(finishRefresh).toBeDefined()
+      await clickButton('Stop recording')
+      await clickButton('Preview conversion')
+      const name = container.querySelector<HTMLInputElement>('#browser-recording-script-name')!
+      await setInputValue(name, 'Operator checkout')
+
+      await act(async () => { finishRefresh({ session: { ...stoppedSession, recording_environment: { ...environment, engine: 'firefox' } } }); await Promise.resolve() })
+      expect(container.querySelector<HTMLInputElement>('#browser-recording-script-name')!.value).toBe('Operator checkout')
+      expect(container.querySelector('[aria-label="Output 1: Checkout Flow"]')).not.toBeNull()
+
+      // The changed recording makes the preview stale: Save converts again
+      // with the operator's name rather than the session's.
+      await clickButton('Save unverified draft')
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(apiMock.previewBrowserRecordingConversion).toHaveBeenLastCalledWith('brec-1', expect.objectContaining({ name: 'Operator checkout' }))
+      expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({ name: 'Operator checkout' }))
+    } finally { vi.useRealTimers() }
+  })
+
+  it('asks before leaving an unsaved recording review and lets a saved one go', async () => {
+    const leave = vi.fn()
+    function Leave() {
+      const runner = useNavigationGuardRunner()
+      return <button type="button" onClick={() => runner.runGuarded(leave)}>Leave recording</button>
+    }
+    const prompt = 'Recording review has work that is not saved yet'
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await act(async () => {
+      root.render(<NavigationGuardProvider><Leave /><BrowserRecorderControlPanel sessionId="brec-1" /></NavigationGuardProvider>)
+    })
+    await flushPromises()
+    await clickButton('Leave recording')
+    expect(leave).toHaveBeenCalledTimes(1)
+
+    await clickButton('Preview conversion')
+    await clickButton('Leave recording')
+    expect(leave).toHaveBeenCalledTimes(1)
+    expect(document.body.textContent).toContain(prompt)
+    await act(async () => {
+      Array.from(document.body.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Keep editing')?.click()
+    })
+    expect(document.body.textContent).not.toContain(prompt)
+
+    await clickButton('Save unverified draft')
+    await flushPromises()
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1)
+    await clickButton('Leave recording')
+    expect(leave).toHaveBeenCalledTimes(2)
+
+    // A new conversion after the save is unsaved again.
+    await clickButton('Preview conversion')
+    await clickButton('Leave recording')
+    expect(leave).toHaveBeenCalledTimes(2)
+    expect(document.body.textContent).toContain(prompt)
   })
 
   it('renders the live session with step feed, counts, and masked indicator', async () => {
@@ -1505,6 +1572,44 @@ describe('BrowserRecorderControlPanel', () => {
     expect(apiMock.createScript).not.toHaveBeenCalled()
     expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-9' })] })
     expect(container.textContent).toContain('saved to the script library')
+  })
+
+  it('asks before dismissing an unsaved recording review and dismisses a saved one directly', async () => {
+    const onDismiss = vi.fn()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    try {
+      apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+      await renderPanel({ onDismiss })
+      await clickButton('Preview conversion')
+
+      await clickButton('Dismiss')
+      await flushPromises()
+      expect(confirm).toHaveBeenCalledWith('Its unsaved conversion is discarded.')
+      expect(onDismiss).not.toHaveBeenCalled()
+      expect(container.querySelector('[aria-label="Output 1: Checkout Flow"]')).not.toBeNull()
+
+      await clickButton('Save unverified draft')
+      await flushPromises()
+      confirm.mockClear()
+      await clickButton('Dismiss')
+      await flushPromises()
+      expect(confirm).not.toHaveBeenCalled()
+      expect(onDismiss).toHaveBeenCalledTimes(1)
+    } finally { confirm.mockRestore() }
+  })
+
+  it('dismisses an unsaved recording review once the discard is confirmed', async () => {
+    const onDismiss = vi.fn()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    try {
+      apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+      await renderPanel({ onDismiss })
+      await clickButton('Preview conversion')
+      await clickButton('Dismiss')
+      await flushPromises()
+      expect(confirm).toHaveBeenCalledTimes(1)
+      expect(onDismiss).toHaveBeenCalledTimes(1)
+    } finally { confirm.mockRestore() }
   })
 
   it('prevents dismissing the panel while an atomic server save is in flight', async () => {
