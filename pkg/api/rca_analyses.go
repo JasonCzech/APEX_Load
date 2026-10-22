@@ -254,7 +254,7 @@ func rcaEvidenceDigest(manifest *RunArchiveManifest) (string, error) {
 	read.ClockObservationsFile, read.ClockObservationCount, read.ClockObservationsTruncated = "", 0, false
 	read.TelemetrySourcesFile, read.TelemetrySourceEpochCount, read.TelemetrySourcesTruncated = "", 0, false
 	read.JointIntervalsFile, read.JointIntervalsParquetFile, read.JointIntervalCount, read.JointIntervalsTruncated = "", "", 0, false
-	read.TelemetryCoverage, read.TelemetryStageDistributions, read.TelemetryStageDigests, read.TelemetryLoss = nil, nil, nil, nil
+	read.TelemetryCoverage, read.TelemetryStageDistributions, read.TelemetryStageDigests, read.TelemetryLoss, read.TelemetryRenderPopulation = nil, nil, nil, nil, nil
 	read.PhaseEventsFile, read.PhaseEventCount, read.PhaseEventsTruncated = "", 0, false
 	read.BrowserHARArtifacts, read.BrowserHARIncomplete, read.BrowserHAROmitted = nil, false, nil
 	read.BrowserInteractionsFile, read.BrowserInteractionRecordCount, read.BrowserInteractionsIncomplete, read.BrowserInteractionsDropped, read.BrowserInteractionsArtifact = "", 0, false, 0, nil

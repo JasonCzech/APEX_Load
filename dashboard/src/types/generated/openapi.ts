@@ -4871,6 +4871,21 @@ export interface operations {
                   "value"?: number;
                 }) | null;
               }) | null;
+              "telemetry_render_population"?: ({
+                "eligible"?: number;
+                "epoch"?: string;
+                "first_sequence"?: number;
+                "ineligible"?: number;
+                "last_sequence"?: number;
+                "population"?: string;
+                "published_eligible"?: number;
+                "reference_client"?: string;
+                "rendered"?: number;
+                "superseded"?: number;
+                "unknown"?: number;
+                "unqualified"?: Record<string, number>;
+                "unreported"?: number;
+              }) | null;
               "telemetry_source_epoch_count"?: number;
               "telemetry_sources_file"?: string;
               "telemetry_sources_truncated"?: boolean;
@@ -39292,7 +39307,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -40070,7 +40087,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -48161,7 +48180,29 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -50489,7 +50530,29 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -67529,7 +67592,29 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -69853,7 +69938,29 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -72669,7 +72776,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -73447,7 +73556,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -77090,6 +77201,21 @@ export interface operations {
                 "state": string;
                 "value": number;
               }) | null;
+            }) | null;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
             }) | null;
             "telemetry_source_epoch_count"?: number;
             "telemetry_sources_file"?: string;
@@ -81862,6 +81988,21 @@ export interface operations {
                   "state": string;
                   "value": number;
                 }) | null;
+              }) | null;
+              "telemetry_render_population"?: ({
+                "eligible": number;
+                "epoch"?: string;
+                "first_sequence"?: number;
+                "ineligible"?: number;
+                "last_sequence"?: number;
+                "population": string;
+                "published_eligible": number;
+                "reference_client"?: string;
+                "rendered": number;
+                "superseded": number;
+                "unknown"?: number;
+                "unqualified"?: Record<string, number>;
+                "unreported": number;
               }) | null;
               "telemetry_source_epoch_count"?: number;
               "telemetry_sources_file"?: string;
@@ -90775,7 +90916,29 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -93103,7 +93266,29 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -113696,7 +113881,29 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -116024,7 +116231,29 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -130780,7 +131009,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -131558,7 +131789,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -133124,7 +133357,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -133902,7 +134137,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -135468,7 +135705,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -136246,7 +136485,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -137812,7 +138053,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -138590,7 +138833,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -140156,7 +140401,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -140934,7 +141181,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -143237,6 +143486,10 @@ export interface operations {
           "client_id"?: string;
           "samples"?: Array<{
             "observed_at"?: string;
+            "publication"?: ({
+              "epoch"?: string;
+              "sequence"?: number;
+            }) | null;
             "receive_to_render_ms"?: number;
             "state"?: string;
           }>;
@@ -145309,7 +145562,29 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -147637,7 +147912,29 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -172461,7 +172758,29 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -174789,7 +175108,29 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;

@@ -957,6 +957,8 @@ type distributedMetricsPublication struct {
 	errorWindows        map[string]distributedGoalErrorAccumulator
 	collections         map[string]distributedWindowMark
 	timings             map[string]distributedPublicationTiming
+	// sources counts the generator windows the point carries.
+	sources int
 }
 
 type distributedMetricsPublicationResult struct {
@@ -1322,6 +1324,9 @@ func (b *distributedExecutionBackend) publishDistributedMetricsRevision(ctx cont
 		if test.runTotals.publishedWindows == nil {
 			test.runTotals.publishedWindows = make(map[string]distributedWindowMark)
 		}
+		// A point whose every collection was already published carries no new
+		// observation: it is not counted in the render population (TEL-A).
+		live.Telemetry.publicationRepeated = distributedPublicationRepeatedLocked(test, publication)
 		for target, collection := range publication.collections {
 			test.runTotals.publishedWindows[target] = collection
 		}
@@ -1978,6 +1983,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 			errorWindows:        make(map[string]distributedGoalErrorAccumulator, len(test.remoteGoalAcceptedErrorWindows)),
 			collections:         collections,
 			timings:             timings,
+			sources:             len(batches),
 		}
 		if len(fences) > 0 && fences[0].enforced {
 			publication.stream = fences[0].stream

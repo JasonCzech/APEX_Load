@@ -2576,6 +2576,39 @@ export interface TelemetryHealth {
   // Provisional telemetry verdict under the run's pinned acceptance policy
   // (C7); the finalized verdict is in the run report.
   acceptance?: TelemetryAcceptanceVerdict
+  // This live publication's identity (TEL-A), and the run's render
+  // accounting for its reference dashboard client.
+  publication?: TelemetryPublication
+  render_population?: TelemetryRenderPopulation
+}
+
+// A live publication to dashboard viewers (TEL-A): its controller epoch and
+// sequence, whether it carries a collection no earlier one did, and the
+// collection times it includes.
+export interface TelemetryPublication {
+  epoch: string
+  sequence: number
+  eligible: boolean
+  oldest_collected_at?: string
+  newest_collected_at?: string
+}
+
+// Every eligible publication in the reference client's reported range is
+// rendered, superseded, unqualified (by reason) or unreported.
+export interface TelemetryRenderPopulation {
+  population: string
+  epoch?: string
+  published_eligible: number
+  reference_client?: string
+  first_sequence?: number
+  last_sequence?: number
+  eligible: number
+  rendered: number
+  superseded: number
+  unqualified?: Record<string, number>
+  unreported: number
+  ineligible?: number
+  unknown?: number
 }
 
 // One telemetry acceptance criterion with the evidence it read (C7).

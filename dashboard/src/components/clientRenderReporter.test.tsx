@@ -248,4 +248,128 @@ describe('useClientRenderReporter', () => {
     expect(request).not.toHaveBeenCalled()
   })
 
+  // TEL-A: the publications the controller names are reported by identity:
+  // one replaced before it rendered is superseded, a rendered one carries its
+  // measurement, and one received while hidden is background once the tab
+  // has measured a visible render.
+  function named(sequence: number, testId = 'run-9') {
+    const telemetry = { client_received_at: new Date().toISOString(), publication: { epoch: 'epoch-1', sequence, eligible: true } }
+    recordClientTelemetryReceipt(telemetry, testId)
+    return { telemetry } as LiveMetrics
+  }
+  function reportedOutcomes() {
+    const samples = request.mock.calls.flatMap(call => JSON.parse(call[1].body).samples as Array<{ state: string; receive_to_render_ms: number; publication?: { epoch: string; sequence: number } }>)
+    return samples.map(sample => [sample.state, sample.publication?.sequence])
+  }
+
+  it('reports each named publication as superseded, rendered or background', async () => {
+    request.mockResolvedValue({ accepted: 1 })
+    const state = { value: 'visible' as DocumentVisibilityState }
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => state.value)
+    // The first callback is cancelled when the second publication commits.
+    await act(async () => { root.render(<Harness testId="run-9" enabled metrics={named(1)} />) })
+    await act(async () => { root.render(<Harness testId="run-9" enabled metrics={named(2)} />) })
+    await act(async () => { vi.advanceTimersByTime(5) })
+    state.value = 'hidden'
+    document.dispatchEvent(new Event('visibilitychange'))
+    await act(async () => { root.render(<Harness testId="run-9" enabled metrics={named(3)} />) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(request).toHaveBeenCalledTimes(1)
+    const samples = JSON.parse(request.mock.calls[0][1].body).samples as Array<{ state: string; receive_to_render_ms: number; publication?: { epoch: string; sequence: number } }>
+    expect(reportedOutcomes()).toEqual([['superseded', 1], ['visible', 2], ['background', 3]])
+    expect(samples.every(sample => sample.publication?.epoch === 'epoch-1')).toBe(true)
+    expect(samples[0].receive_to_render_ms).toBe(0)
+    expect(samples[2].receive_to_render_ms).toBe(0)
+  })
+
+  it('resolves publications batched into one render, and never reports one twice', async () => {
+    request.mockResolvedValue({ accepted: 1 })
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    await act(async () => { root.render(<Harness testId="run-10" enabled metrics={named(1, 'run-10')} />) })
+    await act(async () => { vi.advanceTimersByTime(5) })
+    // Two publications arrive before React renders: only the second commits.
+    named(2, 'run-10')
+    const third = named(3, 'run-10')
+    // Another run's receipt on the same page is left alone.
+    named(1, 'run-other')
+    await act(async () => { root.render(<Harness testId="run-10" enabled metrics={third} />) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    // Toggling reporting does not report the same receipt again.
+    await act(async () => { root.render(<Harness testId="run-10" enabled={false} metrics={third} />) })
+    await act(async () => { root.render(<Harness testId="run-10" enabled metrics={third} />) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS * 2) })
+    const outcomes = reportedOutcomes()
+    expect(outcomes).toEqual([['visible', 1], ['superseded', 2], ['visible', 3]])
+    expect(outcomes.filter(([state, sequence]) => state === 'superseded' && sequence === 2)).toHaveLength(1)
+    expect(outcomes.filter(([state, sequence]) => state === 'visible' && sequence === 3)).toHaveLength(1)
+  })
+
+  it('labels a publication received while hidden background, even when a newer one superseded it', async () => {
+    request.mockResolvedValue({ accepted: 1 })
+    const state = { value: 'visible' as DocumentVisibilityState }
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => state.value)
+    await act(async () => { root.render(<Harness testId="run-12" enabled metrics={named(1, 'run-12')} />) })
+    await act(async () => { vi.advanceTimersByTime(5) })
+    state.value = 'hidden'
+    document.dispatchEvent(new Event('visibilitychange'))
+    named(2, 'run-12') // received while hidden, never rendered on its own
+    state.value = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
+    await act(async () => { root.render(<Harness testId="run-12" enabled metrics={named(3, 'run-12')} />) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(reportedOutcomes()).toEqual([['visible', 1], ['background', 2], ['visible', 3]])
+  })
+
+  it('reports publications received while hidden before its first measurement alongside that measurement', async () => {
+    request.mockResolvedValue({ accepted: 1 })
+    const state = { value: 'hidden' as DocumentVisibilityState }
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => state.value)
+    await act(async () => { root.render(<Harness testId="run-13" enabled metrics={named(1, 'run-13')} />) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(request).not.toHaveBeenCalled()
+    state.value = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
+    await act(async () => { root.render(<Harness testId="run-13" enabled metrics={named(2, 'run-13')} />) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(reportedOutcomes()).toEqual([['background', 1], ['visible', 2]])
+  })
+
+  it('leaves a publication hidden before it painted, in a tab that measured nothing yet, for its first measurement', async () => {
+    request.mockResolvedValue({ accepted: 1 })
+    const state = { value: 'visible' as DocumentVisibilityState }
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => state.value)
+    await act(async () => { root.render(<Harness testId="run-14" enabled metrics={named(1, 'run-14')} />) })
+    await act(async () => {
+      state.value = 'hidden'
+      document.dispatchEvent(new Event('visibilitychange'))
+      state.value = 'visible'
+      document.dispatchEvent(new Event('visibilitychange'))
+      vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS)
+    })
+    expect(request).not.toHaveBeenCalled()
+    await act(async () => { root.render(<Harness testId="run-14" enabled metrics={named(2, 'run-14')} />) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(reportedOutcomes()).toEqual([['background', 1], ['visible', 2]])
+  })
+
+  it('reports nothing it did not see while reporting was off, and no unmeasured outcomes before a visible render', async () => {
+    request.mockResolvedValue({ accepted: 1 })
+    const state = { value: 'hidden' as DocumentVisibilityState }
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => state.value)
+    // A hidden tab that never measured a render reports no outcomes.
+    await act(async () => { root.render(<Harness testId="run-11" enabled metrics={named(1, 'run-11')} />) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(request).not.toHaveBeenCalled()
+    // Publications that arrived while reporting was off are dropped, not
+    // reported superseded, when it turns on.
+    state.value = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
+    await act(async () => { root.render(<Harness testId="run-11" enabled={false} metrics={named(2, 'run-11')} />) })
+    named(3, 'run-11')
+    const current = named(4, 'run-11')
+    await act(async () => { root.render(<Harness testId="run-11" enabled metrics={current} />) })
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(reportedOutcomes()).toEqual([['visible', 4]])
+  })
+
 })

@@ -180,19 +180,36 @@ func (s *Server) handleReportClientRender(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "a client render report needs a client_id and 1 to 64 samples")
 		return
 	}
+	// Every sample that can reach the stage spends the viewer's sample budget:
+	// a visible render, and any unnamed sample. A named publication's
+	// unmeasured outcome (superseded, background) reaches it only from the
+	// reference tab, one report per 2 seconds, so it spends none; each report
+	// still spends at least one, so rotating tab identifiers buy no reports
+	// (TEL-A).
+	charged := 0
+	for _, sample := range report.Samples {
+		if sample.Publication != nil && !sample.Publication.valid() {
+			writeError(w, http.StatusBadRequest, "a client render sample names a publication by a non-empty epoch of at most 64 bytes and a positive sequence")
+			return
+		}
+		if sample.State == "visible" || sample.Publication == nil {
+			charged++
+		}
+	}
+	charged = max(charged, 1)
 	subject := "anonymous:" + requestSourceIP(r).String()
 	if user, ok := AuthenticatedUserFromContext(r.Context()); ok && user != nil {
 		subject = "user:" + user.Subject
 	}
 	now := time.Now()
 	viewer := testID + "\x00" + subject
-	if allowed, wait := s.clientRenderReports.spend(viewer, len(report.Samples), now); !allowed {
+	if allowed, wait := s.clientRenderReports.spend(viewer, charged, now); !allowed {
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait/time.Second)+1))
 		writeError(w, http.StatusTooManyRequests, "client render samples are limited per viewer across all tabs")
 		return
 	}
 	if allowed, wait := s.clientRenderReports.allow(viewer+"\x00"+report.ClientID, now); !allowed {
-		s.clientRenderReports.release(viewer, len(report.Samples))
+		s.clientRenderReports.release(viewer, charged)
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait/time.Second)+1))
 		writeError(w, http.StatusTooManyRequests, "client render reports are limited to one every 2 seconds per tab")
 		return
@@ -202,16 +219,42 @@ func (s *Server) handleReportClientRender(w http.ResponseWriter, r *http.Request
 		return
 	}
 	result := ClientRenderReportResult{}
+	var outcomes []clientRenderOutcome
+	// A named publication's unmeasured outcome excludes a render from the
+	// stage only for the reference client: another tab's would count again
+	// publications the reference tab accounts for.
+	// unmeasured holds the index, in outcomes, of each named publication's
+	// unmeasured outcome: it excludes a render only when the reference tab's
+	// ledger recorded it. A visible render that fails admission (stalled,
+	// implausibly timed) is excluded for every tab, as an unnamed sample is.
+	unmeasured := map[int]string{}
 	for _, sample := range report.Samples {
+		outcome := telemetryRenderRendered
 		if visible, reason := admitClientRenderSample(sample, started, now); visible {
 			recorder.observe(telemetryStageBrowserRender, sample.ReceiveToRenderMs)
 			result.Accepted++
 		} else {
-			recorder.exclude(telemetryStageBrowserRender, reason)
+			outcome = reason
+			if sample.Publication != nil && sample.State != "visible" {
+				unmeasured[len(outcomes)] = reason
+			} else {
+				recorder.exclude(telemetryStageBrowserRender, reason)
+			}
 			if result.Excluded == nil {
 				result.Excluded = map[string]int64{}
 			}
 			result.Excluded[reason]++
+		}
+		if sample.Publication != nil {
+			outcomes = append(outcomes, clientRenderOutcome{publication: *sample.Publication, outcome: outcome})
+		}
+	}
+	// The reference client is the viewer's tab, so another viewer cannot
+	// report as it by reusing its tab identifier.
+	recorded := recorder.renderOutcomes(subject+"\x00"+report.ClientID, outcomes)
+	for index, reason := range unmeasured {
+		if recorded[index] {
+			recorder.exclude(telemetryStageBrowserRender, reason)
 		}
 	}
 	writeJSON(w, http.StatusAccepted, result)

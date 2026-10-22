@@ -15,7 +15,7 @@ type distributedTelemetryAccumulator struct {
 	publishedAt                                             time.Time
 	hasCollectedAt, hasPublishedAt, hasControllerReceivedAt bool
 	dropCounterUnavailable                                  bool
-	oldestCollectedMs                                       float64
+	oldestCollectedMs, newestCollectedMs                    float64
 }
 
 func (a *distributedTelemetryAccumulator) add(state string, telemetry *generatorrpc.MetricsTelemetry) {
@@ -75,6 +75,11 @@ func (a *distributedTelemetryAccumulator) add(state string, telemetry *generator
 			a.oldestCollectedMs = collected
 			a.telemetry.CollectedAtUnixMs, a.telemetry.CollectedAtOffsetMs = telemetry.CollectedAtUnixMs, offset
 		}
+		// The newest is chosen on the same corrected scale as the oldest.
+		if !a.hasCollectedAt || collected > a.newestCollectedMs {
+			a.newestCollectedMs = collected
+			a.telemetry.NewestCollectedAtUnixMs = telemetry.CollectedAtUnixMs
+		}
 		a.telemetry.CollectedAtQuality = combineClockQuality(a.telemetry.CollectedAtQuality, quality, 0)
 		a.hasCollectedAt = true
 	}
@@ -117,10 +122,14 @@ func applyDistributedTelemetryTiming(live *LiveMetrics, batch generatorrpc.Metri
 	t.TransportLagQuality, t.SampleAgeQuality, t.collectedAtQuality = nil, nil, nil
 	t.collectedAtOffsetMs, t.collectedAtBoundUnixMs = 0, 0
 	t.qualifiedAt, t.qualifiedMonotonic = time.Time{}, 0
+	t.newestCollectedAt = time.Time{}
 	t.SampleAgeUnavailable = false
 	if batch.Telemetry != nil {
 		if batch.Telemetry.CollectedAtUnixMs > 0 {
 			live.Telemetry.CollectedAt = time.UnixMilli(batch.Telemetry.CollectedAtUnixMs)
+		}
+		if batch.Telemetry.NewestCollectedAtUnixMs > 0 {
+			live.Telemetry.newestCollectedAt = time.UnixMilli(batch.Telemetry.NewestCollectedAtUnixMs)
 		}
 		if batch.Telemetry.PublishedAtUnixMs > 0 {
 			live.Telemetry.GeneratorPublishedAt = time.UnixMilli(batch.Telemetry.PublishedAtUnixMs)

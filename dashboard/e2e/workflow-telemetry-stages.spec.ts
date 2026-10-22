@@ -34,8 +34,13 @@ test('an opted-in project collects visible render evidence as an advisory stage'
   expect(response.status()).toBe(202)
   const result = await response.json() as { accepted: number }
   expect(result.accepted, 'the visible tab measured its own renders').toBeGreaterThan(0)
-  const body = JSON.parse(response.request().postData() || '{}') as { samples: Array<{ state: string; receive_to_render_ms: number }> }
-  expect(body.samples.every(item => item.state === 'visible' && item.receive_to_render_ms >= 0 && item.receive_to_render_ms < 60_000)).toBe(true)
+  // Measured renders, and the named publications this tab received but did
+  // not render on their own (superseded by a newer one, or hidden).
+  const body = JSON.parse(response.request().postData() || '{}') as { samples: Array<{ state: string; receive_to_render_ms: number; publication?: { epoch: string; sequence: number } }> }
+  expect(body.samples.some(item => item.state === 'visible')).toBe(true)
+  expect(body.samples.every(item => item.state === 'visible'
+    ? item.receive_to_render_ms >= 0 && item.receive_to_render_ms < 60_000
+    : ['superseded', 'background'].includes(item.state) && Boolean(item.publication?.epoch) && (item.publication?.sequence ?? 0) > 0)).toBe(true)
 
   // Inject callback wall-clock drift without changing performance.now().
   // This is a clock-regression fixture, not proof of visible presentation.
@@ -59,6 +64,15 @@ test('an opted-in project collects visible render evidence as an advisory stage'
     const run = await json(await request.get(`/api/v1/tests/${id}`)) as { live_metrics?: { telemetry?: { stage_distributions?: StageDistribution[] } } }
     return run.live_metrics?.telemetry?.stage_distributions?.find(item => item.stage === name)
   }
+  // The watching tab is the run's reference client: its rendered
+  // publications are accounted in the render population (TEL-A).
+  type RenderPopulation = { population: string; reference_client?: string; eligible: number; rendered: number }
+  const population = async () => {
+    const run = await json(await request.get(`/api/v1/tests/${id}`)) as { live_metrics?: { telemetry?: { render_population?: RenderPopulation } } }
+    return run.live_metrics?.telemetry?.render_population
+  }
+  await expect.poll(async () => (await population())?.rendered ?? 0, { timeout: 30_000 }).toBeGreaterThan(0)
+  expect(await population()).toMatchObject({ population: 'rendered_publications', reference_client: expect.any(String) })
   await expect.poll(async () => (await stage('browser_render'))?.samples ?? 0, { timeout: 30_000 }).toBeGreaterThan(0)
   expect(await stage('browser_render')).toMatchObject({ availability: 'measured', advisory: true })
   expect((await stage('controller_fanout'))?.availability).toBe('measured')
@@ -76,7 +90,8 @@ test('an opted-in project collects visible render evidence as an advisory stage'
   await json(await request.post(`/api/v1/tests/${id}/abort`))
   await expect.poll(() => runStatus(request, id), { timeout: 60_000 }).toMatch(/^(COMPLETE|FAILED|ABORTED)$/)
   await expect.poll(async () => (await request.get(`/api/v1/tests/${id}/archive/manifest`)).ok(), { timeout: 60_000 }).toBe(true)
-  const manifest = await json(await request.get(`/api/v1/tests/${id}/archive/manifest`)) as { telemetry_stage_distributions?: StageDistribution[]; telemetry_stage_digests?: Record<string, { count: number }> }
+  const manifest = await json(await request.get(`/api/v1/tests/${id}/archive/manifest`)) as { telemetry_stage_distributions?: StageDistribution[]; telemetry_stage_digests?: Record<string, { count: number }>; telemetry_render_population?: RenderPopulation }
+  expect(manifest.telemetry_render_population?.rendered).toBeGreaterThan(0)
   expect(manifest.telemetry_stage_distributions?.find(item => item.stage === 'browser_render')?.samples).toBeGreaterThan(0)
   expect(manifest.telemetry_stage_digests?.browser_render?.count).toBeGreaterThan(0)
 })

@@ -1230,6 +1230,18 @@ type TelemetryHealth struct {
 	// Acceptance is the run's provisional telemetry verdict under its pinned
 	// acceptance policy; the finalized verdict is in the run report.
 	Acceptance *TelemetryAcceptanceVerdict `json:"acceptance,omitempty"`
+	// Publication identifies this live publication to dashboard viewers, and
+	// RenderPopulation is the run's render accounting so far (TEL-A).
+	Publication      *TelemetryPublication      `json:"publication,omitempty"`
+	RenderPopulation *TelemetryRenderPopulation `json:"render_population,omitempty"`
+	// publicationRepeated is set by a distributed install guard when every
+	// collection the point carries was already published; newestCollectedAt is
+	// a fleet point's newest contributing collection time; collectedAtAssumed
+	// marks a point whose collection time was not reported (the publication
+	// time stands in).
+	publicationRepeated bool
+	newestCollectedAt   time.Time
+	collectedAtAssumed  bool
 	// restoredFromHistory marks health rebuilt from a stored interval
 	// summary (a restarted controller, a follower): it carries none of the
 	// loss, coverage or stage evidence a verdict reads, so none is shown.

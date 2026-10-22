@@ -57,6 +57,11 @@ func TestTelemetryCollectionReplayDoesNotReageTerminalMetrics(t *testing.T) {
 					t.Fatal("initial window rejected")
 				}
 				publishTelemetryCollection(t, runner, run, backend, "gen-a")
+				// A new collection's publication is in the render population (TEL-A).
+				publication := run.LiveMetrics.Telemetry.Publication.clone()
+				if publication == nil || !publication.Eligible {
+					t.Fatalf("a new collection's publication is not eligible: %+v", publication)
+				}
 				ageBefore := telemetryReplayStage(t, run, telemetryStageSampleAge)
 				terminal := telemetryCollectionBatch(run.ID, 2, collection, collectedAt)
 				terminal.ActionMetricsVersion = 1
@@ -76,6 +81,11 @@ func TestTelemetryCollectionReplayDoesNotReageTerminalMetrics(t *testing.T) {
 					}
 					if !run.LiveMetrics.Telemetry.SampleAgeUnavailable || run.LiveMetrics.ActiveVUsers != 0 {
 						t.Fatalf("terminal live metrics: %+v", run.LiveMetrics)
+					}
+					// The replayed collection is published, but not counted in the
+					// render population.
+					if replayed := run.LiveMetrics.Telemetry.Publication; replayed == nil || replayed.Eligible || replayed.Epoch != publication.Epoch || replayed.Sequence != publication.Sequence+1 {
+						t.Fatalf("terminal replay publication %+v after %+v", replayed, publication)
 					}
 					if got := telemetryReplayStage(t, run, telemetryStageSampleAge); got.Samples != ageBefore.Samples || got.MaxMs == nil || *got.MaxMs != *ageBefore.MaxMs {
 						t.Fatalf("terminal replay acquired another sample age: %+v", got)

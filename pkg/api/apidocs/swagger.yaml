@@ -13541,6 +13541,48 @@ paths:
                                   format: int64
                               nullable: true
                           nullable: true
+                        telemetry_render_population:
+                          type: object
+                          properties:
+                            eligible:
+                              type: integer
+                              format: int64
+                            epoch:
+                              type: string
+                            first_sequence:
+                              type: integer
+                              format: int64
+                            ineligible:
+                              type: integer
+                              format: int64
+                            last_sequence:
+                              type: integer
+                              format: int64
+                            population:
+                              type: string
+                            published_eligible:
+                              type: integer
+                              format: int64
+                            reference_client:
+                              type: string
+                            rendered:
+                              type: integer
+                              format: int64
+                            superseded:
+                              type: integer
+                              format: int64
+                            unknown:
+                              type: integer
+                              format: int64
+                            unqualified:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            unreported:
+                              type: integer
+                              format: int64
+                          nullable: true
                         telemetry_source_epoch_count:
                           type: integer
                           format: int64
@@ -96731,9 +96773,19 @@ paths:
                                 missing_metric_windows:
                                   type: integer
                                   format: int64
+                                publication:
+                                  type: object
+                                  description: 'Go type: TelemetryPublication'
+                                  additionalProperties: true
+                                  nullable: true
                                 published_at:
                                   type: string
                                   format: date-time
+                                render_population:
+                                  type: object
+                                  description: 'Go type: TelemetryRenderPopulation'
+                                  additionalProperties: true
+                                  nullable: true
                                 sample_age_ms:
                                   type: number
                                   format: double
@@ -99313,9 +99365,17 @@ paths:
                               missing_metric_windows:
                                 type: integer
                                 format: int64
+                              publication:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               published_at:
                                 type: string
                                 format: date-time
+                              render_population:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               sample_age_ms:
                                 type: number
                                 format: double
@@ -104074,9 +104134,19 @@ paths:
                                 missing_metric_windows:
                                   type: integer
                                   format: int64
+                                publication:
+                                  type: object
+                                  description: 'Go type: TelemetryPublication'
+                                  additionalProperties: true
+                                  nullable: true
                                 published_at:
                                   type: string
                                   format: date-time
+                                render_population:
+                                  type: object
+                                  description: 'Go type: TelemetryRenderPopulation'
+                                  additionalProperties: true
+                                  nullable: true
                                 sample_age_ms:
                                   type: number
                                   format: double
@@ -106656,9 +106726,17 @@ paths:
                               missing_metric_windows:
                                 type: integer
                                 format: int64
+                              publication:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               published_at:
                                 type: string
                                 format: date-time
+                              render_population:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               sample_age_ms:
                                 type: number
                                 format: double
@@ -111418,9 +111496,19 @@ paths:
                                 missing_metric_windows:
                                   type: integer
                                   format: int64
+                                publication:
+                                  type: object
+                                  description: 'Go type: TelemetryPublication'
+                                  additionalProperties: true
+                                  nullable: true
                                 published_at:
                                   type: string
                                   format: date-time
+                                render_population:
+                                  type: object
+                                  description: 'Go type: TelemetryRenderPopulation'
+                                  additionalProperties: true
+                                  nullable: true
                                 sample_age_ms:
                                   type: number
                                   format: double
@@ -114000,9 +114088,17 @@ paths:
                               missing_metric_windows:
                                 type: integer
                                 format: int64
+                              publication:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               published_at:
                                 type: string
                                 format: date-time
+                              render_population:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               sample_age_ms:
                                 type: number
                                 format: double
@@ -118774,9 +118870,19 @@ paths:
                                 missing_metric_windows:
                                   type: integer
                                   format: int64
+                                publication:
+                                  type: object
+                                  description: 'Go type: TelemetryPublication'
+                                  additionalProperties: true
+                                  nullable: true
                                 published_at:
                                   type: string
                                   format: date-time
+                                render_population:
+                                  type: object
+                                  description: 'Go type: TelemetryRenderPopulation'
+                                  additionalProperties: true
+                                  nullable: true
                                 sample_age_ms:
                                   type: number
                                   format: double
@@ -121356,9 +121462,17 @@ paths:
                               missing_metric_windows:
                                 type: integer
                                 format: int64
+                              publication:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               published_at:
                                 type: string
                                 format: date-time
+                              render_population:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               sample_age_ms:
                                 type: number
                                 format: double
@@ -126130,9 +126244,19 @@ paths:
                                 missing_metric_windows:
                                   type: integer
                                   format: int64
+                                publication:
+                                  type: object
+                                  description: 'Go type: TelemetryPublication'
+                                  additionalProperties: true
+                                  nullable: true
                                 published_at:
                                   type: string
                                   format: date-time
+                                render_population:
+                                  type: object
+                                  description: 'Go type: TelemetryRenderPopulation'
+                                  additionalProperties: true
+                                  nullable: true
                                 sample_age_ms:
                                   type: number
                                   format: double
@@ -128712,9 +128836,17 @@ paths:
                               missing_metric_windows:
                                 type: integer
                                 format: int64
+                              publication:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               published_at:
                                 type: string
                                 format: date-time
+                              render_population:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               sample_age_ms:
                                 type: number
                                 format: double
@@ -133486,9 +133618,19 @@ paths:
                                 missing_metric_windows:
                                   type: integer
                                   format: int64
+                                publication:
+                                  type: object
+                                  description: 'Go type: TelemetryPublication'
+                                  additionalProperties: true
+                                  nullable: true
                                 published_at:
                                   type: string
                                   format: date-time
+                                render_population:
+                                  type: object
+                                  description: 'Go type: TelemetryRenderPopulation'
+                                  additionalProperties: true
+                                  nullable: true
                                 sample_age_ms:
                                   type: number
                                   format: double
@@ -136068,9 +136210,17 @@ paths:
                               missing_metric_windows:
                                 type: integer
                                 format: int64
+                              publication:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               published_at:
                                 type: string
                                 format: date-time
+                              render_population:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               sample_age_ms:
                                 type: number
                                 format: double
@@ -140842,9 +140992,19 @@ paths:
                                 missing_metric_windows:
                                   type: integer
                                   format: int64
+                                publication:
+                                  type: object
+                                  description: 'Go type: TelemetryPublication'
+                                  additionalProperties: true
+                                  nullable: true
                                 published_at:
                                   type: string
                                   format: date-time
+                                render_population:
+                                  type: object
+                                  description: 'Go type: TelemetryRenderPopulation'
+                                  additionalProperties: true
+                                  nullable: true
                                 sample_age_ms:
                                   type: number
                                   format: double
@@ -143424,9 +143584,17 @@ paths:
                               missing_metric_windows:
                                 type: integer
                                 format: int64
+                              publication:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               published_at:
                                 type: string
                                 format: date-time
+                              render_population:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               sample_age_ms:
                                 type: number
                                 format: double
@@ -365735,9 +365903,81 @@ paths:
                             missing_metric_windows:
                               type: integer
                               format: int64
+                            publication:
+                              type: object
+                              properties:
+                                eligible:
+                                  type: boolean
+                                epoch:
+                                  type: string
+                                newest_collected_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                oldest_collected_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                sequence:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - eligible
+                                - epoch
+                                - sequence
+                              nullable: true
                             published_at:
                               type: string
                               format: date-time
+                            render_population:
+                              type: object
+                              properties:
+                                eligible:
+                                  type: integer
+                                  format: int64
+                                epoch:
+                                  type: string
+                                first_sequence:
+                                  type: integer
+                                  format: int64
+                                ineligible:
+                                  type: integer
+                                  format: int64
+                                last_sequence:
+                                  type: integer
+                                  format: int64
+                                population:
+                                  type: string
+                                published_eligible:
+                                  type: integer
+                                  format: int64
+                                reference_client:
+                                  type: string
+                                rendered:
+                                  type: integer
+                                  format: int64
+                                superseded:
+                                  type: integer
+                                  format: int64
+                                unknown:
+                                  type: integer
+                                  format: int64
+                                unqualified:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                unreported:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - eligible
+                                - population
+                                - published_eligible
+                                - rendered
+                                - superseded
+                                - unreported
+                              nullable: true
                             sample_age_ms:
                               type: number
                               format: double
@@ -373694,9 +373934,81 @@ paths:
                           missing_metric_windows:
                             type: integer
                             format: int64
+                          publication:
+                            type: object
+                            properties:
+                              eligible:
+                                type: boolean
+                              epoch:
+                                type: string
+                              newest_collected_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              oldest_collected_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              sequence:
+                                type: integer
+                                format: int64
+                            required:
+                              - eligible
+                              - epoch
+                              - sequence
+                            nullable: true
                           published_at:
                             type: string
                             format: date-time
+                          render_population:
+                            type: object
+                            properties:
+                              eligible:
+                                type: integer
+                                format: int64
+                              epoch:
+                                type: string
+                              first_sequence:
+                                type: integer
+                                format: int64
+                              ineligible:
+                                type: integer
+                                format: int64
+                              last_sequence:
+                                type: integer
+                                format: int64
+                              population:
+                                type: string
+                              published_eligible:
+                                type: integer
+                                format: int64
+                              reference_client:
+                                type: string
+                              rendered:
+                                type: integer
+                                format: int64
+                              superseded:
+                                type: integer
+                                format: int64
+                              unknown:
+                                type: integer
+                                format: int64
+                              unqualified:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              unreported:
+                                type: integer
+                                format: int64
+                            required:
+                              - eligible
+                              - population
+                              - published_eligible
+                              - rendered
+                              - superseded
+                              - unreported
+                            nullable: true
                           sample_age_ms:
                             type: number
                             format: double
@@ -383044,9 +383356,81 @@ paths:
                             missing_metric_windows:
                               type: integer
                               format: int64
+                            publication:
+                              type: object
+                              properties:
+                                eligible:
+                                  type: boolean
+                                epoch:
+                                  type: string
+                                newest_collected_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                oldest_collected_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                sequence:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - eligible
+                                - epoch
+                                - sequence
+                              nullable: true
                             published_at:
                               type: string
                               format: date-time
+                            render_population:
+                              type: object
+                              properties:
+                                eligible:
+                                  type: integer
+                                  format: int64
+                                epoch:
+                                  type: string
+                                first_sequence:
+                                  type: integer
+                                  format: int64
+                                ineligible:
+                                  type: integer
+                                  format: int64
+                                last_sequence:
+                                  type: integer
+                                  format: int64
+                                population:
+                                  type: string
+                                published_eligible:
+                                  type: integer
+                                  format: int64
+                                reference_client:
+                                  type: string
+                                rendered:
+                                  type: integer
+                                  format: int64
+                                superseded:
+                                  type: integer
+                                  format: int64
+                                unknown:
+                                  type: integer
+                                  format: int64
+                                unqualified:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                unreported:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - eligible
+                                - population
+                                - published_eligible
+                                - rendered
+                                - superseded
+                                - unreported
+                              nullable: true
                             sample_age_ms:
                               type: number
                               format: double
@@ -391003,9 +391387,81 @@ paths:
                           missing_metric_windows:
                             type: integer
                             format: int64
+                          publication:
+                            type: object
+                            properties:
+                              eligible:
+                                type: boolean
+                              epoch:
+                                type: string
+                              newest_collected_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              oldest_collected_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              sequence:
+                                type: integer
+                                format: int64
+                            required:
+                              - eligible
+                              - epoch
+                              - sequence
+                            nullable: true
                           published_at:
                             type: string
                             format: date-time
+                          render_population:
+                            type: object
+                            properties:
+                              eligible:
+                                type: integer
+                                format: int64
+                              epoch:
+                                type: string
+                              first_sequence:
+                                type: integer
+                                format: int64
+                              ineligible:
+                                type: integer
+                                format: int64
+                              last_sequence:
+                                type: integer
+                                format: int64
+                              population:
+                                type: string
+                              published_eligible:
+                                type: integer
+                                format: int64
+                              reference_client:
+                                type: string
+                              rendered:
+                                type: integer
+                                format: int64
+                              superseded:
+                                type: integer
+                                format: int64
+                              unknown:
+                                type: integer
+                                format: int64
+                              unqualified:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              unreported:
+                                type: integer
+                                format: int64
+                            required:
+                              - eligible
+                              - population
+                              - published_eligible
+                              - rendered
+                              - superseded
+                              - unreported
+                            nullable: true
                           sample_age_ms:
                             type: number
                             format: double
@@ -403181,6 +403637,55 @@ paths:
                           - state
                           - value
                         nullable: true
+                    nullable: true
+                  telemetry_render_population:
+                    type: object
+                    properties:
+                      eligible:
+                        type: integer
+                        format: int64
+                      epoch:
+                        type: string
+                      first_sequence:
+                        type: integer
+                        format: int64
+                      ineligible:
+                        type: integer
+                        format: int64
+                      last_sequence:
+                        type: integer
+                        format: int64
+                      population:
+                        type: string
+                      published_eligible:
+                        type: integer
+                        format: int64
+                      reference_client:
+                        type: string
+                      rendered:
+                        type: integer
+                        format: int64
+                      superseded:
+                        type: integer
+                        format: int64
+                      unknown:
+                        type: integer
+                        format: int64
+                      unqualified:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
+                      unreported:
+                        type: integer
+                        format: int64
+                    required:
+                      - eligible
+                      - population
+                      - published_eligible
+                      - rendered
+                      - superseded
+                      - unreported
                     nullable: true
                   telemetry_source_epoch_count:
                     type: integer
@@ -419526,6 +420031,55 @@ paths:
                               - state
                               - value
                             nullable: true
+                        nullable: true
+                      telemetry_render_population:
+                        type: object
+                        properties:
+                          eligible:
+                            type: integer
+                            format: int64
+                          epoch:
+                            type: string
+                          first_sequence:
+                            type: integer
+                            format: int64
+                          ineligible:
+                            type: integer
+                            format: int64
+                          last_sequence:
+                            type: integer
+                            format: int64
+                          population:
+                            type: string
+                          published_eligible:
+                            type: integer
+                            format: int64
+                          reference_client:
+                            type: string
+                          rendered:
+                            type: integer
+                            format: int64
+                          superseded:
+                            type: integer
+                            format: int64
+                          unknown:
+                            type: integer
+                            format: int64
+                          unqualified:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          unreported:
+                            type: integer
+                            format: int64
+                        required:
+                          - eligible
+                          - population
+                          - published_eligible
+                          - rendered
+                          - superseded
+                          - unreported
                         nullable: true
                       telemetry_source_epoch_count:
                         type: integer
@@ -437505,9 +438059,81 @@ paths:
                             missing_metric_windows:
                               type: integer
                               format: int64
+                            publication:
+                              type: object
+                              properties:
+                                eligible:
+                                  type: boolean
+                                epoch:
+                                  type: string
+                                newest_collected_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                oldest_collected_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                sequence:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - eligible
+                                - epoch
+                                - sequence
+                              nullable: true
                             published_at:
                               type: string
                               format: date-time
+                            render_population:
+                              type: object
+                              properties:
+                                eligible:
+                                  type: integer
+                                  format: int64
+                                epoch:
+                                  type: string
+                                first_sequence:
+                                  type: integer
+                                  format: int64
+                                ineligible:
+                                  type: integer
+                                  format: int64
+                                last_sequence:
+                                  type: integer
+                                  format: int64
+                                population:
+                                  type: string
+                                published_eligible:
+                                  type: integer
+                                  format: int64
+                                reference_client:
+                                  type: string
+                                rendered:
+                                  type: integer
+                                  format: int64
+                                superseded:
+                                  type: integer
+                                  format: int64
+                                unknown:
+                                  type: integer
+                                  format: int64
+                                unqualified:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                unreported:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - eligible
+                                - population
+                                - published_eligible
+                                - rendered
+                                - superseded
+                                - unreported
+                              nullable: true
                             sample_age_ms:
                               type: number
                               format: double
@@ -445464,9 +446090,81 @@ paths:
                           missing_metric_windows:
                             type: integer
                             format: int64
+                          publication:
+                            type: object
+                            properties:
+                              eligible:
+                                type: boolean
+                              epoch:
+                                type: string
+                              newest_collected_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              oldest_collected_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              sequence:
+                                type: integer
+                                format: int64
+                            required:
+                              - eligible
+                              - epoch
+                              - sequence
+                            nullable: true
                           published_at:
                             type: string
                             format: date-time
+                          render_population:
+                            type: object
+                            properties:
+                              eligible:
+                                type: integer
+                                format: int64
+                              epoch:
+                                type: string
+                              first_sequence:
+                                type: integer
+                                format: int64
+                              ineligible:
+                                type: integer
+                                format: int64
+                              last_sequence:
+                                type: integer
+                                format: int64
+                              population:
+                                type: string
+                              published_eligible:
+                                type: integer
+                                format: int64
+                              reference_client:
+                                type: string
+                              rendered:
+                                type: integer
+                                format: int64
+                              superseded:
+                                type: integer
+                                format: int64
+                              unknown:
+                                type: integer
+                                format: int64
+                              unqualified:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              unreported:
+                                type: integer
+                                format: int64
+                            required:
+                              - eligible
+                              - population
+                              - published_eligible
+                              - rendered
+                              - superseded
+                              - unreported
+                            nullable: true
                           sample_age_ms:
                             type: number
                             format: double
@@ -454651,9 +455349,81 @@ paths:
                             missing_metric_windows:
                               type: integer
                               format: int64
+                            publication:
+                              type: object
+                              properties:
+                                eligible:
+                                  type: boolean
+                                epoch:
+                                  type: string
+                                newest_collected_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                oldest_collected_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                sequence:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - eligible
+                                - epoch
+                                - sequence
+                              nullable: true
                             published_at:
                               type: string
                               format: date-time
+                            render_population:
+                              type: object
+                              properties:
+                                eligible:
+                                  type: integer
+                                  format: int64
+                                epoch:
+                                  type: string
+                                first_sequence:
+                                  type: integer
+                                  format: int64
+                                ineligible:
+                                  type: integer
+                                  format: int64
+                                last_sequence:
+                                  type: integer
+                                  format: int64
+                                population:
+                                  type: string
+                                published_eligible:
+                                  type: integer
+                                  format: int64
+                                reference_client:
+                                  type: string
+                                rendered:
+                                  type: integer
+                                  format: int64
+                                superseded:
+                                  type: integer
+                                  format: int64
+                                unknown:
+                                  type: integer
+                                  format: int64
+                                unqualified:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                unreported:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - eligible
+                                - population
+                                - published_eligible
+                                - rendered
+                                - superseded
+                                - unreported
+                              nullable: true
                             sample_age_ms:
                               type: number
                               format: double
@@ -462610,9 +463380,81 @@ paths:
                           missing_metric_windows:
                             type: integer
                             format: int64
+                          publication:
+                            type: object
+                            properties:
+                              eligible:
+                                type: boolean
+                              epoch:
+                                type: string
+                              newest_collected_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              oldest_collected_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              sequence:
+                                type: integer
+                                format: int64
+                            required:
+                              - eligible
+                              - epoch
+                              - sequence
+                            nullable: true
                           published_at:
                             type: string
                             format: date-time
+                          render_population:
+                            type: object
+                            properties:
+                              eligible:
+                                type: integer
+                                format: int64
+                              epoch:
+                                type: string
+                              first_sequence:
+                                type: integer
+                                format: int64
+                              ineligible:
+                                type: integer
+                                format: int64
+                              last_sequence:
+                                type: integer
+                                format: int64
+                              population:
+                                type: string
+                              published_eligible:
+                                type: integer
+                                format: int64
+                              reference_client:
+                                type: string
+                              rendered:
+                                type: integer
+                                format: int64
+                              superseded:
+                                type: integer
+                                format: int64
+                              unknown:
+                                type: integer
+                                format: int64
+                              unqualified:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              unreported:
+                                type: integer
+                                format: int64
+                            required:
+                              - eligible
+                              - population
+                              - published_eligible
+                              - rendered
+                              - superseded
+                              - unreported
+                            nullable: true
                           sample_age_ms:
                             type: number
                             format: double
@@ -477861,9 +478703,81 @@ paths:
                             missing_metric_windows:
                               type: integer
                               format: int64
+                            publication:
+                              type: object
+                              properties:
+                                eligible:
+                                  type: boolean
+                                epoch:
+                                  type: string
+                                newest_collected_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                oldest_collected_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                sequence:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - eligible
+                                - epoch
+                                - sequence
+                              nullable: true
                             published_at:
                               type: string
                               format: date-time
+                            render_population:
+                              type: object
+                              properties:
+                                eligible:
+                                  type: integer
+                                  format: int64
+                                epoch:
+                                  type: string
+                                first_sequence:
+                                  type: integer
+                                  format: int64
+                                ineligible:
+                                  type: integer
+                                  format: int64
+                                last_sequence:
+                                  type: integer
+                                  format: int64
+                                population:
+                                  type: string
+                                published_eligible:
+                                  type: integer
+                                  format: int64
+                                reference_client:
+                                  type: string
+                                rendered:
+                                  type: integer
+                                  format: int64
+                                superseded:
+                                  type: integer
+                                  format: int64
+                                unknown:
+                                  type: integer
+                                  format: int64
+                                unqualified:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                unreported:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - eligible
+                                - population
+                                - published_eligible
+                                - rendered
+                                - superseded
+                                - unreported
+                              nullable: true
                             sample_age_ms:
                               type: number
                               format: double
@@ -485820,9 +486734,81 @@ paths:
                           missing_metric_windows:
                             type: integer
                             format: int64
+                          publication:
+                            type: object
+                            properties:
+                              eligible:
+                                type: boolean
+                              epoch:
+                                type: string
+                              newest_collected_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              oldest_collected_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              sequence:
+                                type: integer
+                                format: int64
+                            required:
+                              - eligible
+                              - epoch
+                              - sequence
+                            nullable: true
                           published_at:
                             type: string
                             format: date-time
+                          render_population:
+                            type: object
+                            properties:
+                              eligible:
+                                type: integer
+                                format: int64
+                              epoch:
+                                type: string
+                              first_sequence:
+                                type: integer
+                                format: int64
+                              ineligible:
+                                type: integer
+                                format: int64
+                              last_sequence:
+                                type: integer
+                                format: int64
+                              population:
+                                type: string
+                              published_eligible:
+                                type: integer
+                                format: int64
+                              reference_client:
+                                type: string
+                              rendered:
+                                type: integer
+                                format: int64
+                              superseded:
+                                type: integer
+                                format: int64
+                              unknown:
+                                type: integer
+                                format: int64
+                              unqualified:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              unreported:
+                                type: integer
+                                format: int64
+                            required:
+                              - eligible
+                              - population
+                              - published_eligible
+                              - rendered
+                              - superseded
+                              - unreported
+                            nullable: true
                           sample_age_ms:
                             type: number
                             format: double
@@ -496403,9 +497389,81 @@ paths:
                             missing_metric_windows:
                               type: integer
                               format: int64
+                            publication:
+                              type: object
+                              properties:
+                                eligible:
+                                  type: boolean
+                                epoch:
+                                  type: string
+                                newest_collected_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                oldest_collected_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                sequence:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - eligible
+                                - epoch
+                                - sequence
+                              nullable: true
                             published_at:
                               type: string
                               format: date-time
+                            render_population:
+                              type: object
+                              properties:
+                                eligible:
+                                  type: integer
+                                  format: int64
+                                epoch:
+                                  type: string
+                                first_sequence:
+                                  type: integer
+                                  format: int64
+                                ineligible:
+                                  type: integer
+                                  format: int64
+                                last_sequence:
+                                  type: integer
+                                  format: int64
+                                population:
+                                  type: string
+                                published_eligible:
+                                  type: integer
+                                  format: int64
+                                reference_client:
+                                  type: string
+                                rendered:
+                                  type: integer
+                                  format: int64
+                                superseded:
+                                  type: integer
+                                  format: int64
+                                unknown:
+                                  type: integer
+                                  format: int64
+                                unqualified:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                unreported:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - eligible
+                                - population
+                                - published_eligible
+                                - rendered
+                                - superseded
+                                - unreported
+                              nullable: true
                             sample_age_ms:
                               type: number
                               format: double
@@ -504350,9 +505408,81 @@ paths:
                           missing_metric_windows:
                             type: integer
                             format: int64
+                          publication:
+                            type: object
+                            properties:
+                              eligible:
+                                type: boolean
+                              epoch:
+                                type: string
+                              newest_collected_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              oldest_collected_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              sequence:
+                                type: integer
+                                format: int64
+                            required:
+                              - eligible
+                              - epoch
+                              - sequence
+                            nullable: true
                           published_at:
                             type: string
                             format: date-time
+                          render_population:
+                            type: object
+                            properties:
+                              eligible:
+                                type: integer
+                                format: int64
+                              epoch:
+                                type: string
+                              first_sequence:
+                                type: integer
+                                format: int64
+                              ineligible:
+                                type: integer
+                                format: int64
+                              last_sequence:
+                                type: integer
+                                format: int64
+                              population:
+                                type: string
+                              published_eligible:
+                                type: integer
+                                format: int64
+                              reference_client:
+                                type: string
+                              rendered:
+                                type: integer
+                                format: int64
+                              superseded:
+                                type: integer
+                                format: int64
+                              unknown:
+                                type: integer
+                                format: int64
+                              unqualified:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              unreported:
+                                type: integer
+                                format: int64
+                            required:
+                              - eligible
+                              - population
+                              - published_eligible
+                              - rendered
+                              - superseded
+                              - unreported
+                            nullable: true
                           sample_age_ms:
                             type: number
                             format: double
@@ -512312,6 +513442,15 @@ paths:
                       observed_at:
                         type: string
                         format: date-time
+                      publication:
+                        type: object
+                        properties:
+                          epoch:
+                            type: string
+                          sequence:
+                            type: integer
+                            format: int64
+                        nullable: true
                       receive_to_render_ms:
                         type: number
                         format: double

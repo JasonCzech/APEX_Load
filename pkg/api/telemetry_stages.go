@@ -80,6 +80,9 @@ type telemetryStageRecorder struct {
 	since    time.Time
 	stages   map[string]*telemetryStageDigest
 	lastSeen map[string]generatorBatchPosition
+	// render is the run's publication ledger and reference-client render
+	// accounting (TEL-A).
+	render telemetryRenderLedger
 }
 
 // generatorBatchPosition is the newest batch a generator's stages were
@@ -122,6 +125,9 @@ func (r *telemetryStageRecorder) adopted(at time.Time) {
 	if r.since.Before(at) {
 		r.since = at.UTC()
 	}
+	// Its publications start a new epoch: the reference client and the
+	// accounting of the earlier ownership do not carry over (TEL-A).
+	r.render = telemetryRenderLedger{}
 }
 
 func (r *telemetryStageRecorder) stageLocked(stage string) *telemetryStageDigest {
@@ -352,6 +358,7 @@ func attachTelemetryStageDistributions(metrics *LiveMetrics, test *ManagedTest) 
 		return
 	}
 	metrics.Telemetry.StageDistributions = test.telemetryStages.snapshot()
+	metrics.Telemetry.RenderPopulation = test.telemetryStages.renderPopulation()
 }
 
 func cloneTelemetryStageDistributions(in []TelemetryStageDistribution) []TelemetryStageDistribution {
@@ -408,14 +415,18 @@ func (tr *TestRunner) persistTelemetryStageDistributions(test *ManagedTest, mani
 	}
 	manifest.TelemetryStageDistributions = recorder.snapshot()
 	manifest.TelemetryStageDigests = recorder.digests()
+	manifest.TelemetryRenderPopulation = recorder.renderPopulation()
 }
 
 // clientRenderSample is one dashboard tab's measured time from receiving a
 // live publication to rendering it.
 type clientRenderSample struct {
 	ReceiveToRenderMs float64   `json:"receive_to_render_ms"`
-	State             string    `json:"state"` // visible, background, disconnected
+	State             string    `json:"state"` // visible, background, disconnected, superseded
 	ObservedAt        time.Time `json:"observed_at"`
+	// Publication names the live publication the sample is about; a newer
+	// tab reports it, an older one does not (TEL-A).
+	Publication *clientRenderPublication `json:"publication,omitempty"`
 }
 
 const (
@@ -439,6 +450,9 @@ func admitClientRenderSample(sample clientRenderSample, runStarted, now time.Tim
 		return false, "background_tab"
 	case "disconnected":
 		return false, "disconnected"
+	case "superseded":
+		// Received, but a newer publication was rendered before it.
+		return false, "superseded"
 	default:
 		return false, "unknown_state"
 	}
