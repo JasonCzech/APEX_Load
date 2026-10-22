@@ -232,3 +232,27 @@ func TestParseCIArgsTelemetryInconclusive(t *testing.T) {
 		t.Fatalf("an unset mapping was sent: %s", encoded)
 	}
 }
+
+// --telemetry-policy names the project telemetry acceptance policy a
+// controller CI run is judged by; it needs controller mode and is omitted when
+// unset, so existing callers keep their derived idempotency keys (TEL-B).
+func TestParseCIArgsTelemetryPolicy(t *testing.T) {
+	base := []string{"--controller-url", "https://apexload.example", "--project-id", "p", "--script-path", "s.json"}
+	args, err := parseCIArgs(append(base, "--telemetry-policy", " strict-gate "))
+	if err != nil || args.telemetryPolicy != "strict-gate" {
+		t.Fatalf("parse = %q %v", args.telemetryPolicy, err)
+	}
+	// project_default is no choice: omitting the flag selects the default.
+	if args, err := parseCIArgs(append(base, "--telemetry-policy", " project_default ")); err != nil || args.telemetryPolicy != "" {
+		t.Fatalf("project_default = %q %v", args.telemetryPolicy, err)
+	}
+	if _, err := parseCIArgs([]string{"--execution-mode", "local", "--publish-check=false", "--script-path", "s.json", "--telemetry-policy", "strict-gate"}); err == nil || !strings.Contains(err.Error(), "controller mode") {
+		t.Fatalf("local mode accepted a telemetry policy: %v", err)
+	}
+	if encoded, _ := json.Marshal(CIRunRequest{ProjectID: "p"}); strings.Contains(string(encoded), "telemetry_acceptance_policy_id") {
+		t.Fatalf("an unset policy was sent: %s", encoded)
+	}
+	if encoded, _ := json.Marshal(CIRunRequest{ProjectID: "p", TelemetryAcceptancePolicyID: "strict-gate"}); !strings.Contains(string(encoded), `"telemetry_acceptance_policy_id":"strict-gate"`) {
+		t.Fatalf("the chosen policy was not sent: %s", encoded)
+	}
+}

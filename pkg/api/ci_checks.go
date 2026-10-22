@@ -835,6 +835,10 @@ func ciGitHubCheckTelemetryLines(verdict *ciTelemetryVerdict) []string {
 	policy := "unknown policy"
 	if verdict.Policy != nil {
 		policy = fmt.Sprintf("%s revision %d", sanitizeCIExternalText(verdict.Policy.Name, 128), verdict.Policy.Revision)
+		// A policy the run chose, rather than the project's default, says so.
+		if verdict.Policy.Source == runPolicySourceSelected {
+			policy += " (chosen by the run)"
+		}
 	}
 	effect := "advisory: never changes the outcome"
 	switch {

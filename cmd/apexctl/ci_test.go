@@ -1044,6 +1044,104 @@ func TestExecuteControllerCIRetryableCreateFailureDoesNotAbortAcceptedRun(t *tes
 	}
 }
 
+// A chosen telemetry policy is sent, changes the derived idempotency key, and
+// must be echoed: a controller that predates policy selection judges the run
+// by the project's default, so apexctl stops the accepted run as soon as its
+// create response lacks the confirmation and reports a configuration error
+// rather than the default's verdict (TEL-B).
+func TestControllerCIRunNeedsTheChosenPolicyConfirmed(t *testing.T) {
+	type create struct {
+		key    string
+		policy string
+	}
+	creates := make(chan create, 4)
+	var echo atomic.Bool
+	var aborts, polls atomic.Int32
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs":
+			var request CIRunRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decode create: %v", err)
+			}
+			creates <- create{key: r.Header.Get("Idempotency-Key"), policy: request.TelemetryAcceptancePolicyID}
+			response := CIRunResponse{SchemaVersion: 1, TestID: "test-1", Status: "COMPLETE", Outcome: ciOutcomePassed}
+			if echo.Load() {
+				response.TelemetryAcceptancePolicyID = request.TelemetryAcceptancePolicyID
+			} else if request.TelemetryAcceptancePolicyID != "" {
+				// An older controller accepted the run and is running it.
+				response.Status, response.Outcome = "RUNNING", ""
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(response)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs/test-1/abort":
+			aborts.Add(1)
+			_, _ = io.WriteString(w, `{"schema_version":1,"test_id":"test-1","status":"ABORTED"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/ci/runs/test-1":
+			polls.Add(1)
+			_, _ = io.WriteString(w, `{"schema_version":1,"test_id":"test-1","status":"RUNNING"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer controller.Close()
+	script := filepath.Join(t.TempDir(), "script.json")
+	if err := os.WriteFile(script, []byte(`{"name":"ci","protocol":"http","actions":[{"name":"home","type":"request","method":"GET","target":"https://example.com"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(policy string) (CIResult, create, error) {
+		t.Helper()
+		args := defaultCIArgs()
+		args.controllerURL, args.projectID, args.scriptPath = controller.URL, "project-1", script
+		args.authMode, args.apiKey = "api-key", "key-1"
+		args.publishCheck, args.requireSLA, args.requireResults = false, false, false
+		args.telemetryPolicy = policy
+		result, err := executeControllerCI(t.Context(), args, nil)
+		select {
+		case sent := <-creates:
+			return result, sent, err
+		default:
+			t.Fatalf("no CI run was created: %#v %v", result, err)
+			return result, create{}, err
+		}
+	}
+	result, unchosen, err := run("")
+	if err != nil || result.Outcome != ciOutcomePassed || unchosen.policy != "" {
+		t.Fatalf("without a choice: %#v %v %+v", result, err, unchosen)
+	}
+	result, unconfirmed, err := run("strict-gate")
+	if unconfirmed.policy != "strict-gate" || unconfirmed.key == unchosen.key {
+		t.Fatalf("the choice was not sent, or kept the unchosen key: %+v %+v", unconfirmed, unchosen)
+	}
+	if err == nil || result.Outcome != ciOutcomeConfigurationError || result.TestID != "test-1" || !strings.Contains(err.Error(), "did not confirm --telemetry-policy") {
+		t.Fatalf("an unconfirmed choice: %#v %v", result, err)
+	}
+	if aborts.Load() != 1 || polls.Load() != 0 {
+		t.Fatalf("an unconfirmed run was observed rather than stopped: %d aborts, %d polls", aborts.Load(), polls.Load())
+	}
+	echo.Store(true)
+	result, confirmed, err := run("strict-gate")
+	if err != nil || result.Outcome != ciOutcomePassed || confirmed.key != unconfirmed.key {
+		t.Fatalf("a confirmed choice: %#v %v %+v", result, err, confirmed)
+	}
+	if aborts.Load() != 1 {
+		t.Fatalf("a confirmed run was aborted: %d aborts", aborts.Load())
+	}
+}
+
+// The job summary names a policy the run chose.
+func TestTelemetryVerdictModeLabelNamesAChosenPolicy(t *testing.T) {
+	verdict := &CITelemetryVerdict{Mode: "fail_ci", Enforced: true, Policy: &CITelemetryPin{ID: "strict-gate", Source: "run_selection"}}
+	if label := telemetryVerdictModeLabel(verdict); label != "fail_ci (decided the outcome); policy chosen by the run" {
+		t.Fatalf("label = %q", label)
+	}
+	verdict.Policy.Source = "project_default"
+	if label := telemetryVerdictModeLabel(verdict); strings.Contains(label, "chosen") {
+		t.Fatalf("a default policy was called chosen: %q", label)
+	}
+}
+
 func TestRequestGitHubIDTokenSendsExactAudience(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("audience"); got != "apexload://controller-1" {
@@ -1407,7 +1505,18 @@ func TestDerivedCIIdempotencyKeySeparatesGateConfiguration(t *testing.T) {
 			WorkflowRef: "octo/apex/.github/workflows/ci.yml@refs/heads/main", RunID: "10", RunAttempt: "1",
 		},
 	}
+	// Pinned: a field added to the derived identity must leave an unset
+	// request's key unchanged, or every retry across an upgrade would create
+	// a second run (this request's key predates telemetry policy selection).
+	if key := deriveCIIdempotencyKey(base); key != "apexload-ci-v1-ec9e1496498dd1215d4024e666cdc167ead611098abd20f7d919a68483a5dc5e" {
+		t.Fatalf("the derived key of an unchanged request changed: %s", key)
+	}
 	changed := base
+	changed.TelemetryAcceptancePolicyID = "strict-gate"
+	if deriveCIIdempotencyKey(base) == deriveCIIdempotencyKey(changed) {
+		t.Fatal("a chosen telemetry policy produced the same idempotency key")
+	}
+	changed = base
 	changed.Execution.VUsers = 20
 	if deriveCIIdempotencyKey(base) == deriveCIIdempotencyKey(changed) {
 		t.Fatal("different gate execution settings produced the same idempotency key")

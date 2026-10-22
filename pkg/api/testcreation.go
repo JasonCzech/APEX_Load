@@ -1445,6 +1445,13 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	telemetryPolicyID, err := tr.validateRunTelemetryAcceptancePolicy(projectID, req.TelemetryAcceptancePolicyID)
+	if err != nil && req.telemetryPolicyInherited && !errors.Is(err, errRunPolicyStoreUnavailable) {
+		err = fmt.Errorf("the source run's chosen telemetry acceptance policy is no longer usable (%w); name another, or %s for the project's default", err, runPolicyProjectDefault)
+	}
+	if err != nil {
+		return nil, err
+	}
 	dynatraceCapture, err := tr.resolveDynatraceCaptureForTest(projectID, req.DynatraceCapture)
 	if err != nil {
 		return nil, err
@@ -1602,6 +1609,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		MonitorBindings:              requestMonitorBindings(req.MonitorBindings),
 		TraceContext:                 traceContext,
 		JointEvidence:                jointEvidence,
+		TelemetryAcceptancePolicyID:  telemetryPolicyID,
 		TotalVUsers:                  totalVUsers,
 		Duration:                     dur,
 		DurationStr:                  req.Duration,
@@ -2046,6 +2054,12 @@ func createTestRequestFromScenarioRevision(req CreateTestRequest, scenario *Stor
 		// a revised copy keeps it unless the request names another.
 		if req.JointEvidence == nil {
 			req.JointEvidence = revisionSource.JointEvidence.Clone()
+		}
+		// So is its chosen telemetry acceptance policy; project_default
+		// drops it.
+		if strings.TrimSpace(req.TelemetryAcceptancePolicyID) == "" && revisionSource.TelemetryAcceptancePolicyID != "" {
+			req.TelemetryAcceptancePolicyID = revisionSource.TelemetryAcceptancePolicyID
+			req.telemetryPolicyInherited = true
 		}
 	} else if scenario != nil {
 		req.Name = firstNonEmpty(req.Name, scenario.Name)

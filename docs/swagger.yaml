@@ -51511,6 +51511,8 @@ paths:
                       type: string
                     workflow_ref:
                       type: string
+                telemetry_acceptance_policy_id:
+                  type: string
                 telemetry_inconclusive:
                   type: string
       responses:
@@ -51662,6 +51664,8 @@ paths:
                   status:
                     type: string
                   status_url:
+                    type: string
+                  telemetry_acceptance_policy_id:
                     type: string
                   telemetry_verdict:
                     type: object
@@ -52018,6 +52022,8 @@ paths:
                     type: string
                   status_url:
                     type: string
+                  telemetry_acceptance_policy_id:
+                    type: string
                   telemetry_verdict:
                     type: object
                     properties:
@@ -52343,6 +52349,8 @@ paths:
                   status:
                     type: string
                   status_url:
+                    type: string
+                  telemetry_acceptance_policy_id:
                     type: string
                   telemetry_verdict:
                     type: object
@@ -64194,6 +64202,8 @@ paths:
                                   type: string
                                 stopped_by_subject:
                                   type: string
+                                telemetry_acceptance_policy_id:
+                                  type: string
                                 telemetry_health:
                                   type: object
                                   description: 'Go type: TelemetryRunHealth'
@@ -72838,6 +72848,8 @@ paths:
                         actions:
                           type: object
                           properties:
+                            allow_telemetry_policy_selection:
+                              type: boolean
                             allowed_environments:
                               type: array
                               items:
@@ -73192,6 +73204,8 @@ paths:
                           actions:
                             type: object
                             properties:
+                              allow_telemetry_policy_selection:
+                                type: boolean
                               allowed_environments:
                                 type: array
                                 items:
@@ -73450,6 +73464,8 @@ paths:
                         actions:
                           type: object
                           properties:
+                            allow_telemetry_policy_selection:
+                              type: boolean
                             allowed_environments:
                               type: array
                               items:
@@ -73678,6 +73694,8 @@ paths:
                           actions:
                             type: object
                             properties:
+                              allow_telemetry_policy_selection:
+                                type: boolean
                               allowed_environments:
                                 type: array
                                 items:
@@ -74629,6 +74647,8 @@ paths:
                   actions:
                     type: object
                     properties:
+                      allow_telemetry_policy_selection:
+                        type: boolean
                       allowed_environments:
                         type: array
                         items:
@@ -74766,6 +74786,8 @@ paths:
                 actions:
                   type: object
                   properties:
+                    allow_telemetry_policy_selection:
+                      type: boolean
                     allowed_environments:
                       type: array
                       items:
@@ -87629,6 +87651,8 @@ paths:
                           actions:
                             type: object
                             properties:
+                              allow_telemetry_policy_selection:
+                                type: boolean
                               allowed_environments:
                                 type: array
                                 items:
@@ -92115,6 +92139,8 @@ paths:
                     preparation_id:
                       type: string
                   nullable: true
+                telemetry_acceptance_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 test:
@@ -93213,6 +93239,8 @@ paths:
                     script_shakeout:
                       type: boolean
                     start_delay:
+                      type: string
+                    telemetry_acceptance_policy_id:
                       type: string
                     termination_mode:
                       type: string
@@ -100564,6 +100592,8 @@ paths:
                         type: string
                       stopped_by_subject:
                         type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
                       telemetry_health:
                         type: object
                         properties:
@@ -100851,6 +100881,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
           content:
             application/json:
               schema:
@@ -107924,6 +107960,8 @@ paths:
                       stopped_by_display_name:
                         type: string
                       stopped_by_subject:
+                        type: string
+                      telemetry_acceptance_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -115286,6 +115324,8 @@ paths:
                       stopped_by_display_name:
                         type: string
                       stopped_by_subject:
+                        type: string
+                      telemetry_acceptance_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -122661,6 +122701,8 @@ paths:
                         type: string
                       stopped_by_subject:
                         type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
                       telemetry_health:
                         type: object
                         properties:
@@ -130034,6 +130076,8 @@ paths:
                       stopped_by_display_name:
                         type: string
                       stopped_by_subject:
+                        type: string
+                      telemetry_acceptance_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -137409,6 +137453,8 @@ paths:
                         type: string
                       stopped_by_subject:
                         type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
                       telemetry_health:
                         type: object
                         properties:
@@ -144782,6 +144828,8 @@ paths:
                       stopped_by_display_name:
                         type: string
                       stopped_by_subject:
+                        type: string
+                      telemetry_acceptance_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -359314,6 +359362,8 @@ paths:
                   type: boolean
                 start_delay:
                   type: string
+                telemetry_acceptance_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 timeslot_id:
@@ -376442,6 +376492,8 @@ paths:
                   stopped_by_display_name:
                     type: string
                   stopped_by_subject:
+                    type: string
+                  telemetry_acceptance_policy_id:
                     type: string
                   telemetry_health:
                     type: object
@@ -393903,6 +393955,8 @@ paths:
                   stopped_by_display_name:
                     type: string
                   stopped_by_subject:
+                    type: string
+                  telemetry_acceptance_policy_id:
                     type: string
                   telemetry_health:
                     type: object
@@ -448623,6 +448677,8 @@ paths:
                     type: string
                   stopped_by_subject:
                     type: string
+                  telemetry_acceptance_policy_id:
+                    type: string
                   telemetry_health:
                     type: object
                     properties:
@@ -465920,6 +465976,8 @@ paths:
                   stopped_by_display_name:
                     type: string
                   stopped_by_subject:
+                    type: string
+                  telemetry_acceptance_policy_id:
                     type: string
                   telemetry_health:
                     type: object
@@ -489282,6 +489340,8 @@ paths:
                   stopped_by_display_name:
                     type: string
                   stopped_by_subject:
+                    type: string
+                  telemetry_acceptance_policy_id:
                     type: string
                   telemetry_health:
                     type: object
@@ -516040,6 +516100,8 @@ paths:
                   type: boolean
                 start_delay:
                   type: string
+                telemetry_acceptance_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 timeslot_id:
@@ -518894,6 +518956,8 @@ paths:
                 script_shakeout:
                   type: boolean
                 start_delay:
+                  type: string
+                telemetry_acceptance_policy_id:
                   type: string
                 termination_mode:
                   type: string

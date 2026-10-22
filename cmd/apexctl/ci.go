@@ -139,6 +139,7 @@ type ciArgs struct {
 	githubSummary            string
 	idempotencyKey           string
 	telemetryInconclusive    string
+	telemetryPolicy          string
 }
 
 type optionalFloat struct{ value **float64 }
@@ -242,6 +243,7 @@ func parseCIArgs(arguments []string) (ciArgs, error) {
 	fs.StringVar(&args.githubSummary, "github-summary", "", "GitHub job summary file")
 	fs.StringVar(&args.idempotencyKey, "idempotency-key", "", "explicit idempotency key")
 	fs.StringVar(&args.telemetryInconclusive, "telemetry-inconclusive", "", "map an inconclusive fail_ci telemetry verdict: pass or fail (no default)")
+	fs.StringVar(&args.telemetryPolicy, "telemetry-policy", "", "judge the run by this project telemetry acceptance policy (its ID) instead of the project's default")
 	if err := fs.Parse(arguments); err != nil {
 		return args, err
 	}
@@ -255,6 +257,11 @@ func parseCIArgs(arguments []string) (ciArgs, error) {
 	args.scriptPath = strings.TrimSpace(args.scriptPath)
 	args.scriptID = strings.TrimSpace(args.scriptID)
 	args.telemetryInconclusive = strings.ToLower(strings.TrimSpace(args.telemetryInconclusive))
+	// project_default is the project's default, which omitting the flag
+	// already selects.
+	if args.telemetryPolicy = strings.TrimSpace(args.telemetryPolicy); args.telemetryPolicy == "project_default" {
+		args.telemetryPolicy = ""
+	}
 	return args, validateCIArgs(args)
 }
 
@@ -291,6 +298,9 @@ func validateCIArgs(args ciArgs) error {
 	if args.executionMode == "local" {
 		if args.telemetryInconclusive != "" {
 			return fmt.Errorf("--telemetry-inconclusive requires controller mode")
+		}
+		if args.telemetryPolicy != "" {
+			return fmt.Errorf("--telemetry-policy requires controller mode")
 		}
 		if args.monitorBindingsFile != "" || args.monitorRulesFile != "" {
 			return fmt.Errorf("monitoring configuration requires controller mode")
@@ -666,6 +676,7 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 			RequireSLA: args.requireSLA, RequireResults: args.requireResults,
 		},
 		Source: sourceFromEnvironment(), PublishCheck: args.publishCheck, TelemetryInconclusive: args.telemetryInconclusive,
+		TelemetryAcceptancePolicyID: args.telemetryPolicy,
 	}
 	if len(rawScript) > 0 {
 		request.Script = json.RawMessage(rawScript)
@@ -688,8 +699,24 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 	client := NewApiClientWithAuth(args.controllerURL, clientAPIKey, "")
 	auth := &ciAuthSession{mode: strings.ToLower(args.authMode), projectID: args.projectID}
 	coordinator := newCIRequestCoordinator(auth, client)
+	// A controller that predates policy selection ignores the choice and
+	// judges the run by the project's default: never report that as a pass.
+	// The accepted run is stopped as soon as its create response shows it,
+	// instead of spending the whole load first.
+	chosen := request.TelemetryAcceptancePolicyID
+	unconfirmed := func() error {
+		return ciConfigurationErrorf("the controller did not confirm --telemetry-policy %q, so the run would be judged by the project's default telemetry policy; upgrade the controller", chosen)
+	}
+	unconfirmedTestID := ""
 	coordinator.Transport.Create = func(ctx context.Context) (*CIRunResponse, error) {
-		return client.CreateCIRun(ctx, request, idempotencyKey)
+		response, err := client.CreateCIRun(ctx, request, idempotencyKey)
+		if err == nil && chosen != "" && (response == nil || response.TelemetryAcceptancePolicyID != chosen) {
+			if response != nil {
+				unconfirmedTestID = response.TestID
+			}
+			return nil, unconfirmed()
+		}
+		return response, err
 	}
 	persistEvidence := func(state ciclient.State[*CIRunResponse], err error) {
 		persistCICoreEvidenceBeforeAbort(args, controllerCIResult(state, err))
@@ -698,8 +725,18 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 	coordinator.OnObservationFailure = persistEvidence
 	state, err := coordinator.Run(ctx, deterministicCITestID(args.projectID, idempotencyKey), args.abortOnCancel)
 	result := controllerCIResult(state, err)
+	if unconfirmedTestID != "" {
+		result.TestID = unconfirmedTestID
+		if abortErr := abortControllerCIRun(context.WithoutCancel(ctx), auth, client, unconfirmedTestID, ""); abortErr != nil {
+			err = errors.Join(err, fmt.Errorf("controller may still be running the unconfirmed CI load: %w", abortErr))
+		}
+	}
 	if err != nil {
 		return result, err
+	}
+	if chosen != "" && (state.Response == nil || state.Response.TelemetryAcceptancePolicyID != chosen) {
+		result.Outcome = ciOutcomeConfigurationError
+		return result, unconfirmed()
 	}
 	classifyCIResult(&result)
 	if checkErr := enforceRequiredCICheck(args, state.Response, &result); checkErr != nil {
@@ -1460,8 +1497,11 @@ func deriveCIIdempotencyKey(request CIRunRequest) string {
 		Execution       CIExecution               `json:"execution"`
 		Goals           CIGoals                   `json:"goals"`
 		MonitorBindings *[]storage.MonitorBinding `json:"monitor_bindings,omitempty"`
+		// Omitted when unset, so existing derived keys are unchanged.
+		TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
 	}{
 		Name: request.Name, ReleaseID: request.ReleaseID, Execution: request.Execution, Goals: request.Goals, MonitorBindings: request.MonitorBindings,
+		TelemetryAcceptancePolicyID: request.TelemetryAcceptancePolicyID,
 	})
 	raw := strings.Join([]string{
 		request.Source.ServerURL, request.Source.RepositoryID, request.Source.Repository,
@@ -1852,11 +1892,16 @@ Authentication:
   Use --auth-mode=api-key with APEXLOAD_API_KEY for the scoped fallback.
 
 Telemetry acceptance:
+  --telemetry-policy ID  Judge the run by this project telemetry acceptance
+                         policy instead of the project's default, where the
+                         project's CI policy allows it. The controller must
+                         confirm the choice, or the run is a configuration
+                         error.
   --telemetry-inconclusive pass|fail
                          How an inconclusive telemetry verdict maps when the
-                         project's acceptance policy is fail_ci. No default:
-                         the controller refuses a fail_ci run without it.
-                         An advisory policy never changes the exit code.
+                         run's acceptance policy is fail_ci. No default: the
+                         controller refuses a fail_ci run without it. An
+                         advisory policy never changes the exit code.
 
 Evidence:
   --json PATH            JSON result path (default apexload-result.json)
@@ -1882,6 +1927,9 @@ func telemetryVerdictModeLabel(verdict *CITelemetryVerdict) string {
 	}
 	if verdict.InconclusivePolicy != "" {
 		label += "; inconclusive maps to " + verdict.InconclusivePolicy
+	}
+	if verdict.Policy != nil && verdict.Policy.Source == "run_selection" {
+		label += "; policy chosen by the run"
 	}
 	return label
 }

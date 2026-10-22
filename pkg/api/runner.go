@@ -637,6 +637,11 @@ type ManagedTest struct {
 	TelemetryHealth       *TelemetryRunHealth                      `json:"telemetry_health,omitempty"`
 	Error                 string                                   `json:"error,omitempty"`
 
+	// TelemetryAcceptancePolicyID names the project telemetry acceptance
+	// policy the run asked for instead of the project's default (TEL-B); its
+	// revision is pinned at Start.
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+
 	// deprecated single-script fields kept for backwards compat in JSON
 	ScriptID   string `json:"script_id,omitempty"`
 	ScriptName string `json:"script_name,omitempty"`
@@ -2311,6 +2316,14 @@ type CreateTestRequest struct {
 	RuntimeSettings  *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
 	ELKCapture       *ELKCaptureConfig        `json:"elk_capture,omitempty"`
 	DynatraceCapture *DynatraceCaptureConfig  `json:"dynatrace_capture,omitempty"`
+
+	// TelemetryAcceptancePolicyID chooses one of the project's telemetry
+	// acceptance policies instead of its default; a revised copy keeps its
+	// source's choice unless it names another, or project_default.
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// telemetryPolicyInherited says the choice came from the revision
+	// source, for an error that names where it came from.
+	telemetryPolicyInherited bool
 
 	scriptShakeoutProvided   bool
 	resourceBaselineProvided bool

@@ -97,6 +97,9 @@ type CIRunRequest struct {
 	// TelemetryInconclusive maps an inconclusive telemetry verdict under a
 	// fail_ci acceptance policy (pass or fail); omitted when unset.
 	TelemetryInconclusive string `json:"telemetry_inconclusive,omitempty"`
+	// TelemetryAcceptancePolicyID judges the run by one of the project's
+	// telemetry acceptance policies instead of its default; omitted when unset.
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
 }
 
 type CIMetrics struct {
@@ -140,6 +143,9 @@ type CIRunResponse struct {
 	// TelemetryVerdict is the run's telemetry acceptance verdict, beside the
 	// application outcome; absent when no acceptance policy applied.
 	TelemetryVerdict *CITelemetryVerdict `json:"telemetry_verdict,omitempty"`
+	// TelemetryAcceptancePolicyID echoes the run's chosen telemetry
+	// acceptance policy; controllers before policy selection omit it.
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
 }
 
 // CITelemetryVerdict is a run's telemetry acceptance verdict (pass, fail or
@@ -163,6 +169,8 @@ type CITelemetryPin struct {
 	Name     string `json:"name"`
 	Revision int64  `json:"revision"`
 	SHA256   string `json:"sha256,omitempty"`
+	// Source is project_default, or run_selection for a policy the run chose.
+	Source string `json:"source,omitempty"`
 }
 
 func (v *CITelemetryVerdict) clone() *CITelemetryVerdict {

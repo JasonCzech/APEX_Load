@@ -106,8 +106,12 @@ inputs:
     description: Optional unique key for this gate. Set it when one workflow run executes multiple gates for the same script.
     required: false
     default: ""
+  telemetry-policy:
+    description: ID of the project telemetry acceptance policy to judge the run by, instead of the project's default. The project's CI policy must allow it (allow_telemetry_policy_selection).
+    required: false
+    default: ""
   telemetry-inconclusive:
-    description: How an inconclusive telemetry acceptance verdict maps under a fail_ci policy (pass or fail). Required by the controller when the project's acceptance policy is fail_ci; there is no default.
+    description: How an inconclusive telemetry acceptance verdict maps under a fail_ci policy (pass or fail). Required by the controller when the run's acceptance policy (its chosen one, or the project's default) is fail_ci; there is no default.
     required: false
     default: ""
   apexctl-version:
@@ -236,6 +240,7 @@ runs:
         APEXLOAD_INPUT_EVIDENCE_DIRECTORY: ${{ inputs.evidence-directory }}
         APEXLOAD_INPUT_IDEMPOTENCY_KEY: ${{ inputs.idempotency-key }}
         APEXLOAD_INPUT_TELEMETRY_INCONCLUSIVE: ${{ inputs.telemetry-inconclusive }}
+        APEXLOAD_INPUT_TELEMETRY_POLICY: ${{ inputs.telemetry-policy }}
         # These values come from GitHub's immutable workflow expression
         # context. apexctl deliberately does not trust the mutable event JSON
         # file for pull-request repository identity.

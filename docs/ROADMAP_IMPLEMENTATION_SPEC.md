@@ -84,6 +84,12 @@ Before TEL-C, resolve the observed generator stage-budget mismatch from measured
 
 Keep the admission receipt immutable. Implement explicitly requested, authorized in-run policy/cadence changes as append-only durable segments with exact effective boundary and revision. A settings edit alone does not change a running test. Retry creates one segment; failed persistence leaves the old segment active. A measurement spanning a boundary is assigned only using its actual observation times; otherwise it is unscored, never proportionally invented. Re-evaluation selects immutable segments without rewriting historical verdicts.
 
+The [policy selection slice](qa/reviews/roadmap-telemetry-policy-selection-2026-10-22/README.md) lets a run choose a non-default project telemetry acceptance policy, through direct run creation, revised copies and CI (`apexctl ci run --telemetry-policy`, where the project's CI policy allows it). The policy is validated at creation, persisted with the run (schema v74) and pinned at Start as `run_selection`. A choice that is gone by Start refuses Start, and CI's inconclusive-mapping requirement follows the chosen policy. Still open:
+- dashboard selection;
+- plain `apexctl run`;
+- scheduled and execution-plan runs;
+- a chosen budget (`telemetry_policy`).
+
 Extend existing comparison, CLI and report projections to expose policy identity, clock qualification, coverage denominators, exclusions, loss lower bounds and stage/end-to-end distributions. Add explicit non-default policy selection where required by TEL-3. Application and telemetry acceptance remain separate; advisory degradation does not stop load. Legacy unfrozen policy remains inconclusive.
 
 Use the existing incident/notification persistence boundary for durable idempotent dispatch and bounded authorized evidence links. A successful claim followed by a dispatch crash must remain retryable. Outcome identity includes run incarnation, policy/assessment revision and verdict, so retries do not create duplicate incidents. Keep payloads scrubbed.

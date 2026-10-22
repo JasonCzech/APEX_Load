@@ -815,20 +815,99 @@ func projectDefaultPolicy(store storage.AnalysisDefinitionStore, project, kind s
 	return found, nil
 }
 
-// resolveRunPolicyPins returns the default policy revisions for a project, in
-// stable kind order, and the telemetry acceptance policy's definition to
-// freeze beside its pin. Stores without analysis definitions have no
-// policies.
-func (tr *TestRunner) resolveRunPolicyPins(projectID string) ([]RunPolicyPin, *TelemetryAcceptancePolicySnapshot, error) {
+// projectPolicyByID is one of a project's live policies of a kind, by ID,
+// validated; nil when the project has none by that ID.
+func projectPolicyByID(store storage.AnalysisDefinitionStore, project, kind, id string) (*storage.AnalysisDefinition, error) {
+	live, err := liveAnalysisPolicies(store, project, kind)
+	if err != nil {
+		return nil, err
+	}
+	for index := range live {
+		if live[index].ID != id {
+			continue
+		}
+		found := live[index]
+		if _, err := decodeAnalysisPolicy(kind, found.Definition); err != nil {
+			return nil, fmt.Errorf("%w: %s policy %q is invalid: %v", errRunPolicyConfiguration, kind, found.Name, err)
+		}
+		return &found, nil
+	}
+	return nil, nil
+}
+
+// runPolicySourceSelected marks a policy pin the run asked for by ID, rather
+// than its project's default.
+const runPolicySourceSelected = "run_selection"
+
+// runPolicyProjectDefault chooses the project's default telemetry acceptance
+// policy explicitly, so a revised copy can drop its source's choice.
+const runPolicyProjectDefault = "project_default"
+
+// errRunPolicyStoreUnavailable marks a policy read that failed: retryable,
+// never a refusal of the run.
+var errRunPolicyStoreUnavailable = errors.New("the project's policies could not be read")
+
+// validateRunTelemetryAcceptancePolicy checks a run's chosen telemetry
+// acceptance policy (TEL-B): one of its project's live, valid policies of
+// that kind. Empty or project_default chooses the project's default. A
+// policy the project lacks is refused, an invalid one is an
+// errRunPolicyConfiguration, and a failed read is errRunPolicyStoreUnavailable.
+func (tr *TestRunner) validateRunTelemetryAcceptancePolicy(projectID, id string) (string, error) {
+	id = strings.TrimSpace(id)
+	if id == "" || id == runPolicyProjectDefault {
+		return "", nil
+	}
+	if len(id) > 128 {
+		return "", errors.New("telemetry_acceptance_policy_id exceeds 128 bytes")
+	}
 	store, ok := tr.testStore.(storage.AnalysisDefinitionStore)
 	if !ok || store == nil {
+		return "", errors.New("telemetry acceptance policies are unavailable")
+	}
+	policy, err := projectPolicyByID(store, normalizeProjectID(projectID), storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, id)
+	if err != nil && !errors.Is(err, errRunPolicyConfiguration) {
+		return "", fmt.Errorf("%w: %v", errRunPolicyStoreUnavailable, err)
+	}
+	if err != nil {
+		return "", err
+	}
+	if policy == nil {
+		return "", fmt.Errorf("telemetry acceptance policy %q was not found in the run's project", id)
+	}
+	return id, nil
+}
+
+// resolveRunPolicyPins returns the policy revisions a run is judged by, in
+// stable kind order: each kind's project default, except the telemetry
+// acceptance policy the run chose (selectedAcceptance), and that policy's
+// definition to freeze beside its pin. A chosen policy that is gone refuses
+// Start rather than falling back to the default. Stores without analysis
+// definitions have no policies.
+func (tr *TestRunner) resolveRunPolicyPins(projectID, selectedAcceptance string) ([]RunPolicyPin, *TelemetryAcceptancePolicySnapshot, error) {
+	store, ok := tr.testStore.(storage.AnalysisDefinitionStore)
+	if !ok || store == nil {
+		if strings.TrimSpace(selectedAcceptance) != "" {
+			return nil, nil, fmt.Errorf("%w: the run's chosen telemetry acceptance policy cannot be read here", errRunPolicyConfiguration)
+		}
 		return nil, nil, nil
 	}
 	projectID = normalizeProjectID(projectID)
+	selectedAcceptance = strings.TrimSpace(selectedAcceptance)
 	pins := []RunPolicyPin{}
 	var acceptance *TelemetryAcceptancePolicySnapshot
 	for _, kind := range storage.AnalysisPolicyKinds {
-		policy, err := projectDefaultPolicy(store, projectID, kind)
+		source := "project_default"
+		var policy *storage.AnalysisDefinition
+		var err error
+		if kind == storage.AnalysisDefinitionKindTelemetryAcceptancePolicy && selectedAcceptance != "" {
+			source = runPolicySourceSelected
+			policy, err = projectPolicyByID(store, projectID, kind, selectedAcceptance)
+			if err == nil && policy == nil {
+				err = fmt.Errorf("%w: the run's chosen telemetry acceptance policy %q no longer exists", errRunPolicyConfiguration, selectedAcceptance)
+			}
+		} else {
+			policy, err = projectDefaultPolicy(store, projectID, kind)
+		}
 		if err != nil {
 			return nil, nil, fmt.Errorf("resolve %s policy: %w", kind, err)
 		}
@@ -836,14 +915,14 @@ func (tr *TestRunner) resolveRunPolicyPins(projectID string) ([]RunPolicyPin, *T
 			continue
 		}
 		digest := sha256.Sum256(policy.Definition)
-		pin := RunPolicyPin{Kind: kind, ID: policy.ID, Name: policy.Name, Revision: policy.Revision, SHA256: hex.EncodeToString(digest[:]), Source: "project_default"}
+		pin := RunPolicyPin{Kind: kind, ID: policy.ID, Name: policy.Name, Revision: policy.Revision, SHA256: hex.EncodeToString(digest[:]), Source: source}
 		pins = append(pins, pin)
 		if kind == storage.AnalysisDefinitionKindTelemetryAcceptancePolicy {
 			// The run's verdict is judged by this exact definition (C7),
-			// already validated by projectDefaultPolicy.
+			// already validated.
 			acceptance = &TelemetryAcceptancePolicySnapshot{Pin: pin}
 			if err := json.Unmarshal(policy.Definition, &acceptance.Definition); err != nil {
-				return nil, nil, fmt.Errorf("%w: default %s policy %q is invalid: %v", errRunPolicyConfiguration, kind, policy.Name, err)
+				return nil, nil, fmt.Errorf("%w: %s policy %q is invalid: %v", errRunPolicyConfiguration, kind, policy.Name, err)
 			}
 		}
 	}

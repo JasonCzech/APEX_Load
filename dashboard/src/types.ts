@@ -456,6 +456,8 @@ export interface GitHubActionsPolicy {
   updated_by?: string
   /** Fails CI runs whose validity is "invalid", or with "suspect" also suspect runs; empty is advisory. */
   validity_gate?: '' | 'invalid' | 'suspect'
+  /** Lets a CI run choose which of the project's telemetry acceptance policies judges it; off, CI runs use the default. */
+  allow_telemetry_policy_selection?: boolean
 }
 
 export interface Application {

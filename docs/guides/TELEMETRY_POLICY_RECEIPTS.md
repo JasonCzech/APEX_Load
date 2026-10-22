@@ -39,7 +39,20 @@ queues a `telemetry_acceptance` evaluation (`POST /api/v1/analysis/evaluations`)
 
 ## Telemetry acceptance verdicts
 
-A project `telemetry_acceptance_policy` judges a run's telemetry, apart from its application verdict. The policy that applies by default is pinned when the run starts, and its definition is frozen in the admission receipt beside the pin (`provenance.telemetry_acceptance_policy`), so a later edit never reinterprets the run. Its criteria are optional, but at least one is required:
+A project `telemetry_acceptance_policy` judges a run's telemetry, apart from its application verdict. The policy that applies by default is pinned when the run starts, and its definition is frozen in the admission receipt beside the pin (`provenance.telemetry_acceptance_policy`), so a later edit never reinterprets the run.
+
+A run can instead choose one of its project's acceptance policies by ID: `telemetry_acceptance_policy_id` on `POST /api/v1/tests` or `POST /api/v1/ci/runs` (`apexctl ci run --telemetry-policy`, action input `telemetry-policy`).
+- **At creation**, the policy must be one of the project's live, valid acceptance policies:
+  - one the project lacks is refused (`400`);
+  - an invalid one is refused with `409`;
+  - a failed read gets `503` (retry).
+- **CI runs** may choose only where the project's GitHub Actions policy sets `allow_telemetry_policy_selection`. Otherwise a choice is refused (`403`), so a pipeline cannot exchange a `fail_ci` default for a weaker policy. Naming `project_default` is no choice and needs no permission. The CI response echoes the choice. `apexctl` stops a run whose create response does not echo it, and exits with a configuration error. An exact retry of an accepted CI run returns that run even if its choice was since disallowed or deleted.
+- **Revised copies.** A revised copy of a queued run keeps its source's choice unless it names another, or `project_default` to use the project's default.
+- **At Start**, the chosen policy's current revision is pinned with source `run_selection`, in place of the default. A chosen policy that is gone or invalid by Start refuses Start, as an invalid default does, rather than falling back to the default. A direct Start leaves the run queued.
+- **Default changes.** Changing the project's default never changes a run's choice.
+- **Remote runs** forward the choice to the remote controller, which checks it against the remote project's policies. A remote controller that does not echo the choice would judge the run by its project's default, so its run is deleted before it starts and the create is refused (`409`).
+
+A policy's criteria are optional, but at least one is required:
 
 | Criterion | Evidence | Passes when |
 | --- | --- | --- |

@@ -264,11 +264,11 @@ func TestCreateCIRunRequiresAnInconclusiveMappingUnderAFailCIPolicy(t *testing.T
 func TestCreateCIRunAcceptsAnAdvisoryPolicyWithoutAMapping(t *testing.T) {
 	server, store := newCIContractTestServer(t, ciRunSourceTestPolicy())
 	seedPolicy(t, store, "project-ci", "gate", storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, `{"version":1,"apply_by_default":true,"min_wall_time_coverage":0.9}`)
-	if status, message := server.ciTelemetryInconclusiveRequirement("project-ci", ""); status != 0 {
+	if status, message := server.ciTelemetryInconclusiveRequirement("project-ci", "", ""); status != 0 {
 		t.Fatalf("advisory default = %d %s", status, message)
 	}
 	seedPolicy(t, store, "project-ci", "second", storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, `{"version":1,"apply_by_default":true,"mode":"fail_ci","max_loss_ratio":0}`)
-	if status, _ := server.ciTelemetryInconclusiveRequirement("project-ci", ""); status != http.StatusConflict {
+	if status, _ := server.ciTelemetryInconclusiveRequirement("project-ci", "", ""); status != http.StatusConflict {
 		t.Fatalf("ambiguous defaults = %d", status)
 	}
 }

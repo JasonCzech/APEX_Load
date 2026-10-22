@@ -109,12 +109,17 @@ type ciRunCreateRequest struct {
 	Source          ciRunSource               `json:"source"`
 	PublishCheck    *bool                     `json:"publish_check,omitempty"`
 	// TelemetryInconclusive maps an inconclusive telemetry verdict under a
-	// fail_ci acceptance policy: pass or fail. It has no default; a project
-	// whose default acceptance policy is fail_ci requires it (C7).
+	// fail_ci acceptance policy: pass or fail. It has no default; a run whose
+	// acceptance policy (its chosen one, or the project's default) is fail_ci
+	// requires it (C7).
 	TelemetryInconclusive string `json:"telemetry_inconclusive,omitempty"`
 	// JointEvidence chooses the run's joint evidence v4 projection, as on a
 	// direct run create; a CI run has no scenario to inherit one from.
 	JointEvidence *engine.JointProjection `json:"joint_evidence,omitempty"`
+	// TelemetryAcceptancePolicyID chooses one of the project's telemetry
+	// acceptance policies instead of its default (TEL-B), as on a direct run
+	// create.
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
 }
 
 func (r ciRunCreateRequest) shouldPublishCheck() bool {
@@ -150,6 +155,9 @@ type ciRunMetadata struct {
 	// JointEvidence is the run's requested joint evidence projection, part of
 	// the request a retry under the same key must repeat.
 	JointEvidence *engine.JointProjection `json:"joint_evidence,omitempty"`
+	// TelemetryAcceptancePolicyID is the run's chosen telemetry acceptance
+	// policy, part of the request a retry under the same key must repeat.
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
 }
 
 type ciRunResponse struct {
@@ -187,6 +195,9 @@ type ciRunResponse struct {
 	// TelemetryVerdict is the run's telemetry acceptance verdict, beside the
 	// application outcome; only a fail_ci policy changes Outcome (C7).
 	TelemetryVerdict *ciTelemetryVerdict `json:"telemetry_verdict,omitempty"`
+	// TelemetryAcceptancePolicyID echoes the telemetry acceptance policy the
+	// run chose, so a client can tell a controller that ignored the choice.
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
 }
 
 type ciAbortRequest struct {
@@ -219,6 +230,11 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.JointEvidence = jointEvidence
+	// Naming project_default is the same as naming no policy: a CI run has
+	// no source run or scenario whose choice it could drop.
+	if req.TelemetryAcceptancePolicyID = strings.TrimSpace(req.TelemetryAcceptancePolicyID); req.TelemetryAcceptancePolicyID == runPolicyProjectDefault {
+		req.TelemetryAcceptancePolicyID = ""
+	}
 	project, err := s.store.GetProject(req.ProjectID)
 	if err != nil || project == nil {
 		writeError(w, http.StatusNotFound, "project not found")
@@ -288,7 +304,7 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "telemetry_inconclusive must be pass or fail")
 		return
 	}
-	metadata := ciRunMetadata{MonitorBindings: req.MonitorBindings, SchemaVersion: ciRunSchemaVersion, Source: req.Source, Name: strings.TrimSpace(req.Name), ReleaseID: strings.TrimSpace(req.ReleaseID), ScriptPath: firstNonEmpty(req.ScriptPath, req.Source.ScriptPath), ScriptIdentity: scriptIdentity, Execution: req.Execution, Goals: req.Goals, RequireSLA: req.Goals.RequireSLA, RequireResults: req.Goals.RequireResults, PublishCheck: req.shouldPublishCheck(), CheckInstallationID: githubPolicy.AppInstallationID, PolicyRevision: policy.Revision, ValidityGate: policy.ValidityGate, IdempotencySHA: sha256String(idempotencyKey), DeploymentLeaseTokenSHA: deploymentLeaseTokenSHA, TelemetryInconclusive: req.TelemetryInconclusive, JointEvidence: req.JointEvidence.Clone()}
+	metadata := ciRunMetadata{MonitorBindings: req.MonitorBindings, SchemaVersion: ciRunSchemaVersion, Source: req.Source, Name: strings.TrimSpace(req.Name), ReleaseID: strings.TrimSpace(req.ReleaseID), ScriptPath: firstNonEmpty(req.ScriptPath, req.Source.ScriptPath), ScriptIdentity: scriptIdentity, Execution: req.Execution, Goals: req.Goals, RequireSLA: req.Goals.RequireSLA, RequireResults: req.Goals.RequireResults, PublishCheck: req.shouldPublishCheck(), CheckInstallationID: githubPolicy.AppInstallationID, PolicyRevision: policy.Revision, ValidityGate: policy.ValidityGate, IdempotencySHA: sha256String(idempotencyKey), DeploymentLeaseTokenSHA: deploymentLeaseTokenSHA, TelemetryInconclusive: req.TelemetryInconclusive, JointEvidence: req.JointEvidence.Clone(), TelemetryAcceptancePolicyID: req.TelemetryAcceptancePolicyID}
 	existing, existingOK := s.runner.GetTest(testID)
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	runActor := testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
@@ -305,6 +321,28 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 	// attempt. New attempts continue through current script/policy validation.
 	var script *dsl.Script
 	if !existingOK {
+		// A new run chooses its telemetry acceptance policy only where the
+		// project's administrators allow it, and the choice is checked before
+		// any check or run is written (TEL-B). An exact retry of an accepted
+		// run returns that run even after either has changed.
+		if req.TelemetryAcceptancePolicyID != "" {
+			if !policy.AllowTelemetryPolicySelection {
+				writeError(w, http.StatusForbidden, "this project's CI policy does not let a run choose its telemetry acceptance policy (actions.allow_telemetry_policy_selection)")
+				return
+			}
+			_, err := s.runner.validateRunTelemetryAcceptancePolicy(req.ProjectID, req.TelemetryAcceptancePolicyID)
+			switch {
+			case errors.Is(err, errRunPolicyStoreUnavailable):
+				writeError(w, http.StatusServiceUnavailable, err.Error())
+				return
+			case errors.Is(err, errRunPolicyConfiguration):
+				writeError(w, http.StatusConflict, err.Error())
+				return
+			case err != nil:
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
 		var resolvedIdentity string
 		var resolvedInline bool
 		script, resolvedIdentity, resolvedInline, err = s.resolveCIRunScript(req)
@@ -331,7 +369,7 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if status, message := s.ciTelemetryInconclusiveRequirement(req.ProjectID, req.TelemetryInconclusive); status != 0 {
+		if status, message := s.ciTelemetryInconclusiveRequirement(req.ProjectID, req.TelemetryInconclusive, req.TelemetryAcceptancePolicyID); status != 0 {
 			writeError(w, status, message)
 			return
 		}
@@ -453,6 +491,7 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		JointEvidence:   req.JointEvidence.Clone(),
 	}
 	create.creationActor = runActor
+	create.TelemetryAcceptancePolicyID = req.TelemetryAcceptancePolicyID
 	if s.beforeCIRunMaterialize != nil {
 		s.beforeCIRunMaterialize(create)
 	}
@@ -529,7 +568,11 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 	}
 	test, _ = s.runner.GetTest(test.ID)
 	response, _ := s.buildCIRunResponse(r.Context(), test)
-	s.recordAuditEvent(r, "ci.run.create", "success", "test", test.ID, test.ProjectID, map[string]any{"repository": req.Source.Repository, "workflow_ref": req.Source.WorkflowRef, "run_id": req.Source.RunID, "run_attempt": req.Source.RunAttempt, "script_identity": scriptIdentity, "publish_check": metadata.PublishCheck})
+	details := map[string]any{"repository": req.Source.Repository, "workflow_ref": req.Source.WorkflowRef, "run_id": req.Source.RunID, "run_attempt": req.Source.RunAttempt, "script_identity": scriptIdentity, "publish_check": metadata.PublishCheck}
+	if metadata.TelemetryAcceptancePolicyID != "" {
+		details["telemetry_acceptance_policy_id"] = metadata.TelemetryAcceptancePolicyID
+	}
+	s.recordAuditEvent(r, "ci.run.create", "success", "test", test.ID, test.ProjectID, details)
 	writeJSON(w, http.StatusAccepted, response)
 }
 
@@ -2022,6 +2065,7 @@ func (s *Server) buildCIRunResponse(ctx context.Context, test *ManagedTest) (ciR
 		return response, err
 	}
 	response.TestID = test.ID
+	response.TelemetryAcceptancePolicyID = metadata.TelemetryAcceptancePolicyID
 	response.Status = strings.ToUpper(strings.TrimSpace(test.Status))
 	response.StatusURL = ciPublicURL("/api/v1/ci/runs/" + url.PathEscape(test.ID))
 	if !ciRunTerminal(response.Status) {

@@ -161,6 +161,16 @@ func (s *Server) handleCreateRemoteRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "remote library did not honor the requested recoverable test identity")
 		return
 	}
+	// A remote controller that predates policy selection ignores the choice
+	// and would judge the run by its project's default: never start that.
+	if chosen := strings.TrimSpace(prepared.TelemetryAcceptancePolicyID); chosen != "" && chosen != runPolicyProjectDefault && remoteTest.TelemetryAcceptancePolicyID != chosen {
+		if cleanupErr := s.attemptRemoteRunCleanup(cleanup); cleanupErr != nil {
+			slog.Warn("unconfirmed remote telemetry policy cleanup remains pending", "remote_id", remote.ID, "remote_test_id", requestedRemoteTestID, "err", cleanupErr)
+			s.startRemoteRunCleanupRetry()
+		}
+		writeError(w, http.StatusConflict, fmt.Sprintf("the remote controller did not confirm telemetry acceptance policy %.128q, so it would judge the run by its project's default; upgrade it, or create the run without the choice", chosen))
+		return
+	}
 	link, err := s.upsertRemoteRunLink(RemoteRunLink{
 		LocalRunID:      uuid.New().String(),
 		RemoteID:        remote.ID,

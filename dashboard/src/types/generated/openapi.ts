@@ -9169,6 +9169,7 @@ export interface operations {
             "sla_evaluated": boolean;
             "status": string;
             "status_url": string;
+            "telemetry_acceptance_policy_id"?: string;
             "telemetry_verdict"?: ({
               "criteria": Array<{
                 "advisory"?: boolean;
@@ -33953,6 +33954,7 @@ export interface operations {
             "sha"?: string;
             "workflow_ref"?: string;
           };
+          "telemetry_acceptance_policy_id"?: string;
           "telemetry_inconclusive"?: string;
         };
       };
@@ -34015,6 +34017,7 @@ export interface operations {
             "sla_evaluated": boolean;
             "status": string;
             "status_url": string;
+            "telemetry_acceptance_policy_id"?: string;
             "telemetry_verdict"?: ({
               "criteria": Array<{
                 "advisory"?: boolean;
@@ -36537,6 +36540,7 @@ export interface operations {
             };
             "github"?: {
               "actions"?: {
+                "allow_telemetry_policy_selection"?: boolean;
                 "allowed_environments"?: Array<string>;
                 "allowed_protocols"?: Array<string>;
                 "allowed_refs"?: Array<string>;
@@ -37760,6 +37764,7 @@ export interface operations {
             "override_script_shakeout_failure"?: boolean;
             "preparation_id"?: string;
           }) | null;
+          "telemetry_acceptance_policy_id"?: string;
           "termination_mode"?: string;
           "test"?: ({
             "application_id"?: string;
@@ -38160,6 +38165,7 @@ export interface operations {
             "script_id"?: string;
             "script_shakeout"?: boolean;
             "start_delay"?: string;
+            "telemetry_acceptance_policy_id"?: string;
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "trace_context"?: ({
@@ -40494,6 +40500,7 @@ export interface operations {
               "status": string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "telemetry_acceptance_policy_id"?: string;
               "telemetry_health"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -40597,6 +40604,11 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -46123,6 +46135,7 @@ export interface operations {
           "script_id"?: string;
           "script_shakeout"?: boolean;
           "start_delay"?: string;
+          "telemetry_acceptance_policy_id"?: string;
           "termination_mode"?: string;
           "timeslot_id"?: (string) | null;
           "trace_context"?: ({
@@ -51353,6 +51366,7 @@ export interface operations {
             "status": string;
             "stopped_by_display_name"?: string;
             "stopped_by_subject"?: string;
+            "telemetry_acceptance_policy_id"?: string;
             "telemetry_health"?: ({
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
@@ -59106,6 +59120,7 @@ export interface operations {
           "script_id"?: string;
           "script_shakeout"?: boolean;
           "start_delay"?: string;
+          "telemetry_acceptance_policy_id"?: string;
           "termination_mode"?: string;
           "timeslot_id"?: (string) | null;
           "trace_context"?: ({
@@ -64726,6 +64741,7 @@ export interface operations {
             "sla_evaluated": boolean;
             "status": string;
             "status_url": string;
+            "telemetry_acceptance_policy_id"?: string;
             "telemetry_verdict"?: ({
               "criteria": Array<{
                 "advisory"?: boolean;
@@ -70664,6 +70680,7 @@ export interface operations {
               };
               "github"?: {
                 "actions"?: {
+                  "allow_telemetry_policy_selection"?: boolean;
                   "allowed_environments"?: Array<string>;
                   "allowed_protocols"?: Array<string>;
                   "allowed_refs"?: Array<string>;
@@ -70864,6 +70881,7 @@ export interface operations {
         content: {
           "application/json": {
             "actions"?: {
+              "allow_telemetry_policy_selection"?: boolean;
               "allowed_environments"?: Array<string>;
               "allowed_protocols"?: Array<string>;
               "allowed_refs"?: Array<string>;
@@ -73967,6 +73985,7 @@ export interface operations {
               "status": string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "telemetry_acceptance_policy_id"?: string;
               "telemetry_health"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -94095,6 +94114,7 @@ export interface operations {
             "status": string;
             "stopped_by_display_name"?: string;
             "stopped_by_subject"?: string;
+            "telemetry_acceptance_policy_id"?: string;
             "telemetry_health"?: ({
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
@@ -101498,6 +101518,7 @@ export interface operations {
                   "status": string;
                   "stopped_by_display_name"?: string;
                   "stopped_by_subject"?: string;
+                  "telemetry_acceptance_policy_id"?: string;
                   "telemetry_health"?: (Record<string, unknown>) | null;
                   "termination_mode"?: string;
                   "timeslot_id"?: (string) | null;
@@ -117062,6 +117083,7 @@ export interface operations {
             "status": string;
             "stopped_by_display_name"?: string;
             "stopped_by_subject"?: string;
+            "telemetry_acceptance_policy_id"?: string;
             "telemetry_health"?: ({
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
@@ -117920,6 +117942,7 @@ export interface operations {
           "script_id"?: string;
           "script_shakeout"?: boolean;
           "start_delay"?: string;
+          "telemetry_acceptance_policy_id"?: string;
           "termination_mode"?: string;
           "timeslot_id"?: (string) | null;
           "trace_context"?: ({
@@ -132206,6 +132229,7 @@ export interface operations {
               "status": string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "telemetry_acceptance_policy_id"?: string;
               "telemetry_health"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -134554,6 +134578,7 @@ export interface operations {
               "status": string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "telemetry_acceptance_policy_id"?: string;
               "telemetry_health"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -136902,6 +136927,7 @@ export interface operations {
               "status": string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "telemetry_acceptance_policy_id"?: string;
               "telemetry_health"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -139250,6 +139276,7 @@ export interface operations {
               "status": string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "telemetry_acceptance_policy_id"?: string;
               "telemetry_health"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -141598,6 +141625,7 @@ export interface operations {
               "status": string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "telemetry_acceptance_policy_id"?: string;
               "telemetry_health"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -148745,6 +148773,7 @@ export interface operations {
             "status": string;
             "stopped_by_display_name"?: string;
             "stopped_by_subject"?: string;
+            "telemetry_acceptance_policy_id"?: string;
             "telemetry_health"?: ({
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
@@ -175943,6 +175972,7 @@ export interface operations {
             "status": string;
             "stopped_by_display_name"?: string;
             "stopped_by_subject"?: string;
+            "telemetry_acceptance_policy_id"?: string;
             "telemetry_health"?: ({
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
@@ -180008,6 +180038,7 @@ export interface operations {
             };
             "github"?: {
               "actions"?: {
+                "allow_telemetry_policy_selection"?: boolean;
                 "allowed_environments"?: Array<string>;
                 "allowed_protocols"?: Array<string>;
                 "allowed_refs"?: Array<string>;
@@ -180103,6 +180134,7 @@ export interface operations {
               };
               "github"?: {
                 "actions"?: {
+                  "allow_telemetry_policy_selection"?: boolean;
                   "allowed_environments"?: Array<string>;
                   "allowed_protocols"?: Array<string>;
                   "allowed_refs"?: Array<string>;
@@ -180338,6 +180370,7 @@ export interface operations {
       content: {
         "application/json": {
           "actions"?: {
+            "allow_telemetry_policy_selection"?: boolean;
             "allowed_environments"?: Array<string>;
             "allowed_protocols"?: Array<string>;
             "allowed_refs"?: Array<string>;
@@ -180473,6 +180506,7 @@ export interface operations {
               };
               "github"?: {
                 "actions"?: {
+                  "allow_telemetry_policy_selection"?: boolean;
                   "allowed_environments"?: Array<string>;
                   "allowed_protocols"?: Array<string>;
                   "allowed_refs"?: Array<string>;
