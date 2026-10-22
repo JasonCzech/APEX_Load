@@ -29,7 +29,7 @@ import type {
   ScriptDebugStepMode,
 } from '../../types/replay'
 import { type AuthoringTemplate } from '../../types'
-import { type CorrelationDiagnoseResponse, type CorrelationStep, type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
+import { type CorrelationDiagnoseResponse, type CorrelationStep, type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationContext, type ScriptValidationResponse } from '../../types/scripts'
 import { type CloneScriptDraftResponse, type DiscardImportSecretSessionRequest, type MigrateImportSecretsRequest, type MigrateImportSecretsResponse, type RebindScriptSecretReferenceResponse, type ScriptSecretStatus } from '../../types/secrets'
 import { type BrunoInspectResponse, type ImportSourceRevision, type BrunoSupportMatrixResponse, type CommitBrunoImportRequest, type CommitBrunoImportResponse } from '../../types/scriptImports'
 import { downloadFilenameFromDisposition } from '../../utils/fileUtils'
@@ -51,6 +51,7 @@ import { type ApplyImportTransportRequest, type ApplyImportTransportResponse, ty
 import { type JsonRequestBody } from '../../types/generated/openapi'
 import { ApiError, REQUEST_ID_HEADER, apiFetch, request, requestWithResponse } from '../apiClient'
 import { type ApiCallOptions, withCallOptions } from './requestOptions'
+import { keyedAuthoringCreate } from './keyedAuthoringCreate'
 
 import { admitScriptAuthoringBaseline, baselineFromSavedScript, ScriptSaveOutcomeUnknown, withoutScriptAuthoringReadContext } from '../../utils/scriptAuthoringRevision'
 import { admitScenarioAuthoringBaseline, baselineFromSavedScenario, ScenarioChangedSinceObserved, scenarioBaselineFromRead, ScenarioSaveOutcomeUnknown } from '../../utils/scenarioAuthoringRevision'
@@ -397,6 +398,14 @@ export function useScriptApi() {
     [],
   )
 
+  // An ordinary create under a draft-owned intent key (AUTH-1): a retry
+  // after a lost response replays the script the first attempt created.
+  const createScriptKeyed = useCallback(
+    (script: ScriptDefinition, projectId: string | undefined, folderId: string | null | undefined, key: string) =>
+      keyedAuthoringCreate<StoredScript>('/scripts', JSON.stringify({ script, project_id: projectId, folder_id: folderId }), key, 'script'),
+    [],
+  )
+
   const getScript = useCallback((id: string) => request<StoredScript>(`/scripts/${id}`), [])
 
   const getScriptAuthoring = useCallback(async (id: string, projectId?: string, signal?: AbortSignal): Promise<ScriptAuthoringBaseline> => {
@@ -496,6 +505,15 @@ export function useScriptApi() {
   const validateDraftScript = useCallback(
     (script: ScriptDefinition, projectId?: string, folderId?: string | null, variables?: Record<string, string>, options?: { fingerprint?: string }) =>
       request<ScriptValidationResponse>('/scripts/validate', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId, variables, ...(options?.fingerprint ? { fingerprint: options.fingerprint } : {}) }) }),
+    [],
+  )
+
+  // The controller's current validation context for a draft or a stored
+  // script (AUTH-B): a result validated under another revision is stale.
+  const getScriptValidationContext = useCallback(
+    (body: { project_id?: string; folder_id?: string | null; script?: ScriptDefinition; script_id?: string; content_revision?: string }) =>
+      // Bounded, so a stalled probe cannot hold off every later one.
+      request<ScriptValidationContext>('/scripts/validation-context', { method: 'POST', body: JSON.stringify(body), timeoutMs: 30_000 }),
     [],
   )
 
@@ -1508,6 +1526,11 @@ export function useScriptApi() {
     [],
   )
 
+  const createScenarioKeyed = useCallback(
+    (data: ScenarioUpsertRequest, key: string) => keyedAuthoringCreate<StoredScenario>('/scenarios', JSON.stringify(data), key, 'scenario'),
+    [],
+  )
+
   const getScenario = useCallback((id: string) => request<StoredScenario>(`/scenarios/${id}`), [])
 
   // A scenario save presents the baseline its draft was loaded from and
@@ -1635,6 +1658,7 @@ export function useScriptApi() {
     () => ({
       listScripts,
       createScript,
+      createScriptKeyed,
       getScript,
       getScriptAuthoring,
       updateScript,
@@ -1648,6 +1672,7 @@ export function useScriptApi() {
       migrateImportSecrets,
       discardImportSecretSession,
       validateDraftScript,
+      getScriptValidationContext,
       listAuthoringCapabilities,
       listAuthoringTemplates,
       listAuthoringComponents,
@@ -1740,6 +1765,7 @@ export function useScriptApi() {
       suggestParameterization,
       listScenarios,
       createScenario,
+      createScenarioKeyed,
       getScenario,
       updateScenario,
       deleteScenario,
@@ -1760,6 +1786,7 @@ export function useScriptApi() {
     [
       listScripts,
       createScript,
+      createScriptKeyed,
       getScript,
       getScriptAuthoring,
       updateScript,
@@ -1773,6 +1800,7 @@ export function useScriptApi() {
       migrateImportSecrets,
       discardImportSecretSession,
       validateDraftScript,
+      getScriptValidationContext,
       listAuthoringCapabilities,
       listAuthoringTemplates,
       listAuthoringComponents,
@@ -1865,6 +1893,7 @@ export function useScriptApi() {
       suggestParameterization,
       listScenarios,
       createScenario,
+      createScenarioKeyed,
       getScenario,
       updateScenario,
       deleteScenario,

@@ -37,8 +37,12 @@ func claimCrashedScenarioCreate(t *testing.T, server *Server, store *storage.SQL
 	if err != nil {
 		t.Fatal(err)
 	}
+	fingerprint, err := scenarioCreateReceiptFingerprint(body)
+	if err != nil {
+		t.Fatal(err)
+	}
 	probe := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", nil)
-	identity, err := server.authoringReceiptIdentity(probe, storage.AuthoringPurposeScenarioCreate, projectID, scenarioCreateKey, "", body)
+	identity, err := server.authoringReceiptIdentity(probe, storage.AuthoringPurposeScenarioCreate, projectID, scenarioCreateKey, "", fingerprint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +93,7 @@ func TestResumedReceiptIsKeptWhileTheEarlierCreateExists(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", nil)
 	request.Header.Set("Idempotency-Key", scenarioCreateKey)
 	projectID, _ := server.scenarioRequestProjectID(body)
-	attempt, outcome := server.claimAuthoringCreate(httptest.NewRecorder(), request, storage.AuthoringPurposeScenarioCreate, "scenario", projectID, "", body)
+	attempt, outcome := server.claimAuthoringCreate(httptest.NewRecorder(), request, storage.AuthoringPurposeScenarioCreate, "scenario", projectID, "", authoringReceiptFingerprint{request: body})
 	if outcome != authoringCreateProceed || attempt == nil || !attempt.resumed {
 		t.Fatalf("expected a resumed claim: %v %#v", outcome, attempt)
 	}
@@ -114,7 +118,7 @@ func TestResumedReceiptIsReleasedWhenTheResourceIsDurablyAbsent(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", nil)
 	request.Header.Set("Idempotency-Key", scenarioCreateKey)
 	projectID, _ := server.scenarioRequestProjectID(body)
-	attempt, outcome := server.claimAuthoringCreate(httptest.NewRecorder(), request, storage.AuthoringPurposeScenarioCreate, "scenario", projectID, "", body)
+	attempt, outcome := server.claimAuthoringCreate(httptest.NewRecorder(), request, storage.AuthoringPurposeScenarioCreate, "scenario", projectID, "", authoringReceiptFingerprint{request: body})
 	if outcome != authoringCreateProceed || attempt == nil || !attempt.resumed {
 		t.Fatalf("expected a resumed claim: %v %#v", outcome, attempt)
 	}
@@ -279,7 +283,7 @@ func TestIdempotentCreateRefusesAnExpiredKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := server.authoringReceiptIdentity(httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", nil), storage.AuthoringPurposeScenarioCreate, projectID, scenarioCreateKey, "", body)
+	identity, err := server.authoringReceiptIdentity(httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", nil), storage.AuthoringPurposeScenarioCreate, projectID, scenarioCreateKey, "", authoringReceiptFingerprint{request: body})
 	if err != nil {
 		t.Fatal(err)
 	}

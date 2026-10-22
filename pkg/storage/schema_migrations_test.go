@@ -127,3 +127,31 @@ func TestSchemaLedgerRejectsNewerAndChangedReleases(t *testing.T) {
 		})
 	}
 }
+
+func TestBrowserSchemaPreservesPublishedAuthoringRelease(t *testing.T) {
+	path := t.TempDir() + "/authoring-v72.db"
+	raw, err := sql.Open("sqlite", sqliteDSN(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(schemaMigrationLedgerDDL); err != nil {
+		raw.Close()
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`INSERT INTO schema_migrations (version, name, fingerprint, applied_at) VALUES (72, 'authoring-receipt-original-outcomes', '3a95b9a7636dfe578c7ea62353c9604d1c772c9ca54d0bfeee61ecfd7f39f9c5', CURRENT_TIMESTAMP)`); err != nil {
+		raw.Close()
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	status, err := store.SchemaStatus()
+	if err != nil || status.AppliedVersion != currentSchemaRelease().Version || len(status.Pending) != 0 {
+		t.Fatal(status, err)
+	}
+}

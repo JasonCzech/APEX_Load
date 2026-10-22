@@ -565,6 +565,95 @@ acknowledgement was lost returns 503 `scenario_save_outcome_unknown`: retry it
 with the same key, which adopts the scenario if it committed. Controllers
 without durable receipts refuse a key with 503 `idempotency_unavailable`.
 
+`POST /api/v1/tests` (a run create, including a queued run's revised copy)
+accepts the same key under receipt contract 1 only: the key fixes the run ID,
+a retry returns the run the first attempt created as it is now, a deleted run
+answers 410 and is never recreated, and `X-APEX-Authoring-Receipt-Version: 2`
+is refused with 400 `idempotency_receipt_version_unsupported`. A create whose
+outcome cannot be confirmed answers 503 `test_create_outcome_unknown`: retry
+it with the same key. With a caller-supplied `requested_test_id` an
+unconfirmed earlier attempt is never adopted; an existing run there answers
+409 `test_identity_in_use`, so read it by that ID. Deleting a run tombstones
+its keys in the same transaction. Before this contract, a key on a run create
+held only the generic 15-minute duplicate-request fence (any key length,
+409 `duplicate idempotency key`); it now follows the receipt rules above,
+including the 16-character minimum and the 24-hour replay.
+
+#### Receipt contract version 2
+
+The contract above is receipt version 1. A keyed create may send
+`X-APEX-Authoring-Receipt-Version: 2`. The create, its group and data-pool
+bindings and the completed receipt then commit in one transaction, together
+with the original outcome: the resource ID, project, content revision and
+creation time, and the disclosure-safe authoring projection the create
+committed. A version 2 retry with the same key returns that recorded
+`AuthoringReceiptOutcome` unchanged (`Idempotent-Replayed: true`, no `ETag`),
+never the resource as it is now: read the current authoring projection before
+editing it. A projection that would bring the outcome near its 4 MiB bound
+(more than 4 MiB less 64 KiB), or a script whose stored content alone is that
+large, is omitted, and `authoring_projection_omitted` names why. A deleted
+resource still returns 410, and the outcome is never refreshed from the
+current resource. The stored outcome is cleared once the resource's delete
+commits. Until then it keeps what the create committed even after the
+resource is edited: a value a later edit removes (scripts are stored as
+authored; scenario runtime credentials are masked in the projection) stays
+in the receipt, and in backups taken meanwhile, for up to 24 hours, and is
+replayed only to the same caller with the same key. Once a key can no longer
+replay, its receipt's request digest and outcome are both scrubbed; the
+receipt still answers the key as expired or deleted. A create that would
+commit after that point is rolled back instead (409
+`idempotency_request_in_progress`; a retry then answers the key as expired),
+so no outcome is stored for a key that cannot replay it.
+
+A `201` to a keyed create carries `X-APEX-Authoring-Receipt-Version` with the
+contract that applied (error responses carry none). A key keeps the contract
+it was first claimed under: a version 2 retry of a version 1 key replays the
+resource as it is now (echo `1`), so a legacy receipt is never reissued as a
+new create, and so do a version 1 retry of a version 2 key and a version 2
+receipt that an older controller completed without an outcome during a
+rolling upgrade (a version 2 receipt such a controller left pending, with its
+resource created, is adopted the same way). Any value other than `1` or `2` is refused with 400
+`idempotency_receipt_version_unsupported`, and a controller whose store cannot
+complete receipts atomically refuses version 2 with 503
+`idempotency_receipt_version_unavailable` before claiming the key.
+
+Keys and requests are stored only as keyed digests, under a key kept in the
+settings table. Where a key wrapper is configured (`APEXLOAD_WRAPPING_*`),
+credential values never enter that digest: a scenario or run create's runtime
+credential values are fingerprinted under a second per-deployment key stored
+only wrapped, and the request digest covers that fingerprint with references
+in their place. Without a configured wrapper (a project secret store that does
+not use one), a scenario create's digest covers the raw request as before, so
+a reader of the whole database could test guesses of those values offline;
+configure key wrapping to close that. Run creates were never digested before,
+so without a wrapper a keyed run create that carries credential values is
+refused with 422 `idempotency_credentials_unprotected` before its key is
+claimed; use secret references for those values. A wrapper the store cannot keep the
+second key for is an error, never a reason to digest the values unprotected.
+Receipts claimed under the earlier digest still recognize their own retries.
+
+The dashboard gives every new script and scenario draft, and every queued
+run's revised copy (under contract 1), its own intent key, and sends script
+and scenario keys under version 2 (falling back to version 1 only on that explicit
+refusal). The key is kept after a lost response, a timeout or a server failure,
+so the next save replays rather than duplicates; it is replaced only after a
+definitive refusal and a changed draft. A scenario draft's key is part of its
+browser checkpoint, so a reload keeps it. A new script draft or revised copy is not
+checkpointed: its key survives a reload only for the same unchanged draft,
+through a local record of keys whose outcome is still unknown (no draft
+content is kept there); a revised copy's key is recalled only for the same
+source run. When the controller will not create with the key (a
+changed draft, an expired key or a deleted original), the editor keeps the
+draft and offers **Save as new**, beside that refusal only: it is the only
+action that creates another object. A scenario save that replays an earlier
+create opens that scenario as it is now, with its own baseline, so the next
+save edits that revision rather than overwrite later edits with the replayed
+form; **Save and configure run** shows it the same way instead of configuring
+a run from it, and one archived since stays in the library to be restored.
+After a replayed run create, creating again replays the same run, and a
+changed draft is refused while that run stays one click away; **Save as new**
+queues another.
+
 ### Scenario authoring revisions
 
 `GET /api/v1/scenarios/{id}?view=authoring` returns the scenario's authoring
@@ -678,9 +767,61 @@ it was issued with; any edit, save, rebaseline or change to those makes it
 stale, and the evidence summary stops reporting it as passed. Debug evidence is
 bound the same way to the fingerprint of the document the replay ran, so a
 configuration, parameter or data-source edit makes it stale too, not only an
-action edit. Secret-reference availability is reconciled against the live
-secret probe when the readiness card renders rather than bound into the
-result.
+action edit. The readiness card also reconciles secret-reference availability
+against the live secret probe as it renders; the result itself depends on
+that availability through its validation context, below.
+
+#### Validation context
+
+Both validation endpoints also return `validation_context`: the controller
+context the result depended on, which an unchanged document does not cover.
+It has an opaque `revision` and four keyed component digests:
+`capabilities` (the controller's authoring catalog and the runtime a browser
+script needs), `policy` (the project's domain feature policy and settings and
+the system script-import policy), `approvals` (whether a Java Vuser script
+needs authoring approval and, for a script with a library ID, whether its approval is
+still valid) and `secret_references` (where the script's secrets resolve:
+its project, an application ahead of it, or an application assignment that
+cannot supply secrets in this project; and each referenced secret, sorted and
+bounded to `secret_reference_limit` names, with its availability;
+`secret_references_truncated` marks a longer list). No secret value enters
+any digest. Validation depends on whether a secret is configured, not on its
+value, so replacing a value leaves the context unchanged, while a rebinding or
+a secret becoming available or unavailable changes it. A draft is bound to the
+project its request was authorized for, as a draft save is, and its `id`
+selects a library assignment and an approval only when it names a stored
+script in that project. `contextual_findings` lists
+context-dependent findings with a fixed `cause`: `secret_unavailable`,
+`approval_required`, `approval_stale` or `capability_unavailable`. They are
+distinct from the static `issues` about the document and from execution
+admission: starting a run always rechecks authorization, approval, secrets and
+placement. (A browser runtime that is not installed is also reported among the
+`warnings`, as before.) Only the project settings validation depends on enter
+`policy` (`authoring` and `features`), and a failed read of the project or
+application secret store, the application or library assignment that scopes
+them, the project or a Java approval session is an error, never a changed
+context: validation then omits `validation_context`, and the context endpoint
+answers 503. A Key Vault fallback reports no read errors, so its outage still
+reads as an unavailable secret.
+
+`POST /api/v1/scripts/validation-context` returns the current context for a
+draft (`script`, with `project_id` and `folder_id`) or a stored script
+(`script_id`), without validating it; exactly one of the two is required. With
+`script_id`, `content_revision` names the stored revision the held result
+validated, and a newer revision answers 409
+`validation_context_revision_changed` instead of a context for content the
+result never saw. A script in another project answers 404, as a missing one
+does. A service account needs the same `scripts:write` scope as for
+validation. The script editor re-reads the context for the result it
+holds when the window regains focus or becomes visible and every 60 seconds
+while the window has focus, one probe at a time and at most one every 5
+seconds (doubling after each failed probe, up to 10 minutes, until a new
+result starts afresh). A different
+revision makes the result stale like an edit does, and the readiness card says
+which components changed (for example, "project secrets changed since the
+check"); a stored script's 409 `validation_context_revision_changed` makes it
+stale too ("the stored script changed since the check"). A result from a controller that reports no context stays bound to its
+document only.
 
 ### Archive editor approval handoff
 

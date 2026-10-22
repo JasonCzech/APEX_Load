@@ -354,14 +354,14 @@ func TestResourceAssociationSessionSubscribesFirstAndKeepsNoBuffers(t *testing.T
 	if b.evidence.cdpPages[page] == nil {
 		t.Fatal("the evidence session was not kept")
 	}
-	want := []string{"on Network.requestWillBeSent", "on Network.responseReceived", "on Network.requestServedFromCache", "on Page.frameNavigated", "on Runtime.executionContextCreated", "on Runtime.executionContextDestroyed", "on Runtime.executionContextsCleared", "on Runtime.bindingCalled", "send Page.enable", "send Network.enable", "send Runtime.enable", "send Runtime.addBinding"}
+	want := []string{"on Page.frameAttached", "on Page.frameDetached", "on Network.requestWillBeSent", "on Network.responseReceived", "on Network.requestServedFromCache", "on Page.frameNavigated", "on Runtime.executionContextCreated", "on Runtime.executionContextDestroyed", "on Runtime.executionContextsCleared", "on Runtime.bindingCalled", "send Page.enable", "send Page.getFrameTree", "send Network.enable", "send Runtime.enable", "send Runtime.addBinding"}
 	if !slices.Equal(session.calls, want) {
 		t.Fatalf("session calls %v, want %v", session.calls, want)
 	}
-	if network := session.sends[1]; network["maxTotalBufferSize"] != 0 || network["maxResourceBufferSize"] != 0 || network["maxPostDataSize"] != 0 {
+	if network := session.sends[2]; network["maxTotalBufferSize"] != 0 || network["maxResourceBufferSize"] != 0 || network["maxPostDataSize"] != 0 {
 		t.Fatalf("Network.enable kept buffers: %v", network)
 	}
-	if binding := session.sends[3]; binding["name"] != b.evidence.loaderBinding || !strings.HasPrefix(b.evidence.loaderBinding, "__apexLoader_") {
+	if binding := session.sends[4]; binding["name"] != b.evidence.loaderBinding || !strings.HasPrefix(b.evidence.loaderBinding, "__apexLoader_") {
 		t.Fatalf("binding %v", binding)
 	}
 }
@@ -417,6 +417,12 @@ type orderingPage struct {
 	log *[]string
 }
 
+func (p *orderingPage) OnFrameAttached(func(playwright.Frame)) {
+	*p.log = append(*p.log, "on frame attached")
+}
+func (p *orderingPage) Frames() []playwright.Frame {
+	return []playwright.Frame{&joinTestFrame{page: p}}
+}
 func (p *orderingPage) OnClose(func(playwright.Page))          { *p.log = append(*p.log, "on close") }
 func (p *orderingPage) OnCrash(func(playwright.Page))          { *p.log = append(*p.log, "on crash") }
 func (p *orderingPage) OnWebSocket(func(playwright.WebSocket)) {}
@@ -433,7 +439,7 @@ func TestPageCloseHandlersPrecedeTheEvidenceSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.registerPage(&orderingPage{log: &log}, false)
-	if !slices.Equal(log, []string{"on close", "on crash", "install"}) {
+	if !slices.Equal(log, []string{"on frame attached", "on close", "on crash", "install"}) {
 		t.Fatalf("registration order %v", log)
 	}
 }

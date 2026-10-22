@@ -441,6 +441,22 @@ describe('scriptAuthoringAssist', () => {
     expect(result.script.actions[result.script.actions.length - 1]?.metadata?.phase).toBe('teardown')
   })
 
+  it('keeps import provenance on the edited script when a component is inserted', () => {
+    const provenance = { source: 'har', source_script_name: 'checkout.har', inputs: { order_id: { mode: 'data' as const, column: 'order_id' } } }
+    const result = applyAuthoringComponentToScript({ ...importedScript, metadata: { import: provenance } }, {
+      id: 'cart-group',
+      kind: 'request_group',
+      name: 'Cart Request',
+      protocols: ['http'],
+      summary: 'Add to cart.',
+      actions: [{ name: 'Add To Cart', type: 'POST', method: 'POST', target: '/cart', headers: {}, body: '' }],
+    })
+
+    expect(result.summary).toContain('Inserted Cart Request')
+    expect(result.script.metadata?.import).toEqual(provenance)
+    expect(result.script.actions[result.script.actions.length - 1]?.name).toBe('Add_To_Cart')
+  })
+
   it('splices main actions after the selected action when a target index is supplied', () => {
     const component = {
       id: 'cart-group',

@@ -1,3 +1,5 @@
+import type { ScriptValidationContext, ScriptValidationContextComponent } from '../types/scripts'
+
 // Binding rules for the script authoring session. A validation result
 // describes exactly one resolved document (its fingerprint), the baseline
 // revision that document was edited from, and the context the result depended
@@ -123,4 +125,32 @@ export function scriptSaveAvailability(input: ScriptSaveInputs): { disabled: boo
                 ? 'Enter a script name before saving'
                 : input.baseURLError || 'Save script'
   return { disabled, title }
+}
+
+// What made a held result stale without an edit: a component of the
+// controller context, or the stored script itself (a stored-script probe
+// answered that a newer revision was saved).
+export type ValidationStaleCause = ScriptValidationContextComponent | 'stored_script'
+
+// validationContextChanges names the components of the controller context a
+// result was validated under that differ from the context observed now; a
+// changed revision with identical components (a newer digest scheme) is
+// reported as every component.
+export function validationContextChanges(validated: ScriptValidationContext | null | undefined, observed: ScriptValidationContext | null | undefined): ScriptValidationContextComponent[] {
+  if (!validated || !observed || validated.revision === observed.revision) return []
+  const names: ScriptValidationContextComponent[] = ['capabilities', 'policy', 'approvals', 'secret_references']
+  const changed = names.filter(name => validated.components?.[name] !== observed.components?.[name])
+  return changed.length > 0 ? changed : names
+}
+
+const CONTEXT_COMPONENT_LABELS: Record<ValidationStaleCause, string> = {
+  capabilities: 'controller capabilities',
+  policy: 'project or domain policy',
+  approvals: 'Java approval',
+  secret_references: 'project secrets',
+  stored_script: 'the stored script',
+}
+
+export function describeValidationContextChanges(changed: ValidationStaleCause[]): string {
+  return changed.map(name => CONTEXT_COMPONENT_LABELS[name]).join(', ')
 }

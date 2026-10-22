@@ -6,6 +6,7 @@ import {
   moveScenarioDraftGroup, scenarioCreatePayload, scenarioDraftFromForm, scenarioDraftFromStoredScenario, scenarioEstimateRequest, scenarioLoadPreview,
   scenarioTimelineGroups, scenarioUpsertPayload,
 } from './scenarioAssembly'
+import { assertDraftHasNoInlineCredentials } from './scenarioAuthoringDraft'
 import { scenarioFormStateFromStoredScenario } from './scenarioFormModel'
 import { buildInitialScenarioDraft, buildScenarioDraftFromTest, scenarioDraftReducer } from './scenarioDraftUtils'
 import type { CreateTestPayload, ScenarioUpsertPayload } from './scenarioPayloadUtils'
@@ -110,6 +111,23 @@ describe('scenario assembly', () => {
     expect(first.groups[0]).toMatchObject({ name: 'Browse', vusers: 20, ramp_up: '1m', ramp_down: '30s', initialization: 'at_once', transaction_response_time_sla_ms: 0, runtime_settings: { run_logic: { iterations: 0 } } })
     expect(first.groups[0]).not.toHaveProperty('iterations')
     expect(first.groups[1]).toMatchObject({ name: 'Watch', role: 'observer', stages: [{ name: 'Warm', type: 'ramp_up', duration: '1m', target_vusers: 2 }, { name: 'Hold', type: 'hold', duration: '5m', target_vusers: 2 }] })
+  })
+
+  it("passes a reopened scenario's secret references, spaced or not, through the checkpoint's credential check into its save payload", () => {
+    // The editor shows references as authored, spacing included (AUTH-C).
+    const scenario = {
+      created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
+      id: 'secret-refs', name: 'Secret references', duration: '5m',
+      runtime_settings: { env: { API_TOKEN: '{{ secret.api_token }}' } },
+      scripts: [{ order: 0, name: 'Checkout', script_id: 'script-a', vusers: 5, runtime_settings: { env: { GROUP_TOKEN: '{{secret.group_token}}' } } }],
+    } as unknown as StoredScenario
+    const form = scenarioFormStateFromStoredScenario(scenario, '')
+    expect(() => assertDraftHasNoInlineCredentials(form)).not.toThrow()
+    const payload = scenarioUpsertPayload(scenarioDraftFromForm(form))
+    expect(payload.runtime_settings?.env).toEqual({ API_TOKEN: '{{ secret.api_token }}' })
+    expect(payload.groups?.[0]?.runtime_settings?.env).toEqual({ GROUP_TOKEN: '{{secret.group_token}}' })
+    // A literal value is still refused by the same check.
+    expect(() => assertDraftHasNoInlineCredentials({ ...form, runtime_settings: { env: { API_TOKEN: 'literal-token' } } })).toThrow()
   })
 
   it('assembles TestHub edits the way the form shows them', () => {

@@ -98,6 +98,21 @@ func (s *SQLiteStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
 }
 
 func (s *SQLiteStore) CreateScriptAuthoringIfAbsent(script *dsl.Script) (*ScriptAuthoringMutationResult, error) {
+	return s.createScriptAuthoringIfAbsent(script, nil, nil)
+}
+
+// CreateScriptAuthoringCompletingReceipt creates a script and completes the
+// caller's original-outcome receipt in the same transaction, with the outcome
+// rendered from the snapshot that transaction read. An existing ID is not
+// applied and leaves the receipt pending.
+func (s *SQLiteStore) CreateScriptAuthoringCompletingReceipt(script *dsl.Script, completion AuthoringReceiptCompletion, outcome func(*ScriptAuthoringSnapshot) (string, error)) (*ScriptAuthoringMutationResult, error) {
+	if outcome == nil {
+		return nil, errors.New("authoring receipt outcome renderer is required")
+	}
+	return s.createScriptAuthoringIfAbsent(script, &completion, outcome)
+}
+
+func (s *SQLiteStore) createScriptAuthoringIfAbsent(script *dsl.Script, completion *AuthoringReceiptCompletion, outcome func(*ScriptAuthoringSnapshot) (string, error)) (*ScriptAuthoringMutationResult, error) {
 	if script == nil {
 		return nil, errors.New("script is required")
 	}
@@ -145,6 +160,15 @@ func (s *SQLiteStore) CreateScriptAuthoringIfAbsent(script *dsl.Script) (*Script
 	snapshot, snapshotErr := readScriptAuthoringSnapshotTx(tx, script.ID)
 	if snapshotErr != nil {
 		return nil, snapshotErr
+	}
+	if completion != nil && rows == 1 {
+		rendered, renderErr := outcome(snapshot)
+		if renderErr != nil {
+			return nil, renderErr
+		}
+		if err := completeAuthoringReceiptTx(tx, completion, snapshot.ContentRevision, rendered); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err

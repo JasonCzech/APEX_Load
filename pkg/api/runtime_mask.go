@@ -110,12 +110,30 @@ func sensitiveEnvValue(value string) bool {
 
 // maskRuntimeSettings returns a clone of the override with sensitive Env values
 // replaced by scrub.Redacted. The input is never mutated; a nil input returns nil.
+// Library export, sync-link and import-claim hashes, manifests and provenance
+// use this form, so it never changes for stored content.
 func maskRuntimeSettings(o *RuntimeSettingsOverride) *RuntimeSettingsOverride {
+	return maskRuntimeSettingsShowingReferences(o, false)
+}
+
+// maskRuntimeSettingsForEditor is maskRuntimeSettings for a scenario response
+// the editor loads. A value that is only a project-secret reference names a
+// secret rather than holding one, so it stays readable, as in a script, and a
+// reopened scenario shows which secret it binds; a controller-owned runtime
+// reference stays masked, since an editor cannot author it.
+func maskRuntimeSettingsForEditor(o *RuntimeSettingsOverride) *RuntimeSettingsOverride {
+	return maskRuntimeSettingsShowingReferences(o, true)
+}
+
+func maskRuntimeSettingsShowingReferences(o *RuntimeSettingsOverride, showReferences bool) *RuntimeSettingsOverride {
 	if o == nil {
 		return nil
 	}
 	clone := cloneRuntimeSettings(o)
 	for key, value := range clone.Env {
+		if showReferences && runtimeOverrideExactSecretPattern.MatchString(strings.TrimSpace(value)) && !isReservedRuntimeOverrideSecretReference(value) {
+			continue
+		}
 		if value != "" && (sensitiveEnvKey(key) || sensitiveEnvValue(value)) {
 			clone.Env[key] = scrub.Redacted
 		}
@@ -461,32 +479,44 @@ func maskRunArchiveRecord(record *storage.RunArchiveRecord) *storage.RunArchiveR
 }
 
 // maskStoredScenario returns a shallow copy of the scenario with root and
-// per-group runtime Env secrets redacted, so a GET never leaks stored secrets.
-// The original scenario (and its overrides) are left untouched.
+// per-group runtime Env secrets redacted, so stored secrets never leak. It is
+// the form library export and content hashes use; responses use
+// maskStoredScenarioForEditor. The original scenario (and its overrides) are
+// left untouched.
 func maskStoredScenario(scenario *StoredScenario) *StoredScenario {
+	return maskStoredScenarioWith(scenario, maskRuntimeSettings)
+}
+
+// maskStoredScenarioForEditor is maskStoredScenario for a scenario response,
+// which shows project-secret references (maskRuntimeSettingsForEditor).
+func maskStoredScenarioForEditor(scenario *StoredScenario) *StoredScenario {
+	return maskStoredScenarioWith(scenario, maskRuntimeSettingsForEditor)
+}
+
+func maskStoredScenarioWith(scenario *StoredScenario, mask func(*RuntimeSettingsOverride) *RuntimeSettingsOverride) *StoredScenario {
 	if scenario == nil {
 		return nil
 	}
 	masked := *scenario
-	masked.RuntimeSettings = maskRuntimeSettings(scenario.RuntimeSettings)
+	masked.RuntimeSettings = mask(scenario.RuntimeSettings)
 	if len(scenario.Scripts) > 0 {
 		refs := cloneScenarioScriptRefs(scenario.Scripts)
 		for i := range refs {
-			refs[i].RuntimeSettings = maskRuntimeSettings(refs[i].RuntimeSettings)
+			refs[i].RuntimeSettings = mask(refs[i].RuntimeSettings)
 		}
 		masked.Scripts = refs
 	}
 	return &masked
 }
 
-// maskStoredScenarios masks each scenario in a list (used by list endpoints).
+// maskStoredScenarios masks each scenario in a list response.
 func maskStoredScenarios(scenarios []*StoredScenario) []*StoredScenario {
 	if scenarios == nil {
 		return nil
 	}
 	masked := make([]*StoredScenario, len(scenarios))
 	for i, scenario := range scenarios {
-		masked[i] = maskStoredScenario(scenario)
+		masked[i] = maskStoredScenarioForEditor(scenario)
 	}
 	return masked
 }

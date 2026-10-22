@@ -1609,6 +1609,15 @@ func (o *sqliteStoreOverlay) CreateRuntimeSecretProvisioningAttempt(a0 *storage.
 	return o.base().CreateRuntimeSecretProvisioningAttempt(a0)
 }
 
+func (o *sqliteStoreOverlay) CreateScenarioAuthoringCompletingReceipt(a0 *storage.Scenario, a1 []storage.ScenarioScript, a2 []storage.ScenarioDataPoolBinding, a3 storage.AuthoringReceiptCompletion, a4 func(*storage.ScenarioAuthoringSnapshot) (string, error)) (*storage.ScenarioAuthoringMutationResult, error) {
+	if fake, ok := o.fake.(interface {
+		CreateScenarioAuthoringCompletingReceipt(*storage.Scenario, []storage.ScenarioScript, []storage.ScenarioDataPoolBinding, storage.AuthoringReceiptCompletion, func(*storage.ScenarioAuthoringSnapshot) (string, error)) (*storage.ScenarioAuthoringMutationResult, error)
+	}); ok {
+		return fake.CreateScenarioAuthoringCompletingReceipt(a0, a1, a2, a3, a4)
+	}
+	return o.base().CreateScenarioAuthoringCompletingReceipt(a0, a1, a2, a3, a4)
+}
+
 func (o *sqliteStoreOverlay) CreateScenarioAuthoringIfAbsent(a0 *storage.Scenario, a1 []storage.ScenarioScript, a2 []storage.ScenarioDataPoolBinding) (*storage.ScenarioAuthoringMutationResult, error) {
 	if fake, ok := o.fake.(interface {
 		CreateScenarioAuthoringIfAbsent(*storage.Scenario, []storage.ScenarioScript, []storage.ScenarioDataPoolBinding) (*storage.ScenarioAuthoringMutationResult, error)
@@ -1688,6 +1697,15 @@ func (o *sqliteStoreOverlay) CreateScenarioWithDataPoolBindingsIfAbsent(a0 *stor
 		return fake.CreateScenarioWithDataPoolBindingsIfAbsent(a0, a1, a2)
 	}
 	return o.base().CreateScenarioWithDataPoolBindingsIfAbsent(a0, a1, a2)
+}
+
+func (o *sqliteStoreOverlay) CreateScriptAuthoringCompletingReceipt(a0 *dsl.Script, a1 storage.AuthoringReceiptCompletion, a2 func(*storage.ScriptAuthoringSnapshot) (string, error)) (*storage.ScriptAuthoringMutationResult, error) {
+	if fake, ok := o.fake.(interface {
+		CreateScriptAuthoringCompletingReceipt(*dsl.Script, storage.AuthoringReceiptCompletion, func(*storage.ScriptAuthoringSnapshot) (string, error)) (*storage.ScriptAuthoringMutationResult, error)
+	}); ok {
+		return fake.CreateScriptAuthoringCompletingReceipt(a0, a1, a2)
+	}
+	return o.base().CreateScriptAuthoringCompletingReceipt(a0, a1, a2)
 }
 
 func (o *sqliteStoreOverlay) CreateScriptAuthoringIfAbsent(a0 *dsl.Script) (*storage.ScriptAuthoringMutationResult, error) {
@@ -2949,6 +2967,15 @@ func (o *sqliteStoreOverlay) GetArchiveFinalizationJob(a0 string) (*storage.Arch
 	return o.base().GetArchiveFinalizationJob(a0)
 }
 
+func (o *sqliteStoreOverlay) GetArchiveFinalizationJobContext(a0 context.Context, a1 string) (*storage.ArchiveFinalizationJob, error) {
+	if fake, ok := o.fake.(interface {
+		GetArchiveFinalizationJobContext(context.Context, string) (*storage.ArchiveFinalizationJob, error)
+	}); ok {
+		return fake.GetArchiveFinalizationJobContext(a0, a1)
+	}
+	return o.base().GetArchiveFinalizationJobContext(a0, a1)
+}
+
 func (o *sqliteStoreOverlay) GetArchiveRefreshJob(a0 string) (*storage.ArchiveRefreshJob, error) {
 	if fake, ok := o.fake.(interface {
 		GetArchiveRefreshJob(string) (*storage.ArchiveRefreshJob, error)
@@ -2956,6 +2983,15 @@ func (o *sqliteStoreOverlay) GetArchiveRefreshJob(a0 string) (*storage.ArchiveRe
 		return fake.GetArchiveRefreshJob(a0)
 	}
 	return o.base().GetArchiveRefreshJob(a0)
+}
+
+func (o *sqliteStoreOverlay) GetArchiveRefreshJobContext(a0 context.Context, a1 string) (*storage.ArchiveRefreshJob, error) {
+	if fake, ok := o.fake.(interface {
+		GetArchiveRefreshJobContext(context.Context, string) (*storage.ArchiveRefreshJob, error)
+	}); ok {
+		return fake.GetArchiveRefreshJobContext(a0, a1)
+	}
+	return o.base().GetArchiveRefreshJobContext(a0, a1)
 }
 
 func (o *sqliteStoreOverlay) GetAuthoringSession(a0 string) (*storage.AuthoringSession, error) {
@@ -3735,6 +3771,15 @@ func (o *sqliteStoreOverlay) GetRunArchiveCollection(a0 string) (*storage.RunArc
 	return o.base().GetRunArchiveCollection(a0)
 }
 
+func (o *sqliteStoreOverlay) GetRunArchiveContext(a0 context.Context, a1 string) (*storage.RunArchiveRecord, error) {
+	if fake, ok := o.fake.(interface {
+		GetRunArchiveContext(context.Context, string) (*storage.RunArchiveRecord, error)
+	}); ok {
+		return fake.GetRunArchiveContext(a0, a1)
+	}
+	return o.base().GetRunArchiveContext(a0, a1)
+}
+
 func (o *sqliteStoreOverlay) GetRunArchiveFailure(a0 string) (*storage.RunArchiveFailure, error) {
 	if fake, ok := o.fake.(interface {
 		GetRunArchiveFailure(string) (*storage.RunArchiveFailure, error)
@@ -3974,6 +4019,15 @@ func (o *sqliteStoreOverlay) GetTest(a0 string) (*storage.TestRecord, error) {
 		return fake.GetTest(a0)
 	}
 	return o.base().GetTest(a0)
+}
+
+func (o *sqliteStoreOverlay) GetTestContext(a0 context.Context, a1 string) (*storage.TestRecord, error) {
+	if fake, ok := o.fake.(interface {
+		GetTestContext(context.Context, string) (*storage.TestRecord, error)
+	}); ok {
+		return fake.GetTestContext(a0, a1)
+	}
+	return o.base().GetTestContext(a0, a1)
 }
 
 func (o *sqliteStoreOverlay) GetTestNote(a0 string) (*storage.TestNote, error) {
@@ -4346,6 +4400,15 @@ func (o *sqliteStoreOverlay) ListAuthoringSessionsPage(a0 string, a1 int, a2 int
 		return fake.ListAuthoringSessionsPage(a0, a1, a2)
 	}
 	return o.base().ListAuthoringSessionsPage(a0, a1, a2)
+}
+
+func (o *sqliteStoreOverlay) ListBrowserBaselineCandidates(a0 context.Context, a1 storage.BrowserBaselineCandidateQuery) ([]storage.BrowserBaselineCandidate, bool, error) {
+	if fake, ok := o.fake.(interface {
+		ListBrowserBaselineCandidates(context.Context, storage.BrowserBaselineCandidateQuery) ([]storage.BrowserBaselineCandidate, bool, error)
+	}); ok {
+		return fake.ListBrowserBaselineCandidates(a0, a1)
+	}
+	return o.base().ListBrowserBaselineCandidates(a0, a1)
 }
 
 func (o *sqliteStoreOverlay) ListCapacityInstanceIntents(a0 string, a1 string) ([]*storage.CapacityInstanceIntent, error) {
@@ -7172,6 +7235,15 @@ func (o *sqliteStoreOverlay) SchemaStatus() (storage.SchemaStatus, error) {
 		return fake.SchemaStatus()
 	}
 	return o.base().SchemaStatus()
+}
+
+func (o *sqliteStoreOverlay) ScrubExpiredAuthoringReceipts(a0 time.Time) (int64, error) {
+	if fake, ok := o.fake.(interface {
+		ScrubExpiredAuthoringReceipts(time.Time) (int64, error)
+	}); ok {
+		return fake.ScrubExpiredAuthoringReceipts(a0)
+	}
+	return o.base().ScrubExpiredAuthoringReceipts(a0)
 }
 
 func (o *sqliteStoreOverlay) SetObjectArchived(a0 string, a1 string, a2 time.Time, a3 bool) (bool, error) {

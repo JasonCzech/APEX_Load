@@ -51,7 +51,7 @@ import type {
   ScenarioScheduleHealth,
   ScenarioScheduleOccurrence,
 } from '../../types/scheduling'
-import { apiFetch, request } from '../apiClient'
+import { apiFetch, request, requestWithResponse } from '../apiClient'
 import { withCallOptions, type ApiCallOptions } from './requestOptions'
 
 type ArchiveTransactionsParams = {
@@ -377,6 +377,13 @@ export function useTestApi() {
     (data: TestCreateRequest, options?: ApiCallOptions) => request<TestSummary>('/tests', withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
     [],
   )
+
+  // A run create under a draft-owned intent key (receipt contract 1): a retry
+  // after a lost response returns the run the first attempt created.
+  const createTestKeyed = useCallback(async (data: TestCreateRequest, key: string): Promise<{ kind: 'created' | 'replayed'; resource: TestSummary }> => {
+    const response = await requestWithResponse<TestSummary>('/tests', { method: 'POST', body: JSON.stringify(data), headers: { 'Idempotency-Key': key } })
+    return { kind: response.headers.get('Idempotent-Replayed') === 'true' ? 'replayed' : 'created', resource: response.body }
+  }, [])
 
   const estimateTest = useCallback(
     (data: TestCreateRequest, options?: ApiCallOptions) => request<DraftCapacityEstimate>('/tests/estimate', withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
@@ -899,6 +906,7 @@ export function useTestApi() {
       listTests,
       getTest,
       createTest,
+      createTestKeyed,
       estimateTest,
       preflightTest,
       getLoadModelSupportMatrix,
@@ -982,6 +990,7 @@ export function useTestApi() {
       listTests,
       getTest,
       createTest,
+      createTestKeyed,
       estimateTest,
       preflightTest,
       getLoadModelSupportMatrix,

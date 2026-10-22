@@ -4,6 +4,8 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useNavigationGuardRunner } from '../hooks/NavigationGuardProvider'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 import ProtocolAssetImport from './ProtocolAssetImport'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -34,6 +36,8 @@ const apiMock = {
   importAsyncAPI: vi.fn(),
   listScripts: vi.fn(),
   createScript: vi.fn(),
+  // Keyed creates reach the createScript mock; intent tests assert the key.
+  createScriptKeyed: vi.fn(async (...args: [script: unknown, projectId?: string, folderId?: string | null, key?: string]) => ({ kind: 'created' as const, resource: await apiMock.createScript(args[0], args[1], args[2]) })),
   deleteScript: vi.fn(),
   importK6: vi.fn(),
   importCloudTest: vi.fn(),
@@ -4049,6 +4053,45 @@ describe('ProtocolAssetImport', () => {
         actions: [expect.objectContaining({ selector: 'role=button[name="Sign in"]' })],
       })],
     }))
+  })
+
+  it('asks before leaving an unsaved import review and lets a saved one go', async () => {
+    const leave = vi.fn()
+    function Leave() {
+      const runner = useNavigationGuardRunner()
+      return <button type="button" onClick={() => runner.runGuarded(leave)}>Leave import</button>
+    }
+    const clickButton = async (label: string) => act(async () => {
+      Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === label)?.click()
+    })
+    await act(async () => root.render(
+      <NavigationGuardProvider>
+        <Leave />
+        <ProtocolAssetImport kind="k6" projectId="project-1" />
+      </NavigationGuardProvider>,
+    ))
+    await clickButton('Leave import')
+    expect(leave).toHaveBeenCalledTimes(1)
+
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['export default function() {}'], 'guarded.js')] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickButton('Inspect & review')
+    await flushPromises()
+    await clickButton('Leave import')
+    expect(leave).toHaveBeenCalledTimes(1)
+    expect(document.body.textContent).toContain('Import review has work that is not saved yet')
+    await clickButton('Keep editing')
+    expect(document.body.textContent).not.toContain('Import review has work that is not saved yet')
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).some(button => button.textContent?.trim() === 'Save draft')).toBe(true)
+
+    await clickButton('Save draft')
+    await flushPromises()
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledTimes(1)
+    await clickButton('Leave import')
+    expect(leave).toHaveBeenCalledTimes(2)
   })
 
   it('reuses a generic atomic save operation after an interrupted response', async () => {

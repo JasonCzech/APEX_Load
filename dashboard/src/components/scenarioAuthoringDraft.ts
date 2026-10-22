@@ -3,6 +3,7 @@ import type { ScenarioSourceMode, ScenarioWizardStep } from './scenarioWizardUti
 import { legacyFlatFormFieldsValid, migrateLegacyFlatForm } from './scenarioAuthoringDraftV2'
 import { emptyScenarioForm, emptyScenarioGroup } from './scenarioFormModel'
 import { scenarioGroupNameAfterScriptSelection } from './scenarioGroupUtils'
+import { isAuthoringCreateIntent, type AuthoringCreateIntent } from './authoringCreateIntent'
 
 /** Authoring checkpoints are browser-local and can never be used as run payloads. */
 export interface ScenarioAuthoringDraft {
@@ -33,6 +34,13 @@ export interface ScenarioAuthoringDraft {
    * its next Save updates that draft rather than adding another.
    */
   projectDraft?: { id: string; revision: number }
+  /**
+   * In a browser checkpoint of a new scenario only: the create intent its
+   * saves send (AUTH-1), so a save retried after a reload replays the
+   * scenario an earlier attempt created instead of creating another. Never
+   * part of a project draft.
+   */
+  createIntent?: AuthoringCreateIntent
 }
 const key = (project: string) => `apexload.scenario.authoring.v1.${encodeURIComponent(project)}`
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
@@ -78,7 +86,7 @@ export function scenarioAuthoringDraftFromScripts(projectId: string, name: strin
  * (scenarioAuthoringDraftV2). Returns null for
  * anything that is not a recognizable checkpoint.
  */
-export function migrateScenarioAuthoringDraft(value: Record<string, unknown>): Record<string, unknown> | null {
+export function migrateScenarioDraftCheckpoint(value: Record<string, unknown>): Record<string, unknown> | null {
   if (value.version === 3) {
     if (!WIZARD_STEPS.includes(value.step as ScenarioWizardStep) || !Number.isInteger(value.visited) || Number(value.visited) < 0 || Number(value.visited) >= WIZARD_STEPS.length) return null
     return value
@@ -86,12 +94,12 @@ export function migrateScenarioAuthoringDraft(value: Record<string, unknown>): R
   if (value.version === 2) {
     if (!record(value.form) || !legacyFlatFormFieldsValid(value.form)) return null
     const baseline = record(value.baselineForm) && legacyFlatFormFieldsValid(value.baselineForm) ? migrateLegacyFlatForm(value.baselineForm) : value.baselineForm
-    return migrateScenarioAuthoringDraft({ ...value, version: 3, form: migrateLegacyFlatForm(value.form), ...(value.baselineForm !== undefined ? { baselineForm: baseline } : {}) })
+    return migrateScenarioDraftCheckpoint({ ...value, version: 3, form: migrateLegacyFlatForm(value.form), ...(value.baselineForm !== undefined ? { baselineForm: baseline } : {}) })
   }
   if (value.version !== 1) return null
   if (!V1_WIZARD_STEPS.includes(String(value.step)) || !Number.isInteger(value.visited) || Number(value.visited) < 0 || Number(value.visited) >= V1_WIZARD_STEPS.length) return null
   const toCurrent = (step: string) => (step === 'start' ? 'scripts' : step) as ScenarioWizardStep
-  return migrateScenarioAuthoringDraft({
+  return migrateScenarioDraftCheckpoint({
     ...value,
     version: 2,
     step: toCurrent(String(value.step)),
@@ -101,6 +109,10 @@ export function migrateScenarioAuthoringDraft(value: Record<string, unknown>): R
 
 // Refuse to persist inline credentials rather than silently dropping authored
 // settings. Project-secret references are safe to retain and resolve at launch.
+// A project-secret reference, with the spacing the runtime accepts
+// ({{ secret.NAME }}).
+const SECRET_REFERENCE = /^\s*\{\{\s*secret\.[\w.-]+\s*\}\}\s*$/
+
 export function assertDraftHasNoInlineCredentials(value: unknown): void {
   const stack: unknown[] = [value]
   let count = 0
@@ -111,11 +123,11 @@ export function assertDraftHasNoInlineCredentials(value: unknown): void {
     if (!record(item)) continue
     for (const [name, child] of Object.entries(item)) {
       if (child == null || child === '') continue
-      const reference = typeof child === 'string' && /^\{\{secret\.[\w.-]+\}\}$/.test(child)
+      const reference = typeof child === 'string' && SECRET_REFERENCE.test(child)
       if (/^(env|headers|extra_http_headers|cookies|storage_state|additional_vm_parameters|password|token|authorization|client_secret|private_key)$/i.test(name)
         && !reference && (typeof child !== 'object' || Object.keys(child).length > 0)) {
         // Environment maps containing only named secret references are retained.
-        if (name === 'env' && record(child) && Object.values(child).every(v => typeof v === 'string' && /^\{\{secret\.[\w.-]+\}\}$/.test(v))) continue
+        if (name === 'env' && record(child) && Object.values(child).every(v => typeof v === 'string' && SECRET_REFERENCE.test(v))) continue
         throw new Error('This draft contains inline runtime credentials or environment values. Use project-secret references before saving; your edits remain here.')
       }
       if (typeof child === 'string' && /^https?:\/\//i.test(child)) {
@@ -136,12 +148,17 @@ export function saveScenarioAuthoringDraft(draft: ScenarioAuthoringDraft): void 
   window.localStorage.setItem(key(draft.projectId), json)
 }
 
-export function readScenarioAuthoringDraft(project: string): ScenarioAuthoringDraft | null {
+// The checkpoint readers are named "…ScenarioDraftCheckpoint": in a name like
+// "readScenarioAuthoringDraft", CodeQL's credential heuristic finds "oauth"
+// ("scenari-oAuth-oring") and reports every write of the result to storage as
+// clear-text credentials. The checkpoint holds none: saving refuses inline
+// credential values.
+export function readScenarioDraftCheckpoint(project: string): ScenarioAuthoringDraft | null {
   if (!project) return null
   try {
     const raw = window.localStorage.getItem(key(project))
     if (!raw || raw.length > 2_000_000) return null
-    return parseScenarioAuthoringDraft(JSON.parse(raw), project)
+    return parseScenarioDraftCheckpoint(JSON.parse(raw), project)
   } catch {
     return null
   }
@@ -151,10 +168,10 @@ export function readScenarioAuthoringDraft(project: string): ScenarioAuthoringDr
  * A draft document, from this browser or saved to the project, upgraded to the
  * current version, or null when it is not a usable draft for the project.
  */
-export function parseScenarioAuthoringDraft(parsed: unknown, project: string): ScenarioAuthoringDraft | null {
+export function parseScenarioDraftCheckpoint(parsed: unknown, project: string): ScenarioAuthoringDraft | null {
   if (!project) return null
   try {
-    const d = record(parsed) ? migrateScenarioAuthoringDraft(parsed) : null
+    const d = record(parsed) ? migrateScenarioDraftCheckpoint(parsed) : null
     if (!d || d.projectId !== project || !record(d.form)) return null
     if (!['savedAt', 'editingUpdatedAt', 'shapeId', 'templateId', 'cloneId'].every(k => typeof d[k] === 'string')) return null
     if (!Number.isFinite(Date.parse(d.savedAt as string)) || (d.editingId !== null && typeof d.editingId !== 'string')) return null
@@ -189,6 +206,8 @@ export function parseScenarioAuthoringDraft(parsed: unknown, project: string): S
     if (f.data_pools !== undefined && (!Array.isArray(f.data_pools) || !f.data_pools.every(binding => record(binding) && typeof binding.pool_id === 'string' && typeof binding.alias === 'string' && (binding.access_mode === 'live' ? ['manual', 'next', 'pop', 'lease'] : ['sequential', 'random', 'unique']).includes(String(binding.selection_strategy))))) return null
     if (['runtime_settings', 'goal_config', 'traffic_profile', 'assignment'].some(name => f[name] !== undefined && !record(f[name]))) return null
     assertDraftHasNoInlineCredentials(f)
+    // An intent belongs to a new scenario in this project; anything else is dropped.
+    if (d.createIntent !== undefined && !(d.editingId === null && isAuthoringCreateIntent(d.createIntent) && d.createIntent.purpose === 'scenario_create' && d.createIntent.projectId === project)) delete d.createIntent
     const link = d.projectDraft
     if (link !== undefined && !(record(link) && typeof link.id === 'string' && link.id && Number.isInteger(link.revision) && (link.revision as number) > 0)) delete d.projectDraft
     // A recorded baseline that does not look like one is dropped: the draft

@@ -38,7 +38,15 @@ test('recording review scopes verification to outputs and invalidates changed co
   await expect(page.getByText('Verification passed for this conversion', { exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Verify output 2', exact: true })).toBeDisabled()
   await page.screenshot({ path: testInfo.outputPath('recording-output-review.png'), fullPage: true })
+  // The review is unsaved, so reloading asks the browser's leave question; a
+  // reload that does not ask fails here rather than at the test timeout.
+  const leavePrompt = page.waitForEvent('dialog', { timeout: 10_000 }).then(async dialog => {
+    const type = dialog.type()
+    await dialog.accept()
+    return type
+  })
   await page.reload()
+  expect(await leavePrompt).toBe('beforeunload')
   await expect(page.getByText('Previous recording verification', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Save unverified draft', exact: true })).toBeVisible()
 })

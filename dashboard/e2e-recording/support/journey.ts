@@ -7,8 +7,16 @@ import { freePort, healthy, startProcess } from './process'
 import { scopeQuery } from '../../e2e/support/workspace'
 
 export type Script = Record<string, any> // DSL changes are checked by the real parser, not a test copy.
-export async function studio(page: Page, h: Harness) {
+export async function studio(page: Page, h: Harness, { discardReview = false } = {}) {
   await page.goto(`${h.url}/#/scripts?${scopeQuery(h.workspace)}`)
+  if (discardReview) {
+    // An unsaved recording review asks before it is left (AUTH-1).
+    const unsaved = page.getByRole('dialog', { name: 'Unsaved Changes' })
+    await unsaved.getByRole('button', { name: 'Discard changes', exact: true }).click()
+    await expect(unsaved).toBeHidden()
+    // The library may then name itself (mode=list); only Record must be gone.
+    await expect(page).not.toHaveURL(/[?&]mode=record(?:&|$)/)
+  }
   await page.reload()
   await page.getByRole('button', { name: 'Script builder', exact: true }).click()
   await page.getByRole('button', { name: 'Record', exact: true }).click()

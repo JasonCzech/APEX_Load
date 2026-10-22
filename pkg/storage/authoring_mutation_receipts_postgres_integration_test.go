@@ -157,3 +157,8 @@ func TestPostgresExclusivePolicyDefaults(t *testing.T) {
 	store, _ := newPostgresScenarioRevisionFixture(t)
 	exerciseExclusivePolicyDefaults(t, store)
 }
+
+func TestPostgresAuthoringReceiptOriginalOutcomes(t *testing.T) {
+	store, _ := newPostgresScenarioRevisionFixture(t)
+	exerciseAuthoringReceiptOriginalOutcomes(t, store)
+}

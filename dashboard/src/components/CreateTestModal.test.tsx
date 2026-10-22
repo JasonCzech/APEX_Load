@@ -2,6 +2,7 @@
 
 import { act, StrictMode, useEffect } from 'react'
 import { createRoot, Root } from 'react-dom/client'
+import { ApiError } from '../hooks/apiClient'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import CreateTestModal from './CreateTestModal'
@@ -12,11 +13,15 @@ import { buildScenarioDraftFromTest } from './scenarioDraftUtils'
 import type { ScenarioDraft, TestSummary } from '../types'
 
 const monitorRequest = vi.hoisted(() => vi.fn())
-vi.mock('../hooks/apiClient', () => ({ request: monitorRequest }))
+const confirmActionMock = vi.hoisted(() => vi.fn<(message: string, options?: unknown) => Promise<boolean>>(async () => true))
+vi.mock('./ux/confirmAction', () => ({ confirmAction: confirmActionMock }))
+vi.mock('../hooks/apiClient', async importOriginal => ({ ApiError: (await importOriginal<typeof import('../hooks/apiClient')>()).ApiError, request: monitorRequest }))
 
 const apiMock = {
   estimateTest: vi.fn(),
   createTest: vi.fn(),
+  // Keyed creates reach the createTest mock; intent tests assert the key.
+  createTestKeyed: vi.fn(async (...args: [data: unknown, key?: string]): Promise<{ kind: 'created' | 'replayed'; resource: unknown }> => ({ kind: 'created', resource: await apiMock.createTest(args[0]) })),
   getSystemInventory: vi.fn(),
   listELKConnections: vi.fn(),
   listDynatraceConnections: vi.fn(),
@@ -785,6 +790,127 @@ describe('CreateTestModal', () => {
     await click('Leave draft')
     expect(selected).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Create queued run has unsaved changes')
+  })
+
+  it('retries a queued-run create under its draft-owned key and starts another only on Save as new (AUTH-1)', async () => {
+    window.localStorage.clear()
+    apiMock.createTest.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await act(async () => root.render(<NavigationGuardProvider><CreateTestModal scripts={[{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]} onClose={vi.fn()} onCreated={vi.fn()} /></NavigationGuardProvider>))
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!, 'Keyed run'))
+    await click('Create queued run')
+    const key = apiMock.createTestKeyed.mock.calls[0][1]
+    expect(key).toMatch(/^test-create-/)
+    apiMock.createTestKeyed.mockRejectedValueOnce(new ApiError('reused', 409, { error: 'reused', code: 'idempotency_key_reused' }))
+    await click('Create queued run')
+    expect(apiMock.createTestKeyed.mock.calls[1][1]).toBe(key)
+    expect(container.textContent).toContain('may already have created the run')
+    apiMock.createTest.mockResolvedValueOnce({ id: 'run-2', name: 'Keyed run' })
+    await click('Save as new')
+    expect(apiMock.createTestKeyed).toHaveBeenCalledTimes(3)
+    expect(apiMock.createTestKeyed.mock.calls[2][1]).not.toBe(key)
+  })
+
+  it('reports a replayed run instead of presenting it as a new queued run (AUTH-1)', async () => {
+    window.localStorage.clear()
+    const onCreated = vi.fn()
+    apiMock.createTestKeyed.mockResolvedValueOnce({ kind: 'replayed', resource: { id: 'run-1', ref_key: 'RUN-1', status: 'RUNNING' } as never })
+    await act(async () => root.render(<NavigationGuardProvider><CreateTestModal scripts={[{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]} onClose={vi.fn()} onCreated={onCreated} /></NavigationGuardProvider>))
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!, 'Replayed run'))
+    await click('Create queued run')
+    expect(onCreated).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('This draft already created run RUN-1 (RUNNING); no new run was queued.')
+    await click('Open run')
+    expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 'run-1' }))
+  })
+
+  it('replays rather than queues another when a replayed draft is created again (AUTH-1)', async () => {
+    window.localStorage.clear()
+    const replay = { kind: 'replayed' as const, resource: { id: 'run-1', ref_key: 'RUN-1', status: 'QUEUED' } as never }
+    apiMock.createTestKeyed.mockResolvedValueOnce(replay)
+    await act(async () => root.render(<NavigationGuardProvider><CreateTestModal scripts={[{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]} onClose={vi.fn()} onCreated={vi.fn()} /></NavigationGuardProvider>))
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!, 'Replayed run'))
+    await click('Create queued run')
+    const key = apiMock.createTestKeyed.mock.calls[0][1]
+    // The outcome is known: no reload record keeps the key.
+    expect(window.localStorage.getItem('apexload.authoring.create-intents.v1') || '').not.toContain(String(key))
+    apiMock.createTestKeyed.mockResolvedValueOnce(replay)
+    await click('Create queued run')
+    expect(apiMock.createTestKeyed.mock.calls[1][1]).toBe(key)
+    expect(container.textContent).toContain('no new run was queued. To queue another, choose Save as new.')
+    // A changed draft is refused under the same key, and the run it made stays one click away.
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!, 'Replayed run, changed'))
+    apiMock.createTestKeyed.mockRejectedValueOnce(new ApiError('reused', 409, { error: 'reused', code: 'idempotency_key_reused' }))
+    await click('Create queued run')
+    expect(apiMock.createTestKeyed.mock.calls[2][1]).toBe(key)
+    expect(container.textContent).toContain('This draft already created run RUN-1, and it has changed since. To queue another run with these changes, choose Save as new.')
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Open run')).toBe(true)
+    expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent === 'Save as new')).toHaveLength(1)
+    // Once that run is deleted, the notice that offered to open it goes.
+    apiMock.createTestKeyed.mockRejectedValueOnce(new ApiError('deleted', 410, { error: 'deleted', code: 'idempotency_resource_deleted' }))
+    await click('Create queued run')
+    expect(container.textContent).toContain('was deleted and will not be recreated')
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Open run')).toBe(false)
+    expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent === 'Save as new')).toHaveLength(1)
+    apiMock.createTest.mockResolvedValueOnce({ id: 'run-2', name: 'Replayed run, changed' })
+    await click('Save as new')
+    expect(apiMock.createTestKeyed).toHaveBeenCalledTimes(5)
+    expect(apiMock.createTestKeyed.mock.calls[4][1]).not.toBe(key)
+  })
+
+  it("never recalls one queued run's revise key for another revised with the same settings (AUTH-1)", async () => {
+    window.localStorage.clear()
+    const sourceA = { ...captureSource(), id: 'source-a', elk_capture: undefined, dynatrace_capture: undefined } as TestSummary
+    const sourceB = { ...sourceA, id: 'source-b' } as TestSummary
+    const revise = async (source: TestSummary) => {
+      await act(async () => root.render(<></>))
+      await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+      apiMock.createTest.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      await click('Create revised copy')
+      const calls = apiMock.createTestKeyed.mock.calls
+      return calls[calls.length - 1]?.[1]
+    }
+    const keyA = await revise(sourceA)
+    expect(keyA).toMatch(/^test-create-/)
+    expect(await revise(sourceB)).not.toBe(keyA)
+    // Reopening the same source's revision recalls its own unanswered key.
+    expect(await revise(sourceA)).toBe(keyA)
+  })
+
+  it('offers Save as new only beside the refusal it answers (AUTH-1)', async () => {
+    window.localStorage.clear()
+    await act(async () => root.render(<NavigationGuardProvider><CreateTestModal scripts={[{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]} onClose={vi.fn()} onCreated={vi.fn()} /></NavigationGuardProvider>))
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!, 'Refused run'))
+    apiMock.createTestKeyed.mockRejectedValueOnce(new ApiError('reused', 409, { error: 'reused', code: 'idempotency_key_reused' }))
+    await click('Create queued run')
+    const saveAsNew = () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save as new')
+    expect(saveAsNew()).toBeDefined()
+    // Another failure is not that refusal, and offers no Save as new.
+    apiMock.createTestKeyed.mockRejectedValueOnce(new ApiError('The run exceeds project capacity', 409, { error: 'The run exceeds project capacity', code: 'capacity_exceeded' }))
+    await click('Create queued run')
+    expect(container.textContent).toContain('The run exceeds project capacity')
+    expect(saveAsNew()).toBeUndefined()
+  })
+
+  it('opens a replayed run over later edits only after they are explicitly discarded (AUTH-1)', async () => {
+    window.localStorage.clear()
+    const onCreated = vi.fn()
+    apiMock.createTestKeyed.mockResolvedValueOnce({ kind: 'replayed', resource: { id: 'run-1', ref_key: 'RUN-1', status: 'QUEUED' } as never })
+    await act(async () => root.render(<NavigationGuardProvider><CreateTestModal scripts={[{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]} onClose={vi.fn()} onCreated={onCreated} /></NavigationGuardProvider>))
+    const input = container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!
+    await act(async () => setInputValue(input, 'Replayed run'))
+    await click('Create queued run')
+    await act(async () => setInputValue(input, 'Edited after the replay'))
+    confirmActionMock.mockResolvedValueOnce(false)
+    await click('Open run')
+    // Opening the existing run never saves the later edits: it only offers
+    // to discard them.
+    expect(confirmActionMock).toHaveBeenCalledWith(expect.stringContaining('Discard the edits made since and open run RUN-1'), expect.objectContaining({ confirmLabel: 'Discard edits' }))
+    expect(onCreated).not.toHaveBeenCalled()
+    confirmActionMock.mockResolvedValueOnce(true)
+    await click('Open run')
+    expect(onCreated).toHaveBeenCalledTimes(1)
+    expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 'run-1' }))
+    expect(apiMock.createTestKeyed).toHaveBeenCalledTimes(1)
   })
 
   it('retains its navigation guard and draft after a refused create', async () => {

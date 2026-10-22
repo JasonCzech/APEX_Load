@@ -5,6 +5,7 @@ import "github.com/jasonczech/apexload/pkg/internal/importreview"
 import (
 	"context"
 	cryptorand "crypto/rand"
+	"database/sql"
 	"errors"
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/runcontract"
@@ -1923,22 +1924,75 @@ func (tr *TestRunner) secretResolverForProject(projectID string) engine.SecretRe
 	return engine.CacheSecretResolverForRun(secretstore.EngineResolver(tr.projectSecretStore, projectID))
 }
 
+// scriptSecretBinding is where a script's secret references resolve: its
+// project's secrets, with an application's secrets ahead of them, or nothing
+// at all when the application is refused (it belongs to another project, no
+// longer exists or cannot be read) or the assignment cannot be read. Err
+// holds a failed read, which resolves nothing too.
+type scriptSecretBinding struct {
+	ProjectID     string
+	ApplicationID string
+	Refused       bool
+	Err           error
+}
+
 // A run binds the application selected for that run. Script-only operations
 // use the library assignment instead, allowing one shared application binding
 // to serve every script in that application.
-func (tr *TestRunner) secretResolverForScope(projectID, applicationID string) engine.SecretResolver {
-	project := tr.secretResolverForProject(projectID)
+func (tr *TestRunner) secretBindingForScope(projectID, applicationID string) scriptSecretBinding {
+	binding := scriptSecretBinding{ProjectID: projectID}
 	applicationID = strings.TrimSpace(applicationID)
 	if applicationID == "" || tr == nil || tr.applicationSecretStore == nil {
-		return project
+		return binding
 	}
 	if tr.applicationStore != nil {
 		app, err := tr.applicationStore.GetApplication(applicationID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			binding.Refused, binding.Err = true, err
+			return binding
+		}
 		if err != nil || app == nil || normalizeProjectID(app.ProjectID) != normalizeProjectID(projectID) {
-			return engine.SecretResolverFunc(func(string) (string, bool) { return "", false })
+			binding.Refused = true
+			return binding
 		}
 	}
-	scopeID := storage.ApplicationSecretScopeID(applicationID)
+	binding.ApplicationID = applicationID
+	return binding
+}
+
+func (tr *TestRunner) secretBindingForScript(script *dsl.Script) scriptSecretBinding {
+	if script == nil {
+		return scriptSecretBinding{}
+	}
+	if tr != nil && tr.libraryAssignmentStore != nil && strings.TrimSpace(script.ID) != "" {
+		assignments, err := tr.libraryAssignmentStore.ListLibraryAssignments("script", []string{script.ID})
+		if err != nil {
+			return scriptSecretBinding{ProjectID: script.ProjectID, Refused: true, Err: err}
+		}
+		if assignment := assignments[script.ID]; assignment != nil && assignment.Application != nil {
+			return tr.secretBindingForScope(script.ProjectID, assignment.Application.ID)
+		}
+	}
+	return scriptSecretBinding{ProjectID: script.ProjectID}
+}
+
+func (tr *TestRunner) secretResolverForScope(projectID, applicationID string) engine.SecretResolver {
+	return tr.secretResolverForBinding(tr.secretBindingForScope(projectID, applicationID))
+}
+
+func (tr *TestRunner) secretResolverForScript(script *dsl.Script) engine.SecretResolver {
+	return tr.secretResolverForBinding(tr.secretBindingForScript(script))
+}
+
+func (tr *TestRunner) secretResolverForBinding(binding scriptSecretBinding) engine.SecretResolver {
+	if binding.Refused {
+		return engine.SecretResolverFunc(func(string) (string, bool) { return "", false })
+	}
+	project := tr.secretResolverForProject(binding.ProjectID)
+	if binding.ApplicationID == "" {
+		return project
+	}
+	scopeID := storage.ApplicationSecretScopeID(binding.ApplicationID)
 	return engine.CacheSecretResolverForRun(engine.ContextSecretResolverFunc(func(parent context.Context, name string) (string, bool) {
 		if parent == nil {
 			parent = context.Background()
@@ -1958,22 +2012,6 @@ func (tr *TestRunner) secretResolverForScope(projectID, applicationID string) en
 			return "", false
 		}
 	}))
-}
-
-func (tr *TestRunner) secretResolverForScript(script *dsl.Script) engine.SecretResolver {
-	if script == nil {
-		return tr.secretResolverForProject("")
-	}
-	if tr != nil && tr.libraryAssignmentStore != nil && strings.TrimSpace(script.ID) != "" {
-		assignments, err := tr.libraryAssignmentStore.ListLibraryAssignments("script", []string{script.ID})
-		if err != nil {
-			return engine.SecretResolverFunc(func(string) (string, bool) { return "", false })
-		}
-		if assignment := assignments[script.ID]; assignment != nil && assignment.Application != nil {
-			return tr.secretResolverForScope(script.ProjectID, assignment.Application.ID)
-		}
-	}
-	return tr.secretResolverForProject(script.ProjectID)
 }
 
 func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunnerOption) *TestRunner {
