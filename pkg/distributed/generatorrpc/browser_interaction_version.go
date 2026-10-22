@@ -44,6 +44,9 @@ func (c *Client) observeBrowserInteractionVersion(pong *pb.HeartbeatPong) {
 		if protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserDocumentProofV2) {
 			c.connection.browserDocumentProof = 2
 		}
+		if protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserDocumentProofV3) {
+			c.connection.browserDocumentProof = 3
+		}
 	}
 	c.connection.browserOriginalSource = pong != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserOriginalSourceV1+"+"+FeaturePreparationV1)
 	c.connection.browserInteractionV2 = available

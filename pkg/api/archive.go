@@ -1149,6 +1149,9 @@ var archiveErrorWhitespacePattern = regexp.MustCompile(`\s+`)
 var archiveSnapshotLeadingTemplateBasePattern = regexp.MustCompile(`^\{\{\s*(?:var|param)\.[^{}]+\s*\}\}\s*(.*)$`)
 
 type runArchiveWriter struct {
+	browserProofMu      sync.Mutex
+	browserProofJournal *protocol.BrowserSourceJournal
+	browserProofSealed  bool
 	// businessKeys digests the run's business-key values (G16).
 	businessKeys            *businessKeyArchiver
 	captureBudget           *archiveCaptureBudget

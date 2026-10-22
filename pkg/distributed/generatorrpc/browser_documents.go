@@ -29,6 +29,11 @@ func browserRuntimeFeatures(instance protocol.Protocol) []string {
 				features = append(features, FeatureBrowserDocumentProofV1)
 				if max, ok := instance.(interface{ BrowserDocumentReceiptMaxVersion() int }); ok && max.BrowserDocumentReceiptMaxVersion() >= 2 {
 					features = append(features, FeatureBrowserDocumentProofV2)
+					if max.BrowserDocumentReceiptMaxVersion() >= 3 {
+						if _, ok := instance.(protocol.BrowserSourceLeaseProvider); ok {
+							features = append(features, FeatureBrowserDocumentProofV3)
+						}
+					}
 				}
 			}
 		}

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"path/filepath"
 
@@ -56,6 +57,18 @@ func (w *runArchiveWriter) RecordBrowserDocumentReceiptEvidence(evidence *protoc
 	if err != nil {
 		w.flushErr = err
 		return err
+	}
+	if err := w.browserReceiptsFile.Sync(); err != nil {
+		w.flushErr = err
+		return err
+	}
+	if w.manifest.BrowserReceiptRecordCount == 0 {
+		for _, dir := range []string{w.rootDir, filepath.Dir(w.rootDir)} {
+			if err := syncArchiveDirectory(dir); err != nil {
+				w.flushErr = err
+				return err
+			}
+		}
 	}
 	w.manifest.BrowserReceiptRecordCount++
 	return nil
@@ -172,4 +185,35 @@ func (w *runArchiveWriter) MarkBrowserDocumentReceiptIncomplete() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.manifest.BrowserReceiptIncomplete = true
+}
+
+func (w *runArchiveWriter) BrowserDocumentSourceJournal() (*protocol.BrowserSourceJournal, error) {
+	if w == nil {
+		return nil, fmt.Errorf("browser source archive unavailable")
+	}
+	w.browserProofMu.Lock()
+	defer w.browserProofMu.Unlock()
+	if w.browserProofSealed {
+		return nil, fmt.Errorf("browser source archive sealed")
+	}
+	if w.browserProofJournal == nil {
+		w.mu.Lock()
+		runID, owner := w.manifest.TestID, "controller"
+		w.mu.Unlock()
+		if owner == "" {
+			owner = "generator"
+		}
+		journal, err := protocol.NewBrowserSourceJournal(runID, owner, w.RecordBrowserDocumentReceiptEvidence)
+		if err != nil {
+			return nil, err
+		}
+		w.browserProofJournal = journal
+	}
+	return w.browserProofJournal, nil
+}
+func (w *runArchiveWriter) sealBrowserSourceJournal(success bool) error {
+	w.browserProofMu.Lock()
+	defer w.browserProofMu.Unlock()
+	w.browserProofSealed = true
+	return w.browserProofJournal.Seal(success)
 }

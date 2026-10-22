@@ -4011,3 +4011,19 @@ func (sink *combinedSink) MarkBrowserDocumentReceiptIncomplete() {
 		}
 	}
 }
+
+func (sink *combinedSink) BrowserDocumentSourceJournal() (*protocol.BrowserSourceJournal, error) {
+	var selected protocol.BrowserSourceJournalProvider
+	for _, child := range sink.sinks {
+		if source, ok := child.(protocol.BrowserSourceJournalProvider); ok {
+			if selected != nil {
+				return nil, fmt.Errorf("ambiguous browser source archive")
+			}
+			selected = source
+		}
+	}
+	if selected == nil {
+		return nil, nil
+	}
+	return selected.BrowserDocumentSourceJournal()
+}

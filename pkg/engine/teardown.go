@@ -95,7 +95,14 @@ func callProtocolTeardownWithSlots(ctx context.Context, p interface {
 
 func callProtocolTeardownWithMode(ctx context.Context, p interface {
 	Teardown(context.Context) error
-}, config *RedactionConfig, slots chan struct{}, strict bool) error {
+}, config *RedactionConfig, slots chan struct{}, strict bool) (resultErr error) {
+	defer func() {
+		if provider, ok := p.(protocol.BrowserSourceLeaseProvider); ok {
+			if lease := provider.BrowserDocumentSourceLease(); lease != nil {
+				resultErr = errors.Join(resultErr, lease.Finish(resultErr == nil))
+			}
+		}
+	}()
 	if p == nil {
 		return nil
 	}

@@ -35,7 +35,7 @@ func TestBrowserDocumentProofNegotiation(t *testing.T) {
 		{"explicit", []string{FeaturePreparationV1, FeatureBrowserDocumentProofV1}, false, false, 1, 1, 1, true},
 		{"wrong ack", []string{FeaturePreparationV1, FeatureBrowserDocumentProofV1}, true, true, 0, 0, 1, false},
 		{"unsupported", nil, true, false, 1, 0, 0, false},
-		{"future", []string{FeaturePreparationV1, FeatureBrowserDocumentProofV1}, true, false, 3, 3, 0, false},
+		{"future", []string{FeaturePreparationV1, FeatureBrowserDocumentProofV1}, true, false, 4, 4, 0, false},
 		{"v2 negotiated", []string{FeaturePreparationV1, FeatureBrowserDocumentProofV2}, true, true, 0, 2, 2, true},
 		{"v2 on v1", []string{FeaturePreparationV1, FeatureBrowserDocumentProofV1}, true, false, 2, 0, 0, false},
 	} {
@@ -71,7 +71,7 @@ func TestBrowserDocumentProofAssignmentValidation(t *testing.T) {
 		version         uint32
 		prepared, valid bool
 		assigned        int
-	}{{0, false, true, -1}, {0, true, true, -1}, {1, false, false, 1}, {1, true, true, 1}, {2, true, true, 2}, {3, true, false, -1}} {
+	}{{0, false, true, -1}, {0, true, true, -1}, {1, false, false, 1}, {1, true, true, 1}, {2, true, true, 2}, {3, true, true, 3}, {4, true, false, -1}} {
 		q := &pb.WorkAssignment{BrowserDocumentProofVersion: tc.version, PrepareOnly: tc.prepared}
 		if (validateBrowserDocumentProofVersion(q) == nil) != tc.valid || assignedBrowserDocumentProofVersion(q) != tc.assigned {
 			t.Fatal(tc)

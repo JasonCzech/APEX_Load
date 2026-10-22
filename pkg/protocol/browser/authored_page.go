@@ -11,6 +11,7 @@ import (
 // navigation command. It does not issue a target request or use URL equality to
 // attribute a page. Missing/ambiguous native joins remain unavailable.
 func (b *Browser) noteAuthoredPageResponse(ctx context.Context, action *protocol.Action, result *protocol.Result, response playwright.Response) {
+	b.noteCausalDocumentResponse(ctx, action, response)
 	if action == nil || result == nil {
 		return
 	}

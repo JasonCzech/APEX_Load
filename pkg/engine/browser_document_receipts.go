@@ -41,7 +41,7 @@ func (r *browserDocumentRegistration) publishReceipts() {
 		r.receiptFailed()
 		return
 	}
-	if version != 1 && version != 2 {
+	if version != 1 && version != 2 && version != 3 {
 		r.mu.Unlock()
 		return
 	}

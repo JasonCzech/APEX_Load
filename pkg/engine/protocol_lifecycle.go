@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type scrubbedContextError struct {
@@ -47,11 +48,34 @@ func callProtocolInit(ctx context.Context, p interface {
 	if p == nil {
 		return fmt.Errorf("protocol init is unavailable")
 	}
+	var lease *protocol.BrowserSourceLease
+	defer func() {
+		if err != nil && lease != nil {
+			err = errors.Join(err, lease.Finish(false))
+		}
+	}()
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("protocol init panicked: %s", recoveredPanicLogTextWithConfig(recovered, redaction))
 		}
 	}()
+	if source, ok := protoConfig["browser_document_source_journal"].(protocol.BrowserSourceJournalProvider); ok {
+		provider, ok := p.(protocol.BrowserSourceLeaseProvider)
+		if !ok {
+			return fmt.Errorf("browser source ledger runtime unavailable")
+		}
+		journal, readErr := source.BrowserDocumentSourceJournal()
+		if readErr != nil {
+			return readErr
+		}
+		if journal != nil {
+			lease, err = journal.Begin()
+			if err != nil {
+				return err
+			}
+			provider.SetBrowserDocumentSourceLease(lease)
+		}
+	}
 	if err := p.Init(ctx, protoConfig); err != nil {
 		return scrubProtocolLifecycleError(err, redaction)
 	}

@@ -712,6 +712,9 @@ func loadLevelDurationSketches(groups map[string]*GroupLiveMetrics) map[string]*
 }
 
 func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr string, slaEvaluated bool, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error) {
+	if err := w.sealBrowserSourceJournal(status == "COMPLETE"); err != nil {
+		w.MarkBrowserDocumentReceiptIncomplete()
+	}
 	w.stopFlushLoop()
 	w.harMu.Lock()
 	defer w.harMu.Unlock()

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"io"
+	"os"
+	"path/filepath"
 )
 
 func (w *archiveRecorder) RecordBrowserDocumentReceiptEvidence(evidence *protocol.BrowserDocumentReceiptEvidence) error {
@@ -49,6 +51,28 @@ func (w *archiveRecorder) RecordBrowserDocumentReceiptEvidence(evidence *protoco
 		w.recordErr = err
 		return err
 	}
+	if err := w.browserReceiptsFile.Sync(); err != nil {
+		w.recordErr = err
+		return err
+	}
+	if w.manifest.BrowserReceiptRecordCount == 0 {
+		if err := syncGeneratorArchiveDirectory(w.runRoot); err != nil {
+			w.recordErr = err
+			return err
+		}
+		parent, err := os.OpenRoot(filepath.Dir(w.rootDir))
+		if err == nil {
+			err = syncGeneratorArchiveDirectory(parent)
+			closeErr := parent.Close()
+			if err == nil {
+				err = closeErr
+			}
+		}
+		if err != nil {
+			w.recordErr = err
+			return err
+		}
+	}
 	w.manifest.BrowserReceiptRecordCount++
 	return nil
 }
@@ -60,4 +84,35 @@ func (w *archiveRecorder) MarkBrowserDocumentReceiptIncomplete() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.manifest.BrowserReceiptIncomplete = true
+}
+
+func (w *archiveRecorder) BrowserDocumentSourceJournal() (*protocol.BrowserSourceJournal, error) {
+	if w == nil {
+		return nil, fmt.Errorf("browser source archive unavailable")
+	}
+	w.browserProofMu.Lock()
+	defer w.browserProofMu.Unlock()
+	if w.browserProofSealed {
+		return nil, fmt.Errorf("browser source archive sealed")
+	}
+	if w.browserProofJournal == nil {
+		w.mu.Lock()
+		runID, owner := w.manifest.TestID, w.manifest.SourceIdentity
+		w.mu.Unlock()
+		if owner == "" {
+			owner = "generator"
+		}
+		journal, err := protocol.NewBrowserSourceJournal(runID, owner, w.RecordBrowserDocumentReceiptEvidence)
+		if err != nil {
+			return nil, err
+		}
+		w.browserProofJournal = journal
+	}
+	return w.browserProofJournal, nil
+}
+func (w *archiveRecorder) sealBrowserSourceJournal(success bool) error {
+	w.browserProofMu.Lock()
+	defer w.browserProofMu.Unlock()
+	w.browserProofSealed = true
+	return w.browserProofJournal.Seal(success)
 }

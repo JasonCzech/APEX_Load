@@ -48,13 +48,15 @@ type BrowserDocumentReceipt struct {
 // not prove clock continuity between samples, bound drift, or qualify a map
 // to the controller clock. Raw browser measurement windows stay unchanged.
 type BrowserDocumentReceiptEvidence struct {
-	Version          int                      `json:"version"`
-	SourceGeneration string                   `json:"source_generation"`
-	StartedAt        time.Time                `json:"started_at"`
-	WallStepObserved bool                     `json:"wall_step_observed"`
-	Incomplete       bool                     `json:"incomplete"`
-	Receipts         []BrowserDocumentReceipt `json:"receipts"`
-	Lifetime         *BrowserNativeLifetime   `json:"lifetime,omitempty"`
+	Version          int                         `json:"version"`
+	SourceGeneration string                      `json:"source_generation"`
+	StartedAt        time.Time                   `json:"started_at"`
+	WallStepObserved bool                        `json:"wall_step_observed"`
+	Incomplete       bool                        `json:"incomplete"`
+	Receipts         []BrowserDocumentReceipt    `json:"receipts"`
+	Lifetime         *BrowserNativeLifetime      `json:"lifetime,omitempty"`
+	Source           *BrowserSourceEvent         `json:"source,omitempty"`
+	Closure          *BrowserNativeSourceClosure `json:"closure,omitempty"`
 }
 
 // BrowserDocumentReceiptEvidenceProvider returns a bounded local snapshot;
@@ -64,10 +66,26 @@ type BrowserDocumentReceiptEvidenceProvider interface {
 }
 
 func (e *BrowserDocumentReceiptEvidence) Clone() *BrowserDocumentReceiptEvidence {
-	if e == nil || (e.Version != BrowserDocumentReceiptVersion && e.Version != BrowserDocumentReceiptLifetimeVersion) || e.Version == 1 && e.Lifetime != nil || !BrowserEvidenceGeneration(e.SourceGeneration) || e.StartedAt.IsZero() || e.StartedAt.Location() != time.UTC || len(e.Receipts) > MaxBrowserDocumentReceipts {
+	if e == nil || (e.Version != BrowserDocumentReceiptVersion && e.Version != BrowserDocumentReceiptLifetimeVersion && e.Version != BrowserDocumentReceiptClosureVersion) || e.Version == 1 && e.Lifetime != nil || !BrowserEvidenceGeneration(e.SourceGeneration) || e.StartedAt.IsZero() || e.StartedAt.Location() != time.UTC || len(e.Receipts) > MaxBrowserDocumentReceipts {
 		return nil
 	}
 	out := *e
+	if e.Version < 3 && (e.Source != nil || e.Closure != nil) {
+		return nil
+	}
+	if e.Source != nil {
+		if !e.Source.valid() {
+			return nil
+		}
+		source := *e.Source
+		out.Source = &source
+	}
+	if e.Closure != nil {
+		out.Closure = e.Closure.clone(e.SourceGeneration)
+		if out.Closure == nil {
+			return nil
+		}
+	}
 	if e.Lifetime != nil {
 		if !e.Lifetime.CreationBracketed || e.Lifetime.EndNS < 0 || !e.Lifetime.Closed && e.Lifetime.EndNS != 0 {
 			return nil
@@ -152,10 +170,14 @@ func DecodeBrowserDocumentReceiptEvidence(raw []byte) (*BrowserDocumentReceiptEv
 // Version 1 intentionally carries no lifetime/qualification proof.
 func BrowserDocumentReceiptProjection(e *BrowserDocumentReceiptEvidence, version int) *BrowserDocumentReceiptEvidence {
 	e = e.Clone()
-	if e == nil || version < 1 || version > 2 || e.Version < version {
+	if e == nil || version < 1 || version > 3 || e.Version < version {
 		return nil
 	}
 	e.Version = version
+	if version < 3 {
+		e.Source = nil
+		e.Closure = nil
+	}
 	if version == 1 {
 		e.Lifetime = nil
 	}

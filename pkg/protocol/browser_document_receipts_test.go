@@ -40,7 +40,7 @@ func TestBrowserDocumentReceiptContractRoundTrip(t *testing.T) {
 
 func TestBrowserDocumentReceiptContractRefusesMalformed(t *testing.T) {
 	for name, mutate := range map[string]func(*BrowserDocumentReceiptEvidence){
-		"future version":         func(e *BrowserDocumentReceiptEvidence) { e.Version = 3 },
+		"future version":         func(e *BrowserDocumentReceiptEvidence) { e.Version = 4 },
 		"missing source":         func(e *BrowserDocumentReceiptEvidence) { e.SourceGeneration = "" },
 		"foreign document":       func(e *BrowserDocumentReceiptEvidence) { e.Receipts[0].DocumentID = strings.Repeat("b", 32) + "-d1" },
 		"foreign frame":          func(e *BrowserDocumentReceiptEvidence) { e.Receipts[0].FrameID = "foreign" },

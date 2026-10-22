@@ -36,6 +36,13 @@ func (b *Browser) closeWithContext(ctx context.Context) (result error) {
 	generation := b.evidence.generation
 	hadContext := b.pwContext != nil
 	b.mu.Unlock()
+	// Publish the terminal context only after physical closure/proof handling.
+	// The execution owner separately acknowledges the protocol slot termination.
+	defer func() {
+		if lease := b.BrowserDocumentSourceLease(); lease != nil {
+			result = errors.Join(result, lease.CloseContext(b.BrowserDocumentReceiptEvidence(), result == nil))
+		}
+	}()
 	defer func() {
 		failure := recover()
 		if failure != nil {

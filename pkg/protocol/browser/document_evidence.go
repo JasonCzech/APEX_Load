@@ -20,6 +20,7 @@ const browserFrameIdentityLimit = 256
 const browserRequestIdentityLimit = 512
 
 type browserDocumentState struct {
+	creationLowerNS                                int64 // A native command-response join can tighten the context creation bound.
 	frame                                          playwright.Frame
 	page                                           playwright.Page
 	token, lifecycleToken                          string
@@ -39,11 +40,12 @@ type browserRequestIdentity struct {
 	join     resourceJoin
 }
 type browserEvidenceState struct {
-	clock              browserDocumentReceiptClock
-	lifecycleContext   context.Context
-	generation         string
-	sequence           uint64
-	binding, finalizer string
+	actionCreationLowerNS int64
+	clock                 browserDocumentReceiptClock
+	lifecycleContext      context.Context
+	generation            string
+	sequence              uint64
+	binding, finalizer    string
 	// loaderBinding is the evidence CDP session's binding through which a
 	// document reports its token from its own context (Chromium).
 	loaderBinding                                          string
@@ -57,11 +59,13 @@ type browserEvidenceState struct {
 	issued, inFlight, droppedRequests, droppedObservations int64
 	incomplete, cancelled                                  bool
 	// Resource association state (resource_association.go).
-	cdpPages        map[playwright.Page]*cdpEvidencePage
-	pwFrameCDP      map[playwright.Frame]string
-	cdpFramePW      map[string]playwright.Frame
-	loaderDocuments map[string]loaderDocument
-	timingRequests  map[resourceTimingKey]int
+	nativeSources             map[*cdpEvidencePage]playwright.Page
+	nativeDiscoveryIncomplete bool
+	cdpPages                  map[playwright.Page]*cdpEvidencePage
+	pwFrameCDP                map[playwright.Frame]string
+	cdpFramePW                map[string]playwright.Frame
+	loaderDocuments           map[string]loaderDocument
+	timingRequests            map[resourceTimingKey]int
 }
 type browserDocumentPayload struct {
 	Kind             string   `json:"kind"`
@@ -118,7 +122,7 @@ func (b *Browser) resetBrowserEvidence(version string) error {
 	// requests.
 	b.harEvidenceGeneration = generation
 	b.evidence = browserEvidenceState{clock: newBrowserDocumentReceiptClock(time.Now()), generation: generation, binding: "__apexEvidence_" + generation, finalizer: "__apexFinalize_" + generation, loaderBinding: "__apexLoader_" + generation, frames: make(map[playwright.Frame]string), documents: make(map[string]*browserDocumentState), requests: make(map[playwright.Request]*browserRequestIdentity), cohort: cohort, shapedPages: make(map[playwright.Page]bool),
-		cdpPages: make(map[playwright.Page]*cdpEvidencePage), pwFrameCDP: make(map[playwright.Frame]string), cdpFramePW: make(map[string]playwright.Frame), loaderDocuments: make(map[string]loaderDocument), timingRequests: make(map[resourceTimingKey]int)}
+		nativeSources: make(map[*cdpEvidencePage]playwright.Page), cdpPages: make(map[playwright.Page]*cdpEvidencePage), pwFrameCDP: make(map[playwright.Frame]string), cdpFramePW: make(map[string]playwright.Frame), loaderDocuments: make(map[string]loaderDocument), timingRequests: make(map[resourceTimingKey]int)}
 	b.mu.Unlock()
 	return nil
 }

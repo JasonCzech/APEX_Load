@@ -404,6 +404,9 @@ type archiveTelemetryHealth struct {
 }
 
 type archiveRecorder struct {
+	browserProofMu      sync.Mutex
+	browserProofJournal *protocol.BrowserSourceJournal
+	browserProofSealed  bool
 	// harMu serializes HAR moves with Finalize and Discard; it is taken
 	// before mu.
 	harMu    sync.Mutex
@@ -1360,6 +1363,9 @@ func (w *archiveRecorder) RecordIntervalSummary(summary archiveIntervalSummary) 
 func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr string) (record *storage.RunArchiveRecord, err error) {
 	if w == nil {
 		return nil, fmt.Errorf("generator archive recorder is unavailable")
+	}
+	if err := w.sealBrowserSourceJournal(status == "COMPLETE"); err != nil {
+		w.MarkBrowserDocumentReceiptIncomplete()
 	}
 	w.harMu.Lock()
 	defer w.harMu.Unlock()

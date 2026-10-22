@@ -224,6 +224,11 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 	if vu.browserDocumentProofVersion != 0 {
 		config["browser_document_proof_version"] = vu.browserDocumentProofVersion
 	}
+	if vu.browserDocumentProofVersion == 0 || vu.browserDocumentProofVersion >= 3 {
+		if sink, ok := vu.ResultSink.(protocol.BrowserSourceJournalProvider); ok && dsl.BrowserDocumentCaptureRequested(vu.Script) {
+			config["browser_document_source_journal"] = sink
+		}
+	}
 	if vu.browserInteractionVersion != 0 {
 		config["browser_interaction_evidence_version"] = vu.browserInteractionVersion
 	}

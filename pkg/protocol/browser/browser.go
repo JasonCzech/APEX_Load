@@ -19,8 +19,9 @@ func init() {
 }
 
 type Browser struct {
-	contextCloseGate            chan struct{} // Context-aware physical-close ownership; initialized under mu.
-	authoredIdentityReadPending bool          // At most one native identity read, including a timed-out reader.
+	sourceLease                 *protocol.BrowserSourceLease // Execution-owner expectation predates Init. Protected by mu.
+	contextCloseGate            chan struct{}                // Context-aware physical-close ownership; initialized under mu.
+	authoredIdentityReadPending bool                         // At most one native identity read, including a timed-out reader.
 	evidence                    browserEvidenceState
 	newUserPolicy               string
 	documentProofVersion        int
@@ -375,6 +376,11 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		// which the gesture's own actionability checks would have waited for.
 		result.StartTime = result.StartTime.Add(min(time.Since(preRead), interactionReadOverhead))
 	}
+	b.mu.Lock()
+	if !b.evidence.clock.start.IsZero() {
+		b.evidence.actionCreationLowerNS = time.Since(b.evidence.clock.start).Nanoseconds()
+	}
+	b.mu.Unlock()
 	actionErr, terminal := b.dispatchAction(actionCtx, action, result)
 	if terminal {
 		result.Duration = time.Since(result.StartTime)

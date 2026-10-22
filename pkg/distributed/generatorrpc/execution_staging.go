@@ -1154,10 +1154,15 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		return nil, status.Errorf(codes.InvalidArgument, "interaction evidence v%d requires browser interaction capture", request.GetBrowserInteractionEvidenceVersion())
 	}
 	if request.GetBrowserDocumentProofVersion() > 0 {
-		if request.GetBrowserDocumentProofVersion() == 2 {
+		if request.GetBrowserDocumentProofVersion() >= 2 {
 			max, ok := instance.(interface{ BrowserDocumentReceiptMaxVersion() int })
-			if !ok || max.BrowserDocumentReceiptMaxVersion() < 2 {
+			if !ok || max.BrowserDocumentReceiptMaxVersion() < int(request.GetBrowserDocumentProofVersion()) {
 				return nil, status.Error(codes.FailedPrecondition, "runtime does not support browser receipt lifetime v2")
+			}
+		}
+		if request.GetBrowserDocumentProofVersion() == 3 {
+			if _, ok := instance.(protocol.BrowserSourceLeaseProvider); !ok {
+				return nil, status.Error(codes.FailedPrecondition, "runtime lacks independent source ledger")
 			}
 		}
 		if err := validateBrowserDocumentProofRuntime(&script, instance); err != nil {

@@ -1020,7 +1020,7 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 	if assignment.PreferBrowserDocumentProof && request.PrepareOnly && request.BrowserDocumentProofVersion == 0 && c.browserDocumentProofNegotiated() > 0 {
 		request.BrowserDocumentProofVersion = c.browserDocumentProofNegotiated()
 	}
-	if request.BrowserDocumentProofVersion > 2 {
+	if request.BrowserDocumentProofVersion > 3 {
 		return AssignmentResult{}, fmt.Errorf("unsupported browser document proof version")
 	}
 	if request.BrowserDocumentProofVersion > 0 {

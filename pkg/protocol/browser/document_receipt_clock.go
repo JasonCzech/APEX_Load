@@ -16,10 +16,10 @@ const maxBrowserDocumentReceipts = protocol.MaxBrowserDocumentReceipts // begin,
 const browserDocumentWallStepThreshold = 100 * time.Millisecond
 
 type browserDocumentReceiptClock struct {
-	lifetime                     *protocol.BrowserNativeLifetime
-	start                        time.Time // Retains Go's process monotonic reading; never serialize it directly.
-	receipts                     map[string]BrowserDocumentReceipt
-	wallStepObserved, incomplete bool
+	lifetime                           *protocol.BrowserNativeLifetime
+	start                              time.Time // Retains Go's process monotonic reading; never serialize it directly.
+	receipts                           map[string]BrowserDocumentReceipt
+	wallStepObserved, incomplete, loss bool
 }
 
 func newBrowserDocumentReceiptClock(start time.Time) browserDocumentReceiptClock {
@@ -31,6 +31,7 @@ func newBrowserDocumentReceiptClock(start time.Time) browserDocumentReceiptClock
 func (c *browserDocumentReceiptClock) observe(now time.Time) (elapsed, drift time.Duration) {
 	if c.start.IsZero() {
 		c.incomplete = true
+		c.loss = true
 		return 0, 0
 	}
 	return c.observeSample(now, now.Sub(c.start))
@@ -40,6 +41,7 @@ func (c *browserDocumentReceiptClock) observeSample(now time.Time, elapsed time.
 	drift := now.UTC().Sub(c.start.UTC()) - elapsed
 	if elapsed < 0 {
 		c.incomplete = true
+		c.loss = true
 	}
 	if drift > browserDocumentWallStepThreshold || drift < -browserDocumentWallStepThreshold {
 		c.wallStepObserved = true
@@ -59,6 +61,7 @@ func (c *browserDocumentReceiptClock) record(d *browserDocumentState, p browserD
 	}
 	if len(c.receipts) >= maxBrowserDocumentReceipts {
 		c.incomplete = true
+		c.loss = true
 		return
 	}
 	c.receipts[key] = BrowserDocumentReceipt{DocumentID: d.documentID, LifecycleID: d.lifecycleID, FrameID: d.frameID, Kind: p.Kind, MeasurementID: measurementID, Revision: revision, BrowserTimeOriginMS: p.TimeOrigin, BrowserOffsetMS: p.Offset, ReceivedAt: now.UTC(), HostElapsedNS: int64(elapsed), WallDriftNS: int64(drift)}
@@ -75,7 +78,8 @@ func (b *Browser) BrowserDocumentReceiptEvidence() *BrowserDocumentReceiptEviden
 	if !b.documentMetricsEnabled || s.generation == "" || s.clock.start.IsZero() {
 		return nil
 	}
-	out := &BrowserDocumentReceiptEvidence{Version: protocol.BrowserDocumentReceiptLifetimeVersion, SourceGeneration: s.generation, StartedAt: s.clock.start.UTC(), WallStepObserved: s.clock.wallStepObserved, Incomplete: s.clock.incomplete || s.incomplete || s.cancelled || s.droppedObservations > 0}
+	out := &BrowserDocumentReceiptEvidence{Version: protocol.BrowserDocumentReceiptClosureVersion, SourceGeneration: s.generation, StartedAt: s.clock.start.UTC(), WallStepObserved: s.clock.wallStepObserved, Incomplete: s.clock.incomplete || s.incomplete || s.cancelled || s.droppedObservations > 0}
+	out.Closure = b.nativeSourceClosureLocked()
 	if s.clock.lifetime != nil {
 		lifetime := *s.clock.lifetime
 		out.Lifetime = &lifetime
@@ -108,5 +112,5 @@ func (b *Browser) BrowserDocumentReceiptTransportVersion() int {
 }
 
 func (b *Browser) BrowserDocumentReceiptMaxVersion() int {
-	return protocol.BrowserDocumentReceiptLifetimeVersion
+	return protocol.BrowserDocumentReceiptClosureVersion
 }

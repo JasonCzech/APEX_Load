@@ -832,6 +832,11 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 	if vu.sourceSamplers != nil {
 		vu.sourceSamplers.bindProtocolConfig(config, vu.Script)
 	}
+	if vu.browserDocumentProofVersion == 0 || vu.browserDocumentProofVersion >= 3 {
+		if sink, ok := vu.ResultSink.(protocol.BrowserSourceJournalProvider); ok && dsl.BrowserDocumentCaptureRequested(vu.Script) {
+			config["browser_document_source_journal"] = sink
+		}
+	}
 	config, err := withBrowserIdentityConfig(config, vu.browserIdentity, vu.Script)
 	if err != nil {
 		return err

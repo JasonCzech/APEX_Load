@@ -11,12 +11,13 @@ import (
 
 const FeatureBrowserDocumentProofV1 = "browser_document_proof_v1"
 const FeatureBrowserDocumentProofV2 = "browser_document_proof_v2"
+const FeatureBrowserDocumentProofV3 = "browser_document_proof_v3"
 
 func validateBrowserDocumentProofVersion(request *pb.WorkAssignment) error {
 	switch request.GetBrowserDocumentProofVersion() {
 	case 0:
 		return nil
-	case 1, 2:
+	case 1, 2, 3:
 		if request.GetPrepareOnly() {
 			return nil
 		}
@@ -26,7 +27,7 @@ func validateBrowserDocumentProofVersion(request *pb.WorkAssignment) error {
 	}
 }
 func assignedBrowserDocumentProofVersion(request *pb.WorkAssignment) int {
-	if request.GetBrowserDocumentProofVersion() == 1 || request.GetBrowserDocumentProofVersion() == 2 {
+	if request.GetBrowserDocumentProofVersion() == 1 || request.GetBrowserDocumentProofVersion() == 2 || request.GetBrowserDocumentProofVersion() == 3 {
 		return int(request.GetBrowserDocumentProofVersion())
 	}
 	// Zero means the local default in engine configuration. A legacy remote
