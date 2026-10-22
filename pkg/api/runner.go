@@ -371,6 +371,10 @@ type TestRunner struct {
 	// test default), so behavior is unchanged unless election is wired in.
 	leadership            *executionLeadership
 	durableExecutionFence bool
+	// evacuationRollbackRecovery writes version 4 evacuation journals and lets
+	// a successor roll a prepared or staged evacuation back to its prior
+	// topology. Off until that recovery is qualified for a deployment.
+	evacuationRollbackRecovery bool
 	// runAdoptionDoneGeneration is the durable execution generation whose
 	// acquire-time run adoption (Phase A) has finished. The generator epoch
 	// keeper waits for it instead of for the whole reconcile.

@@ -72,7 +72,7 @@ func TestInterruptedEvacuationRecoveryRequiresEveryProcessFence(t *testing.T) {
 			test.CreatedAt = record.StartTime
 			test.ProjectID = record.ProjectID
 			tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -162,7 +162,7 @@ func TestInterruptedEvacuationRecoveryRequiresEveryProcessFence(t *testing.T) {
 
 func TestInterruptedEvacuationRecoveryRejectsIncompleteJournal(t *testing.T) {
 	tr, _, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestInterruptedEvacuationRecoveryRejectsIncompleteJournal(t *testing.T) {
 func TestInterruptedEvacuationRecoveryFencesReusedArchiveTargets(t *testing.T) {
 	tr, _, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	raw, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	raw, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestInterruptedEvacuationRecoveryFencesReusedArchiveTargets(t *testing.T) {
 func TestInterruptedEvacuationRecoveryRequiresCapacityLedger(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next); err != nil {
+	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{}); err != nil {
 		t.Fatal(err)
 	}
 	test.Status = "STOPPING"
@@ -260,7 +260,7 @@ func TestInterruptedEvacuationRecoveryRequiresCapacityLedger(t *testing.T) {
 func TestInterruptedEvacuationRecoveryRetriesIncompleteTerminalState(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next); err != nil {
+	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{}); err != nil {
 		t.Fatal(err)
 	}
 	if result, err := store.UpdateTestStatusIfActive(test.ID, "FAILED", nil, "prior incomplete terminal write"); err != nil || result != storage.TestStatusTransitionUpdated {
@@ -292,7 +292,7 @@ func TestInterruptedEvacuationRecoveryUsesDurableSourceFenceAfterSourceDisappear
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	markEvacuationRecoveryRunStarted(t, store, test)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +342,7 @@ func TestInterruptedEvacuationRecoverySkipsLedgerClaimForCompletedTarget(t *test
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	markEvacuationRecoveryRunStarted(t, store, test)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	raw, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	raw, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +418,7 @@ func TestInterruptedEvacuationTerminalCleanupDoesNotReclaimGenerators(t *testing
 	test.CreatedAt = record.StartTime
 	test.ProjectID = record.ProjectID
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next); err != nil {
+	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {
@@ -469,7 +469,7 @@ func TestInterruptedEvacuationTerminalCleanupDoesNotReclaimGenerators(t *testing
 func TestInterruptedEvacuationLegacyFailedStillRequiresProcessFence(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next); err != nil {
+	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{}); err != nil {
 		t.Fatal(err)
 	}
 	ended := time.Now().UTC()
@@ -502,7 +502,7 @@ func TestInterruptedEvacuationLegacyFailedStillRequiresProcessFence(t *testing.T
 
 func TestInterruptedEvacuationRecoveryIncludesDurableCapacityTargets(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next); err != nil {
+	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{}); err != nil {
 		t.Fatal(err)
 	}
 	budget := protocol.CapacityVector{CPUCores: 1, MemoryMB: 100, NetworkMbps: 100, VUsers: 10}
@@ -564,7 +564,7 @@ func TestInterruptedEvacuationOperatorAttestationResolvesVanishedGenerator(t *te
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	markEvacuationRecoveryRunStarted(t, store, test)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next); err != nil {
+	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {

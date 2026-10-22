@@ -29,6 +29,11 @@ func (tr *TestRunner) adoptPodCapacity(ctx context.Context, testID string, adopt
 			return fmt.Errorf("standby %s was not included in the epoch claim", row.Target)
 		}
 		if row.TestID == testID && adopted[row.Target] != nil {
+			if standbyCapacityReservation(row) && row.State == "committed" && row.Generation == generation {
+				// An evacuation rollback already reserved this idle standby
+				// under the new epoch and confirmed it with the generator.
+				continue
+			}
 			if row.State != "committed" || row.Generation == 0 || row.Generation >= generation {
 				return fmt.Errorf("reservation for %s has an unexpected state or owner", row.Target)
 			}

@@ -40,7 +40,7 @@ func TestRunEvacuationCheckpointInterruptionAndCompletion(t *testing.T) {
 			if initial {
 				tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
 			}
-			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 			if err != nil || guard == "" {
 				t.Fatalf("begin = %q, %v", guard, err)
 			}
@@ -67,7 +67,7 @@ func TestRunEvacuationCheckpointInterruptionAndCompletion(t *testing.T) {
 			if record.ContinuityCheckpoint != guard {
 				t.Fatal("ordinary re-arm erased guard")
 			}
-			if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next); err == nil {
+			if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{}); err == nil {
 				t.Fatal("second evacuation bypassed unresolved guard")
 			}
 			if err := tr.writeRunContinuity(context.Background(), test, generation, owner, token, previous, guard); err == nil {
@@ -130,7 +130,7 @@ func TestInterruptedEvacuationPhasesRemainStoppingAfterTakeover(t *testing.T) {
 		t.Run(phase, func(t *testing.T) {
 			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 			tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -175,7 +175,7 @@ func TestInterruptedEvacuationPhasesRemainStoppingAfterTakeover(t *testing.T) {
 func TestRunEvacuationCommittedSuccessorAdoptsExistingReplacement(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestRunEvacuationCommittedSuccessorAdoptsExistingReplacement(t *testing.T) 
 func TestLegacyCommittedEvacuationWaitsForCleanupProof(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ func TestRunEvacuationCommitWaitsForReplacementCapacity(t *testing.T) {
 		t.Fatal(err)
 	}
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +354,7 @@ func TestRunEvacuationCommitWaitsForReplacementCapacity(t *testing.T) {
 func TestRunEvacuationCommittedPromotionRejectsStaleLeaseAndReplay(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +405,7 @@ func TestRunEvacuationCommittedPromotionRejectsStaleLeaseAndReplay(t *testing.T)
 func TestRunEvacuationCommittedProofRejectsCorruption(t *testing.T) {
 	tr, _, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +466,7 @@ func TestRunEvacuationStagingRejectsInvalidProgress(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -482,7 +482,7 @@ func TestRunEvacuationStagingRejectsInvalidProgress(t *testing.T) {
 	for _, fault := range []string{"wrong-owner", "wrong-generation", "stale-store", "lost-lease", "write-failure", "canceled", "replay"} {
 		t.Run(fault, func(t *testing.T) {
 			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -610,7 +610,7 @@ func TestRunEvacuationCheckpointRejectsUnavailableOwnershipAndStorage(t *testing
 				setContinuityCheckpointLocked(test, `{"version":99}`)
 				expected = test.continuityCheckpoint
 			}
-			guard, err := tr.beginRunEvacuationCheckpoint(ctx, test, generation, owner, "gen-a", token, previous, next)
+			guard, err := tr.beginRunEvacuationCheckpoint(ctx, test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 			if err == nil || guard != "" {
 				t.Fatalf("unsafe begin accepted: %q %v", guard, err)
 			}
@@ -623,7 +623,7 @@ func TestRunEvacuationCheckpointRejectsUnavailableOwnershipAndStorage(t *testing
 
 func TestRunEvacuationCheckpointRejectedCompletionRemainsUnarmed(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -678,7 +678,7 @@ func TestRunEvacuationSourceFenceRejectsStaleOrUnownedProgress(t *testing.T) {
 	for _, fault := range []string{"wrong-owner", "wrong-generation", "stage-mismatch", "stale-memory", "stale-store", "lost-lease", "write-failure", "canceled", "replay"} {
 		t.Run(fault, func(t *testing.T) {
 			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -746,7 +746,7 @@ func TestRunEvacuationReplacementCommitRejectsInvalidProgress(t *testing.T) {
 	for _, fault := range []string{"unfenced", "wrong-owner", "wrong-generation", "stage-mismatch", "stale-store", "lost-lease", "write-failure", "canceled", "replay"} {
 		t.Run(fault, func(t *testing.T) {
 			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -815,7 +815,7 @@ func (*unavailableArchiveFailureStore) SaveRunArchiveFailure(*storage.RunArchive
 
 func TestRunEvacuationCheckpointRecoveryDefersArchiveMarkerWhenCleanupIsUnproven(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
-	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -850,7 +850,7 @@ func TestRunEvacuationCheckpointRecoveryPreservesPendingArchiveCollection(t *tes
 	if err != nil || !prepared {
 		t.Fatalf("archive collection intent = %+v, %v, %v", intent, prepared, err)
 	}
-	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -896,7 +896,7 @@ func TestRunEvacuationCheckpointPreservesHistoryAndRejectsInvalidCompletion(t *t
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
 	// A previous re-arm may have failed after recording an adoption in memory.
 	test.continuityFailovers = []RunFailover{{PriorGeneration: 1, Generation: 2, AdoptedAt: time.Now().UTC(), AdoptedGenerators: 1}}
-	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -969,7 +969,7 @@ func TestRunEvacuationCheckpointPreservesNonContinuityBehavior(t *testing.T) {
 		if policy == "continue" {
 			tr.continuityKeyWrapper = nil
 		}
-		guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+		guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 		if err != nil || guard != "" {
 			t.Fatalf("unarmed %s run unexpectedly guarded: %v", policy, err)
 		}

@@ -115,7 +115,7 @@ func setContinuityCheckpointLocked(test *ManagedTest, raw string) {
 	checkpoint, present, err := decodeRunContinuityCheckpoint(raw)
 	if err != nil || !present {
 		var guard runEvacuationCheckpoint
-		if json.Unmarshal([]byte(raw), &guard) == nil && (guard.Version == 2 || guard.Version == runEvacuationCheckpointVersion) && len(guard.Prior.Failovers) >= len(test.continuityFailovers) {
+		if json.Unmarshal([]byte(raw), &guard) == nil && (guard.Version == 2 || supportedRunEvacuationCheckpointVersion(guard.Version)) && len(guard.Prior.Failovers) >= len(test.continuityFailovers) {
 			test.continuityFailovers = append([]RunFailover(nil), guard.Prior.Failovers...)
 		}
 		return

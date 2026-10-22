@@ -57,15 +57,18 @@ func (s *SQLiteStore) AdoptPodCapacity(expected []PodCapacityReservation, leaseN
 	}
 	// A standby inserted after the caller's snapshot must not be silently left
 	// with an old owner. Capacity mutations share this transaction fence, so
-	// checking all idle dedicated claims here closes that observation race.
-	rows, err := tx.Query(`SELECT target, reservation_json FROM pod_capacity_reservations WHERE test_id=?`, expected[0].TestID)
+	// checking all idle dedicated claims here closes that observation race. A
+	// standby already reserved and committed under this term (an evacuation
+	// rollback) has no old owner.
+	rows, err := tx.Query(`SELECT target, reservation_json, generation, state FROM pod_capacity_reservations WHERE test_id=?`, expected[0].TestID)
 	if err != nil {
 		return err
 	}
 	var coverageErr error
 	for rows.Next() {
-		var target, raw string
-		if err := rows.Scan(&target, &raw); err != nil {
+		var target, raw, state string
+		var storedGeneration uint64
+		if err := rows.Scan(&target, &raw, &storedGeneration, &state); err != nil {
 			coverageErr = err
 			break
 		}
@@ -74,7 +77,7 @@ func (s *SQLiteStore) AdoptPodCapacity(expected []PodCapacityReservation, leaseN
 			coverageErr = err
 			break
 		}
-		if claim.Dedicated && len(claim.GroupPeaks) == 0 && !seen[target] {
+		if claim.Dedicated && len(claim.GroupPeaks) == 0 && !seen[target] && (storedGeneration != generation || claim.Generation != generation || state != "committed") {
 			coverageErr = errors.New("standby capacity changed during adoption")
 			break
 		}
