@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"math"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -167,6 +168,131 @@ func TestAnalysisAcceptanceRawAndCounterPopulationsReconcile(t *testing.T) {
 		got := derived.Buckets[bucket]
 		if got.Reason != expected.reason || expected.reason == "" && (got.Value == nil || *got.Value != expected.value) || expected.reason != "" && got.Value != nil {
 			t.Fatalf("delta bucket %d = %+v, want %+v", bucket, got, expected)
+		}
+	}
+}
+
+// Analytical acceptance (NA-A): an import that accepts rejected measurements
+// keeps only the readable ones, and its rejected count, its downloadable
+// rejection rows and its queried counts and sums reconcile with DuckDB's own
+// SQL over the source.
+func TestAnalysisAcceptanceAcceptedRejectionsReconcile(t *testing.T) {
+	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "proj-a")
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	server, store := newTimeslotServer(t)
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	const start = 1700000040
+	source := filepath.Join(t.TempDir(), "words.parquet")
+	if _, err := db.Exec("COPY (SELECT " + strconv.Itoa(start) + "+i AS ts, CASE WHEN i % 13 = 4 THEN 'n/a' ELSE ((i*31) % 100)::VARCHAR END AS latency FROM range(180) t(i)) TO '" + source + "' (FORMAT PARQUET)"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Upload the source's exact bytes.
+	created := timeslotRequest(t, server, "POST", "/api/v1/analysis/imports?project_id=proj-a", map[string]any{"name": "rejections", "files": []any{map[string]any{"relative_path": "words.parquet", "size": len(data)}}})
+	var in storage.AnalysisImport
+	if created.Code != 201 || json.Unmarshal(created.Body.Bytes(), &in) != nil {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	path, dataset := "/api/v1/analysis/imports/"+in.ID, "/api/v1/analysis/datasets/"+in.ID
+	upload := httptest.NewRequest("PUT", path+"/files/"+in.Files[0].ID+"?offset=0", bytes.NewReader(data))
+	upload.Header.Set("Content-Type", "application/octet-stream")
+	uploaded := httptest.NewRecorder()
+	server.mux.ServeHTTP(uploaded, upload)
+	if uploaded.Code != 200 {
+		t.Fatalf("upload: %d", uploaded.Code)
+	}
+	// Preview: the file's row count and first timestamp, before any rows are
+	// judged (the text column is redacted there).
+	previewed := timeslotRequest(t, server, "GET", path+"/files/"+in.Files[0].ID+"/preview", nil)
+	var preview analytics.Preview
+	if previewed.Code != 200 || json.Unmarshal(previewed.Body.Bytes(), &preview) != nil || preview.Schema.Rows != 180 || len(preview.Samples) == 0 || preview.Samples[0]["ts"] != float64(start) {
+		t.Fatalf("preview: %d %s", previewed.Code, previewed.Body.String())
+	}
+	current, err := store.(storage.AnalysisImportStore).GetAnalysisImport(in.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mapping := analysis.ParquetMapping{Version: 1, Timestamp: []string{"ts"}, TimestampEncoding: "unix_s", Timezone: "UTC", Measures: []analysis.ParquetMeasure{{Value: []string{"latency"}, Name: "latency", Kind: analysis.KindObservation, Unit: "ms"}}}
+	if r := timeslotRequest(t, server, "PUT", path+"/mapping", map[string]any{"revision": current.Revision, "mapping": mapping, "allow_rejected": true}); r.Code != 200 {
+		t.Fatalf("mapping: %d %s", r.Code, r.Body.String())
+	}
+	if r := timeslotRequest(t, server, "POST", path+"/commit", nil); r.Code != 202 {
+		t.Fatalf("commit: %d %s", r.Code, r.Body.String())
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if current, err = store.(storage.AnalysisImportStore).GetAnalysisImport(in.ID); err != nil {
+			t.Fatal(err)
+		}
+		if current.State != "normalizing" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	for len(analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	// The engine's contract: a finite number is a measurement, a null is an
+	// accepted missing sample, and anything else is rejected.
+	const readablePredicate = "coalesce(isfinite(try_cast(latency AS DOUBLE)), false)"
+	const rejectedPredicate = "latency IS NOT NULL AND NOT " + readablePredicate
+	var accepted, unreadable int64
+	if err := db.QueryRow("SELECT count(*) FILTER (WHERE latency IS NULL OR "+readablePredicate+"), count(*) FILTER (WHERE "+rejectedPredicate+") FROM read_parquet('"+source+"')").Scan(&accepted, &unreadable); err != nil {
+		t.Fatal(err)
+	}
+	if current.State != "ready" || current.Accepted != accepted || current.Rejected != unreadable || unreadable == 0 {
+		t.Fatalf("commit: %s, %d accepted (source %d), %d rejected (source %d): %q", current.State, current.Accepted, accepted, current.Rejected, unreadable, current.Error)
+	}
+	if digest := sha256.Sum256(data); current.Files[0].SHA256 != hex.EncodeToString(digest[:]) {
+		t.Fatalf("source digest %q", current.Files[0].SHA256)
+	}
+
+	// The rejection download names exactly the unreadable source rows.
+	r := timeslotRequest(t, server, "GET", dataset+"/rejections/0", nil)
+	if r.Code != 200 {
+		t.Fatalf("rejections: %d %s", r.Code, r.Body.String())
+	}
+	rejections := filepath.Join(t.TempDir(), "rejections.parquet")
+	if err := os.WriteFile(rejections, r.Body.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rejectedRows := "SELECT file_row_number FROM read_parquet('" + source + "', file_row_number=true) WHERE " + rejectedPredicate
+	var mismatched int64
+	if err := db.QueryRow("SELECT count(*) FROM (SELECT source_row FROM read_parquet('" + rejections + "') EXCEPT " + rejectedRows + " UNION ALL SELECT file_row_number FROM (" + rejectedRows + " EXCEPT SELECT source_row FROM read_parquet('" + rejections + "')))").Scan(&mismatched); err != nil || mismatched != 0 {
+		t.Fatalf("rejection rows differ from the source's unreadable rows by %d: %v", mismatched, err)
+	}
+	// Each rejected row appears once, attributed to the one file and measure,
+	// with the engine's fixed reason.
+	var listed, distinct int64
+	var attributed bool
+	if err := db.QueryRow("SELECT count(*), count(DISTINCT source_row), coalesce(bool_and(source_file = 0 AND mapped_measure = 0 AND reason = 'invalid_timestamp_name_or_value'), false) FROM read_parquet('"+rejections+"')").Scan(&listed, &distinct, &attributed); err != nil || listed != unreadable || distinct != unreadable || !attributed {
+		t.Fatalf("rejection artifact: %d rows, %d distinct, attributed %t (want %d): %v", listed, distinct, attributed, unreadable, err)
+	}
+
+	// Queried minutes hold only the readable measurements, and every series
+	// response reports the rejected count.
+	from := time.Unix(start, 0).UTC()
+	for _, aggregation := range []string{"count", "sum"} {
+		r := timeslotRequest(t, server, "POST", dataset+"/series", analytics.SeriesQuery{Metric: "latency", From: from, To: from.Add(3 * time.Minute), BucketSeconds: 60, Aggregation: aggregation})
+		var out AnalysisDatasetSeriesResponse
+		if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &out) != nil || len(out.Points) != 3 || out.RejectedRows != unreadable {
+			t.Fatalf("%s: %d %s", aggregation, r.Code, r.Body.String())
+		}
+		for bucket, point := range out.Points {
+			var want float64
+			if err := db.QueryRow("SELECT "+map[string]string{"count": "count", "sum": "sum"}[aggregation]+"(try_cast(latency AS DOUBLE)) FILTER (WHERE "+readablePredicate+") FROM read_parquet('"+source+"') WHERE (ts-"+strconv.Itoa(start)+") // 60 = ?", bucket).Scan(&want); err != nil {
+				t.Fatal(err)
+			}
+			if point.Value == nil || *point.Value != want {
+				t.Fatalf("%s bucket %d = %+v, the readable source rows give %v", aggregation, bucket, point, want)
+			}
 		}
 	}
 }
