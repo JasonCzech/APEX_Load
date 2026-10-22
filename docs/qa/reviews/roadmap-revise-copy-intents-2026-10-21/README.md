@@ -29,6 +29,10 @@ One reviewer read scratch snapshots only:
 - Round 3: one finding, fixed: saving from the leave prompt queued another run.
 - Round 4: no findings (also covering the second Playwright test).
 
+## Follow-up
+
+The [cross-cutting AUTH review](../roadmap-auth-cross-cutting-2026-10-21/README.md) refused keyed run creates that carry credential values where no key wrapper is configured (rather than digesting them unprotected), kept a replayed draft's key so creating again replays, and recalls a revised copy's key only for its own source run.
+
 ## Remaining
 
 As for the first slice: crash injection at each receipt/resource boundary, two-tab concurrent-click qualification, and both-profile browser coverage of the conflict, expiry and deletion paths remain open.

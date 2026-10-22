@@ -71,7 +71,9 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   // The run this draft creates is one intent (AUTH-1): its key survives a
   // lost response and retries; only Save as new starts another.
   const createIntentRef = useRef<{ intent: AuthoringCreateIntent | null; fresh: boolean }>({ intent: null, fresh: false })
-  const [createNeedsNewIntent, setCreateNeedsNewIntent] = useState(false)
+  // The error that refused this draft's key for good; Save as new is offered
+  // with that error only.
+  const [createNeedsNewIntent, setCreateNeedsNewIntent] = useState('')
   // A create that replayed the run an earlier attempt of this draft created:
   // no new run was queued, so it is reported rather than opened as new.
   const [replayedRun, setReplayedRun] = useState<TestSummary | null>(null)
@@ -266,12 +268,13 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
   const performSubmitDraft = async (): Promise<boolean> => {
     if (!mountedRef.current) return false
+    setCreateNeedsNewIntent('')
     if (monitorEditorError) { setError(monitorEditorError); return false }
     if (elasticMonitorConflict) { setError('Turn legacy Elastic log capture off or remove the conflicting run-bound source before launching.'); return false }
     if (captureNeedsReview) { setError('Review the unavailable capture connection, retry, or explicitly turn capture off before launching.'); return false }
     setError('')
-    setCreateNeedsNewIntent(false)
-    setReplayedRun(null)
+    // A replay notice stays until another run is queued: a later refusal of a
+    // changed draft does not change that this draft's run exists.
     setLoading(true)
     try {
       if (terminationMode === 'iterations' ? duration !== '' : !isValidDurationInput(duration)) {
@@ -306,15 +309,23 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
       const submittedFingerprint = authoringFingerprint
       const intentProject = effectiveProjectId || ''
-      const digest = authoringPayloadDigest(payload)
+      // A revised copy's key belongs to its source run: two queued runs revised
+      // with the same settings are different decisions.
+      const digest = authoringPayloadDigest(revisionContext?.sourceTestId ? { payload, source_test_id: revisionContext.sourceTestId } : payload)
       const intentOwner = createIntentRef.current
       const intent = nextAuthoringCreateIntent(startingAuthoringCreateIntent(intentOwner.intent, 'test_create', intentProject, digest, Date.now(), intentOwner.fresh), 'test_create', intentProject, digest)
       const created = await sendUnderAuthoringCreateIntent(intent, { update: next => { intentOwner.intent = next; intentOwner.fresh = false } }, 'run',
         key => api.createTestKeyed(payload, key),
-        async outcome => ({ done: mountedRef.current, value: outcome }))
+        // A replay leaves the key with this draft: creating again replays the
+        // same run (a changed draft is refused) and only Save as new queues
+        // another.
+        async outcome => ({ done: mountedRef.current && outcome.kind === 'created', value: outcome }))
       if (!mountedRef.current) return false
       const test = created.resource
       if (created.kind === 'replayed') {
+        // The outcome is known, so a reload need not recall the key; it
+        // stays with this open draft only.
+        forgetAuthoringCreateIntent(intentOwner.intent)
         // The draft's run already exists: retire the guard for this
         // submission and say so, without presenting it as a new run.
         baselineAuthoringFingerprintRef.current = submittedFingerprint
@@ -324,6 +335,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       }
       // Successful creation durably accepts this submitted draft. Retire only
       // its guard before the parent attempts guarded navigation synchronously.
+      setReplayedRun(null)
       baselineAuthoringFingerprintRef.current = submittedFingerprint
       if (latestAuthoringFingerprintRef.current !== submittedFingerprint) {
         // Fields remain editable while saving. The successful receipt belongs
@@ -339,8 +351,13 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       return true
     } catch (error: unknown) {
       if (mountedRef.current) {
-        if (error instanceof AuthoringCreateNeedsNewIntent) setCreateNeedsNewIntent(true)
-        setError(getErrorMessage(error, errorMessage))
+        const message = error instanceof AuthoringCreateNeedsNewIntent && error.reason === 'changed' && replayedRun
+          ? `This draft already created run ${replayedRun.ref_key || replayedRun.id}, and it has changed since. To queue another run with these changes, choose Save as new.`
+          : getErrorMessage(error, errorMessage)
+        if (error instanceof AuthoringCreateNeedsNewIntent) setCreateNeedsNewIntent(message)
+        // The replayed run is gone: its notice and Open run no longer apply.
+        if (error instanceof AuthoringCreateNeedsNewIntent && error.reason === 'deleted') setReplayedRun(null)
+        setError(message)
       }
       return false
     } finally {
@@ -362,6 +379,14 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     return operation
   }
   submitDraftRef.current = submitDraft
+  // An explicit new intent: the next create sends a new key.
+  const saveAsNew = () => {
+    forgetAuthoringCreateIntent(createIntentRef.current.intent)
+    createIntentRef.current = { intent: null, fresh: true }
+    setCreateNeedsNewIntent('')
+    setReplayedRun(null)
+    void submitDraft()
+  }
   const modalDirty = authoringFingerprint !== baselineAuthoringFingerprintRef.current
   modalDirtyRef.current = modalDirty
   const modalGuard = useMemo<NavigationGuard>(() => ({
@@ -597,7 +622,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
           {replayedRun && (
             <p className="settings-inline-notice" role="status">
-              {`This draft already created run ${replayedRun.ref_key || replayedRun.id} (${replayedRun.status || 'status unknown'}); no new run was queued.`}
+              {`This draft already created run ${replayedRun.ref_key || replayedRun.id} (${replayedRun.status || 'status unknown'}); no new run was queued. To queue another, choose Save as new.`}
               <button type="button" className="btn btn-sm btn-secondary" onClick={async () => {
                 // Edits made since the replayed submission are not saved by
                 // opening the existing run: only discarding them leaves.
@@ -609,18 +634,14 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                 releaseOwnGuardRef.current = null
                 onCreated(replayedRun)
               }}>Open run</button>
+              <button type="button" className="btn btn-sm btn-secondary" disabled={loading} onClick={saveAsNew}>Save as new</button>
             </p>
           )}
           {error && <p className="form-error" role="alert">
             {error}
-            {createNeedsNewIntent && (
-              <button type="button" className="btn btn-sm btn-secondary" disabled={loading} onClick={() => {
-                // An explicit new intent: the next create sends a new key.
-                forgetAuthoringCreateIntent(createIntentRef.current.intent)
-                createIntentRef.current = { intent: null, fresh: true }
-                setCreateNeedsNewIntent(false)
-                void submitDraft()
-              }}>Save as new</button>
+            {/* The replay notice above carries its own Save as new. */}
+            {createNeedsNewIntent && error === createNeedsNewIntent && !replayedRun && (
+              <button type="button" className="btn btn-sm btn-secondary" disabled={loading} onClick={saveAsNew}>Save as new</button>
             )}
           </p>}
 

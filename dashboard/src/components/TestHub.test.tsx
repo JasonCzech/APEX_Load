@@ -1155,6 +1155,86 @@ describe('TestHub', () => {
     expect(apiMock.createScenarioKeyed.mock.calls[2][1]).not.toBe(key)
   })
 
+  it('continues from the scenario as it is now when a save replays an earlier create (AUTH-1)', async () => {
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    const nameInput = () => container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!
+    await act(async () => setInputValue(nameInput(), 'Replay probe'))
+    await clickWizardStep('Run settings')
+    // An earlier attempt created the scenario, and it was edited elsewhere since.
+    const current = withScenarioAuthoring({
+      id: 'replayed-scenario', project_id: 'project-1', name: 'Edited elsewhere', duration: '7m',
+      scripts: [{ order: 0, script_id: 'script-1', name: 'Edited group', vusers: 3 }], created_at: '', updated_at: '2026-10-21T10:00:00Z', script_count: 1,
+    }, 'b')
+    apiMock.createScenarioKeyed.mockResolvedValueOnce({ kind: 'replayed-original', outcome: {
+      receipt_version: 2, resource_type: 'scenario', resource_id: 'replayed-scenario', project_id: 'project-1',
+      content_revision: `scn-v1-${'a'.repeat(64)}`, created_at: '2026-10-21T09:00:00Z',
+    } } as never)
+    apiMock.getScenario.mockResolvedValueOnce(current)
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(container.textContent).toContain('showing that scenario as it is now')
+    await clickWizardStep('Start')
+    expect(nameInput().value).toBe('Edited elsewhere')
+
+    // The next save edits that revision under its own tag; the replayed form is gone.
+    await act(async () => setInputValue(nameInput(), 'Edited here'))
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.updateScenario).toHaveBeenCalledTimes(1)
+    const [id, payload, baseline] = apiMock.updateScenario.mock.calls[0]
+    expect(id).toBe('replayed-scenario')
+    expect(payload).toMatchObject({ name: 'Edited here', duration: '7m', groups: [expect.objectContaining({ name: 'Edited group', vusers: 3 })] })
+    expect(baseline).toMatchObject({ etag: `"scenario-authoring-v1:scn-v1-${'b'.repeat(64)}"` })
+  })
+
+  it('leaves an archived replayed scenario in the library, flags a missing baseline and reviews before configuring a run (AUTH-1)', async () => {
+    const onCreateTestFromScenario = vi.fn()
+    const replay = (id: string) => apiMock.createScenarioKeyed.mockResolvedValueOnce({ kind: 'replayed-original', outcome: {
+      receipt_version: 2, resource_type: 'scenario', resource_id: id, project_id: 'project-1',
+      content_revision: `scn-v1-${'a'.repeat(64)}`, created_at: '2026-10-21T09:00:00Z',
+    } } as never)
+    const build = async (name: string) => {
+      await act(async () => root.render(<TestHub key={name} testStatuses={{}} onSelectTest={vi.fn()} onCreateTestFromScenario={onCreateTestFromScenario} initialView="builder" />))
+      await flushPromises()
+      await chooseLibraryScriptForGroup()
+      await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, name))
+      await clickWizardStep('Run settings')
+    }
+    const scenario = { project_id: 'project-1', duration: '7m', scripts: [{ order: 0, script_id: 'script-1', name: 'Group', vusers: 3 }], created_at: '', updated_at: '2026-10-21T10:00:00Z', script_count: 1 }
+
+    // Archived since: not opened for editing, as the library's Edit would not.
+    await build('Archived replay')
+    replay('archived-replay')
+    apiMock.getScenario.mockResolvedValueOnce(withScenarioAuthoring({ ...scenario, id: 'archived-replay', name: 'Archived since', archived_at: '2026-10-21T11:00:00Z' }, 'b'))
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(container.textContent).toContain('that scenario has since been archived. Restore it from the Scenario library to edit it.')
+    expect(container.querySelector('input[placeholder="Scenario name"]')).toBeNull()
+
+    // Read without a baseline: opened, but it must be reloaded before saving.
+    await build('Unpaired replay')
+    replay('unpaired-replay')
+    apiMock.getScenario.mockResolvedValueOnce({ ...scenario, id: 'unpaired-replay', name: 'Unpaired' })
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(container.textContent).toContain('showing that scenario as it is now')
+    expect(container.textContent).toContain('did not return a supported scenario revision')
+
+    // Save and configure run shows the scenario as it is now instead of configuring a run from it.
+    await build('Configure replay')
+    replay('configure-replay')
+    apiMock.getScenario.mockResolvedValueOnce(withScenarioAuthoring({ ...scenario, id: 'configure-replay', name: 'Edited before configuring' }, 'c'))
+    await clickWizardStep('Review')
+    await clickButton('Save and configure run')
+    await flushPromises()
+    expect(onCreateTestFromScenario).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Review it, then choose Save and configure run again.')
+    await clickWizardStep('Start')
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')?.value).toBe('Edited before configuring')
+  })
+
   it('keeps an unanswered create key recallable when the save is refused for good (AUTH-1)', async () => {
     await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
     await flushPromises()

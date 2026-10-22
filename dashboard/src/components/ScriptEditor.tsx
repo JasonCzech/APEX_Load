@@ -1558,10 +1558,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   if (createIntentRef.current.draft !== initialScript || createIntentRef.current.projectId !== projectId) {
     createIntentRef.current = { draft: initialScript, projectId, intent: null, fresh: false }
   }
-  // The intent owner whose key the controller refused for good; Save as new
-  // applies to that draft only.
-  const [refusedIntentOwner, setRefusedIntentOwner] = useState<object | null>(null)
-  const createNeedsNewIntent = refusedIntentOwner !== null && refusedIntentOwner === createIntentRef.current
+  // The intent owner whose key the controller refused for good, with the
+  // error that said so; Save as new applies to that draft and error only.
+  const [refusedIntent, setRefusedIntent] = useState<{ owner: object; message: string } | null>(null)
+  const createNeedsNewIntent = refusedIntent !== null && refusedIntent.owner === createIntentRef.current && refusedIntent.message === error
   if (
     editorResourceScopeRef.current.projectId !== projectId
     || editorResourceScopeRef.current.folderId !== folderId
@@ -3042,7 +3042,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     )
     saveInFlightScopeRef.current = requestResourceScope
     const intentOwner = createIntentRef.current
-    setError(''); setSuccess(''); setWarnings([]); setSaving(true); setRefusedIntentOwner(null)
+    setError(''); setSuccess(''); setWarnings([]); setSaving(true); setRefusedIntent(null)
     setValidationEvidence(null)
     clearValidatedBinding()
     setValidationReplayPreflight(null)
@@ -3124,14 +3124,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           ? 'The authored script or its placement changed since this editor loaded. Your draft was not saved. Load the current baseline, inspect the diff, and explicitly reapply or reload.'
           : 'We could not confirm whether this save reached the server. Your draft is kept here. Load the current version to compare it with your draft, then reapply your changes.')
       }
-      if (e instanceof AuthoringCreateNeedsNewIntent) setRefusedIntentOwner(intentOwner)
       const baseMessage = scriptSaveFailedOnServer(e)
         ? `Saving failed on the server; your draft is kept here. Choose Save to try again. Server detail: ${getErrorMessage(e, 'none given')}`
         : getErrorMessage(e, 'Failed to save script')
       const createdNames = pendingCreatedSecretNamesRef.current
-      setError(createdNames.length > 0
+      const message = createdNames.length > 0
         ? `${baseMessage} ${createdNames.join(', ')} ${createdNames.length === 1 ? 'was' : 'were'} already created and remain in the project vault as unused entries until this draft is saved or the entries are removed administratively.`
-        : baseMessage)
+        : baseMessage
+      if (e instanceof AuthoringCreateNeedsNewIntent) setRefusedIntent({ owner: intentOwner, message })
+      setError(message)
       if (getErrorMessage(e, '').includes('Script JSON is invalid')) {
         setDebuggerBottomTab('problems')
       }
@@ -7276,7 +7277,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 forgetAuthoringCreateIntent(createIntentRef.current.intent)
                 createIntentRef.current.intent = null
                 createIntentRef.current.fresh = true
-                setRefusedIntentOwner(null)
+                setRefusedIntent(null)
                 void handleSave()
               }}>Save as new</button>
             )}

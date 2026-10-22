@@ -51419,6 +51419,14 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "422": {
+        content: {
+          "application/json": {
+            "code"?: "idempotency_credentials_unprotected";
+            "error": string;
+          };
+        };
+      };
       "503": {
         content: {
           "application/json": {

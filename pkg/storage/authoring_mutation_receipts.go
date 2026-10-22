@@ -260,7 +260,9 @@ func (s *SQLiteStore) ClaimAuthoringMutationReceipt(in AuthoringMutationReceiptC
 
 // completeAuthoringReceiptTx completes the caller's pending original-outcome
 // receipt inside a create transaction. Zero rows means the reservation is no
-// longer this request's, and the create must roll back.
+// longer this request's, or its key can no longer replay (it expired or was
+// scrubbed, so an outcome stored now would never be scrubbed), and the create
+// must roll back.
 func completeAuthoringReceiptTx(tx *storeTx, completion *AuthoringReceiptCompletion, resourceRevision, outcome string) error {
 	if completion == nil {
 		return nil
@@ -278,8 +280,9 @@ func completeAuthoringReceiptTx(tx *storeTx, completion *AuthoringReceiptComplet
 	}
 	result, err := tx.Exec(`UPDATE authoring_mutation_receipts
 		SET state = ?, owner_token = '', lease_expires_at = NULL, resource_revision = ?, original_outcome = ?, updated_at = ?
-		WHERE id = ? AND state = ? AND owner_token = ? AND tombstoned_at IS NULL AND COALESCE(outcome_version, 1) = ?`,
-		AuthoringReceiptComplete, strings.TrimSpace(resourceRevision), outcome, now.UTC(), id, AuthoringReceiptPending, owner, AuthoringReceiptOutcomeOriginal)
+		WHERE id = ? AND state = ? AND owner_token = ? AND tombstoned_at IS NULL AND COALESCE(outcome_version, 1) = ?
+			AND request_digest <> '' AND expires_at > ?`,
+		AuthoringReceiptComplete, strings.TrimSpace(resourceRevision), outcome, now.UTC(), id, AuthoringReceiptPending, owner, AuthoringReceiptOutcomeOriginal, now.UTC())
 	if err != nil {
 		return fmt.Errorf("complete authoring receipt: %w", err)
 	}
@@ -328,14 +331,17 @@ func (s *SQLiteStore) ReleaseAuthoringMutationReceiptLease(id, ownerToken string
 
 // AbandonAuthoringMutationReceipt removes a pending reservation whose create
 // definitely did not happen (for example a validation failure), so the same
-// key can be retried with a corrected request.
+// key can be retried with a corrected request. A reservation whose key can no
+// longer replay (expired or scrubbed) is kept: removing it would let a retry
+// claim the key afresh instead of being answered as expired.
 func (s *SQLiteStore) AbandonAuthoringMutationReceipt(id, ownerToken string) (bool, error) {
 	id, ownerToken = strings.TrimSpace(id), strings.TrimSpace(ownerToken)
 	if id == "" || ownerToken == "" {
 		return false, errors.New("authoring receipt abandonment requires id and owner token")
 	}
-	result, err := s.db.Exec(`DELETE FROM authoring_mutation_receipts WHERE id = ? AND state = ? AND owner_token = ?`,
-		id, AuthoringReceiptPending, ownerToken)
+	result, err := s.db.Exec(`DELETE FROM authoring_mutation_receipts WHERE id = ? AND state = ? AND owner_token = ?
+		AND request_digest <> '' AND expires_at > ?`,
+		id, AuthoringReceiptPending, ownerToken, time.Now().UTC())
 	if err != nil {
 		return false, fmt.Errorf("abandon authoring receipt: %w", err)
 	}

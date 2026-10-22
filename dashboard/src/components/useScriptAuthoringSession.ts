@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import type { ScriptDefinition } from '../types/scripts'
 import type { ScriptAuthoringBaseline } from '../types/storedContent'
+import { ApiError } from '../hooks/apiClient'
 import { getErrorMessage } from '../utils/errorUtils'
 import { admitScriptAuthoringBaseline, reapplyScriptDraft } from '../utils/scriptAuthoringRevision'
 import { formatScriptJson } from './scriptEditorJsonModel'
-import { admitValidationResponse, draftFingerprint, sameValidationBinding, validationContextChanges, validationRequestStillCurrent, type ValidationAdmission, type ValidationBinding, type ValidationEcho, type ValidationRequest } from './scriptAuthoringSession'
+import { admitValidationResponse, draftFingerprint, sameValidationBinding, validationContextChanges, validationRequestStillCurrent, type ValidationAdmission, type ValidationBinding, type ValidationEcho, type ValidationRequest, type ValidationStaleCause } from './scriptAuthoringSession'
 import type { ScriptValidationContext } from '../types/scripts'
 
 // ResolvedScriptDraft is the one resolution of the current draft that
@@ -100,9 +101,11 @@ const noop = () => undefined
 // stored script; whether the editor holds unsaved work; and guarded
 // navigation away from it.
 // The interval at which a held result's controller context is re-read while
-// the editor is visible (also on focus and when the page becomes visible).
+// the editor's window has focus (also on focus and when the page becomes
+// visible). After a failed probe the spacing doubles, up to the maximum.
 export const VALIDATION_CONTEXT_PROBE_INTERVAL_MS = 60_000
 export const VALIDATION_CONTEXT_PROBE_SPACING_MS = 5_000
+export const VALIDATION_CONTEXT_PROBE_MAX_BACKOFF_MS = 10 * 60_000
 
 export function useScriptAuthoringSession({ initialScript, initiallyDirty: givenInitiallyDirty, resolveCurrentScript, flushPendingEdits, documentKey, contentRevision: givenRevision = '', context, baseline: baselineOptions, document: documentOptions, navigation: navigationOptions, probeValidationContext: probeValidationContextOption }: Options) {
   // ---- Paired baseline ----------------------------------------------------
@@ -236,7 +239,13 @@ export function useScriptAuthoringSession({ initialScript, initiallyDirty: given
   // reports no context binds to its document only.
   const [validatedContext, setValidatedContext] = useState<ScriptValidationContext | null>(null)
   const [observedContext, setObservedContext] = useState<ScriptValidationContext | null>(null)
-  const validationContextChanged = validatedBinding ? validationContextChanges(validatedContext, observedContext) : []
+  // A stored-script probe answered that a newer revision was saved: its
+  // context can no longer be read for the content this result validated.
+  const [storedRevisionChanged, setStoredRevisionChanged] = useState(false)
+  // Consecutive failed context probes; a new result starts afresh.
+  const probeFailuresRef = useRef(0)
+  const validationContextChanged: ValidationStaleCause[] = !validatedBinding ? []
+    : storedRevisionChanged ? ['stored_script'] : validationContextChanges(validatedContext, observedContext)
 
   const resolveDraft = useCallback((): ResolvedScriptDraft => {
     const { script, editGeneration } = flushPendingEdits(resolveCurrentScript())
@@ -269,6 +278,8 @@ export function useScriptAuthoringSession({ initialScript, initiallyDirty: given
     setValidatedBinding(null)
     setValidatedContext(null)
     setObservedContext(null)
+    setStoredRevisionChanged(false)
+    probeFailuresRef.current = 0
     const current = currentBindingRef.current
     return {
       requestId: latestRequestRef.current,
@@ -289,6 +300,8 @@ export function useScriptAuthoringSession({ initialScript, initiallyDirty: given
     setValidatedBinding({ ...request.sent, fingerprint: draftFingerprint(adoptedDocumentKey) })
     setValidatedContext(context ?? null)
     setObservedContext(context ?? null)
+    setStoredRevisionChanged(false)
+    probeFailuresRef.current = 0
   }, [])
 
   // probeValidationContext re-reads the controller context for the result
@@ -299,22 +312,34 @@ export function useScriptAuthoringSession({ initialScript, initiallyDirty: given
   const validatedBindingRef = useRef(validatedBinding)
   validatedBindingRef.current = validatedBinding
   // One probe at a time, and none within VALIDATION_CONTEXT_PROBE_SPACING_MS
-  // of the last: a focus and a visibility change arrive together, and each
-  // probe resolves the script's secrets on the controller.
+  // of the last (doubling after each failure): a focus and a visibility
+  // change arrive together, a draft probe uploads the whole document, and
+  // each probe resolves the script's secrets on the controller.
   const probeInFlightRef = useRef(false)
   const lastProbeAtRef = useRef(0)
   const probeValidationContext = useCallback(async () => {
     const probe = probeRef.current
     const binding = validatedBindingRef.current
     if (!probe || !binding || !sameValidationBinding(binding, currentBindingRef.current)) return
-    if (probeInFlightRef.current || Date.now() - lastProbeAtRef.current < VALIDATION_CONTEXT_PROBE_SPACING_MS) return
+    const spacing = Math.min(VALIDATION_CONTEXT_PROBE_SPACING_MS * 2 ** probeFailuresRef.current, VALIDATION_CONTEXT_PROBE_MAX_BACKOFF_MS)
+    if (probeInFlightRef.current || Date.now() - lastProbeAtRef.current < spacing) return
     probeInFlightRef.current = true
     lastProbeAtRef.current = Date.now()
     const request = latestRequestRef.current
+    const stillHeld = () => request === latestRequestRef.current && validatedBindingRef.current === binding
     try {
       const observed = await probe(binding)
-      if (observed && request === latestRequestRef.current && validatedBindingRef.current === binding) setObservedContext(observed)
-    } catch { /* An unreachable controller leaves the last observation; a start rechecks everything. */ } finally {
+      probeFailuresRef.current = 0
+      if (observed && stillHeld()) setObservedContext(observed)
+    } catch (cause) {
+      // A newer stored revision is a definitive answer: the result no longer
+      // describes the stored script. Anything else leaves the last
+      // observation (a start rechecks everything) and backs off.
+      if (cause instanceof ApiError && cause.status === 409 && cause.code === 'validation_context_revision_changed') {
+        probeFailuresRef.current = 0
+        if (stillHeld()) setStoredRevisionChanged(true)
+      } else probeFailuresRef.current += 1
+    } finally {
       probeInFlightRef.current = false
     }
   }, [])
@@ -322,9 +347,12 @@ export function useScriptAuthoringSession({ initialScript, initiallyDirty: given
     if (!validatedBinding || !validatedContext || !probeRef.current) return undefined
     const visible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden'
     const onFocus = () => { if (visible()) void probeValidationContext() }
+    // The periodic re-read runs only while the window has focus, so an idle
+    // editor in a background window does not keep uploading its draft.
+    const onInterval = () => { if (typeof document === 'undefined' || document.hasFocus()) onFocus() }
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onFocus)
-    const timer = window.setInterval(onFocus, VALIDATION_CONTEXT_PROBE_INTERVAL_MS)
+    const timer = window.setInterval(onInterval, VALIDATION_CONTEXT_PROBE_INTERVAL_MS)
     return () => {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onFocus)

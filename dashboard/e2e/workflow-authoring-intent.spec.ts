@@ -69,11 +69,14 @@ test('[AUTH-1] a scenario create whose response was lost replays after a reload 
   await expect.poll(() => scenariosNamed(request, workspace, name)).toBe(1)
   await page.unroute('**/api/v1/scenarios')
 
-  // A reload keeps the draft and the key its unanswered create used.
+  // A reload keeps the draft and the key its unanswered create used. Only
+  // the browser checkpoint may supply that key here: the record of unanswered
+  // keys, which would also find it by payload, is cleared first.
   const replayed: string[] = []
   page.on('request', sent => {
     if (sent.method() === 'POST' && new URL(sent.url()).pathname === '/api/v1/scenarios') replayed.push(sent.headers()['idempotency-key'] ?? '')
   })
+  await page.evaluate(() => window.localStorage.removeItem('apexload.authoring.create-intents.v1'))
   await page.reload()
   await page.getByRole('region', { name: 'Unsaved work in this browser' }).getByRole('button', { name: 'Resume draft', exact: true }).click()
   await expect(page.getByPlaceholder('Scenario name')).toHaveValue(name)
@@ -132,6 +135,12 @@ test('[AUTH-1] a queued revised copy whose response was lost replays instead of 
   expect(sentKeys[0]).toMatch(/^test-create-/)
   expect(response.request().headers()['idempotency-key']).toBe(sentKeys[0])
   await expect(dialog.getByRole('status')).toContainText('no new run was queued')
+  // Creating again replays the same run; only Save as new would queue another.
+  const again = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/tests')
+  await create.click()
+  const repeated = await again
+  expect(repeated.headers()['idempotent-replayed']).toBe('true')
+  expect(repeated.request().headers()['idempotency-key']).toBe(sentKeys[0])
   const runs: unknown = await json(await request.get(`/api/v1/tests?project_id=${encodeURIComponent(workspace.projectId)}`))
   const items = Array.isArray(runs) ? runs : (runs as { tests?: unknown[] }).tests ?? []
   expect(items.filter(item => (item as { name?: string }).name === name)).toHaveLength(1)

@@ -56,6 +56,8 @@ describe('authoring create intents', () => {
     expect(settleFailedAuthoringCreate(intent, new ApiError('unknown', 503, { error: 'unknown', code: 'scenario_save_outcome_unknown' }), 'scenario').state).toBe('pending')
     expect(settleFailedAuthoringCreate(intent, new ApiError('invalid', 400), 'script').state).toBe('refused')
     expect(settleFailedAuthoringCreate(intent, new ApiError('forbidden', 403), 'script').state).toBe('refused')
+    // A keyed run create carrying credentials without key wrapping is refused before its key is claimed.
+    expect(settleFailedAuthoringCreate({ ...intent, purpose: 'test_create' }, new ApiError('unprotected', 422, { error: 'unprotected', code: 'idempotency_credentials_unprotected' }), 'run').state).toBe('refused')
     for (const [code, reason] of [['idempotency_key_reused', 'changed'], ['idempotency_key_expired', 'expired'], ['idempotency_resource_deleted', 'deleted']] as const) {
       let thrown: unknown
       try { settleFailedAuthoringCreate(intent, new ApiError(code, code === 'idempotency_resource_deleted' ? 410 : 409, { error: code, code }), 'script') } catch (cause) { thrown = cause }

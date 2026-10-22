@@ -113,17 +113,21 @@ describe('scenario assembly', () => {
     expect(first.groups[1]).toMatchObject({ name: 'Watch', role: 'observer', stages: [{ name: 'Warm', type: 'ramp_up', duration: '1m', target_vusers: 2 }, { name: 'Hold', type: 'hold', duration: '5m', target_vusers: 2 }] })
   })
 
-  it('keeps the project-secret references of a reopened scenario through the builder checkpoint and save', () => {
+  it("passes a reopened scenario's secret references, spaced or not, through the checkpoint's credential check into its save payload", () => {
+    // The editor shows references as authored, spacing included (AUTH-C).
     const scenario = {
       created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
       id: 'secret-refs', name: 'Secret references', duration: '5m',
-      runtime_settings: { env: { API_TOKEN: '{{secret.api_token}}' } },
+      runtime_settings: { env: { API_TOKEN: '{{ secret.api_token }}' } },
       scripts: [{ order: 0, name: 'Checkout', script_id: 'script-a', vusers: 5, runtime_settings: { env: { GROUP_TOKEN: '{{secret.group_token}}' } } }],
     } as unknown as StoredScenario
-    expect(() => assertDraftHasNoInlineCredentials(scenarioFormStateFromStoredScenario(scenario, ''))).not.toThrow()
-    const payload = scenarioUpsertPayload(scenarioDraftFromStoredScenario(scenario))
-    expect(payload.runtime_settings?.env).toEqual({ API_TOKEN: '{{secret.api_token}}' })
+    const form = scenarioFormStateFromStoredScenario(scenario, '')
+    expect(() => assertDraftHasNoInlineCredentials(form)).not.toThrow()
+    const payload = scenarioUpsertPayload(scenarioDraftFromForm(form))
+    expect(payload.runtime_settings?.env).toEqual({ API_TOKEN: '{{ secret.api_token }}' })
     expect(payload.groups?.[0]?.runtime_settings?.env).toEqual({ GROUP_TOKEN: '{{secret.group_token}}' })
+    // A literal value is still refused by the same check.
+    expect(() => assertDraftHasNoInlineCredentials({ ...form, runtime_settings: { env: { API_TOKEN: 'literal-token' } } })).toThrow()
   })
 
   it('assembles TestHub edits the way the form shows them', () => {

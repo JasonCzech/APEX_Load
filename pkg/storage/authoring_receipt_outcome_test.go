@@ -221,6 +221,57 @@ func exerciseAuthoringReceiptOriginalOutcomes(t *testing.T, store *SQLiteStore) 
 		}
 	})
 
+	t.Run("an expired or scrubbed reservation cannot gain an outcome", func(t *testing.T) {
+		readOutcome := func(id string) string {
+			var outcome string
+			if err := store.db.QueryRow(`SELECT original_outcome FROM authoring_mutation_receipts WHERE id = ?`, id).Scan(&outcome); err != nil {
+				t.Fatal(err)
+			}
+			return outcome
+		}
+		// A create that commits after its key's replay lifetime.
+		late := originalOutcomeClaim(t, store, "key-late", "owner-1", "script", "late-script", now)
+		if _, err := store.CreateScriptAuthoringCompletingReceipt(newScript("late-script"), AuthoringReceiptCompletion{ReceiptID: late.Receipt.ID, OwnerToken: "owner-1", Now: now.Add(25 * time.Hour)}, render); !errors.Is(err, ErrAuthoringReceiptLost) {
+			t.Fatalf("completion of an expired reservation: %v", err)
+		}
+		if readOutcome(late.Receipt.ID) != "" {
+			t.Fatal("an expired reservation stored an outcome")
+		}
+		if _, err := store.GetScriptAuthoringSnapshot("late-script"); err == nil {
+			t.Fatal("the create committed although its receipt could not be completed")
+		}
+		// A create whose clock lags a scrub that already ran.
+		scrubbed := originalOutcomeClaim(t, store, "key-scrubbed", "owner-1", "script", "scrubbed-script", now)
+		if _, err := store.ScrubExpiredAuthoringReceipts(now.Add(25 * time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.CreateScriptAuthoringCompletingReceipt(newScript("scrubbed-script"), AuthoringReceiptCompletion{ReceiptID: scrubbed.Receipt.ID, OwnerToken: "owner-1", Now: now.Add(time.Hour)}, render); !errors.Is(err, ErrAuthoringReceiptLost) {
+			t.Fatalf("completion of a scrubbed reservation: %v", err)
+		}
+		if readOutcome(scrubbed.Receipt.ID) != "" {
+			t.Fatal("a scrubbed reservation stored an outcome")
+		}
+	})
+
+	t.Run("a reservation rolled back past its lifetime still answers expired", func(t *testing.T) {
+		// Claimed 25 hours ago, so its key can no longer replay.
+		past := time.Now().UTC().Add(-25 * time.Hour)
+		late := originalOutcomeClaim(t, store, "key-late-retry", "owner-1", "script", "late-retry-script", past)
+		if _, err := store.CreateScriptAuthoringCompletingReceipt(newScript("late-retry-script"), AuthoringReceiptCompletion{ReceiptID: late.Receipt.ID, OwnerToken: "owner-1", Now: time.Now().UTC()}, render); !errors.Is(err, ErrAuthoringReceiptLost) {
+			t.Fatalf("completion past the lifetime: %v", err)
+		}
+		// The request's own cleanup cannot remove it ...
+		if gone, err := store.AbandonAuthoringMutationReceipt(late.Receipt.ID, "owner-1"); err != nil || gone {
+			t.Fatalf("abandon of an expired reservation: %v %v", gone, err)
+		}
+		// ... so a retry of the key is answered as expired, not claimed afresh.
+		retry := authoringReceiptInput("owner-2")
+		retry.KeyHash, retry.ResourceType, retry.ResourceID, retry.OutcomeVersion = "key-late-retry", "script", "late-retry-script", AuthoringReceiptOutcomeOriginal
+		if _, err := store.ClaimAuthoringMutationReceipt(retry, time.Now().UTC(), time.Minute); !errors.Is(err, ErrAuthoringReceiptExpired) {
+			t.Fatalf("retry of the expired key: %v", err)
+		}
+	})
+
 	t.Run("an earlier digest scheme's receipt is the same request", func(t *testing.T) {
 		input := authoringReceiptInput("owner-1")
 		input.KeyHash, input.ResourceID, input.RequestDigest = "key-scheme", "scheme-script", "hmac-sha256:earlier-scheme"

@@ -1250,16 +1250,18 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 	}
 	if err == nil && found && durable != nil && durable.Script != nil &&
 		durable.ID == script.ID && durable.ProjectID == script.ProjectID && durable.ContentRevision != "" {
-		resolver := s.runner.secretResolverForScript(durable.Script)
+		binding := s.runner.secretBindingForScript(durable.Script)
+		resolver := s.runner.secretResolverForBinding(binding)
 		response := buildScriptValidationResponse(id, durable.Script, resolver)
 		response.ValidatedContentRevision = durable.ContentRevision
-		s.attachValidationContext(r, &response, durable.ProjectID, durable.Script, resolver)
+		s.attachValidationContext(r, &response, durable.ProjectID, durable.Script, binding, resolver)
 		writeJSON(w, http.StatusOK, response)
 		return
 	}
-	resolver := s.runner.secretResolverForScript(script.Script)
+	binding := s.runner.secretBindingForScript(script.Script)
+	resolver := s.runner.secretResolverForBinding(binding)
 	response := buildScriptValidationResponse(id, script.Script, resolver)
-	s.attachValidationContext(r, &response, script.ProjectID, script.Script, resolver)
+	s.attachValidationContext(r, &response, script.ProjectID, script.Script, binding, resolver)
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -1291,18 +1293,25 @@ func (s *Server) handleValidationContext(w http.ResponseWriter, r *http.Request)
 		if request.FolderID != nil {
 			script.FolderID = request.FolderID
 		}
-		projectID = script.ProjectID
+		if !s.bindValidationDraft(w, r, script) {
+			return
+		}
+		scoped, err := s.draftForSecretBinding(script)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "the validation context is unavailable")
+			return
+		}
+		script, projectID = scoped, script.ProjectID
 	case request.Script == nil && strings.TrimSpace(request.ScriptID) != "":
 		stored, found, err := s.runner.GetScriptAuthoringDurable(request.ScriptID)
 		if err != nil {
 			writeError(w, http.StatusServiceUnavailable, "the script could not be read")
 			return
 		}
-		if !found || stored == nil || stored.Script == nil {
+		// Another project's script is as hidden as a missing one.
+		authorized, scoped := authorizedProjectFromRequest(r)
+		if !found || stored == nil || stored.Script == nil || (scoped && normalizeProjectID(stored.ProjectID) != authorized) {
 			writeError(w, http.StatusNotFound, "script not found")
-			return
-		}
-		if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
 			return
 		}
 		if revision := strings.TrimSpace(request.ContentRevision); revision != "" && revision != stored.ContentRevision {
@@ -1314,11 +1323,8 @@ func (s *Server) handleValidationContext(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "exactly one of script and script_id is required")
 		return
 	}
-	if authorized, scoped := authorizedProjectFromRequest(r); scoped && normalizeProjectID(projectID) != authorized {
-		writeError(w, http.StatusNotFound, "project not found")
-		return
-	}
-	validation, err := s.buildValidationContext(r.Context(), projectID, script, s.runner.secretResolverForScript(script))
+	binding := s.runner.secretBindingForScript(script)
+	validation, err := s.buildValidationContext(r.Context(), projectID, script, binding, s.runner.secretResolverForBinding(binding))
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "the validation context is unavailable")
 		return
@@ -1368,8 +1374,15 @@ func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Reques
 	if wrapper.FolderID != nil {
 		script.FolderID = wrapper.FolderID
 	}
+	if !s.bindValidationDraft(w, r, script) {
+		return
+	}
 
-	resolver := s.runner.secretResolverForScript(script)
+	// A draft whose ID could not be checked validates as an unsaved draft of
+	// its project, without a context: the context's binding is unknown.
+	scoped, scopeErr := s.draftForSecretBinding(script)
+	binding := s.runner.secretBindingForScript(scoped)
+	resolver := s.runner.secretResolverForBinding(binding)
 	response := buildDraftScriptValidationResponseWithVariables(
 		"",
 		script,
@@ -1377,8 +1390,51 @@ func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Reques
 		resolver,
 	)
 	response.ValidatedFingerprint = wrapper.Fingerprint
-	s.attachValidationContext(r, &response, script.ProjectID, script, resolver)
+	if scopeErr == nil {
+		s.attachValidationContext(r, &response, script.ProjectID, scoped, binding, resolver)
+	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+// bindValidationDraft binds a draft to the project its request was
+// authorized for, as a draft save does, so its validation and context
+// describe that project rather than the default one.
+func (s *Server) bindValidationDraft(w http.ResponseWriter, r *http.Request, script *dsl.Script) bool {
+	if authorized, scoped := authorizedProjectFromRequest(r); scoped {
+		if err := bindDraftScriptProject(script, authorized); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return false
+		}
+	}
+	return true
+}
+
+// draftForSecretBinding is the draft as its secrets and approval resolve:
+// its ID selects a library assignment and an approval only when it names a
+// stored script in the draft's own project, read durably (as the binding
+// is), not from a replica's cache. Any other ID is dropped, so a draft cannot
+// borrow another project's assignment, application secrets or approval
+// state. A failed read returns the draft without its ID and the error.
+func (s *Server) draftForSecretBinding(script *dsl.Script) (*dsl.Script, error) {
+	id := strings.TrimSpace(script.ID)
+	if id == "" || s.runner == nil {
+		return script, nil
+	}
+	unbound := *script
+	unbound.ID = ""
+	stored, found, err := s.runner.GetScriptAuthoringDurable(id)
+	if errors.Is(err, errScriptAuthoringUnsupported) {
+		// A store without durable authoring reads has only the cache.
+		cached, ok := s.runner.GetScript(id)
+		stored, found, err = cached, ok, nil
+	}
+	if err != nil {
+		return &unbound, err
+	}
+	if found && stored != nil && stored.ID == id && normalizeProjectID(stored.ProjectID) == normalizeProjectID(script.ProjectID) {
+		return script, nil
+	}
+	return &unbound, nil
 }
 
 func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {

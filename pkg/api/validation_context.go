@@ -36,10 +36,11 @@ type validationContext = importreview.ValidationContext
 var errValidationContextUnavailable = errors.New("validation context is unavailable without storage")
 
 // buildValidationContext computes the context a script validation result
-// depends on, for the script as the caller sees it in projectID. Every
-// component is a keyed digest: a secret's value enters only as an HMAC under
-// a per-deployment key, so neither the revision nor a component discloses it.
-func (s *Server) buildValidationContext(ctx context.Context, projectID string, script *dsl.Script, resolver engine.SecretResolver) (*validationContext, error) {
+// depends on, for the script as the caller sees it in projectID, with its
+// secrets resolved through binding by resolver (the resolver the validation
+// used). Every component is a keyed digest, and no secret value enters any:
+// validation depends on whether a secret is configured, never on its value.
+func (s *Server) buildValidationContext(ctx context.Context, projectID string, script *dsl.Script, binding scriptSecretBinding, resolver engine.SecretResolver) (*validationContext, error) {
 	if s == nil || s.store == nil {
 		// Without storage there is no per-deployment key to digest under.
 		return nil, errValidationContextUnavailable
@@ -126,23 +127,37 @@ func (s *Server) buildValidationContext(ctx context.Context, projectID string, s
 		}
 	}
 
-	// Secret references: each referenced name (bounded, sorted) with its
-	// availability and a keyed digest of its current value, so a rebinding
-	// changes the context while the value stays undisclosed.
-	secrets, truncated, missing, err := validationContextSecrets(ctx, script, resolver, func(name, value string) (string, error) {
-		return digest("secret-value", []string{name, value})
-	})
+	// Secret references: where the script's secrets resolve (its project, an
+	// application ahead of it, or a refused assignment that resolves none)
+	// and each referenced name (bounded, sorted) with its availability. A
+	// rebinding or a secret becoming available or unavailable changes the
+	// context; replacing a value does not, and no value is digested, so the
+	// context cannot confirm a guess of one.
+	if binding.Err != nil {
+		return nil, fmt.Errorf("resolve secret references: %w", binding.Err)
+	}
+	names, truncated, missing, err := validationContextSecrets(ctx, script, resolver)
 	if err != nil {
 		return nil, err
 	}
 	// The resolver reports a provider failure as a miss; only a store that
 	// answered "not found" makes a secret unavailable.
-	if err := s.secretProviderFailure(ctx, script.ProjectID, script, missing); err != nil {
+	if err := s.secretProviderFailure(ctx, binding, missing); err != nil {
 		return nil, fmt.Errorf("resolve secret references: %w", err)
 	}
+	secrets := struct {
+		Project     string      `json:"project"`
+		Application string      `json:"application,omitempty"`
+		Refused     bool        `json:"refused,omitempty"`
+		Names       [][2]string `json:"names"`
+	}{strings.TrimSpace(binding.ProjectID), binding.ApplicationID, binding.Refused, names}
 	result.SecretReferencesTruncated = truncated
+	unavailable := "the referenced secret is not configured for this project"
+	if binding.Refused {
+		unavailable = "the script's application assignment cannot supply secrets in this project"
+	}
 	for _, name := range missing {
-		result.Findings = append(result.Findings, importreview.ValidationContextFinding{Cause: "secret_unavailable", Subject: name, Detail: "the referenced secret is not configured for this project"})
+		result.Findings = append(result.Findings, importreview.ValidationContextFinding{Cause: "secret_unavailable", Subject: name, Detail: unavailable})
 	}
 
 	components := []struct {
@@ -171,9 +186,9 @@ func (s *Server) buildValidationContext(ctx context.Context, projectID string, s
 }
 
 // validationContextSecrets lists the script's referenced secrets (sorted,
-// at most validationContextSecretLimit) with availability and a value
-// digest, plus the unavailable names.
-func validationContextSecrets(ctx context.Context, script *dsl.Script, resolver engine.SecretResolver, valueDigest func(name, value string) (string, error)) ([][3]string, bool, []string, error) {
+// at most validationContextSecretLimit) with their availability, plus the
+// unavailable names.
+func validationContextSecrets(ctx context.Context, script *dsl.Script, resolver engine.SecretResolver) ([][2]string, bool, []string, error) {
 	if script == nil {
 		return nil, false, nil, nil
 	}
@@ -184,35 +199,30 @@ func validationContextSecrets(ctx context.Context, script *dsl.Script, resolver 
 	if truncated {
 		names = names[:validationContextSecretLimit]
 	}
-	values := map[string]string{}
 	unresolved := names
 	if resolver != nil && len(names) > 0 {
 		resolveCtx, cancel := engine.WithSecretResolutionBudget(ctx)
-		resolved, missing, err := engine.ResolveSecretNames(resolveCtx, names, resolver)
+		_, missing, err := engine.ResolveSecretNames(resolveCtx, names, resolver)
 		cancel()
 		if err != nil {
 			// An unreachable provider is not an unconfigured secret.
 			return nil, false, nil, fmt.Errorf("resolve secret references: %w", err)
 		}
-		values, unresolved = resolved, missing
+		unresolved = missing
 	}
 	unavailable := map[string]bool{}
 	for _, name := range unresolved {
 		unavailable[name] = true
 	}
-	entries := make([][3]string, 0, len(names))
+	entries := make([][2]string, 0, len(names))
 	missing := make([]string, 0)
 	for _, name := range names {
 		if unavailable[name] {
-			entries = append(entries, [3]string{name, "unavailable", ""})
+			entries = append(entries, [2]string{name, "unavailable"})
 			missing = append(missing, name)
 			continue
 		}
-		digest, err := valueDigest(name, values[name])
-		if err != nil {
-			return nil, false, nil, err
-		}
-		entries = append(entries, [3]string{name, "available", digest})
+		entries = append(entries, [2]string{name, "available"})
 	}
 	return entries, truncated, missing, nil
 }
@@ -233,8 +243,8 @@ func browserRuntimeWarning(script *dsl.Script) string {
 // attachValidationContext adds the validation context to a response. A
 // context that cannot be computed is omitted, and a client then treats the
 // result as bound to its document only, as with an older controller.
-func (s *Server) attachValidationContext(r *http.Request, response *scriptValidationResponse, projectID string, script *dsl.Script, resolver engine.SecretResolver) {
-	validation, err := s.buildValidationContext(r.Context(), projectID, script, resolver)
+func (s *Server) attachValidationContext(r *http.Request, response *scriptValidationResponse, projectID string, script *dsl.Script, binding scriptSecretBinding, resolver engine.SecretResolver) {
+	validation, err := s.buildValidationContext(r.Context(), projectID, script, binding, resolver)
 	if err != nil {
 		return
 	}
@@ -247,42 +257,33 @@ func (s *Server) attachValidationContext(r *http.Request, response *scriptValida
 var errSecretResolutionInconsistent = errors.New("a managed secret store holds a value the resolver could not read")
 
 // secretProviderFailure re-reads, for the names the resolver reported
-// missing, the managed stores that resolve the script's secrets and the
-// application read that scopes them. projectID is the script's own, exactly
-// as the resolver used it: a draft without one resolved no project secrets. It returns an error when any read
-// failed (other than "not found") or found a usable value: either way the
-// secret is not known to be unconfigured. A Key Vault fallback reports no
-// errors to recheck, so its outage still reads as unavailable.
-func (s *Server) secretProviderFailure(ctx context.Context, projectID string, script *dsl.Script, names []string) error {
+// missing, the managed stores the binding resolves them from: the
+// application's secrets and the project's, exactly as the resolver read them
+// (a draft without a project resolved no project secrets, and a refused
+// binding resolved nothing, so there is nothing to re-read). It returns an
+// error when any read failed (other than "not found") or found a usable
+// value: either way the secret is not known to be unconfigured. A Key Vault
+// fallback reports no errors to recheck, so its outage still reads as
+// unavailable.
+func (s *Server) secretProviderFailure(ctx context.Context, binding scriptSecretBinding, names []string) error {
 	tr := s.runner
-	if tr == nil || len(names) == 0 {
+	if tr == nil || len(names) == 0 || binding.Refused {
 		return nil
 	}
 	type lookup func(context.Context, string) (string, error)
 	lookups := make([]lookup, 0, 2)
-	if tr.projectSecretStore != nil && strings.TrimSpace(projectID) != "" {
+	if binding.ApplicationID != "" && tr.applicationSecretStore != nil {
+		scope := storage.ApplicationSecretScopeID(binding.ApplicationID)
+		lookups = append(lookups, func(ctx context.Context, name string) (string, error) {
+			value, _, err := tr.applicationSecretStore.Get(ctx, scope, name)
+			return value, err
+		})
+	}
+	if projectID := binding.ProjectID; tr.projectSecretStore != nil && strings.TrimSpace(projectID) != "" {
 		lookups = append(lookups, func(ctx context.Context, name string) (string, error) {
 			value, _, err := tr.projectSecretStore.Get(ctx, projectID, name)
 			return value, err
 		})
-	}
-	if tr.applicationSecretStore != nil && tr.libraryAssignmentStore != nil && script != nil && strings.TrimSpace(script.ID) != "" {
-		assignments, err := tr.libraryAssignmentStore.ListLibraryAssignments("script", []string{script.ID})
-		if err != nil {
-			return err
-		}
-		if assignment := assignments[script.ID]; assignment != nil && assignment.Application != nil {
-			if tr.applicationStore != nil {
-				if _, err := tr.applicationStore.GetApplication(assignment.Application.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-					return err
-				}
-			}
-			scope := storage.ApplicationSecretScopeID(assignment.Application.ID)
-			lookups = append(lookups, func(ctx context.Context, name string) (string, error) {
-				value, _, err := tr.applicationSecretStore.Get(ctx, scope, name)
-				return value, err
-			})
-		}
 	}
 	budget, cancel := engine.WithSecretResolutionBudget(ctx)
 	defer cancel()
