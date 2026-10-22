@@ -107,10 +107,29 @@ type workerSeriesBounds struct {
 	From time.Time `json:"from"`
 	To   time.Time `json:"to"`
 }
+
+// workerSchemaMismatch names, by index, the file and mapped column of a
+// schema_mismatch error (analysis.SchemaMismatchError); never source text.
+type workerSchemaMismatch struct {
+	File   int    `json:"file"`
+	Column int    `json:"column"`
+	Reason string `json:"reason"`
+}
+
+// workerRejectedRows names, by index, the file and measure of a rejected_rows
+// error (analysis.RejectedRowsError) with its count and first row ordinals.
+type workerRejectedRows struct {
+	File    int     `json:"file"`
+	Measure int     `json:"measure"`
+	Count   int64   `json:"count"`
+	Rows    []int64 `json:"rows"`
+}
 type workerResult struct {
 	SeriesBounds   *workerSeriesBounds     `json:"series_bounds,omitempty"`
 	Status         string                  `json:"status"`         // ok, cancelled, error
 	Code           string                  `json:"code,omitempty"` // fixed reason, never native error text
+	Mismatch       *workerSchemaMismatch   `json:"mismatch,omitempty"`
+	RejectedRows   *workerRejectedRows     `json:"rejected_rows,omitempty"`
 	CancelSequence uint64                  `json:"cancel_sequence,omitempty"`
 	Preview        *workerPreviewResult    `json:"preview,omitempty"`
 	Normalize      *workerNormalizeResult  `json:"normalize,omitempty"`

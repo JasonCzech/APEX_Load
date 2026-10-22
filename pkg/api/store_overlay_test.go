@@ -2708,13 +2708,13 @@ func (o *sqliteStoreOverlay) ExhaustRunArchiveCollection(a0 string, a1 string, a
 	return o.base().ExhaustRunArchiveCollection(a0, a1, a2, a3, a4)
 }
 
-func (o *sqliteStoreOverlay) FailAnalysisImportAttempt(a0 context.Context, a1 string, a2 string, a3 string, a4 int64) error {
+func (o *sqliteStoreOverlay) FailAnalysisImportAttempt(a0 context.Context, a1 string, a2 string, a3 string, a4 int64, a5 string) error {
 	if fake, ok := o.fake.(interface {
-		FailAnalysisImportAttempt(context.Context, string, string, string, int64) error
+		FailAnalysisImportAttempt(context.Context, string, string, string, int64, string) error
 	}); ok {
-		return fake.FailAnalysisImportAttempt(a0, a1, a2, a3, a4)
+		return fake.FailAnalysisImportAttempt(a0, a1, a2, a3, a4, a5)
 	}
-	return o.base().FailAnalysisImportAttempt(a0, a1, a2, a3, a4)
+	return o.base().FailAnalysisImportAttempt(a0, a1, a2, a3, a4, a5)
 }
 
 func (o *sqliteStoreOverlay) FinalizeGitHubScriptSyncClaim(a0 *storage.GitHubScriptLink, a1 string) (bool, error) {

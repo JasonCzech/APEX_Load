@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/analysis"
 )
 
 type workerProcessProfile struct {
@@ -588,6 +590,11 @@ func runWorkerParentOwned(a *workerAttempt, request workerRequest, options worke
 			return nil, ErrUnavailable
 		case "incompatible_histogram_bounds":
 			return nil, ErrIncompatibleHistogramBounds
+		case "schema_mismatch":
+			return nil, &analysis.SchemaMismatchError{File: result.Mismatch.File, Column: result.Mismatch.Column, Reason: result.Mismatch.Reason}
+		case "rejected_rows":
+			rejected := result.RejectedRows
+			return nil, &analysis.RejectedRowsError{File: rejected.File, Measure: rejected.Measure, Count: rejected.Count, Rows: append([]int64(nil), rejected.Rows...)}
 		default:
 			return nil, errWorkerProtocol
 		}

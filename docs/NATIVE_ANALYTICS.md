@@ -39,7 +39,9 @@ pending status 503, retains their bytes and keeps the cleanup job. Qualified
 process-restart, HA and remote-backend recovery remain open. See the
 [upload and deletion review](qa/reviews/feature-completion-native-upload-2026-10-04/README.md).
 
-Rejected measurements fail publication by default. Explicitly accepting them retains a complete rejected-row Parquet artifact with file/measure identity and zero-based source row ordinals, plus bounded metadata summaries. Rejected source values are never copied into error reports. The dashboard caps artifact downloads at 64 MiB; larger artifacts remain accessible through the authenticated API.
+Rejected measurements fail publication by default; the import's error then names the file, the measure, how many rows were rejected and the first zero-based source row ordinals. Explicitly accepting them retains a complete rejected-row Parquet artifact with file/measure identity and zero-based source row ordinals, plus bounded metadata summaries. Rejected source values are never copied into error reports. The dashboard caps artifact downloads at 64 MiB; larger artifacts remain accessible through the authenticated API.
+
+Every source file must hold each mapped column as a scalar column. A file that lacks one, holds it as a list or repeated field, or holds a group of fields there fails the whole import before any row is read; nothing is accepted, and the import's error names the file and the column, for example `File "b.parquet" does not match the mapping: it has no column "latency".` A mapped column whose values in some file cannot be read as numbers is a rejected measurement with row provenance, as above. Other normalization failures keep the generic message. Two files with the same content are normally refused at commit, naming both; identical content uploaded in differently sized chunks is caught during normalization instead, with the generic message.
 
 Mappings distinguish gauges, counters, raw transaction observations and summary
 values. Timestamp mappings require an explicit timezone and encoding. Offset

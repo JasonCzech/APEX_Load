@@ -47,7 +47,7 @@ func nativePreviewAuthorityFixture(t *testing.T, state string, wrappers ...func(
 	if err = store.ConfirmAnalysisAttemptWritersQuiesced(t.Context(), in.ID, in.ProjectID, in.Owner); err != nil {
 		t.Fatal(err)
 	}
-	if err = store.FailAnalysisImportAttempt(t.Context(), in.ID, in.ProjectID, in.Owner, in.Revision); err != nil {
+	if err = store.FailAnalysisImportAttempt(t.Context(), in.ID, in.ProjectID, in.Owner, in.Revision, ""); err != nil {
 		t.Fatal(err)
 	}
 	in, err = store.GetAnalysisImport(in.ID)

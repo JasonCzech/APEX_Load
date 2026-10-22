@@ -92,6 +92,17 @@ func InspectParquet(path string) (ParquetSchemaPreview, error) {
 	return ParquetSchemaPreview{Rows: footerMeta.NumRows, Columns: columns, FileSize: info.Size()}, nil
 }
 
+// EscapedColumnPath joins path components with ".", escaping a backslash or a
+// "." within a component, so a component named "a.b" differs from the path
+// a, b.
+func EscapedColumnPath(parts []string) string {
+	escaped := make([]string, len(parts))
+	for i, part := range parts {
+		escaped[i] = strings.NewReplacer(`\`, `\\`, `.`, `\.`).Replace(part)
+	}
+	return strings.Join(escaped, ".")
+}
+
 func flattenParquetSchema(elements []*parquet.SchemaElement) ([]ParquetColumn, error) {
 	if len(elements) > maxParquetSchemaElements || len(elements) == 0 || elements[0] == nil || elements[0].GetNumChildren() <= 0 {
 		return nil, errors.New("Parquet root must contain columns")
@@ -150,11 +161,7 @@ func flattenParquetSchema(elements []*parquet.SchemaElement) ([]ParquetColumn, e
 			return errors.New("invalid Parquet physical type")
 		}
 		parts := append([]string(nil), path[1:]...)
-		escaped := make([]string, len(parts))
-		for i, part := range parts {
-			escaped[i] = strings.NewReplacer(`\`, `\\`, `.`, `\.`).Replace(part)
-		}
-		column := ParquetColumn{Path: strings.Join(escaped, "."), PathComponents: parts, PhysicalType: element.Type.String(),
+		column := ParquetColumn{Path: EscapedColumnPath(parts), PathComponents: parts, PhysicalType: element.Type.String(),
 			LogicalType: element.LogicalType, Precision: element.Precision, Scale: element.Scale, TypeLength: element.TypeLength,
 			Repeated: repeated, Nullable: nullable}
 		if element.ConvertedType != nil {
