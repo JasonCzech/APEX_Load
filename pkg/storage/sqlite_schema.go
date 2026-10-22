@@ -2359,6 +2359,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_domain_deployment_targets_cluster ON domain_deployment_targets(default_cluster_id)`, "idx_domain_deployment_targets_cluster"},
 	{`CREATE INDEX IF NOT EXISTS idx_capacity_reservations_project_time ON capacity_reservations(project_id, start_at, end_at)`, "idx_capacity_reservations_project_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_capacity_reservations_bound_test ON capacity_reservations(bound_test_id)`, "idx_capacity_reservations_bound_test"},
+	{`CREATE INDEX IF NOT EXISTS idx_tests_browser_baseline_inventory ON tests(COALESCE(NULLIF(project_id, ''), 'default'), COALESCE(application_id, ''), COALESCE(scenario_id, ''), status, id)`, "idx_tests_browser_baseline_inventory"},
 	{`CREATE INDEX IF NOT EXISTS idx_tests_timeslot ON tests(timeslot_id)`, "idx_tests_timeslot"},
 	{`CREATE INDEX IF NOT EXISTS idx_scenario_data_pool_bindings_pool ON scenario_data_pool_bindings(pool_id)`, "idx_scenario_data_pool_bindings_pool"},
 	{`CREATE INDEX IF NOT EXISTS idx_shared_data_pools_project ON shared_data_pools(project_id)`, "idx_shared_data_pools_project"},
