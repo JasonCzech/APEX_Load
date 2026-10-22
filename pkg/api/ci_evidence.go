@@ -121,8 +121,7 @@ func (s *Server) validatedCIRunArchiveEvidence(ctx context.Context, test *Manage
 		return nil, fmt.Errorf("load durable archive terminal metrics: %w", err)
 	}
 	validity, validityErr := s.archiveReadCaches().cachedRunArchiveValidity(record)
-	return &ciValidatedArchiveEvidence{Manifest: manifest, FinalSummary: finalSummary, Validity: validity, ValidityUnavailable: validityErr != nil,
-		TelemetryVerdict: telemetryAcceptanceForManifest(manifest)}, nil
+	return newCIValidatedArchiveEvidence(manifest, finalSummary, validity, validityErr != nil), nil
 }
 
 // cachedRunArchiveValidity is the validity verdict of the report built over

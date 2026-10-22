@@ -474,7 +474,8 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 
 	report.Validity = archiveRunValidity(manifest, validityResults.counted(), summaries, resources)
-	report.TelemetryAcceptance = telemetryAcceptanceForManifest(manifest)
+	// Judged on the recorded evidence, reported with its text scrubbed.
+	report.TelemetryAcceptance = scrubTelemetryVerdict(telemetryAcceptanceForManifest(manifest), newTelemetryTextScrubber(manifest))
 	report.Overview.ResourceSamples = int64(len(resources))
 	for _, sample := range resources {
 		if sample.CPUProcessPct > report.ResourcePeaks.CPUProcessPct {
@@ -600,7 +601,8 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.BrowserIterations = browserIterations.result()
 	report.SalesforceEPT = salesforceEPT.result()
 	report.AuraParity = auraParity.result()
-	report.HostNetwork = buildRunArchiveHostNetwork(manifest.HostNetwork)
+	// From the public projection: its source labels are scrubbed (TEL-B).
+	report.HostNetwork = buildRunArchiveHostNetwork(report.Manifest.HostNetwork)
 	report.HTTP3Preflight = cloneHTTP3Preflight(manifest.Provenance.HTTP3Preflight)
 	report.ArtifactInventory = buildRunArchiveArtifactInventory(record, manifest)
 

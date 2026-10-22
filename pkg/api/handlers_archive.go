@@ -539,10 +539,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
 			return
 		}
-		manifest, manifestErr := s.archiveDomainService().GetTestManifest(testID)
-		if manifestErr != nil {
-			manifest = nil
-		}
+		manifest := s.reportTestManifest(testID)
 		var bundle bytes.Buffer
 		if err := writeRunArchiveAnalysisBundle(report, &bundle, profile.ID, annotations, manifest); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to write analysis tables: "+err.Error())
@@ -571,10 +568,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
 			return
 		}
-		manifest, manifestErr := s.archiveDomainService().GetTestManifest(testID)
-		if manifestErr != nil {
-			manifest = nil
-		}
+		manifest := s.reportTestManifest(testID)
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+sanitizeFilename(testID)+"-"+profileID+".csv\"")
 		if err := writeRunArchiveReportCSVWithProfileAndAnnotations(report, w, profileID, annotations, manifest); err != nil {
@@ -603,10 +597,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
 			return
 		}
-		manifest, manifestErr := s.archiveDomainService().GetTestManifest(testID)
-		if manifestErr != nil {
-			manifest = nil
-		}
+		manifest := s.reportTestManifest(testID)
 		var pdfBody bytes.Buffer
 		// Prefer printing the HTML report so the PDF matches it; fall back to the
 		// built-in text renderer when headless Chromium is not available.
@@ -642,10 +633,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
 			return
 		}
-		manifest, manifestErr := s.archiveDomainService().GetTestManifest(testID)
-		if manifestErr != nil {
-			manifest = nil
-		}
+		manifest := s.reportTestManifest(testID)
 		var document bytes.Buffer
 		if err := writeRunArchiveReportDOCXWithProfileAndAnnotations(report, &document, profile.ID, annotations, manifest); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to write archive report docx: "+err.Error())
@@ -1136,10 +1124,7 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 	// The generator-assignment manifest powers Appendix C. It is best-effort:
 	// a failure (e.g. an archived run whose live state is gone) must not block
 	// the report, so the renderer degrades to an "unavailable" note on nil.
-	manifest, manifestErr := s.archiveDomainService().GetTestManifest(r.PathValue("id"))
-	if manifestErr != nil {
-		manifest = nil
-	}
+	manifest := s.reportTestManifest(r.PathValue("id"))
 	html, err := renderRunArchiveHTMLReportWithAnnotations(report, profile, annotations, manifest)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to render archive report: "+err.Error())

@@ -321,6 +321,11 @@ func (s *Server) loadBaselineComparison(w http.ResponseWriter, r *http.Request, 
 		writeError(w, 500, "invalid comparison snapshot")
 		return nil, false
 	}
+	// A comparison saved before telemetry text was scrubbed is projected
+	// with the shared scrubber (TEL-B).
+	for i := range result.TelemetryComparisons {
+		result.TelemetryComparisons[i] = scrubBaselineTelemetryComparison(result.TelemetryComparisons[i], telemetryTextScrubber{})
+	}
 	for _, baseline := range result.Baselines {
 		test, found := s.archiveDomainService().GetTest(baseline.ID)
 		if !found || !baselineSameScope(current, test) {

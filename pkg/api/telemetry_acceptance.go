@@ -780,6 +780,9 @@ func (s *Server) notifyTelemetryAcceptance(testID string, manifest *RunArchiveMa
 	if stamp.IsZero() {
 		stamp = time.Now().UTC()
 	}
+	// The event says what the verdict says, its text scrubbed (TEL-B).
+	scrubber := newTelemetryTextScrubber(manifest)
+	verdict, manifest = scrubTelemetryVerdict(verdict, scrubber), scrubTelemetryText(manifest, scrubber)
 	conditions := []string{"run:" + testID, "mode:" + verdict.Mode}
 	if verdict.Policy != nil {
 		conditions = append(conditions, fmt.Sprintf("policy:%s@%d", verdict.Policy.ID, verdict.Policy.Revision))
@@ -806,7 +809,7 @@ func (s *Server) notifyTelemetryAcceptance(testID string, manifest *RunArchiveMa
 	if len(verdict.Reasons) > 0 {
 		summary += ": " + verdict.Reasons[0]
 	}
-	name := manifest.TestName
+	name := scrubTelemetryIdentity(manifest.TestName)
 	if strings.TrimSpace(name) == "" {
 		name = testID
 	}

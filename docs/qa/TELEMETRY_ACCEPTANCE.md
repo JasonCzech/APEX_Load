@@ -116,6 +116,13 @@ Each fault in TEL-4's matrix names the tests that accept it. The Go tests run in
 |  | reports publications received while hidden before its first measurement alongside that measurement (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
 |  | leaves a publication hidden before it painted, in a tab that measured nothing yet, for its first measurement (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
 |  | an opted-in project collects visible render evidence as an advisory stage (`dashboard/e2e/workflow-telemetry-stages.spec.ts`) | End to end, both profiles |
+| Sanitization: credential and payload sentinels in telemetry source names, reasons and policy names | `TestTelemetryProjectionsScrubSentinels` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
+|  | `TestTelemetryTextScrubberRulesAndShape` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
+|  | `TestSavedBaselineComparisonServesScrubbedTelemetry` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
+|  | `TestTelemetryAcceptanceWebhookScrubsSentinels` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
+|  | `TestRunReportRouteScrubsGeneratorTargets` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
+|  | `TestRunCalendarTopologyScrubsGeneratorTargets` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
+|  | `TestTelemetryNotificationRuntimeScrubsAndPinsRecipients` (`pkg/api/telemetry_notification_runtime_test.go`) | Go |
 | HA adoption gaps | `TestTelemetryCoverageAfterAdoption` (`pkg/api/telemetry_coverage_test.go`) | Go |
 |  | `TestTelemetryLiveCoverageAfterAdoptionIsALowerBound` (`pkg/api/telemetry_coverage_test.go`) | Go |
 |  | `TestTelemetryStageRecorderReadoptionSamplesFromTheAdoption` (`pkg/api/telemetry_acceptance_test.go`) | Go |

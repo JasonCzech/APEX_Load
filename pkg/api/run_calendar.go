@@ -1169,14 +1169,16 @@ func userForCalendarSchedule(schedule *storage.ScenarioSchedule, test *ManagedTe
 	return user
 }
 
+// topologyForCalendar names generators as the run's other projections name
+// them: targets and IDs scrubbed as identities (TEL-B).
 func topologyForCalendar(test *ManagedTest, inventory SystemInventoryResponse, manifest *RunArchiveManifest, now time.Time) RunCalendarTopology {
 	if test != nil && calendarStatusActive(test.Status) {
 		controller := inventory.Controller
 		return RunCalendarTopology{
 			Source:             "live",
 			Controller:         &controller,
-			GeneratorShards:    cloneGeneratorShardSummaries(test.GeneratorShards),
-			GeneratorInventory: cloneGeneratorInventoryEntries(inventory.Generators),
+			GeneratorShards:    scrubGeneratorShardTargets(cloneGeneratorShardSummaries(test.GeneratorShards)),
+			GeneratorInventory: scrubGeneratorInventoryTargets(cloneGeneratorInventoryEntries(inventory.Generators)),
 			Summary:            topologySummary("live", test.GeneratorShards, inventory.Generators),
 		}
 	}
@@ -1184,8 +1186,8 @@ func topologyForCalendar(test *ManagedTest, inventory SystemInventoryResponse, m
 		return RunCalendarTopology{
 			Source:             "archive",
 			ControllerEnv:      cloneStringMap(manifest.Provenance.ControllerEnv),
-			GeneratorShards:    cloneGeneratorShardSummaries(manifest.Provenance.GeneratorShards),
-			GeneratorInventory: cloneGeneratorInventoryEntries(manifest.Provenance.GeneratorInventory),
+			GeneratorShards:    scrubGeneratorShardTargets(cloneGeneratorShardSummaries(manifest.Provenance.GeneratorShards)),
+			GeneratorInventory: scrubGeneratorInventoryTargets(cloneGeneratorInventoryEntries(manifest.Provenance.GeneratorInventory)),
 			Summary:            topologySummary("archive", manifest.Provenance.GeneratorShards, manifest.Provenance.GeneratorInventory),
 		}
 	}

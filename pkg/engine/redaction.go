@@ -182,6 +182,19 @@ func (c *RedactionConfig) ScrubText(value string) string {
 	return scrubSensitiveTextWithConfig(value, c)
 }
 
+// ApplyPatterns applies only the configured payload rules, in order, with no
+// runtime values and no shared scrubber: for a caller that chains several
+// configurations before scrubbing once.
+func (c *RedactionConfig) ApplyPatterns(value string) string {
+	if c == nil {
+		return value
+	}
+	for _, pattern := range c.compiled {
+		value = pattern.re.ReplaceAllString(value, pattern.repl)
+	}
+	return value
+}
+
 // HasRuntimeSecretMaterial reports whether the config contains exact,
 // memory-only PLATFORM-MANAGED runtime values. Protocols use this signal to
 // suppress binary evidence (notably screenshots and browser HAR/trace capture),
