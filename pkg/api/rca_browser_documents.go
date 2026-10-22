@@ -197,7 +197,10 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 func rcaDocumentCohort(tuple protocol.BrowserDocumentMetricSummary, incomplete bool) *rca.DocumentCohort {
 	family := tuple
 	family.Cohort = nil
-	return &rca.DocumentCohort{Metric: tuple.Metric, Group: tuple.Group, Family: browserDocumentTupleDigest(protocol.BrowserDocumentMetricKey(family)), Fields: browserCohortFields(tuple.Cohort), Incomplete: incomplete}
+	// Retained v1 browser documents have no browser-to-host calibration or
+	// expected-source/terminal ledger. Do not infer either from generator clock
+	// samples, local execution, or successful archive collection.
+	return &rca.DocumentCohort{ClockQualification: rca.BrowserEvidenceUnavailable, SourceCoverageQualification: rca.BrowserEvidenceUnavailable, Metric: tuple.Metric, Group: tuple.Group, Family: browserDocumentTupleDigest(protocol.BrowserDocumentMetricKey(family)), Fields: browserCohortFields(tuple.Cohort), Incomplete: incomplete}
 }
 
 // browserCohortFields are a runtime cohort's fields as text, so two cohorts'

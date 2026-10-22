@@ -154,7 +154,12 @@ var DefaultBrowserBaselineParams = BrowserBaselineParams{
 // cohort's fields, so a cohort without an exact baseline match can say what
 // changed. Incomplete marks evidence that dropped document observations.
 type DocumentCohort struct {
-	Metric string `json:"metric"`
+	// These states are set by the trusted archive adapter after validating
+	// source-bound evidence for the entire retained population. Zero values,
+	// local execution, and absence of reported loss are not positive proof.
+	ClockQualification          string `json:"clock_qualification"`
+	SourceCoverageQualification string `json:"source_coverage_qualification"`
+	Metric                      string `json:"metric"`
 	// Group is the scenario group that measured the document.
 	Group      string            `json:"group,omitempty"`
 	Family     string            `json:"family"`
@@ -277,6 +282,25 @@ func DetectBrowserBaseline(input DetectionInput, params BrowserBaselineParams) *
 	if input.DocumentsIncomplete {
 		out.Status = DetectionPartial
 		out.Limitations = append(out.Limitations, Limitation{Code: BrowserBaselineRunEvidenceIncomplete, Detail: "the run's browser document evidence was not fully read; a cohort it left out has no result"})
+	}
+	seenQualification := map[string]bool{}
+	addQualification := func(series []Series, baseline bool) {
+		for _, s := range series {
+			if s.Kind != SeriesBrowserDocument {
+				continue
+			}
+			for _, limitation := range browserDocumentQualificationLimitations(s.Document, baseline) {
+				if !seenQualification[limitation.Code] {
+					seenQualification[limitation.Code] = true
+					out.Limitations = append(out.Limitations, limitation)
+					out.Status = DetectionPartial
+				}
+			}
+		}
+	}
+	addQualification(documents, false)
+	if input.Baseline != nil {
+		addQualification(input.Baseline.Series, true)
 	}
 	levels := sortedLevels(input.Levels)
 	if len(levels) == 0 {
@@ -539,6 +563,12 @@ func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples 
 	}
 	if !baselineWindowsValid {
 		return unscored(BrowserBaselineBaselineWindowInvalid, "the baseline's full document measurement windows are missing, invalid or cross a matching steady-load boundary")
+	}
+	if reason, detail := browserDocumentQualification(s.Document, false); reason != "" {
+		return unscored(reason, detail)
+	}
+	if reason, detail := browserDocumentQualification(b.Document, true); reason != "" {
+		return unscored(reason, detail)
 	}
 	if len(values) < params.MinBaselineBuckets {
 		return unscored(BrowserBaselineInsufficient, fmt.Sprintf("%d of the %d valid baseline buckets needed", len(values), params.MinBaselineBuckets))

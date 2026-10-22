@@ -179,8 +179,8 @@ func TestRCABrowserArchivedUnassignedGroupsCannotQualify(t *testing.T) {
 			}
 			result := got.Results[0]
 			if group == "browser" {
-				if result.State != rca.BrowserBaselineAnomaly {
-					t.Fatalf("valid control: %+v", result)
+				if result.State != rca.BrowserBaselineUnscored || result.Reason != rca.BrowserClockUnavailable {
+					t.Fatalf("authored identity alone cannot qualify clocks: %+v", result)
 				}
 			} else if result.State != rca.BrowserBaselineUnscored || result.Reason != rca.BrowserBaselineCohortChanged || result.Z != 0 || result.ExpectedHigh != 0 {
 				t.Fatalf("unassigned cohort scored: %+v", result)

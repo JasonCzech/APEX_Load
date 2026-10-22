@@ -682,8 +682,8 @@ func TestRCABrowserDocumentSeriesMatchAcrossArchives(t *testing.T) {
 			Baseline: &rca.DetectionBaseline{TestID: "baseline", Qualification: rca.BaselineQualified, Levels: []rca.LoadLevel{level}, Series: []rca.Series{baseline}}}
 		return rca.DetectBrowserBaseline(input, rca.DefaultBrowserBaselineParams).Results[0]
 	}
-	// The same tuple is found (one bucket is too few to score).
-	if got := judge(same); got.Reason != rca.BrowserBaselineInsufficient || got.BaselineBuckets != 1 {
+	// The same tuple is found, but timestamps do not prove clock alignment.
+	if got := judge(same); got.Reason != rca.BrowserClockUnavailable || got.BaselineBuckets != 1 {
 		t.Fatalf("same cohort = %+v", got)
 	}
 	if got := judge(other); got.Reason != rca.BrowserBaselineCohortChanged || !strings.Contains(got.Detail, "browser_version") {

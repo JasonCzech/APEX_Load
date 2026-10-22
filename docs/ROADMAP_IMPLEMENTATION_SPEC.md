@@ -288,6 +288,8 @@ Retain recommended **1–2 browser VUsers and maximum 5 per generator**. A highe
 
 ### BI-A — Qualified baseline selection and findings
 
+The [candidate inventory and qualification safety slice](qa/reviews/roadmap-browser-qualification-2026-10-21/README.md) adds an indexed, bounded canonical-ID inventory and explicitly leaves browser comparisons unscored without verified browser-to-controller clocks and complete source populations. Both cross-run browser baselines and generic in-run load scoring enforce this gate; raw observations remain available. Engine v7 preserves historical results while preventing their reuse for new requests. Latest-compatible admission, positive producer proof acquisition and real two-run qualification remain open.
+
 The [full measurement-window slice](qa/reviews/roadmap-browser-source-windows-2026-10-21/README.md) retains the earliest start and latest end of all final documents contributing to each RCA bucket. Comparisons remain unscored when a contributing window is absent, invalid or crosses its admitting steady-load span, including pauses between equal-load spans. Engine v6 prevents reuse under earlier qualification rules. Source-clock synchronization, complete source-coverage attestation and latest-compatible admission selection remain open.
 
 The [retained bucket-grid slice](qa/reviews/roadmap-browser-bucket-grid-2026-10-21/README.md) refuses duplicate, zero or off-cadence browser bucket timestamps without filling gaps. Engine v5 preserves historical assessments while invalidating reuse under the earlier qualification logic. Source-clock synchronization, source-window completeness and latest-compatible admission selection remain open.

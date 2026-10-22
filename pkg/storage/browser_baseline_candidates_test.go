@@ -15,6 +15,11 @@ func TestBrowserBaselineCandidatePages(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
+	exerciseBrowserBaselineCandidatePages(t, s)
+}
+
+func exerciseBrowserBaselineCandidatePages(t *testing.T, s *SQLiteStore) {
+	t.Helper()
 	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
 	if err := s.SaveProject(&Project{ID: "foreign", Name: "Foreign"}); err != nil {
 		t.Fatal(err)
