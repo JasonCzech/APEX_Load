@@ -1,8 +1,12 @@
 package api
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -21,11 +25,29 @@ func browserPanelHTTPFixture(t *testing.T) (*Server, string, *storage.RunArchive
 	if err != nil {
 		t.Fatal(err)
 	}
+	var manifest RunArchiveManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Provenance.ProjectID = project
+	raw, err = json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(record.ManifestPath, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
 	record.ManifestSHA256 = sha256BytesHex(raw)
 	server.runner.mu.Lock()
 	server.runner.tests[record.TestID] = &ManagedTest{ID: record.TestID, Name: "Current", ProjectID: project, Status: "COMPLETE"}
 	server.runner.archives[record.TestID] = record
 	server.runner.mu.Unlock()
+	if err := server.store.SaveTest(&storage.TestRecord{ID: record.TestID, Name: "Browser fixture", ProjectID: project, Status: "COMPLETE", StartTime: start}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.store.SaveRunArchive(record); err != nil {
+		t.Fatal(err)
+	}
 	q := tupleQuery()
 	q.QueryVersion = 4
 	response := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", q)
@@ -78,6 +100,9 @@ func TestBrowserPanelInputPinsHTTPPublicationChangeAndHistoricalMetadata(t *test
 	next.ManifestSHA256 = sha256BytesHex(raw)
 	server.runner.mu.Lock()
 	server.runner.archives[record.TestID] = &next
+	if err := server.store.SaveRunArchive(&next); err != nil {
+		t.Fatal(err)
+	}
 	server.runner.mu.Unlock()
 	response = dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", q)
 	if response.Code != 422 {
@@ -137,6 +162,9 @@ func TestBrowserPanelInputPinsHTTPRefusesForeignMissingAndOversizedSave(t *testi
 	delete(server.runner.tests, record.TestID)
 	delete(server.runner.archives, record.TestID)
 	server.runner.mu.Unlock()
+	if err := server.store.DeleteTest(record.TestID); err != nil {
+		t.Fatal(err)
+	}
 	response := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboard-definitions", browserPanelDefinitionFixture(project, q))
 	if response.Code != 400 {
 		t.Fatalf("deleted inputs saved %d %s", response.Code, response.Body.String())
@@ -157,6 +185,7 @@ func TestBrowserPanelInputPinsHTTPTwoPublicationsAndForeignBaseline(t *testing.T
 	}
 	record.TestID = "baseline"
 	manifest.TestID = record.TestID
+	manifest.Provenance.ProjectID = project
 	raw, err = json.Marshal(manifest)
 	if err != nil {
 		t.Fatal(err)
@@ -169,6 +198,12 @@ func TestBrowserPanelInputPinsHTTPTwoPublicationsAndForeignBaseline(t *testing.T
 	server.runner.tests[record.TestID] = &ManagedTest{ID: record.TestID, Name: "Baseline", ProjectID: project, Status: "COMPLETE"}
 	server.runner.archives[record.TestID] = record
 	server.runner.mu.Unlock()
+	if err := server.store.SaveTest(&storage.TestRecord{ID: record.TestID, Name: "Browser fixture", ProjectID: project, Status: "COMPLETE", StartTime: start}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.store.SaveRunArchive(record); err != nil {
+		t.Fatal(err)
+	}
 	q.ComparisonRunID = record.TestID
 	q.BrowserInputs = nil
 	response := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", q)
@@ -210,6 +245,15 @@ func TestBrowserPanelInputPinsHTTPTwoPublicationsAndForeignBaseline(t *testing.T
 	server.runner.mu.Lock()
 	server.runner.tests[record.TestID].ProjectID = "foreign"
 	server.runner.mu.Unlock()
+	if err := server.store.SaveProject(&storage.Project{ID: "foreign", Name: "Foreign", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.store.DeleteTest(record.TestID); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.store.SaveTest(&storage.TestRecord{ID: record.TestID, Name: "Foreign", ProjectID: "foreign", Status: "COMPLETE", StartTime: start}); err != nil {
+		t.Fatal(err)
+	}
 	response = dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", q)
 	if response.Code != 404 {
 		t.Fatalf("foreign baseline read %d %s", response.Code, response.Body.String())
@@ -230,6 +274,9 @@ func TestBrowserPanelInputPinsHTTPRefusesUnprovedOrTamperedBytes(t *testing.T) {
 				next.ManifestSHA256 = ""
 				server.runner.mu.Lock()
 				server.runner.archives[record.TestID] = &next
+				if err := server.store.SaveRunArchive(&next); err != nil {
+					t.Fatal(err)
+				}
 				server.runner.mu.Unlock()
 			case "changed manifest bytes":
 				raw, err := os.ReadFile(record.ManifestPath)
@@ -289,5 +336,125 @@ func TestBrowserPanelInputPinsHTTPDefaultLimitRoundTrip(t *testing.T) {
 	response = dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", query)
 	if response.Code != 200 {
 		t.Fatalf("saved query rejected %d %s", response.Code, response.Body.String())
+	}
+}
+
+// The separate real SQL pool models connection contention without changing the
+// server's other store operations or leaking a background read after cancellation.
+type browserPanelDeadlineStore struct {
+	archive bool
+	storage.Store
+	pool  *sql.DB
+	calls int
+}
+
+func (s *browserPanelDeadlineStore) GetTestContext(ctx context.Context, id string) (*storage.TestRecord, error) {
+	if s.archive {
+		return s.Store.(interface {
+			GetTestContext(context.Context, string) (*storage.TestRecord, error)
+		}).GetTestContext(ctx, id)
+	}
+	s.calls++
+	var selected string
+	if err := s.pool.QueryRowContext(ctx, "SELECT id FROM tests WHERE id = ?", id).Scan(&selected); err != nil {
+		return nil, err
+	}
+	return s.Store.(interface {
+		GetTestContext(context.Context, string) (*storage.TestRecord, error)
+	}).GetTestContext(ctx, selected)
+}
+func (s *browserPanelDeadlineStore) GetRunArchiveContext(ctx context.Context, id string) (*storage.RunArchiveRecord, error) {
+	if s.archive {
+		s.calls++
+		var selected string
+		if err := s.pool.QueryRowContext(ctx, "SELECT id FROM tests WHERE id = ?", id).Scan(&selected); err != nil {
+			return nil, err
+		}
+	}
+	return s.Store.(interface {
+		GetRunArchiveContext(context.Context, string) (*storage.RunArchiveRecord, error)
+	}).GetRunArchiveContext(ctx, id)
+}
+func TestBrowserPanelSavedValidationHonorsIdentityDeadline(t *testing.T) {
+	for _, archive := range []bool{false, true} {
+		for _, canceled := range []bool{false, true} {
+			t.Run(fmt.Sprintf("archive=%v/canceled=%v", archive, canceled), func(t *testing.T) {
+				server, project, _, q := browserPanelHTTPFixture(t)
+				actual := server.store.(*storage.SQLiteStore)
+				pool, err := sql.Open("sqlite", actual.BackendInfo().DSN)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer pool.Close()
+				pool.SetMaxOpenConns(1)
+				conn, err := pool.Conn(context.Background())
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer conn.Close()
+				probe := &browserPanelDeadlineStore{Store: server.store, pool: pool, archive: archive}
+				server.store = probe
+				defer func() { server.store = actual }()
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+				defer cancel()
+				if canceled {
+					cancel()
+				}
+				request := httptest.NewRequest(http.MethodPost, "/", nil).WithContext(ctx)
+				response := httptest.NewRecorder()
+				definition := browserPanelDefinitionFixture(project, q)
+				expectedCalls := 1
+				if archive && canceled {
+					expectedCalls = 0
+				}
+				before := len(analysisPipelineJobs)
+				finished := make(chan bool, 1)
+				go func() { finished <- server.validateSavedBrowserPanelInputs(response, request, &definition) }()
+				select {
+				case accepted := <-finished:
+					if accepted || response.Code != 400 || probe.calls != expectedCalls || len(analysisPipelineJobs) != before {
+						t.Fatal("identity deadline or admission release failed", accepted, response.Code, probe.calls)
+					}
+				case <-time.After(time.Second):
+					conn.Close()
+					<-finished
+					t.Fatal("saved panel validation ignored identity deadline")
+				}
+			})
+		}
+	}
+}
+
+func TestBrowserPanelSavedInputsRejectForeignPublicationIdentity(t *testing.T) {
+	for _, field := range []string{"project", "incarnation"} {
+		t.Run(field, func(t *testing.T) {
+			server, project, record, q := browserPanelHTTPFixture(t)
+			manifest, err := loadRunArchiveManifestFromRecord(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if field == "project" {
+				manifest.Provenance.ProjectID = "foreign"
+			} else {
+				manifest.Provenance.RunIncarnation = "another-execution"
+			}
+			raw, err := json.Marshal(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(record.ManifestPath, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			record.ManifestSHA256 = sha256BytesHex(raw)
+			if err := server.store.SaveRunArchive(record); err != nil {
+				t.Fatal(err)
+			}
+			q.BrowserInputs.Current.ManifestSHA256 = record.ManifestSHA256
+			definition := browserPanelDefinitionFixture(project, q)
+			w := httptest.NewRecorder()
+			if server.validateSavedBrowserPanelInputs(w, httptest.NewRequest(http.MethodPost, "/", nil), &definition) || w.Code != 400 {
+				t.Fatal("foreign publication accepted", w.Code)
+			}
+		})
 	}
 }

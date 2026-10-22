@@ -146,6 +146,8 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 		manifest: RunArchiveManifest{
 			BrowserDocumentCaptureRequested: groupsRequestBrowserDocumentCapture(test.Groups),
 			SchemaVersion:                   archiveSchemaVersion,
+			BrowserProofExpectedOwners:      []string{"controller"},
+			BrowserProofAuthorityMode:       "local",
 			TestID:                          test.ID,
 			TestName:                        test.Name,
 			CreatedAt:                       time.Now(),

@@ -95,17 +95,23 @@ func (s *Server) validateSavedBrowserPanelInputs(w http.ResponseWriter, r *http.
 	defer func() { <-analysisPipelineJobs }()
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	archives := s.archiveDomainService()
 	load := func(id string, q storage.AnalyticsQuery) (NativeArchiveSeries, error) {
-		test, ok := archives.GetTest(id)
-		if !ok || normalizeProjectID(test.ProjectID) != normalizeProjectID(d.ProjectID) {
+		reader, ok := s.store.(interface {
+			GetTestContext(context.Context, string) (*storage.TestRecord, error)
+			GetRunArchiveContext(context.Context, string) (*storage.RunArchiveRecord, error)
+		})
+		if !ok {
+			return NativeArchiveSeries{}, errors.New("input identity reader unavailable")
+		}
+		test, err := reader.GetTestContext(ctx, id)
+		if err != nil || test == nil || test.ID != id || normalizeProjectID(test.ProjectID) != normalizeProjectID(d.ProjectID) {
 			return NativeArchiveSeries{}, errors.New("input run unavailable")
 		}
-		record, ok := archives.GetRunArchiveContext(ctx, id)
-		if !ok {
+		record, err := reader.GetRunArchiveContext(ctx, id)
+		if err != nil || record == nil || record.TestID != id {
 			return NativeArchiveSeries{}, errors.New("input archive unavailable")
 		}
-		return buildNativeArchiveSeries(ctx, record, q)
+		return buildNativeArchiveSeriesForTest(ctx, record, q, test, s.store)
 	}
 	for _, q := range queries {
 		current, err := load(q.BrowserInputs.Current.RunID, q)

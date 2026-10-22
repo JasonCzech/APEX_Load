@@ -49,18 +49,20 @@ type RunArchiveSourceCoverage = archivecontract.RunArchiveSourceCoverage
 type RunArchiveSource = archivecontract.RunArchiveSource
 
 type RunArchiveManifest struct {
-	SourceCoverage      *RunArchiveSourceCoverage   `json:"source_coverage,omitempty"`
-	CSVExports          []RunArchiveCSVExportStatus `json:"csv_exports,omitempty"`
-	CSVExportIncomplete string                      `json:"csv_export_incomplete,omitempty"`
-	TerminationReason   string                      `json:"termination_reason,omitempty"`
-	SchemaVersion       string                      `json:"schema_version"`
-	TestID              string                      `json:"test_id"`
-	TestName            string                      `json:"test_name"`
-	CreatedAt           time.Time                   `json:"created_at"`
-	CompletedAt         time.Time                   `json:"completed_at,omitempty"`
-	Status              string                      `json:"status,omitempty"`
-	Error               string                      `json:"error,omitempty"`
-	Provenance          RunArchiveProvenance        `json:"provenance,omitempty"`
+	BrowserProofExpectedOwners []string                    `json:"browser_proof_expected_owners,omitempty"`
+	BrowserProofAuthorityMode  string                      `json:"browser_proof_authority_mode,omitempty"`
+	SourceCoverage             *RunArchiveSourceCoverage   `json:"source_coverage,omitempty"`
+	CSVExports                 []RunArchiveCSVExportStatus `json:"csv_exports,omitempty"`
+	CSVExportIncomplete        string                      `json:"csv_export_incomplete,omitempty"`
+	TerminationReason          string                      `json:"termination_reason,omitempty"`
+	SchemaVersion              string                      `json:"schema_version"`
+	TestID                     string                      `json:"test_id"`
+	TestName                   string                      `json:"test_name"`
+	CreatedAt                  time.Time                   `json:"created_at"`
+	CompletedAt                time.Time                   `json:"completed_at,omitempty"`
+	Status                     string                      `json:"status,omitempty"`
+	Error                      string                      `json:"error,omitempty"`
+	Provenance                 RunArchiveProvenance        `json:"provenance,omitempty"`
 	// ExecutorCompletedAt keeps the executing controller's own completion time
 	// when failover recovery restamps CompletedAt with the durable run end.
 	ExecutorCompletedAt *time.Time `json:"executor_completed_at,omitempty"`

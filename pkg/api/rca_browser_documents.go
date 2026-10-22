@@ -121,19 +121,83 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 	if accumulator == nil {
 		return nil, nil, nil
 	}
+	proof, proofErr := readBrowserSourceProof(ctx, record, manifest)
+	if ctx.Err() != nil {
+		return nil, nil, ctx.Err()
+	}
+	// Remote owner clocks retain their evidence, but cannot be substituted for
+	// the controller authority without a separately acquired causal envelope.
+	localProof := proofErr == nil && proof != nil && manifest.BrowserProofAuthorityMode == "local" && len(manifest.BrowserProofExpectedOwners) == 1 && manifest.BrowserProofExpectedOwners[0] == "controller"
+	// The journal must cover raw sources too, including censored observations.
+	if proof != nil {
+		for _, measurement := range accumulator.measurements {
+			if ctx.Err() != nil {
+				return nil, nil, ctx.Err()
+			}
+			p, _, ok := proof.Context(measurement.observation.SourceGeneration)
+			known := false
+			if ok {
+				for _, d := range p.Receipts.Closure.Documents {
+					if d.DocumentID == measurement.observation.DocumentID && d.LifecycleID == measurement.observation.LifecycleID {
+						known = true
+						break
+					}
+				}
+			}
+			if !known {
+				proof = nil
+				localProof = false
+				break
+			}
+		}
+	}
 	finals, _ := browserDocumentFinals(accumulator, rcaBrowserDocumentMetrics, func(o protocol.BrowserDocumentObservation) bool {
-		return !o.WindowEnd.Before(from) && o.WindowEnd.Before(to)
+		return localProof || !o.WindowEnd.Before(from) && o.WindowEnd.Before(to)
 	})
+	clockProofComplete := localProof
 	type tupleSeries struct {
 		tuple   protocol.BrowserDocumentMetricSummary
 		buckets map[int]*protocol.BrowserMetricDistribution
 		windows map[int]rca.DocumentWindow
+		mapped  bool
 	}
 	tuples := map[string]*tupleSeries{}
 	for _, f := range finals {
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		mappedVUsers := 0
+		mappedSpanID := ""
+		if localProof {
+			window, spans, mapErr := proof.Map(f.observation)
+			if mapErr == nil {
+				p, _, _ := proof.Context(f.observation.SourceGeneration)
+				// These UTC values label the owner's monotonic bounds. They are not
+				// interpolated browser event times or cross-telemetry alignment claims.
+				f.start = p.AuthorityStartedAt.Add(time.Duration(window.StartNS))
+				f.at = p.AuthorityStartedAt.Add(time.Duration(window.EndNS))
+				for _, span := range spans {
+					if protocol.ContainedInBrowserSteadySpan(window, []protocol.BrowserMonotonicSpan{span.BrowserMonotonicSpan}) {
+						mappedVUsers = span.VUsers
+						mappedSpanID = sha256BytesHex([]byte(fmt.Sprintf("%s/%s/%s/%d/%d", span.Authority.RunID, span.Authority.Incarnation, span.Authority.DomainID, span.StartNS, span.EndNS)))
+						break
+					}
+				}
+			}
+			if mapErr != nil {
+				clockProofComplete = false
+			}
+		}
+		if f.at.Before(from) || !f.at.Before(to) {
+			if localProof {
+				clockProofComplete = false
+			}
+			continue
+		}
+
 		t := tuples[f.key]
 		if t == nil {
-			t = &tupleSeries{tuple: f.tuple, buckets: map[int]*protocol.BrowserMetricDistribution{}, windows: map[int]rca.DocumentWindow{}}
+			t = &tupleSeries{tuple: f.tuple, buckets: map[int]*protocol.BrowserMetricDistribution{}, windows: map[int]rca.DocumentWindow{}, mapped: localProof}
 			tuples[f.key] = t
 		}
 		i := int(f.at.Sub(from) / bucket)
@@ -148,6 +212,12 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 		if !exists || f.at.After(w.End) {
 			w.End = f.at
 		}
+		validMap := mappedVUsers > 0 && (!exists || w.MonotonicVerified && w.MonotonicVUsers == mappedVUsers && w.MonotonicSpanID == mappedSpanID)
+		w.MonotonicVerified = validMap
+		w.MonotonicVUsers = mappedVUsers
+		w.MonotonicSpanID = mappedSpanID
+		t.mapped = t.mapped && clockProofComplete
+		w.Invalid = w.Invalid || localProof && !validMap
 		w.Invalid = w.Invalid || f.start.IsZero() || f.at.IsZero() || f.at.Before(f.start)
 		t.windows[i] = w
 	}
@@ -170,6 +240,13 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 			Evidence: rca.EvidenceRef{Kind: "browser_document", Locator: browserDocumentsFileName + "#" + label},
 			Identity: rcaRunSeriesIdentity(scope, "browser_document", digest, metric, t.tuple.Unit, analysis.KindObservation, bucket),
 			Document: rcaDocumentCohort(t.tuple, accumulator.incomplete)}
+		if t.mapped && clockProofComplete {
+			s.Document.ClockQualification = rca.BrowserEvidenceQualified
+			s.Document.TimelineQualification = rca.BrowserEvidenceUnavailable
+		}
+		if proof != nil && proofErr == nil {
+			s.Document.SourceCoverageQualification = rca.BrowserEvidenceQualified
+		}
 		s.Document.Windows = make(map[time.Time]rca.DocumentWindow, min(n, len(t.windows)))
 		for i := 0; i < n; i++ {
 			point := rca.SeriesPoint{At: from.Add(time.Duration(i) * bucket)}

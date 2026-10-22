@@ -68,6 +68,9 @@ func (vu *VUser) Run(ctx context.Context) {
 	ctx, cleanup, err := vu.bindSourceSamplerBoundary(ctx)
 	if err != nil {
 		vu.recordDataRowError(err)
+		if owner, ok := vu.PauseControl.(interface{ browserDocumentLoadLeaving(bool) }); ok {
+			owner.browserDocumentLoadLeaving(true)
+		}
 		return
 	}
 	defer cleanup()
@@ -79,10 +82,18 @@ func (vu *VUser) Run(ctx context.Context) {
 		}
 	}()
 	if !run.prepare() {
+		if owner, ok := vu.PauseControl.(interface{ browserDocumentLoadLeaving(bool) }); ok {
+			owner.browserDocumentLoadLeaving(true)
+		}
 		return
 	}
 	defer vu.closeLiveTables()
 	defer run.finalize()
+	defer func() {
+		if owner, ok := vu.PauseControl.(interface{ browserDocumentLoadLeaving(bool) }); ok {
+			owner.browserDocumentLoadLeaving(run.genuineExit)
+		}
+	}()
 	if !run.initialize() {
 		return
 	}

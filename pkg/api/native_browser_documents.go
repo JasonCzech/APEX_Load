@@ -24,11 +24,12 @@ import (
 
 // browserDocumentFinal is one final eligible document measurement.
 type browserDocumentFinal struct {
-	tuple protocol.BrowserDocumentMetricSummary
-	key   string
-	at    time.Time
-	start time.Time
-	value float64
+	observation protocol.BrowserDocumentObservation
+	tuple       protocol.BrowserDocumentMetricSummary
+	key         string
+	at          time.Time
+	start       time.Time
+	value       float64
 }
 
 // browserDocumentTupleLabel names a tuple for people: its measurement fields,
@@ -72,7 +73,7 @@ func browserDocumentFinals(accumulator *archiveBrowserDocumentAccumulator, metri
 			excluded[reason]++
 		default:
 			tuple := protocol.BrowserDocumentObservationTuple(o)
-			finals = append(finals, browserDocumentFinal{tuple: tuple, key: protocol.BrowserDocumentMetricKey(tuple), at: o.WindowEnd, start: o.WindowStart, value: *o.Value})
+			finals = append(finals, browserDocumentFinal{observation: o, tuple: tuple, key: protocol.BrowserDocumentMetricKey(tuple), at: o.WindowEnd, start: o.WindowStart, value: *o.Value})
 		}
 	}
 	return finals, excluded

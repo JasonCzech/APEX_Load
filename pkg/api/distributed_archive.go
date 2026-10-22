@@ -166,6 +166,18 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 
 	manifest := mergeRemoteArchiveManifest(tr, test, bundles, finalStatus, finalError, completedAt)
 	manifest.SourceCoverage = coverage
+	manifest.BrowserProofAuthorityMode = "distributed"
+	intent, intentErr := tr.runArchiveCollectionIntent(test)
+	if intentErr != nil {
+		return nil, intentErr
+	}
+	if intent != nil {
+		for _, owner := range intent.Sources {
+			manifest.BrowserProofExpectedOwners = append(manifest.BrowserProofExpectedOwners, owner)
+		}
+		sort.Strings(manifest.BrowserProofExpectedOwners)
+	}
+
 	if !requireAll {
 		manifest.CSVExportIncomplete = "not all generator archives were required; complete export cannot be verified"
 	}

@@ -117,29 +117,34 @@ type cdpContextLoader struct {
 	commit, created   uint64
 }
 
-type cdpEvidencePage struct {
-	expectedLoaders     map[string]string // Native loader -> frame, retained independently of JS receipts.
+type cdpSourceCensus struct {
+	expectedLoaders     map[string]string
 	discoveryIncomplete bool
-	records             map[resourceJoinKey][]*cdpRequestRecord
-	latest              map[string]*cdpRequestRecord
-	served              map[string]bool
-	frames              map[string]cdpFrameCommit
-	contexts            map[int64]cdpContextLoader
+	loaderTokens        map[string]string
+	ambiguousLoaders    map[string]bool
+	bindingReady        bool
+	truncated           bool
+}
+
+type cdpEvidencePage struct {
+	*cdpSourceCensus
+
+	records  map[resourceJoinKey][]*cdpRequestRecord
+	latest   map[string]*cdpRequestRecord
+	served   map[string]bool
+	frames   map[string]cdpFrameCommit
+	contexts map[int64]cdpContextLoader
 	// loaderTokens is the document token each loader's document reported
 	// from its own context; a loader reporting two different tokens is
 	// ambiguous.
-	loaderTokens     map[string]string
-	ambiguousLoaders map[string]bool
 	// contextsSeen numbers default contexts in creation order. Only contexts
 	// created after the binding was installed (beyond provableAfter) can
 	// prove a document: an older context never ran the bootstrap's report
 	// and leaves the binding to page scripts.
 	contextsSeen  uint64
 	provableAfter uint64
-	bindingReady  bool
 	ordinals      map[resourceJoinKey]int
 	count         int
-	truncated     bool
 }
 
 type loaderDocument struct {
@@ -168,7 +173,7 @@ type resourceTimingKey struct {
 }
 
 func newCDPEvidencePage() *cdpEvidencePage {
-	return &cdpEvidencePage{expectedLoaders: map[string]string{}, records: map[resourceJoinKey][]*cdpRequestRecord{}, latest: map[string]*cdpRequestRecord{}, served: map[string]bool{}, frames: map[string]cdpFrameCommit{}, contexts: map[int64]cdpContextLoader{}, loaderTokens: map[string]string{}, ambiguousLoaders: map[string]bool{}, ordinals: map[resourceJoinKey]int{}}
+	return &cdpEvidencePage{cdpSourceCensus: &cdpSourceCensus{expectedLoaders: map[string]string{}, loaderTokens: map[string]string{}, ambiguousLoaders: map[string]bool{}}, records: map[resourceJoinKey][]*cdpRequestRecord{}, latest: map[string]*cdpRequestRecord{}, served: map[string]bool{}, frames: map[string]cdpFrameCommit{}, contexts: map[int64]cdpContextLoader{}, ordinals: map[resourceJoinKey]int{}}
 }
 
 // installResourceAssociation attaches the evidence CDP session to a newly
@@ -230,7 +235,7 @@ func (b *Browser) installResourceAssociation(browserContext playwright.BrowserCo
 	if len(b.evidence.nativeSources) >= browserDocumentLimit {
 		b.evidence.nativeDiscoveryIncomplete = true
 	} else {
-		b.evidence.nativeSources[state] = page
+		b.evidence.nativeSources[state.cdpSourceCensus] = page
 	}
 	b.mu.Unlock()
 	// This session only reads request metadata: zero buffers keep a second

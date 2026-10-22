@@ -593,6 +593,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 			defer func() { e.metrics.SetActiveVUsers(activeVUsers.Add(-1)) }()
 
 			vu = &VUser{
+				browserAuthoredDefinition:    e.browserAuthoredDefinition,
 				LiveTableClient:              e.liveTableClient,
 				LiveTableClientID:            e.liveTableClientID,
 				LiveTableBindings:            e.liveTableBindings,

@@ -157,6 +157,7 @@ type DocumentCohort struct {
 	// These states are set by the trusted archive adapter after validating
 	// source-bound evidence for the entire retained population. Zero values,
 	// local execution, and absence of reported loss are not positive proof.
+	TimelineQualification       string `json:"timeline_qualification,omitempty"`
 	ClockQualification          string `json:"clock_qualification"`
 	SourceCoverageQualification string `json:"source_coverage_qualification"`
 	Metric                      string `json:"metric"`
@@ -174,6 +175,13 @@ type DocumentCohort struct {
 // bucket. Invalid preserves any malformed constituent instead of hiding it in
 // the envelope. These timestamps do not attest source-clock synchronization.
 type DocumentWindow struct {
+	// MonotonicVUsers is set only when every constituent measurement fits one
+	// positively recorded executor span at this load. It supplements retained
+	// raw timestamps, which are never treated as clock calibration.
+	MonotonicSpanID   string `json:"monotonic_span_id,omitempty"`
+	MonotonicVUsers   int    `json:"monotonic_vusers,omitempty"`
+	MonotonicVerified bool   `json:"monotonic_verified,omitempty"`
+
 	Start   time.Time `json:"start"`
 	End     time.Time `json:"end"`
 	Invalid bool      `json:"invalid,omitempty"`
@@ -476,16 +484,37 @@ func browserBucketGridValid(points []SeriesPoint, bucket time.Duration) bool {
 // browserSourceWindowsWithin requires the whole measurement population, not
 // merely the bucket where its final publication landed, to belong to this span.
 func browserSourceWindowsWithin(s Series, points []SeriesPoint, level LoadLevel) bool {
+	spanID := ""
+	proofMode := ""
 	for _, point := range points {
 		if !usable(point) {
 			continue
 		}
 		w, ok := s.Document.Windows[point.At.UTC()]
-		if !ok || w.Invalid || w.Start.IsZero() || w.End.IsZero() || w.End.Before(w.Start) ||
-			w.Start.Before(level.Start) || w.End.After(level.End) ||
-			w.End.Before(point.At) || !w.End.Before(point.At.Add(s.Bucket)) {
+		if !ok || w.Invalid {
 			return false
 		}
+		if w.MonotonicVerified {
+			if proofMode == "raw" || spanID != "" && spanID != w.MonotonicSpanID {
+				return false
+			}
+			proofMode = "monotonic"
+			spanID = w.MonotonicSpanID
+			if w.MonotonicSpanID == "" || w.MonotonicVUsers <= 0 || float64(w.MonotonicVUsers) != level.VUsers || level.Rate != 0 {
+				return false
+			}
+			// Projected labels place buckets but do not establish load eligibility.
+			// Every constituent belongs to this independently proven monotonic span.
+			continue
+		}
+		if proofMode == "monotonic" {
+			return false
+		}
+		proofMode = "raw"
+		if w.Start.IsZero() || w.End.IsZero() || w.End.Before(w.Start) || w.Start.Before(level.Start) || w.End.After(level.End) || w.End.Before(point.At) || !w.End.Before(point.At.Add(s.Bucket)) {
+			return false
+		}
+
 	}
 	return true
 }

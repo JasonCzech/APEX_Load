@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -124,5 +125,58 @@ func TestBrowserOriginalSourcePreparedVUserRetainsBinding(t *testing.T) {
 	prepared.group.BrowserAuthoredDefinition = protocol.BrowserAuthoredDefinition{}
 	if !vu.browserAuthoredDefinition.Valid() {
 		t.Fatal("prepared state mutated VUser source binding")
+	}
+}
+
+var registerOriginalEngineBrowser sync.Once
+var originalEngineBrowserCapture struct {
+	sync.Mutex
+	steps []*protocol.BrowserAuthoredStep
+}
+
+func TestBrowserOriginalSourceClosedEngineDispatch(t *testing.T) {
+	// Isolate the adapter with a case-sensitive registry entry; authored browser
+	// identity accepts case-insensitive protocol names.
+	originalEngineBrowserCapture.Lock()
+	originalEngineBrowserCapture.steps = nil
+	originalEngineBrowserCapture.Unlock()
+	registerOriginalEngineBrowser.Do(func() {
+		protocol.Register("BROWSER", func() protocol.Protocol {
+			return &replayTestProtocol{execute: func(action *protocol.Action) (*protocol.Result, error) {
+				originalEngineBrowserCapture.Lock()
+				originalEngineBrowserCapture.steps = append(originalEngineBrowserCapture.steps, action.BrowserAuthoredStep.Clone())
+				originalEngineBrowserCapture.Unlock()
+				return &protocol.Result{Success: true, StatusCode: 200, StartTime: time.Now()}, nil
+			}}
+		})
+	})
+	source := &dsl.Script{Protocol: "BROWSER", Init: []dsl.Action{{Type: "browser_click"}}, Actions: []dsl.Action{{Type: "browser_click"}}, Teardown: []dsl.Action{{Type: "browser_click"}}}
+	definition := BrowserOriginalAuthoredDefinition(source)
+	runtime := cloneSingleIterationScript(source)
+	runtime.Config.Browser.HARArtifactDir = t.TempDir()
+	if !definition.Valid() || replayScriptHash(runtime) == definition.ScriptSHA256 {
+		t.Fatal("fixture lacks distinct original provenance")
+	}
+	e, err := New(Config{Script: runtime, VUsers: 1, Duration: time.Second, BrowserAuthoredDefinition: definition})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := e.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalErrors != 0 {
+		t.Fatal("closed engine failed", result)
+	}
+	originalEngineBrowserCapture.Lock()
+	got := append([]*protocol.BrowserAuthoredStep(nil), originalEngineBrowserCapture.steps...)
+	originalEngineBrowserCapture.Unlock()
+	if len(got) != 3 {
+		t.Fatalf("dispatched %d actions, want init/action/teardown", len(got))
+	}
+	for i, path := range []string{"init[0]", "actions[0]", "teardown[0]"} {
+		if !reflect.DeepEqual(got[i], protocol.NewBrowserOriginalAuthoredStep(definition, path)) {
+			t.Fatalf("%s lost original source: %+v", path, got[i])
+		}
 	}
 }

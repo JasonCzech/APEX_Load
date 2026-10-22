@@ -158,6 +158,12 @@ func nativeIdentityDifference(left, right []string) []string {
 	return result
 }
 func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRecord, q storage.AnalyticsQuery) (NativeArchiveSeries, error) {
+	return buildNativeArchiveSeriesForTest(ctx, record, q, nil, nil)
+}
+
+// The optional durable identity is checked under the same materialization lease
+// and manifest read as the series, preventing stale same-ID publications.
+func buildNativeArchiveSeriesForTest(ctx context.Context, record *storage.RunArchiveRecord, q storage.AnalyticsQuery, test *storage.TestRecord, metadataStore any) (NativeArchiveSeries, error) {
 	result := NativeArchiveSeries{RunID: record.TestID, Buckets: []NativeArchiveBucket{}, Identities: []string{}, Warnings: []string{}}
 	if err := storage.ValidateNativeArchiveQuery(q); err != nil {
 		return result, err
@@ -170,6 +176,9 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		return result, err
+	}
+	if test != nil && !runArchiveManifestMatchesStoredTest(manifest, test, metadataStore) {
+		return result, errors.New("input archive identity changed")
 	}
 	if archiveExecutionCompletedAt(manifest).IsZero() || manifest.Provenance.StartedAt == nil || manifest.Provenance.StartedAt.IsZero() {
 		return result, errors.New("completed archive with execution start time required")

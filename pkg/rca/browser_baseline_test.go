@@ -16,7 +16,7 @@ var browserBaselineStart = time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 // input for estimator tests; production archives must supply their own proof.
 func documentSeries(id, metric, unit, family string, fields map[string]string, values []float64, samples int64) Series {
 	s := Series{ID: id, Kind: SeriesBrowserDocument, Unit: unit, Observation: ObservationInterval, Bucket: time.Second,
-		Evidence: EvidenceRef{Kind: "browser_document", Locator: "browser_documents.jsonl#" + id}, Document: &DocumentCohort{ClockQualification: BrowserEvidenceQualified, SourceCoverageQualification: BrowserEvidenceQualified, Metric: metric, Family: family, Fields: fields, Windows: map[time.Time]DocumentWindow{}}}
+		Evidence: EvidenceRef{Kind: "browser_document", Locator: "browser_documents.jsonl#" + id}, Document: &DocumentCohort{TimelineQualification: BrowserEvidenceQualified, ClockQualification: BrowserEvidenceQualified, SourceCoverageQualification: BrowserEvidenceQualified, Metric: metric, Family: family, Fields: fields, Windows: map[time.Time]DocumentWindow{}}}
 	for i, v := range values {
 		point := SeriesPoint{At: browserBaselineStart.Add(time.Duration(i) * time.Second), Value: v, Valid: !math.IsNaN(v), Count: int32(samples)}
 		if !point.Valid {

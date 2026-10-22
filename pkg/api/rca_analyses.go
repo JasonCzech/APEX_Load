@@ -65,7 +65,7 @@ const (
 // archive.8: original identity uses initial provenance and every observed
 // browser group must belong to both workloads; baseline IDs are canonical.
 // archive.9: latest-compatible admission freezes its selection/rejection receipt.
-const rcaArchiveAdapterVersion = "archive.9"
+const rcaArchiveAdapterVersion = "archive.10"
 
 // maxRCACoverageSources bounds the sources a monitor_sources coverage row
 // names.

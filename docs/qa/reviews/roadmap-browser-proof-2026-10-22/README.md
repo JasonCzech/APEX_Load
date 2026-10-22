@@ -1,6 +1,6 @@
 # Browser durable receipt and qualification work
 
-This work implements the remaining receipt transport, conservative full-window mapping and independent source-closure contracts in [BI-A](../../../ROADMAP_IMPLEMENTATION_SPEC.md#bi-a--qualified-baseline-selection-and-findings). This record describes completed slices only; qualification remains unavailable until the transport, expected-source inventory, native lifecycle closure and trusted-domain window checks are all connected.
+This work implements the remaining receipt transport, conservative full-window mapping and independent source-closure contracts in [BI-A](../../../ROADMAP_IMPLEMENTATION_SPEC.md#bi-a--qualified-baseline-selection-and-findings). The supported local Chromium main-frame path now connects transport, expected-source inventory, native closure and whole-window load attribution. Unsupported discovery or clock domains remain explicitly unavailable. The per-slice notes below preserve their completion-time scope.
 
 ## Shared receipt contract
 
@@ -10,13 +10,13 @@ Independent review found that individually valid receipts could disagree on a li
 
 Targeted contract/native round-trip tests passed. Both full affected package suites passed (`pkg/protocol`: 0.713 seconds; native-required `pkg/protocol/browser`: 98.923 seconds). Independent re-review found no remaining findings. Evidence is retained outside the repository at `/private/tmp/apex-browser-durable-backend/browser-receipt-contract-*`.
 
-## Remaining integration
+## Qualification boundaries
 
-- Negotiate and persist separate bounded receipt/closure artifacts; include them in transfer, integrity, recovery and RCA input digests.
-- Establish expected execution slots before initialization and retain every terminal outcome and publication obligation, including resets, failed initialization and missing generators.
-- Acquire native document expectations independently of JS receipts. Unsupported native discovery remains unavailable.
-- Map complete lifetimes with conservative causal bounds in a trusted controller domain. Bounds crossing a pause, transition, restart or unknown interval cannot qualify.
-- Run positive and refusal fixtures, the private HAR import regression, retained Salesforce replay, independent slice reviews and final cross-cutting reviews before PR publication.
+- Receipt transport and integrity/recovery apply to negotiated local and generator evidence; legacy peers retain their original wire contracts.
+- Positive baseline load attribution currently requires a local controller-owned monotonic domain, a complete single-page Chromium main-frame census, and a static closed workload. The whole selected population must fit one proven steady span. Dynamic/rate-shaped workloads, unknown transitions, missing sources, ambiguous discovery, and unsupported WebKit discovery remain unqualified.
+- Distributed journals retain their source evidence and independent pre-dispatch expected-owner inventory. A generator clock is not substituted for the controller domain: distributed clock qualification remains unavailable without an independently acquired controller causal envelope.
+- Monotonic bounds projected onto an owner UTC label are baseline coordinates, not precise event timestamps or alignment with other telemetry. Generic timeline/onset scoring requires separate positive timeline qualification and remains unavailable for this evidence. Raw browser document windows are preserved unchanged.
+- Reference-host, native Linux/Windows, and multi-host release qualification remain dependent on the unavailable external environments previously identified by the user.
 
 ## Durable receipt transport
 
@@ -45,3 +45,14 @@ Chromium closure reconciles an independent native loader census with immutable d
 The reader requires an independently supplied expected-owner inventory, contiguous journal sequences, successful terminal obligations, matching document/lifecycle identities, consistent same-process monotonic lifetime bounds, and reconciliation of all extra snapshots. Unknown generators or unbound snapshots cannot disappear from the population. The mapper binds the exact final measurement revision and raw window to conservative native creation/receipt-delivery bounds. It never estimates a clock offset from a URL, browser wall time, or one-way delivery.
 
 Independent reviews found and fixed silent child-frame/page-overflow gaps, directory publication durability, impossible lifetime bounds, document identity conflicts, forgotten unbound snapshots, and noncanonical control records. Added tests cover these refusals, v1/v2/v3 projection, publisher failure/panic, engine admission ordering, and native Chromium mapping with silent-child/WebKit refusals. Targeted protocol/browser/engine/generator/API checks passed; protocol and engine journal race checks passed. Logs are under `/private/tmp/apex-browser-durable-backend/browser-source-*`. Engine phase hooks and archive/RCA qualification remain the next integration slice.
+
+## Engine phases and archive consumption
+
+Static closed-workload phases are published from actual engine control boundaries. Initial ramp, pause, resumed spans, duration retirement, accepted load controls and unexpected departure are distinguished. A cancellation observed after it has already reached workers invalidates proof; it cannot be backdated into a clean boundary. Rejected controls do not alter proof. A native source census retains only bounded identity state after page closure, not the page's network request maps.
+
+Local archives freeze the controller owner; distributed collection copies its independently persisted pre-dispatch owner inventory. Archive readers check all raw document/lifecycle identities against reconciled native contexts. Exact final revisions map to conservative same-process bounds. Every contributing window must fit a positively recorded load span, and a bucket or selected population cannot combine different spans across a pause. Browser target wall-clock shifts do not move the projected population. Archive adapter version 10 invalidates results produced under earlier qualification rules.
+
+Two real Chromium runs, each containing four measured navigations, passed durable archive reconstruction and scored baseline comparisons. Constant-value metrics retain the existing zero-variance refusal. The fixtures also verify missing-source refusal and that baseline load proof cannot enable generic timeline scoring. Synthetic regressions cover target clock shifts, same-bucket and multi-bucket pauses, rejected controls, cancellation ordering, and mixed proof modes. The full protocol, RCA and engine package tests passed (0.902 / 0.189 / 81.987 seconds); native and archive logs are retained under `/private/tmp/apex-browser-durable-backend/browser-proof-*`. Final integrated validation and cross-cutting review are recorded below when complete.
+
+
+The actual multi-group engine/native-browser fixture also passed normal duration retirement and unexpected early-exit refusal. Independent cross-cutting review found a missing original-source descriptor in single-group closed execution and a non-cancellable saved-panel identity lookup. Both were corrected with dispatch-provenance and occupied-SQL-pool/cancellation regressions. The source reconciler caches completed validation until new evidence arrives, keeping repeated context lookups bounded; archive projection loops honor cancellation. Review rounds and final integrated validation are recorded below once complete.

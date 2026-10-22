@@ -37,6 +37,9 @@ func TestBrowserDocumentProofNegotiation(t *testing.T) {
 		{"unsupported", nil, true, false, 1, 0, 0, false},
 		{"future", []string{FeaturePreparationV1, FeatureBrowserDocumentProofV1}, true, false, 4, 4, 0, false},
 		{"v2 negotiated", []string{FeaturePreparationV1, FeatureBrowserDocumentProofV2}, true, true, 0, 2, 2, true},
+		{"v3 negotiated", []string{FeaturePreparationV1, FeatureBrowserDocumentProofV1, FeatureBrowserDocumentProofV2, FeatureBrowserDocumentProofV3}, true, true, 0, 3, 3, true},
+		{"v3 wrong ack", []string{FeaturePreparationV1, FeatureBrowserDocumentProofV3}, true, true, 0, 2, 3, false},
+		{"v3 on v2", []string{FeaturePreparationV1, FeatureBrowserDocumentProofV2}, true, false, 3, 0, 0, false},
 		{"v2 on v1", []string{FeaturePreparationV1, FeatureBrowserDocumentProofV1}, true, false, 2, 0, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -50,7 +53,7 @@ func TestBrowserDocumentProofNegotiation(t *testing.T) {
 			if rpc.request != nil && rpc.request.BrowserDocumentProofVersion != tc.want {
 				t.Fatal("unexpected version", rpc.request.BrowserDocumentProofVersion)
 			}
-			if tc.want == 1 && (rpc.request == nil || !rpc.request.PrepareOnly) {
+			if tc.want > 0 && (rpc.request == nil || !rpc.request.PrepareOnly) {
 				t.Fatal("proof skipped staging")
 			}
 		})

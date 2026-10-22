@@ -14,12 +14,14 @@ type BrowserSteadyProof struct {
 	VUsers int
 }
 type BrowserContextProof struct {
-	Receipts          *BrowserDocumentReceiptEvidence
-	Authority         BrowserClockDomain
-	SourceOriginNS    int64
-	BeforeNS, AfterNS int64
+	AuthorityStartedAt time.Time
+	Receipts           *BrowserDocumentReceiptEvidence
+	Authority          BrowserClockDomain
+	SourceOriginNS     int64
+	BeforeNS, AfterNS  int64
 }
 type browserProofOwner struct {
+	startedAt       time.Time
 	identity        string
 	authority       BrowserClockDomain
 	sequence, total uint64
@@ -36,13 +38,14 @@ type browserProofOwner struct {
 // expectedOwners must come from the controller's pre-dispatch durable intent;
 // passing the owners found in this stream would not establish source closure.
 type BrowserSourceReconciler struct {
-	runID         string
-	expected      map[string]bool
-	owners        map[string]*browserProofOwner
-	generations   map[string]*browserProofOwner
-	observed      map[string]map[string]BrowserDocumentReceipt
-	observedCount int
-	failed        error
+	runID             string
+	expected          map[string]bool
+	owners            map[string]*browserProofOwner
+	generations       map[string]*browserProofOwner
+	observed          map[string]map[string]BrowserDocumentReceipt
+	observedCount     int
+	checked, complete bool
+	failed            error
 }
 
 func NewBrowserSourceReconciler(runID string, expectedOwners []string) *BrowserSourceReconciler {
@@ -59,6 +62,7 @@ func NewBrowserSourceReconciler(runID string, expectedOwners []string) *BrowserS
 	return r
 }
 func (r *BrowserSourceReconciler) Observe(e *BrowserDocumentReceiptEvidence) error {
+	r.checked = false
 	if r.failed != nil {
 		return r.failed
 	}
@@ -107,7 +111,7 @@ func (r *BrowserSourceReconciler) Observe(e *BrowserDocumentReceiptEvidence) err
 		if event.Kind != "owner_expected" || event.Sequence != 1 || event.ExpectedSlots != 0 || event.SlotID != "" || e.SourceGeneration != event.Authority.DomainID {
 			return fail("missing owner expectation")
 		}
-		owner = &browserProofOwner{identity: event.OwnerID, authority: event.Authority, slots: map[string]map[string]bool{}, seenSlots: map[string]bool{}, contexts: map[string]*BrowserContextProof{}}
+		owner = &browserProofOwner{startedAt: e.StartedAt, identity: event.OwnerID, authority: event.Authority, slots: map[string]map[string]bool{}, seenSlots: map[string]bool{}, contexts: map[string]*BrowserContextProof{}}
 		r.owners[event.OwnerID] = owner
 	} else if event.Kind == "owner_expected" {
 		return fail("duplicate owner")
@@ -141,7 +145,7 @@ func (r *BrowserSourceReconciler) Observe(e *BrowserDocumentReceiptEvidence) err
 			return fail("late context expectation")
 		}
 		slots[e.SourceGeneration] = false
-		owner.contexts[e.SourceGeneration] = &BrowserContextProof{Receipts: e, Authority: owner.authority, BeforeNS: event.AtNS, SourceOriginNS: event.SourceOriginNS}
+		owner.contexts[e.SourceGeneration] = &BrowserContextProof{AuthorityStartedAt: owner.startedAt, Receipts: e, Authority: owner.authority, BeforeNS: event.AtNS, SourceOriginNS: event.SourceOriginNS}
 		r.generations[e.SourceGeneration] = owner
 	case "context_terminal":
 		slots, ok := owner.slots[event.SlotID]
@@ -214,7 +218,14 @@ func (r *BrowserSourceReconciler) Observe(e *BrowserDocumentReceiptEvidence) err
 	}
 	return nil
 }
-func (r *BrowserSourceReconciler) Complete() bool {
+func (r *BrowserSourceReconciler) Complete() (complete bool) {
+	if r == nil {
+		return false
+	}
+	if r.checked {
+		return r.complete
+	}
+	defer func() { r.checked = true; r.complete = complete }()
 	if r == nil || r.failed != nil || len(r.owners) != len(r.expected) {
 		return false
 	}

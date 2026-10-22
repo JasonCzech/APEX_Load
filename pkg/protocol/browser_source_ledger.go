@@ -308,3 +308,14 @@ func (j *BrowserSourceJournal) Seal(success bool) error {
 func (j *BrowserSourceJournal) String() string {
 	return fmt.Sprintf("browser source journal for %s", j.owner)
 }
+
+// Invalidate records an observed load/source uncertainty without inventing a
+// retroactive boundary. Reconciliation keeps the failed event sticky.
+func (j *BrowserSourceJournal) Invalidate() error {
+	if j == nil {
+		return nil
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.writeLocked("unknown", "", false, nil)
+}

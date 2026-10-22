@@ -59,7 +59,7 @@ type browserEvidenceState struct {
 	issued, inFlight, droppedRequests, droppedObservations int64
 	incomplete, cancelled                                  bool
 	// Resource association state (resource_association.go).
-	nativeSources             map[*cdpEvidencePage]playwright.Page
+	nativeSources             map[*cdpSourceCensus]playwright.Page
 	nativeDiscoveryIncomplete bool
 	cdpPages                  map[playwright.Page]*cdpEvidencePage
 	pwFrameCDP                map[playwright.Frame]string
@@ -122,7 +122,7 @@ func (b *Browser) resetBrowserEvidence(version string) error {
 	// requests.
 	b.harEvidenceGeneration = generation
 	b.evidence = browserEvidenceState{clock: newBrowserDocumentReceiptClock(time.Now()), generation: generation, binding: "__apexEvidence_" + generation, finalizer: "__apexFinalize_" + generation, loaderBinding: "__apexLoader_" + generation, frames: make(map[playwright.Frame]string), documents: make(map[string]*browserDocumentState), requests: make(map[playwright.Request]*browserRequestIdentity), cohort: cohort, shapedPages: make(map[playwright.Page]bool),
-		nativeSources: make(map[*cdpEvidencePage]playwright.Page), cdpPages: make(map[playwright.Page]*cdpEvidencePage), pwFrameCDP: make(map[playwright.Frame]string), cdpFramePW: make(map[string]playwright.Frame), loaderDocuments: make(map[string]loaderDocument), timingRequests: make(map[resourceTimingKey]int)}
+		nativeSources: make(map[*cdpSourceCensus]playwright.Page), cdpPages: make(map[playwright.Page]*cdpEvidencePage), pwFrameCDP: make(map[playwright.Frame]string), cdpFramePW: make(map[string]playwright.Frame), loaderDocuments: make(map[string]loaderDocument), timingRequests: make(map[resourceTimingKey]int)}
 	b.mu.Unlock()
 	return nil
 }

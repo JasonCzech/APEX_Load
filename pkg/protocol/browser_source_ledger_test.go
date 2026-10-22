@@ -252,3 +252,30 @@ func TestBrowserSourceControlEventCannotHideForeignReceipts(t *testing.T) {
 		}
 	}
 }
+
+func TestBrowserSourceCompletedLookupCacheInvalidatedByNewEvidence(t *testing.T) {
+	records, g := sourceJournalFixture(t)
+	r := NewBrowserSourceReconciler("run", []string{"controller"})
+	for _, e := range records {
+		if err := r.Observe(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !r.Complete() {
+		t.Fatal("valid journal incomplete")
+	}
+	for i := 0; i < 1000; i++ {
+		if _, _, ok := r.Context(g); !ok {
+			t.Fatal("immutable lookup failed")
+		}
+	}
+	extra := receiptContractFixture()
+	extra.SourceGeneration = strings.Repeat("c", 32)
+	extra.Receipts = nil
+	if err := r.Observe(extra); err != nil {
+		t.Fatal(err)
+	}
+	if r.Complete() {
+		t.Fatal("new source reused cached closure")
+	}
+}
