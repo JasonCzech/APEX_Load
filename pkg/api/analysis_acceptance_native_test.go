@@ -44,10 +44,11 @@ func acceptanceParquet(t *testing.T, query string) []byte {
 	return data
 }
 
-// acceptanceImport creates an import of files, uploads them, sets mapping and
-// commits; it returns the commit response code and body and the import as
-// it stands once normalization ends.
-func acceptanceImport(t *testing.T, server *Server, store storage.Store, files []acceptanceImportFile, mapping analysis.ParquetMapping) (int, string, storage.AnalysisImport) {
+// acceptanceImport creates an import of files, uploads them, runs any
+// beforeMapping check (a preview, say), sets mapping and commits; it returns
+// the commit response code and body and the import as it stands once
+// normalization ends.
+func acceptanceImport(t *testing.T, server *Server, store storage.Store, files []acceptanceImportFile, mapping analysis.ParquetMapping, beforeMapping ...func(storage.AnalysisImport)) (int, string, storage.AnalysisImport) {
 	t.Helper()
 	declared := []any{}
 	for _, file := range files {
@@ -70,6 +71,9 @@ func acceptanceImport(t *testing.T, server *Server, store storage.Store, files [
 		if response.Code != 200 {
 			t.Fatalf("upload %s: %d %s", file.name, response.Code, response.Body.String())
 		}
+	}
+	for _, check := range beforeMapping {
+		check(in)
 	}
 	current, err := store.(storage.AnalysisImportStore).GetAnalysisImport(in.ID)
 	if err != nil {

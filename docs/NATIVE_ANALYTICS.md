@@ -78,7 +78,10 @@ legacy mapping behavior, quality admission and saved-bound precision.
 Percentiles come from raw observations, from a summary that declares the
 percentile it reports, or interpolated within a histogram's bins. Summary
 percentiles are never averaged or treated as transaction samples. Counters require explicit rate conversion;
-resets, duplicate instants and missing samples interrupt the rate chain. Queries
+resets, duplicate instants and missing samples interrupt the rate chain. A null
+scalar measurement is a missing sample: its whole bucket, count included, reads as
+missing rather than as fewer samples or zero. A histogram whose bin counts are all
+null is missing; one with only some null is rejected. Queries
 are bounded to 10,000 buckets and 366 days. Unsupported semantics produce an
 explicit error instead of a misleading chart.
 
