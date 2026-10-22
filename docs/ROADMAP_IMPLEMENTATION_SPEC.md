@@ -288,6 +288,8 @@ Retain recommended **1–2 browser VUsers and maximum 5 per generator**. A highe
 
 ### BI-A — Qualified baseline selection and findings
 
+The [native receipt-clock acquisition slice](qa/reviews/roadmap-browser-receipt-clocks-2026-10-22/README.md) adds bounded process-local browser/host delivery receipts, source-scoped monotonic origins and observed wall-step latching. It does not yet persist or transport those receipts and cannot qualify browser clocks or complete source coverage; versioned durable acquisition, full-window mappings and independent source closure remain open.
+
 The [frozen latest-compatible admission slice](qa/reviews/roadmap-browser-selection-2026-10-21/README.md) implements complete bounded candidate inspection, exact archive-time ranking, compatibility checks and immutable selection/rejection receipts through queue, worker and bundle export. Current native evidence still fails closed without positive clock and expected-source proof; native acquisition and real two-run qualification remain open. Earlier slice notes below describe their completion-time scope.
 
 The [candidate inventory and qualification safety slice](qa/reviews/roadmap-browser-qualification-2026-10-21/README.md) adds an indexed, bounded canonical-ID inventory and explicitly leaves browser comparisons unscored without verified browser-to-controller clocks and complete source populations. Both cross-run browser baselines and generic in-run load scoring enforce this gate; raw observations remain available. Engine v7 preserves historical results while preventing their reuse for new requests. Latest-compatible admission, positive producer proof acquisition and real two-run qualification remain open.
