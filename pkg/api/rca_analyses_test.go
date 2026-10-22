@@ -536,7 +536,7 @@ func TestRCAWorkerRunsQueuedAnalyses(t *testing.T) {
 func TestRCABrowserQualificationVersionPreservesHistoricalAssessment(t *testing.T) {
 	server, store := rcaTestServer(t)
 	currentVersion := rcaEngineVersion
-	historicalVersion := strings.Replace(currentVersion, "apexload.rca.engine.v4+", "apexload.rca.engine.v3+", 1)
+	historicalVersion := strings.Replace(currentVersion, "apexload.rca.engine.v5+", "apexload.rca.engine.v4+", 1)
 	if currentVersion == historicalVersion {
 		t.Fatal("qualification change did not advance engine identity")
 	}

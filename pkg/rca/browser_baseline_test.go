@@ -460,3 +460,81 @@ func TestBrowserBaselineChecksTupleEvenWhenSeriesIDMatches(t *testing.T) {
 		})
 	}
 }
+
+func TestBrowserBaselineRejectsAmbiguousBucketTimestamps(t *testing.T) {
+	for _, side := range []string{"current", "baseline"} {
+		for _, kind := range []string{"duplicate", "off grid", "zero timestamp"} {
+			t.Run(side+"/"+kind, func(t *testing.T) {
+				current := documentSeries("lcp", "lcp", "ms", "family", chromium141, browserNoisy(20, 1400, 20), 3)
+				baseline := documentSeries("lcp", "lcp", "ms", "family", chromium141, browserNoisy(40, 1000, 20), 3)
+				changed := &baseline
+				if side == "current" {
+					changed = &current
+				}
+				switch kind {
+				case "duplicate":
+					changed.Points = append(changed.Points, changed.Points[1])
+				case "off grid":
+					changed.Points[1].At = changed.Points[1].At.Add(time.Millisecond)
+				case "zero timestamp":
+					changed.Points[1].At = time.Time{}
+				}
+				got := DetectBrowserBaseline(browserBaselineInput([]Series{current}, []Series{baseline}, BaselineQualified), DefaultBrowserBaselineParams)
+				if len(got.Results) != 1 {
+					t.Fatalf("results: %+v", got)
+				}
+				r := got.Results[0]
+				if r.State != BrowserBaselineUnscored || r.Reason != BrowserBaselineBucketGridInvalid || r.Z != 0 || r.ExpectedHigh != 0 {
+					t.Fatalf("ambiguous grid scored: %+v", r)
+				}
+			})
+		}
+	}
+}
+
+func TestBrowserBaselineBucketGridPreservesMissingAndUnorderedEvidence(t *testing.T) {
+	current := documentSeries("lcp", "lcp", "ms", "family", chromium141, browserNoisy(20, 1400, 20), 3)
+	baseline := documentSeries("lcp", "lcp", "ms", "family", chromium141, browserNoisy(40, 1000, 20), 3)
+	// A whole missing bucket is a gap, not an extra sample or an irregular grid.
+	baseline.Points = append(baseline.Points[:10], baseline.Points[11:]...)
+	baseline.Points[0], baseline.Points[20] = baseline.Points[20], baseline.Points[0]
+	before := append([]SeriesPoint(nil), baseline.Points...)
+	got := DetectBrowserBaseline(browserBaselineInput([]Series{current}, []Series{baseline}, BaselineQualified), DefaultBrowserBaselineParams).Results[0]
+	if got.State != BrowserBaselineAnomaly || got.BaselineBuckets != 39 || got.BaselineSamples != 117 {
+		t.Fatalf("missing bucket semantics changed: %+v", got)
+	}
+	if !reflect.DeepEqual(before, baseline.Points) {
+		t.Fatal("detector mutated caller evidence")
+	}
+	// Re-publication of five buckets must not satisfy the thirty-bucket minimum.
+	baseline.Points = nil
+	five := documentSeries("lcp", "lcp", "ms", "family", chromium141, browserNoisy(5, 1000, 20), 3)
+	for i := 0; i < 8; i++ {
+		baseline.Points = append(baseline.Points, five.Points...)
+	}
+	got = DetectBrowserBaseline(browserBaselineInput([]Series{current}, []Series{baseline}, BaselineQualified), DefaultBrowserBaselineParams).Results[0]
+	if got.State != BrowserBaselineUnscored || got.Reason != BrowserBaselineBucketGridInvalid {
+		t.Fatalf("republication manufactured baseline: %+v", got)
+	}
+}
+
+func TestBrowserBucketGridBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		points []SeriesPoint
+		bucket time.Duration
+		want   bool
+	}{
+		{"empty", nil, time.Second, true},
+		{"no cadence", nil, 0, false},
+		{"negative cadence", nil, -time.Second, false},
+		{"independent origin", []SeriesPoint{{At: browserBaselineStart.Add(123 * time.Millisecond)}, {At: browserBaselineStart.Add(123*time.Millisecond + 2*time.Second)}}, time.Second, true},
+		{"duration overflow", []SeriesPoint{{At: time.Date(1000, 1, 1, 0, 0, 0, 0, time.UTC)}, {At: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)}}, time.Nanosecond, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := browserBucketGridValid(tc.points, tc.bucket); got != tc.want {
+				t.Fatalf("grid valid=%v want %v", got, tc.want)
+			}
+		})
+	}
+}

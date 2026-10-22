@@ -288,6 +288,8 @@ Retain recommended **1–2 browser VUsers and maximum 5 per generator**. A highe
 
 ### BI-A — Qualified baseline selection and findings
 
+The [retained bucket-grid slice](qa/reviews/roadmap-browser-bucket-grid-2026-10-21/README.md) refuses duplicate, zero or off-cadence browser bucket timestamps without filling gaps. Engine v5 preserves historical assessments while invalidating reuse under the earlier qualification logic. Source-clock synchronization, source-window completeness and latest-compatible admission selection remain open.
+
 The [original-source qualification slice](qa/reviews/roadmap-browser-original-baseline-2026-10-21/README.md) requires matching valid retained original script and structure identities in addition to executable identity. Missing or changed source provenance leaves the affected browser group unscored in new assessments. Latest-compatible selection and clock/source-window qualification remain open.
 
 The [pinned baseline admission slice](qa/reviews/roadmap-browser-pinned-admission-2026-10-21/README.md) resolves a run's immutable `pinned_run` policy at RCA admission and freezes the selected archive digest. Explicit caller baselines remain supported; selected archives still finalizing refuse admission. Latest-compatible selection, complete clock/source qualification and browser-findings integration remain open.

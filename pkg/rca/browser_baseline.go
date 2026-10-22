@@ -40,6 +40,7 @@ const (
 	BrowserBaselineCohortChanged      = "cohort_changed"
 	BrowserBaselineCadenceChanged     = "cadence_changed"
 	BrowserBaselineCadenceUnavailable = "cadence_unavailable"
+	BrowserBaselineBucketGridInvalid  = "bucket_grid_invalid"
 	BrowserBaselineNoSameLoadWindow   = "no_same_load_window"
 	BrowserBaselineInsufficient       = "insufficient_baseline"
 	BrowserBaselineZeroVariance       = "zero_variance"
@@ -409,6 +410,31 @@ func spanValues(points []SeriesPoint) ([]float64, int64) {
 	return values, samples
 }
 
+// browserBucketGridValid checks sorted retained buckets without filling gaps or
+// collapsing duplicate publications into extra statistical samples. Each run may
+// have its own grid origin; equal durations do not require equal wall-clock starts.
+func browserBucketGridValid(points []SeriesPoint, bucket time.Duration) bool {
+	if bucket <= 0 {
+		return false
+	}
+	for i, point := range points {
+		if point.At.IsZero() {
+			return false
+		}
+		if i == 0 {
+			continue
+		}
+		previous := points[i-1].At
+		gap := point.At.Sub(previous)
+		// Sub saturates for ranges beyond time.Duration. Do not let that
+		// saturation accidentally establish a cadence for corrupt timestamps.
+		if gap <= 0 || gap%bucket != 0 || !previous.Add(gap).Equal(point.At) {
+			return false
+		}
+	}
+	return true
+}
+
 func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples int64, byID map[string]Series, byFamily map[string][]Series, baselineLevels []LoadLevel, ref BaselineRef, baselineIncomplete bool, params BrowserBaselineParams) BrowserBaselineResult {
 	sorted := slices.Clone(current)
 	slices.Sort(sorted)
@@ -449,6 +475,9 @@ func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples 
 		return unscored(BrowserBaselineCadenceChanged, "the run and baseline document buckets have different durations")
 	}
 	b.Points = sortedPoints(b.Points)
+	if !browserBucketGridValid(s.Points, s.Bucket) || !browserBucketGridValid(b.Points, b.Bucket) {
+		return unscored(BrowserBaselineBucketGridInvalid, "document buckets need unique recorded timestamps on each run's declared cadence; gaps remain missing")
+	}
 	baselineSpans := segments(b, baselineLevels)
 	var values []float64
 	matched := false
