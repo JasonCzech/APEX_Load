@@ -491,10 +491,25 @@ func (tr *TestRunner) storeScenarioLockedWithSources(id string, req CreateScenar
 	if hasLiveDataPools(dataPools) {
 		livePolicyErr = tr.validateLiveTablePolicy(projectID)
 	}
+	// The scenario's chosen telemetry acceptance policy must be one of its
+	// own project's live, valid policies when it is saved (TEL-B); each run
+	// created from it is checked again at creation and pinned at Start.
+	// A save that keeps the scenario's current choice (an unrelated edit, a
+	// library import update, a rollback) is not judged again: a choice
+	// deleted since is refused by every run that inherits it, and restoring a
+	// scenario must not depend on a policy read.
+	telemetryPolicyID, telemetryPolicyErr := normalizeTelemetryPolicyChoice(req.TelemetryAcceptancePolicyID), error(nil)
+	if existing == nil || telemetryPolicyID != existing.TelemetryAcceptancePolicyID || normalizeProjectID(existing.ProjectID) != normalizeProjectID(projectID) {
+		telemetryPolicyID, telemetryPolicyErr = tr.validateRunTelemetryAcceptancePolicy(projectID, req.TelemetryAcceptancePolicyID)
+	}
 	tr.mu.Lock()
 	if poolProjectErr != nil {
 		return nil, poolProjectErr
 	}
+	if telemetryPolicyErr != nil {
+		return nil, telemetryPolicyErr
+	}
+	scenario.TelemetryAcceptancePolicyID = telemetryPolicyID
 	if poolArchiveErr != nil {
 		return nil, poolArchiveErr
 	}
@@ -615,7 +630,8 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 		GoalConfig       any
 		TrafficProfile   any
 		RuntimeSettings  any
-		JointEvidence    any `json:",omitempty"`
+		JointEvidence    any    `json:",omitempty"`
+		TelemetryPolicy  string `json:",omitempty"`
 		Scripts          []storage.ScenarioScript
 	}{
 		ID:               scenario.ID,
@@ -633,6 +649,7 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 		TrafficProfile:   scenario.TrafficProfile,
 		RuntimeSettings:  scenario.RuntimeSettings,
 		JointEvidence:    scenario.JointEvidence,
+		TelemetryPolicy:  scenario.TelemetryAcceptancePolicyID,
 		Scripts:          canonicalScripts,
 	}))
 }

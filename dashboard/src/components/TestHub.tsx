@@ -41,6 +41,8 @@ import './CreateTestModal.css'
 import { goalConfigFromForm, maxStageVUsers, scenarioDraftFromForm, scenarioDraftGroupFromForm, scenarioEstimateRequest, scenarioLoadPreview, scenarioTimelineGroups, scenarioUpsertPayload } from './scenarioAssembly'
 import { BROWSER_ITERATION_CATEGORY, JOINT_EVIDENCE_DIMENSIONS, JOINT_EVIDENCE_MAX_DIMENSIONS, jointEvidenceIssue, jointPropertyCategory, jointPropertyCategoryLabel, promotedPropertyCategories, toggleJointEvidenceDimension } from './jointEvidenceModel'
 import type { JointEvidenceProjection } from '../types/jointEvidence'
+import TelemetryPolicySelect from './TelemetryPolicySelect'
+import { telemetryPolicySaveIssue } from './telemetryAcceptanceChoice'
 import { SortHeader } from './SortHeader'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
@@ -861,6 +863,15 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   // offered with that error only.
   const [createNeedsNewIntent, setCreateNeedsNewIntent] = useState('')
   const [form, setForm] = useState<ScenarioFormState>(() => emptyScenarioForm())
+  // Reloads the telemetry policy select after a save check found its list stale.
+  const [telemetryPolicyRefresh, setTelemetryPolicyRefresh] = useState(0)
+  // Ends a save-time policy read when the builder closes or the hub unmounts;
+  // the save it guarded is then dropped, never sent unchecked.
+  const telemetryPolicyCheckAbortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => telemetryPolicyCheckAbortRef.current?.abort(), [])
+  useEffect(() => {
+    if (!showForm) telemetryPolicyCheckAbortRef.current?.abort()
+  }, [showForm])
   const currentDraftRef = useRef({ form, activeProjectId, showForm })
   currentDraftRef.current = { form, activeProjectId, showForm }
   const markWizardStepVisited = useCallback((stepId: ScenarioWizardStep) => {
@@ -2945,6 +2956,25 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     savingRef.current = true
     setSavePending(true)
     try {
+      // A chosen telemetry acceptance policy is judged against a fresh read
+      // of the project's policies, under the save lock.
+      // A save that keeps the loaded scenario's choice is not judged, as the
+      // controller does not judge it.
+      const savedChoice = editingId ? baseline?.projection.scenario.telemetry_acceptance_policy_id : undefined
+      const policyCheck = new AbortController()
+      telemetryPolicyCheckAbortRef.current = policyCheck
+      const policyIssue = await telemetryPolicySaveIssue(submittedDraft.activeProjectId, submittedDraft.form.telemetry_acceptance_policy_id, undefined, typeof savedChoice === 'string' ? savedChoice : undefined, policyCheck.signal)
+      // An ended check (the builder closed) or a draft changed meanwhile drops
+      // the save it guarded.
+      if (policyCheck.signal.aborted || !stillCurrent() || builderSessionRef.current !== submittedSession) return null
+      if (policyIssue) {
+        setError(policyIssue)
+        setTelemetryPolicyRefresh(count => count + 1)
+        setWizardStep('run')
+        setRunSettingsTab('scenario')
+        setScenarioSettingsSection('advanced')
+        return null
+      }
       const persisted = await persistBuilderScenario({
         editingId, payload, baseline, projectId: activeProjectId || undefined,
         createIntent: {
@@ -3710,6 +3740,18 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     </div>
   )
 
+  // The telemetry acceptance policy every run of the scenario is judged by.
+  const renderTelemetryPolicy = () => (
+    <TelemetryPolicySelect
+      projectId={activeProjectId}
+      subject="scenario"
+      refreshKey={telemetryPolicyRefresh}
+      storedId={editingId && typeof scenarioBaseline?.projection.scenario.telemetry_acceptance_policy_id === 'string' ? scenarioBaseline.projection.scenario.telemetry_acceptance_policy_id : undefined}
+      value={form.telemetry_acceptance_policy_id ?? ''}
+      onChange={value => setForm(previous => ({ ...previous, telemetry_acceptance_policy_id: value || undefined }))}
+    />
+  )
+
   // A scenario's joint evidence projection, captured by every run created
   // from it (directly, by a schedule or by an execution plan).
   const renderJointEvidence = () => {
@@ -4374,6 +4416,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           {renderProtectRun()}
           {renderPreRunAssurance()}
           {renderJointEvidence()}
+          {renderTelemetryPolicy()}
           <TransactionResponseTimeSLASettings
             defaultMs={goalConfigFromForm(form).transaction_response_time_sla_ms}
             groups={formGroups.map((group, index) => ({
@@ -4777,6 +4820,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               {renderProtectRun()}
               {renderPreRunAssurance()}
               {renderJointEvidence()}
+              {renderTelemetryPolicy()}
               <TransactionResponseTimeSLASettings
                 defaultMs={goalConfigFromForm(form).transaction_response_time_sla_ms}
                 groups={formGroups.map((group, index) => ({

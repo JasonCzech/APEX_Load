@@ -28,6 +28,8 @@ import ConfiguredGeneratorChips from './ConfiguredGeneratorChips'
 import { formatEstimate } from './generatorNames'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { confirmAction } from './ux/confirmAction'
+import TelemetryPolicySelect from './TelemetryPolicySelect'
+import { telemetryPolicySaveIssue } from './telemetryAcceptanceChoice'
 import { BROWSER_ITERATION_CATEGORY, describeJointEvidence, jointPropertyCategory, promotedPropertyCategories } from './jointEvidenceModel'
 import { AuthoringCreateNeedsNewIntent, authoringPayloadDigest, forgetAuthoringCreateIntent, nextAuthoringCreateIntent, sendUnderAuthoringCreateIntent, startingAuthoringCreateIntent, type AuthoringCreateIntent } from './authoringCreateIntent'
 
@@ -101,6 +103,12 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const scenarioNameRef = useRef<HTMLInputElement | null>(null)
   const titleId = useId()
   const mountedRef = useRef(false)
+  // The create check's policy read ends when the modal unmounts (the modal
+  // cannot be closed while it is busy; the read lasts at most 10 s), and the
+  // copy is then never created. A block reloads the select's list.
+  const policyCheckAbortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => policyCheckAbortRef.current?.abort(), [])
+  const [telemetryPolicyRefresh, setTelemetryPolicyRefresh] = useState(0)
   useEffect(() => {
     mountedRef.current = true
     return () => { mountedRef.current = false }
@@ -285,10 +293,31 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     if (monitorEditorError) { setError(monitorEditorError); return false }
     if (elasticMonitorConflict) { setError('Turn legacy Elastic log capture off or remove the conflicting run-bound source before launching.'); return false }
     if (captureNeedsReview) { setError('Review the unavailable capture connection, retry, or explicitly turn capture off before launching.'); return false }
+    // A chosen (or kept) telemetry acceptance policy the project no longer has
+    // is refused here, against a fresh read, rather than by the controller.
+    // The modal shows it is busy from here on.
     setError('')
+    setLoading(true)
+    policyCheckAbortRef.current = new AbortController()
+    // Fields stay editable (keyboard focus must not be lost); a form changed
+    // while its policy was checked is not created from the stale snapshot.
+    const checkedFingerprint = authoringFingerprint
+    const policyIssue = await telemetryPolicySaveIssue(revisionContext?.projectId ?? projectId, scenarioDraft.telemetryAcceptancePolicyId, revisionContext?.telemetryAcceptancePolicyId, undefined, policyCheckAbortRef.current.signal)
+    if (!mountedRef.current) return false
+    if (latestAuthoringFingerprintRef.current !== checkedFingerprint) {
+      setLoading(false)
+      setError('The run settings changed while the telemetry acceptance policy was being checked; review them and create again.')
+      return false
+    }
+    if (policyIssue) {
+      setLoading(false)
+      setError(policyIssue)
+      // The select reloads, so it marks the policy the project lost.
+      setTelemetryPolicyRefresh(count => count + 1)
+      return false
+    }
     // A replay notice stays until another run is queued: a later refusal of a
     // changed draft does not change that this draft's run exists.
-    setLoading(true)
     try {
       if (terminationMode === 'iterations' ? duration !== '' : !isValidDurationInput(duration)) {
         throw new Error(terminationMode === 'iterations' ? 'Iteration completion must not specify a duration.' : 'Enter a positive steady state duration.')
@@ -630,6 +659,14 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
               {revisionCategoryNote ? ` ${revisionCategoryNote}` : ''}
             </p>
           )}
+          <TelemetryPolicySelect
+            projectId={revisionContext?.projectId ?? projectId}
+            subject="run"
+            value={scenarioDraft.telemetryAcceptancePolicyId ?? ''}
+            inheritedId={revisionContext?.telemetryAcceptancePolicyId}
+            refreshKey={telemetryPolicyRefresh}
+            onChange={value => updateScenarioField('telemetryAcceptancePolicyId', value || undefined)}
+          />
           <RunMonitorBindingSelector projectId={revisionContext?.projectId ?? projectId} scenarioId={revisionContext?.scenarioId} legacyELKConnectionId={elkConnectionId} onConflictChange={setElasticMonitorConflict} value={monitorBindings} onChange={setMonitorBindings} />
           <MonitorRuleEditor projectId={revisionContext?.projectId ?? projectId} value={goalConfig.monitor_rules || []} onChange={rules => updateGoalConfig('monitor_rules', rules)} onValidationChange={setMonitorEditorError} />
           <CreateTestRuntimeOverrides

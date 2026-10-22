@@ -866,9 +866,13 @@ type Scenario struct {
 	TrafficProfile   any        `json:"traffic_profile,omitempty"`
 	// JointEvidence is the scenario's joint evidence v4 projection (JSON
 	// blob), carried to every run created from the scenario.
-	JointEvidence any       `json:"joint_evidence,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	JointEvidence any `json:"joint_evidence,omitempty"`
+	// TelemetryAcceptancePolicyID names the project telemetry acceptance
+	// policy every run created from the scenario inherits; empty uses the
+	// project's default.
+	TelemetryAcceptancePolicyID string    `json:"telemetry_acceptance_policy_id,omitempty"`
+	CreatedAt                   time.Time `json:"created_at"`
+	UpdatedAt                   time.Time `json:"updated_at"`
 }
 
 type ScenarioScript struct {

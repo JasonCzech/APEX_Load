@@ -332,7 +332,7 @@ go run ./cmd/apexctl run \
 - `--base-url` — Override the script base URL at run time
 - `--p95-latency-ms`, `--max-error-pct`, `--max-avg-server-processing-ms`, `--max-avg-transfer-ms`, `--max-error-count` — CI/CD guardrails that make `apexctl` exit non-zero when breached
 
-Additional `run` flags: `--junit` (write a JUnit XML report), `--timeout` (API run wait timeout; default duration + 30m), and `--transaction-rule` / `--transaction-rules-file` (exact per-transaction SLA rules; require `--api`).
+Additional `run` flags: `--junit` (write a JUnit XML report), `--timeout` (API run wait timeout; default duration + 30m), `--transaction-rule` / `--transaction-rules-file` (exact per-transaction SLA rules; require `--api`), and `--telemetry-policy` (judge the run by one of the project's telemetry acceptance policies instead of its default; requires `--api`, and the controller must confirm it before the run starts).
 
 **Subcommands** (`apexctl help` prints the full list):
 

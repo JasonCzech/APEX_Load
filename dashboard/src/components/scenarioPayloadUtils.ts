@@ -45,6 +45,7 @@ export type ScenarioUpsertPayload = {
   goal_config?: GoalConfig
   traffic_profile?: TrafficProfile
   joint_evidence?: JointEvidenceProjection
+  telemetry_acceptance_policy_id?: string
   runtime_settings?: {
     iterations?: number
     pacing?: PacingConfig
@@ -94,6 +95,7 @@ export type CreateTestPayload = {
   goal_config?: GoalConfig
   traffic_profile?: TrafficProfile
   joint_evidence?: JointEvidenceProjection
+  telemetry_acceptance_policy_id?: string
   runtime_settings?: ScenarioUpsertPayload['runtime_settings']
   data_pools?: ScenarioDataPoolBinding[]
   elk_capture?: { connection_id: string }
@@ -113,6 +115,8 @@ type ScenarioPayloadInput = {
   runtimeSettings: ScenarioRuntimeSettings
   trafficProfile?: TrafficProfile
   jointEvidence?: JointEvidenceProjection
+  /** A chosen telemetry acceptance policy ID, or project_default; absent uses the default (or inherits). */
+  telemetryAcceptancePolicyId?: string
 }
 
 type ScenarioUpsertPayloadInput = ScenarioPayloadInput & {
@@ -429,6 +433,7 @@ export function buildScenarioExecutionPayload(input: ScenarioPayloadInput & { da
   ...(runtime ? {runtime_settings: runtime} : {}),
   ...(input.trafficProfile ? {traffic_profile: input.trafficProfile} : {}),
   ...(input.jointEvidence ? {joint_evidence: input.jointEvidence} : {}),
+  ...(input.telemetryAcceptancePolicyId?.trim() ? {telemetry_acceptance_policy_id: input.telemetryAcceptancePolicyId.trim()} : {}),
   ...(input.dataPools !== undefined ? {data_pools: input.dataPools} : {}),
  })
 }

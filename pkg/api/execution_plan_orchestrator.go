@@ -247,6 +247,9 @@ func (tr *TestRunner) preflightExecutionPlanRuntimeSecretAuthority(plan *storage
 			// malformed entry later reaches runtime-secret persistence.
 			continue
 		}
+		// This secret preflight does not depend on the telemetry policy; the
+		// entry's create judges it.
+		req.skipTelemetryPolicyCheck = true
 		preview, _, revision, err := tr.buildManagedTestFromSnapshot(req, executionPlanEntryTestID(runID, index, entry.Order), "DRAFT")
 		if err != nil || !tr.managedTestBuildFenceCurrent(revision) {
 			continue

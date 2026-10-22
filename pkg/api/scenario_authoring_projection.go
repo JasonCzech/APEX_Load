@@ -53,24 +53,25 @@ type ScenarioAuthoringDataPoolBinding struct {
 // ScenarioAuthoringDocument holds only persisted authored fields, with
 // runtime credentials masked exactly as the ordinary scenario read masks them.
 type ScenarioAuthoringDocument struct {
-	ID               string                             `json:"id"`
-	RefKey           string                             `json:"ref_key,omitempty"`
-	Name             string                             `json:"name"`
-	ProjectID        string                             `json:"project_id"`
-	WorkloadShapeID  string                             `json:"workload_shape_id,omitempty"`
-	Duration         string                             `json:"duration"`
-	StartDelay       string                             `json:"start_delay,omitempty"`
-	TerminationMode  string                             `json:"termination_mode,omitempty"`
-	ScenarioMode     string                             `json:"scenario_mode,omitempty"`
-	ScriptShakeout   bool                               `json:"script_shakeout,omitempty"`
-	ResourceBaseline bool                               `json:"resource_baseline,omitempty"`
-	Assignment       *GeneratorAssignmentSettings       `json:"assignment,omitempty"`
-	GoalConfig       *GoalConfig                        `json:"goal_config,omitempty"`
-	TrafficProfile   *TrafficProfile                    `json:"traffic_profile,omitempty"`
-	RuntimeSettings  *RuntimeSettingsOverride           `json:"runtime_settings,omitempty"`
-	JointEvidence    *engine.JointProjection            `json:"joint_evidence,omitempty"`
-	Groups           []ScenarioAuthoringGroup           `json:"groups"`
-	DataPools        []ScenarioAuthoringDataPoolBinding `json:"data_pools"`
+	ID                          string                             `json:"id"`
+	RefKey                      string                             `json:"ref_key,omitempty"`
+	Name                        string                             `json:"name"`
+	ProjectID                   string                             `json:"project_id"`
+	WorkloadShapeID             string                             `json:"workload_shape_id,omitempty"`
+	Duration                    string                             `json:"duration"`
+	StartDelay                  string                             `json:"start_delay,omitempty"`
+	TerminationMode             string                             `json:"termination_mode,omitempty"`
+	ScenarioMode                string                             `json:"scenario_mode,omitempty"`
+	ScriptShakeout              bool                               `json:"script_shakeout,omitempty"`
+	ResourceBaseline            bool                               `json:"resource_baseline,omitempty"`
+	Assignment                  *GeneratorAssignmentSettings       `json:"assignment,omitempty"`
+	GoalConfig                  *GoalConfig                        `json:"goal_config,omitempty"`
+	TrafficProfile              *TrafficProfile                    `json:"traffic_profile,omitempty"`
+	RuntimeSettings             *RuntimeSettingsOverride           `json:"runtime_settings,omitempty"`
+	JointEvidence               *engine.JointProjection            `json:"joint_evidence,omitempty"`
+	TelemetryAcceptancePolicyID string                             `json:"telemetry_acceptance_policy_id,omitempty"`
+	Groups                      []ScenarioAuthoringGroup           `json:"groups"`
+	DataPools                   []ScenarioAuthoringDataPoolBinding `json:"data_pools"`
 }
 
 type ScenarioAuthoringPlacement struct {
@@ -149,13 +150,14 @@ func buildScenarioAuthoringProjection(snapshot *storage.ScenarioAuthoringSnapsho
 		WorkloadShapeID: scenario.WorkloadShapeID, Duration: scenario.Duration, StartDelay: scenario.StartDelay,
 		TerminationMode: scenario.TerminationMode, ScenarioMode: normalizeScenarioMode(scenario.ScenarioMode),
 		ScriptShakeout: scenario.ScriptShakeout, ResourceBaseline: scenario.ResourceBaseline,
-		Assignment:      decodeStoredGeneratorAssignment(scenario.Assignment),
-		GoalConfig:      decodeStoredGoalConfig(scenario.GoalConfig),
-		TrafficProfile:  decodeStoredTrafficProfile(scenario.TrafficProfile),
-		RuntimeSettings: maskRuntimeSettingsForEditor(decodeStoredRuntimeSettings(scenario.RuntimeSettings)),
-		JointEvidence:   decodeStoredJointEvidence(scenario.JointEvidence),
-		Groups:          make([]ScenarioAuthoringGroup, 0, len(groups)),
-		DataPools:       make([]ScenarioAuthoringDataPoolBinding, 0, len(snapshot.DataPools)),
+		Assignment:                  decodeStoredGeneratorAssignment(scenario.Assignment),
+		GoalConfig:                  decodeStoredGoalConfig(scenario.GoalConfig),
+		TrafficProfile:              decodeStoredTrafficProfile(scenario.TrafficProfile),
+		RuntimeSettings:             maskRuntimeSettingsForEditor(decodeStoredRuntimeSettings(scenario.RuntimeSettings)),
+		JointEvidence:               decodeStoredJointEvidence(scenario.JointEvidence),
+		TelemetryAcceptancePolicyID: scenario.TelemetryAcceptancePolicyID,
+		Groups:                      make([]ScenarioAuthoringGroup, 0, len(groups)),
+		DataPools:                   make([]ScenarioAuthoringDataPoolBinding, 0, len(snapshot.DataPools)),
 	}
 	for _, group := range groups {
 		document.Groups = append(document.Groups, ScenarioAuthoringGroup{

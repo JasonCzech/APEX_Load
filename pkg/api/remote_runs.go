@@ -108,6 +108,8 @@ func (s *Server) handleCreateRemoteRun(w http.ResponseWriter, r *http.Request) {
 		status := http.StatusBadRequest
 		if errors.Is(err, errServiceAccountLibraryBundleScope) {
 			status = http.StatusForbidden
+		} else if errors.Is(err, errRemoteRunScenarioPolicy) {
+			status = http.StatusConflict
 		}
 		writeError(w, status, err.Error())
 		return
@@ -440,12 +442,25 @@ func maskRemoteRunAction(action map[string]any) map[string]any {
 	return masked
 }
 
+// errRemoteRunScenarioPolicy refuses a remote run whose scenario chose a
+// telemetry acceptance policy the request does not translate.
+var errRemoteRunScenarioPolicy = errors.New("the scenario's telemetry acceptance policy is local to this controller")
+
 func (s *Server) prepareRemoteRunCreateRequest(ctx context.Context, remote LibraryRemote, req CreateTestRequest, explicitRemoteProjectID string) (CreateTestRequest, []LibraryImportResultItem, string, string, string, error) {
 	localProjectID, err := s.remoteRunCreateLocalProject(req)
 	if err != nil {
 		return req, nil, "", "", "", err
 	}
 	localScenarioID := strings.TrimSpace(req.ScenarioID)
+	// A scenario's telemetry acceptance policy names a local policy, which the
+	// pushed library bundle does not carry: the remote would judge the run by
+	// its own copy's choice or its project's default, never the local choice.
+	// The caller names the remote policy (or project_default) explicitly.
+	if localScenarioID != "" && strings.TrimSpace(req.TelemetryAcceptancePolicyID) == "" {
+		if scenario, ok := s.runner.GetScenario(localScenarioID); ok && scenario != nil && scenario.TelemetryAcceptancePolicyID != "" {
+			return req, nil, "", "", "", fmt.Errorf("%w: scenario %s chooses telemetry acceptance policy %q, which does not travel to the remote controller; name a remote policy with telemetry_acceptance_policy_id, or %s", errRemoteRunScenarioPolicy, localScenarioID, scenario.TelemetryAcceptancePolicyID, runPolicyProjectDefault)
+		}
+	}
 	// The destination is an administrator-configured trust mapping. A project
 	// editor may select local assets, but must not be able to redirect the
 	// controller's broader remote credential into an arbitrary remote project.

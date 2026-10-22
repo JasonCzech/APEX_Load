@@ -89,6 +89,10 @@ vi.mock('../hooks/useProject', () => ({
   useProject: () => projectState,
 }))
 
+// The project's telemetry acceptance policies (TEL-B); none by default.
+const telemetryPolicyList = vi.hoisted(() => vi.fn(async (): Promise<unknown[]> => []))
+vi.mock('../hooks/api/analysisPoliciesApi', () => ({ analysisPoliciesApi: { list: telemetryPolicyList } }))
+
 // Isolate the scenario's save-handoff decisions; real import/editor persistence
 // is covered by workflow-scenario-composition through the HTTP controller.
 vi.mock('./ScriptsPage', () => ({
@@ -742,6 +746,8 @@ describe('TestHub', () => {
   beforeEach(() => {
     sessionStorage.clear()
     localStorage.clear()
+    telemetryPolicyList.mockReset()
+    telemetryPolicyList.mockResolvedValue([])
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -1308,6 +1314,168 @@ describe('TestHub', () => {
     await flushPromises()
     expect(apiMock.updateScenario).toHaveBeenCalledTimes(1)
     expect(apiMock.updateScenario.mock.calls[0][1]).toHaveProperty('joint_evidence', { population: 'transaction', dimensions: ['name', 'property:browser_iteration'] })
+  })
+
+  it('saves the telemetry acceptance policy every run of the scenario is judged by (TEL-B)', async () => {
+    telemetryPolicyList.mockResolvedValue([
+      { id: 'default-gate', project_id: 'project-1', kind: 'telemetry_acceptance_policy', name: 'Default gate', revision: 1, definition: { version: 1, apply_by_default: true }, deleted: false, created_at: '' },
+      { id: 'strict-gate', project_id: 'project-1', kind: 'telemetry_acceptance_policy', name: 'Strict gate', revision: 2, definition: { version: 1 }, deleted: false, created_at: '' },
+    ])
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Policy probe'))
+    await clickWizardStep('Run settings')
+    await clickScenarioSettingsSection('Advanced settings')
+    await flushPromises()
+    expect(telemetryPolicyList).toHaveBeenCalledWith('project-1', 'telemetry_acceptance_policy', expect.anything())
+    const select = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-policy-select"] select')!
+    expect(select.options[0].textContent).toBe('Project default (Default gate)')
+    await act(async () => setSelectValue(select, 'strict-gate'))
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({ name: 'Policy probe', telemetry_acceptance_policy_id: 'strict-gate' }))
+  })
+
+  it('keeps a stored scenario\'s telemetry acceptance policy when it is saved without changing it (TEL-B)', async () => {
+    telemetryPolicyList.mockResolvedValue([
+      { id: 'strict-gate', project_id: 'project-1', kind: 'telemetry_acceptance_policy', name: 'Strict gate', revision: 1, definition: { version: 1 }, deleted: false, created_at: '' },
+    ])
+    const stored: StoredScenario = { id: 'policy-keep', name: 'Policy keep', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven',
+      telemetry_acceptance_policy_id: 'strict-gate',
+      scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await flushPromises()
+    await clickWizardStep('Review')
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.updateScenario).toHaveBeenCalledTimes(1)
+    expect(apiMock.updateScenario.mock.calls[0][1]).toHaveProperty('telemetry_acceptance_policy_id', 'strict-gate')
+  })
+
+  it('saves an unrelated edit that keeps a stored telemetry acceptance policy deleted since, as the controller does (TEL-B)', async () => {
+    telemetryPolicyList.mockResolvedValue([
+      { id: 'other-gate', project_id: 'project-1', kind: 'telemetry_acceptance_policy', name: 'Other gate', revision: 1, definition: { version: 1 }, deleted: false, created_at: '' },
+    ])
+    const stored: StoredScenario = { id: 'policy-kept', name: 'Policy kept', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven',
+      telemetry_acceptance_policy_id: 'gone-gate',
+      scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await flushPromises()
+    await clickWizardStep('Run settings')
+    await clickScenarioSettingsSection('Advanced settings')
+    await flushPromises()
+    const select = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-policy-select"] select')!
+    expect(select.value).toBe('gone-gate')
+    expect(select.selectedOptions[0].textContent).toBe('gone-gate (no longer available)')
+    await clickWizardStep('Review')
+    // An unrelated edit.
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Policy kept, renamed'))
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.updateScenario).toHaveBeenCalledTimes(1)
+    expect(apiMock.updateScenario.mock.calls[0][1]).toMatchObject({ name: 'Policy kept, renamed', telemetry_acceptance_policy_id: 'gone-gate' })
+    // The builder's capacity estimates (debounced 300 ms) never send the
+    // choice, so a lost one cannot fail them.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)) })
+    expect(apiMock.estimateTest).toHaveBeenCalled()
+    for (const [request] of apiMock.estimateTest.mock.calls) expect(request).not.toHaveProperty('telemetry_acceptance_policy_id')
+  })
+
+  it('blocks choosing a telemetry acceptance policy deleted since the list loaded, judged by a fresh read, and opens the panel that shows it (TEL-B)', async () => {
+    const newGate = { id: 'new-gate', project_id: 'project-1', kind: 'telemetry_acceptance_policy', name: 'New gate', revision: 1, definition: { version: 1 }, deleted: false, created_at: '' }
+    // The select's first read offers new-gate; every later read (the save
+    // check, the select's reload) no longer has it.
+    telemetryPolicyList.mockResolvedValue([])
+    telemetryPolicyList.mockResolvedValueOnce([newGate])
+    const stored: StoredScenario = { id: 'policy-edit', name: 'Policy edit', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven',
+      scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await flushPromises()
+    await clickWizardStep('Run settings')
+    await clickScenarioSettingsSection('Advanced settings')
+    await flushPromises()
+    await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[data-testid="telemetry-policy-select"] select')!, 'new-gate'))
+    await clickWizardStep('Review')
+    expect(container.querySelector('[data-testid="telemetry-policy-select"]')).toBeNull()
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.updateScenario).not.toHaveBeenCalled()
+    expect(container.querySelector('.page-error-banner')?.textContent).toContain('"new-gate" no longer exists')
+    // The block opened the panel, whose reloaded list marks the choice.
+    const select = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-policy-select"] select')!
+    expect(select.value).toBe('new-gate')
+    expect(select.selectedOptions[0].textContent).toBe('new-gate (no longer available)')
+    expect(select.getAttribute('aria-invalid')).toBe('true')
+    await act(async () => setSelectValue(select, ''))
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.updateScenario).toHaveBeenCalledTimes(1)
+    expect(apiMock.updateScenario.mock.calls[0][1]).not.toHaveProperty('telemetry_acceptance_policy_id')
+  })
+
+  it('reloads an open telemetry policy select when a save is blocked by a policy deleted since it loaded (TEL-B)', async () => {
+    const newGate = { id: 'new-gate', project_id: 'project-1', kind: 'telemetry_acceptance_policy', name: 'New gate', revision: 1, definition: { version: 1 }, deleted: false, created_at: '' }
+    telemetryPolicyList.mockResolvedValue([])
+    telemetryPolicyList.mockResolvedValueOnce([newGate])
+    const stored: StoredScenario = { id: 'policy-open', name: 'Policy open', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven',
+      scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await flushPromises()
+    await clickWizardStep('Run settings')
+    await clickScenarioSettingsSection('Advanced settings')
+    await flushPromises()
+    const select = () => container.querySelector<HTMLSelectElement>('[data-testid="telemetry-policy-select"] select')!
+    await act(async () => setSelectValue(select(), 'new-gate'))
+    expect(select().selectedOptions[0].textContent).toBe('New gate (new-gate)')
+    // Saved with the panel open: the select stays mounted, so only the
+    // block's reload can mark the choice.
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.updateScenario).not.toHaveBeenCalled()
+    expect(telemetryPolicyList).toHaveBeenCalledTimes(3)
+    expect(select().selectedOptions[0].textContent).toBe('new-gate (no longer available)')
+  })
+
+  it('drops a save whose telemetry policy check is pending when the scenario hub unmounts (TEL-B)', async () => {
+    const strictGate = { id: 'strict-gate', project_id: 'project-1', kind: 'telemetry_acceptance_policy', name: 'Strict gate', revision: 1, definition: { version: 1 }, deleted: false, created_at: '' }
+    let reads = 0
+    let releaseCheck: (policies: unknown[]) => void = () => {}
+    telemetryPolicyList.mockImplementation(() => {
+      reads += 1
+      return reads === 1 ? Promise.resolve([strictGate]) : new Promise(resolve => { releaseCheck = resolve })
+    })
+    const stored: StoredScenario = { id: 'policy-unmount', name: 'Policy unmount', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven',
+      scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await flushPromises()
+    await clickWizardStep('Run settings')
+    await clickScenarioSettingsSection('Advanced settings')
+    await flushPromises()
+    await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[data-testid="telemetry-policy-select"] select')!, 'strict-gate'))
+    await clickButton('Save scenario')
+    // The check's read is pending; the hub unmounts, then the read answers.
+    await act(async () => root.unmount())
+    releaseCheck([strictGate])
+    await flushPromises()
+    expect(apiMock.updateScenario).not.toHaveBeenCalled()
+    expect(apiMock.createScenario).not.toHaveBeenCalled()
+    root = createRoot(container)
   })
 
   it('keeps an unanswered create key recallable when the save is refused for good (AUTH-1)', async () => {

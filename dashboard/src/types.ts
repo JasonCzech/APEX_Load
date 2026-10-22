@@ -860,6 +860,8 @@ export interface TestSummary {
   traffic_profile?: import('./types/trafficProfiles').TrafficProfile
   /** The joint evidence projection the run captures. */
   joint_evidence?: import('./types/jointEvidence').JointEvidenceProjection
+  /** The project telemetry acceptance policy the run chose instead of the default (TEL-B). */
+  telemetry_acceptance_policy_id?: string
   /** The execution-plan run that started this run. */
   execution_plan?: TestExecutionPlanLink
   archive?: RunArchiveRecord
@@ -2359,6 +2361,8 @@ export interface ScenarioDraftRevisionContext {
   sourceTestId: string
   /** The source run's joint evidence, shown read-only; a revised copy keeps it. */
   jointEvidence?: import('./types/jointEvidence').JointEvidenceProjection
+  /** The source run's chosen telemetry acceptance policy; a revised copy keeps it unless it names another. */
+  telemetryAcceptancePolicyId?: string
   applicationId?: string
   releaseId?: string
   scenarioId?: string
@@ -2383,6 +2387,8 @@ export interface ScenarioDraft {
   trafficProfile?: TrafficProfile
   /** The joint evidence the scenario's runs capture (absent: none). */
   jointEvidence?: import('./types/jointEvidence').JointEvidenceProjection
+  /** The telemetry acceptance policy chosen for the scenario's (or this) run; absent: the default, or a revised copy's inherited choice. */
+  telemetryAcceptancePolicyId?: string
   /** Authored data-pool bindings of a saved scenario (a revision keeps its source's in revisionContext). */
   dataPools?: ScenarioDataPoolBinding[]
   /** Immutable source-run context carried only when a queued run is revised. */

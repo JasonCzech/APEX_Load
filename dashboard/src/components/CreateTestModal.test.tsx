@@ -847,6 +847,157 @@ describe('CreateTestModal', () => {
     expect(notice()).toContain('These changes stop promoting "operation": restore its promotion, or the copy may be refused.')
   })
 
+  it("sends another telemetry acceptance policy a revised copy chooses (TEL-B)", async () => {
+    const policies = [{ id: 'other-gate', project_id: 'project-a', kind: 'telemetry_acceptance_policy', name: 'Other gate', revision: 1, definition: { version: 1 }, deleted: false, created_at: '' }]
+    monitorRequest.mockImplementation((path: string) => Promise.resolve(path.includes('/analysis/capabilities') ? { monitoring_enabled: false } : path.includes('/analysis/policies') ? policies : []))
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, telemetry_acceptance_policy_id: 'strict-gate' } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    await act(async () => { await Promise.resolve() })
+    const select = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-policy-select"] select')!
+    await act(async () => {
+      select.value = 'other-gate'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click('Create revised copy')
+    expect(apiMock.createTest.mock.calls[0][0]).toHaveProperty('telemetry_acceptance_policy_id', 'other-gate')
+  })
+
+  it("blocks a policy deleted after the modal loaded, judged by a fresh read while the modal shows it is busy (TEL-B)", async () => {
+    const otherGate = { id: 'other-gate', project_id: 'project-a', kind: 'telemetry_acceptance_policy', name: 'Other gate', revision: 1, definition: { version: 1 }, deleted: false, created_at: '' }
+    // The select's first read offers other-gate; the create check's read is
+    // held, then answers without it.
+    let releaseCheck: (policies: unknown[]) => void = () => {}
+    let policyReads = 0
+    monitorRequest.mockImplementation((path: string) => {
+      if (path.includes('/analysis/capabilities')) return Promise.resolve({ monitoring_enabled: false })
+      if (!path.includes('/analysis/policies')) return Promise.resolve([])
+      policyReads += 1
+      if (policyReads === 1) return Promise.resolve([otherGate])
+      if (policyReads === 2) return new Promise(resolve => { releaseCheck = resolve })
+      return Promise.resolve([])
+    })
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    await act(async () => { await Promise.resolve() })
+    const select = () => container.querySelector<HTMLSelectElement>('[data-testid="telemetry-policy-select"] select')!
+    await act(async () => {
+      select().value = 'other-gate'
+      select().dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click('Create revised copy')
+    // Busy while the check's read is pending.
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Creating revised copy'))?.disabled).toBe(true)
+    // Fields stay editable, so keyboard focus is never lost.
+    expect(select().matches(':disabled')).toBe(false)
+    await act(async () => { releaseCheck([]) })
+    await act(async () => { await Promise.resolve() })
+    expect(apiMock.createTest).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('"other-gate" no longer exists')
+    // The select reloaded and marks the choice.
+    expect(select().selectedOptions[0].textContent).toBe('other-gate (no longer available)')
+  })
+
+  it("creates nothing when the modal unmounts while its telemetry policy check is pending (TEL-B)", async () => {
+    let releaseCheck: (policies: unknown[]) => void = () => {}
+    let policyReads = 0
+    monitorRequest.mockImplementation((path: string) => {
+      if (path.includes('/analysis/capabilities')) return Promise.resolve({ monitoring_enabled: false })
+      if (!path.includes('/analysis/policies')) return Promise.resolve([])
+      policyReads += 1
+      return policyReads === 1 ? Promise.resolve([]) : new Promise(resolve => { releaseCheck = resolve })
+    })
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, telemetry_acceptance_policy_id: 'strict-gate' } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    await act(async () => { await Promise.resolve() })
+    await click('Create revised copy')
+    await act(async () => root.unmount())
+    await act(async () => { releaseCheck([{ id: 'strict-gate', project_id: 'project-a', kind: 'telemetry_acceptance_policy', name: 'Strict gate', revision: 1, definition: { version: 1 }, deleted: false, created_at: '' }]) })
+    await act(async () => { await Promise.resolve() })
+    expect(apiMock.createTest).not.toHaveBeenCalled()
+    root = createRoot(container)
+  })
+
+  it("does not create a copy from settings changed while its telemetry policy was checked (TEL-B)", async () => {
+    let releaseCheck: (policies: unknown[]) => void = () => {}
+    let policyReads = 0
+    const strictGate = { id: 'strict-gate', project_id: 'project-a', kind: 'telemetry_acceptance_policy', name: 'Strict gate', revision: 1, definition: { version: 1 }, deleted: false, created_at: '' }
+    monitorRequest.mockImplementation((path: string) => {
+      if (path.includes('/analysis/capabilities')) return Promise.resolve({ monitoring_enabled: false })
+      if (!path.includes('/analysis/policies')) return Promise.resolve([])
+      policyReads += 1
+      return policyReads === 2 ? new Promise(resolve => { releaseCheck = resolve }) : Promise.resolve([strictGate])
+    })
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, telemetry_acceptance_policy_id: 'strict-gate' } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    await act(async () => { await Promise.resolve() })
+    const select = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-policy-select"] select')!
+    await click('Create revised copy')
+    // Changed while the check is pending: the copy is not created from the
+    // submitted snapshot, and the new choice is kept for the next create.
+    await act(async () => {
+      select.value = 'project_default'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => { releaseCheck([strictGate]) })
+    await act(async () => { await Promise.resolve() })
+    expect(apiMock.createTest).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('changed while the telemetry acceptance policy was being checked')
+    await click('Create revised copy')
+    expect(apiMock.createTest).toHaveBeenCalledTimes(1)
+    expect(apiMock.createTest.mock.calls[0][0]).toHaveProperty('telemetry_acceptance_policy_id', 'project_default')
+  })
+
+  it("keeps a revised copy's chosen telemetry acceptance policy unless another or the project default is chosen (TEL-B)", async () => {
+    const policies = [
+      { id: 'default-gate', project_id: 'project-a', kind: 'telemetry_acceptance_policy', name: 'Default gate', revision: 1, definition: { version: 1, apply_by_default: true }, deleted: false, created_at: '' },
+      { id: 'strict-gate', project_id: 'project-a', kind: 'telemetry_acceptance_policy', name: 'Strict gate', revision: 1, definition: { version: 1 }, deleted: false, created_at: '' },
+    ]
+    monitorRequest.mockImplementation((path: string) => Promise.resolve(path.includes('/analysis/capabilities') ? { monitoring_enabled: false } : path.includes('/analysis/policies') ? policies : []))
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, telemetry_acceptance_policy_id: 'strict-gate' } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    await act(async () => { await Promise.resolve() })
+    expect(monitorRequest).toHaveBeenCalledWith(expect.stringContaining('/analysis/policies?'), expect.anything())
+    const select = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-policy-select"] select')!
+    expect(select.value).toBe('')
+    expect(select.options[0].textContent).toBe("Keep the source run's choice (Strict gate)")
+    // Kept: the copy inherits the choice, so the request does not resend it.
+    await click('Create revised copy')
+    expect(apiMock.createTest.mock.calls[0][0]).not.toHaveProperty('telemetry_acceptance_policy_id')
+  })
+
+  it("refuses a revised copy that would keep a source policy the project no longer has (TEL-B)", async () => {
+    const policies = [{ id: 'default-gate', project_id: 'project-a', kind: 'telemetry_acceptance_policy', name: 'Default gate', revision: 1, definition: { version: 1, apply_by_default: true }, deleted: false, created_at: '' }]
+    monitorRequest.mockImplementation((path: string) => Promise.resolve(path.includes('/analysis/capabilities') ? { monitoring_enabled: false } : path.includes('/analysis/policies') ? policies : []))
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, telemetry_acceptance_policy_id: 'gone-gate' } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    await act(async () => { await Promise.resolve() })
+    const select = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-policy-select"] select')!
+    expect(select.options[0].textContent).toBe("Keep the source run's choice (gone-gate (no longer available))")
+    await click('Create revised copy')
+    expect(apiMock.createTest).not.toHaveBeenCalled()
+    expect(container.textContent).toContain(`The source run's telemetry acceptance policy "gone-gate" no longer exists`)
+    // Choosing the project default sends it and creates the copy.
+    await act(async () => {
+      select.value = 'project_default'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click('Create revised copy')
+    expect(apiMock.createTest).toHaveBeenCalledTimes(1)
+    expect(apiMock.createTest.mock.calls[0][0]).toHaveProperty('telemetry_acceptance_policy_id', 'project_default')
+  })
+
+  it('sends project_default when a revised copy drops its source run\'s telemetry acceptance policy (TEL-B)', async () => {
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, telemetry_acceptance_policy_id: 'strict-gate' } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    const select = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-policy-select"] select')!
+    await act(async () => {
+      select.value = 'project_default'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click('Create revised copy')
+    expect(apiMock.createTest.mock.calls[0][0]).toHaveProperty('telemetry_acceptance_policy_id', 'project_default')
+  })
+
   it('replays rather than queues another when a replayed draft is created again (AUTH-1)', async () => {
     window.localStorage.clear()
     const replay = { kind: 'replayed' as const, resource: { id: 'run-1', ref_key: 'RUN-1', status: 'QUEUED' } as never }

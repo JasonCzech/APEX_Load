@@ -18045,6 +18045,8 @@ paths:
                       type: boolean
                     start_delay:
                       type: string
+                    telemetry_acceptance_policy_id:
+                      type: string
                     termination_mode:
                       type: string
                     traffic_profile:
@@ -64295,6 +64297,8 @@ paths:
                                 script_shakeout:
                                   type: boolean
                                 start_delay:
+                                  type: string
+                                telemetry_acceptance_policy_id:
                                   type: string
                                 termination_mode:
                                   type: string
@@ -162962,6 +162966,8 @@ paths:
                   type: boolean
                 start_delay:
                   type: string
+                telemetry_acceptance_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 traffic_profile:
@@ -163809,6 +163815,8 @@ paths:
                               script_shakeout:
                                 type: boolean
                               start_delay:
+                                type: string
+                              telemetry_acceptance_policy_id:
                                 type: string
                               termination_mode:
                                 type: string
@@ -166026,6 +166034,8 @@ paths:
                             - script_id
                             - vusers
                       start_delay:
+                        type: string
+                      telemetry_acceptance_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -167173,6 +167183,8 @@ paths:
                                 type: boolean
                               start_delay:
                                 type: string
+                              telemetry_acceptance_policy_id:
+                                type: string
                               termination_mode:
                                 type: string
                               traffic_profile:
@@ -169389,6 +169401,8 @@ paths:
                             - script_id
                             - vusers
                       start_delay:
+                        type: string
+                      telemetry_acceptance_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -170816,6 +170830,8 @@ paths:
                           script_shakeout:
                             type: boolean
                           start_delay:
+                            type: string
+                          telemetry_acceptance_policy_id:
                             type: string
                           termination_mode:
                             type: string
@@ -172884,6 +172900,8 @@ paths:
                   type: boolean
                 start_delay:
                   type: string
+                telemetry_acceptance_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 traffic_profile:
@@ -173730,6 +173748,8 @@ paths:
                           script_shakeout:
                             type: boolean
                           start_delay:
+                            type: string
+                          telemetry_acceptance_policy_id:
                             type: string
                           termination_mode:
                             type: string
@@ -175947,6 +175967,8 @@ paths:
                         - script_id
                         - vusers
                   start_delay:
+                    type: string
+                  telemetry_acceptance_policy_id:
                     type: string
                   termination_mode:
                     type: string
@@ -176973,6 +176995,8 @@ paths:
                             type: boolean
                           start_delay:
                             type: string
+                          telemetry_acceptance_policy_id:
+                            type: string
                           termination_mode:
                             type: string
                           traffic_profile:
@@ -179189,6 +179213,8 @@ paths:
                         - script_id
                         - vusers
                   start_delay:
+                    type: string
+                  telemetry_acceptance_policy_id:
                     type: string
                   termination_mode:
                     type: string
@@ -181079,6 +181105,8 @@ paths:
                             type: boolean
                           start_delay:
                             type: string
+                          telemetry_acceptance_policy_id:
+                            type: string
                           termination_mode:
                             type: string
                           traffic_profile:
@@ -183296,6 +183324,8 @@ paths:
                         - vusers
                   start_delay:
                     type: string
+                  telemetry_acceptance_policy_id:
+                    type: string
                   termination_mode:
                     type: string
                   traffic_profile:
@@ -184127,6 +184157,8 @@ paths:
                               script_shakeout:
                                 type: boolean
                               start_delay:
+                                type: string
+                              telemetry_acceptance_policy_id:
                                 type: string
                               termination_mode:
                                 type: string
@@ -185406,6 +185438,8 @@ paths:
                             - script_id
                             - vusers
                       start_delay:
+                        type: string
+                      telemetry_acceptance_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -188733,6 +188767,8 @@ paths:
                       type: boolean
                     start_delay:
                       type: string
+                    telemetry_acceptance_policy_id:
+                      type: string
                     termination_mode:
                       type: string
                     traffic_profile:
@@ -190691,6 +190727,8 @@ paths:
                       script_shakeout:
                         type: boolean
                       start_delay:
+                        type: string
+                      telemetry_acceptance_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -192853,6 +192891,8 @@ paths:
                         type: boolean
                       start_delay:
                         type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
                       termination_mode:
                         type: string
                       traffic_profile:
@@ -194605,6 +194645,8 @@ paths:
                     script_shakeout:
                       type: boolean
                     start_delay:
+                      type: string
+                    telemetry_acceptance_policy_id:
                       type: string
                     termination_mode:
                       type: string
@@ -196564,6 +196606,8 @@ paths:
                       script_shakeout:
                         type: boolean
                       start_delay:
+                        type: string
+                      telemetry_acceptance_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -198988,6 +199032,8 @@ paths:
                 script_shakeout:
                   type: boolean
                 start_delay:
+                  type: string
+                telemetry_acceptance_policy_id:
                   type: string
                 termination_mode:
                   type: string

@@ -49,6 +49,7 @@ func (req *CreateTestRequest) UnmarshalJSON(data []byte) error {
 }
 
 func (tr *TestRunner) EstimateDraftCapacity(req CreateTestRequest) (*DraftCapacityEstimate, error) {
+	req.skipTelemetryPolicyCheck = true
 	preview, snapshot, revision, err := tr.buildManagedTestFromSnapshot(req, "draft-estimate", "DRAFT")
 	if err != nil {
 		return nil, err
@@ -1445,9 +1446,27 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
-	telemetryPolicyID, err := tr.validateRunTelemetryAcceptancePolicy(projectID, req.TelemetryAcceptancePolicyID)
+	var telemetryPolicyID string
+	if req.skipTelemetryPolicyCheck {
+		// A capacity estimate or preview does not depend on the run's policy:
+		// it is neither read nor judged, so a lost or unreadable choice never
+		// fails one or hides its findings. Launch preflight and real creates
+		// still judge it.
+		telemetryPolicyID = normalizeTelemetryPolicyChoice(req.TelemetryAcceptancePolicyID)
+	} else {
+		telemetryPolicyID, err = tr.validateRunTelemetryAcceptancePolicy(projectID, req.TelemetryAcceptancePolicyID)
+	}
+	if errors.Is(err, errRunPolicyStoreUnavailable) && req.telemetryPolicyFromScenario {
+		// The scenario's choice was validated when the scenario was saved, and
+		// Start pins it or refuses: a policy read that fails while a schedule
+		// or plan entry materializes keeps the choice rather than failing the
+		// run (or launching it late on a retry).
+		telemetryPolicyID, err = normalizeTelemetryPolicyChoice(req.TelemetryAcceptancePolicyID), nil
+	}
 	if err != nil && req.telemetryPolicyInherited && !errors.Is(err, errRunPolicyStoreUnavailable) {
 		err = fmt.Errorf("the source run's chosen telemetry acceptance policy is no longer usable (%w); name another, or %s for the project's default", err, runPolicyProjectDefault)
+	} else if err != nil && req.telemetryPolicyFromScenario && !errors.Is(err, errRunPolicyStoreUnavailable) {
+		err = fmt.Errorf("the scenario's chosen telemetry acceptance policy is no longer usable (%w); choose another in the scenario, or name one (or %s) on the run", err, runPolicyProjectDefault)
 	}
 	if err != nil {
 		return nil, err
@@ -2094,6 +2113,12 @@ func createTestRequestFromScenarioRevision(req CreateTestRequest, scenario *Stor
 		// request names another projection.
 		if req.JointEvidence == nil {
 			req.JointEvidence = scenario.JointEvidence.Clone()
+		}
+		// And its chosen telemetry acceptance policy, unless the request
+		// names another or project_default.
+		if strings.TrimSpace(req.TelemetryAcceptancePolicyID) == "" && scenario.TelemetryAcceptancePolicyID != "" {
+			req.TelemetryAcceptancePolicyID = scenario.TelemetryAcceptancePolicyID
+			req.telemetryPolicyFromScenario = true
 		}
 	}
 

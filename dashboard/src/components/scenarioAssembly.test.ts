@@ -143,6 +143,19 @@ describe('scenario assembly', () => {
     expect(scenarioUpsertPayload(scenarioDraftFromForm({ ...form, joint_evidence: undefined }))).not.toHaveProperty('joint_evidence')
   })
 
+  it("carries a scenario's chosen telemetry acceptance policy into its save and run payloads (TEL-B)", () => {
+    const stored = { ...kitchenSinkScenario(), telemetry_acceptance_policy_id: 'strict-gate' }
+    const form = scenarioFormStateFromStoredScenario(stored, '')
+    expect(form.telemetry_acceptance_policy_id).toBe('strict-gate')
+    const draft = scenarioDraftFromForm(form)
+    expect(scenarioUpsertPayload(draft).telemetry_acceptance_policy_id).toBe('strict-gate')
+    expect(scenarioCreatePayload(draft).telemetry_acceptance_policy_id).toBe('strict-gate')
+    // A capacity estimate does not depend on the policy, so it never sends it.
+    expect(scenarioEstimateRequest(draft)).not.toHaveProperty('telemetry_acceptance_policy_id')
+    // Cleared, a save sends none, which returns the scenario to the project's default.
+    expect(scenarioUpsertPayload(scenarioDraftFromForm({ ...form, telemetry_acceptance_policy_id: undefined }))).not.toHaveProperty('telemetry_acceptance_policy_id')
+  })
+
   it('assembles TestHub edits the way the form shows them', () => {
     const form = scenarioFormStateFromStoredScenario(kitchenSinkScenario(), '')
     // The goal fields edit the form's goal config, its only goal store

@@ -847,6 +847,28 @@ const runPolicyProjectDefault = "project_default"
 // never a refusal of the run.
 var errRunPolicyStoreUnavailable = errors.New("the project's policies could not be read")
 
+// runPolicyErrorStatus maps a telemetry acceptance policy choice's failure
+// to its HTTP status: 503 for a policy read that failed (retryable), 409 for
+// a chosen policy that is invalid. Any other failure is the caller's.
+func runPolicyErrorStatus(err error) (int, bool) {
+	switch {
+	case errors.Is(err, errRunPolicyStoreUnavailable):
+		return http.StatusServiceUnavailable, true
+	case errors.Is(err, errRunPolicyConfiguration):
+		return http.StatusConflict, true
+	}
+	return 0, false
+}
+
+// normalizeTelemetryPolicyChoice is a choice as stored: trimmed, and empty
+// for the project's default.
+func normalizeTelemetryPolicyChoice(id string) string {
+	if id = strings.TrimSpace(id); id == runPolicyProjectDefault {
+		return ""
+	}
+	return id
+}
+
 // validateRunTelemetryAcceptancePolicy checks a run's chosen telemetry
 // acceptance policy (TEL-B): one of its project's live, valid policies of
 // that kind. Empty or project_default chooses the project's default. A
@@ -872,7 +894,7 @@ func (tr *TestRunner) validateRunTelemetryAcceptancePolicy(projectID, id string)
 		return "", err
 	}
 	if policy == nil {
-		return "", fmt.Errorf("telemetry acceptance policy %q was not found in the run's project", id)
+		return "", fmt.Errorf("telemetry acceptance policy %q was not found in the project", id)
 	}
 	return id, nil
 }

@@ -208,6 +208,7 @@ export function parseScenarioDraftCheckpoint(parsed: unknown, project: string): 
     // A joint evidence projection the builder could not edit is not a usable draft.
     const joint = f.joint_evidence
     if (record(joint) && !((joint.population === 'action' || joint.population === 'transaction') && Array.isArray(joint.dimensions) && joint.dimensions.every(dimension => typeof dimension === 'string'))) return null
+    if (f.telemetry_acceptance_policy_id !== undefined && typeof f.telemetry_acceptance_policy_id !== 'string') return null
     assertDraftHasNoInlineCredentials(f)
     // An intent belongs to a new scenario in this project; anything else is dropped.
     if (d.createIntent !== undefined && !(d.editingId === null && isAuthoringCreateIntent(d.createIntent) && d.createIntent.purpose === 'scenario_create' && d.createIntent.projectId === project)) delete d.createIntent

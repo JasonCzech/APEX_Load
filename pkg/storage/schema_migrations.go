@@ -101,6 +101,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 72, Name: "authoring-receipt-original-outcomes", Fingerprint: "3a95b9a7636dfe578c7ea62353c9604d1c772c9ca54d0bfeee61ecfd7f39f9c5"},
 	{Version: 73, Name: "scenario-joint-evidence", Fingerprint: "ef537d03bafd0be1fa05de02b58b818b7ec4eb9c7871d34206e45c8f9d73cb9f"},
 	{Version: 74, Name: "run-telemetry-acceptance-policy", Fingerprint: "cda40e0c026018b6f77de37550e4ed5cfca7dff4333c1108c0c6f89eed04ccc1"},
+	{Version: 75, Name: "scenario-telemetry-acceptance-policy", Fingerprint: "c00b5e594596cac79fee9e43821429ba1dcd6835313bbb241c49507c4abe37b0"},
 }
 
 type SchemaMigrationRecord struct {

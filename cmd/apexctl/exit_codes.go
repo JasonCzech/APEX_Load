@@ -28,6 +28,19 @@ func cliInputErrorf(format string, values ...any) error {
 	return &cliInputError{cause: fmt.Errorf(format, values...)}
 }
 
+// cliConfigurationError is a run the controller accepted but could not run as
+// asked (such as an unconfirmed telemetry policy choice): exit 2, not a
+// controller or transport failure.
+type cliConfigurationError struct{ cause error }
+
+func (e *cliConfigurationError) Error() string { return e.cause.Error() }
+
+func (e *cliConfigurationError) Unwrap() error { return e.cause }
+
+func cliConfigurationErrorf(format string, values ...any) error {
+	return &cliConfigurationError{cause: fmt.Errorf(format, values...)}
+}
+
 // apexctl's public exit-code contract lets automation distinguish a failed
 // load-test verdict from bad inputs and from a controller/transport failure.
 const (
@@ -48,6 +61,10 @@ func testRunExitCode(controllerBacked bool, terminalStatus string, breached bool
 	}
 	if runErr == nil {
 		return exitCodeSuccess
+	}
+	var configurationErr *cliConfigurationError
+	if errors.As(runErr, &configurationErr) {
+		return exitCodeUsageOrConfiguration
 	}
 	if controllerBacked {
 		return exitCodeControllerOrTransport

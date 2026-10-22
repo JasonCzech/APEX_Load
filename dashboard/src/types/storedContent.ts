@@ -137,6 +137,7 @@ export interface StoredScenario {
   traffic_profile?: TrafficProfile
   runtime_settings?: RuntimeSettingsOverride
   joint_evidence?: JointEvidenceProjection
+  telemetry_acceptance_policy_id?: string
   scripts: Array<{
     order: number
     name?: string
