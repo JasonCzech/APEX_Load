@@ -14,7 +14,8 @@ export async function studio(page: Page, h: Harness, { discardReview = false } =
     const unsaved = page.getByRole('dialog', { name: 'Unsaved Changes' })
     await unsaved.getByRole('button', { name: 'Discard changes', exact: true }).click()
     await expect(unsaved).toBeHidden()
-    await expect(page).not.toHaveURL(/[?&]mode=/)
+    // The library may then name itself (mode=list); only Record must be gone.
+    await expect(page).not.toHaveURL(/[?&]mode=record(?:&|$)/)
   }
   await page.reload()
   await page.getByRole('button', { name: 'Script builder', exact: true }).click()
