@@ -12,6 +12,7 @@ import (
 )
 
 const BrowserDocumentReceiptVersion = 1
+const BrowserDocumentReceiptLifetimeVersion = 2
 const MaxBrowserDocumentReceipts = (MaxBrowserDocumentObservations / 5) * 7
 const MaxBrowserDocumentReceiptRecords = 2_000_000
 const MaxBrowserDocumentReceiptBytes = 512 << 10
@@ -53,6 +54,7 @@ type BrowserDocumentReceiptEvidence struct {
 	WallStepObserved bool                     `json:"wall_step_observed"`
 	Incomplete       bool                     `json:"incomplete"`
 	Receipts         []BrowserDocumentReceipt `json:"receipts"`
+	Lifetime         *BrowserNativeLifetime   `json:"lifetime,omitempty"`
 }
 
 // BrowserDocumentReceiptEvidenceProvider returns a bounded local snapshot;
@@ -62,10 +64,17 @@ type BrowserDocumentReceiptEvidenceProvider interface {
 }
 
 func (e *BrowserDocumentReceiptEvidence) Clone() *BrowserDocumentReceiptEvidence {
-	if e == nil || e.Version != BrowserDocumentReceiptVersion || !BrowserEvidenceGeneration(e.SourceGeneration) || e.StartedAt.IsZero() || e.StartedAt.Location() != time.UTC || len(e.Receipts) > MaxBrowserDocumentReceipts {
+	if e == nil || (e.Version != BrowserDocumentReceiptVersion && e.Version != BrowserDocumentReceiptLifetimeVersion) || e.Version == 1 && e.Lifetime != nil || !BrowserEvidenceGeneration(e.SourceGeneration) || e.StartedAt.IsZero() || e.StartedAt.Location() != time.UTC || len(e.Receipts) > MaxBrowserDocumentReceipts {
 		return nil
 	}
 	out := *e
+	if e.Lifetime != nil {
+		if !e.Lifetime.CreationBracketed || e.Lifetime.EndNS < 0 || !e.Lifetime.Closed && e.Lifetime.EndNS != 0 {
+			return nil
+		}
+		lifetime := *e.Lifetime
+		out.Lifetime = &lifetime
+	}
 	out.Receipts = append([]BrowserDocumentReceipt(nil), e.Receipts...)
 	seen := make(map[string]bool, len(e.Receipts))
 	type lifecycleIdentity struct {
@@ -75,6 +84,9 @@ func (e *BrowserDocumentReceiptEvidence) Clone() *BrowserDocumentReceiptEvidence
 	lifecycles := make(map[string]lifecycleIdentity)
 	documents := make(map[string]lifecycleIdentity)
 	for _, r := range e.Receipts {
+		if e.Lifetime != nil && e.Lifetime.Closed && r.HostElapsedNS > e.Lifetime.EndNS {
+			return nil
+		}
 		if !browserEvidenceID(r.DocumentID, e.SourceGeneration, false) || !browserEvidenceID(r.LifecycleID, e.SourceGeneration, false) || !browserEvidenceID(r.FrameID, e.SourceGeneration, false) || r.ReceivedAt.IsZero() || r.ReceivedAt.Location() != time.UTC || r.HostElapsedNS < 0 || math.IsNaN(r.BrowserTimeOriginMS) || math.IsInf(r.BrowserTimeOriginMS, 0) || r.BrowserTimeOriginMS <= 0 || r.BrowserTimeOriginMS > 253402300799999 || !browserFinite(r.BrowserOffsetMS, 86400000) {
 			return nil
 		}
@@ -134,4 +146,18 @@ func DecodeBrowserDocumentReceiptEvidence(raw []byte) (*BrowserDocumentReceiptEv
 		return nil, fmt.Errorf("browser document receipt evidence is malformed")
 	}
 	return owned, nil
+}
+
+// BrowserDocumentReceiptProjection preserves strict v1 wire compatibility.
+// Version 1 intentionally carries no lifetime/qualification proof.
+func BrowserDocumentReceiptProjection(e *BrowserDocumentReceiptEvidence, version int) *BrowserDocumentReceiptEvidence {
+	e = e.Clone()
+	if e == nil || version < 1 || version > 2 || e.Version < version {
+		return nil
+	}
+	e.Version = version
+	if version == 1 {
+		e.Lifetime = nil
+	}
+	return e
 }

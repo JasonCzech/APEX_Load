@@ -16,6 +16,7 @@ const maxBrowserDocumentReceipts = protocol.MaxBrowserDocumentReceipts // begin,
 const browserDocumentWallStepThreshold = 100 * time.Millisecond
 
 type browserDocumentReceiptClock struct {
+	lifetime                     *protocol.BrowserNativeLifetime
 	start                        time.Time // Retains Go's process monotonic reading; never serialize it directly.
 	receipts                     map[string]BrowserDocumentReceipt
 	wallStepObserved, incomplete bool
@@ -74,7 +75,11 @@ func (b *Browser) BrowserDocumentReceiptEvidence() *BrowserDocumentReceiptEviden
 	if !b.documentMetricsEnabled || s.generation == "" || s.clock.start.IsZero() {
 		return nil
 	}
-	out := &BrowserDocumentReceiptEvidence{Version: 1, SourceGeneration: s.generation, StartedAt: s.clock.start.UTC(), WallStepObserved: s.clock.wallStepObserved, Incomplete: s.clock.incomplete || s.incomplete || s.cancelled || s.droppedObservations > 0}
+	out := &BrowserDocumentReceiptEvidence{Version: protocol.BrowserDocumentReceiptLifetimeVersion, SourceGeneration: s.generation, StartedAt: s.clock.start.UTC(), WallStepObserved: s.clock.wallStepObserved, Incomplete: s.clock.incomplete || s.incomplete || s.cancelled || s.droppedObservations > 0}
+	if s.clock.lifetime != nil {
+		lifetime := *s.clock.lifetime
+		out.Lifetime = &lifetime
+	}
 	for _, receipt := range s.clock.receipts {
 		out.Receipts = append(out.Receipts, receipt)
 	}
@@ -100,4 +105,8 @@ func (b *Browser) BrowserDocumentReceiptTransportVersion() int {
 		return 0
 	}
 	return b.documentProofVersion
+}
+
+func (b *Browser) BrowserDocumentReceiptMaxVersion() int {
+	return protocol.BrowserDocumentReceiptLifetimeVersion
 }

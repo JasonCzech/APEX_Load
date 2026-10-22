@@ -10,12 +10,13 @@ import (
 )
 
 const FeatureBrowserDocumentProofV1 = "browser_document_proof_v1"
+const FeatureBrowserDocumentProofV2 = "browser_document_proof_v2"
 
 func validateBrowserDocumentProofVersion(request *pb.WorkAssignment) error {
 	switch request.GetBrowserDocumentProofVersion() {
 	case 0:
 		return nil
-	case 1:
+	case 1, 2:
 		if request.GetPrepareOnly() {
 			return nil
 		}
@@ -25,21 +26,24 @@ func validateBrowserDocumentProofVersion(request *pb.WorkAssignment) error {
 	}
 }
 func assignedBrowserDocumentProofVersion(request *pb.WorkAssignment) int {
-	if request.GetBrowserDocumentProofVersion() == 1 {
-		return 1
+	if request.GetBrowserDocumentProofVersion() == 1 || request.GetBrowserDocumentProofVersion() == 2 {
+		return int(request.GetBrowserDocumentProofVersion())
 	}
 	// Zero means the local default in engine configuration. A legacy remote
 	// controller must explicitly suppress the additive sidecar on a new peer.
 	return -1
 }
-func (c *Client) browserDocumentProofNegotiated() bool {
+func (c *Client) browserDocumentProofNegotiated() uint32 {
 	if c.connection == nil {
-		return false
+		return 0
 	}
 	c.connection.mu.Lock()
 	defer c.connection.mu.Unlock()
 	age := time.Since(c.connection.browserInteractionObserved)
-	return c.connection.browserDocumentProof && age >= 0 && age <= 30*time.Second
+	if age < 0 || age > 30*time.Second {
+		return 0
+	}
+	return c.connection.browserDocumentProof
 }
 
 func validateBrowserDocumentProofRuntime(script *dsl.Script, instance protocol.Protocol) error {

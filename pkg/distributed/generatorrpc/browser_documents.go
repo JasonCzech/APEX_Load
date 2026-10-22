@@ -27,6 +27,9 @@ func browserRuntimeFeatures(instance protocol.Protocol) []string {
 		if _, ok := instance.(protocol.BrowserDocumentReceiptEvidenceProvider); ok {
 			if _, wired := instance.(interface{ BrowserDocumentReceiptTransportVersion() int }); wired {
 				features = append(features, FeatureBrowserDocumentProofV1)
+				if max, ok := instance.(interface{ BrowserDocumentReceiptMaxVersion() int }); ok && max.BrowserDocumentReceiptMaxVersion() >= 2 {
+					features = append(features, FeatureBrowserDocumentProofV2)
+				}
 			}
 		}
 	}

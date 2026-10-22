@@ -701,7 +701,7 @@ type Client struct {
 }
 
 type sharedClientConnection struct {
-	browserDocumentProof       bool
+	browserDocumentProof       uint32
 	browserOriginalSource      bool
 	browserInteractionV2       bool
 	browserInteractionV3       bool
@@ -1017,14 +1017,14 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 			request.BrowserAuthoredDefinition = nil
 		}
 	}
-	if assignment.PreferBrowserDocumentProof && request.PrepareOnly && request.BrowserDocumentProofVersion == 0 && c.browserDocumentProofNegotiated() {
-		request.BrowserDocumentProofVersion = 1
+	if assignment.PreferBrowserDocumentProof && request.PrepareOnly && request.BrowserDocumentProofVersion == 0 && c.browserDocumentProofNegotiated() > 0 {
+		request.BrowserDocumentProofVersion = c.browserDocumentProofNegotiated()
 	}
-	if request.BrowserDocumentProofVersion > 1 {
+	if request.BrowserDocumentProofVersion > 2 {
 		return AssignmentResult{}, fmt.Errorf("unsupported browser document proof version")
 	}
-	if request.BrowserDocumentProofVersion == 1 {
-		if !c.browserDocumentProofNegotiated() {
+	if request.BrowserDocumentProofVersion > 0 {
+		if c.browserDocumentProofNegotiated() < request.BrowserDocumentProofVersion {
 			return AssignmentResult{}, fmt.Errorf("browser_document_proof_v1_capability_not_negotiated")
 		}
 		request.PrepareOnly = true

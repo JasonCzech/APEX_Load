@@ -41,11 +41,11 @@ func (r *browserDocumentRegistration) publishReceipts() {
 		r.receiptFailed()
 		return
 	}
-	if version != 1 {
+	if version != 1 && version != 2 {
 		r.mu.Unlock()
 		return
 	}
-	evidence := readBrowserReceipts(p)
+	evidence := protocol.BrowserDocumentReceiptProjection(readBrowserReceipts(p), version)
 	if evidence == nil {
 		r.mu.Unlock()
 		r.receiptFailed()

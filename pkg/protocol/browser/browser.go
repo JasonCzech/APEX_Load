@@ -19,7 +19,8 @@ func init() {
 }
 
 type Browser struct {
-	authoredIdentityReadPending bool // At most one native identity read, including a timed-out reader.
+	contextCloseGate            chan struct{} // Context-aware physical-close ownership; initialized under mu.
+	authoredIdentityReadPending bool          // At most one native identity read, including a timed-out reader.
 	evidence                    browserEvidenceState
 	newUserPolicy               string
 	documentProofVersion        int

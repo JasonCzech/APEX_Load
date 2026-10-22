@@ -87,7 +87,7 @@ func (b *Browser) applyConfig(config map[string]any) error {
 func (b *Browser) applyDefaultConfig() {
 	b.interactionVersion = protocol.BrowserInteractionVersion
 	b.storageState = nil
-	b.documentProofVersion = 1
+	b.documentProofVersion = protocol.BrowserDocumentReceiptLifetimeVersion
 	b.documentMetricsEnabled = false
 	b.newUserPolicy = "persistent_context"
 	b.engine = browsercontract.DefaultEngine

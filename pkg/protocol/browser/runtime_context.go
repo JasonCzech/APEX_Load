@@ -164,6 +164,17 @@ func (b *Browser) openAdmittedBrowserContext(ctx context.Context) error {
 			return errors.Join(err, b.discardHARWorkingFile())
 		}
 	}
+	// Establish the monotonic lower bound before creating any renderer. A
+	// binding received after navigation cannot bound document timeOrigin.
+	if err := b.resetBrowserEvidence(pwBrowser.Version()); err != nil {
+		if owner != nil {
+			owner.abandonWriter()
+		}
+		return errors.Join(err, b.discardHARWorkingFile())
+	}
+	b.mu.Lock()
+	b.evidence.clock.lifetime = &protocol.BrowserNativeLifetime{CreationBracketed: true}
+	b.mu.Unlock()
 	browserContext, err := pwBrowser.NewContext(options)
 	if err != nil {
 		if owner != nil {
@@ -189,7 +200,7 @@ func (b *Browser) openAdmittedBrowserContext(ctx context.Context) error {
 		}
 	}
 
-	if err := b.installDocumentEvidence(browserContext, pwBrowser.Version()); err != nil {
+	if err := b.installPreparedDocumentEvidence(browserContext); err != nil {
 		b.stopRequestPolicyWaiters()
 		return b.failBrowserContextInitialization(browserContext, err)
 	}

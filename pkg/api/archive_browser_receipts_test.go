@@ -26,6 +26,8 @@ func TestBrowserReceiptArchiveRoundTripAndIntegrity(t *testing.T) {
 		t.Fatal(err)
 	}
 	original := receiptTransportFixture()
+	original.Version = 2
+	original.Lifetime = &protocol.BrowserNativeLifetime{CreationBracketed: true}
 	if err = w.RecordBrowserDocumentReceiptEvidence(original); err != nil {
 		t.Fatal(err)
 	}
@@ -39,6 +41,15 @@ func TestBrowserReceiptArchiveRoundTripAndIntegrity(t *testing.T) {
 	}
 	if m.TransactionCount != 0 || m.BrowserDocumentRecordCount != 0 || m.BrowserReceiptRecordCount != 1 || !validArchiveSHA256(m.BrowserReceiptsSHA256) {
 		t.Fatal("receipt became measurement or lost integrity", m)
+	}
+	foundVersioned := false
+	for _, artifact := range m.Artifacts {
+		if artifact.RecordType == "browser_receipts_versioned" {
+			foundVersioned = true
+		}
+	}
+	if !foundVersioned {
+		t.Fatal("v2 receipt mislabeled in inventory")
 	}
 	var restored *protocol.BrowserDocumentReceiptEvidence
 	if err = forEachBrowserReceiptArtifact(context.Background(), record.ArchivePath, m.BrowserReceiptsFile, m.BrowserReceiptsSHA256, 1, func(e *protocol.BrowserDocumentReceiptEvidence) error { restored = e; return nil }); err != nil || !reflect.DeepEqual(restored, original) {

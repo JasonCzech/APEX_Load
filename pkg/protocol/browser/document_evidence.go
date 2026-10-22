@@ -126,6 +126,10 @@ func (b *Browser) installDocumentEvidence(ctx playwright.BrowserContext, version
 	if err := b.resetBrowserEvidence(version); err != nil {
 		return err
 	}
+	return b.installPreparedDocumentEvidence(ctx)
+}
+
+func (b *Browser) installPreparedDocumentEvidence(ctx playwright.BrowserContext) error {
 	// Resource IDs use passive native request hooks independently. New document
 	// observers/bindings and lifecycle target execution require explicit opt-in.
 	if !b.documentMetricsEnabled {

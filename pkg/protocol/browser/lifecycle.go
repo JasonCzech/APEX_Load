@@ -4,13 +4,60 @@ import (
 	"context"
 	"errors"
 	"github.com/mxschmitt/playwright-go"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func (b *Browser) close() error { return b.closeWithContext(context.Background()) }
 
-func (b *Browser) closeWithContext(ctx context.Context) error {
+func (b *Browser) closeWithContext(ctx context.Context) (result error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	b.mu.Lock()
+	if b.contextCloseGate == nil {
+		b.contextCloseGate = make(chan struct{}, 1)
+		b.contextCloseGate <- struct{}{}
+	}
+	gate := b.contextCloseGate
+	b.mu.Unlock()
+	select {
+	case <-gate:
+	default:
+		select {
+		case <-gate:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	defer func() { gate <- struct{}{} }()
+	b.mu.Lock()
+	generation := b.evidence.generation
+	hadContext := b.pwContext != nil
+	b.mu.Unlock()
+	defer func() {
+		failure := recover()
+		if failure != nil {
+			result = errors.New("native browser close panicked")
+		}
+		defer func() {
+			if failure != nil {
+				panic(failure)
+			}
+		}()
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if b.evidence.generation == generation && b.evidence.clock.lifetime != nil && !b.evidence.clock.lifetime.Closed && hadContext {
+			if result == nil {
+				elapsed, _ := b.evidence.clock.observe(time.Now())
+				b.evidence.clock.lifetime.EndNS = int64(elapsed)
+				b.evidence.clock.lifetime.Closed = true
+			} else {
+				b.evidence.clock.incomplete = true
+			}
+		}
+	}()
 	var closeErr error
 	b.censorDocumentEvidence(nil, "context_closed")
 	b.mu.Lock()
