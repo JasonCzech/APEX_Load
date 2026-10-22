@@ -33,6 +33,11 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
+	// PreferBrowserOutcomeClocks upgrades implicit controller requests only after fresh capability negotiation.
+	PreferBrowserOutcomeClocks        bool
+	BrowserAuthoredDefinition         protocol.BrowserAuthoredDefinition
+	BrowserDocumentProofVersion       uint32
+	PreferBrowserDocumentProof        bool
 	BrowserInteractionEvidenceVersion uint32
 	RendezvousConfigJSON              []byte
 	LiveTableBindingsJSON             []byte
@@ -699,7 +704,10 @@ type Client struct {
 }
 
 type sharedClientConnection struct {
+	browserDocumentProof       uint32
+	browserOriginalSource      bool
 	browserInteractionV2       bool
+	browserInteractionV3       bool
 	browserInteractionObserved time.Time
 	runtimeResources           bool
 	runtimeResourcesObserved   time.Time
@@ -998,11 +1006,42 @@ func (c *Client) claimExecutionEpoch(ctx context.Context, generation uint64, lea
 }
 
 func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (AssignmentResult, error) {
+	if assignment.BrowserAuthoredDefinition != (protocol.BrowserAuthoredDefinition{}) && !assignment.BrowserAuthoredDefinition.Valid() {
+		return AssignmentResult{}, fmt.Errorf("invalid browser original source definition")
+	}
 	request := toProtoAssignment(assignment)
-	if request.GetBrowserInteractionEvidenceVersion() > 2 {
+	if request.BrowserAuthoredDefinition != nil {
+		if !browserAuthoredDefinitionFromProto(request.BrowserAuthoredDefinition).Valid() {
+			return AssignmentResult{}, fmt.Errorf("invalid browser original source definition")
+		}
+		// Original-source evidence is additive. Old peers and immediate assignments
+		// keep legacy engine-input identity; they must not be silently staged here.
+		if !request.PrepareOnly || !c.browserOriginalSourceNegotiated() {
+			request.BrowserAuthoredDefinition = nil
+		}
+	}
+	if assignment.PreferBrowserDocumentProof && request.PrepareOnly && request.BrowserDocumentProofVersion == 0 && c.browserDocumentProofNegotiated() > 0 {
+		request.BrowserDocumentProofVersion = c.browserDocumentProofNegotiated()
+	}
+	if request.BrowserDocumentProofVersion > 3 {
+		return AssignmentResult{}, fmt.Errorf("unsupported browser document proof version")
+	}
+	if request.BrowserDocumentProofVersion > 0 {
+		if c.browserDocumentProofNegotiated() < request.BrowserDocumentProofVersion {
+			return AssignmentResult{}, fmt.Errorf("browser_document_proof_v1_capability_not_negotiated")
+		}
+		request.PrepareOnly = true
+	}
+	if assignment.PreferBrowserOutcomeClocks && request.GetBrowserInteractionEvidenceVersion() == 2 && c.browserOutcomeClocksNegotiated() {
+		request.BrowserInteractionEvidenceVersion = 3
+	}
+	if request.GetBrowserInteractionEvidenceVersion() > 3 {
 		return AssignmentResult{}, fmt.Errorf("unsupported browser interaction evidence version")
 	}
-	if request.GetBrowserInteractionEvidenceVersion() == 2 {
+	if request.GetBrowserInteractionEvidenceVersion() == 3 && !c.browserOutcomeClocksNegotiated() {
+		return AssignmentResult{}, fmt.Errorf("browser_interaction_v3_capability_not_negotiated")
+	}
+	if protocol.BrowserInteractionHasDispatch(int(request.GetBrowserInteractionEvidenceVersion())) {
 		if !c.browserInteractionVersionNegotiated() {
 			return AssignmentResult{}, fmt.Errorf("browser_interaction_v2_capability_not_negotiated")
 		}
@@ -1021,8 +1060,14 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 		return AssignmentResult{}, fmt.Errorf("runtime_resource_capability_not_negotiated")
 	}
 	ack, err := c.rpc.AssignWork(ctx, request)
-	if err == nil && ack.GetAccepted() && request.GetBrowserInteractionEvidenceVersion() == 2 && ack.GetBrowserInteractionEvidenceVersion() != 2 {
-		return AssignmentResult{}, fmt.Errorf("browser_interaction_v2_negotiation_failed")
+	if err == nil && ack.GetAccepted() && request.BrowserDocumentProofVersion != 0 && ack.GetBrowserDocumentProofVersion() != request.BrowserDocumentProofVersion {
+		return AssignmentResult{}, fmt.Errorf("browser_document_proof_negotiation_failed")
+	}
+	if err == nil && ack.GetAccepted() && request.BrowserAuthoredDefinition != nil && !proto.Equal(request.BrowserAuthoredDefinition, ack.GetBrowserAuthoredDefinition()) {
+		return AssignmentResult{}, fmt.Errorf("browser_original_source_negotiation_failed")
+	}
+	if err == nil && ack.GetAccepted() && protocol.BrowserInteractionHasDispatch(int(request.GetBrowserInteractionEvidenceVersion())) && ack.GetBrowserInteractionEvidenceVersion() != request.GetBrowserInteractionEvidenceVersion() {
+		return AssignmentResult{}, fmt.Errorf("browser_interaction_v%d_negotiation_failed", request.GetBrowserInteractionEvidenceVersion())
 	}
 	if err == nil && ack.GetAccepted() && request.RuntimeResourceClaim != nil && !ValidRuntimeResourceAdmission(request.RuntimeResourceClaim, ack.GetRuntimeResourceAdmission()) {
 		return AssignmentResult{}, fmt.Errorf("runtime_resource_negotiation_failed")
@@ -1921,6 +1966,8 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	targetDuration := resolvedPreciseDuration(assignment.TargetDuration, assignment.TargetDurationSeconds)
 	rampUp := resolvedPreciseDuration(assignment.RampUp, int64(assignment.RampUpSeconds))
 	return &pb.WorkAssignment{PrepareOnly: assignment.PrepareOnly,
+		BrowserAuthoredDefinition:         browserAuthoredDefinitionToProto(assignment.BrowserAuthoredDefinition),
+		BrowserDocumentProofVersion:       assignment.BrowserDocumentProofVersion,
 		BrowserInteractionEvidenceVersion: assignment.BrowserInteractionEvidenceVersion,
 		RendezvousConfigJson:              append([]byte(nil), assignment.RendezvousConfigJSON...),
 		LiveTableBindingsJson:             append([]byte(nil), assignment.LiveTableBindingsJSON...),

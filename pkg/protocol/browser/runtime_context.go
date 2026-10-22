@@ -164,6 +164,28 @@ func (b *Browser) openAdmittedBrowserContext(ctx context.Context) error {
 			return errors.Join(err, b.discardHARWorkingFile())
 		}
 	}
+	// Establish the monotonic lower bound before creating any renderer. A
+	// binding received after navigation cannot bound document timeOrigin.
+	if err := b.resetBrowserEvidence(pwBrowser.Version()); err != nil {
+		if owner != nil {
+			owner.abandonWriter()
+		}
+		return errors.Join(err, b.discardHARWorkingFile())
+	}
+	b.mu.Lock()
+	b.evidence.clock.lifetime = &protocol.BrowserNativeLifetime{CreationBracketed: true}
+	b.mu.Unlock()
+	if lease := b.BrowserDocumentSourceLease(); lease != nil {
+		b.mu.Lock()
+		nativeStart := b.evidence.clock.start
+		b.mu.Unlock()
+		if err := lease.ExpectContext(b.BrowserDocumentReceiptEvidence(), nativeStart); err != nil {
+			if owner != nil {
+				owner.abandonWriter()
+			}
+			return errors.Join(err, b.discardHARWorkingFile())
+		}
+	}
 	browserContext, err := pwBrowser.NewContext(options)
 	if err != nil {
 		if owner != nil {
@@ -189,7 +211,7 @@ func (b *Browser) openAdmittedBrowserContext(ctx context.Context) error {
 		}
 	}
 
-	if err := b.installDocumentEvidence(browserContext, pwBrowser.Version()); err != nil {
+	if err := b.installPreparedDocumentEvidence(browserContext); err != nil {
 		b.stopRequestPolicyWaiters()
 		return b.failBrowserContextInitialization(browserContext, err)
 	}
@@ -200,7 +222,7 @@ func (b *Browser) openAdmittedBrowserContext(ctx context.Context) error {
 		b.interactions.documents = nil
 		b.mu.Unlock()
 		observer := browserInteractionObserver(browserInteractionGlobal(generation))
-		if b.interactionVersion == protocol.BrowserInteractionVersion2 {
+		if protocol.BrowserInteractionHasDispatch(b.interactionVersion) {
 			observer = browserInteractionObserverV2(browserInteractionGlobal(generation), finalizer)
 		}
 		if err := browserContext.AddInitScript(playwright.Script{Content: playwright.String(observer)}); err != nil {
@@ -586,6 +608,7 @@ func (b *Browser) registerPage(page playwright.Page, activate bool, expectedGene
 	}
 	if !known {
 		if len(b.pages) >= browserPageLimit {
+			b.evidence.nativeDiscoveryIncomplete = true
 			b.mu.Unlock()
 			_ = page.Close()
 			return
@@ -602,6 +625,13 @@ func (b *Browser) registerPage(page playwright.Page, activate bool, expectedGene
 	// blocking protocol calls, and a popup can close while they run.
 	if !known {
 		b.observePageWebSockets(page)
+		b.mu.Lock()
+		sourceGeneration := b.evidence.generation
+		b.mu.Unlock()
+		page.OnFrameAttached(func(playwright.Frame) { b.markNativeDiscoveryIncomplete(sourceGeneration) })
+		if len(page.Frames()) != 1 {
+			b.markNativeDiscoveryIncomplete(sourceGeneration)
+		}
 		page.OnClose(func(closed playwright.Page) { b.censorDocumentEvidence(closed, "context_closed"); b.removePage(closed) })
 		page.OnCrash(func(crashed playwright.Page) { b.censorDocumentEvidence(crashed, "crash") })
 	}

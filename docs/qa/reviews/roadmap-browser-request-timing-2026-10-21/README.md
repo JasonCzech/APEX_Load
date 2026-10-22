@@ -1,0 +1,7 @@
+# Native request timing snapshots — 2026-10-21
+
+The authored-page prototype reproduced a native timing race: a navigation consumer read the SDK's internal timing pointer while its dispatcher wrote response completion. The patched pinned SDK serializes response initialization and completion with detached timing snapshots. Callers cannot mutate the SDK's record, and partial native initializers retain previously observed fields. Driver/browser versions and target traffic are unchanged. The upstream provenance manifest retains original hashes and explicitly declares request.go/response.go as altered; CI and Makefile run the new dependency-module contract tests.
+
+## Validation and review
+
+Full Go suite: **35,814 passing tests/subtests**, 38 explicit skips, zero failures. SDK race checks: **250** passing tests/subtests across ten repetitions; native runtime/recorder/API race checks: **93** across three repetitions. Both auth profiles passed the actual native browser panel/HAR workflow and related browser workflows: dev-admin had four passes and one explicit permission-test skip; all five passed under local-auth. The private HAR import retains the prior stable results. Documentation links passed, and final timing-slice review found no remaining findings. Raw validation logs, tested source/asset hashes, screenshots, the initial reproduced race and `evidence/SHA256SUMS` remain local; only this Markdown evidence record is committed. Authored-page receipts remain a separate uncommitted prototype. No actual-device or external-platform qualification is implied.

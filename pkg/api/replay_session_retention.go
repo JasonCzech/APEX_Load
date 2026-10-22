@@ -34,6 +34,7 @@ func replaySessionProjectMatches(actualProjectID, expectedProjectID string) bool
 type replaySessionIDReserver func(context.Context, string, string) (sessionID string, release func(), leaseSignal *replaySessionLeaseSignal, err error)
 
 type replaySessionLeaseSignal struct {
+	artifactPublisher   recordbridge.TerminalReplayArtifactPublisher
 	once                sync.Once
 	done                chan struct{}
 	mu                  sync.RWMutex
@@ -149,7 +150,8 @@ func waitForReplaySessionWorkers(sessions []<-chan struct{}, timeout time.Durati
 }
 
 // replaySessionLeaseStore is the narrow durable coordination boundary required
-// for caller-visible replay IDs in HA mode. SQLite and PostgreSQL implement it
+// for caller-visible replay IDs in storage-backed controllers (required in HA).
+// Local-only adapters expose no durable artifact capability. SQLite and PostgreSQL implement it
 // with a dedicated lease/tombstone table and database clock.
 type replaySessionLeaseStore interface {
 	TryAcquireReplaySessionLease(context.Context, string, string, string, time.Duration, int, int) (storage.ReplaySessionLeaseAcquireResult, error)
@@ -234,3 +236,11 @@ func (s *replaySessionLeaseSignal) RetainForTerminal(ttl time.Duration) error {
 }
 func (s *replaySessionLeaseSignal) ReleaseRetainedID() { s.releaseRetainedID() }
 func (s *replaySessionLeaseSignal) ReleaseAll()        { s.releaseAll() }
+
+// ReplayArtifactPublisher is fixed before this private lease is handed out.
+func (s *replaySessionLeaseSignal) ReplayArtifactPublisher() recordbridge.TerminalReplayArtifactPublisher {
+	if s == nil {
+		return nil
+	}
+	return s.artifactPublisher
+}

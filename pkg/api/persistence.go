@@ -1065,6 +1065,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		MonitorBindings:          cloneMonitorBindings(record.MonitorBindings),
 		TraceContext:             decodeStoredRunTraceContext(record.TraceContext),
 		JointEvidence:            decodeStoredJointEvidence(record.JointEvidence),
+		AnalysisPolicySelections: decodeStoredRunAnalysisPolicySelections(record.AnalysisPolicySelections),
 		TotalVUsers:              record.TotalVUsers,
 		Duration:                 time.Duration(record.Duration),
 		DurationStr:              persistedDurationString(record.Duration, record.TerminationMode),
@@ -1224,7 +1225,11 @@ func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
 		// overlay in process memory; execution must resolve through the governed
 		// project store and therefore fails closed until values are configured.
 		groups[index].runtimeSecretValues = nil
+		// Recompilation reads the mutable script library. It repairs execution,
+		// but cannot recover proof of the original source for this stored run.
+		groups[index].browserAuthoredDefinition = protocol.BrowserAuthoredDefinition{}
 		if index < len(specs) {
+			specs[index].BrowserAuthoredDefinition = protocol.BrowserAuthoredDefinition{}
 			specs[index].SecretResolver = tr.boundSecretResolverForRunGroup(test, index, specs[index].Script.ProjectID)
 		}
 	}
@@ -1366,15 +1371,16 @@ func restoreStoredEngineGroupSpecs(test *ManagedTest) ([]engine.GroupConfig, err
 			}
 		}
 		specs = append(specs, engine.GroupConfig{
-			Name:            group.Name,
-			StartOffset:     startOffset,
-			Script:          group.script,
-			VUsers:          initialVUsers,
-			RampUp:          engineRampUp,
-			RampDown:        engineRampDown,
-			AllowZeroVUsers: allowZeroVUsers,
-			InitStrategy:    group.Initialization,
-			RedactionConfig: redactionConfig,
+			BrowserAuthoredDefinition: group.browserAuthoredDefinition,
+			Name:                      group.Name,
+			StartOffset:               startOffset,
+			Script:                    group.script,
+			VUsers:                    initialVUsers,
+			RampUp:                    engineRampUp,
+			RampDown:                  engineRampDown,
+			AllowZeroVUsers:           allowZeroVUsers,
+			InitStrategy:              group.Initialization,
+			RedactionConfig:           redactionConfig,
 		})
 	}
 	return specs, nil
@@ -1987,6 +1993,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		MonitorBindings:                cloneMonitorBindings(test.MonitorBindings),
 		TraceContext:                   runTraceContextForStorage(test.TraceContext),
 		JointEvidence:                  jointEvidenceForStorage(test.JointEvidence),
+		AnalysisPolicySelections:       runAnalysisPolicySelectionsForStorage(test.AnalysisPolicySelections),
 	}
 }
 
@@ -2187,11 +2194,12 @@ func storedGroupsForLockedMarshal(groups []TestGroup) any {
 	stored := make([]storedTestGroup, 0, len(groups))
 	for _, group := range groups {
 		stored = append(stored, storedTestGroup{
-			TestGroup:         group,
-			RuntimeScript:     group.script,
-			BaseScript:        group.baseScript,
-			SharedDataSources: group.sharedDataSources,
-			RedactionRules:    group.redactionRules,
+			BrowserAuthoredDefinition: group.browserAuthoredDefinition,
+			TestGroup:                 group,
+			RuntimeScript:             group.script,
+			BaseScript:                group.baseScript,
+			SharedDataSources:         group.sharedDataSources,
+			RedactionRules:            group.redactionRules,
 		})
 	}
 	return stored

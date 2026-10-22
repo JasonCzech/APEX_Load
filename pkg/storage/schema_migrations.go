@@ -99,7 +99,13 @@ var schemaReleases = []schemaRelease{
 	{Version: 70, Name: "durable-java-http-action-history", Fingerprint: "e1cfdf7cb8281eb9236da48ff4df94cdab8e72f9da16e18e2de36d414662cd9d"},
 	{Version: 71, Name: "deleted-test-identities", Fingerprint: "eb3e5fd1f6988061c86d0c4c50dee89c0c3853732dddd91c1439e9cc43f0fd5c"},
 	{Version: 72, Name: "authoring-receipt-original-outcomes", Fingerprint: "3a95b9a7636dfe578c7ea62353c9604d1c772c9ca54d0bfeee61ecfd7f39f9c5"},
-	{Version: 73, Name: "scenario-joint-evidence", Fingerprint: "ef537d03bafd0be1fa05de02b58b818b7ec4eb9c7871d34206e45c8f9d73cb9f"},
+	{Version: 73, Name: "browser-acceptance-dependency-pins", Fingerprint: "8738458dd436ce260ff34e9f7640762e22b1df5cad6c02a38884bd91e81a363d"},
+	{Version: 74, Name: "run-analysis-policy-selections", Fingerprint: "c930085449d7bd3b0eec530963d9cea06b50b9c27090a2c91259f93f8e7abd4a"},
+	{Version: 75, Name: "replay-artifact-retention-receipts", Fingerprint: "14cc8a74dc9d9fdc2091cb8da3c42d6b69e6286d4c3613e821403dfe48f28196"},
+	{Version: 76, Name: "browser-baseline-candidate-inventory", Fingerprint: "3b53081becf3ec7b776039bda59d7ffcfe3cf6f1093d3e97a1c103172dc21233"},
+	{Version: 77, Name: "browser-baseline-default-project-index", Fingerprint: "44bf5029b0676240b04a119aa682f6f62bcc84f904dc637807ef1e1a8c1e8908"},
+	{Version: 78, Name: "browser-authoring-schema-integration", Fingerprint: "b83cbdd0900bde9dc06f0614ae6ac7a13598a1faf18cf41f6742750a94d8045b"},
+	{Version: 79, Name: "scenario-joint-evidence", Fingerprint: "1d912aebbf1f83f3997271bc505a5cb53e4502fa90929a039f093718c664fb35"},
 }
 
 type SchemaMigrationRecord struct {

@@ -146,6 +146,8 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 		manifest: RunArchiveManifest{
 			BrowserDocumentCaptureRequested: groupsRequestBrowserDocumentCapture(test.Groups),
 			SchemaVersion:                   archiveSchemaVersion,
+			BrowserProofExpectedOwners:      []string{"controller"},
+			BrowserProofAuthorityMode:       "local",
 			TestID:                          test.ID,
 			TestName:                        test.Name,
 			CreatedAt:                       time.Now(),
@@ -712,6 +714,9 @@ func loadLevelDurationSketches(groups map[string]*GroupLiveMetrics) map[string]*
 }
 
 func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr string, slaEvaluated bool, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error) {
+	if err := w.sealBrowserSourceJournal(status == "COMPLETE"); err != nil {
+		w.MarkBrowserDocumentReceiptIncomplete()
+	}
 	w.stopFlushLoop()
 	w.harMu.Lock()
 	defer w.harMu.Unlock()
@@ -816,13 +821,14 @@ func (w *runArchiveWriter) syncAndCloseDataFilesLocked() error {
 	if w == nil {
 		return nil
 	}
-	files := []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.elkFile, w.dynatraceFile, w.browserDocumentsFile, w.lookupFile}
+	files := []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.elkFile, w.dynatraceFile, w.browserDocumentsFile, w.browserReceiptsFile, w.lookupFile}
 	w.txFile = nil
 	w.resourceFile = nil
 	w.summaryFile = nil
 	w.elkFile = nil
 	w.dynatraceFile = nil
 	w.browserDocumentsFile = nil
+	w.browserReceiptsFile = nil
 	w.browserDocumentsEncoder = nil
 	w.browserDocumentsBuf = nil
 	w.lookupFile = nil
@@ -1034,6 +1040,7 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		{Name: manifest.ResourceSamplesParquetFile, Kind: "dataset", Format: "parquet", RecordType: "resource_samples", Count: manifest.ResourceSampleCount},
 		{Name: manifest.IntervalSummariesFile, Kind: "dataset", Format: "jsonl", RecordType: "interval_summaries", Count: manifest.IntervalSummaryCount},
 		{Name: manifest.IntervalSummariesParquetFile, Kind: "dataset", Format: "parquet", RecordType: "interval_summaries", Count: manifest.IntervalSummaryCount},
+		{Name: manifest.BrowserReceiptsFile, Kind: "evidence", Format: "jsonl", RecordType: "browser_receipts_versioned", Count: manifest.BrowserReceiptRecordCount},
 		{Name: manifest.BrowserDocumentsFile, Kind: "evidence", Format: "jsonl", RecordType: "browser_documents_v2", Count: manifest.BrowserDocumentRecordCount},
 		{Name: manifest.BrowserDocumentsParquetFile, Kind: "evidence", Format: "parquet", RecordType: "browser_documents_v2", Count: manifest.BrowserDocumentRecordCount},
 		{Name: manifest.TestManifestFile, Kind: "manifest", Format: "json", RecordType: "test_manifest"},
@@ -1072,7 +1079,7 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		}
 		file, info, err := openArchiveArtifactForRead(root, artifact.Name)
 		if err != nil {
-			if os.IsNotExist(err) && artifact.Name != manifest.BrowserDocumentsFile && artifact.Name != manifest.BrowserDocumentsParquetFile {
+			if os.IsNotExist(err) && artifact.Name != manifest.BrowserReceiptsFile && artifact.Name != manifest.BrowserDocumentsFile && artifact.Name != manifest.BrowserDocumentsParquetFile {
 				continue
 			}
 			return err
@@ -1089,6 +1096,9 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		artifact.SHA256 = sum
 		if artifact.RecordType == runArchiveHARRecordType && !runArchiveHARMatches(manifest, artifact) {
 			return fmt.Errorf("archive HAR %s differs from its receipt", artifact.Name)
+		}
+		if artifact.Name == manifest.BrowserReceiptsFile {
+			manifest.BrowserReceiptsSHA256 = sum
 		}
 		if artifact.Name == manifest.BrowserDocumentsFile {
 			manifest.BrowserDocumentsSHA256 = sum

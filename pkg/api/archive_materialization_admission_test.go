@@ -247,7 +247,9 @@ func TestArchiveActiveBudgetComparisonsWithOneArchiveSlot(t *testing.T) {
 	t.Setenv(envArchiveActiveReaderMaxBytes, "4096")
 	// Evict each idle cache immediately: reports must finish file access before release.
 	t.Setenv(envArchiveMaterializationCacheMaxBytes, "1")
-	t.Setenv(envArchiveMaterializeTimeout, "2s")
+	// Keep the inner acquisition timeout beyond the request deadline so a
+	// self-pinned read cannot silently omit sibling archives and return success.
+	t.Setenv(envArchiveMaterializeTimeout, "10s")
 	objects := map[string][]byte{}
 	objectServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		data, ok := objects[r.URL.Path]
@@ -300,7 +302,8 @@ func TestArchiveActiveBudgetComparisonsWithOneArchiveSlot(t *testing.T) {
 		"/api/v1/tests/one-slot-a/report?profile=executive",
 	} {
 		t.Run(path, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			// This guards a deadlock, not report-rendering latency on a busy runner.
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			request := httptest.NewRequest(http.MethodGet, path, nil).WithContext(ctx)
 			response := httptest.NewRecorder()
@@ -308,13 +311,18 @@ func TestArchiveActiveBudgetComparisonsWithOneArchiveSlot(t *testing.T) {
 			if response.Code != http.StatusOK {
 				t.Fatalf("response=%d %s", response.Code, response.Body.String())
 			}
-			if strings.Contains(path, "/archive/report?") && strings.EqualFold(strings.TrimSpace(request.URL.Query().Get("profile")), "audit") {
+			if strings.Contains(path, "/archive/report?") {
 				var report RunArchiveReport
 				if err := json.Unmarshal(response.Body.Bytes(), &report); err != nil {
 					t.Fatal(err)
 				}
-				if report.Integrity == nil || report.Integrity.Status != integrityStatusVerified {
-					t.Fatalf("audit lost verified integrity: %+v", report.Integrity)
+				if report.ReleaseTrend == nil || report.ReleaseTrend.RunCount != 3 {
+					t.Fatalf("report lost sibling archives: %+v", report.ReleaseTrend)
+				}
+				if strings.Contains(path, "/archive/report?") && strings.EqualFold(strings.TrimSpace(request.URL.Query().Get("profile")), "audit") {
+					if report.Integrity == nil || report.Integrity.Status != integrityStatusVerified {
+						t.Fatalf("audit lost verified integrity: %+v", report.Integrity)
+					}
 				}
 			}
 			if ctx.Err() != nil {

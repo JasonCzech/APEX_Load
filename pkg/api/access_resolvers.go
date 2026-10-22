@@ -6,6 +6,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/recorder"
@@ -1331,16 +1333,29 @@ func browserRecordingPreservedInt(preserved map[string]any, key string) int {
 	return -1
 }
 
-func resolveBrowserReplaySessionProjectID(manager *BrowserReplayManager) requestProjectLookup {
+func resolveBrowserReplaySessionProjectID(manager *BrowserReplayManager, retained ...*replayArtifactRuntime) requestProjectLookup {
 	return func(r *http.Request) (string, int, string) {
+		if manager != nil {
+			if project, ok := manager.LookupProjectID(r.PathValue("session_id")); ok {
+				return project, 0, ""
+			}
+		}
+		if len(retained) > 0 && retained[0] != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			defer cancel()
+			scope, err := retained[0].store.LookupReplayArtifactScope(ctx, r.PathValue("session_id"))
+			if errors.Is(err, sql.ErrNoRows) {
+				return "", http.StatusNotFound, "browser replay session not found"
+			}
+			if err != nil {
+				return "", http.StatusServiceUnavailable, "retained replay authorization is unavailable"
+			}
+			return scope.ProjectID, 0, ""
+		}
 		if manager == nil {
 			return "", http.StatusServiceUnavailable, "browser replay is not configured"
 		}
-		projectID, ok := manager.LookupProjectID(r.PathValue("session_id"))
-		if !ok {
-			return "", http.StatusNotFound, "browser replay session not found"
-		}
-		return projectID, 0, ""
+		return "", http.StatusNotFound, "browser replay session not found"
 	}
 }
 

@@ -1575,6 +1575,16 @@ func (s *SQLiteStore) DeleteProjectIfLeaseHeld(id, leaseName, leaseOwnerID strin
 }
 
 func deleteProjectGraphTx(tx *storeTx, id string) error {
+	// Preserve exact artifact identities, including unjoined writers, for
+	// cleanup. Revoke old terminal owners so recreating a project ID cannot
+	// authorize late reservation/publication from its previous incarnation.
+	if _, err := tx.Exec(`UPDATE replay_artifact_receipts SET state='cleanup' WHERE project_id=?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE replay_session_leases SET expires_at=? WHERE project_id=?`, time.Unix(0, 0).UTC(), id); err != nil {
+		return err
+	}
+
 	if err := queueProjectAnalysisCleanupTx(tx, id); err != nil {
 		return err
 	}

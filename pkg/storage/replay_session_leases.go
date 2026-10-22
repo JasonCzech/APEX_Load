@@ -88,6 +88,16 @@ func (s *SQLiteStore) TryAcquireReplaySessionLease(
 		return "", fmt.Errorf("purge expired replay session leases: %w", err)
 	}
 
+	// Durable artifacts keep the namespace even after process pruning or lease
+	// expiry. Physical cleanup, not a clock alone, releases this tombstone.
+	var artifactCount int
+	if err := replayLeaseQueryRowContext(ctx, tx, `SELECT COUNT(*) FROM replay_artifact_receipts WHERE session_id=?`, sessionID).Scan(&artifactCount); err != nil {
+		return "", err
+	}
+	if artifactCount != 0 {
+		return ReplaySessionLeaseConflict, nil
+	}
+
 	var existingExpiry time.Time
 	err = replayLeaseQueryRowContext(ctx, tx, `SELECT expires_at FROM replay_session_leases WHERE session_id = ?`, sessionID).Scan(&existingExpiry)
 	if err == nil && existingExpiry.After(now) {

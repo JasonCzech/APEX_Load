@@ -685,6 +685,12 @@ func removeLocalArchiveDirectory(path string) error {
 			return fmt.Errorf("inspect configured archive root %q: %w", root, err)
 		}
 		components := strings.Split(relative, string(filepath.Separator))
+		for _, component := range components {
+			if isReplayArtifactNamespace(component) {
+				_ = rootHandle.Close()
+				return fmt.Errorf("run archive deletion cannot remove replay artifacts")
+			}
+		}
 		for _, component := range components[:len(components)-1] {
 			child, openErr := openArchiveChildDirectoryAt(rootHandle, component, false, 0)
 			if openErr != nil {
@@ -921,6 +927,9 @@ func archiveMaterializationRuntime(configured archiveBackendRuntime, record *sto
 }
 
 func validateArchiveRunID(testID string) error {
+	if isReplayArtifactNamespace(testID) {
+		return fmt.Errorf("test id is reserved for replay artifacts")
+	}
 	if archivequota.IsReservedName(testID) {
 		return fmt.Errorf("test id is reserved for archive backlog accounting")
 	}

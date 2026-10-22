@@ -9,7 +9,7 @@ import {
   type ScriptDefinition,
   type ScriptParameterDefinition,
 } from '../types/scripts'
-import { dslActionNeedsExplicitTarget } from './dslActionCatalog'
+import { dslActionNeedsExplicitTarget, getCachedDslActionCatalog } from './dslActionCatalog'
 import { headerListToCompatibilityMap } from './scriptActionHelpers'
 import { canonicalThinkTimeType, thinkTimeConfigForType } from './thinkTimeConfig'
 import { formatMillisecondsAsSecondsDuration } from './runtimeTiming'
@@ -164,9 +164,6 @@ function buildUniqueActionName(baseName: string, seen: Set<string>): string {
 // in sync so an importer-produced target-less action is never wrongly flagged
 // "target required" during the catalog-load window.
 function legacyActionNeedsExplicitTarget(actionType: string): boolean {
-  if (actionType.startsWith('browser_')) {
-    return actionType !== 'browser_screenshot'
-  }
   return ![
     'jms_ack',
     'jms_commit',
@@ -223,7 +220,34 @@ function legacyActionNeedsExplicitTarget(actionType: string): boolean {
 }
 
 function actionNeedsExplicitTarget(action: ScriptActionDefinition): boolean {
+  // Browser element actions accept locator alternatives; the generic catalog
+  // target helper deliberately cannot inspect those values. Validate them below.
+  if (action.type?.startsWith('browser_')) {
+    return action.type === 'browser_navigate' && !action.selector?.trim()
+  }
   return dslActionNeedsExplicitTarget(action.type || '', legacyActionNeedsExplicitTarget)
+}
+
+// Only element actions require a locator. Page navigation, WebSocket waits,
+// dialogs, and response waits have their own server-validated parameters.
+function browserActionMissingLocator(action: ScriptActionDefinition): boolean {
+  const type = action.type || ''
+  if (!type.startsWith('browser_')) return false
+  const spec = getCachedDslActionCatalog()?.actions.find(entry => entry.type === type)
+  const requiresElement = spec
+    ? spec.require_one_of?.some(fields => fields.includes('object_ref') && fields.includes('selector'))
+    : ['browser_click', 'browser_download', 'browser_check', 'browser_dblclick',
+      'browser_hover', 'browser_fill', 'browser_select', 'browser_set_files',
+      'browser_tap', 'browser_long_press', 'browser_swipe', 'browser_drag_and_drop'].includes(type)
+  if (action.selector?.trim() || action.target?.trim()) return false
+  if (requiresElement) return !action.object_ref?.trim()
+  return type === 'browser_wait' && !action.wait_for
+}
+
+function browserLocatorIssueMessage(actionType: string): string {
+  return actionType === 'browser_wait'
+    ? 'browser_wait needs wait_for, a selector, or a target.'
+    : `${actionType} needs a selector, target, or object reference.`
 }
 
 function deepMerge(base: Record<string, unknown>, patch?: Record<string, unknown>): Record<string, unknown> {
@@ -314,6 +338,7 @@ function collectControlFlowIssues(action: ScriptActionDefinition, phase: Authori
     if (stepPath.length) {
       if (!node.name?.trim()) emit({ id: `${phasePrefix}:${actionIndex}:${pathKey}:name`, severity: 'error', phase, actionIndex, message: 'Action name is required.' })
       if (actionNeedsExplicitTarget(node) && !node.target?.trim()) emit({ id: `${phasePrefix}:${actionIndex}:${pathKey}:target`, severity: 'error', phase, actionIndex, message: 'Action target is required for this protocol step.' })
+      if (browserActionMissingLocator(node)) emit({ id: `${phasePrefix}:${actionIndex}:${pathKey}:selector`, severity: 'error', phase, actionIndex, message: browserLocatorIssueMessage(node.type || '') })
     }
     const control = node.control || {}
     if (node.type === 'control_loop') {
@@ -515,13 +540,13 @@ export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue
       }
     }
 
-    if (actionType.startsWith('browser_') && actionType !== 'browser_navigate' && actionType !== 'browser_screenshot' && !action.selector?.trim() && !actionTarget.trim()) {
+    if (browserActionMissingLocator(action)) {
       pushIssue(issues, {
         id: `${phasePrefix}:${actionIndex}:selector`,
         severity: 'error',
         phase,
         actionIndex,
-        message: `${actionType} needs a selector or target.`,
+        message: browserLocatorIssueMessage(actionType),
       })
     }
 

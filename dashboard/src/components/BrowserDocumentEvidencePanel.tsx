@@ -1,9 +1,11 @@
+import BrowserAuthoredPages from './BrowserAuthoredPages'
 import { useMemo } from 'react'
 import type { BrowserDocumentSummaryMode, BrowserRuntimeCohort } from '../types/browserDocumentEvidence'
 import { buildBrowserDocumentPanelModel, browserDocumentDistributionBins, formatBrowserDocumentValue } from './browserDocumentEvidenceModel'
 import './BrowserDocumentEvidencePanel.css'
 
 interface Props {
+  authoredPages?: unknown
   summary?: unknown
   observations?: unknown
   summaryMode: BrowserDocumentSummaryMode
@@ -30,7 +32,7 @@ function RuntimeCohort({ cohort }: { cohort: BrowserRuntimeCohort | null | undef
   </dl>
 }
 
-export default function BrowserDocumentEvidencePanel({ summary, observations, summaryMode, observationsTruncated, softNavigation }: Props) {
+export default function BrowserDocumentEvidencePanel({ summary, observations, summaryMode, observationsTruncated, softNavigation, authoredPages }: Props) {
   const model = useMemo(() => buildBrowserDocumentPanelModel(summary, observations, summaryMode, observationsTruncated),
     [summary, observations, summaryMode, observationsTruncated])
   const provisionalLabel = model.mode === 'live-history' ? 'First seen provisional' : model.mode === 'archive-latest' ? 'Retained pending' : 'Provisional semantics unavailable'
@@ -69,6 +71,7 @@ export default function BrowserDocumentEvidencePanel({ summary, observations, su
       </table>
     </div>}
     {model.state === 'ready' && !model.rows.length && <p>No document metric tuples were recorded.</p>}
+    {summaryMode === 'archive-latest' && <BrowserAuthoredPages value={authoredPages} />}
     <h4>Retained document observations</h4>
     <p>Bounded display of at most 256 observations. Source UTC windows are shown as supplied; cross-host clock synchronization is not verified. Child frames and BFCache lifecycles remain separate.</p>
     {model.observationsTruncated === true && <p role="status">The retained display reached its cap. Additional source observations are excluded from this view.</p>}

@@ -284,11 +284,20 @@ judges them within the run, so the two never disagree about one cohort.
 
 The run's pinned `browser_policy` applies here: its effect floors raise the
 defaults below (never lower them), and its baseline mode decides whether a
-comparison is made. `none` turns it off (`policy_baseline_off`), `pinned_run`
+comparison is made. When an analysis request omits `baseline_test_id`,
+`pinned_run` resolves the saved policy revision's run ID at admission and freezes
+it with the baseline archive digest. A newer policy revision does not change
+the queued selection. An unavailable baseline refuses admission, and one still
+being finalized returns a retryable conflict. An archive changed after admission
+is reported as unavailable baseline evidence; it is never silently reselected.
+An explicit `baseline_test_id` remains supported for general RCA.
+
+`none` turns browser comparison off (`policy_baseline_off`); `pinned_run`
 compares only when the analysis's baseline is the pinned run
 (`policy_pinned_run` when it compares with another run; without a qualified
 baseline the section says `no_qualified_baseline`), and `latest_compatible`
-uses the analysis's baseline run. The section names the policy (`policy`, id@revision). A pinned
+uses the explicitly supplied analysis baseline for now; automatic compatible-run
+selection remains pending. The section names the policy (`policy`, id@revision). A pinned
 revision that is missing, no longer matches its pin or is invalid leaves the
 defaults (`policy_unavailable`, `partial`); a store that cannot read it fails
 the analysis, which can be retried.
@@ -300,7 +309,12 @@ the analysis, which can be retried.
   shaping, and cache and new-user policy. Document, navigation and measurement
   IDs are lineage only, never matching keys. Each document counts once, at its
   latest retained measurement, so a republished observation adds nothing.
-  Documents become per-bucket p75 values before any comparison.
+  Documents become per-bucket p75 values before any comparison. Original
+  authored script and structure digests must also be valid and equal for the
+  group in both archives, alongside the existing executable-script checks.
+  Missing historical source provenance is not reconstructed from the executable
+  digest: new assessments leave that group's browser comparison unscored as
+  `cohort_changed`. Saved historical assessments retain their original results.
 - **Scoring.** The run's value at a level is the median of its bucket p75
   values there. It is scored with the three-sigma scorer of
   `pkg/analysis/anomaly.go` (`ThreeSigmaScore`) against the baseline's valid
@@ -318,6 +332,8 @@ the analysis, which can be retried.
     lost document observations. Retained counts and baseline identity remain
     visible, but neither an anomaly nor a within-range verdict is qualified;
     the section is `partial`;
+  - `cadence_changed`: current and baseline interval buckets differ;
+  - `cadence_unavailable`: either series lacks a positive interval cadence;
   - `no_same_load_window`;
   - `no_baseline_cohort`;
   - `cohort_changed`: the baseline measured the same measurement under another

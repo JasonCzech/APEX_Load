@@ -1308,7 +1308,7 @@ export default function TestExecutionArchive({
               <p className="scenario-script-status">Browser metrics were not captured for this archive.</p>
             ) : null}
             {(archiveReport.browser_documents != null || archiveReport.browser_document_evidence !== undefined || archiveReport.overview.browser || showStandaloneReportSection) &&
-              <BrowserDocumentEvidencePanel summary={archiveReport.browser_documents} observations={archiveReport.browser_document_evidence}
+              <BrowserDocumentEvidencePanel authoredPages={archiveReport.browser_authored_pages} summary={archiveReport.browser_documents} observations={archiveReport.browser_document_evidence}
                 summaryMode="archive-latest" observationsTruncated={archiveReport.browser_document_evidence_truncated} softNavigation={archiveReport.browser_soft_navigation} />}
             {archiveReport.browser_iterations && archiveReport.browser_iterations.length > 0 && <BrowserIterationTable rows={archiveReport.browser_iterations} />}
             {archiveReport.salesforce_ept && archiveReport.salesforce_ept.length > 0 && <SalesforceEPTTable rows={archiveReport.salesforce_ept} />}

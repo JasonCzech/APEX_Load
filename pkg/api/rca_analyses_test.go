@@ -530,3 +530,73 @@ func TestRCAWorkerRunsQueuedAnalyses(t *testing.T) {
 		}
 	}
 }
+
+// New qualification logic gets a new input identity; historical assessments
+// remain readable and unchanged rather than being relabelled as requalified.
+func TestRCABrowserQualificationVersionPreservesHistoricalAssessment(t *testing.T) {
+	server, store := rcaTestServer(t)
+	currentVersion := rcaEngineVersion
+	historicalVersion := strings.Replace(currentVersion, "apexload.rca.engine.v7+", "apexload.rca.engine.v6+", 1)
+	if currentVersion == historicalVersion {
+		t.Fatal("qualification change did not advance engine identity")
+	}
+	t.Cleanup(func() { rcaEngineVersion = currentVersion })
+	rcaEngineVersion = historicalVersion
+	firstReply := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{})
+	if firstReply.Code != http.StatusAccepted {
+		t.Fatalf("historical admission: %d", firstReply.Code)
+	}
+	first := decodeRCAResponse(t, firstReply.Body.Bytes())
+	if ran, err := server.runNextRCAAnalysis(context.Background(), nil); err != nil || !ran {
+		t.Fatal(ran, err)
+	}
+	before, err := store.GetRCAAnalysis(storage.DefaultProjectID, "rca-run", first.AnalysisID)
+	if err != nil || before == nil || before.State != storage.RCAStateCompleted {
+		t.Fatal(before, err)
+	}
+	rcaEngineVersion = currentVersion
+	nextReply := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{})
+	if nextReply.Code != http.StatusAccepted {
+		t.Fatalf("new admission: %d", nextReply.Code)
+	}
+	next := decodeRCAResponse(t, nextReply.Body.Bytes())
+	if next.AnalysisID == first.AnalysisID || next.Inputs == nil || next.Inputs.Engine != currentVersion {
+		t.Fatal("new qualification reused historical identity")
+	}
+	historical := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodGet, rcaRunPath+"/analyses/"+first.AnalysisID, nil).Body.Bytes())
+	if historical.State != storage.RCAStateCompleted || historical.Inputs == nil || historical.Inputs.Engine != historicalVersion || historical.Assessment == nil {
+		t.Fatal("historical assessment changed")
+	}
+	after, err := store.GetRCAAnalysis(storage.DefaultProjectID, "rca-run", first.AnalysisID)
+	if err != nil || after == nil || string(after.Payload) != string(before.Payload) {
+		t.Fatal("historical payload rewritten", err)
+	}
+}
+
+func TestRCABrowserQualificationRefusesQueuedOldEngine(t *testing.T) {
+	for _, oldVersion := range []string{"", "apexload.rca.engine.v3+historical"} {
+		t.Run(oldVersion, func(t *testing.T) {
+			server, _ := rcaTestServer(t)
+			current := rcaEngineVersion
+			t.Cleanup(func() { rcaEngineVersion = current })
+			rcaEngineVersion = oldVersion
+			reply := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{})
+			if reply.Code != http.StatusAccepted {
+				t.Fatalf("admission: %d", reply.Code)
+			}
+			queued := decodeRCAResponse(t, reply.Body.Bytes())
+			rcaEngineVersion = current
+			if ran, err := server.runNextRCAAnalysis(context.Background(), nil); err != nil || !ran {
+				t.Fatal(ran, err)
+			}
+			failed := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodGet, rcaRunPath+"/analyses/"+queued.AnalysisID, nil).Body.Bytes())
+			if failed.State != storage.RCAStateFailed || failed.Assessment != nil || !strings.Contains(failed.Error, "engine changed") {
+				t.Fatalf("old engine evaluated: %+v", failed)
+			}
+			retry := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes())
+			if retry.AnalysisID == queued.AnalysisID || retry.Inputs == nil || retry.Inputs.Engine != current {
+				t.Fatal("fresh request did not freeze current engine")
+			}
+		})
+	}
+}

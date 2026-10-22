@@ -1,4 +1,5 @@
 import type { JointEvidenceProjection } from '../types/jointEvidence'
+import type { RunAnalysisPolicySelections } from './analysisPolicies/runPolicySelection'
 import type { MonitorBinding } from '../types/runMonitoring'
 import { GeneratorAssignmentSettings, GoalConfig, RuntimeJavaVuserSettings, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode, TrafficProfile } from '../types'
 import { normalizeRequiredLabels } from './assignmentLabels'
@@ -70,6 +71,7 @@ export type ScenarioUpsertPayload = {
 }
 
 export type CreateTestPayload = {
+  analysis_policy_selections?: RunAnalysisPolicySelections
   monitor_bindings?: MonitorBinding[]
   name?: string
   duration: string
@@ -123,6 +125,7 @@ type ScenarioUpsertPayloadInput = ScenarioPayloadInput & {
 }
 
 type CreateTestPayloadInput = ScenarioPayloadInput & {
+  analysisPolicySelections?: RunAnalysisPolicySelections
   monitorBindings?: MonitorBinding[]
   name?: string
   applicationId?: string
@@ -451,6 +454,7 @@ export function buildCreateTestPayload(input: CreateTestPayloadInput): CreateTes
   ...(input.revisionSourceTestId && input.sourceRuntimeSettingsPresent && execution.runtime_settings === undefined ? { runtime_settings: {} } : {}),
   ...(input.revisionSourceTestId && input.sourceStartDelayPresent && execution.start_delay === undefined ? { start_delay: '0s' } : {}),
   ...(input.monitorBindings !== undefined ? {monitor_bindings: structuredClone(input.monitorBindings)} : {}),
+  ...(input.analysisPolicySelections !== undefined ? {analysis_policy_selections: structuredClone(input.analysisPolicySelections)} : {}),
   ...(input.name ? {name: input.name} : {}),
   ...(input.projectId ? {project_id: input.projectId} : {}),
   ...(input.applicationId ? {application_id: input.applicationId} : {}),

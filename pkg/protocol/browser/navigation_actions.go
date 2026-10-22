@@ -33,7 +33,7 @@ func (b *Browser) historyBackAction(ctx context.Context, action *protocol.Action
 		return fmt.Errorf("browser_back did not change page URL; no previous history entry")
 	}
 	b.currentURL = afterURL
-	return b.noteDocumentResponse(action, result, page, response)
+	return b.noteDocumentResponse(ctx, action, result, page, response)
 }
 
 func (b *Browser) historyForwardAction(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
@@ -60,7 +60,7 @@ func (b *Browser) historyForwardAction(ctx context.Context, action *protocol.Act
 		return fmt.Errorf("browser_forward did not change page URL; no next history entry")
 	}
 	b.currentURL = afterURL
-	return b.noteDocumentResponse(action, result, page, response)
+	return b.noteDocumentResponse(ctx, action, result, page, response)
 }
 
 func (b *Browser) reloadAction(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
@@ -80,7 +80,7 @@ func (b *Browser) reloadAction(ctx context.Context, action *protocol.Action, res
 		return err
 	}
 	b.currentURL = page.URL()
-	return b.noteDocumentResponse(action, result, page, response)
+	return b.noteDocumentResponse(ctx, action, result, page, response)
 }
 
 func navigationWaitUntil(action *protocol.Action) (*playwright.WaitUntilState, error) {

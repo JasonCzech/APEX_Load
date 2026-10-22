@@ -24,7 +24,17 @@ import (
 const collectionReceiptMaxBytes int64 = 8 << 20
 
 var collectionPayloadNames = []string{"transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl"}
-var collectionBrowserPayloadNames = append(append([]string(nil), collectionPayloadNames...), browserDocumentsFileName)
+
+func collectionBrowserPayloadNames(m *RunArchiveManifest) []string {
+	names := append([]string(nil), collectionPayloadNames...)
+	if m.BrowserReceiptsFile != "" {
+		names = append(names, browserReceiptsFileName)
+	}
+	if m.BrowserDocumentsFile != "" {
+		names = append(names, browserDocumentsFileName)
+	}
+	return names
+}
 
 type collectionCacheStore interface {
 	ConfigureRunArchiveCollectionCache(string, string, int64, string, string) (*storage.RunArchiveCollectionIntent, bool, error)
@@ -195,18 +205,8 @@ func (c *collectionSourceCache) decode(ctx context.Context, root *os.Root, targe
 	if err := json.Unmarshal(data, &receipt); err != nil {
 		return nil, err
 	}
-	if receipt.TestID != c.intent.TestID || receipt.ProjectID != c.intent.ProjectID || !receipt.StartTime.Equal(c.intent.StartTime) || receipt.Token != c.intent.IntentToken || receipt.Target != target || receipt.Identity != c.intent.Sources[target] || (len(receipt.Files) != 3 && len(receipt.Files) != 4) || int64(len(receipt.Manifest)) > remoteArchiveManifestMaxBytes {
+	if receipt.TestID != c.intent.TestID || receipt.ProjectID != c.intent.ProjectID || !receipt.StartTime.Equal(c.intent.StartTime) || receipt.Token != c.intent.IntentToken || receipt.Target != target || receipt.Identity != c.intent.Sources[target] || (len(receipt.Files) < 3 || len(receipt.Files) > 5) || int64(len(receipt.Manifest)) > remoteArchiveManifestMaxBytes {
 		return nil, errors.New("collection receipt identity mismatch")
-	}
-	total := int64(len(data))
-	for i, file := range receipt.Files {
-		if file.Name != collectionBrowserPayloadNames[i] || file.Bytes < 0 || file.Bytes > c.intent.CacheLimitBytes-total || len(file.SHA256) != 64 {
-			return nil, errors.New("invalid collection receipt payload")
-		}
-		total += file.Bytes
-	}
-	if total != anchor.Bytes || total > c.intent.CacheLimitBytes {
-		return nil, errors.New("collection receipt size mismatch")
 	}
 	var manifest RunArchiveManifest
 	if err := json.Unmarshal(receipt.Manifest, &manifest); err != nil {
@@ -215,7 +215,24 @@ func (c *collectionSourceCache) decode(ctx context.Context, root *os.Root, targe
 	if err := validateBrowserDocumentManifest(&manifest, true); err != nil {
 		return nil, err
 	}
+	cacheNames := collectionBrowserPayloadNames(&manifest)
+	if len(receipt.Files) != len(cacheNames) {
+		return nil, errors.New("collection receipt browser artifact mismatch")
+	}
+	total := int64(len(data))
+	for i, file := range receipt.Files {
+		if file.Name != cacheNames[i] || file.Bytes < 0 || file.Bytes > c.intent.CacheLimitBytes-total || len(file.SHA256) != 64 {
+			return nil, errors.New("invalid collection receipt payload")
+		}
+		total += file.Bytes
+	}
+	if total != anchor.Bytes || total > c.intent.CacheLimitBytes {
+		return nil, errors.New("collection receipt size mismatch")
+	}
 	names := []string{manifest.TransactionsFile, manifest.ResourceSamplesFile, manifest.IntervalSummariesFile}
+	if manifest.BrowserReceiptsFile != "" {
+		names = append(names, manifest.BrowserReceiptsFile)
+	}
 	if manifest.BrowserDocumentsFile != "" {
 		names = append(names, manifest.BrowserDocumentsFile)
 	}
@@ -344,6 +361,14 @@ func (c *collectionSourceCache) save(ctx context.Context, bundle remoteArchiveBu
 		return err
 	}
 	paths := []string{bundle.transactionsPath, bundle.resourcesPath, bundle.summariesPath}
+	if bundle.manifest.BrowserReceiptsFile != "" {
+		if bundle.browserReceiptsPath == "" {
+			return errors.New("collection browser receipt source is missing")
+		}
+		paths = append(paths, bundle.browserReceiptsPath)
+	} else if bundle.browserReceiptsPath != "" {
+		return errors.New("undeclared collection browser receipt source")
+	}
 	if bundle.manifest.BrowserDocumentsFile != "" {
 		if bundle.browserDocumentsPath == "" {
 			return errors.New("collection browser source is missing")
@@ -352,6 +377,7 @@ func (c *collectionSourceCache) save(ctx context.Context, bundle remoteArchiveBu
 	} else if bundle.browserDocumentsPath != "" {
 		return errors.New("undeclared collection browser source")
 	}
+	cacheNames := collectionBrowserPayloadNames(&bundle.manifest)
 	var payloadBytes int64
 	// Transfer files are private, but retain descriptors so hashing and copying
 	// cannot switch to a different pathname after validation.
@@ -383,7 +409,7 @@ func (c *collectionSourceCache) save(ctx context.Context, bundle remoteArchiveBu
 			return errors.New("downloaded collection file changed")
 		}
 		payloadBytes += n
-		receipt.Files = append(receipt.Files, collectionCachedFile{Name: collectionBrowserPayloadNames[i], Bytes: n, SHA256: hex.EncodeToString(hash.Sum(nil))})
+		receipt.Files = append(receipt.Files, collectionCachedFile{Name: cacheNames[i], Bytes: n, SHA256: hex.EncodeToString(hash.Sum(nil))})
 	}
 	data, err := json.Marshal(receipt)
 	if err != nil {
@@ -449,7 +475,7 @@ func (c *collectionSourceCache) save(ctx context.Context, bundle remoteArchiveBu
 			if _, err := source.Seek(0, io.SeekStart); err != nil {
 				return err
 			}
-			dst, err := destination.OpenFile(collectionBrowserPayloadNames[i], os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+			dst, err := destination.OpenFile(cacheNames[i], os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 			if err != nil {
 				return err
 			}

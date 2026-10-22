@@ -345,6 +345,7 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 		MonitorBindings:              cloneMonitorBindings(test.MonitorBindings),
 		TraceContext:                 cloneRunTraceContext(test.TraceContext),
 		JointEvidence:                test.JointEvidence.Clone(),
+		AnalysisPolicySelections:     cloneRunAnalysisPolicySelections(test.AnalysisPolicySelections),
 		TotalVUsers:                  test.TotalVUsers,
 		Duration:                     test.Duration,
 		DurationStr:                  test.DurationStr,
@@ -1437,6 +1438,13 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 			return nil, err
 		}
 	}
+	policySelections, err := normalizeRunAnalysisPolicySelections(req.AnalysisPolicySelections)
+	if err != nil {
+		return nil, err
+	}
+	if err := tr.validateSelectedRunAnalysisPolicies(projectID, policySelections); err != nil {
+		return nil, err
+	}
 	traceContext, err := normalizeRunTraceContext(req.TraceContext)
 	if err != nil {
 		return nil, err
@@ -1602,6 +1610,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		MonitorBindings:              requestMonitorBindings(req.MonitorBindings),
 		TraceContext:                 traceContext,
 		JointEvidence:                jointEvidence,
+		AnalysisPolicySelections:     policySelections,
 		TotalVUsers:                  totalVUsers,
 		Duration:                     dur,
 		DurationStr:                  req.Duration,
@@ -2044,6 +2053,9 @@ func createTestRequestFromScenarioRevision(req CreateTestRequest, scenario *Stor
 		}
 		// The run's joint evidence projection is a materialized setting too:
 		// a revised copy keeps it unless the request names another.
+		if req.AnalysisPolicySelections == nil {
+			req.AnalysisPolicySelections = cloneRunAnalysisPolicySelections(revisionSource.AnalysisPolicySelections)
+		}
 		if req.JointEvidence == nil {
 			req.JointEvidence = revisionSource.JointEvidence.Clone()
 		}
@@ -2946,6 +2958,12 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 		currentVUsers:                initialVUsers,
 	}
 
+	var authoredDefinition protocol.BrowserAuthoredDefinition
+	if revisionGroup != nil {
+		authoredDefinition = revisionGroup.browserAuthoredDefinition
+	} else {
+		authoredDefinition = engine.BrowserOriginalAuthoredDefinition(script.Script)
+	}
 	scriptCopy := *script.Script
 	credentialContextBase := cloneScriptDefinition(script.Script)
 	// Runtime HAR capture and retention must use the same centrally managed
@@ -3138,6 +3156,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 			}
 		}
 	}
+	testGroup.browserAuthoredDefinition = authoredDefinition
 	testGroup.script = &scriptCopy
 	testGroup.baseScript = baseScriptSnapshot
 	testGroup.sharedDataSources = cloneDataSources(sharedDataSources)
@@ -3147,16 +3166,17 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 	secretResolver := overlayRuntimeSecretResolver(runtimeSecretValues, tr.secretResolverForProject(scriptCopy.ProjectID))
 
 	engineGroup := engine.GroupConfig{
-		Name:            name,
-		StartOffset:     startOffset,
-		Script:          &scriptCopy,
-		VUsers:          engineVUsers,
-		RampUp:          engineRampUp,
-		RampDown:        engineRampDown,
-		AllowZeroVUsers: allowZeroVUsers,
-		InitStrategy:    initStrategy,
-		RedactionConfig: redactionConfig,
-		SecretResolver:  secretResolver,
+		BrowserAuthoredDefinition: authoredDefinition,
+		Name:                      name,
+		StartOffset:               startOffset,
+		Script:                    &scriptCopy,
+		VUsers:                    engineVUsers,
+		RampUp:                    engineRampUp,
+		RampDown:                  engineRampDown,
+		AllowZeroVUsers:           allowZeroVUsers,
+		InitStrategy:              initStrategy,
+		RedactionConfig:           redactionConfig,
+		SecretResolver:            secretResolver,
 	}
 
 	return testGroup, engineGroup, nil

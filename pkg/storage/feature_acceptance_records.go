@@ -9,7 +9,7 @@ import (
 )
 
 // Feature acceptance results. A support claim follows the latest record for
-// its requirement/feature/profile/provider/platform; revoked withdraws it.
+// its requirement/feature/profile/provider/platform/cohort; revoked withdraws it.
 // "Latest" is the database-assigned sequence, never a node clock.
 const (
 	AcceptancePassed  = "passed"
@@ -26,7 +26,10 @@ type FeatureAcceptanceArtifact struct {
 // FeatureAcceptanceRecord is one append-only qualification result: which
 // commit and binary ran which suite, with hashes of the sanitized evidence.
 type FeatureAcceptanceRecord struct {
-	ID string `json:"id"`
+	ID            string                          `json:"id"`
+	Qualification *BrowserAcceptanceQualification `json:"qualification,omitempty"`
+	CohortSHA256  string                          `json:"cohort_sha256,omitempty"`
+	RecordSHA256  string                          `json:"record_sha256,omitempty"`
 	// Seq orders records by insertion. Records written before it existed
 	// have 0 and fall back to recorded_at.
 	Seq           int64                       `json:"seq"`
@@ -69,6 +72,10 @@ func (s *SQLiteStore) AppendFeatureAcceptanceRecord(record *FeatureAcceptanceRec
 	default:
 		return errors.New("invalid feature acceptance result")
 	}
+	if err := validateBrowserAcceptanceQualification(record); err != nil {
+		return err
+	}
+	record.CohortSHA256 = BrowserAcceptanceCohortSHA256(record.Qualification)
 	artifacts := record.Artifacts
 	if artifacts == nil {
 		artifacts = []FeatureAcceptanceArtifact{}
@@ -85,6 +92,7 @@ func (s *SQLiteStore) AppendFeatureAcceptanceRecord(record *FeatureAcceptanceRec
 		seq, err := s.appendFeatureAcceptanceRecord(record, string(body))
 		if err == nil {
 			record.Seq, record.Artifacts = seq, artifacts
+			record.RecordSHA256, _ = BrowserAcceptanceRecordSHA256(record)
 			return nil
 		}
 		if !isUniqueConstraintErr(err) || attempt >= 8 {
@@ -106,11 +114,25 @@ func (s *SQLiteStore) appendFeatureAcceptanceRecord(record *FeatureAcceptanceRec
 			return 0, err
 		}
 	}
+	if tx.dialect != storeDialectPostgres {
+		// Acquire SQLite's writer slot before reading qualification dependencies.
+		// A no-row write establishes ordering without changing historical records.
+		if _, err := tx.Exec(`UPDATE feature_acceptance_records SET seq = seq WHERE 1 = 0`); err != nil {
+			return 0, err
+		}
+	}
+	if err := checkBrowserAcceptanceDependencies(tx, record); err != nil {
+		return 0, err
+	}
+	qualification, err := json.Marshal(record.Qualification)
+	if err != nil {
+		return 0, err
+	}
 	var seq int64
-	if err := tx.QueryRow(`INSERT INTO feature_acceptance_records (id, requirement_id, feature, profile, provider, platform, commit_sha, binary_sha256, suite, result, artifacts, notes, recorded_at, recorded_by, seq)
-		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(MAX(seq), 0) + 1 FROM feature_acceptance_records RETURNING seq`,
+	if err := tx.QueryRow(`INSERT INTO feature_acceptance_records (id, requirement_id, feature, profile, provider, platform, commit_sha, binary_sha256, suite, result, artifacts, notes, recorded_at, recorded_by, seq, qualification, cohort_sha256)
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ? FROM feature_acceptance_records RETURNING seq`,
 		record.ID, record.RequirementID, record.Feature, record.Profile, record.Provider, record.Platform, record.CommitSHA, record.BinarySHA256,
-		record.Suite, record.Result, artifacts, record.Notes, record.RecordedAt.UTC(), record.RecordedBy).Scan(&seq); err != nil {
+		record.Suite, record.Result, artifacts, record.Notes, record.RecordedAt.UTC(), record.RecordedBy, string(qualification), record.CohortSHA256).Scan(&seq); err != nil {
 		return 0, err
 	}
 	return seq, tx.Commit()
@@ -141,7 +163,7 @@ func (s *SQLiteStore) ListFeatureAcceptanceRecords(requirementID, feature string
 	return scanFeatureAcceptanceRecords(rows)
 }
 
-const featureAcceptanceColumns = `id, requirement_id, feature, profile, provider, platform, commit_sha, binary_sha256, suite, result, artifacts, notes, recorded_at, recorded_by, seq`
+const featureAcceptanceColumns = `id, requirement_id, feature, profile, provider, platform, commit_sha, binary_sha256, suite, result, artifacts, notes, recorded_at, recorded_by, seq, qualification, cohort_sha256`
 
 // featureAcceptanceNewestFirst orders by insertion; records from before the
 // sequence existed (seq 0) sort after every sequenced one, by time.
@@ -151,17 +173,24 @@ func scanFeatureAcceptanceRecords(rows *sql.Rows) ([]*FeatureAcceptanceRecord, e
 	records := []*FeatureAcceptanceRecord{}
 	for rows.Next() {
 		var record FeatureAcceptanceRecord
-		var artifacts string
+		var artifacts, qualification string
 		if err := rows.Scan(&record.ID, &record.RequirementID, &record.Feature, &record.Profile, &record.Provider, &record.Platform, &record.CommitSHA,
-			&record.BinarySHA256, &record.Suite, &record.Result, &artifacts, &record.Notes, &record.RecordedAt, &record.RecordedBy, &record.Seq); err != nil {
+			&record.BinarySHA256, &record.Suite, &record.Result, &artifacts, &record.Notes, &record.RecordedAt, &record.RecordedBy, &record.Seq, &qualification, &record.CohortSHA256); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(artifacts), &record.Artifacts); err != nil {
 			return nil, err
 		}
+		if err := json.Unmarshal([]byte(qualification), &record.Qualification); err != nil {
+			return nil, err
+		}
 		if record.Artifacts == nil {
 			record.Artifacts = []FeatureAcceptanceArtifact{}
 		}
+		if record.CohortSHA256 != BrowserAcceptanceCohortSHA256(record.Qualification) {
+			return nil, errors.New("invalid stored browser acceptance cohort")
+		}
+		record.RecordSHA256, _ = BrowserAcceptanceRecordSHA256(&record)
 		records = append(records, &record)
 	}
 	return records, rows.Err()
@@ -196,9 +225,9 @@ func (s *SQLiteStore) latestFeatureAcceptance(requirementID, feature string, lim
 		args = append(args, feature)
 	}
 	rows, err := s.db.Query(`SELECT `+featureAcceptanceColumns+` FROM (
-			SELECT `+featureAcceptanceColumns+`, ROW_NUMBER() OVER (PARTITION BY requirement_id, feature, profile, provider, platform ORDER BY `+featureAcceptanceNewestFirst+`) AS subject_rank
+			SELECT `+featureAcceptanceColumns+`, ROW_NUMBER() OVER (PARTITION BY requirement_id, feature, profile, provider, platform, cohort_sha256 ORDER BY `+featureAcceptanceNewestFirst+`) AS subject_rank
 			FROM feature_acceptance_records WHERE 1 = 1`+filter+`
-		) ranked WHERE subject_rank = 1 ORDER BY requirement_id, feature, profile, provider, platform LIMIT ?`, append(args, limit+1)...)
+		) ranked WHERE subject_rank = 1 ORDER BY requirement_id, feature, profile, provider, platform, cohort_sha256 LIMIT ?`, append(args, limit+1)...)
 	if err != nil {
 		return nil, false, err
 	}

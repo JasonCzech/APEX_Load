@@ -1,6 +1,6 @@
 # Java Vuser pooling: evidence tooling and implementation status
 
-Status: Shared JVMs available for ordinary runs behind an operator switch and a per-script setting (2026-10-15); the pilot evidence collector and dedicated execution-pod integration remain; no enabled AKS backend
+Status: Shared JVMs available for ordinary runs behind an operator switch and a per-script setting (2026-10-15); pilot evidence tooling and experimental dedicated execution-pod integration are implemented, with delegated-Linux pooled evidence and live dedicated AKS qualification still required; no automatically enabled AKS backend
 
 This document tracks the evidence-first implementation of pooled Java Vuser
 hosts. Dedicated execution remains the default runtime path. The [shared-JVM operator policy](JAVA_SHARED_JVMS.md) enables ordinary shared runs; explicitly wired pilot profiles remain a separate experimental evidence path. Nothing in
@@ -64,13 +64,15 @@ The pilot-stage gates below describe the manually qualified evidence path. Ordin
    requires representative execution and operator approval.
    The slot worker does not prove arbitrary background work stopped and must not
    be treated as a reusable session or process containment mechanism.
-2. **Independent AKS dedicated track:** dedicated backend on the lifecycle/reservation interface;
-   authenticated TLS facade and namespace-scoped broker; PID 1 supervisor with
-   independent lease enforcement; restricted per-JVM execution pods; exact-UID
-   termination evidence and durable quarantine; epoch fencing and reconciliation;
-   prepare/ready/commit integration and bounded assignment staging; manifests and
-   real network/descendant/node-failure tests. Durable dedicated reservation and
-   reconciliation primitives are documented in [dedicated execution contracts](JAVA_DEDICATED_EXECUTION_CONTRACTS.md#durable-dedicated-broker-state-and-explicit-pilot-diagnostics); no AKS execution backend is enabled.
+2. **Independent AKS dedicated track:** the experimental dedicated backend,
+   authenticated broker and loopback facade, PID 1 supervisor, durable reservation
+   and quarantine, prepare/ready/commit staging and deployment scaffold are
+   implemented; see [the broker service guide](JAVA_BROKER_SERVICE.md) and
+   [dedicated execution contracts](JAVA_DEDICATED_EXECUTION_CONTRACTS.md).
+   Release still requires a qualified independent runtime attestor and infrastructure
+   fencing, plus live network, descendant-process and node-failure evidence.
+   Local component tests do not establish AKS containment or performance; no backend
+   is automatically enabled.
 3. **After the synthetic gate:** normal-engine mode selection, distributed pooled placement and reservations,
    Windows execution/containment validation, qualified AKS pooling, preflight and
    reporting UI/API changes, real-workload qualification, and production release.

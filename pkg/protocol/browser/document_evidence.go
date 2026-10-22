@@ -20,6 +20,7 @@ const browserFrameIdentityLimit = 256
 const browserRequestIdentityLimit = 512
 
 type browserDocumentState struct {
+	creationLowerNS                                int64 // A native command-response join can tighten the context creation bound.
 	frame                                          playwright.Frame
 	page                                           playwright.Page
 	token, lifecycleToken                          string
@@ -39,10 +40,12 @@ type browserRequestIdentity struct {
 	join     resourceJoin
 }
 type browserEvidenceState struct {
-	lifecycleContext   context.Context
-	generation         string
-	sequence           uint64
-	binding, finalizer string
+	actionCreationLowerNS int64
+	clock                 browserDocumentReceiptClock
+	lifecycleContext      context.Context
+	generation            string
+	sequence              uint64
+	binding, finalizer    string
 	// loaderBinding is the evidence CDP session's binding through which a
 	// document reports its token from its own context (Chromium).
 	loaderBinding                                          string
@@ -56,11 +59,13 @@ type browserEvidenceState struct {
 	issued, inFlight, droppedRequests, droppedObservations int64
 	incomplete, cancelled                                  bool
 	// Resource association state (resource_association.go).
-	cdpPages        map[playwright.Page]*cdpEvidencePage
-	pwFrameCDP      map[playwright.Frame]string
-	cdpFramePW      map[string]playwright.Frame
-	loaderDocuments map[string]loaderDocument
-	timingRequests  map[resourceTimingKey]int
+	nativeSources             map[*cdpSourceCensus]playwright.Page
+	nativeDiscoveryIncomplete bool
+	cdpPages                  map[playwright.Page]*cdpEvidencePage
+	pwFrameCDP                map[playwright.Frame]string
+	cdpFramePW                map[string]playwright.Frame
+	loaderDocuments           map[string]loaderDocument
+	timingRequests            map[resourceTimingKey]int
 }
 type browserDocumentPayload struct {
 	Kind             string   `json:"kind"`
@@ -116,8 +121,8 @@ func (b *Browser) resetBrowserEvidence(version string) error {
 	// The context's native HAR, if it records one, holds this generation's
 	// requests.
 	b.harEvidenceGeneration = generation
-	b.evidence = browserEvidenceState{generation: generation, binding: "__apexEvidence_" + generation, finalizer: "__apexFinalize_" + generation, loaderBinding: "__apexLoader_" + generation, frames: make(map[playwright.Frame]string), documents: make(map[string]*browserDocumentState), requests: make(map[playwright.Request]*browserRequestIdentity), cohort: cohort, shapedPages: make(map[playwright.Page]bool),
-		cdpPages: make(map[playwright.Page]*cdpEvidencePage), pwFrameCDP: make(map[playwright.Frame]string), cdpFramePW: make(map[string]playwright.Frame), loaderDocuments: make(map[string]loaderDocument), timingRequests: make(map[resourceTimingKey]int)}
+	b.evidence = browserEvidenceState{clock: newBrowserDocumentReceiptClock(time.Now()), generation: generation, binding: "__apexEvidence_" + generation, finalizer: "__apexFinalize_" + generation, loaderBinding: "__apexLoader_" + generation, frames: make(map[playwright.Frame]string), documents: make(map[string]*browserDocumentState), requests: make(map[playwright.Request]*browserRequestIdentity), cohort: cohort, shapedPages: make(map[playwright.Page]bool),
+		nativeSources: make(map[*cdpSourceCensus]playwright.Page), cdpPages: make(map[playwright.Page]*cdpEvidencePage), pwFrameCDP: make(map[playwright.Frame]string), cdpFramePW: make(map[string]playwright.Frame), loaderDocuments: make(map[string]loaderDocument), timingRequests: make(map[resourceTimingKey]int)}
 	b.mu.Unlock()
 	return nil
 }
@@ -125,6 +130,10 @@ func (b *Browser) installDocumentEvidence(ctx playwright.BrowserContext, version
 	if err := b.resetBrowserEvidence(version); err != nil {
 		return err
 	}
+	return b.installPreparedDocumentEvidence(ctx)
+}
+
+func (b *Browser) installPreparedDocumentEvidence(ctx playwright.BrowserContext) error {
 	// Resource IDs use passive native request hooks independently. New document
 	// observers/bindings and lifecycle target execution require explicit opt-in.
 	if !b.documentMetricsEnabled {
@@ -297,6 +306,7 @@ func (b *Browser) receiveDocumentEvidence(source *playwright.BindingSource, raw 
 		}
 		d = &browserDocumentState{cohort: docCohort, frame: source.Frame, page: source.Page, token: p.DocumentToken, lifecycleToken: p.LifecycleToken, documentID: documentID, lifecycleID: s.nextID("l"), frameID: frameID, navigationID: s.nextID("n"), start: start, timeOrigin: p.TimeOrigin, restored: p.Restored, observations: make(map[string]protocol.BrowserDocumentObservation)}
 		s.documents[key] = d
+		s.clock.record(d, p, "", 0, time.Now())
 		if b.documentMetricsEnabled {
 			for _, metric := range []string{"fcp", "lcp", "cls", "inp", "ttfb"} {
 				o := b.documentObservationLocked(d, metric, end)
@@ -310,6 +320,7 @@ func (b *Browser) receiveDocumentEvidence(source *playwright.BindingSource, raw 
 		return false
 	}
 	if p.Kind == "end" {
+		s.clock.record(d, p, "", 0, time.Now())
 		d.ended = true
 		return true
 	}
@@ -351,7 +362,8 @@ func (b *Browser) receiveDocumentEvidence(source *playwright.BindingSource, raw 
 	}
 	o.Revision++
 	o.WindowEnd = end
-	o.CapturedAt = time.Now().UTC()
+	receivedAt := time.Now()
+	o.CapturedAt = receivedAt.UTC()
 	o.State = p.State
 	o.Boundary = p.Boundary
 	o.InteractionCount = int64(p.InteractionCount)
@@ -371,6 +383,10 @@ func (b *Browser) receiveDocumentEvidence(source *playwright.BindingSource, raw 
 	if !o.Valid() {
 		s.incomplete = true
 		return false
+	}
+	s.clock.observe(receivedAt)
+	if o.State == "final" || o.State == "censored" {
+		s.clock.record(d, p, o.MeasurementID, o.Revision, receivedAt)
 	}
 	d.observations[p.Metric] = o
 	return true
@@ -426,6 +442,9 @@ func (b *Browser) censorDocumentEvidence(page playwright.Page, boundary string) 
 	for _, d := range b.evidence.documents {
 		if page != nil && d.page != page {
 			continue
+		}
+		if !d.ended {
+			b.evidence.clock.incomplete = true
 		}
 		for metric, o := range d.observations {
 			if o.State == "final" || o.State == "censored" {
@@ -590,6 +609,9 @@ func (b *Browser) censorFrameEvidence(frame playwright.Frame) {
 	for _, d := range b.evidence.documents {
 		if d.frame != frame {
 			continue
+		}
+		if !d.ended {
+			b.evidence.clock.incomplete = true
 		}
 		for metric, o := range d.observations {
 			if o.State == "final" || o.State == "censored" {

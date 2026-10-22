@@ -1,3 +1,4 @@
+import type { RunAnalysisPolicySelections } from './analysisPolicies/runPolicySelection'
 import type { MonitorBinding } from '../types/runMonitoring'
 import type { GoalConfig, LoadStageDraft, ScenarioDraft, ScenarioDraftGroup, StoredScenario } from '../types'
 import type { ScenarioFormGroup, ScenarioFormState } from '../types/scenarioAuthoring'
@@ -137,6 +138,7 @@ export function scenarioUpsertPayload(draft: ScenarioDraft, context: ScenarioUps
 }
 
 export type ScenarioCreateContext = {
+  analysisPolicySelections?: RunAnalysisPolicySelections
   projectId?: string
   folderId?: string | null
   monitorBindings?: MonitorBinding[]
@@ -177,6 +179,7 @@ export function scenarioCreatePayload(draft: ScenarioDraft, context: ScenarioCre
     folderId: revision ? revision.folderId : context.folderId,
     dataPools: revision ? revision.dataPools : draft.dataPools,
     monitorBindings: context.monitorBindings,
+    analysisPolicySelections: context.analysisPolicySelections ?? revision?.analysisPolicySelections,
     elkConnectionId: context.elkConnectionId,
     dynatraceConnectionId: context.dynatraceConnectionId,
   })

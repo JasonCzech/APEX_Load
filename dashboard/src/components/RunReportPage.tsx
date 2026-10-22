@@ -1,3 +1,4 @@
+import RunReportProjectPanels from './RunReportProjectPanels'
 import MessagingProgressDiagnostics from './MessagingProgressDiagnostics'
 import MessagingDiagnostics from './MessagingDiagnostics'
 import RunAnnotations from './RunAnnotations'
@@ -76,6 +77,7 @@ function reportSectionForArea(area: ReportArea): ReportSection {
 
 interface Props {
   testId: string
+  canManageTests?: boolean
   canPublishConfluence?: boolean
   // canManageProject lets a project admin approve business keys.
   canManageProject?: boolean
@@ -121,6 +123,7 @@ function httpStatus(error: unknown): number | undefined {
 
 export default function RunReportPage({
   testId,
+  canManageTests = false,
   canPublishConfluence = false,
   canManageProject = false,
   initialLens,
@@ -751,6 +754,7 @@ export default function RunReportPage({
           )}
           <div data-report-focus="action-summary">{renderEvidence('action-summary')}</div>
           <JourneyRiskPanel testId={testId} />
+          {test.project_id && <RunReportProjectPanels key={`${testId}-${test.project_id}`} testId={testId} projectId={test.project_id} history={timelineHistory} properties={Object.keys(report?.by_property || {}).sort()} canManage={canManageTests} />}
         </>}
         {area === 'Load Impact' && hasArchive && <div data-report-focus="load-impact">{renderEvidence('load-impact')}</div>}
         {area === 'Diagnostics' && hasArchive && <>

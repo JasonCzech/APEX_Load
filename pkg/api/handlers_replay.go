@@ -348,7 +348,7 @@ func (s *Server) configureReplaySessionReservations() {
 }
 
 // reserveReplaySessionID claims a session ID in two phases so the process-wide
-// replaySessionMu is never held across the HA lease store's network round-trips:
+// replaySessionMu is never held across the durable lease store's network round-trips:
 // the ID is first reserved locally as a pending entry under the mutex (which
 // keeps two concurrent local callers from claiming the same ID and counts the
 // caller against capacity), then the durable lease is acquired with the mutex
@@ -466,7 +466,7 @@ func (s *Server) pruneExpiredReplaySessionReservationsLocked(now time.Time) {
 	}
 }
 
-// activatePendingReplaySessionID performs the durable HA lease acquisition for
+// activatePendingReplaySessionID performs durable lease acquisition, when supported, for
 // a locally pended session ID without holding replaySessionMu across the store
 // round-trips, then flips the pending entry to active. Every failure path
 // removes the pending entry so a failed acquire leaves no local residue.
@@ -483,7 +483,12 @@ func (s *Server) activatePendingReplaySessionID(executionCtx context.Context, se
 		leadershipCtx            context.Context
 		releaseLeadershipContext context.CancelFunc
 	)
-	if s.haExecution {
+	// A retained artifact outlives its controller and protects the same namespace
+	// in both HA and single-controller deployments. Use durable ownership whenever
+	// the store supports it; local-only adapters retain their existing behavior.
+	availableStore, supportsDurable := s.store.(replaySessionLeaseStore)
+	useDurable := s.haExecution || (supportsDurable && availableStore != nil)
+	if useDurable {
 		leadershipCtx, releaseLeadershipContext = context.WithCancel(executionCtx)
 	}
 	fail := func(err error) (string, func(), *replaySessionLeaseSignal, error) {
@@ -495,10 +500,9 @@ func (s *Server) activatePendingReplaySessionID(executionCtx context.Context, se
 		return "", nil, nil, err
 	}
 	leaseStartedAt := time.Now()
-	if s.haExecution {
-		var ok bool
-		leaseStore, ok = s.store.(replaySessionLeaseStore)
-		if !ok || leaseStore == nil {
+	if useDurable {
+		leaseStore = availableStore
+		if !supportsDurable || leaseStore == nil {
 			return fail(errReplaySessionLeaseUnavailable)
 		}
 		ctx, cancel := context.WithTimeout(leadershipCtx, replaySessionLeaseOperationTimeout(ttl))
@@ -523,6 +527,9 @@ func (s *Server) activatePendingReplaySessionID(executionCtx context.Context, se
 			releaseCtx, releaseCancel := context.WithTimeout(context.Background(), replaySessionLeaseOperationTimeout(ttl))
 			_, _ = leaseStore.ReleaseReplaySessionLease(releaseCtx, sessionID, ownerToken, projectID)
 			releaseCancel()
+			if !s.haExecution {
+				return fail(leadershipCtx.Err())
+			}
 			return fail(errNotExecutionLeader)
 		}
 		if !time.Now().Before(leaseStartedAt.Add(ttl)) {
@@ -724,6 +731,9 @@ func (s *Server) activatePendingReplaySessionID(executionCtx context.Context, se
 		leaseSignal.clearValidUntil()
 		detachLeadership()
 		lifecycleState = "released"
+	}
+	if leaseStore != nil && s.replayArtifacts != nil {
+		leaseSignal.artifactPublisher = &boundReplayArtifactPublisher{runtime: s.replayArtifacts, id: sessionID, project: projectID, owner: ownerToken}
 	}
 	return sessionID, release, leaseSignal, nil
 }

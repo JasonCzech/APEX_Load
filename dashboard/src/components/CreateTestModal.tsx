@@ -1,3 +1,5 @@
+import RunPolicySelector from './analysisPolicies/RunPolicySelector'
+import { cloneRunPolicySelections, runPolicySelectionProblem, type RunAnalysisPolicySelections } from './analysisPolicies/runPolicySelection'
 import MonitorRuleEditor from './MonitorRuleEditor'
 import RunMonitorBindingSelector from './RunMonitorBindingSelector'
 import type { MonitorBinding } from '../types/runMonitoring'
@@ -93,7 +95,16 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const [dynatraceConnections, setDynatraceConnections] = useState<DynatraceConnection[]>([])
   const [dynatraceConnectionId, setDynatraceConnectionId] = useState(() => initialScenario?.revisionContext?.dynatraceConnectionId ?? '')
   const [monitorBindings, setMonitorBindings] = useState<MonitorBinding[] | undefined>(() => initialScenario?.revisionContext?.monitorBindings?.map(binding => ({ ...binding })))
-  const authoringFingerprint = JSON.stringify([scenarioDraft, monitorBindings, elkConnectionId, dynatraceConnectionId])
+  const [analysisPolicySelections, setAnalysisPolicySelections] = useState<RunAnalysisPolicySelections | undefined>(() => cloneRunPolicySelections(initialScenario?.revisionContext?.analysisPolicySelections))
+  const selectionProject = initialScenario?.revisionContext?.projectId ?? projectId ?? ''
+  const selectionProjectRef = useRef(selectionProject)
+  useEffect(() => {
+    if (selectionProjectRef.current !== selectionProject) {
+      selectionProjectRef.current = selectionProject
+      setAnalysisPolicySelections(undefined)
+    }
+  }, [selectionProject])
+  const authoringFingerprint = JSON.stringify([scenarioDraft, monitorBindings, elkConnectionId, dynatraceConnectionId, analysisPolicySelections])
   const latestAuthoringFingerprintRef = useRef(authoringFingerprint)
   latestAuthoringFingerprintRef.current = authoringFingerprint
   const baselineAuthoringFingerprintRef = useRef(authoringFingerprint)
@@ -222,7 +233,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   // The chart draws the draft's load preview: the projection every scenario
   // editor shares (AUTH-3), so offsets, stages and baselines match.
   const loadPlan = scenarioLoadPreview(scenarioDraft)
-  const buildPayload = () => scenarioCreatePayload(scenarioDraft, { projectId, folderId, monitorBindings, elkConnectionId, dynatraceConnectionId })
+  const buildPayload = () => scenarioCreatePayload(scenarioDraft, { projectId, folderId, monitorBindings, elkConnectionId, dynatraceConnectionId, analysisPolicySelections })
 
   const buildEstimatePayload = useCallback(
     () => scenarioEstimateRequest(scenarioDraft, { projectId, folderId, monitorBindings }),
@@ -312,6 +323,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       if (aggregateError) throw new Error(aggregateError)
       const transactionSLAError = validateGoalConfig(goalConfig) || validateTransactionResponseTimeSLAOverrides(groups)
       if (transactionSLAError) throw new Error(transactionSLAError)
+      const selectionProblem = runPolicySelectionProblem(analysisPolicySelections)
+      if (selectionProblem) throw new Error(selectionProblem)
       const payload = buildPayload()
 
       if (scenarioMode === 'goal_oriented') {
@@ -437,6 +450,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
           <span className="total-vusers">{totalVUsers} total VUsers</span>
         </div>
         <form onSubmit={handleSubmit} className="modal-form">
+          <RunPolicySelector projectId={selectionProject} value={analysisPolicySelections} onChange={setAnalysisPolicySelections} disabled={loading} />
           {isReviseMode && (
             <p className="page-subtitle">Saving here creates a new queued run. The current queued run remains unchanged.</p>
           )}

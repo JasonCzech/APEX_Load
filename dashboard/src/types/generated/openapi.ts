@@ -1790,6 +1790,27 @@ export interface operations {
                 "current"?: Record<string, unknown>;
               }) | null;
             }) | null;
+            "browser_authored_pages"?: ({
+              "bindings"?: Array<({
+                "association"?: string;
+                "authored_step"?: (Record<string, unknown>) | null;
+                "document_id"?: string;
+                "lifecycle_id"?: string;
+                "navigation_sequence"?: number;
+                "observed_at"?: string;
+                "page_id"?: string;
+                "reason"?: string;
+                "request_id"?: string;
+                "source_generation"?: string;
+                "state"?: string;
+                "version"?: number;
+              }) | null>;
+              "dropped"?: number;
+              "incomplete"?: boolean;
+              "receipt_records"?: number;
+              "unavailable"?: Record<string, number>;
+              "version"?: number;
+            }) | null;
             "browser_by_device"?: Record<string, ({
               "avg_blocking_resources"?: number;
               "avg_browser_process_cpu_pct"?: number;
@@ -4392,6 +4413,12 @@ export interface operations {
               "browser_interactions_dropped"?: number;
               "browser_interactions_file"?: string;
               "browser_interactions_incomplete"?: boolean;
+              "browser_proof_authority_mode"?: string;
+              "browser_proof_expected_owners"?: Array<string>;
+              "browser_receipt_incomplete"?: boolean;
+              "browser_receipt_record_count"?: number;
+              "browser_receipts_file"?: string;
+              "browser_receipts_sha256"?: string;
               "business_key_digests_unavailable"?: boolean;
               "clock_observation_count"?: number;
               "clock_observations_file"?: string;
@@ -4481,6 +4508,7 @@ export interface operations {
                 "aura_http_requests"?: Array<Record<string, unknown>>;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
+                "browser_authored_sources"?: Record<string, Record<string, unknown>>;
                 "business_keys"?: (Record<string, unknown>) | null;
                 "comparison_fingerprint"?: string;
                 "comparison_metrics"?: Record<string, Record<string, unknown>>;
@@ -4669,6 +4697,7 @@ export interface operations {
                 "aura_http_requests"?: Array<Record<string, unknown>>;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
+                "browser_authored_sources"?: Record<string, Record<string, unknown>>;
                 "business_keys"?: (Record<string, unknown>) | null;
                 "comparison_fingerprint"?: string;
                 "comparison_metrics"?: Record<string, Record<string, unknown>>;
@@ -36096,6 +36125,18 @@ export interface operations {
           "platform"?: string;
           "profile"?: string;
           "provider"?: string;
+          "qualification"?: ({
+            "analysis_algorithm"?: string;
+            "capability_sha256"?: string;
+            "dependencies"?: Array<{
+              "record_id"?: string;
+              "record_sha256"?: string;
+            }>;
+            "measurement_algorithm"?: string;
+            "metric"?: string;
+            "runtime_sha256"?: string;
+            "version"?: number;
+          }) | null;
           "requirement_id"?: string;
           "result"?: string;
           "suite"?: string;
@@ -36119,6 +36160,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -37354,6 +37400,16 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "analysis_policy_selections"?: ({
+            "browser"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+            "journey"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+          }) | null;
           "application_id"?: string;
           "assignment"?: ({
             "failover_policy"?: string;
@@ -37762,6 +37818,16 @@ export interface operations {
           }) | null;
           "termination_mode"?: string;
           "test"?: ({
+            "analysis_policy_selections"?: ({
+              "browser"?: ({
+                "id"?: string;
+                "revision"?: number;
+              }) | null;
+              "journey"?: ({
+                "id"?: string;
+                "revision"?: number;
+              }) | null;
+            }) | null;
             "application_id"?: string;
             "assignment"?: ({
               "failover_policy"?: string;
@@ -38383,6 +38449,16 @@ export interface operations {
                   "resource_name": string;
                   "resource_type": string;
                   "status": string;
+                }) | null;
+              }) | null;
+              "analysis_policy_selections"?: ({
+                "browser"?: ({
+                  "id": string;
+                  "revision": number;
+                }) | null;
+                "journey"?: ({
+                  "id": string;
+                  "revision": number;
                 }) | null;
               }) | null;
               "application_id"?: string;
@@ -45415,6 +45491,16 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "analysis_policy_selections"?: ({
+            "browser"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+            "journey"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+          }) | null;
           "application_id"?: string;
           "assignment"?: ({
             "failover_policy"?: string;
@@ -46288,6 +46374,16 @@ export interface operations {
                 "resource_name": string;
                 "resource_type": string;
                 "status": string;
+              }) | null;
+            }) | null;
+            "analysis_policy_selections"?: ({
+              "browser"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+              "journey"?: ({
+                "id": string;
+                "revision": number;
               }) | null;
             }) | null;
             "application_id"?: string;
@@ -58398,6 +58494,16 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "analysis_policy_selections"?: ({
+            "browser"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+            "journey"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+          }) | null;
           "application_id"?: string;
           "assignment"?: ({
             "failover_policy"?: string;
@@ -61169,6 +61275,7 @@ export interface operations {
     parameters: {
       "query"?: {
         "binary_sha256"?: string;
+        "cohort_sha256"?: string;
         "commit_sha"?: string;
         "feature"?: string;
         "platform"?: string;
@@ -61183,10 +61290,12 @@ export interface operations {
         content: {
           "application/json": {
             "statuses": Array<{
+              "cohort_sha256"?: string;
               "feature": string;
               "latest": ({
                 "artifacts": Array<Record<string, unknown>>;
                 "binary_sha256"?: string;
+                "cohort_sha256"?: string;
                 "commit_sha": string;
                 "feature": string;
                 "id": string;
@@ -61194,6 +61303,16 @@ export interface operations {
                 "platform"?: string;
                 "profile"?: string;
                 "provider"?: string;
+                "qualification"?: ({
+                  "analysis_algorithm"?: string;
+                  "capability_sha256": string;
+                  "dependencies"?: Array<Record<string, unknown>>;
+                  "measurement_algorithm": string;
+                  "metric": string;
+                  "runtime_sha256": string;
+                  "version": number;
+                }) | null;
+                "record_sha256"?: string;
                 "recorded_at": string;
                 "recorded_by": string;
                 "requirement_id": string;
@@ -61210,6 +61329,7 @@ export interface operations {
               "withdrawn_by"?: ({
                 "artifacts": Array<Record<string, unknown>>;
                 "binary_sha256"?: string;
+                "cohort_sha256"?: string;
                 "commit_sha": string;
                 "feature": string;
                 "id": string;
@@ -61217,6 +61337,16 @@ export interface operations {
                 "platform"?: string;
                 "profile"?: string;
                 "provider"?: string;
+                "qualification"?: ({
+                  "analysis_algorithm"?: string;
+                  "capability_sha256": string;
+                  "dependencies"?: Array<Record<string, unknown>>;
+                  "measurement_algorithm": string;
+                  "metric": string;
+                  "runtime_sha256": string;
+                  "version": number;
+                }) | null;
+                "record_sha256"?: string;
                 "recorded_at": string;
                 "recorded_by": string;
                 "requirement_id": string;
@@ -64044,6 +64174,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -64293,6 +64430,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -64526,6 +64670,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -64571,6 +64716,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -64652,6 +64798,11 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -71858,6 +72009,16 @@ export interface operations {
                   "status": string;
                 }) | null;
               }) | null;
+              "analysis_policy_selections"?: ({
+                "browser"?: ({
+                  "id": string;
+                  "revision": number;
+                }) | null;
+                "journey"?: ({
+                  "id": string;
+                  "revision": number;
+                }) | null;
+              }) | null;
               "application_id"?: string;
               "archive"?: ({
                 "archive_backend"?: string;
@@ -74644,6 +74805,7 @@ export interface operations {
               "action_name"?: string;
               "authored_step"?: ({
                 "script_sha256": string;
+                "source_structure_sha256"?: string;
                 "step_id": string;
                 "step_path": string;
                 "version": number;
@@ -75164,6 +75326,12 @@ export interface operations {
             "browser_interactions_dropped"?: number;
             "browser_interactions_file"?: string;
             "browser_interactions_incomplete"?: boolean;
+            "browser_proof_authority_mode"?: string;
+            "browser_proof_expected_owners"?: Array<string>;
+            "browser_receipt_incomplete"?: boolean;
+            "browser_receipt_record_count"?: number;
+            "browser_receipts_file"?: string;
+            "browser_receipts_sha256"?: string;
             "business_key_digests_unavailable"?: boolean;
             "clock_observation_count"?: number;
             "clock_observations_file"?: string;
@@ -75283,6 +75451,11 @@ export interface operations {
               }>;
               "baseline_pinned"?: boolean;
               "baseline_pinned_at"?: (string) | null;
+              "browser_authored_sources"?: Record<string, {
+                "script_sha256": string;
+                "structure_sha256": string;
+                "version": number;
+              }>;
               "business_keys"?: ({
                 "digest_only_groups"?: Array<string>;
                 "extractions": Array<string>;
@@ -76296,6 +76469,11 @@ export interface operations {
               }>;
               "baseline_pinned"?: boolean;
               "baseline_pinned_at"?: (string) | null;
+              "browser_authored_sources"?: Record<string, {
+                "script_sha256": string;
+                "structure_sha256": string;
+                "version": number;
+              }>;
               "business_keys"?: ({
                 "digest_only_groups"?: Array<string>;
                 "extractions": Array<string>;
@@ -78242,6 +78420,33 @@ export interface operations {
                 "baselines": Record<string, Record<string, unknown>>;
                 "current": Record<string, unknown>;
               }) | null;
+            }) | null;
+            "browser_authored_pages"?: ({
+              "bindings": Array<({
+                "association"?: string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
+                "document_id"?: string;
+                "lifecycle_id"?: string;
+                "navigation_sequence"?: number;
+                "observed_at": string;
+                "page_id"?: string;
+                "reason"?: string;
+                "request_id"?: string;
+                "source_generation"?: string;
+                "state": string;
+                "version": number;
+              }) | null>;
+              "dropped": number;
+              "incomplete": boolean;
+              "receipt_records": number;
+              "unavailable"?: Record<string, number>;
+              "version": number;
             }) | null;
             "browser_by_device"?: Record<string, ({
               "avg_blocking_resources"?: number;
@@ -80925,6 +81130,12 @@ export interface operations {
               "browser_interactions_dropped"?: number;
               "browser_interactions_file"?: string;
               "browser_interactions_incomplete"?: boolean;
+              "browser_proof_authority_mode"?: string;
+              "browser_proof_expected_owners"?: Array<string>;
+              "browser_receipt_incomplete"?: boolean;
+              "browser_receipt_record_count"?: number;
+              "browser_receipts_file"?: string;
+              "browser_receipts_sha256"?: string;
               "business_key_digests_unavailable"?: boolean;
               "clock_observation_count"?: number;
               "clock_observations_file"?: string;
@@ -81040,6 +81251,11 @@ export interface operations {
                 }>;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
+                "browser_authored_sources"?: Record<string, {
+                  "script_sha256": string;
+                  "structure_sha256": string;
+                  "version": number;
+                }>;
                 "business_keys"?: ({
                   "digest_only_groups"?: Array<string>;
                   "extractions": Array<string>;
@@ -81553,6 +81769,11 @@ export interface operations {
                 }>;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
+                "browser_authored_sources"?: Record<string, {
+                  "script_sha256": string;
+                  "structure_sha256": string;
+                  "version": number;
+                }>;
                 "business_keys"?: ({
                   "digest_only_groups"?: Array<string>;
                   "extractions": Array<string>;
@@ -87026,6 +87247,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -87275,6 +87503,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -87521,6 +87756,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -87566,6 +87802,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -87736,6 +87973,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -87985,6 +88229,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -88231,6 +88482,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -88276,6 +88528,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -89030,6 +89283,16 @@ export interface operations {
                 "resource_name": string;
                 "resource_type": string;
                 "status": string;
+              }) | null;
+            }) | null;
+            "analysis_policy_selections"?: ({
+              "browser"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+              "journey"?: ({
+                "id": string;
+                "revision": number;
               }) | null;
             }) | null;
             "application_id"?: string;
@@ -101436,6 +101699,7 @@ export interface operations {
                 "summary"?: Record<string, unknown>;
                 "test"?: ({
                   "activity"?: (Record<string, unknown>) | null;
+                  "analysis_policy_selections"?: (Record<string, unknown>) | null;
                   "application_id"?: string;
                   "archive"?: (Record<string, unknown>) | null;
                   "archive_failure"?: (Record<string, unknown>) | null;
@@ -103722,6 +103986,7 @@ export interface operations {
                 "sha256": string;
               }>;
               "binary_sha256"?: string;
+              "cohort_sha256"?: string;
               "commit_sha": string;
               "feature": string;
               "id": string;
@@ -103729,6 +103994,16 @@ export interface operations {
               "platform"?: string;
               "profile"?: string;
               "provider"?: string;
+              "qualification"?: ({
+                "analysis_algorithm"?: string;
+                "capability_sha256": string;
+                "dependencies"?: Array<Record<string, unknown>>;
+                "measurement_algorithm": string;
+                "metric": string;
+                "runtime_sha256": string;
+                "version": number;
+              }) | null;
+              "record_sha256"?: string;
               "recorded_at": string;
               "recorded_by": string;
               "requirement_id": string;
@@ -108477,6 +108752,21 @@ export interface operations {
       content: {
         "application/json": {
           "aggregation"?: string;
+          "browser_inputs"?: ({
+            "baseline"?: ({
+              "manifest_sha256"?: string;
+              "run_id"?: string;
+              "tuple_ids"?: Array<string>;
+            }) | null;
+            "current"?: {
+              "manifest_sha256"?: string;
+              "run_id"?: string;
+              "tuple_ids"?: Array<string>;
+            };
+            "query_sha256"?: string;
+            "version"?: number;
+          }) | null;
+          "browser_tuple_mode"?: string;
           "bucket_seconds"?: number;
           "comparison_run_id"?: string;
           "derivation"?: ({
@@ -108517,6 +108807,16 @@ export interface operations {
           "application/json": {
             "added": Array<string>;
             "baseline"?: ({
+              "browser_tuples"?: ({
+                "tuples": Array<{
+                  "buckets": Array<Record<string, unknown>>;
+                  "cohort_digest": string;
+                  "id": string;
+                  "label": string;
+                  "measurement": Record<string, unknown>;
+                }>;
+                "version": number;
+              }) | null;
               "buckets": Array<{
                 "count": number;
                 "from": string;
@@ -108532,8 +108832,37 @@ export interface operations {
               "unit"?: string;
               "warnings": Array<string>;
             }) | null;
+            "browser_inputs"?: ({
+              "baseline"?: ({
+                "manifest_sha256": string;
+                "run_id": string;
+                "tuple_ids": Array<string>;
+              }) | null;
+              "current": {
+                "manifest_sha256": string;
+                "run_id": string;
+                "tuple_ids": Array<string>;
+              };
+              "query_sha256": string;
+              "version": number;
+            }) | null;
+            "browser_tuple_comparisons"?: Array<{
+              "reason"?: string;
+              "status": string;
+              "tuple_id": string;
+            }>;
             "comparable": boolean;
             "current": {
+              "browser_tuples"?: ({
+                "tuples": Array<{
+                  "buckets": Array<Record<string, unknown>>;
+                  "cohort_digest": string;
+                  "id": string;
+                  "label": string;
+                  "measurement": Record<string, unknown>;
+                }>;
+                "version": number;
+              }) | null;
               "buckets": Array<{
                 "count": number;
                 "from": string;
@@ -108604,6 +108933,21 @@ export interface operations {
       content: {
         "application/json": {
           "aggregation"?: string;
+          "browser_inputs"?: ({
+            "baseline"?: ({
+              "manifest_sha256"?: string;
+              "run_id"?: string;
+              "tuple_ids"?: Array<string>;
+            }) | null;
+            "current"?: {
+              "manifest_sha256"?: string;
+              "run_id"?: string;
+              "tuple_ids"?: Array<string>;
+            };
+            "query_sha256"?: string;
+            "version"?: number;
+          }) | null;
+          "browser_tuple_mode"?: string;
           "bucket_seconds"?: number;
           "comparison_run_id"?: string;
           "derivation"?: ({
@@ -109377,6 +109721,8 @@ export interface operations {
               "kind"?: string;
               "query"?: ({
                 "aggregation"?: string;
+                "browser_inputs"?: (Record<string, unknown>) | null;
+                "browser_tuple_mode"?: string;
                 "bucket_seconds"?: number;
                 "comparison_run_id"?: string;
                 "derivation"?: (Record<string, unknown>) | null;
@@ -109747,6 +110093,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -109996,6 +110349,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -110229,6 +110589,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -110274,6 +110635,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -110531,6 +110893,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -110780,6 +111149,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -111026,6 +111402,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -111071,6 +111448,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -111246,6 +111624,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -111495,6 +111880,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -111741,6 +112133,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -111786,6 +112179,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -111997,6 +112391,16 @@ export interface operations {
                 "resource_name": string;
                 "resource_type": string;
                 "status": string;
+              }) | null;
+            }) | null;
+            "analysis_policy_selections"?: ({
+              "browser"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+              "journey"?: ({
+                "id": string;
+                "revision": number;
               }) | null;
             }) | null;
             "application_id"?: string;
@@ -117521,6 +117925,16 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "analysis_policy_selections"?: ({
+            "browser"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+            "journey"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+          }) | null;
           "application_id"?: string;
           "assignment"?: ({
             "failover_policy"?: string;
@@ -130097,6 +130511,16 @@ export interface operations {
                   "status": string;
                 }) | null;
               }) | null;
+              "analysis_policy_selections"?: ({
+                "browser"?: ({
+                  "id": string;
+                  "revision": number;
+                }) | null;
+                "journey"?: ({
+                  "id": string;
+                  "revision": number;
+                }) | null;
+              }) | null;
               "application_id"?: string;
               "archive"?: ({
                 "archive_backend"?: string;
@@ -132443,6 +132867,16 @@ export interface operations {
                   "resource_name": string;
                   "resource_type": string;
                   "status": string;
+                }) | null;
+              }) | null;
+              "analysis_policy_selections"?: ({
+                "browser"?: ({
+                  "id": string;
+                  "revision": number;
+                }) | null;
+                "journey"?: ({
+                  "id": string;
+                  "revision": number;
                 }) | null;
               }) | null;
               "application_id"?: string;
@@ -134793,6 +135227,16 @@ export interface operations {
                   "status": string;
                 }) | null;
               }) | null;
+              "analysis_policy_selections"?: ({
+                "browser"?: ({
+                  "id": string;
+                  "revision": number;
+                }) | null;
+                "journey"?: ({
+                  "id": string;
+                  "revision": number;
+                }) | null;
+              }) | null;
               "application_id"?: string;
               "archive"?: ({
                 "archive_backend"?: string;
@@ -137141,6 +137585,16 @@ export interface operations {
                   "status": string;
                 }) | null;
               }) | null;
+              "analysis_policy_selections"?: ({
+                "browser"?: ({
+                  "id": string;
+                  "revision": number;
+                }) | null;
+                "journey"?: ({
+                  "id": string;
+                  "revision": number;
+                }) | null;
+              }) | null;
               "application_id"?: string;
               "archive"?: ({
                 "archive_backend"?: string;
@@ -139487,6 +139941,16 @@ export interface operations {
                   "resource_name": string;
                   "resource_type": string;
                   "status": string;
+                }) | null;
+              }) | null;
+              "analysis_policy_selections"?: ({
+                "browser"?: ({
+                  "id": string;
+                  "revision": number;
+                }) | null;
+                "journey"?: ({
+                  "id": string;
+                  "revision": number;
                 }) | null;
               }) | null;
               "application_id"?: string;
@@ -143680,6 +144144,16 @@ export interface operations {
                 "resource_name": string;
                 "resource_type": string;
                 "status": string;
+              }) | null;
+            }) | null;
+            "analysis_policy_selections"?: ({
+              "browser"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+              "journey"?: ({
+                "id": string;
+                "revision": number;
               }) | null;
             }) | null;
             "application_id"?: string;
@@ -149006,6 +149480,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -149255,6 +149736,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -149488,6 +149976,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -149533,6 +150022,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -149790,6 +150280,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -150039,6 +150536,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -150285,6 +150789,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -150330,6 +150835,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -150505,6 +151011,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -150754,6 +151267,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -151000,6 +151520,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -151045,6 +151566,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -157423,6 +157945,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -157672,6 +158201,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -157905,6 +158441,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -157950,6 +158487,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -158943,6 +159481,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -159192,6 +159737,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -159425,6 +159977,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -159470,6 +160023,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -160634,6 +161188,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -160883,6 +161444,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -161129,6 +161697,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -161174,6 +161743,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -162248,6 +162818,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -162497,6 +163074,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -162743,6 +163327,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -162788,6 +163373,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -163863,6 +164449,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -164112,6 +164705,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -164358,6 +164958,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -164403,6 +165004,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -165477,6 +166079,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -165726,6 +166335,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -165972,6 +166588,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -166017,6 +166634,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -166317,6 +166935,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -166566,6 +167191,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -166812,6 +167444,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -166857,6 +167490,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -167041,6 +167675,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -167290,6 +167931,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -167536,6 +168184,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -167581,6 +168230,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -167756,6 +168406,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -168005,6 +168662,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -168238,6 +168902,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -168283,6 +168948,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -168584,6 +169250,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -168833,6 +169506,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -169079,6 +169759,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -169124,6 +169805,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -169294,6 +169976,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -169543,6 +170232,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -169789,6 +170485,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -169834,6 +170531,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -170878,6 +171576,16 @@ export interface operations {
                 "resource_name": string;
                 "resource_type": string;
                 "status": string;
+              }) | null;
+            }) | null;
+            "analysis_policy_selections"?: ({
+              "browser"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+              "journey"?: ({
+                "id": string;
+                "revision": number;
               }) | null;
             }) | null;
             "application_id"?: string;
@@ -185370,6 +186078,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -185619,6 +186334,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -185865,6 +186587,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -185910,6 +186633,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -186094,6 +186818,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -186343,6 +187074,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -186589,6 +187327,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -186634,6 +187373,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -186818,6 +187558,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -187067,6 +187814,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -187313,6 +188067,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -187358,6 +188113,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -187542,6 +188298,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -187791,6 +188554,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -188037,6 +188807,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -188082,6 +188853,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
@@ -193165,6 +193937,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -193414,6 +194193,13 @@ export interface operations {
                 "action_index": number;
                 "action_name": string;
                 "action_type": string;
+                "authored_step"?: ({
+                  "script_sha256": string;
+                  "source_structure_sha256"?: string;
+                  "step_id": string;
+                  "step_path": string;
+                  "version": number;
+                }) | null;
                 "body"?: string;
                 "client_metrics"?: ({
                   "action_duration_ms"?: number;
@@ -193647,6 +194433,7 @@ export interface operations {
                   "action_index": number;
                   "action_name": string;
                   "action_type": string;
+                  "authored_step"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
@@ -193692,6 +194479,7 @@ export interface operations {
                 }>;
                 "final_variables"?: Record<string, string>;
                 "group": string;
+                "native_har_capture_omissions"?: Record<string, number>;
                 "protocol": string;
                 "repair_suggestions"?: Array<{
                   "action"?: string;

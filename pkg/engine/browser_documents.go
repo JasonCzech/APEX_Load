@@ -21,18 +21,21 @@ type browserSeenMeasurement struct {
 	digest   [32]byte
 }
 type browserDocumentRegistration struct {
-	mu                  sync.Mutex
-	provider            protocol.BrowserDocumentEvidenceProvider
-	registry            *engineBrowserDocuments
-	group, region       string
-	finished            bool
-	generation          string
-	sourceDropped       int64
-	sink                ResultSink
-	publishedGeneration string
-	publishedDigest     [32]byte
-	publishing          bool
-	redaction           func() *RedactionConfig
+	mu                                  sync.Mutex
+	provider                            protocol.BrowserDocumentEvidenceProvider
+	registry                            *engineBrowserDocuments
+	group, region                       string
+	finished                            bool
+	generation                          string
+	sourceDropped                       int64
+	sink                                ResultSink
+	publishedGeneration                 string
+	publishedDigest                     [32]byte
+	receiptDigest                       [32]byte
+	receiptPublished, receiptPublishing bool
+	receiptDone                         chan struct{}
+	publishing                          bool
+	redaction                           func() *RedactionConfig
 }
 type engineBrowserDocuments struct {
 	mu                 sync.Mutex
@@ -42,6 +45,7 @@ type engineBrowserDocuments struct {
 	dropped            int64
 	incomplete, closed bool
 	coverageDirty      bool
+	receiptIncomplete  bool
 }
 
 // markIncomplete is called with state.mu held. Coverage changes must be
@@ -89,6 +93,9 @@ func (mc *MetricsCollector) registerBrowserDocuments(p protocol.Protocol, group 
 func (r *browserDocumentRegistration) capture(finish bool) bool {
 	if r == nil {
 		return false
+	}
+	if finish {
+		r.publishReceipts()
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -263,6 +270,7 @@ func (mc *MetricsCollector) bindBrowserDocumentRedaction(p protocol.Protocol, re
 }
 
 func (r *browserDocumentRegistration) publishFinal(evidence *protocol.BrowserDocumentEvidence, redaction *RedactionConfig) {
+	r.publishReceipts()
 	if r == nil || evidence == nil {
 		return
 	}

@@ -5,6 +5,7 @@ package recordbridge
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -47,4 +48,22 @@ type ReplayManagerOptions struct {
 	Retention             *ReplayRetentionConfig
 	CloseTimeout          time.Duration
 	ExecutionContextError error
+}
+
+// TerminalReplayArtifactPublisher is an optional lease-bound persistence port.
+// Publish must stop using its input readers before returning, retain the exact
+// lease owner for its final publication CAS, and honor cancellation. Ambiguous
+// remote writer outcomes must retain their durable cleanup identity and quota.
+// A nil error means both immutable objects were verified and durably published.
+// The input is a detached terminal snapshot and a joined native HAR, never a
+// synthetic substitute. Neither may be retained after Publish returns.
+type TerminalReplayArtifactPublisher interface {
+	Publish(context.Context, *BrowserReplaySession, io.ReadSeeker, int64) error
+}
+
+// ReplayArtifactPublicationLease is deliberately separate from SessionLease:
+// standalone bridges and older adapters remain local-only. A nil publisher
+// also means local-only; implementing the getter alone grants no capability.
+type ReplayArtifactPublicationLease interface {
+	ReplayArtifactPublisher() TerminalReplayArtifactPublisher
 }
