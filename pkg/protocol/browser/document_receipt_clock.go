@@ -3,49 +3,16 @@ package browser
 import (
 	"sort"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
-// BrowserDocumentReceipt is a one-way delivery observation, not a clock
-// synchronization sample. Browser offsets are supplied by the target's
-// document binding; host timestamps are sampled by this native process only.
-// No maximum delivery delay, browser clock integrity or symmetric latency is
-// implied. MeasurementID/Revision bind metric receipts to immutable raw data.
-type BrowserDocumentReceipt struct {
-	DocumentID          string    `json:"document_id"`
-	LifecycleID         string    `json:"lifecycle_id"`
-	FrameID             string    `json:"frame_id"`
-	Kind                string    `json:"kind"`
-	MeasurementID       string    `json:"measurement_id,omitempty"`
-	Revision            uint64    `json:"revision,omitempty"`
-	BrowserTimeOriginMS float64   `json:"browser_time_origin_ms"`
-	BrowserOffsetMS     float64   `json:"browser_offset_ms"`
-	ReceivedAt          time.Time `json:"received_at"`
-	HostElapsedNS       int64     `json:"host_elapsed_ns"`
-	WallDriftNS         int64     `json:"wall_drift_ns"`
-}
+// Aliases retain the local diagnostic API while sharing its passive wire
+// contract with durable collectors. Raw browser_documents_v2 is unchanged.
+type BrowserDocumentReceipt = protocol.BrowserDocumentReceipt
+type BrowserDocumentReceiptEvidence = protocol.BrowserDocumentReceiptEvidence
 
-// BrowserDocumentReceiptEvidence is a bounded, process-local acquisition
-// snapshot. It is deliberately separate from the v2 document wire contract:
-// callers must not silently add it to archives read by v2-only peers. It is
-// not persisted or consumed by RCA yet. A missing terminal receipt may mean
-// cancellation, a lost binding, or a silent source; this is NOT an expected
-// source ledger, and no count of these receipts proves population coverage.
-//
-// SourceGeneration identifies the monotonic origin StartedAt. HostElapsedNS
-// values can be compared only within that generation. WallStepObserved latches
-// a sampled absolute wall/monotonic divergence greater than 100 ms. False does
-// not prove clock continuity between samples, bound drift, or qualify a map
-// to the controller clock. Raw browser measurement windows stay unchanged.
-type BrowserDocumentReceiptEvidence struct {
-	Version          int                      `json:"version"`
-	SourceGeneration string                   `json:"source_generation"`
-	StartedAt        time.Time                `json:"started_at"`
-	WallStepObserved bool                     `json:"wall_step_observed"`
-	Incomplete       bool                     `json:"incomplete"`
-	Receipts         []BrowserDocumentReceipt `json:"receipts"`
-}
-
-const maxBrowserDocumentReceipts = browserDocumentLimit * 7 // begin, five metrics, end per lifecycle
+const maxBrowserDocumentReceipts = protocol.MaxBrowserDocumentReceipts // begin, five metrics, end per lifecycle
 const browserDocumentWallStepThreshold = 100 * time.Millisecond
 
 type browserDocumentReceiptClock struct {

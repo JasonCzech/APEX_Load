@@ -173,6 +173,14 @@ func TestBrowserDocumentReceiptNativeAcquisition(t *testing.T) {
 			if snapshot == nil || snapshot.SourceGeneration != raw.SourceGeneration || len(snapshot.Receipts) < 7 {
 				t.Fatalf("native acquisition missing %+v", snapshot)
 			}
+			encoded, err := json.Marshal(snapshot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := protocol.DecodeBrowserDocumentReceiptEvidence(encoded)
+			if err != nil || !reflect.DeepEqual(snapshot, decoded) {
+				t.Fatalf("native receipt contract roundtrip: %v", err)
+			}
 			receipts := make(map[string]BrowserDocumentReceipt)
 			for _, receipt := range snapshot.Receipts {
 				if receipt.Kind == "metric" {
