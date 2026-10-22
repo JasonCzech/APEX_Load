@@ -4,6 +4,8 @@
 // saved before it is sent.
 
 export const BROWSER_POLICY_METRICS = ['lcp', 'fcp', 'inp', 'cls'] as const
+export const BROWSER_TIMING_METRICS = ['lcp', 'fcp', 'inp'] as const
+export type BrowserTimingMetricName = typeof BROWSER_TIMING_METRICS[number]
 export type BrowserPolicyMetricName = typeof BROWSER_POLICY_METRICS[number]
 
 export interface BrowserMetricDraft { include: boolean; good: string; poor: string; weight: string }
@@ -14,6 +16,7 @@ export interface BrowserPolicyDraft {
   metrics: Record<BrowserPolicyMetricName, BrowserMetricDraft>
   engines: { chromium: boolean; webkit: boolean }
   deviceProfiles: string
+  floorTimingByMetricMs: Record<BrowserTimingMetricName, string>
   floorTimingMs: string
   floorTimingRelative: string
   floorCls: string
@@ -52,6 +55,7 @@ export function defaultBrowserPolicyDraft(): BrowserPolicyDraft {
     },
     engines: { chromium: false, webkit: false },
     deviceProfiles: '',
+    floorTimingByMetricMs: { lcp: '', fcp: '', inp: '' },
     floorTimingMs: '',
     floorTimingRelative: '',
     floorCls: '',
@@ -88,6 +92,8 @@ export function browserDraftFromDefinition(name: string, definition: unknown): B
   draft.engines = { chromium: engines.includes('chromium'), webkit: engines.includes('webkit') }
   draft.deviceProfiles = Array.isArray(applicability.device_profiles) ? applicability.device_profiles.filter(value => typeof value === 'string').join(', ') : ''
   const floors = record(definition.effect_floors) ? definition.effect_floors : {}
+  const metricFloors = record(floors.timing_by_metric_ms) ? floors.timing_by_metric_ms : {}
+  for (const metric of BROWSER_TIMING_METRICS) draft.floorTimingByMetricMs[metric] = numberText(metricFloors[metric])
   draft.floorTimingMs = numberText(floors.timing_ms)
   draft.floorTimingRelative = numberText(floors.timing_relative)
   draft.floorCls = numberText(floors.cls)
@@ -125,6 +131,14 @@ export function browserDefinitionFromDraft(draft: BrowserPolicyDraft): { definit
     if (!Number.isFinite(value)) return { problem: 'Effect floors must be numbers.' }
     floors[key] = value
   }
+  const metricFloors: Record_ = {}
+  for (const metric of BROWSER_TIMING_METRICS) {
+    const value = parsed(draft.floorTimingByMetricMs[metric])
+    if (value === undefined) continue
+    if (!Number.isFinite(value) || value < 50 || value > 600_000) return { problem: `${metric.toUpperCase()} floor must be between 50 and 600000 ms.` }
+    metricFloors[metric] = value
+  }
+  if (Object.keys(metricFloors).length) floors.timing_by_metric_ms = metricFloors
   if (draft.baselineMode === 'pinned_run' && !draft.baselineRunId.trim()) return { problem: 'A pinned baseline needs the run to compare with.' }
   return {
     definition: {

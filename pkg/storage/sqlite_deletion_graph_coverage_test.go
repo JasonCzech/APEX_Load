@@ -45,6 +45,7 @@ var manuallyDeletedProjectTables = stringSet(
 // evidence. A declaration here is therefore a reviewed retention decision, not
 // an omission from deleteProjectGraphTx.
 var retainedAfterProjectDeletionTables = stringSet(
+	"replay_artifact_receipts",  // Exact-generation cleanup and unknown writers outlive their project.
 	"analysis_upload_writers",   // Exact upload owners survive project deletion.
 	"analysis_attempt_journal",  // Exact writer/publication proof survives project deletion.
 	"object_activity_events",    // Safe activity history follows audit retention independently of project deletion.

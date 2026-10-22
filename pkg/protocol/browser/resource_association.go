@@ -117,7 +117,18 @@ type cdpContextLoader struct {
 	commit, created   uint64
 }
 
+type cdpSourceCensus struct {
+	expectedLoaders     map[string]string
+	discoveryIncomplete bool
+	loaderTokens        map[string]string
+	ambiguousLoaders    map[string]bool
+	bindingReady        bool
+	truncated           bool
+}
+
 type cdpEvidencePage struct {
+	*cdpSourceCensus
+
 	records  map[resourceJoinKey][]*cdpRequestRecord
 	latest   map[string]*cdpRequestRecord
 	served   map[string]bool
@@ -126,18 +137,14 @@ type cdpEvidencePage struct {
 	// loaderTokens is the document token each loader's document reported
 	// from its own context; a loader reporting two different tokens is
 	// ambiguous.
-	loaderTokens     map[string]string
-	ambiguousLoaders map[string]bool
 	// contextsSeen numbers default contexts in creation order. Only contexts
 	// created after the binding was installed (beyond provableAfter) can
 	// prove a document: an older context never ran the bootstrap's report
 	// and leaves the binding to page scripts.
 	contextsSeen  uint64
 	provableAfter uint64
-	bindingReady  bool
 	ordinals      map[resourceJoinKey]int
 	count         int
-	truncated     bool
 }
 
 type loaderDocument struct {
@@ -166,7 +173,7 @@ type resourceTimingKey struct {
 }
 
 func newCDPEvidencePage() *cdpEvidencePage {
-	return &cdpEvidencePage{records: map[resourceJoinKey][]*cdpRequestRecord{}, latest: map[string]*cdpRequestRecord{}, served: map[string]bool{}, frames: map[string]cdpFrameCommit{}, contexts: map[int64]cdpContextLoader{}, loaderTokens: map[string]string{}, ambiguousLoaders: map[string]bool{}, ordinals: map[resourceJoinKey]int{}}
+	return &cdpEvidencePage{cdpSourceCensus: &cdpSourceCensus{expectedLoaders: map[string]string{}, loaderTokens: map[string]string{}, ambiguousLoaders: map[string]bool{}}, records: map[resourceJoinKey][]*cdpRequestRecord{}, latest: map[string]*cdpRequestRecord{}, served: map[string]bool{}, frames: map[string]cdpFrameCommit{}, contexts: map[int64]cdpContextLoader{}, ordinals: map[resourceJoinKey]int{}}
 }
 
 // installResourceAssociation attaches the evidence CDP session to a newly
@@ -193,9 +200,18 @@ func (b *Browser) installResourceAssociation(browserContext playwright.BrowserCo
 		cdp, err = browserContext.NewCDPSession(page)
 	}
 	if err != nil || cdp == nil {
+		b.mu.Lock()
+		b.evidence.nativeDiscoveryIncomplete = true
+		b.mu.Unlock()
 		return
 	}
 	state := newCDPEvidencePage()
+	cdp.On("Page.frameAttached", func(map[string]any) { b.markNativeDiscoveryIncomplete(generation) })
+	cdp.On("Page.frameDetached", func(params map[string]any) {
+		if cdpText(params, "reason") == "swap" {
+			b.markNativeDiscoveryIncomplete(generation)
+		}
+	})
 	cdp.On("Network.requestWillBeSent", func(params map[string]any) { b.observeCDPRequest(state, params, generation) })
 	cdp.On("Network.responseReceived", func(params map[string]any) { b.observeCDPResponse(state, params, generation) })
 	cdp.On("Network.requestServedFromCache", func(params map[string]any) { b.observeCDPCacheHit(state, params, generation) })
@@ -211,10 +227,23 @@ func (b *Browser) installResourceAssociation(browserContext playwright.BrowserCo
 		return
 	}
 	b.evidence.cdpPages[page] = state
+	// Additional targets can start before their CDP session attaches. Their
+	// pre-attachment history cannot be independently closed by this census.
+	if len(b.evidence.nativeSources) > 0 {
+		b.evidence.nativeDiscoveryIncomplete = true
+	}
+	if len(b.evidence.nativeSources) >= browserDocumentLimit {
+		b.evidence.nativeDiscoveryIncomplete = true
+	} else {
+		b.evidence.nativeSources[state.cdpSourceCensus] = page
+	}
 	b.mu.Unlock()
 	// This session only reads request metadata: zero buffers keep a second
 	// network agent from retaining bodies in the renderer.
 	_, err = cdp.Send("Page.enable", map[string]any{})
+	if err == nil {
+		b.seedNativeInitialDocument(cdp, state, generation)
+	}
 	if err == nil {
 		_, err = cdp.Send("Network.enable", map[string]any{"maxTotalBufferSize": 0, "maxResourceBufferSize": 0, "maxPostDataSize": 0})
 	}
@@ -233,8 +262,12 @@ func (b *Browser) installResourceAssociation(browserContext playwright.BrowserCo
 		state.provableAfter, state.bindingReady = state.contextsSeen, true
 		b.mu.Unlock()
 	}
+	if err == nil {
+		b.joinNativeInitialDocument(cdp, state, generation)
+	}
 	if err != nil {
 		b.mu.Lock()
+		b.evidence.nativeDiscoveryIncomplete = true
 		delete(b.evidence.cdpPages, page)
 		b.mu.Unlock()
 		_ = cdp.Detach()
@@ -365,6 +398,19 @@ func (b *Browser) observeCDPCommit(state *cdpEvidencePage, params map[string]any
 	defer b.mu.Unlock()
 	if b.evidence.generation != generation {
 		return
+	}
+	if cdpText(frame, "parentId") != "" {
+		state.discoveryIncomplete = true
+	}
+	if state.expectedLoaders == nil {
+		state.expectedLoaders = map[string]string{}
+	}
+	if _, duplicate := state.expectedLoaders[loaderID]; duplicate {
+		state.discoveryIncomplete = true
+	} else if len(state.expectedLoaders) >= browserDocumentLimit {
+		state.discoveryIncomplete = true
+	} else {
+		state.expectedLoaders[loaderID] = frameID
 	}
 	previous, known := state.frames[frameID]
 	if !known && len(state.frames) >= cdpCommitFrameLimit {

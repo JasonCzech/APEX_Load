@@ -1446,11 +1446,12 @@ type TestRecord struct {
 	MonitorBindings       *MonitorBindings          `json:"monitor_bindings,omitempty"`
 	TraceContext          any                       `json:"trace_context,omitempty"` // JSON blob
 	// JointEvidence is the run's joint evidence v4 projection (JSON blob).
-	JointEvidence         any `json:"joint_evidence,omitempty"`
-	DynatraceCapture      any `json:"dynatrace_capture,omitempty"`       // JSON blob
-	StartAuthorization    any `json:"start_authorization,omitempty"`     // JSON blob
-	ExecutionPlanApproval any `json:"execution_plan_approval,omitempty"` // JSON blob
-	ExecutionPlan         any `json:"execution_plan,omitempty"`          // JSON blob: the plan run that started this run
+	JointEvidence            any `json:"joint_evidence,omitempty"`
+	AnalysisPolicySelections any `json:"analysis_policy_selections,omitempty"`
+	DynatraceCapture         any `json:"dynatrace_capture,omitempty"`       // JSON blob
+	StartAuthorization       any `json:"start_authorization,omitempty"`     // JSON blob
+	ExecutionPlanApproval    any `json:"execution_plan_approval,omitempty"` // JSON blob
+	ExecutionPlan            any `json:"execution_plan,omitempty"`          // JSON blob: the plan run that started this run
 	// InitialProvenance is the immutable, masked start-of-run archive snapshot.
 	// It is stored as an opaque JSON blob because the API archive model must not
 	// become a dependency of the storage package.

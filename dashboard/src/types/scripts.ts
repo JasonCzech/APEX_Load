@@ -1189,6 +1189,8 @@ export interface ScriptReplayActionEvent {
 }
 
 export interface ScriptReplayReport {
+  /** Bounded capture failures; absence does not establish native capture coverage. */
+  native_har_capture_omissions?: Record<string, number>
   replay_session_id?: string
   script_hash?: string
   script_revision?: string

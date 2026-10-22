@@ -33,7 +33,7 @@ const LimitationStageSkipped = "stage_skipped"
 
 // EngineVersionBase names the engine's generation; EngineVersion appends the
 // versions and a fingerprint of every value that shapes an assessment.
-const EngineVersionBase = "apexload.rca.engine.v3"
+const EngineVersionBase = "apexload.rca.engine.v7"
 
 // EngineVersion identifies everything that decides an assessment from frozen
 // inputs: the rules' and parameters' versions, a fingerprint of every value
@@ -73,18 +73,19 @@ const (
 // Assessment is a run's v2 root-cause assessment. The service fills the
 // analysis identity, revision and input digests; Analyze fills the rest.
 type Assessment struct {
-	SchemaVersion string       `json:"schema_version"`
-	AnalysisID    string       `json:"analysis_id"`
-	Revision      int64        `json:"revision"`
-	Inputs        InputDigests `json:"inputs"`
-	Acceptance    Acceptance   `json:"acceptance"`
-	Validity      Validity     `json:"validity"`
-	Anomalies     []Anomaly    `json:"anomalies"`
-	Hypotheses    []Hypothesis `json:"hypotheses"`
-	Outcome       string       `json:"outcome"`
-	Coverage      []Coverage   `json:"coverage"`
-	Limitations   []Limitation `json:"limitations"`
-	Budget        Budget       `json:"budget"`
+	BrowserSelection *BrowserBaselineSelection `json:"browser_selection,omitempty"`
+	SchemaVersion    string                    `json:"schema_version"`
+	AnalysisID       string                    `json:"analysis_id"`
+	Revision         int64                     `json:"revision"`
+	Inputs           InputDigests              `json:"inputs"`
+	Acceptance       Acceptance                `json:"acceptance"`
+	Validity         Validity                  `json:"validity"`
+	Anomalies        []Anomaly                 `json:"anomalies"`
+	Hypotheses       []Hypothesis              `json:"hypotheses"`
+	Outcome          string                    `json:"outcome"`
+	Coverage         []Coverage                `json:"coverage"`
+	Limitations      []Limitation              `json:"limitations"`
+	Budget           Budget                    `json:"budget"`
 
 	Detection  Detection    `json:"detection"`
 	Graph      Graph        `json:"graph"`
@@ -97,6 +98,7 @@ type Assessment struct {
 
 // InputDigests identify the frozen inputs an assessment read.
 type InputDigests struct {
+	BrowserSelection string `json:"browser_selection,omitempty"`
 	Archive          string `json:"archive"`
 	EvidenceRevision int64  `json:"evidence_revision"`
 	Baseline         string `json:"baseline,omitempty"`

@@ -41,9 +41,10 @@ unknown creation outcomes require a separate externally attested creation fence
 plus complete never-started runtime history and authoritative pod-object removal
 before release; otherwise they remain
 durably quarantined. The first
-failure is retained. A qualified runtime attestor, infrastructure fencing, PID 1 supervisor,
-TLS facade/broker service, deployment
-manifests, and assignment staging integration are still required. The store has
+failure is retained. The PID 1 supervisor, broker, loopback facade, deployment
+scaffold and explicit distributed assignment integration are implemented; see
+[JAVA_BROKER_SERVICE.md](JAVA_BROKER_SERVICE.md). A qualified runtime attestor,
+infrastructure fencing and live infrastructure qualification remain release gates. The store has
 a hard 10,000-record lifetime bound and retains released records; operator-safe
 compaction remains a future operation rather than silent evidence deletion.
 
@@ -317,8 +318,10 @@ admission, all-or-nothing capacity, preparation expiry under renewal, cancellati
 with an ambiguous created pod, no initialization before commit, real mTLS
 handshakes, and the Kubernetes-create → exact-container → harness → commit path.
 The broker API and host credential provisioning described below now connect
-these primitives. The generator-facing facade, assignment staging integration
-and deployment wiring remain separate implementation work.
+these primitives. The generator-facing facade, explicit distributed assignment
+integration and deployment scaffold are described in
+[JAVA_BROKER_SERVICE.md](JAVA_BROKER_SERVICE.md); production qualification still
+requires the external attestor and infrastructure evidence specified there.
 
 Per-Vuser context now travels in a bounded canonical host-context envelope,
 separate from the immutable image profile. The pod policy digest includes the

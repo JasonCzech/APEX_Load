@@ -13,6 +13,7 @@ const FeatureBrowserDocumentEvidenceV2 = "browser_document_evidence_v2"
 // evidence capture (E3).
 const FeatureBrowserInteractionEvidenceV1 = "browser_interaction_evidence_v1"
 const FeatureBrowserInteractionEvidenceV2 = dsl.FeatureBrowserInteractionEvidenceV2
+const FeatureBrowserInteractionEvidenceV3 = "browser_interaction_evidence_v3"
 
 // browserRuntimeFeatures are the features a browser runtime instance
 // advertises, read the same way when the generator advertises them and when
@@ -23,12 +24,28 @@ func browserRuntimeFeatures(instance protocol.Protocol) []string {
 	features := []string{dsl.FeatureBrowserSessionIdentitiesV1, dsl.FeatureBrowserSalesforceJWTV1}
 	if _, ok := instance.(protocol.BrowserDocumentEvidenceProvider); ok {
 		features = append(features, FeatureBrowserDocumentEvidenceV2)
+		if _, ok := instance.(protocol.BrowserDocumentReceiptEvidenceProvider); ok {
+			if _, wired := instance.(interface{ BrowserDocumentReceiptTransportVersion() int }); wired {
+				features = append(features, FeatureBrowserDocumentProofV1)
+				if max, ok := instance.(interface{ BrowserDocumentReceiptMaxVersion() int }); ok && max.BrowserDocumentReceiptMaxVersion() >= 2 {
+					features = append(features, FeatureBrowserDocumentProofV2)
+					if max.BrowserDocumentReceiptMaxVersion() >= 3 {
+						if _, ok := instance.(protocol.BrowserSourceLeaseProvider); ok {
+							features = append(features, FeatureBrowserDocumentProofV3)
+						}
+					}
+				}
+			}
+		}
 	}
 	if _, ok := instance.(protocol.BrowserInteractionEvidenceProvider); ok {
 		features = append(features, FeatureBrowserInteractionEvidenceV1)
 	}
 	if _, ok := instance.(protocol.BrowserInteractionEvidenceV2Provider); ok {
-		features = append(features, FeatureBrowserInteractionEvidenceV2)
+		features = append(features, FeatureBrowserInteractionEvidenceV2, FeatureBrowserOriginalSourceV1)
+	}
+	if _, ok := instance.(protocol.BrowserInteractionEvidenceV3Provider); ok {
+		features = append(features, FeatureBrowserInteractionEvidenceV3)
 	}
 	return features
 }

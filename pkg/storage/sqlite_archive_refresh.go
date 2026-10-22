@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -80,7 +81,12 @@ func scanArchiveRefreshJob(row rowScanner) (*ArchiveRefreshJob, error) {
 }
 
 func (s *SQLiteStore) GetArchiveRefreshJob(testID string) (*ArchiveRefreshJob, error) {
-	return scanArchiveRefreshJob(s.db.QueryRow(`SELECT test_id, project_id, generation,
+	return s.GetArchiveRefreshJobContext(context.Background(), testID)
+}
+
+// GetArchiveRefreshJobContext includes database pool waits in the caller deadline.
+func (s *SQLiteStore) GetArchiveRefreshJobContext(ctx context.Context, testID string) (*ArchiveRefreshJob, error) {
+	return scanArchiveRefreshJob(s.db.QueryRowContext(ctx, `SELECT test_id, project_id, generation,
 		intent_token, created_at, updated_at FROM archive_refresh_jobs WHERE test_id = ?`, strings.TrimSpace(testID)))
 }
 

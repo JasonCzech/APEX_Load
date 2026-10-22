@@ -482,7 +482,7 @@ func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 	}
 	if browserCfg.CaptureInteractions != nil {
 		cfg["browser_capture_interactions"] = *browserCfg.CaptureInteractions
-		cfg["browser_interaction_evidence_version"] = protocol.BrowserInteractionVersion2
+		cfg["browser_interaction_evidence_version"] = protocol.BrowserInteractionVersion3
 	}
 	policy := "persistent_context"
 	if browserEmulationNewUserEachIteration(&script.Config) {

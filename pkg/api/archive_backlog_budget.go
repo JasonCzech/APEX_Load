@@ -22,7 +22,7 @@ const envArchiveBacklogMaxBytes = "APEXLOAD_ARCHIVE_BACKLOG_MAX_BYTES"
 // These are independently admitted collection copies, object-backend namespaces
 // below the filesystem root, and imported library assets. They are not workload
 // producer/publication output. Readers and transfer scratch use separate roots.
-var controllerArchiveBacklogExclusions = []string{"_collection", "_object_staging", "library-imports"}
+var controllerArchiveBacklogExclusions = []string{"_collection", "_object_staging", "library-imports", archiveReplayDirectory}
 
 type archiveBacklogBudget struct {
 	mu      sync.Mutex

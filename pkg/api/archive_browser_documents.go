@@ -117,6 +117,9 @@ func validArchiveSHA256(value string) bool {
 }
 
 func validateBrowserDocumentManifest(manifest *RunArchiveManifest, requireProof bool) error {
+	if err := validateBrowserReceiptManifest(manifest, requireProof); err != nil {
+		return err
+	}
 	if manifest == nil {
 		return errors.New("browser document manifest is unavailable")
 	}
@@ -315,6 +318,9 @@ func readArchiveBrowserDocumentMeasurements(ctx context.Context, record *storage
 }
 
 func mergeRemoteBrowserDocuments(root string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, budget *archiveOutputBudget) (err error) {
+	if err := mergeRemoteBrowserReceipts(root, manifest, bundles, budget); err != nil {
+		return err
+	}
 	qualifyBrowserDocumentSourceCoverage(manifest, bundles)
 	if err := validateBrowserDocumentManifest(manifest, false); err != nil {
 		return err

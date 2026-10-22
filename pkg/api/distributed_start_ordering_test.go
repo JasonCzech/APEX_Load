@@ -278,7 +278,9 @@ func waitDistributedActivation(t *testing.T, runner *TestRunner, testID string) 
 }
 
 func TestDistributedCommitBarrierIsChosenAfterSlowRunningPersistence(t *testing.T) {
-	timeout := 400 * time.Millisecond
+	// This assertion compares the barrier to persistence completion; it does
+	// not require a short RPC budget. Leave headroom for owned teardown too.
+	timeout := 2 * time.Second
 	baseStore, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)

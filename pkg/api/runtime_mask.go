@@ -588,6 +588,7 @@ func maskTestGroupsRuntimeSettings(groups []TestGroup) []TestGroup {
 // Provenance is long-lived evidence and may be downloaded by project viewers,
 // so it must never retain runnable credentials.
 func maskRunArchiveProvenance(provenance RunArchiveProvenance) RunArchiveProvenance {
+	provenance.BrowserAuthoredSources = cloneBrowserAuthoredDefinitions(provenance.BrowserAuthoredSources)
 	provenance.LiveTables = cloneLiveTableArchiveSummaries(provenance.LiveTables)
 	provenance.ProjectLiveTables = append([]RunArchiveProjectLiveTableAttachment(nil), provenance.ProjectLiveTables...)
 	provenance.TelemetryPolicy = cloneTelemetryBudgetPolicy(provenance.TelemetryPolicy)

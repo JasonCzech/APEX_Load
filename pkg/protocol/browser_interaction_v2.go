@@ -9,6 +9,16 @@ import (
 // dispatch clocks. Its producer must be negotiated with the receiving peer.
 // Version 1 remains readable and never acquires inferred dispatch data.
 const BrowserInteractionVersion2 = 2
+
+// BrowserInteractionVersion3 adds optional observed outcome clocks.
+const BrowserInteractionVersion3 = 3
+
+func BrowserInteractionHasDispatch(version int) bool {
+	return version == BrowserInteractionVersion2 || version == BrowserInteractionVersion3
+}
+
+type BrowserInteractionEvidenceV3Provider interface{ SupportsBrowserInteractionEvidenceV3() }
+
 const (
 	InteractionDispatchClockUnavailable    = "clock_unavailable"
 	InteractionDispatchDocumentUnavailable = "document_identity_unavailable"
@@ -52,7 +62,7 @@ func browserInteractionV2FieldsValid(i BrowserInteraction) bool {
 	if i.Execution != nil && (!i.Execution.Valid() || i.AuthoredStep == nil) {
 		return false
 	}
-	if i.Version != BrowserInteractionVersion2 || i.AuthoredStep != nil && !i.AuthoredStep.Valid() {
+	if !BrowserInteractionHasDispatch(i.Version) || i.AuthoredStep != nil && !i.AuthoredStep.Valid() {
 		return false
 	}
 	if i.Dispatch != nil {

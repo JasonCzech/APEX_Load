@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { freezeBrowserPanelDefinition } from './browserPanelInputs'
+import { useEffect, useRef, useState } from 'react'
 import ArchivedNativePanel from './ArchivedNativePanel'
 import NativeEvidencePanel from './NativeEvidencePanel'
 import './NativeAnalyticsPanel.css'
@@ -22,11 +23,13 @@ export default function NativeAnalyticsPanel({ panel, history }: { panel: Dashbo
   </ExportableChart>
 }
 
-export function NativePanelAuthoring({ onSave, properties = [] }: { properties?: string[]; onSave: (definition: Pick<DashboardDefinition, 'name' | 'tabs'>) => Promise<void> }) {
+export function NativePanelAuthoring({ onSave, properties = [], runId }: { runId?: string; properties?: string[]; onSave: (definition: Pick<DashboardDefinition, 'name' | 'tabs'>) => Promise<void> }) {
   const [evidenceMode, setEvidenceMode] = useState('')
   const [merged, setMerged] = useState(false)
   const [group, setGroup] = useState('')
   const [maxSeries, setMaxSeries] = useState(10)
+  const [separateBrowserTuples, setSeparateBrowserTuples] = useState(false)
+  const [freezeInputs, setFreezeInputs] = useState(false)
   const [overlayType, setOverlayType] = useState('')
   const [overlayId, setOverlayId] = useState('')
   const [overlayMetric, setOverlayMetric] = useState('')
@@ -47,21 +50,27 @@ export function NativePanelAuthoring({ onSave, properties = [] }: { properties?:
   const [kind, setKind] = useState('line')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const previewAbort = useRef<AbortController | null>(null)
+  useEffect(() => () => { previewAbort.current?.abort(); previewAbort.current = null }, [runId])
   // Browser documents are one measurement tuple of the archive: their
   // filters name the tuple, and they have no action, property or grouping.
   const browserDocuments = population === 'browser_document'
   const javaHTTP = population === 'java_http_action'
   const metricTable = javaHTTP ? nativeJavaHTTPMetrics : browserDocuments ? nativeBrowserDocumentMetrics : population ? nativePopulationMetrics : nativeMetrics
   return <details className="native-panel-authoring"><summary>Create project analytics panel</summary><form onSubmit={async event => {
-    event.preventDefault(); setBusy(true); setError('')
-    try { await onSave({ name: title.trim(), tabs: [{ id: 'analytics', title: 'Analytics', panels: [{ id: 'metric', title: title.trim(), kind, x: 0, y: 0, w: 24, h: 8, query: { query_version: ANALYTICS_QUERY_VERSION, metric, aggregation, max_series: evidenceMode ? maxSeries : 1, ...(evidenceMode ? { evidence_mode: evidenceMode as 'live' | 'archive', ...(evidenceMode === 'live' && merged ? { live_bucket_mode: 'merged' as const } : {}), dimensions: group ? [group] : [], ...(overlayType ? { overlay_selection: { ...(overlayType === 'dataset' ? { dataset_id: overlayId.trim() } : { source_id: overlayId.trim() }), metric: overlayMetric.trim(), aggregation: overlayAggregation, host: overlayType === 'monitor' ? overlayHost.trim() || undefined : undefined, max_lag_seconds: lag } } : {}) } : {}), ...(population ? { population: population as 'action' | 'transaction' | 'browser_document' | 'java_http_action', filters: { ...dimensionFilters, ...(action && !browserDocuments ? { action } : {}) }, start_seconds: start, end_seconds: end, bucket_seconds: bucket, comparison_run_id: evidenceMode ? undefined : baseline.trim() || undefined, ...(population === 'action' && property ? { property_name: property.split('=')[0], property_value: evidenceMode && group === 'property' ? undefined : property.slice(property.indexOf('=') + 1) } : {}) } : {}) } }] }] }) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to save panel') } finally { setBusy(false) }
+    event.preventDefault(); if (busy) return; setBusy(true); setError('')
+    const abort = new AbortController(); previewAbort.current = abort
+    try { const definition: Pick<DashboardDefinition, 'name' | 'tabs'> = { name: title.trim(), tabs: [{ id: 'analytics', title: 'Analytics', panels: [{ id: 'metric', title: title.trim(), kind, x: 0, y: 0, w: 24, h: 8, query: { query_version: browserDocuments && separateBrowserTuples && freezeInputs ? 4 : ANALYTICS_QUERY_VERSION, metric, aggregation, max_series: evidenceMode || browserDocuments && separateBrowserTuples ? maxSeries : 1, ...(browserDocuments && separateBrowserTuples ? { browser_tuple_mode: 'separate' as const } : {}), ...(evidenceMode ? { evidence_mode: evidenceMode as 'live' | 'archive', ...(evidenceMode === 'live' && merged ? { live_bucket_mode: 'merged' as const } : {}), dimensions: group ? [group] : [], ...(overlayType ? { overlay_selection: { ...(overlayType === 'dataset' ? { dataset_id: overlayId.trim() } : { source_id: overlayId.trim() }), metric: overlayMetric.trim(), aggregation: overlayAggregation, host: overlayType === 'monitor' ? overlayHost.trim() || undefined : undefined, max_lag_seconds: lag } } : {}) } : {}), ...(population ? { population: population as 'action' | 'transaction' | 'browser_document' | 'java_http_action', filters: { ...dimensionFilters, ...(action && !browserDocuments ? { action } : {}) }, start_seconds: start, end_seconds: end, bucket_seconds: bucket, comparison_run_id: evidenceMode ? undefined : baseline.trim() || undefined, ...(population === 'action' && property ? { property_name: property.split('=')[0], property_value: evidenceMode && group === 'property' ? undefined : property.slice(property.indexOf('=') + 1) } : {}) } : {}) } }] }] }; const prepared = await freezeBrowserPanelDefinition(runId, definition, abort.signal); abort.signal.throwIfAborted(); await onSave(prepared) } catch (reason) { if (!abort.signal.aborted) setError(reason instanceof Error ? reason.message : 'Unable to save panel') } finally { if (previewAbort.current === abort) previewAbort.current = null; setBusy(false) }
   }}>
     <label>Panel title<input required maxLength={256} value={title} onChange={event => setTitle(event.target.value)} /></label>
     <label>Evidence workflow<select aria-label="Evidence workflow" value={evidenceMode} onChange={event => { const mode = event.target.value; setEvidenceMode(mode); setDimensionFilters({}); if (mode) { setPopulation('action'); setMetric('response_time'); setAggregation('avg'); setGroup('action') } else { setGroup(''); setOverlayType('') } }}><option value="">Run totals / archive comparison</option><option value="live">Filtered live intervals</option><option value="archive">Grouped archive and overlays</option></select></label>
     <label>Evidence population<select aria-label="Evidence population" value={population} onChange={event => { const next = event.target.value; setPopulation(next); setProperty(''); setGroup('action'); if (next === 'java_http_action') { setMetric('java_http_input_bytes'); setAggregation('avg'); setAction(''); setDimensionFilters({}); setGroup(''); setOverlayType('') } else if (next === 'browser_document') { setMetric('document_lcp'); setAggregation('p75'); setAction(''); setDimensionFilters({ frame_scope: 'main_frame', lifecycle_phase: 'navigation' }) } else { setMetric(next ? 'response_time' : 'tps'); setAggregation('avg'); setDimensionFilters({}) } }}>{!evidenceMode && <option value="">Retained run totals</option>}<option value="action">{evidenceMode === 'live' ? 'Live actions' : 'Archived actions'}</option><option value="transaction">{evidenceMode === 'live' ? 'Live business transactions' : 'Archived business transactions'}</option>{!evidenceMode && <><option value="browser_document">Archived browser documents</option><option value="java_http_action">Archived Java representations</option></>}</select></label>
     {population && <fieldset><legend>Evidence selection</legend>
       {browserDocuments ? <>
-        <p>A browser panel reads one measurement tuple: name the engine, device profile and group (and region or runtime cohort when several share them).</p>
+        <label><input type="checkbox" checked={separateBrowserTuples} onChange={event => setSeparateBrowserTuples(event.target.checked)} />Show separate browser cohorts</label>
+        {separateBrowserTuples && <label><input type="checkbox" checked={freezeInputs} disabled={!runId} onChange={event => setFreezeInputs(event.target.checked)} />Freeze archive inputs for this panel</label>}
+        {separateBrowserTuples && freezeInputs && <p>Saving evaluates the current and selected comparison archives. The saved panel keeps those exact publications and tuple identities when opened from another run. Changed or unavailable inputs require an explicit new save.</p>}
+        {separateBrowserTuples ? <><p>Each complete measurement tuple has its own series. Different engines, profiles, runtime cohorts and document lifecycles are never pooled. Limits fail explicitly.</p><label>Maximum browser series<input type="number" required min={1} max={20} value={maxSeries} onChange={event => setMaxSeries(Number(event.target.value))} /></label></> : <p>A browser panel reads one measurement tuple: name the engine, device profile and group (and region or runtime cohort when several share them).</p>}
         {[['engine', 'Engine'], ['device_profile', 'Device profile'], ['group', 'Group'], ['region', 'Region'], ['cohort', 'Runtime cohort']].map(([key, label]) => <label key={key}>{label}<input aria-label={`${label} filter`} maxLength={key === 'cohort' ? 16 : 256} value={dimensionFilters[key] || ''} onChange={event => setDimensionFilters(current => { const next = { ...current }; if (event.target.value.trim()) next[key] = event.target.value.trim(); else delete next[key]; return next })} /></label>)}
         <label>Frame scope<select aria-label="Frame scope" value={dimensionFilters.frame_scope || 'main_frame'} onChange={event => setDimensionFilters(current => ({ ...current, frame_scope: event.target.value }))}><option value="main_frame">Main frame</option><option value="child_frame">Child frames</option></select></label>
         <label>Lifecycle<select aria-label="Lifecycle" value={dimensionFilters.lifecycle_phase || 'navigation'} onChange={event => setDimensionFilters(current => ({ ...current, lifecycle_phase: event.target.value }))}><option value="navigation">Navigations</option><option value="bfcache_restore">Back-forward cache restores</option></select></label>

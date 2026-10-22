@@ -144,7 +144,7 @@ test('the Browser area leads from a finding to its document resources and HAR en
 // BI-4: an editor creates and edits a browser policy; a save based on a
 // revision someone else replaced is refused and offers the current one; a
 // past revision is shown read-only; a delete names the revision it read.
-test('browser policies save revisions, refuse stale edits and show past revisions', async ({ page }) => {
+test('browser policies save revisions, refuse stale edits and show past revisions', async ({ page }, testInfo) => {
   test.setTimeout(120_000)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const request = page.context().request
@@ -159,28 +159,38 @@ test('browser policies save revisions, refuse stale edits and show past revision
   await panel.getByRole('button', { name: 'New browser policy', exact: true }).click()
   const editor = panel.getByRole('form', { name: 'New browser policy', exact: true })
   await editor.getByLabel('Name', { exact: true }).fill('Checkout vitals')
+  await editor.getByLabel('LCP floor (ms)', { exact: true }).fill('350')
+  await editor.getByLabel('FCP floor (ms)', { exact: true }).fill('75')
+  await editor.getByLabel('INP floor (ms)', { exact: true }).fill('50')
+  await page.setViewportSize({ width: 760, height: 900 })
+  await editor.getByLabel('LCP floor (ms)', { exact: true }).scrollIntoViewIfNeeded()
+  await expect(editor.getByLabel('LCP floor (ms)', { exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('browser-metric-floors.png'), animations: 'disabled' })
   await editor.getByRole('button', { name: 'Save policy', exact: true }).click()
   const table = panel.getByRole('table', { name: 'Browser policies', exact: true })
   await expect(table.getByRole('row', { name: /Checkout vitals/ })).toContainText('1')
   const [stored] = await json(await request.get(`/api/v1/analysis/policies?${scope}&kind=browser_policy`)) as unknown as Array<{ id: string; revision: number; name: string; definition: Record<string, unknown> }>
-  expect(stored).toMatchObject({ name: 'Checkout vitals', revision: 1 })
+  expect(stored).toMatchObject({ name: 'Checkout vitals', revision: 1, definition: { effect_floors: { timing_by_metric_ms: { lcp: 350, fcp: 75, inp: 50 } } } })
 
   // Someone else saves revision 2 while this editor holds revision 1.
   await table.getByRole('button', { name: 'Edit', exact: true }).click()
   const edit = panel.getByRole('form', { name: 'Edit browser policy', exact: true })
   await expect(edit).toContainText('(revision 1)')
-  await json(await request.put(`/api/v1/analysis/policies/${stored.id}?${scope}`, { data: { kind: 'browser_policy', name: 'Checkout vitals (API)', definition: stored.definition, revision: 1 } }))
+  await expect(edit.getByLabel('LCP floor (ms)', { exact: true })).toHaveValue('350')
+  await json(await request.put(`/api/v1/analysis/policies/${stored.id}?${scope}`, { data: { kind: 'browser_policy', name: 'Checkout vitals (API)', definition: { ...stored.definition, effect_floors: { timing_by_metric_ms: { lcp: 500, fcp: 75, inp: 50 } } }, revision: 1 } }))
   await edit.getByLabel('LCP good bound', { exact: true }).fill('2000')
   await edit.getByRole('button', { name: 'Save policy', exact: true }).click()
   await expect(edit).toContainText('This policy changed since you opened it')
   await edit.getByRole('button', { name: 'Load the current revision', exact: true }).click()
   await expect(edit).toContainText('(revision 2)')
+  await expect(edit.getByLabel('LCP floor (ms)', { exact: true })).toHaveValue('500')
   await expect(edit.getByLabel('Name', { exact: true })).toHaveValue('Checkout vitals (API)')
   await edit.getByLabel('LCP good bound', { exact: true }).fill('2000')
   await edit.getByRole('button', { name: 'Save policy', exact: true }).click()
   await expect(table.getByRole('row', { name: /Checkout vitals \(API\)/ })).toContainText('3')
   const current = await json(await request.get(`/api/v1/analysis/policies/${stored.id}?${scope}`)) as unknown as { revision: number; definition: { metrics: Array<{ metric: string; good: number }> } }
   expect(current.revision).toBe(3)
+  expect(current.definition).toMatchObject({ effect_floors: { timing_by_metric_ms: { lcp: 500, fcp: 75, inp: 50 } } })
   expect(current.definition.metrics.find(metric => metric.metric === 'lcp')?.good).toBe(2000)
 
   // Revision 1 is unchanged and read-only.
@@ -190,6 +200,7 @@ test('browser policies save revisions, refuse stale edits and show past revision
   await revision.getByRole('button', { name: 'Show', exact: true }).click()
   await expect(revision).toContainText('Revision 1')
   await expect(revision).toContainText('"good": 2500')
+  await expect(revision).toContainText('"lcp": 350')
 
   await table.getByRole('button', { name: 'Delete', exact: true }).click()
   await page.getByRole('alertdialog').getByRole('button', { name: 'Delete policy', exact: true }).click()

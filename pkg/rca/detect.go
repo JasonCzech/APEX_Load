@@ -273,10 +273,28 @@ func Detect(input DetectionInput, params DetectParams, budgeter *Budgeter) ([]An
 	}
 	out := &detectOutput{params: params, judged: JudgedSeries{}, insufficient: map[string]bool{}}
 	matched := 0
+	qualificationSeen := map[string]bool{}
 	for _, s := range series {
 		if budgeter.Exhausted() {
 			detection.Status = DetectionPartial
 			break
+		}
+		if s.Kind == SeriesBrowserDocument {
+			limits := browserDocumentQualificationLimitations(s.Document, false)
+			if s.Document != nil && s.Document.TimelineQualification != BrowserEvidenceQualified {
+				limits = append(limits, Limitation{Code: "browser_timeline_unavailable", Detail: "bounded browser load attribution does not establish alignment with the telemetry timeline"})
+			}
+			if len(limits) > 0 {
+				detection.Status = DetectionPartial
+				detection.SeriesExcluded++
+				for _, limit := range limits {
+					if !qualificationSeen[limit.Code] {
+						limitations = append(limitations, limit)
+						qualificationSeen[limit.Code] = true
+					}
+				}
+				continue
+			}
 		}
 		offered := len(s.Points)
 		if s = boundedSeries(s, budgeter); len(s.Points) < offered {

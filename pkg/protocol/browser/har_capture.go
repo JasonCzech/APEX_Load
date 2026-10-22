@@ -123,7 +123,15 @@ func normalizeHARCapturePolicy(value string) string {
 // the evidence exists by the time the error happens; the file is discarded at
 // close when no error occurred.
 func (b *Browser) applyHARCaptureOptions(contextOptions *playwright.BrowserNewContextOptions) error {
-	if b.harCapturePolicy == HARCaptureOff || b.harCapturePolicy == "" || b.hasRuntimeSecretMaterial() {
+	if b.harCapturePolicy == HARCaptureOff || b.harCapturePolicy == "" {
+		return nil
+	}
+	if b.hasRuntimeSecretMaterial() {
+		// Policy suppression is not a failed capture and creates no writer.
+		// Use the existing once-per-context warning path without secret values.
+		b.mu.Lock()
+		b.harUnavailableReason = "har_runtime_secrets"
+		b.mu.Unlock()
 		return nil
 	}
 	if contextOptions == nil {

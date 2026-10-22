@@ -471,3 +471,146 @@ At most 200 patterns are kept, and patterns are found among the first 100,000
 interactions (`interactions_truncated` beyond that). Screenshot overlays are
 not produced. Incomplete journeys are E5's journey accounting
 (`/archive/journeys`), not a pattern here.
+
+## Promoting browser intelligence support
+
+Passing `BI-*` acceptance records require reviewed, currently accepted `BE-4`
+evidence for the exact claimed measurement cohort. A pending request or a test
+suite that ran earlier does not authorize promotion. This gate changes support
+claims; it does not rewrite historical findings or promote preview results.
+
+Supply a version-1 `qualification` object with the measured `runtime_sha256`,
+`capability_sha256`, `metric` and `measurement_algorithm`. The acceptance record
+must also identify the engine in `provider`, a nonempty profile (use `desktop`
+for desktop), platform, full commit SHA and tested binary SHA-256. A BI record
+adds its versioned `analysis_algorithm` and one to eight `dependencies`, each
+with the accepted BE record's `record_id` and returned `record_sha256`.
+Both records must name the same binary and measurement scope. Artifact hashes
+remain required, and the accepted BE record's digest binds its artifact hashes,
+reviewer identity, sequence and cohort. The server returns `record_sha256` so
+callers do not need to reproduce its canonical serialization.
+
+The dependency check and promotion insert share a database transaction and
+writer fence. A missing, pending, failed, revoked, superseded or mismatched BE
+record returns a conflict without inserting a promotion. A later withdrawal
+also makes current BI support unavailable; the original accepted record and
+its pins stay readable. Old records without qualification remain historical
+records and cannot qualify a new BI promotion.
+
+The returned `cohort_sha256` identifies one metric/measurement/analysis scope,
+including its runtime and capability digests. Different metrics or estimators
+remain separate acceptance subjects. A broader withdrawal without qualification
+covers every matching cohort. Query the exact cohort in release automation:
+
+```bash
+apexctl qa record-acceptance --requirement BI-1 --feature browser-findings \
+  --provider chromium --profile desktop --platform linux-amd64 \
+  --commit FULL_COMMIT_SHA --binary ./controller --suite browser-intelligence \
+  --result passed --artifact reviewed-evidence.json --qualification cohort.json
+apexctl qa acceptance --requirement BI-1 --feature browser-findings \
+  --provider chromium --profile desktop --platform linux-amd64 \
+  --commit FULL_COMMIT_SHA --binary ./controller --cohort COHORT_SHA256 \
+  --require-supported
+```
+
+`cohort.json` holds the qualification object only and is limited to 16 KiB.
+The server validates its fields and dependency pins. Evidence bytes are not
+uploaded by these commands; the existing operator review remains responsible
+for the evidence behind their hashes. A passing local/emulated cohort cannot
+qualify another host, actual device, engine or binary.
+
+### Per-metric baseline effect floors
+
+Browser policies can set separate LCP, FCP and INP minimum changes in
+`effect_floors.timing_by_metric_ms`. Each optional value must be between 50 and
+600,000 milliseconds. The policy editor offers the same three fields; leaving
+one empty uses the overall timing floors. These values affect baseline anomaly
+qualification independently of whether the metric contributes to the weighted
+threshold score. CLS continues to use its separate `effect_floors.cls` field.
+
+For each timing metric, the effective floor is the largest of its configured
+metric floor, the overall absolute floor (at least 50 ms), and the overall
+relative floor (at least 10% of the baseline mean). A per-metric value cannot
+lower either overall floor. Runs keep the floors from their pinned immutable
+policy revision even when the policy is edited later. This does not change the
+`browser_baseline.v1` estimator or implement compatible-run selection.
+
+### Original authored source identity
+
+New managed browser runs and stored-script replays bind authored steps before
+controller runtime overrides. Each version-2 `authored_step` identifies the
+original script SHA-256, its structural path/type digest, the exact step path
+and a derived step ID. Replay events expose that definition identity, and run
+archives retain the source descriptors in `provenance.browser_authored_sources`.
+The step identity does not prove that a gesture dispatched; use the separately
+retained native dispatch and invocation evidence for that claim.
+
+Version 1 continues to identify the exact engine input. It is not relabeled as
+original-source proof. A restored compiled run preserves its stored source
+binding; rebuilding legacy runtime inputs from the current script library leaves
+original-source identity unavailable. The runtime validates the structural
+binding before using a descriptor. Public DSL and replay option JSON cannot
+supply source authority.
+
+Prepared generator assignments carry source descriptors only after fresh
+`browser_original_source_v1` capability negotiation and require an exact
+staging acknowledgement. Older or stale peers and immediate assignments retain
+legacy identity. Source equality alone does not establish matching browser
+runtime, policy, load, document, page or measurement cohorts. Authored page
+identity and compatible-baseline selection remain separate requirements.
+
+
+## Choose policy revisions for a run
+
+In New run, expand **Browser and journey policies** to choose an exact browser or journey policy revision. The latest revision is offered initially; an older revision remains selectable by its revision number. Leaving a kind on **Project default at start** preserves default resolution. Policy lists load when the section opens.
+
+Run drafts, held runs, delayed starts and revised queued copies retain the selection. In a revised copy, explicitly choosing the project default clears the inherited selection. Switching projects clears the prior project's selection. Recurring schedule authoring continues to use project defaults; this selector does not change a saved scenario or recurring schedule.
+
+Creation checks the selected revision and project. Admission resolves the same immutable revision again and computes its digest on the server. A later edit does not change the chosen revision. A policy deletion visible when admission resolves the selection refuses the start; it cannot silently replace the selection with a default. Already admitted runs retain their historical policy pins and findings. Policy resolution and the admission write use the existing run-identity and execution-ownership fences.
+
+The archive's `provenance.policy_pins` identifies an explicit selection with `source: run_selection`. A default uses `source: project_default`. The selected revision and current tombstone are read in one database snapshot. A concurrent deletion after that read follows the same admission boundary as existing default policies. Historical policy reads remain available after deletion for authorized inspection.
+
+
+## Observed post-action wait clocks
+
+Raw browser interaction evidence version 3 retains a supported Sync wait's actual host-side start, effective deadline, observed return and monotonic elapsed duration. These clocks are separate from native gesture dispatch and later diagnostic capture. After-action delay or cancellation during capture cannot rewrite a result already observed at the wait boundary. A parent context may shorten the effective deadline; cancellation, invalid or missing clocks, and a success first observed after its deadline do not establish a satisfied authored deadline.
+
+The controller negotiates `browser_interaction_evidence_v3` with a fresh generator heartbeat and an exact traffic-free staging acknowledgement. Older generators keep their negotiated version-2 evidence. Historical version-1/version-2 records never receive invented clocks. The raw evidence version is separate from interaction analysis version 3; repeat and retry windows continue to use native dispatch time, with unchanged population exclusions.
+
+This receipt covers the runtime's declared post-action Sync waits. It does not claim composition of assertion, dialog, download, navigation and state outcomes, authored page identity, actual-device qualification or an independent target clock. Retained raw evidence preserves clock and outcome together through archive serialization. Browser and mobile-emulation cohorts retain their existing native-versus-synthetic dispatch limitations.
+
+
+## Separate browser cohorts in saved panels
+
+For a completed run, open **Performance** in its report. In Create project analytics panel, choose Archived browser documents and enable **Show separate browser cohorts**. Set a maximum of 1–20 series and retain exact engine, profile, frame, lifecycle, group, region or cohort filters when needed. A selection exceeding the limit fails explicitly. Each tuple has at most 1,000 time buckets; the combined result has at most 20,000 buckets.
+
+These panels save query version 3 with `browser_tuple_mode: separate`. Their versioned result keeps each complete measurement tuple separate, with its own runtime cohort digest, final-document counts, missing buckets and CSV export. Progress snapshots and excluded/censored measurements never enter the percentiles. The legacy bucket array is empty, so an older consumer cannot mistake the result for a pooled distribution. Queries saved before this option retain their single-tuple behavior.
+
+A comparison pairs exact tuple identities and reports missing current/baseline tuples or unavailable workload/coverage compatibility. It does not produce an overall pooled verdict or establish a baseline anomaly. Derived multi-tuple calculations remain unavailable; select one exact tuple to use the existing derivations. Saved comparison panels still resolve their input runs through the existing project authorization; immutable comparison-to-panel input pinning remains separate work.
+
+
+## Supported authored navigation page receipts
+
+Archived document evidence includes a separate **Authored browser pages** view when the runtime retained page-binding receipts. A receipt joins the original structural navigation step to the response actually returned by that command and the observed native document/lifecycle. Repeated executions of that step share an authored page ID while retaining distinct runtime document IDs; duplicate display names do not merge structural steps. Final document measurements are not rewritten when the navigation command later returns.
+
+Version 1 supports explicit Chromium navigation/reload/new-window responses whose existing CDP loader join proves the document. Version 2 supports Chromium and WebKit when the exact native navigation request and sequence remain unchanged around a bounded document/lifecycle identity observation. Canceled reads, stale requests or source generations cannot acquire a binding. Redirects rely on the returned native request rather than URL equality. History/BFCache, same-document/SPA and click-created popup cases without that proof remain unavailable; no page ID is guessed for them or for historical records. Binding a page does not establish equivalent runtime state, journey success, baseline compatibility or actual-device qualification.
+
+The report retains at most 1,024 distinct document/lifecycle bindings, reports malformed/source-mismatched/conflicting and dropped receipts, and never readmits a conflicting identity within that retained set. Counts describe retained receipts, not every page issued. The dashboard displays at most 256 bindings; CSV exports all retained bindings. Original source/structure digests, structural step, native request, source generation and document/lifecycle remain inspectable.
+
+
+## Reading native waterfall and cache evidence
+
+The retained resource inspector draws request phases only when a native document join and document-relative start are available. A missing join leaves the waterfall unavailable; URLs and action timestamps cannot fill it in. Request phases are not cross-host clock synchronization or server-processing measurements.
+
+Each response has its own cache availability. Chromium can expose an observed cache hit; a cached response must not claim a negotiated network protocol. WebKit may expose neither a cache decision nor a document join, even when an independent fixture can count requests. The inspector preserves these unavailable states. At narrow widths, scroll the retained resource table horizontally to reach the inspection column.
+
+Controlled local fixtures reconcile the rendered native waterfall with server receive/finish observations and native HAR timing. They use absolute navigation URLs without a script base URL so the controller's separate HTTP latency probe is not configured. These fixtures qualify only their recorded host/engine/emulation cohorts, not actual devices, remote clock synchronization or reference-host performance.
+
+
+## Frozen browser comparison inputs
+
+On a completed run's **Performance** report, enable **Show separate browser cohorts** and **Freeze archive inputs for this panel** in the project panel editor. Optionally select a comparison run. Save evaluates the authorized archives and retains the exact current/baseline run IDs, verified publication digests, complete tuple identities and query digest. Query version 4 is explicit; existing panels keep their prior semantics.
+
+A frozen panel opened from another run continues reading its saved inputs. Changed, deleted, expired or inaccessible publications remain unavailable; they never silently switch to that other run or the latest archive. Preview and explicitly save new inputs to select a replacement. The frozen-input details and CSV expose publication/query provenance. Baseline-only cohorts retain their measured buckets and CSV rows; absent current values and counts stay missing instead of becoming zero. These pins preserve the archive's recorded policy and cohort evidence; they do not establish baseline anomaly eligibility or a transaction spanning independent archive publications.
+
+Editors may save at most 20 frozen panels together, within the shared analysis admission and deadline. Each input retains its existing limits; the combined current/baseline panel also enforces the selected tuple limit (at most 20) and 20,000 time-bucket rows, including baseline-only cohorts. An oversized union is rejected explicitly. Viewers may inspect authorized saved panels and CSV; native HAR downloads retain their separate authorization. Metadata-only renaming preserves historical pins even when an input has expired. Changing a saved query requires evaluation of its actual inputs.

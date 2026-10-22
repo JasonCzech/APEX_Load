@@ -19,13 +19,17 @@ func init() {
 }
 
 type Browser struct {
-	evidence               browserEvidenceState
-	newUserPolicy          string
-	documentMetricsEnabled bool
-	storageState           *playwright.OptionalStorageState
-	systemLanguage         string
-	availableScreenWidth   int
-	availableScreenHeight  int
+	sourceLease                 *protocol.BrowserSourceLease // Execution-owner expectation predates Init. Protected by mu.
+	contextCloseGate            chan struct{}                // Context-aware physical-close ownership; initialized under mu.
+	authoredIdentityReadPending bool                         // At most one native identity read, including a timed-out reader.
+	evidence                    browserEvidenceState
+	newUserPolicy               string
+	documentProofVersion        int
+	documentMetricsEnabled      bool
+	storageState                *playwright.OptionalStorageState
+	systemLanguage              string
+	availableScreenWidth        int
+	availableScreenHeight       int
 
 	engine                     string
 	quic                       string // browserQUICAuto or browserQUICOff
@@ -372,6 +376,11 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		// which the gesture's own actionability checks would have waited for.
 		result.StartTime = result.StartTime.Add(min(time.Since(preRead), interactionReadOverhead))
 	}
+	b.mu.Lock()
+	if !b.evidence.clock.start.IsZero() {
+		b.evidence.actionCreationLowerNS = time.Since(b.evidence.clock.start).Nanoseconds()
+	}
+	b.mu.Unlock()
 	actionErr, terminal := b.dispatchAction(actionCtx, action, result)
 	if terminal {
 		result.Duration = time.Since(result.StartTime)
@@ -383,8 +392,12 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 
 	var interactionSync browserInteractionSync
 	if actionErr == nil {
-		actionErr = b.runPostActionSync(actionCtx, action)
-		interactionSync = browserInteractionSync{reached: true, err: actionErr}
+		var clock *protocol.BrowserOutcomeClock
+		if b.interactionsEnabled && b.interactionVersion == protocol.BrowserInteractionVersion3 {
+			clock = &protocol.BrowserOutcomeClock{}
+		}
+		actionErr = b.runPostActionSyncWithClock(actionCtx, action, clock)
+		interactionSync = browserInteractionSync{reached: true, err: actionErr, contextErr: actionCtx.Err(), clock: clock.Clone()}
 	}
 	if actionErr == nil && dialogGuardsThisAction {
 		actionErr = b.waitForPendingDialog(actionCtx, dialogWait)
@@ -423,7 +436,8 @@ func browserPageNavigation(actionType string) bool {
 // noteDocumentResponse records how the site answered a page load on page:
 // its status on result, and, for an error status the step does not expect,
 // the refusal the load fails with. Another answer ends an earlier refusal.
-func (b *Browser) noteDocumentResponse(action *protocol.Action, result *protocol.Result, page playwright.Page, response playwright.Response) error {
+func (b *Browser) noteDocumentResponse(ctx context.Context, action *protocol.Action, result *protocol.Result, page playwright.Page, response playwright.Response) error {
+	b.noteAuthoredPageResponse(ctx, action, result, response)
 	if response == nil {
 		return nil
 	}

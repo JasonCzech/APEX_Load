@@ -220,7 +220,7 @@ func registerReplayHARProtocol(t *testing.T, harDir string, publish func() []str
 }
 
 // A replay's native HAR copy belongs to its session record: a later record
-// reusing the ID never serves it, removing the record removes the copy, the
+// reusing the ID never serves it, removing the record removes the local copy, the
 // evidence ZIP streams it with its digest, and a replay that fails before
 // reporting retires its recording instead of leaving it published.
 func TestBrowserReplayHARCopiesBelongToTheirRecord(t *testing.T) {
@@ -272,29 +272,36 @@ func TestBrowserReplayHARCopiesBelongToTheirRecord(t *testing.T) {
 		t.Fatalf("streamed evidence %+v %v", metadata, err)
 	}
 	first := retainedReplayHARFixturePath(t, server, "replay-har-reuse")
-	// Expiring the completed record removes its native copy and releases its
-	// ID. A retry without capture must use only its own synthetic evidence.
+	// Expiring the local record removes its copy, but the durable receipt still
+	// owns the ID and native bytes until database-clock expiry and exact cleanup.
 	waitForBrowserReplayFixture(t, server.browserReplay, "replay-har-reuse")
 	advanceClock(48 * time.Hour)
 	server.browserReplay.PruneExpired()
 	if _, err := os.Stat(first); !os.IsNotExist(err) {
 		t.Fatalf("a retired record's copy stayed: %v", err)
 	}
+	if _, err := server.browserReplay.Start("", script, BrowserReplayStartRequest{ReplaySessionID: "replay-har-reuse"}); !errors.Is(err, errReplaySessionIDConflict) {
+		t.Fatal("cache eviction released a retained artifact namespace", err)
+	}
+	if reply := harDownloadRequest(t, server, base+"/har", "replay-editor", harEditor); reply.Code != http.StatusOK || reply.Header().Get("X-APEXLoad-HAR-Fidelity") != "native" || !strings.Contains(reply.Body.String(), "first-attempt") {
+		t.Fatalf("cache eviction lost durable native evidence: %d", reply.Code)
+	}
+	base = "/api/v1/browser-replay/sessions/replay-har-next"
 	published = ""
 	captureMu.Lock()
 	captures = map[string]any{}
 	captureMu.Unlock()
-	if _, err := server.browserReplay.Start("", script, BrowserReplayStartRequest{ReplaySessionID: "replay-har-reuse"}); err != nil {
+	if _, err := server.browserReplay.Start("", script, BrowserReplayStartRequest{ReplaySessionID: "replay-har-next"}); err != nil {
 		t.Fatal(err)
 	}
-	waitBrowserReplayTerminal(t, server.browserReplay, "replay-har-reuse", 5*time.Second)
+	waitBrowserReplayTerminal(t, server.browserReplay, "replay-har-next", 5*time.Second)
 	captureMu.Lock()
 	if captures["browser_har_capture"] != nil || captures["browser_har_capture_policy"] != nil {
 		t.Fatalf("an unrequested recording forced the capture policy: %+v", captures)
 	}
 	captureMu.Unlock()
 	if reply := harDownloadRequest(t, server, base+"/har", "replay-editor", harEditor); reply.Code != http.StatusOK || reply.Header().Get("X-APEXLoad-HAR-Fidelity") != harsynth.Fidelity || strings.Contains(reply.Body.String(), "first-attempt") {
-		t.Fatalf("a reused ID served the earlier record's HAR: %d %s", reply.Code, reply.Header().Get("X-APEXLoad-HAR-Fidelity"))
+		t.Fatalf("a new replay served the earlier record's HAR: %d %s", reply.Code, reply.Header().Get("X-APEXLoad-HAR-Fidelity"))
 	}
 
 	// A replay that fails before reporting (a data source that cannot load)

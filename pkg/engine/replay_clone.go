@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"maps"
+
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -50,6 +52,7 @@ func cloneReplayDebugAction(action ReplayDebugAction) *ReplayDebugAction {
 }
 
 func cloneReplayActionEvent(event ReplayActionEvent) *ReplayActionEvent {
+	event.AuthoredStep = event.AuthoredStep.Clone()
 	cloned := event
 	// Raw correlation evidence is single-use and must not survive into any
 	// report/session/progress clone, even though its field is also JSON-excluded.
@@ -95,6 +98,7 @@ func cloneReplayReport(report *ReplayReport) *ReplayReport {
 		return nil
 	}
 	cloned := *report
+	cloned.NativeHARCaptureOmissions = maps.Clone(report.NativeHARCaptureOmissions)
 	cloned.FinalVariables = cloneStringMap(report.FinalVariables)
 	cloned.RuntimeProfile = *cloneReplayRuntimeProfile(&report.RuntimeProfile)
 	cloned.ArtifactManifest = cloneReplayArtifactManifest(report.ArtifactManifest)

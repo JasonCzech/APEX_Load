@@ -67,3 +67,13 @@ func (m *BrowserReplayManager) executionFenceError(ctx context.Context, lease *s
 	}
 	return nil
 }
+
+func (s *sessionLease) artifactPublisher() TerminalReplayArtifactPublisher {
+	if s == nil {
+		return nil
+	}
+	if port, ok := s.port.(ReplayArtifactPublicationLease); ok {
+		return port.ReplayArtifactPublisher()
+	}
+	return nil
+}

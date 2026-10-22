@@ -1,5 +1,23 @@
 # QA Review Records
 
+- [Browser baseline full measurement windows](roadmap-browser-source-windows-2026-10-21/README.md) — refuse populations whose source windows cross the compared steady-load span.
+
+- [Browser baseline bucket timestamps](roadmap-browser-bucket-grid-2026-10-21/README.md) — reject ambiguous retained grids without filling missing evidence.
+
+- [Independent documentation and roadmap review](roadmap-independent-review-2026-10-21/README.md) — expanded cross-commit independent audit and regression fixes.
+
+- [Bounded replay recovery runtime](roadmap-browser-replay-runtime-2026-10-21/README.md) — project-scoped receipt rechecks, bounded reader/writer admission and exact cleanup retries.
+
+- [Retained replay read contract](roadmap-browser-replay-read-contract-2026-10-21/README.md) — bounded report polling, exact terminal reconstruction and native fallback refusal.
+
+- [Filesystem replay source identity](roadmap-browser-replay-volume-identity-2026-10-21/README.md) — persisted namespace identity and held-root operations prevent same-path volume substitution.
+
+- [Replay recovery scope and cleanup pagination](roadmap-browser-replay-recovery-storage-2026-10-21/README.md) — internal authorization metadata and bounded traversal past foreign-backend receipts.
+
+- [Lease-bound replay artifact publisher](roadmap-browser-replay-publisher-2026-10-21/README.md) — immutable receipt admission, verified writer completion and owner-fenced publication.
+
+- [Terminal replay publication port](roadmap-browser-replay-publication-port-2026-10-21/README.md) — optional lease-bound native publication, pending download gate and late-completion fences.
+
 - [Chromium browser-process loss and pool replacement](roadmap-browser-process-loss-2026-10-20/README.md) — shared desktop/mobile-emulation context censoring and independent replacement-source evidence.
 - [Native browser document failure evidence](roadmap-browser-native-failure-2026-10-20/README.md) — native page close in Chromium/WebKit and Chromium renderer crash; precise local qualification limits.
 
@@ -33,6 +51,8 @@ The themed reports preserve the original narrative of each consolidated review, 
 | [evaluations-2026.md](evaluations-2026.md) | 2026-07-30, 2026-09-22 | Data Pools roadmap (Tier B/C) open; LoadRunner runtime-settings evaluations complete | Data Pools API and UX evaluation, LoadRunner runtime-settings import evaluations for `ACME_RCI` and `ACME_IAO`. Current importer behavior: [../../IMPORT_FIDELITY_AND_REPAIRS.md](../../IMPORT_FIDELITY_AND_REPAIRS.md) |
 
 ## Completed implementation reviews
+
+[Immutable replay artifact backend — 2026-10-21](roadmap-browser-replay-backend-2026-10-21/README.md) records bounded HAR/report transport, namespace isolation and exact-generation cleanup; runtime recovery wiring remains open.
 
 [Browser stack cross-commit review — 2026-10-21](roadmap-browser-cross-commit-2026-10-21/README.md) records the keyboard aggregation bound repair and scoped validation of the completed PR stack.
 

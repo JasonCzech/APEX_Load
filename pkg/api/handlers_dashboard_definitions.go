@@ -46,6 +46,9 @@ func (s *Server) handleCreateDashboardDefinition(w http.ResponseWriter, r *http.
 	_, subject, _ := s.resolveAuditActor(r)
 	definition.Owner = subject
 	definition.Revision = 1
+	if !s.validateSavedBrowserPanelInputs(w, r, &definition) {
+		return
+	}
 	if err := store.SaveDashboardDefinition(&definition); err != nil {
 		writeDashboardDefinitionSaveError(w, err)
 		return
@@ -164,6 +167,9 @@ func (s *Server) handlePatchDashboardDefinition(w http.ResponseWriter, r *http.R
 		definition.Tabs = *patch.Tabs
 	}
 	store, _ := s.dashboardDefinitions()
+	if patch.Tabs != nil && !s.validateSavedBrowserPanelInputs(w, r, definition) {
+		return
+	}
 	updated, err := store.UpdateDashboardDefinitionIfRevision(definition, patch.Revision)
 	if err != nil {
 		writeDashboardDefinitionSaveError(w, err)

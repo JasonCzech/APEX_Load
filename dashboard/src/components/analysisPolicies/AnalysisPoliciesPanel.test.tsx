@@ -48,7 +48,7 @@ describe('AnalysisPoliciesPanel (BI-4)', () => {
     const row = container.querySelector('tbody tr')!
     expect(row.textContent).toContain('Vitals')
     expect(row.textContent).toContain('3')
-    expect(row.textContent).toContain('Pinned at Start')
+    expect(row.textContent).toContain('Project default')
   })
 
   it('saves an edit at the revision it was read at, and offers the current revision on a conflict', async () => {

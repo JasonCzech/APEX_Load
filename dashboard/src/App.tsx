@@ -3729,6 +3729,7 @@ function AppShell({
               {view.page === "report" && !routeAssetScopeBlocked && (
                 <RunReportPage
                   testId={view.testId}
+                  canManageTests={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false)}
                   canPublishConfluence={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false)}
                   canManageProject={canManageProjects}
                   initialSection={view.section}

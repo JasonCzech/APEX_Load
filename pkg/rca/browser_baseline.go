@@ -2,6 +2,7 @@ package rca
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -34,18 +35,23 @@ const (
 
 // Reasons a browser baseline result is unscored, or evidence was excluded.
 const (
-	BrowserBaselineNoBaselineRun      = "no_qualified_baseline"
-	BrowserBaselineNoBaselineCohort   = "no_baseline_cohort"
-	BrowserBaselineCohortChanged      = "cohort_changed"
-	BrowserBaselineNoSameLoadWindow   = "no_same_load_window"
-	BrowserBaselineInsufficient       = "insufficient_baseline"
-	BrowserBaselineZeroVariance       = "zero_variance"
-	BrowserBaselineNoEffectFloor      = "no_effect_floor"
-	BrowserBaselineOutsideSteadyLoad  = "outside_steady_load"
-	BrowserBaselineSourceLoss         = "source_loss"
-	BrowserBaselineBaselineSourceLoss = "baseline_source_loss"
-	BrowserBaselineResultsTruncated   = "browser_baseline_truncated"
-	BrowserBaselineLevelsUnavailable  = "load_levels_unavailable"
+	BrowserBaselineNoBaselineRun         = "no_qualified_baseline"
+	BrowserBaselineNoBaselineCohort      = "no_baseline_cohort"
+	BrowserBaselineCohortChanged         = "cohort_changed"
+	BrowserBaselineCadenceChanged        = "cadence_changed"
+	BrowserBaselineCadenceUnavailable    = "cadence_unavailable"
+	BrowserBaselineBucketGridInvalid     = "bucket_grid_invalid"
+	BrowserBaselineSourceWindowInvalid   = "source_window_invalid"
+	BrowserBaselineBaselineWindowInvalid = "baseline_source_window_invalid"
+	BrowserBaselineNoSameLoadWindow      = "no_same_load_window"
+	BrowserBaselineInsufficient          = "insufficient_baseline"
+	BrowserBaselineZeroVariance          = "zero_variance"
+	BrowserBaselineNoEffectFloor         = "no_effect_floor"
+	BrowserBaselineOutsideSteadyLoad     = "outside_steady_load"
+	BrowserBaselineSourceLoss            = "source_loss"
+	BrowserBaselineBaselineSourceLoss    = "baseline_source_loss"
+	BrowserBaselineResultsTruncated      = "browser_baseline_truncated"
+	BrowserBaselineLevelsUnavailable     = "load_levels_unavailable"
 	// BrowserBaselineEvidenceUnavailable: the baseline's document evidence
 	// was not fully read, so a missing cohort may exist there.
 	BrowserBaselineEvidenceUnavailable = "baseline_evidence_unavailable"
@@ -89,21 +95,41 @@ type BrowserBaselineParams struct {
 // baseline mode (none, latest_compatible, or pinned_run with RunID).
 // Unavailable says why the pinned policy could not be used.
 type BrowserBaselinePolicy struct {
-	Ref            string   `json:"ref"`
-	TimingMs       *float64 `json:"timing_ms,omitempty"`
-	TimingRelative *float64 `json:"timing_relative,omitempty"`
-	CLS            *float64 `json:"cls,omitempty"`
-	Mode           string   `json:"mode,omitempty"`
-	RunID          string   `json:"run_id,omitempty"`
-	Unavailable    string   `json:"unavailable,omitempty"`
+	MetricFloors   map[string]float64 `json:"metric_floors,omitempty"`
+	Ref            string             `json:"ref"`
+	TimingMs       *float64           `json:"timing_ms,omitempty"`
+	TimingRelative *float64           `json:"timing_relative,omitempty"`
+	CLS            *float64           `json:"cls,omitempty"`
+	Mode           string             `json:"mode,omitempty"`
+	RunID          string             `json:"run_id,omitempty"`
+	Unavailable    string             `json:"unavailable,omitempty"`
 }
 
 // BrowserBaselineParamsFor are the defaults with a pinned policy's effect
 // floors applied; a floor can only raise its default.
 func BrowserBaselineParamsFor(policy *BrowserBaselinePolicy) BrowserBaselineParams {
 	params := DefaultBrowserBaselineParams
+	if params.MetricFloors != nil {
+		original := params.MetricFloors
+		params.MetricFloors = make(map[string]float64, len(original))
+		for metric, value := range original {
+			params.MetricFloors[metric] = value
+		}
+	}
 	if policy == nil || policy.Unavailable != "" {
 		return params
+	}
+	if len(policy.MetricFloors) > 0 {
+		if params.MetricFloors == nil {
+			params.MetricFloors = make(map[string]float64, len(policy.MetricFloors))
+		}
+		for metric, value := range policy.MetricFloors {
+			if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+				params.MetricFloors[metric] = value
+				continue
+			}
+			params.MetricFloors[metric] = max(params.MetricFloors[metric], value)
+		}
 	}
 	if policy.TimingMs != nil {
 		params.TimingFloorMs = max(params.TimingFloorMs, *policy.TimingMs)
@@ -128,12 +154,37 @@ var DefaultBrowserBaselineParams = BrowserBaselineParams{
 // cohort's fields, so a cohort without an exact baseline match can say what
 // changed. Incomplete marks evidence that dropped document observations.
 type DocumentCohort struct {
-	Metric string `json:"metric"`
+	// These states are set by the trusted archive adapter after validating
+	// source-bound evidence for the entire retained population. Zero values,
+	// local execution, and absence of reported loss are not positive proof.
+	TimelineQualification       string `json:"timeline_qualification,omitempty"`
+	ClockQualification          string `json:"clock_qualification"`
+	SourceCoverageQualification string `json:"source_coverage_qualification"`
+	Metric                      string `json:"metric"`
 	// Group is the scenario group that measured the document.
 	Group      string            `json:"group,omitempty"`
 	Family     string            `json:"family"`
 	Fields     map[string]string `json:"fields,omitempty"`
 	Incomplete bool              `json:"incomplete,omitempty"`
+	// Windows retains the full measurement envelope of each populated bucket.
+	// Keys are bucket starts in UTC; missing windows do not prove steady load.
+	Windows map[time.Time]DocumentWindow `json:"windows,omitempty"`
+}
+
+// DocumentWindow is the envelope of all final measurements contributing to a
+// bucket. Invalid preserves any malformed constituent instead of hiding it in
+// the envelope. These timestamps do not attest source-clock synchronization.
+type DocumentWindow struct {
+	// MonotonicVUsers is set only when every constituent measurement fits one
+	// positively recorded executor span at this load. It supplements retained
+	// raw timestamps, which are never treated as clock calibration.
+	MonotonicSpanID   string `json:"monotonic_span_id,omitempty"`
+	MonotonicVUsers   int    `json:"monotonic_vusers,omitempty"`
+	MonotonicVerified bool   `json:"monotonic_verified,omitempty"`
+
+	Start   time.Time `json:"start"`
+	End     time.Time `json:"end"`
+	Invalid bool      `json:"invalid,omitempty"`
 }
 
 // BrowserBaseline is the detector's output for one assessment.
@@ -239,6 +290,25 @@ func DetectBrowserBaseline(input DetectionInput, params BrowserBaselineParams) *
 	if input.DocumentsIncomplete {
 		out.Status = DetectionPartial
 		out.Limitations = append(out.Limitations, Limitation{Code: BrowserBaselineRunEvidenceIncomplete, Detail: "the run's browser document evidence was not fully read; a cohort it left out has no result"})
+	}
+	seenQualification := map[string]bool{}
+	addQualification := func(series []Series, baseline bool) {
+		for _, s := range series {
+			if s.Kind != SeriesBrowserDocument {
+				continue
+			}
+			for _, limitation := range browserDocumentQualificationLimitations(s.Document, baseline) {
+				if !seenQualification[limitation.Code] {
+					seenQualification[limitation.Code] = true
+					out.Limitations = append(out.Limitations, limitation)
+					out.Status = DetectionPartial
+				}
+			}
+		}
+	}
+	addQualification(documents, false)
+	if input.Baseline != nil {
+		addQualification(input.Baseline.Series, true)
 	}
 	levels := sortedLevels(input.Levels)
 	if len(levels) == 0 {
@@ -386,6 +456,69 @@ func spanValues(points []SeriesPoint) ([]float64, int64) {
 	return values, samples
 }
 
+// browserBucketGridValid checks sorted retained buckets without filling gaps or
+// collapsing duplicate publications into extra statistical samples. Each run may
+// have its own grid origin; equal durations do not require equal wall-clock starts.
+func browserBucketGridValid(points []SeriesPoint, bucket time.Duration) bool {
+	if bucket <= 0 {
+		return false
+	}
+	for i, point := range points {
+		if point.At.IsZero() {
+			return false
+		}
+		if i == 0 {
+			continue
+		}
+		previous := points[i-1].At
+		gap := point.At.Sub(previous)
+		// Sub saturates for ranges beyond time.Duration. Do not let that
+		// saturation accidentally establish a cadence for corrupt timestamps.
+		if gap <= 0 || gap%bucket != 0 || !previous.Add(gap).Equal(point.At) {
+			return false
+		}
+	}
+	return true
+}
+
+// browserSourceWindowsWithin requires the whole measurement population, not
+// merely the bucket where its final publication landed, to belong to this span.
+func browserSourceWindowsWithin(s Series, points []SeriesPoint, level LoadLevel) bool {
+	spanID := ""
+	proofMode := ""
+	for _, point := range points {
+		if !usable(point) {
+			continue
+		}
+		w, ok := s.Document.Windows[point.At.UTC()]
+		if !ok || w.Invalid {
+			return false
+		}
+		if w.MonotonicVerified {
+			if proofMode == "raw" || spanID != "" && spanID != w.MonotonicSpanID {
+				return false
+			}
+			proofMode = "monotonic"
+			spanID = w.MonotonicSpanID
+			if w.MonotonicSpanID == "" || w.MonotonicVUsers <= 0 || float64(w.MonotonicVUsers) != level.VUsers || level.Rate != 0 {
+				return false
+			}
+			// Projected labels place buckets but do not establish load eligibility.
+			// Every constituent belongs to this independently proven monotonic span.
+			continue
+		}
+		if proofMode == "monotonic" {
+			return false
+		}
+		proofMode = "raw"
+		if w.Start.IsZero() || w.End.IsZero() || w.End.Before(w.Start) || w.Start.Before(level.Start) || w.End.After(level.End) || w.End.Before(point.At) || !w.End.Before(point.At.Add(s.Bucket)) {
+			return false
+		}
+
+	}
+	return true
+}
+
 func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples int64, byID map[string]Series, byFamily map[string][]Series, baselineLevels []LoadLevel, ref BaselineRef, baselineIncomplete bool, params BrowserBaselineParams) BrowserBaselineResult {
 	sorted := slices.Clone(current)
 	slices.Sort(sorted)
@@ -411,13 +544,32 @@ func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples 
 	if b.Document.Incomplete {
 		result.Caveats = append(result.Caveats, BrowserBaselineBaselineSourceLoss)
 	}
+	// A series ID is a lookup key, not proof of the measurement contract.
+	// Retained/custom inputs must still describe the same tuple and runtime.
+	if s.Document.Metric != b.Document.Metric || s.Document.Family != b.Document.Family || s.Document.Group != b.Document.Group || s.Unit != b.Unit || !maps.Equal(s.Document.Fields, b.Document.Fields) {
+		return unscored(BrowserBaselineCohortChanged, "the matching series ID describes a different measurement tuple or runtime cohort")
+	}
+	// v1 gives each interval bucket equal weight. Comparing different bucket
+	// durations changes the population and cannot establish a like-for-like
+	// baseline, even when both sides retained enough buckets.
+	if s.Observation != ObservationInterval || b.Observation != ObservationInterval || s.Bucket <= 0 || b.Bucket <= 0 {
+		return unscored(BrowserBaselineCadenceUnavailable, "both document series need a recorded positive interval bucket duration")
+	}
+	if s.Bucket != b.Bucket {
+		return unscored(BrowserBaselineCadenceChanged, "the run and baseline document buckets have different durations")
+	}
 	b.Points = sortedPoints(b.Points)
+	if !browserBucketGridValid(s.Points, s.Bucket) || !browserBucketGridValid(b.Points, b.Bucket) {
+		return unscored(BrowserBaselineBucketGridInvalid, "document buckets need unique recorded timestamps on each run's declared cadence; gaps remain missing")
+	}
 	baselineSpans := segments(b, baselineLevels)
 	var values []float64
 	matched := false
+	baselineWindowsValid := true
 	for index, bl := range baselineLevels {
 		if sameLoad(level, bl, params.LevelTolerance) {
 			matched = true
+			baselineWindowsValid = baselineWindowsValid && browserSourceWindowsWithin(b, baselineSpans[index], bl)
 			v, n := spanValues(baselineSpans[index])
 			values = append(values, v...)
 			result.BaselineSamples += n
@@ -434,6 +586,18 @@ func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples 
 	}
 	if !matched {
 		return unscored(BrowserBaselineNoSameLoadWindow, "the baseline run has no steady level at this load")
+	}
+	if !browserSourceWindowsWithin(s, segments(s, []LoadLevel{level})[0], level) {
+		return unscored(BrowserBaselineSourceWindowInvalid, "the run's full document measurement windows are missing, invalid or cross the steady-load boundary")
+	}
+	if !baselineWindowsValid {
+		return unscored(BrowserBaselineBaselineWindowInvalid, "the baseline's full document measurement windows are missing, invalid or cross a matching steady-load boundary")
+	}
+	if reason, detail := browserDocumentQualification(s.Document, false); reason != "" {
+		return unscored(reason, detail)
+	}
+	if reason, detail := browserDocumentQualification(b.Document, true); reason != "" {
+		return unscored(reason, detail)
 	}
 	if len(values) < params.MinBaselineBuckets {
 		return unscored(BrowserBaselineInsufficient, fmt.Sprintf("%d of the %d valid baseline buckets needed", len(values), params.MinBaselineBuckets))

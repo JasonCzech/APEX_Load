@@ -385,7 +385,7 @@ jobs:
 
       - name: Require owned HAR SDK completion contract
         if: matrix.lane == 'race'
-        run: go test -race -count=1 github.com/mxschmitt/playwright-go -run '^TestAPEX(OwnedHAR|LoadState)'
+        run: go test -race -count=1 github.com/mxschmitt/playwright-go -run '^TestAPEX(OwnedHAR|LoadState|RequestTiming|NavigationCommit)'
 
       # The race detector's larger frames leave some parked stacks at 16 KB,
       # so the 8 KB parked-stack bound is checked in a normal build.
@@ -670,6 +670,16 @@ jobs:
         if: github.server_url != 'https://github.com'
         working-directory: dashboard
         run: ./node_modules/.bin/playwright install chromium
+
+      # The native browser panel workflow executes scripts in the Go controller.
+      # Its driver/runtime is distinct from the Node UI automation runtime above.
+      - name: Install controller browser runtimes and hosted-runner dependencies
+        if: github.server_url == 'https://github.com'
+        run: go run github.com/mxschmitt/playwright-go/cmd/playwright@v0.6100.0 install --with-deps chromium webkit
+
+      - name: Install controller browser runtimes from the GHES mirror
+        if: github.server_url != 'https://github.com'
+        run: go run github.com/mxschmitt/playwright-go/cmd/playwright@v0.6100.0 install chromium webkit
 
       - name: User workflow regressions against the embedded controller dashboard
         env:
