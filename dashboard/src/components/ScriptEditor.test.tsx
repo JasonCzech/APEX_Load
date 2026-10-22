@@ -7520,6 +7520,72 @@ describe('ScriptEditor', () => {
     now.mockRestore()
   })
 
+  it('treats a newer stored revision as making the result stale (AUTH-B)', async () => {
+    const context = { version: 1, revision: 'vctx1:stored', secret_reference_limit: 256, components: { capabilities: 'c', policy: 'p', approvals: 'a', secret_references: 's' } }
+    let clock = Date.now()
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => (clock += 10_000))
+    apiMock.validateScript.mockResolvedValueOnce({ script_id: 'script-1', valid: true, issues: [], warnings: [], validation_context: context })
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />) })
+    await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushReact()
+    expect(findReadinessCard(container)?.textContent).toContain('Script validation passed.')
+    apiMock.getScriptValidationContext.mockRejectedValue(new ApiError('changed', 409, { error: 'changed', code: 'validation_context_revision_changed' }))
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    await flushReact()
+    expect(apiMock.getScriptValidationContext).toHaveBeenCalledWith(expect.objectContaining({ project_id: 'project-1', script_id: 'script-1' }))
+    const card = findReadinessCard(container)?.textContent || ''
+    expect(card).not.toContain('Script validation passed.')
+    expect(card).toContain('Readiness results no longer apply: the stored script changed since the check. Recheck readiness.')
+    now.mockRestore()
+  })
+
+  it('backs off a failing validation-context probe and probes the timer only with focus (AUTH-B)', async () => {
+    const context = { version: 1, revision: 'vctx1:a', secret_reference_limit: 256, components: { capabilities: 'c', policy: 'p', approvals: 'a', secret_references: 's' } }
+    let clock = 1_000_000
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      apiMock.validateDraftScript.mockResolvedValueOnce({ script_id: '', valid: true, issues: [], warnings: [], validation_context: context })
+      await act(async () => { root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />) })
+      await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      await flushReact()
+      expect(findReadinessCard(container)?.textContent).toContain('Script validation passed.')
+      apiMock.getScriptValidationContext.mockReset()
+      // A window without focus is not probed on the timer.
+      clock += 120_000
+      await act(async () => { vi.advanceTimersByTime(120_000) })
+      expect(apiMock.getScriptValidationContext).not.toHaveBeenCalled()
+      // A failed probe doubles the spacing before the next.
+      apiMock.getScriptValidationContext.mockRejectedValue(new ApiError('unavailable', 503, { error: 'unavailable' }))
+      const focus = async (advance: number) => { clock += advance; await act(async () => { window.dispatchEvent(new Event('focus')) }); await flushReact() }
+      await focus(6_000)
+      expect(apiMock.getScriptValidationContext).toHaveBeenCalledTimes(1)
+      await focus(6_000)
+      expect(apiMock.getScriptValidationContext).toHaveBeenCalledTimes(1)
+      await focus(6_000)
+      expect(apiMock.getScriptValidationContext).toHaveBeenCalledTimes(2)
+      // A new result starts afresh: the next probe needs only the base spacing.
+      apiMock.validateDraftScript.mockResolvedValueOnce({ script_id: '', valid: true, issues: [], warnings: [], validation_context: context })
+      await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      await flushReact()
+      await focus(6_000)
+      expect(apiMock.getScriptValidationContext).toHaveBeenCalledTimes(3)
+      // A window with focus is probed on the timer once the spacing allows.
+      hasFocus.mockReturnValue(true)
+      apiMock.getScriptValidationContext.mockResolvedValue(context)
+      clock += 60_000
+      await act(async () => { vi.advanceTimersByTime(60_000) })
+      await flushReact()
+      expect(apiMock.getScriptValidationContext).toHaveBeenCalledTimes(4)
+      expect(findReadinessCard(container)?.textContent).toContain('Script validation passed.')
+    } finally {
+      vi.useRealTimers()
+      hasFocus.mockRestore()
+      now.mockRestore()
+    }
+  })
+
   it('validates a draft script before save', async () => {
     apiMock.validateDraftScript.mockResolvedValueOnce({
       script_id: '',

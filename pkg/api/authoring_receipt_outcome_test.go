@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -255,6 +256,57 @@ func TestRenderAuthoringReceiptOutcomeOmitsAnOversizedProjection(t *testing.T) {
 	}
 }
 
+func TestScriptReceiptOutcomeOmitsAProjectionItsStoredContentCannotFit(t *testing.T) {
+	script := httpScript("bounded-outcome-script", "Bounded outcome")
+	script.ProjectID = storage.DefaultProjectID
+	snapshot := &storage.ScriptAuthoringSnapshot{Script: script, ContentRevision: "scr-v1-" + strings.Repeat("a", 64)}
+	render := func(contentBytes int) AuthoringReceiptOutcome {
+		t.Helper()
+		snapshot.ContentBytes = contentBytes
+		rendered, err := renderScriptReceiptOutcome(snapshot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var outcome AuthoringReceiptOutcome
+		if err := json.Unmarshal([]byte(rendered), &outcome); err != nil {
+			t.Fatal(err)
+		}
+		return outcome
+	}
+	if small := render(1024); small.AuthoringProjection == nil || small.ProjectionOmitted != "" {
+		t.Fatalf("a small script's projection was omitted: %#v", small)
+	}
+	// Content beyond the bound omits the projection before building it.
+	large := render(authoringReceiptProjectionBound + 1)
+	if large.AuthoringProjection != nil || large.ProjectionOmitted != "exceeds_receipt_outcome_bound" ||
+		large.ResourceID != script.ID || large.ContentRevision != snapshot.ContentRevision || large.ProjectID != storage.DefaultProjectID {
+		t.Fatalf("an oversized script's outcome: %#v", large)
+	}
+	snapshot.ContentRevision = "not-a-revision"
+	if _, err := renderScriptReceiptOutcome(snapshot); err == nil {
+		t.Fatal("an invalid revision rendered an outcome")
+	}
+
+	// The store measures the content it reads back.
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "content-bytes.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	stored := httpScript("measured-script", "Measured")
+	if _, err := store.CreateScriptAuthoringIfAbsent(stored); err != nil {
+		t.Fatal(err)
+	}
+	measured, err := store.GetScriptAuthoringSnapshot("measured-script")
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions, _ := json.Marshal(measured.Script.Actions)
+	if measured.ContentBytes < len(actions) {
+		t.Fatalf("stored content bytes %d below the actions' own %d", measured.ContentBytes, len(actions))
+	}
+}
+
 func TestCreateReceiptVersionOpenAPIContract(t *testing.T) {
 	data, err := GenerateOpenAPIYAML("server.go")
 	if err != nil {
@@ -461,5 +513,57 @@ func TestScenarioCreateReceiptWithoutKeyWrappingKeepsTheEarlierDigest(t *testing
 	earlier, err := server.authoringReceiptIdentity(probe, storage.AuthoringPurposeScenarioCreate, "", key, "", authoringReceiptFingerprint{request: request})
 	if err != nil || fallback.RequestDigest != earlier.RequestDigest {
 		t.Fatalf("without a wrapper the digest is the earlier scheme's: %v", err)
+	}
+}
+
+func credentialRunRequest(name, token string) CreateTestRequest {
+	return CreateTestRequest{
+		Name: name, Duration: "1m",
+		RuntimeSettings: &RuntimeSettingsOverride{Env: map[string]string{"API_TOKEN": token}},
+		Groups:          []CreateGroupEntry{{Name: "Primary", ScriptID: "credential-receipt-script", VUsers: 1}},
+	}
+}
+
+func TestRunCreateReceiptWithoutKeyWrappingRefusesCredentialValues(t *testing.T) {
+	const key = "run-credential-key-000001"
+	server, _ := credentialReceiptFixture(t, false)
+	refused := receiptCreateRequest(t, server, "/api/v1/tests", credentialRunRequest("Unwrapped run", "unwrapped-run-value"), key, "")
+	if refused.Code != http.StatusUnprocessableEntity || idempotencyErrorCode(t, refused) != "idempotency_credentials_unprotected" ||
+		!strings.Contains(refused.Body.String(), "secret references") || countTestsNamed(server, "Unwrapped run") != 0 {
+		t.Fatalf("a keyed run create carrying a credential without a wrapper: %d %s", refused.Code, refused.Body.String())
+	}
+	// Nothing was claimed: the key still creates a run that carries none.
+	plain := CreateTestRequest{Name: "Plain run", Duration: "1m", Groups: []CreateGroupEntry{{Name: "Primary", ScriptID: "credential-receipt-script", VUsers: 1}}}
+	if created := receiptCreateRequest(t, server, "/api/v1/tests", plain, key, ""); created.Code != http.StatusCreated {
+		t.Fatalf("the refused key: %d %s", created.Code, created.Body.String())
+	}
+	// With a wrapper the same request is keyed, its value fingerprinted under
+	// the wrapped key.
+	wrapped, _ := credentialReceiptFixture(t, true)
+	request := credentialRunRequest("Wrapped run", "wrapped-run-value")
+	if created := receiptCreateRequest(t, wrapped, "/api/v1/tests", request, key, ""); created.Code != http.StatusCreated {
+		t.Fatalf("a keyed run create carrying a credential with a wrapper: %d %s", created.Code, created.Body.String())
+	}
+	if retry := receiptCreateRequest(t, wrapped, "/api/v1/tests", request, key, ""); retry.Code != http.StatusCreated || retry.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("retry: %d %s", retry.Code, retry.Body.String())
+	}
+}
+
+// noSwapStore hides the settings compare-and-swap the credential key needs.
+type noSwapStore struct{ storage.Store }
+
+func TestReceiptCredentialKeyNeverFallsBackWhenAWrapperCannotStoreIt(t *testing.T) {
+	server, store := credentialReceiptFixture(t, true)
+	server.store = noSwapStore{store}
+	if _, err := server.authoringReceiptCredentialKey(t.Context()); err == nil || errors.Is(err, errAuthoringReceiptCredentialKeyUnavailable) {
+		t.Fatalf("a wrapper on a store without compare-and-swap: %v", err)
+	}
+	probe := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", nil)
+	fingerprint, err := scenarioCreateReceiptFingerprint(credentialScenarioRequest("No swap", "no-swap-value"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.authoringReceiptIdentity(probe, storage.AuthoringPurposeScenarioCreate, "", "scenario-credential-key-04", "", fingerprint); err == nil {
+		t.Fatal("the credential values fell back to the unwrapped digest")
 	}
 }

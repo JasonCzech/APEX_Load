@@ -111,6 +111,7 @@ func lifecycleAuth2Properties() map[string]map[lifecycleProperty][]lifecycleProo
 			lifecycleGates: {
 				vitestProof(editor, "queues a new runner-backed Java Vuser script for approval instead of creating it"),
 				vitestProof(editor, "clears a readiness result whose controller context changed and says why (AUTH-B)"),
+				vitestProof(editor, "treats a newer stored revision as making the result stale (AUTH-B)"),
 			},
 			lifecyclePending:    {vitestProof(editor, "retains a focused cell typed during save through canonical parent echo and the next save")},
 			lifecycleNavigation: {vitestProof(editor, "guards dirty editor close and clears the guard after a successful save")},
@@ -263,7 +264,7 @@ func lifecycleAuth2Properties() map[string]map[lifecycleProperty][]lifecycleProo
 			lifecycleSecrets: {
 				goProof("TestScenarioSecretReferencesSurviveSaveAndReload"),
 				goProof("TestMaskRuntimeSettingsForEditorShowsOnlyProjectSecretReferences"),
-				vitestProof("components/scenarioAssembly.test.ts", "keeps the project-secret references of a reopened scenario through the builder checkpoint and save"),
+				vitestProof("components/scenarioAssembly.test.ts", "passes a reopened scenario's secret references, spaced or not, through the checkpoint's credential check into its save payload"),
 			},
 			lifecycleGates: {
 				vitestProof(hub, "converts a newly disabled selected shape to Custom Workload"),
@@ -279,6 +280,7 @@ func lifecycleAuth2Properties() map[string]map[lifecycleProperty][]lifecycleProo
 			lifecycleReopen: {
 				e2eProof(scenario, "scenario rename and reopen retain Results, WebSocket, named shape and group timing intent"),
 				vitestProof(hub, "autosaves builder progress so a reload offers to resume it"),
+				vitestProof(hub, "continues from the scenario as it is now when a save replays an earlier create (AUTH-1)"),
 			},
 		},
 		"New run": {
@@ -296,7 +298,11 @@ func lifecycleAuth2Properties() map[string]map[lifecycleProperty][]lifecycleProo
 			},
 		},
 		"Queued revision and execution overview": {
-			lifecycleOwnership: {goProof("TestQueuedRunRevisionRejectsNonQueuedAndCrossProjectSources")},
+			lifecycleOwnership: {
+				goProof("TestQueuedRunRevisionRejectsNonQueuedAndCrossProjectSources"),
+				vitestProof(modal, "never recalls one queued run's revise key for another revised with the same settings (AUTH-1)"),
+				vitestProof(modal, "replays rather than queues another when a replayed draft is created again (AUTH-1)"),
+			},
 			lifecycleProvenance: {
 				vitestProof(modal, "preserves hierarchy provenance and the data-pool snapshot on a queued-run revision"),
 				e2eProof(newTestE2E, "queued-copy preserves source capture IDs and durably clears the last authored goal"),

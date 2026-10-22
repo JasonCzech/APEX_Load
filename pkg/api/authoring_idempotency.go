@@ -53,6 +53,11 @@ var errAuthoringReceiptCreateUnsupported = errors.New("original-outcome authorin
 // to protect credential fingerprints.
 var errAuthoringReceiptCredentialKeyUnavailable = errors.New("credential fingerprints require a configured key wrapper")
 
+// errAuthoringReceiptCredentialsUnprotected: a keyed run create carries
+// credential values and no key wrapper is configured to protect their
+// fingerprint.
+var errAuthoringReceiptCredentialsUnprotected = errors.New("a keyed run create carrying credential values requires a configured key wrapper")
+
 // authoringReceiptFingerprint is the request identity an Idempotency-Key
 // binds. request is the caller's exact input before server-side
 // normalization, with credential values replaced by references; credentials
@@ -93,20 +98,22 @@ type AuthoringReceiptOutcome struct {
 
 // renderAuthoringReceiptOutcome renders one original outcome. The projection
 // is the same disclosure-safe authoring view a reader is served, so the
-// receipt never stores credentials the projection masks.
+// receipt never stores credentials the projection masks. A nil projection is
+// one already known to exceed the bound.
 func renderAuthoringReceiptOutcome(resourceType, id, projectID, revision string, createdAt time.Time, projection any) (string, error) {
 	outcome := AuthoringReceiptOutcome{
 		ReceiptVersion: storage.AuthoringReceiptOutcomeOriginal, ResourceType: resourceType, ResourceID: id,
 		ProjectID: normalizeProjectID(projectID), ContentRevision: revision, CreatedAt: createdAt.UTC(),
 	}
-	body, err := json.Marshal(projection)
-	if err != nil {
-		return "", err
-	}
-	if len(body) > storage.MaxAuthoringReceiptOutcomeBytes-authoringReceiptOutcomeHeadroom {
-		outcome.ProjectionOmitted = "exceeds_receipt_outcome_bound"
-	} else {
-		outcome.AuthoringProjection = body
+	outcome.ProjectionOmitted = "exceeds_receipt_outcome_bound"
+	if projection != nil {
+		body, err := json.Marshal(projection)
+		if err != nil {
+			return "", err
+		}
+		if len(body) <= authoringReceiptProjectionBound {
+			outcome.AuthoringProjection, outcome.ProjectionOmitted = body, ""
+		}
 	}
 	encoded, err := json.Marshal(outcome)
 	if err != nil {
@@ -115,7 +122,19 @@ func renderAuthoringReceiptOutcome(resourceType, id, projectID, revision string,
 	return string(encoded), nil
 }
 
+// authoringReceiptProjectionBound is the largest projection an outcome keeps.
+const authoringReceiptProjectionBound = storage.MaxAuthoringReceiptOutcomeBytes - authoringReceiptOutcomeHeadroom
+
 func renderScriptReceiptOutcome(snapshot *storage.ScriptAuthoringSnapshot) (string, error) {
+	// The outcome renders inside the create's transaction. A script whose
+	// stored content alone exceeds the bound has no projection within it, so
+	// it is omitted without building and marshalling it there.
+	if snapshot != nil && snapshot.Script != nil && snapshot.ContentBytes > authoringReceiptProjectionBound {
+		if !storage.ValidScriptContentRevision(snapshot.ContentRevision) {
+			return "", storage.ErrScriptAuthoringUnavailable
+		}
+		return renderAuthoringReceiptOutcome("script", snapshot.Script.ID, snapshot.Script.ProjectID, snapshot.ContentRevision, snapshot.Script.CreatedAt, nil)
+	}
 	stored, err := storedScriptFromAuthoringSnapshot(snapshot)
 	if err != nil {
 		return "", err
@@ -345,6 +364,11 @@ func (s *Server) claimAuthoringCreate(w http.ResponseWriter, r *http.Request, pu
 		return nil, authoringCreateHandled
 	}
 	identity, err := s.authoringReceiptIdentity(r, purpose, projectID, key, requestedID, request)
+	if errors.Is(err, errAuthoringReceiptCredentialsUnprotected) {
+		// A definitive refusal before the key is claimed: nothing was created.
+		writeAuthoringIdempotencyError(w, http.StatusUnprocessableEntity, "idempotency_credentials_unprotected", "a keyed run create cannot carry credential values on a controller without key wrapping; use secret references for them, or configure key wrapping")
+		return nil, authoringCreateHandled
+	}
 	if err != nil {
 		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_unavailable", "idempotency receipts are unavailable")
 		return nil, authoringCreateHandled
@@ -412,8 +436,10 @@ type authoringReceiptIdentity struct {
 // under a second key stored only wrapped (authoringReceiptCredentialKey), and
 // the request digest covers that fingerprint and the request with references
 // in their place. Without a wrapper (a project secret store that does not use
-// one) the digest covers the raw request as before this scheme, and a reader
-// of the whole database could test guesses of those values offline.
+// one) a scenario create's digest covers the raw request as it did before
+// this scheme, and a reader of the whole database could test guesses of those
+// values offline. Run creates were never digested before it, so a keyed run
+// create that carries credential values is refused instead.
 func (s *Server) authoringReceiptIdentity(r *http.Request, purpose, projectID, key, requestedID string, request authoringReceiptFingerprint) (authoringReceiptIdentity, error) {
 	digestKey, err := s.persistentDigestKey(authoringReceiptDigestKeySetting, "authoring receipt")
 	if err != nil {
@@ -429,6 +455,9 @@ func (s *Server) authoringReceiptIdentity(r *http.Request, purpose, projectID, k
 	if len(request.credentials) == 0 {
 		requestDigest, err = directImportHMAC(digestKey, authoringReceiptRequestDomain, request.request)
 	} else if credentialKey, keyErr := s.authoringReceiptCredentialKey(r.Context()); errors.Is(keyErr, errAuthoringReceiptCredentialKeyUnavailable) {
+		if purpose == storage.AuthoringPurposeTestCreate {
+			return authoringReceiptIdentity{}, errAuthoringReceiptCredentialsUnprotected
+		}
 		requestDigest, err = directImportHMAC(digestKey, authoringReceiptRequestDomain, request.legacyOrRequest())
 	} else if keyErr != nil {
 		return authoringReceiptIdentity{}, keyErr
@@ -464,8 +493,10 @@ func (s *Server) authoringReceiptIdentity(r *http.Request, purpose, projectID, k
 
 // authoringReceiptCredentialKey returns the key credential values are
 // fingerprinted under. It is generated once per deployment and kept in the
-// settings table only wrapped by the configured key wrapper; without one,
-// credential-bearing creates cannot be keyed.
+// settings table only wrapped by the configured key wrapper. Without one it
+// reports errAuthoringReceiptCredentialKeyUnavailable (see
+// authoringReceiptIdentity); a wrapper whose key the store cannot initialize
+// atomically is an error, never a reason to digest the values unprotected.
 func (s *Server) authoringReceiptCredentialKey(ctx context.Context) ([]byte, error) {
 	s.receiptCredentialKeyMu.Lock()
 	defer s.receiptCredentialKeyMu.Unlock()
@@ -473,9 +504,12 @@ func (s *Server) authoringReceiptCredentialKey(ctx context.Context) ([]byte, err
 		return s.receiptCredentialKey, nil
 	}
 	wrapper := s.clusterSecretWrapper
-	cas, supported := s.store.(settingsCompareAndSwapper)
-	if wrapper == nil || s.store == nil || !supported {
+	if wrapper == nil || s.store == nil {
 		return nil, errAuthoringReceiptCredentialKeyUnavailable
+	}
+	cas, supported := s.store.(settingsCompareAndSwapper)
+	if !supported {
+		return nil, errors.New("authoring receipt credential key cannot be initialized atomically on this store")
 	}
 	aad := []byte(authoringReceiptCredentialKeyAAD)
 	raw, err := s.store.GetSetting(authoringReceiptCredentialKeySetting)
@@ -630,9 +664,10 @@ func writeAuthoringReceiptCreateError(w http.ResponseWriter, err error) bool {
 	switch {
 	case errors.Is(err, storage.ErrAuthoringReceiptLost):
 		// Another attempt resumed the reservation after this one's lease
-		// expired; its own outcome decides what a retry sees.
+		// expired, or the key's replay lifetime ended first; a retry sees
+		// that attempt's outcome or the expired key.
 		w.Header().Set("Retry-After", "2")
-		writeAuthoringIdempotencyError(w, http.StatusConflict, "idempotency_request_in_progress", "a request with this Idempotency-Key took over the create; retry to see its outcome")
+		writeAuthoringIdempotencyError(w, http.StatusConflict, "idempotency_request_in_progress", "this create no longer holds its Idempotency-Key (another request took it over, or it expired); retry to see the key's outcome")
 		return true
 	case errors.Is(err, errAuthoringReceiptCreateUnsupported):
 		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_receipt_version_unavailable", "original-outcome receipts are unavailable on this controller; retry with receipt version 1 for a replay of the current resource")

@@ -376326,6 +376326,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: Unprocessable Entity Idempotency outcomes carry a code; other failures keep the generic error body.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_credentials_unprotected
+                  error:
+                    type: string
+                required:
+                  - error
         "503":
           description: Service Unavailable Idempotency outcomes carry a code; other failures keep the generic error body.
           content:
@@ -376348,7 +376363,7 @@ paths:
       parameters:
         - name: Idempotency-Key
           in: header
-          description: 'Optional retry key (16-512 visible ASCII characters), scoped to project, caller and create kind. The same key and request return the run the first request created, as it is now, for 24 hours with Idempotent-Replayed: true (the run ID is fixed by the key; with a caller-supplied requested_test_id an unconfirmed earlier attempt is never adopted, and an existing run there answers 409 test_identity_in_use, so read it by that ID); a create whose outcome cannot be confirmed answers 503 test_create_outcome_unknown and must be retried with the same key; a changed request returns 409 idempotency_key_reused, an expired key 409 idempotency_key_expired, a deleted run 410 idempotency_resource_deleted (it is never recreated), and an in-flight duplicate 409 idempotency_request_in_progress with Retry-After. Controllers without durable receipts refuse the key with 503 idempotency_unavailable. A key is kept while an earlier attempt may have committed; it is released for a corrected request only when the create was refused before running or a durable read proves no run was created.'
+          description: 'Optional retry key (16-512 visible ASCII characters), scoped to project, caller and create kind. The same key and request return the run the first request created, as it is now, for 24 hours with Idempotent-Replayed: true (the run ID is fixed by the key; with a caller-supplied requested_test_id an unconfirmed earlier attempt is never adopted, and an existing run there answers 409 test_identity_in_use, so read it by that ID); a create whose outcome cannot be confirmed answers 503 test_create_outcome_unknown and must be retried with the same key; without a configured key wrapper, a keyed create that carries credential values is refused before its key is claimed with 422 idempotency_credentials_unprotected (use secret references for them); a changed request returns 409 idempotency_key_reused, an expired key 409 idempotency_key_expired, a deleted run 410 idempotency_resource_deleted (it is never recreated), and an in-flight duplicate 409 idempotency_request_in_progress with Retry-After. Controllers without durable receipts refuse the key with 503 idempotency_unavailable. A key is kept while an earlier attempt may have committed; it is released for a corrected request only when the create was refused before running or a durable read proves no run was created.'
           required: false
           schema:
             type: string

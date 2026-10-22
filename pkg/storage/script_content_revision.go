@@ -34,6 +34,9 @@ type ScriptAuthoringSnapshot struct {
 	Script            *dsl.Script
 	ContentRevision   string
 	LibraryAssignment *LibraryAssignment
+	// ContentBytes is the stored size of the script's encoded content
+	// columns, a cheap measure of how large any rendering of it will be.
+	ContentBytes int
 }
 
 type ScriptAuthoringPrecondition struct {
@@ -118,7 +121,8 @@ func scanScriptAuthoringRow(row scriptRowScanner) (*ScriptAuthoringSnapshot, err
 		return nil, fmt.Errorf("decode script %s: %w", script.ID, err)
 	}
 	recognizeLegacyCredentialPreservingImport(&script)
-	return &ScriptAuthoringSnapshot{Script: &script, ContentRevision: revision}, nil
+	size := len(metadata) + len(goals) + len(config) + len(data) + len(parameters) + len(init) + len(actions) + len(teardown)
+	return &ScriptAuthoringSnapshot{Script: &script, ContentRevision: revision, ContentBytes: size}, nil
 }
 
 func readScriptAuthoringSnapshotTx(tx *storeTx, id string) (*ScriptAuthoringSnapshot, error) {

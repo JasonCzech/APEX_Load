@@ -28,6 +28,10 @@ One reviewer read scratch snapshots only:
 - Round 3: one low finding, fixed: a draft without a project ID lost its context because the recheck and the resolver used different project IDs.
 - Round 4: no findings.
 
+## Follow-up
+
+The [cross-cutting AUTH review](../roadmap-auth-cross-cutting-2026-10-21/README.md) replaced the secret-reference value digest above with a value-free binding (where the script's secrets resolve, and each name's availability), made the secret re-check share the resolver's application rule, bound drafts to their authorized project, answers 404 for another project's script, and made the editor treat a stored-revision 409 as stale and back off failed probes.
+
 ## Remaining
 
 Policy revoke, capability change, secret rebinding and approval expiry are qualified at the API and component levels. Both-profile browser coverage of the stale-context notice, and a scenario-level validation context, remain open.

@@ -112,22 +112,22 @@ Every row proves each property with a named test (`TestLifecycleParityProperties
 
 | AUTH-2 row | Ownership and destination | Warnings and provenance | Secret references | Capability and policy gates | Pending edits | Dirty navigation | Delayed replies | Exact resolved payload | Durable reopen |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Direct JSON and structured editor | 3 | 2 | 1 | 2 | 1 | 1 | 1 | 1 | 2 |
+| Direct JSON and structured editor | 3 | 2 | 1 | 3 | 1 | 1 | 1 | 1 | 2 |
 | Template/component/clone | 3 | 3 | 3 | 2 | shared | shared | 1 | 2 | 1 |
 | Every import launcher | 3 | 3 | 2 | 1 | 2 | 1 | 1 | 1 | 1 |
 | Multi-script imports | 2 | 1 | 2 | 2 | 2 | 1 | 1 | 2 | 2 |
 | Recording | 2 | 2 | 2 | 3 | 1 | 2 | 1 | 2 | 1 |
 | Classic replay/debug/browser replay | 2 | 2 | 2 | 1 | 1 | shared | 2 | 1 | 1 |
-| Scenario library wizard and compact modal | 1 | 1 | 3 | 2 | 2 | 1 | 1 | 1 | 2 |
+| Scenario library wizard and compact modal | 1 | 1 | 3 | 2 | 2 | 1 | 1 | 1 | 3 |
 | New run | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 2 |
-| Queued revision and execution overview | 1 | 2 | 1 | 2 | 1 | 1 | 2 | 1 | 1 |
+| Queued revision and execution overview | 3 | 2 | 1 | 2 | 1 | 1 | 2 | 1 | 1 |
 
 ### Direct JSON and structured editor
 
 - Ownership and destination: `components/ScriptEditor.test.tsx`: carries the editor folder onto the authoring session; `components/ScriptEditor.test.tsx`: does not let an older save response overwrite a newly opened project document; `TestScriptAuthoringAPIConditionedSaveAndStalePlacement`
 - Warnings and provenance: `components/ScriptEditor.test.tsx`: keeps created-name provenance within the actual editor resource; `components/ScriptEditor.test.tsx`: refreshes imported runtime parity metadata from validation responses
 - Secret references: `components/ScriptEditor.test.tsx`: loads stored secret status, opens script bindings, and refreshes it after save
-- Capability and policy gates: `components/ScriptEditor.test.tsx`: queues a new runner-backed Java Vuser script for approval instead of creating it; `components/ScriptEditor.test.tsx`: clears a readiness result whose controller context changed and says why (AUTH-B)
+- Capability and policy gates: `components/ScriptEditor.test.tsx`: queues a new runner-backed Java Vuser script for approval instead of creating it; `components/ScriptEditor.test.tsx`: clears a readiness result whose controller context changed and says why (AUTH-B); `components/ScriptEditor.test.tsx`: treats a newer stored revision as making the result stale (AUTH-B)
 - Pending edits: `components/ScriptEditor.test.tsx`: retains a focused cell typed during save through canonical parent echo and the next save
 - Dirty navigation: `components/ScriptEditor.test.tsx`: guards dirty editor close and clears the guard after a successful save
 - Delayed replies: `components/ScriptEditor.test.tsx`: ignores a validation response when the editable draft changes in flight
@@ -198,13 +198,13 @@ Every row proves each property with a named test (`TestLifecycleParityProperties
 
 - Ownership and destination: `components/TestHub.test.tsx`: resets a pristine scenario edit before authoring in a different project
 - Warnings and provenance: `components/TestHub.test.tsx`: applies workload templates and renders load-model validation findings
-- Secret references: `TestScenarioSecretReferencesSurviveSaveAndReload`; `TestMaskRuntimeSettingsForEditorShowsOnlyProjectSecretReferences`; `components/scenarioAssembly.test.ts`: keeps the project-secret references of a reopened scenario through the builder checkpoint and save
+- Secret references: `TestScenarioSecretReferencesSurviveSaveAndReload`; `TestMaskRuntimeSettingsForEditorShowsOnlyProjectSecretReferences`; `components/scenarioAssembly.test.ts`: passes a reopened scenario's secret references, spaced or not, through the checkpoint's credential check into its save payload
 - Capability and policy gates: `components/TestHub.test.tsx`: converts a newly disabled selected shape to Custom Workload; `TestLibraryScenarioPreservesAndEnforcesWorkloadShapeIdentity`
 - Pending edits: `components/TestHub.test.tsx`: retains a scenario script review with later edits and returns after a finished save; `workflow-scenario-composition.spec.ts`: scenario prerequisite saves retain archive siblings and later editor changes
 - Dirty navigation: `components/TestHub.test.tsx`: keeps a saved project draft when later unsaved edits are discarded
 - Delayed replies: `components/TestHub.test.tsx`: does not attach a late data-pool result to a replacement draft
 - Exact resolved payload: `components/TestHub.test.tsx`: creates a scenario from the typed form payload
-- Durable reopen: `workflow-scenario-composition.spec.ts`: scenario rename and reopen retain Results, WebSocket, named shape and group timing intent; `components/TestHub.test.tsx`: autosaves builder progress so a reload offers to resume it
+- Durable reopen: `workflow-scenario-composition.spec.ts`: scenario rename and reopen retain Results, WebSocket, named shape and group timing intent; `components/TestHub.test.tsx`: autosaves builder progress so a reload offers to resume it; `components/TestHub.test.tsx`: continues from the scenario as it is now when a save replays an earlier create (AUTH-1)
 
 ### New run
 
@@ -220,7 +220,7 @@ Every row proves each property with a named test (`TestLifecycleParityProperties
 
 ### Queued revision and execution overview
 
-- Ownership and destination: `TestQueuedRunRevisionRejectsNonQueuedAndCrossProjectSources`
+- Ownership and destination: `TestQueuedRunRevisionRejectsNonQueuedAndCrossProjectSources`; `components/CreateTestModal.test.tsx`: never recalls one queued run's revise key for another revised with the same settings (AUTH-1); `components/CreateTestModal.test.tsx`: replays rather than queues another when a replayed draft is created again (AUTH-1)
 - Warnings and provenance: `components/CreateTestModal.test.tsx`: preserves hierarchy provenance and the data-pool snapshot on a queued-run revision; `workflow-new-test.spec.ts`: queued-copy preserves source capture IDs and durably clears the last authored goal
 - Secret references: `TestRevisionSourceGroupIndexPreventsCredentialSwap`
 - Capability and policy gates: `components/CommandCenterQueuedRevision.test.tsx`: does not mount a late lazy editor after permission retirement; `components/CreateTestModal.test.tsx`: blocks aggregate staged demand above the backend one-million VUser limit

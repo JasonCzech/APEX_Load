@@ -39,6 +39,8 @@ Two independent reviewers (backend and dashboard) read scratch snapshots only, f
 
 The full `pkg/api` run during the [lifecycle property matrix slice](../roadmap-lifecycle-property-matrix-2026-10-21/README.md) found that this slice's receipt-completing script create stored its store call in a closure before passing it to `contentmutation.OutsideLock`. The store call still ran outside the runner lock, but `TestEveryLockHeldDurableWriteIsCounted` recognizes only an inline callback, so it failed. Each create call is now an inline callback again.
 
+The [cross-cutting AUTH review](../roadmap-auth-cross-cutting-2026-10-21/README.md) then made a create that would complete after its key expired roll back, skipped building an oversized script's projection inside the transaction, documented outcome retention after edits, and made a replayed scenario save open the scenario as it is now.
+
 ## Remaining
 
 Queued revise-copy (`POST /tests`) intent keys, crash injection at each receipt/resource boundary, two-tab concurrent-click qualification, and browser coverage (both profiles) of the conflict, expiry and deletion paths that lead to Save as new remain open for AUTH-A; those paths are covered by unit and Go tests only. Credential fingerprints stay on the earlier digest where no key wrapper is configured.

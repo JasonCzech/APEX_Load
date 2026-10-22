@@ -855,7 +855,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const createIntentRef = useRef<AuthoringCreateIntent | null>(null)
   const createIntentFreshRef = useRef(false)
   const writeOwnCheckpointRef = useRef<() => void>(() => undefined)
-  const [createNeedsNewIntent, setCreateNeedsNewIntent] = useState(false)
+  // The error that refused the draft's create key for good; Save as new is
+  // offered with that error only.
+  const [createNeedsNewIntent, setCreateNeedsNewIntent] = useState('')
   const [form, setForm] = useState<ScenarioFormState>(() => emptyScenarioForm())
   const currentDraftRef = useRef({ form, activeProjectId, showForm })
   currentDraftRef.current = { form, activeProjectId, showForm }
@@ -1635,7 +1637,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     builderSessionRef.current += 1
     createIntentRef.current = null
     createIntentFreshRef.current = false
-    setCreateNeedsNewIntent(false)
+    setCreateNeedsNewIntent('')
     activeCheckpointSavedAtRef.current = ''
     autosaveSavedAtRef.current = ''
     autosaveReplacedRef.current = null
@@ -2848,7 +2850,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const persistScenario = async () => {
     if (savingRef.current) return null
     setError('')
-    setCreateNeedsNewIntent(false)
+    setCreateNeedsNewIntent('')
     if (sourcePending) { setError(sourcePendingMessage); setWizardStep('source'); return null }
     if (!canManageTests) {
       setError('Current session can view scenarios but cannot create or edit them.')
@@ -2958,15 +2960,15 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       const saved = persisted.saved
       setScenarioBaseline(persisted.baseline)
       originalShapeIdRef.current = selectedShapeId
-      setSavedNotice(persisted.replayed
-        ? `This draft had already been saved as ${saved.name || form.name}${saved.ref_key ? ` (${saved.ref_key})` : ''} by an earlier attempt; showing that scenario.`
-        : `Saved ${saved.name || form.name}${saved.ref_key ? ` (${saved.ref_key})` : ''}.`)
-      return saved
+      // A replay's notice is set where the builder continues from it.
+      if (!persisted.replayed) setSavedNotice(`Saved ${saved.name || form.name}${saved.ref_key ? ` (${saved.ref_key})` : ''}.`)
+      return { saved, replayed: persisted.replayed, baseline: persisted.baseline }
     } catch (err: unknown) {
       if (!stillCurrent() || builderSessionRef.current !== submittedSession) return null
-      if (err instanceof AuthoringCreateNeedsNewIntent && !editingId) setCreateNeedsNewIntent(true)
+      const message = getErrorMessage(err, 'Unable to save scenario')
+      if (err instanceof AuthoringCreateNeedsNewIntent && !editingId) setCreateNeedsNewIntent(message)
       if (editingId && scenarioSaveNeedsReconciliation(err)) setScenarioConflict({ reason: scenarioConflictReason(err), loading: false, current: null })
-      else setError(getErrorMessage(err, 'Unable to save scenario'))
+      else setError(message)
       return null
     } finally {
       savingRef.current = false
@@ -3074,14 +3076,41 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       activeCheckpointSavedAtRef.current = ''
     } else setAuthoringDraft(latest)
   }
+  // A save that replayed an earlier create: that scenario may have been
+  // edited since, so the builder continues from it as it is now, with its own
+  // baseline, never from this form (the next save could otherwise overwrite
+  // those edits). As with the library's Edit, an archived one is not opened,
+  // and one read without a baseline must be reloaded before it saves.
+  const continueFromReplayedScenario = (saved: StoredScenario, baseline: ScenarioAuthoringBaseline | null, notice: string) => {
+    clearScenarioBuilderDraft()
+    try { clearResolvedCheckpoint() } catch { /* Server save succeeded; a local checkpoint may remain. */ }
+    const label = `${saved.name || form.name}${saved.ref_key ? ` (${saved.ref_key})` : ''}`
+    if (saved.archived_at) {
+      resetScenarioBuilder()
+      setSavedNotice(`This draft had already been saved as ${label} by an earlier attempt, and that scenario has since been archived. Restore it from the Scenario library to edit it.`)
+      return
+    }
+    const step = wizardStep
+    openEditFrom(saved, baseline)
+    setWizardStep(step)
+    if (!baseline) setScenarioConflict({ reason: scenarioRevisionUnsupported, loading: false, current: null })
+    setSavedNotice(`This draft had already been saved as ${label} by an earlier attempt; showing that scenario as it is now.${notice}`)
+  }
+
   // One Save: a complete scenario saves as a scenario; anything else saves as a
   // draft in the project, which nothing can launch.
   const saveScenario = async (): Promise<boolean> => {
     if (monitorEditorError) { setError(monitorEditorError); return false }
     if (scenarioIncompleteReason) return saveProjectDraft(scenarioIncompleteReason)
-    const saved = await persistScenario()
-    if (!saved) return false
+    const persisted = await persistScenario()
+    if (!persisted) return false
+    const { saved } = persisted
     void settleProjectDraft(saved)
+    if (persisted.replayed) {
+      continueFromReplayedScenario(saved, persisted.baseline, '')
+      void refresh()
+      return true
+    }
     setEditingId(saved.id)
     editingBaselineFormRef.current = JSON.stringify(form)
     resumedBaselineTagRef.current = ''
@@ -3288,9 +3317,17 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   }
 
   const saveScenarioAndCreateTest = async () => {
-    const saved = await persistScenario()
-    if (!saved) return
+    const persisted = await persistScenario()
+    if (!persisted) return
+    const { saved } = persisted
     void settleProjectDraft(saved)
+    if (persisted.replayed) {
+      // The scenario as it is now may differ from this form: show it before
+      // a run is configured from it.
+      continueFromReplayedScenario(saved, persisted.baseline, ' Review it, then choose Save and configure run again.')
+      void refresh()
+      return
+    }
     try { clearResolvedCheckpoint() } catch { /* The server save is authoritative. */ }
     // Publish the saved state before the parent evaluates navigation guards.
     flushSync(resetScenarioBuilder)
@@ -4984,13 +5021,13 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 
       {error && <div ref={errorRef} tabIndex={-1} className="settings-error-inline page-error-banner" role="alert">
         {error}
-        {createNeedsNewIntent && !editingId && showForm && (
+        {createNeedsNewIntent && error === createNeedsNewIntent && !editingId && showForm && (
           <button type="button" className="btn btn-sm btn-secondary" disabled={savePending} onClick={() => {
             // An explicit new intent: the next save creates under a new key.
             forgetAuthoringCreateIntent(createIntentRef.current)
             createIntentRef.current = null
             createIntentFreshRef.current = true
-            setCreateNeedsNewIntent(false)
+            setCreateNeedsNewIntent('')
             writeOwnCheckpoint()
             void saveScenario()
           }}>Save as new</button>

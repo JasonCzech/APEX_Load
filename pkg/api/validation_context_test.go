@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/internal/importreview"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -74,7 +75,7 @@ func hasContextFinding(context *importreview.ValidationContext, cause, subject s
 	return false
 }
 
-func TestValidationContextChangesWithSecretAvailabilityAndRebinding(t *testing.T) {
+func TestValidationContextChangesWithSecretAvailabilityButNotItsValue(t *testing.T) {
 	server, _, secrets := validationContextFixture(t)
 	script := secretReferencingScript()
 
@@ -97,16 +98,186 @@ func TestValidationContextChangesWithSecretAvailabilityAndRebinding(t *testing.T
 		t.Fatal("a secret change moved an unrelated component")
 	}
 
+	// Validation depends on whether a secret is configured, not on its
+	// value, so a new value leaves the context as it was and no guess of a
+	// value can be confirmed against it.
 	secrets.mu.Lock()
-	secrets.values[storage.DefaultProjectID+"/api_token"] = "rebound-secret-value"
+	secrets.values[storage.DefaultProjectID+"/api_token"] = "replaced-secret-value"
 	secrets.mu.Unlock()
-	rebound, code := probeValidationContext(t, server, map[string]any{"project_id": storage.DefaultProjectID, "script": script})
-	if code != http.StatusOK || rebound.Revision == bound.Revision || rebound.Components.SecretReferences == bound.Components.SecretReferences {
-		t.Fatalf("rebinding the secret did not change the probed context: %d %+v", code, rebound)
+	replaced, code := probeValidationContext(t, server, map[string]any{"project_id": storage.DefaultProjectID, "script": script})
+	if code != http.StatusOK || replaced.Revision != bound.Revision {
+		t.Fatalf("replacing a secret's value changed the probed context: %d %+v", code, replaced)
 	}
-	payload, _ := json.Marshal(rebound)
-	if strings.Contains(string(payload), "rebound-secret-value") || strings.Contains(string(payload), "first-secret-value") {
+	payload, _ := json.Marshal(replaced)
+	if strings.Contains(string(payload), "replaced-secret-value") || strings.Contains(string(payload), "first-secret-value") {
 		t.Fatal("the context discloses a secret value")
+	}
+}
+
+// failingApplications cannot read any application.
+type failingApplications struct{}
+
+func (failingApplications) GetApplication(string) (*storage.Application, error) {
+	return nil, errors.New("application store unreachable")
+}
+
+func TestValidationContextFollowsTheResolversApplicationBinding(t *testing.T) {
+	records, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "context-applications.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = records.Close() })
+	now := time.Now().UTC()
+	for _, project := range []string{"shared-project", "other-project"} {
+		if err := records.SaveProject(&storage.Project{ID: project, Name: project, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id, project := range map[string]string{"app-a": "shared-project", "app-x": "other-project"} {
+		if err := records.SaveApplication(&storage.Application{ID: id, ProjectID: project, Name: id, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x42}, 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: records, BrunoArtifactWrapper: wrapper})
+	for path, value := range map[string]string{
+		"/api/v1/projects/shared-project/secrets": "project-password",
+		"/api/v1/applications/app-x/secrets":      "foreign-application-password",
+	} {
+		if response := secretAPIRequest(t, server, http.MethodPost, path, map[string]any{
+			"secrets": []map[string]string{{"name": "LOGIN_PASSWORD", "value": value}},
+		}); response.Code != http.StatusCreated {
+			t.Fatalf("%s: %d %s", path, response.Code, response.Body.String())
+		}
+	}
+	script := func(id, project string) *dsl.Script {
+		return &dsl.Script{ID: id, Name: id, Version: "1", Protocol: "http", ProjectID: project,
+			Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
+			Actions: []dsl.Action{{Name: "Call", Type: "request", Target: "/?p={{secret.LOGIN_PASSWORD}}"}}}
+	}
+	for id, place := range map[string][2]string{"assigned-script": {"shared-project", "app-a"}, "foreign-script": {"other-project", "app-x"}} {
+		if _, err := server.runner.StoreScriptDurable(script(id, place[0])); err != nil {
+			t.Fatal(err)
+		}
+		assignment, err := records.ListLibraryAssignments("script", []string{id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := records.ReplaceLibraryAssignment("script", id, place[0], ptrString(place[1]), nil, assignment[id].Revision); err != nil {
+			t.Fatal(err)
+		}
+	}
+	probe := func(draft *dsl.Script) *importreview.ValidationContext {
+		t.Helper()
+		context, code := probeValidationContext(t, server, map[string]any{"project_id": "shared-project", "script": draft})
+		if code != http.StatusOK {
+			t.Fatalf("probe of %q: %d", draft.ID, code)
+		}
+		return context
+	}
+
+	unassigned := probe(script("", "shared-project"))
+	assigned := probe(script("assigned-script", "shared-project"))
+	if hasContextFinding(unassigned, "secret_unavailable", "") || hasContextFinding(assigned, "secret_unavailable", "") {
+		t.Fatalf("the project secret is unavailable: %+v %+v", unassigned.Findings, assigned.Findings)
+	}
+	if assigned.Components.SecretReferences == unassigned.Components.SecretReferences || assigned.Revision == unassigned.Revision {
+		t.Fatal("resolving through an application did not change the secret-reference binding")
+	}
+	// A draft's ID is checked durably, not against this replica's cache: a
+	// script stored by another replica keeps its application binding.
+	if _, err := records.CreateScriptAuthoringIfAbsent(script("uncached-script", "shared-project")); err != nil {
+		t.Fatal(err)
+	}
+	uncachedAssignment, err := records.ListLibraryAssignments("script", []string{"uncached-script"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := records.ReplaceLibraryAssignment("script", "uncached-script", "shared-project", ptrString("app-a"), nil, uncachedAssignment["uncached-script"].Revision); err != nil {
+		t.Fatal(err)
+	}
+	if _, cached := server.runner.GetScript("uncached-script"); cached {
+		t.Fatal("the fixture script is in this replica's cache")
+	}
+	if uncached := probe(script("uncached-script", "shared-project")); uncached.Components.SecretReferences != assigned.Components.SecretReferences {
+		t.Fatal("a script missing from the cache lost its application binding")
+	}
+	if _, err := server.runner.projectSecretStore.Replace(context.Background(), "shared-project", "LOGIN_PASSWORD", "rotated-password", "tester"); err != nil {
+		t.Fatal(err)
+	}
+	if rotated := probe(script("", "shared-project")); rotated.Revision != unassigned.Revision {
+		t.Fatal("rotating a secret value changed the context")
+	}
+
+	// Another project's script ID neither borrows its application's secrets
+	// nor reveals them: the draft resolves as an unsaved draft of its project.
+	if borrowed := probe(script("foreign-script", "shared-project")); borrowed.Revision != unassigned.Revision {
+		t.Fatalf("a foreign script ID changed the draft's context: %+v", borrowed)
+	}
+
+	// An application in another project, or one that no longer exists,
+	// resolves nothing, and there is then nothing for the re-check to find.
+	for _, application := range []string{"app-x", "missing-application"} {
+		binding := server.runner.secretBindingForScope("shared-project", application)
+		if !binding.Refused || binding.Err != nil || binding.ApplicationID != "" {
+			t.Fatalf("binding to %s = %+v", application, binding)
+		}
+		if err := server.secretProviderFailure(context.Background(), binding, []string{"LOGIN_PASSWORD"}); err != nil {
+			t.Fatalf("re-check of a refused binding to %s: %v", application, err)
+		}
+	}
+
+	// A failed application read is a failed read, not a refused binding.
+	server.runner.applicationStore = failingApplications{}
+	if _, code := probeValidationContext(t, server, map[string]any{"project_id": "shared-project", "script": script("assigned-script", "shared-project")}); code != http.StatusServiceUnavailable {
+		t.Fatalf("an unreadable application answered %d, not 503", code)
+	}
+}
+
+func TestValidationContextBindsADraftToItsAuthorizedProject(t *testing.T) {
+	server, store, _ := validationContextFixture(t)
+	now := time.Now()
+	if err := store.SaveProject(&storage.Project{ID: "context-folder-project", Name: "Folder project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveFolder(&storage.Folder{ID: "context-folder", ProjectID: "context-folder-project", Name: "Scripts", Category: "scripts", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	enableTrustedHeaderAuth(t, server)
+	send := func(path string, body map[string]any) *httptest.ResponseRecorder {
+		payload, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(payload))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Auth-Request-User", "folder-viewer")
+		req.Header.Set("X-APEXLoad-Project-Roles", "context-folder-project="+RoleViewer)
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, req)
+		return response
+	}
+	draft := secretReferencingScript()
+	draft.ProjectID = ""
+	validated := send("/api/v1/scripts/validate", map[string]any{"folder_id": "context-folder", "script": draft, "fingerprint": "sdf1-test"})
+	var validation importreview.ScriptValidationResponse
+	if err := json.Unmarshal(validated.Body.Bytes(), &validation); err != nil || validated.Code != http.StatusOK || validation.ValidationContext == nil {
+		t.Fatalf("validation of a folder draft: %d %s", validated.Code, validated.Body.String())
+	}
+	for _, body := range []map[string]any{
+		{"folder_id": "context-folder", "script": draft},
+		{"project_id": "context-folder-project", "script": draft},
+	} {
+		response := send("/api/v1/scripts/validation-context", body)
+		var probed importreview.ValidationContext
+		if err := json.Unmarshal(response.Body.Bytes(), &probed); err != nil || response.Code != http.StatusOK || probed.Revision != validation.ValidationContext.Revision {
+			t.Fatalf("probe %v disagrees with the folder draft's validation: %d %s", body, response.Code, response.Body.String())
+		}
+	}
+	// The draft's own project must be the authorized one.
+	elsewhere := secretReferencingScript()
+	if response := send("/api/v1/scripts/validate", map[string]any{"folder_id": "context-folder", "script": elsewhere, "fingerprint": "sdf1-test"}); response.Code != http.StatusBadRequest {
+		t.Fatalf("a draft naming another project: %d %s", response.Code, response.Body.String())
 	}
 }
 
@@ -261,7 +432,8 @@ func TestValidationContextEndpointEnforcesProjectScope(t *testing.T) {
 	if response := send(map[string]any{"project_id": storage.DefaultProjectID, "script": secretReferencingScript()}); response.Code != http.StatusOK {
 		t.Fatalf("a viewer probing a draft in their project: %d %s", response.Code, response.Body.String())
 	}
-	if response := send(map[string]any{"project_id": storage.DefaultProjectID, "script_id": foreign.ID}); response.Code != http.StatusForbidden && response.Code != http.StatusNotFound {
+	// Another project's script is as hidden as a missing one.
+	if response := send(map[string]any{"project_id": storage.DefaultProjectID, "script_id": foreign.ID}); response.Code != http.StatusNotFound {
 		t.Fatalf("a probe of another project's script: %d %s", response.Code, response.Body.String())
 	}
 	draft := secretReferencingScript()
@@ -278,11 +450,12 @@ func TestValidationContextTreatsAStoredValueTheResolverMissedAsAFailedRead(t *te
 	secrets.mu.Unlock()
 	// The resolver reported api_token missing although the project store
 	// holds it (as when an application or assignment read failed).
-	err := server.secretProviderFailure(context.Background(), storage.DefaultProjectID, secretReferencingScript(), []string{"api_token"})
+	project := scriptSecretBinding{ProjectID: storage.DefaultProjectID}
+	err := server.secretProviderFailure(context.Background(), project, []string{"api_token"})
 	if !errors.Is(err, errSecretResolutionInconsistent) {
 		t.Fatalf("a stored value the resolver missed: %v", err)
 	}
-	if err := server.secretProviderFailure(context.Background(), storage.DefaultProjectID, secretReferencingScript(), []string{"really_missing"}); err != nil {
+	if err := server.secretProviderFailure(context.Background(), project, []string{"really_missing"}); err != nil {
 		t.Fatalf("a genuinely unconfigured secret: %v", err)
 	}
 }
