@@ -184,6 +184,9 @@ type RunArchiveManifest struct {
 	// TelemetryStageDigests the mergeable digests behind them.
 	TelemetryStageDistributions []TelemetryStageDistribution      `json:"telemetry_stage_distributions,omitempty"`
 	TelemetryStageDigests       map[string]engine.TDigestSnapshot `json:"telemetry_stage_digests,omitempty"`
+	// TelemetryRenderPopulation is the run's render accounting for its
+	// reference dashboard client, as this controller recorded it (TEL-A).
+	TelemetryRenderPopulation *TelemetryRenderPopulation `json:"telemetry_render_population,omitempty"`
 	// TelemetryLoss is the run's total of each loss counter at finalize:
 	// exact, an observed lower bound or unavailable, with the reason.
 	TelemetryLoss *TelemetryLossAccounting `json:"telemetry_loss,omitempty"`

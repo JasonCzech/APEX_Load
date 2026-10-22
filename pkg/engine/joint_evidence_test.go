@@ -129,3 +129,31 @@ func TestJointTupleKeyBounds(t *testing.T) {
 		t.Fatalf("an unrepresentable label became a tuple: %+v", snapshot)
 	}
 }
+
+// A joint tuple holds only what joint evidence publishes (counts, errors and
+// the distribution beside them): a sample's diagnostics, transport timings,
+// bytes, duration bounds and correlation identifiers stay with the marginal
+// action metrics and never become per-tuple state.
+func TestJointAccumulatorKeepsOnlyPublishedState(t *testing.T) {
+	projection := &JointProjection{Population: "action", Dimensions: []string{"name"}}
+	acc := newJointAccumulator(projection)
+	for i, success := range []bool{true, false, true} {
+		r := jointResult("login", "", "", false, 10*(i+1))
+		r.Success = success
+		r.DNSTime, r.ConnectTime, r.TLSTime, r.TTFB = time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond
+		r.BytesSent, r.BytesReceived = 100, 200
+		r.CorrelationID, r.DependencyType, r.DependencyTarget = fmt.Sprintf("corr-%d", i), "java_http", "orders"
+		r.ServerTelemetry = &protocol.ServerTelemetry{ServerProcessingMs: 4, JavaHTTP: &protocol.JavaHTTPDiagnostics{}}
+		acc.add(projection, r, nil)
+	}
+	key, _ := JointTupleKey([]string{"login"})
+	tuple := acc.finish().Tuples[key]
+	if tuple == nil || tuple.Count != 3 || tuple.Errors != 1 || tuple.AvgDuration != 20*time.Millisecond || tuple.P99 <= 0 ||
+		tuple.DurationDigest == nil || tuple.DurationDigest.Count != 3 || tuple.DurationSketch == nil || tuple.DurationSketch.Count != 3 {
+		t.Fatalf("tuple %+v", tuple)
+	}
+	if tuple.ServerTelemetry != nil || tuple.BytesSent != 0 || tuple.BytesRecv != 0 || tuple.AvgDNSMs != 0 || tuple.AvgTTFBMs != 0 ||
+		len(tuple.CorrelationIDs) != 0 || tuple.CorrelationCount != 0 || tuple.DependencyType != "" || tuple.LastErrorMessage != "" || tuple.MinDuration != 0 || tuple.MaxDuration != 0 {
+		t.Fatalf("tuple kept state joint evidence does not publish: %+v", tuple)
+	}
+}

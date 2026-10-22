@@ -407,6 +407,11 @@ func (tr *TestRunner) validateScenarioRuntimeMutationLocked(scenario *StoredScen
 	if err := validateIterationEngineGroups(scenario.TerminationMode, engineGroups); err != nil {
 		return err
 	}
+	// A runtime change that drops a promoted property category the
+	// scenario's joint evidence groups by would make every later run fail.
+	if err := validateJointEvidenceCategories(scenario.JointEvidence, testGroups); err != nil {
+		return err
+	}
 	for index, group := range engineGroups {
 		if scenario.TerminationMode != "iterations" && group.StartOffset > duration {
 			return fmt.Errorf("group[%d]: start_offset %s begins after the %s scenario deadline", index, group.StartOffset, duration)

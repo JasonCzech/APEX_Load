@@ -455,3 +455,85 @@ func TestWorkerPreviewRefusesCaseAmbiguousPhysicalSchema(t *testing.T) {
 		}
 	}
 }
+
+// A schema mismatch crosses the worker boundary as indices into the request's
+// files and mapped columns, only with its own code, and only for a
+// normalization.
+func TestWorkerSchemaMismatchResultNamesOnlyRequestIndices(t *testing.T) {
+	b := workerTestBootstrap(t)
+	request := workerTestRequest(b)
+	valid := workerResult{Status: "error", Code: "schema_mismatch", Mismatch: &workerSchemaMismatch{File: 0, Column: 1, Reason: analysis.SchemaMismatchAbsent}}
+	if err := valid.validate(b, request); err != nil {
+		t.Fatalf("a mismatch naming the file and the mapped value column was refused: %v", err)
+	}
+	frame, err := workerFrame{Identity: b.Identity, Kind: "result", Result: &valid}.clone()
+	if err != nil || frame.Result.Mismatch == nil || *frame.Result.Mismatch != *valid.Mismatch {
+		t.Fatalf("a mismatch did not survive the frame encoding: %#v %v", frame.Result, err)
+	}
+	for name, result := range map[string]workerResult{
+		"file out of range":   {Status: "error", Code: "schema_mismatch", Mismatch: &workerSchemaMismatch{File: 1, Column: 0, Reason: analysis.SchemaMismatchAbsent}},
+		"column out of range": {Status: "error", Code: "schema_mismatch", Mismatch: &workerSchemaMismatch{File: 0, Column: 2, Reason: analysis.SchemaMismatchAbsent}},
+		"negative index":      {Status: "error", Code: "schema_mismatch", Mismatch: &workerSchemaMismatch{File: -1, Column: 0, Reason: analysis.SchemaMismatchAbsent}},
+		"unknown reason":      {Status: "error", Code: "schema_mismatch", Mismatch: &workerSchemaMismatch{File: 0, Column: 0, Reason: "the engine said so"}},
+		"code without detail": {Status: "error", Code: "schema_mismatch"},
+		"detail on another":   {Status: "error", Code: "internal", Mismatch: &workerSchemaMismatch{}},
+		"detail on success":   {Status: "ok", Normalize: workerTestNormalizeResult(b).Normalize, Mismatch: &workerSchemaMismatch{}},
+	} {
+		if result.validate(b, request) == nil {
+			t.Errorf("%s: admitted", name)
+		}
+	}
+	preview := workerRequest{Preview: &workerPreviewOperation{InputHandle: b.Handles[0].Handle}}
+	if (workerResult{Status: "error", Code: "schema_mismatch", Mismatch: &workerSchemaMismatch{Reason: analysis.SchemaMismatchAbsent}}).validate(b, preview) == nil {
+		t.Error("a preview admitted a normalization's schema mismatch")
+	}
+}
+
+// Rejected rows cross the worker boundary as indices, a count and the first
+// ascending row ordinals, only with their own code.
+func TestWorkerRejectedRowsResultNamesOnlyRequestIndicesAndOrdinals(t *testing.T) {
+	b := workerTestBootstrap(t) // the input has 3 rows
+	request := workerTestRequest(b)
+	request.Normalize.AllowRejected = false
+	request.Normalize.OutputHandles = request.Normalize.OutputHandles[:1] // no rejection output without acceptance
+	if err := request.validate(b); err != nil {
+		t.Fatalf("test request: %v", err)
+	}
+	valid := workerResult{Status: "error", Code: "rejected_rows", RejectedRows: &workerRejectedRows{File: 0, Measure: 0, Count: 2, Rows: []int64{0, 2}}}
+	if err := valid.validate(b, request); err != nil {
+		t.Fatalf("rejected rows naming the file, measure and first rows were refused: %v", err)
+	}
+	for name, rejected := range map[string]workerRejectedRows{
+		"file out of range":     {File: 1, Measure: 0, Count: 1, Rows: []int64{0}},
+		"measure out of range":  {File: 0, Measure: 1, Count: 1, Rows: []int64{0}},
+		"no count":              {File: 0, Measure: 0, Count: 0},
+		"no rows":               {File: 0, Measure: 0, Count: 1},
+		"fewer rows than count": {File: 0, Measure: 0, Count: 2, Rows: []int64{0}},
+		"more rows than count":  {File: 0, Measure: 0, Count: 1, Rows: []int64{0, 1}},
+		"count above the input": {File: 0, Measure: 0, Count: 4, Rows: []int64{0, 1, 2}},
+		"row past the input":    {File: 0, Measure: 0, Count: 1, Rows: []int64{3}},
+		"unordered rows":        {File: 0, Measure: 0, Count: 2, Rows: []int64{2, 1}},
+		"negative row":          {File: 0, Measure: 0, Count: 1, Rows: []int64{-1}},
+	} {
+		if (workerResult{Status: "error", Code: "rejected_rows", RejectedRows: &rejected}).validate(b, request) == nil {
+			t.Errorf("%s: admitted", name)
+		}
+	}
+	accepting := workerTestRequest(b) // accepts rejections, so none can fail it
+	if valid.validate(b, accepting) == nil {
+		t.Error("rejected rows were admitted for a normalization that accepts them")
+	}
+	preview := workerRequest{Preview: &workerPreviewOperation{InputHandle: b.Handles[0].Handle}}
+	if valid.validate(b, preview) == nil {
+		t.Error("a preview admitted a normalization's rejected rows")
+	}
+	if (workerResult{Status: "ok", Normalize: workerTestNormalizeResult(b).Normalize, RejectedRows: valid.RejectedRows}).validate(b, request) == nil {
+		t.Error("a successful result carried rejected rows")
+	}
+	if (workerResult{Status: "error", Code: "rejected_rows"}).validate(b, request) == nil {
+		t.Error("the code was admitted without its detail")
+	}
+	if (workerResult{Status: "error", Code: "internal", RejectedRows: valid.RejectedRows}).validate(b, request) == nil {
+		t.Error("the detail was admitted with another code")
+	}
+}

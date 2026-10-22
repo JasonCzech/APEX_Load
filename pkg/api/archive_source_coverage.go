@@ -66,7 +66,8 @@ func archiveMissingSourcesMessage(sources []RunArchiveSource, missing int) strin
 		if source.Collected {
 			continue
 		}
-		lost = append(lost, source.Label())
+		// Named as the report's other generator lists name them (TEL-B).
+		lost = append(lost, scrubTelemetryIdentity(source.Label()))
 	}
 	message += ": " + strings.Join(lost, ", ") + "."
 	var covered, partly []string

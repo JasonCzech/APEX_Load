@@ -39,6 +39,8 @@ import { formatTimeCompact, isValidDurationInput, parseDurationToSeconds } from 
 import './TestHub.css'
 import './CreateTestModal.css'
 import { goalConfigFromForm, maxStageVUsers, scenarioDraftFromForm, scenarioDraftGroupFromForm, scenarioEstimateRequest, scenarioLoadPreview, scenarioTimelineGroups, scenarioUpsertPayload } from './scenarioAssembly'
+import { BROWSER_ITERATION_CATEGORY, JOINT_EVIDENCE_DIMENSIONS, JOINT_EVIDENCE_MAX_DIMENSIONS, jointEvidenceIssue, jointPropertyCategory, jointPropertyCategoryLabel, promotedPropertyCategories, toggleJointEvidenceDimension } from './jointEvidenceModel'
+import type { JointEvidenceProjection } from '../types/jointEvidence'
 import { SortHeader } from './SortHeader'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
@@ -2910,6 +2912,14 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       setError(transactionSLAError)
       return null
     }
+    const jointIssue = jointEvidenceIssue(form.joint_evidence, promotedPropertyCategories(form, scripts))
+    if (jointIssue) {
+      setError(jointIssue)
+      setWizardStep('run')
+      setRunSettingsTab('scenario')
+      setScenarioSettingsSection('advanced')
+      return null
+    }
     if (form.scenario_mode === 'goal_oriented') {
       const goalConfig = goalConfigFromForm(form)
       if (!hasGoalModeConfiguration(goalConfig)) {
@@ -3700,6 +3710,63 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     </div>
   )
 
+  // A scenario's joint evidence projection, captured by every run created
+  // from it (directly, by a schedule or by an execution plan).
+  const renderJointEvidence = () => {
+    const projection = form.joint_evidence
+    const promoted = promotedPropertyCategories(form, scripts)
+    const chosen = projection?.dimensions ?? []
+    const full = chosen.length >= JOINT_EVIDENCE_MAX_DIMENSIONS
+    const propertyChosen = chosen.some(dimension => jointPropertyCategory(dimension) !== null)
+    const chosenCategories = chosen.map(jointPropertyCategory).filter((name): name is string => name !== null)
+    // The engine's browser iteration category is always admitted.
+    const categoryPromoted = (name: string) => name === BROWSER_ITERATION_CATEGORY || promoted.includes(name)
+    const issue = jointEvidenceIssue(projection, promoted)
+    const setProjection = (next: JointEvidenceProjection | undefined) => setForm(previous => ({ ...previous, joint_evidence: next }))
+    const options = [
+      ...JOINT_EVIDENCE_DIMENSIONS.map(dimension => ({ id: dimension.id, label: dimension.label, property: false, promoted: true })),
+      ...[...new Set([...promoted, ...chosenCategories])].map(name => ({ id: `property:${name}`, label: jointPropertyCategoryLabel(name), property: true, promoted: categoryPromoted(name) })),
+    ]
+    return (
+      <div className="scenario-subpanel" data-testid="joint-evidence">
+        <div className="scenario-assignment-header">
+          <div>
+            <h4>Joint evidence</h4>
+            <p>Count every sample under the exact combination of up to three dimensions, so grouped and filtered results show measured intersections rather than separate totals combined. Every run of this scenario captures it, including scheduled runs and execution plans.</p>
+          </div>
+        </div>
+        <label className="scenario-field">
+          <span>Population</span>
+          <select aria-label="Joint evidence population" className="settings-input" value={projection?.population ?? ''} onChange={event => {
+            const population = event.target.value
+            setProjection(population === 'action' || population === 'transaction' ? { population, dimensions: projection?.dimensions ?? ['name'] } : undefined)
+          }}>
+            <option value="">Off</option>
+            <option value="action">Actions</option>
+            <option value="transaction">Business transactions</option>
+          </select>
+        </label>
+        {projection && (
+          <fieldset className="scenario-option-grid">
+            <legend>Dimensions (up to {JOINT_EVIDENCE_MAX_DIMENSIONS}; one property category)</legend>
+            {options.map(option => {
+              const checked = chosen.includes(option.id)
+              const disabled = !checked && full && !(option.property && propertyChosen)
+              return (
+                <label key={option.id} className={`scenario-option-card ${checked ? 'selected' : ''}`}>
+                  <input type="checkbox" checked={checked} disabled={disabled} onChange={event => setProjection(toggleJointEvidenceDimension(projection, option.id, event.target.checked))} />
+                  <div><strong>{option.label}</strong>{!option.promoted && <span>Not promoted by any of this scenario's scripts</span>}</div>
+                </label>
+              )
+            })}
+          </fieldset>
+        )}
+        {projection && promoted.length === 0 && !chosenCategories.some(categoryPromoted) && <p className="scenario-assignment-copy secondary">No script in this scenario promotes a property category (Results, Property analytics), so none can be grouped here.</p>}
+        {issue && <p className="form-error">{issue}</p>}
+      </div>
+    )
+  }
+
   const renderProtectRun = () => (
     <div className="scenario-subpanel" data-testid="protect-the-run">
       <div className="scenario-assignment-header">
@@ -4306,6 +4373,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         {scenarioSettingsSection === 'advanced' && <>
           {renderProtectRun()}
           {renderPreRunAssurance()}
+          {renderJointEvidence()}
           <TransactionResponseTimeSLASettings
             defaultMs={goalConfigFromForm(form).transaction_response_time_sla_ms}
             groups={formGroups.map((group, index) => ({
@@ -4708,6 +4776,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             {scenarioSettingsSection === 'advanced' && <>
               {renderProtectRun()}
               {renderPreRunAssurance()}
+              {renderJointEvidence()}
               <TransactionResponseTimeSLASettings
                 defaultMs={goalConfigFromForm(form).transaction_response_time_sla_ms}
                 groups={formGroups.map((group, index) => ({

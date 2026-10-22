@@ -857,6 +857,8 @@ export interface TestSummary {
   goal_config?: GoalConfig
   /** A traffic-profile run's replayed profile: its per-group TPS (or VUser) points by offset. */
   traffic_profile?: import('./types/trafficProfiles').TrafficProfile
+  /** The joint evidence projection the run captures. */
+  joint_evidence?: import('./types/jointEvidence').JointEvidenceProjection
   /** The execution-plan run that started this run. */
   execution_plan?: TestExecutionPlanLink
   archive?: RunArchiveRecord
@@ -2356,6 +2358,8 @@ export interface ScenarioDraftRevisionContext {
   dynatraceConnectionId?: string
   monitorBindings?: import('./types/runMonitoring').MonitorBinding[]
   sourceTestId: string
+  /** The source run's joint evidence, shown read-only; a revised copy keeps it. */
+  jointEvidence?: import('./types/jointEvidence').JointEvidenceProjection
   applicationId?: string
   releaseId?: string
   scenarioId?: string
@@ -2378,6 +2382,8 @@ export interface ScenarioDraft {
   runtimeSettings: ScenarioRuntimeSettingsDraft
   /** Authored production traffic profile (TestHub's production-replay shape). */
   trafficProfile?: TrafficProfile
+  /** The joint evidence the scenario's runs capture (absent: none). */
+  jointEvidence?: import('./types/jointEvidence').JointEvidenceProjection
   /** Authored data-pool bindings of a saved scenario (a revision keeps its source's in revisionContext). */
   dataPools?: ScenarioDataPoolBinding[]
   /** Immutable source-run context carried only when a queued run is revised. */
@@ -2573,6 +2579,42 @@ export interface TelemetryHealth {
   // Provisional telemetry verdict under the run's pinned acceptance policy
   // (C7); the finalized verdict is in the run report.
   acceptance?: TelemetryAcceptanceVerdict
+  // This live publication's identity (TEL-A), and the run's render
+  // accounting for its reference dashboard client.
+  publication?: TelemetryPublication
+  render_population?: TelemetryRenderPopulation
+}
+
+// A live publication to dashboard viewers (TEL-A): its controller epoch and
+// sequence, whether it carries a collection no earlier one did, and the
+// collection times it includes.
+export interface TelemetryPublication {
+  epoch: string
+  sequence: number
+  eligible: boolean
+  oldest_collected_at?: string
+  newest_collected_at?: string
+}
+
+// Every eligible publication in the reference client's reported range is
+// rendered, superseded, unqualified (by reason) or unreported.
+export interface TelemetryRenderPopulation {
+  population: string
+  epoch?: string
+  published_eligible: number
+  reference_client?: string
+  first_sequence?: number
+  last_sequence?: number
+  eligible: number
+  rendered: number
+  superseded: number
+  unqualified?: Record<string, number>
+  unreported: number
+  ineligible?: number
+  unknown?: number
+  // When this accounting began: the run's start, or the adoption by this
+  // controller.
+  sampled_from?: string
 }
 
 // One telemetry acceptance criterion with the evidence it read (C7).

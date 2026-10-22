@@ -97,6 +97,32 @@ Each fault in TEL-4's matrix names the tests that accept it. The Go tests run in
 |  | does not measure a publication received while the tab is hidden (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
 |  | seeds history on first open and backfills only the missed window on reconnect (`dashboard/src/components/useExecutionMetricsStream.test.tsx`) | Dashboard |
 |  | an opted-in project collects visible render evidence as an advisory stage (`dashboard/e2e/workflow-telemetry-stages.spec.ts`) | End to end, both profiles |
+| Render population: publication identity, superseded, hidden and unreported publications | `TestTelemetryRenderLedgerAccountsTheReferenceClient` (`pkg/api/telemetry_render_population_test.go`) | Go |
+|  | `TestTelemetryRenderLedgerAccountsPastEviction` (`pkg/api/telemetry_render_population_test.go`) | Go |
+|  | `TestClientRenderReportGuardsTheReferenceAndTheBudget` (`pkg/api/telemetry_render_population_test.go`) | Go |
+|  | `TestLivePublicationsCarryIdentityAndEligibility` (`pkg/api/telemetry_render_population_test.go`) | Go |
+|  | `TestDistributedPublicationRepeatedOnlyWhenEveryCollectionWasPublished` (`pkg/api/telemetry_render_population_test.go`) | Go |
+|  | `TestClientRenderReportAccountsPublications` (`pkg/api/telemetry_render_population_test.go`) | Go |
+|  | `TestTelemetryAcceptanceReportStatesTheRenderPopulation` (`pkg/api/telemetry_render_population_test.go`) | Go |
+|  | `TestClientRenderUnnamedSamplesSpendTheBudget` (`pkg/api/telemetry_render_population_test.go`) | Go |
+|  | `TestPublicationBoundsKeepEachGeneratorsClock` (`pkg/api/telemetry_render_population_test.go`) | Go |
+|  | `TestTelemetryCollectionReplayDoesNotReageTerminalMetrics` (`pkg/api/telemetry_collection_replay_test.go`) | Go |
+|  | reports each named publication as superseded, rendered or background (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | logs named publications in arrival order and resolves earlier ones as superseded (`dashboard/src/components/clientTelemetryReceipt.test.ts`) | Dashboard |
+|  | replaces a re-delivered publication and discards receipts no reporter saw (`dashboard/src/components/clientTelemetryReceipt.test.ts`) | Dashboard |
+|  | resolves publications batched into one render, and never reports one twice (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | reports nothing it did not see while reporting was off, and no unmeasured outcomes before a visible render (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | labels a publication received while hidden background, even when a newer one superseded it (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | reports publications received while hidden before its first measurement alongside that measurement (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | leaves a publication hidden before it painted, in a tab that measured nothing yet, for its first measurement (`dashboard/src/components/clientRenderReporter.test.tsx`) | Dashboard |
+|  | an opted-in project collects visible render evidence as an advisory stage (`dashboard/e2e/workflow-telemetry-stages.spec.ts`) | End to end, both profiles |
+| Sanitization: credential and payload sentinels in telemetry source names, reasons and policy names | `TestTelemetryProjectionsScrubSentinels` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
+|  | `TestTelemetryTextScrubberRulesAndShape` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
+|  | `TestSavedBaselineComparisonServesScrubbedTelemetry` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
+|  | `TestTelemetryAcceptanceWebhookScrubsSentinels` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
+|  | `TestRunReportRouteScrubsGeneratorTargets` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
+|  | `TestRunCalendarTopologyScrubsGeneratorTargets` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
+|  | `TestTelemetryNotificationRuntimeScrubsAndPinsRecipients` (`pkg/api/telemetry_notification_runtime_test.go`) | Go |
 | HA adoption gaps | `TestTelemetryCoverageAfterAdoption` (`pkg/api/telemetry_coverage_test.go`) | Go |
 |  | `TestTelemetryLiveCoverageAfterAdoptionIsALowerBound` (`pkg/api/telemetry_coverage_test.go`) | Go |
 |  | `TestTelemetryStageRecorderReadoptionSamplesFromTheAdoption` (`pkg/api/telemetry_acceptance_test.go`) | Go |

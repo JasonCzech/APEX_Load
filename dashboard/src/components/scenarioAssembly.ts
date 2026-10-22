@@ -84,6 +84,7 @@ export function scenarioDraftFromForm(form: ScenarioFormState): ScenarioDraft {
     runtimeSettings: runtimeSettingsFromForm(form),
     groups: form.groups.map(scenarioDraftGroupFromForm),
     ...(form.traffic_profile ? { trafficProfile: form.traffic_profile } : {}),
+    ...(form.joint_evidence ? { jointEvidence: structuredClone(form.joint_evidence) } : {}),
     dataPools: (form.data_pools || []).map(binding => ({ ...binding, access_mode: binding.access_mode === 'live' ? 'live' as const : 'read_only' as const, ...(binding.live_options ? { live_options: structuredClone(binding.live_options) } : {}) })),
   }
 }
@@ -131,6 +132,7 @@ export function scenarioUpsertPayload(draft: ScenarioDraft, context: ScenarioUps
     goalConfig: draft.goalConfig,
     runtimeSettings: draft.runtimeSettings,
     trafficProfile: draft.trafficProfile,
+    jointEvidence: draft.jointEvidence,
     dataPools: draft.dataPools,
   })
 }
@@ -165,6 +167,7 @@ export function scenarioCreatePayload(draft: ScenarioDraft, context: ScenarioCre
     goalConfig: draft.goalConfig,
     runtimeSettings: draft.runtimeSettings,
     trafficProfile: draft.trafficProfile,
+    jointEvidence: draft.jointEvidence,
     applicationId: revision?.applicationId,
     releaseId: revision?.releaseId,
     scenarioId: revision?.scenarioId,

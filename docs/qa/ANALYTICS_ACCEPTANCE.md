@@ -27,13 +27,14 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 |  | `TestNativeLocalTimestampQualifierRequiresAgreementAndCancellation` (`pkg/analysis/duckdb/native_local_timestamp_test.go`) | DuckDB build |
 | Nulls | `TestNativeRejectionProvenanceAndNullBuckets` (`pkg/analysis/duckdb/native_test.go`) | DuckDB build |
 |  | `TestNativeSummaryPartialWindowsDuplicatesNullsAndMissingCounts` (`pkg/analysis/duckdb/native_summary_test.go`) | DuckDB build |
+|  | `TestAnalysisAcceptanceRawAndCounterPopulationsReconcile` (`pkg/api/analysis_acceptance_populations_native_test.go`) | DuckDB build |
 | Malformed files and rows | `TestNativeHistogramRejectsMalformedRowsWithProvenance` (`pkg/analysis/duckdb/native_histogram_test.go`) | DuckDB build |
 |  | `TestFlattenParquetSchemaRejectsMalformedTree` (`pkg/analysis/parquet_schema_test.go`) | Default build |
 |  | `TestNativeWorkerModeNeverFallsThroughOnMalformedMarker` (`pkg/analysis/duckdb/worker_attempt_test.go`) | Default build |
 | Schema drift across the files of an import | `TestNativeAcceptanceSchemaDriftAcrossFiles` (`pkg/analysis/duckdb/native_acceptance_golden_test.go`) | DuckDB build |
 |  | `TestAnalysisAcceptanceDuplicateAndDriftedFiles` (`pkg/api/analysis_acceptance_native_test.go`) | DuckDB build |
 | Raw versus summary and distribution inputs | `TestAnalysisSummaryImportPreviewCommitQueryReconcile` (`pkg/api/analysis_summary_native_test.go`) | DuckDB build |
-|  | `TestAnalysisHistogramImportCommitQueryReconcile` (`pkg/api/analysis_histogram_native_test.go`) | DuckDB build |
+|  | `TestAnalysisHistogramImportPreviewCommitQueryReconcile` (`pkg/api/analysis_histogram_native_test.go`) | DuckDB build |
 |  | `TestAnalysisComparisonAdmitsSummaryOnlyStatisticsForDatasets` (`pkg/api/analysis_summary_test.go`) | Default build |
 | Negotiated mapping-preserving reassociation | `TestAnalysisCapabilitiesAdvertiseMappingAssociationContract` (`pkg/api/analysis_mapping_association_test.go`) | Default build |
 |  | `TestAnalysisNegotiatedAssociationGeneratedContract` (`pkg/api/analysis_mapping_association_test.go`) | Default build |
@@ -47,13 +48,19 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 | Resets | `TestNativeCounterReadingsMarkResetsAndDuplicates` (`pkg/analysis/duckdb/native_test.go`) | DuckDB build |
 |  | `TestNativeLongCumulativeHistogramDetectsResets` (`pkg/analysis/duckdb/native_histogram_test.go`) | DuckDB build |
 |  | `TestImportedCounterDerivationsAreResetAware` (`pkg/api/native_derivations_test.go`) | Default build |
+|  | `TestAnalysisAcceptanceRawAndCounterPopulationsReconcile` (`pkg/api/analysis_acceptance_populations_native_test.go`) | DuckDB build |
 | Exact rejection provenance | `TestNativeRejectionProvenanceAndNullBuckets` (`pkg/analysis/duckdb/native_test.go`) | DuckDB build |
 |  | `TestAnalysisRejectionDownloadIsDurableAndBounded` (`pkg/api/analysis_imports_native_test.go`) | DuckDB build |
+|  | `TestAnalysisAcceptanceAcceptedRejectionsReconcile` (`pkg/api/analysis_acceptance_populations_native_test.go`) | DuckDB build |
+|  | `TestAnalysisAcceptanceDuplicateAndDriftedFiles` (`pkg/api/analysis_acceptance_native_test.go`) | DuckDB build |
 | Preview, commit and query reconciliation | `TestAnalysisSummaryImportPreviewCommitQueryReconcile` (`pkg/api/analysis_summary_native_test.go`) | DuckDB build |
-|  | `TestAnalysisHistogramImportCommitQueryReconcile` (`pkg/api/analysis_histogram_native_test.go`) | DuckDB build |
+|  | `TestAnalysisHistogramImportPreviewCommitQueryReconcile` (`pkg/api/analysis_histogram_native_test.go`) | DuckDB build |
+|  | `TestAnalysisAcceptanceRawAndCounterPopulationsReconcile` (`pkg/api/analysis_acceptance_populations_native_test.go`) | DuckDB build |
+|  | `TestAnalysisAcceptanceAcceptedRejectionsReconcile` (`pkg/api/analysis_acceptance_populations_native_test.go`) | DuckDB build |
 |  | `TestNativeReconciliationPinsStoreAtRealServerConstruction` (`pkg/api/analysis_reconciliation_test.go`) | Default build |
 | Source non-mutation | `TestNativeAcceptanceMappingLayoutsAgree` (`pkg/analysis/duckdb/native_acceptance_golden_test.go`) | DuckDB build |
 |  | `TestNativeAbsoluteTimestampRequiresSourceOffset` (`pkg/analysis/duckdb/native_timestamp_contract_test.go`) | DuckDB build |
+|  | `TestAnalysisAcceptanceRawAndCounterPopulationsReconcile` (`pkg/api/analysis_acceptance_populations_native_test.go`) | DuckDB build |
 | Cross-project denial | `TestAnalysisSavedMappingsProjectIsolationAndRevision` (`pkg/api/analysis_queries_test.go`) | Default build |
 |  | `TestAnalysisComparisonBoundsAndForeignRun` (`pkg/api/analysis_queries_test.go`) | Default build |
 |  | `TestAnalysisUploadCursorRefusesForeignReturnedImportIdentity` (`pkg/api/analysis_upload_reconciliation_test.go`) | Default build |
@@ -63,8 +70,9 @@ Each NA-6 golden behavior names the tests that accept it and the build they run 
 | Deletion | `TestAnalysisDatasetDeletionPlanValidatesEveryKeyBeforeDeleting` (`pkg/api/analysis_upload_delete_key_test.go`) | Default build |
 |  | `TestAnalysisDeletionPinsBackendBeforeMetadataMutation` (`pkg/api/analysis_upload_delete_key_test.go`) | Default build |
 | Raw count, sum and percentile reconciliation | `TestNativeAcceptanceMappingLayoutsAgree` (`pkg/analysis/duckdb/native_acceptance_golden_test.go`) | DuckDB build |
-|  | `TestAnalysisHistogramImportCommitQueryReconcile` (`pkg/api/analysis_histogram_native_test.go`) | DuckDB build |
+|  | `TestAnalysisHistogramImportPreviewCommitQueryReconcile` (`pkg/api/analysis_histogram_native_test.go`) | DuckDB build |
 |  | `TestNativeRejectsInvalidRowsAndSummaryPercentiles` (`pkg/analysis/duckdb/native_test.go`) | DuckDB build |
+|  | `TestAnalysisAcceptanceRawAndCounterPopulationsReconcile` (`pkg/api/analysis_acceptance_populations_native_test.go`) | DuckDB build |
 | Distribution copies and oversized pending publications | `TestDurationSketchCopyRejectsOversizedBeforeRetention` (`pkg/engine/distribution_copy_bounds_test.go`) | Default build |
 |  | `TestDistributionWireCopiesKeepExistingBounds` (`pkg/distributed/generatorrpc/distribution_wire_bounds_test.go`) | Default build |
 |  | `TestOversizedDistributionRefusalPreservesCountsAndCompatibleFallback` (`pkg/distributed/generatorrpc/distribution_wire_bounds_test.go`) | Default build |

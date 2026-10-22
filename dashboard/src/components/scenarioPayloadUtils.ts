@@ -1,3 +1,4 @@
+import type { JointEvidenceProjection } from '../types/jointEvidence'
 import type { RunAnalysisPolicySelections } from './analysisPolicies/runPolicySelection'
 import type { MonitorBinding } from '../types/runMonitoring'
 import { GeneratorAssignmentSettings, GoalConfig, RuntimeJavaVuserSettings, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode, TrafficProfile } from '../types'
@@ -44,6 +45,7 @@ export type ScenarioUpsertPayload = {
   groups: ScenarioGroupPayload[]
   goal_config?: GoalConfig
   traffic_profile?: TrafficProfile
+  joint_evidence?: JointEvidenceProjection
   runtime_settings?: {
     iterations?: number
     pacing?: PacingConfig
@@ -93,6 +95,7 @@ export type CreateTestPayload = {
   groups?: ScenarioGroupPayload[]
   goal_config?: GoalConfig
   traffic_profile?: TrafficProfile
+  joint_evidence?: JointEvidenceProjection
   runtime_settings?: ScenarioUpsertPayload['runtime_settings']
   data_pools?: ScenarioDataPoolBinding[]
   elk_capture?: { connection_id: string }
@@ -111,6 +114,7 @@ type ScenarioPayloadInput = {
   goalConfig: GoalConfig
   runtimeSettings: ScenarioRuntimeSettings
   trafficProfile?: TrafficProfile
+  jointEvidence?: JointEvidenceProjection
 }
 
 type ScenarioUpsertPayloadInput = ScenarioPayloadInput & {
@@ -427,6 +431,7 @@ export function buildScenarioExecutionPayload(input: ScenarioPayloadInput & { da
   ...(goal ? {goal_config: goal} : {}),
   ...(runtime ? {runtime_settings: runtime} : {}),
   ...(input.trafficProfile ? {traffic_profile: input.trafficProfile} : {}),
+  ...(input.jointEvidence ? {joint_evidence: input.jointEvidence} : {}),
   ...(input.dataPools !== undefined ? {data_pools: input.dataPools} : {}),
  })
 }

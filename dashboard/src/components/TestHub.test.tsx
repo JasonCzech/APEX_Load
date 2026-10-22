@@ -1235,6 +1235,81 @@ describe('TestHub', () => {
     expect(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')?.value).toBe('Edited before configuring')
   })
 
+  it('saves the joint evidence its runs capture, grouped by a promoted property category (NA-B)', async () => {
+    apiMock.listScripts.mockResolvedValue({
+      scripts: [{ id: 'script-1', name: 'Checkout Flow', protocol: 'http', version: '1.0.0', created_at: '2026-05-12T00:00:00Z',
+        script: { config: { results: { property_analytics: [{ name: 'operation', extraction: 'operation_type', values: ['checkout', 'search'] }] } } } }],
+      count: 1,
+    })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Joint probe'))
+    await clickWizardStep('Run settings')
+    await clickScenarioSettingsSection('Advanced settings')
+    const panel = () => container.querySelector('[data-testid="joint-evidence"]')!
+    const option = (label: string) => Array.from(panel().querySelectorAll('label')).find(item => item.textContent?.startsWith(label))?.querySelector('input')
+    expect(option('Name')).toBeUndefined()
+    await act(async () => setSelectValue(panel().querySelector<HTMLSelectElement>('select[aria-label="Joint evidence population"]')!, 'action'))
+    expect(option('Name')?.checked).toBe(true)
+    await act(async () => { option('Group')!.click() })
+    await act(async () => { option('Property: operation')!.click() })
+    // Three are chosen: a fourth dimension is not offered.
+    expect(option('Region')?.disabled).toBe(true)
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Joint probe', joint_evidence: { population: 'action', dimensions: ['name', 'group', 'property:operation'] },
+    }))
+  })
+
+  it('blocks saving a category the scripts no longer promote, shows why where it is chosen, and clears when turned off (NA-B)', async () => {
+    const stored: StoredScenario = { id: 'joint-edit', name: 'Joint edit', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven',
+      joint_evidence: { population: 'action', dimensions: ['name', 'property:tier'] },
+      scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await flushPromises()
+    await clickWizardStep('Review')
+    await clickButton('Save scenario')
+    await flushPromises()
+    // The save is refused before any request, and the panel that explains it is open.
+    expect(apiMock.updateScenario).not.toHaveBeenCalled()
+    expect(container.querySelector('.page-error-banner')?.textContent).toContain('"tier" is not promoted')
+    const panel = container.querySelector('[data-testid="joint-evidence"]')
+    expect(panel?.textContent).toContain("Not promoted by any of this scenario's scripts")
+    expect(panel?.querySelector('fieldset legend')?.textContent).toContain('one property category')
+    await act(async () => setSelectValue(panel!.querySelector<HTMLSelectElement>('select[aria-label="Joint evidence population"]')!, ''))
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.updateScenario).toHaveBeenCalledTimes(1)
+    expect(apiMock.updateScenario.mock.calls[0][1]).not.toHaveProperty('joint_evidence')
+  })
+
+  it('names the browser iteration category for what it splits and never marks it unpromoted (NA-B)', async () => {
+    const stored: StoredScenario = { id: 'joint-browser', name: 'Joint browser', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven',
+      joint_evidence: { population: 'transaction', dimensions: ['name', 'property:browser_iteration'] },
+      scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await flushPromises()
+    await clickWizardStep('Run settings')
+    await clickScenarioSettingsSection('Advanced settings')
+    const panel = container.querySelector('[data-testid="joint-evidence"]')
+    const option = Array.from(panel?.querySelectorAll('label') ?? []).find(item => item.textContent?.startsWith('Browser iteration (cold/warm)'))
+    expect(option?.querySelector('input')?.checked).toBe(true)
+    expect(panel?.textContent).not.toContain('Not promoted')
+    await clickWizardStep('Review')
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.updateScenario).toHaveBeenCalledTimes(1)
+    expect(apiMock.updateScenario.mock.calls[0][1]).toHaveProperty('joint_evidence', { population: 'transaction', dimensions: ['name', 'property:browser_iteration'] })
+  })
+
   it('keeps an unanswered create key recallable when the save is refused for good (AUTH-1)', async () => {
     await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
     await flushPromises()

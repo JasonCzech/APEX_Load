@@ -149,6 +149,13 @@ func sameStrings(a, b []string) bool {
 // compareBaselineTelemetry decides whether two runs' telemetry health can be
 // compared and, if so, how it moved.
 func compareBaselineTelemetry(current, baseline *baselineComparisonRun, workload rca.WorkloadQualification) BaselineTelemetryComparison {
+	// Decided on the recorded profiles, projected with both runs' rules: a
+	// policy is shared by a project's runs, so one run's rule must hide its
+	// name in the other's profile too (TEL-B).
+	return scrubBaselineTelemetryComparison(decideBaselineTelemetry(current, baseline, workload), newTelemetryTextScrubber(current.manifest, baseline.manifest))
+}
+
+func decideBaselineTelemetry(current, baseline *baselineComparisonRun, workload rca.WorkloadQualification) BaselineTelemetryComparison {
 	out := BaselineTelemetryComparison{BaselineRunID: baseline.identity.ID, Scope: "whole_run", Reasons: []string{},
 		Current: telemetryRunProfile(current.identity.ID, current.manifest), Baseline: telemetryRunProfile(baseline.identity.ID, baseline.manifest)}
 	c, b := out.Current, out.Baseline

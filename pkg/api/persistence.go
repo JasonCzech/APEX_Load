@@ -459,6 +459,7 @@ func (tr *TestRunner) buildStoredScenarioFromPartsLocked(scenario *storage.Scena
 		GoalConfig:       decodeStoredGoalConfig(scenario.GoalConfig),
 		TrafficProfile:   decodeStoredTrafficProfile(scenario.TrafficProfile),
 		RuntimeSettings:  decodeStoredRuntimeSettings(scenario.RuntimeSettings),
+		JointEvidence:    decodeStoredJointEvidence(scenario.JointEvidence),
 		Scripts:          refs,
 		Schedules:        schedules,
 		DataPools:        dataPools,
@@ -1587,6 +1588,7 @@ func storedScenarioToStorage(stored *StoredScenario) *storage.Scenario {
 		GoalConfig:       goalConfigForStorage(stored.GoalConfig),
 		TrafficProfile:   trafficProfileForStorage(stored.TrafficProfile),
 		RuntimeSettings:  runtimeSettingsForStorage(stored.RuntimeSettings),
+		JointEvidence:    jointEvidenceForStorage(stored.JointEvidence),
 		CreatedAt:        stored.CreatedAt,
 		UpdatedAt:        stored.UpdatedAt,
 	}

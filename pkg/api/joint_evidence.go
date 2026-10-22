@@ -9,6 +9,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -28,6 +29,40 @@ func normalizeJointEvidence(projection *engine.JointProjection) (*engine.JointPr
 		return nil, fmt.Errorf("joint_evidence: %w", err)
 	}
 	return projection.Clone(), nil
+}
+
+// validateJointEvidenceCategories refuses a projected property category that
+// none of the run's groups promotes. A run counts property values only for
+// the finite categories its scripts promote (results.property_analytics,
+// after runtime overrides) and the engine's own cold/warm browser iteration
+// category; any other would only ever read as the empty label, so only these
+// bounded categories are admitted.
+func validateJointEvidenceCategories(projection *engine.JointProjection, groups []TestGroup) error {
+	if projection == nil {
+		return nil
+	}
+	for _, dimension := range projection.Dimensions {
+		name, ok := engine.JointPropertyCategory(dimension)
+		if !ok || name == protocol.BrowserIterationDimension || jointEvidenceCategoryPromoted(groups, name) {
+			continue
+		}
+		return fmt.Errorf("joint_evidence: property category %q is not promoted by any of the run's scripts (results.property_analytics)", name)
+	}
+	return nil
+}
+
+func jointEvidenceCategoryPromoted(groups []TestGroup, name string) bool {
+	for _, group := range groups {
+		if group.script == nil {
+			continue
+		}
+		for _, rule := range group.script.Config.Results.PropertyAnalytics {
+			if rule.Name == name {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func jointEvidenceForStorage(projection *engine.JointProjection) any {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -206,22 +207,54 @@ func TestNativeAcceptanceDecimalValues(t *testing.T) {
 
 // A second file whose schema drifted from the mapping fails the
 // normalization closed (nothing is accepted), with or without rejections
-// allowed; a text column whose values are numbers is read as numbers.
+// allowed, naming the file and the mapped column it lacks or holds as a list;
+// a text column whose values are numbers is read as numbers, and one with
+// other text names its rejected rows unless they are accepted.
 func TestNativeAcceptanceSchemaDriftAcrossFiles(t *testing.T) {
 	e, first := nativeFixture(t, "SELECT 1700000040+i AS ts, (100+i)::DOUBLE AS latency FROM range(60) t(i)")
 	missing := nativeAcceptanceFile(t, e, "missing.parquet", "SELECT 1700000100+i AS ts, (200+i)::DOUBLE AS latency_ms FROM range(60) t(i)")
 	text := nativeAcceptanceFile(t, e, "text.parquet", "SELECT 1700000100+i AS ts, (200+i)::VARCHAR AS latency FROM range(60) t(i)")
 	mapping := Mapping{Version: 1, Timestamp: Column{"ts"}, TimestampEncoding: "unix_s", Timezone: "UTC", Measures: []Measure{{Value: Column{"latency"}, Name: "latency", Kind: analysis.KindGauge, Unit: "ms"}}}
+	repeated := nativeAcceptanceFile(t, e, "repeated.parquet", "SELECT 1700000100+i AS ts, [(200+i)::DOUBLE] AS latency FROM range(60) t(i)")
+	grouped := nativeAcceptanceFile(t, e, "grouped.parquet", "SELECT 1700000100+i AS ts, {'p50': (200+i)::DOUBLE, 'samples': [i]} AS latency FROM range(60) t(i)")
 	for _, allow := range []bool{false, true} {
 		r, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{first, missing}, Mapping: mapping, AllowRejected: allow})
-		if err == nil || r.Accepted != 0 || len(r.Files) != 0 {
-			t.Fatalf("a file without the mapped column (allow rejected %v) was normalized: %+v %v", allow, r, err)
+		var mismatch *analysis.SchemaMismatchError
+		if !errors.As(err, &mismatch) || *mismatch != (analysis.SchemaMismatchError{File: 1, Column: 1, Reason: analysis.SchemaMismatchAbsent}) || r.Accepted != 0 || len(r.Files) != 0 {
+			t.Fatalf("a file without the mapped column (allow rejected %v) was normalized or not named: %+v %v", allow, r, err)
 		}
 		if err := e.ReleaseOutputs(); err != nil {
 			t.Fatal(err)
 		}
 	}
-	r, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{first, text}, Mapping: mapping})
+	r, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{first, repeated}, Mapping: mapping})
+	var mismatch *analysis.SchemaMismatchError
+	if !errors.As(err, &mismatch) || *mismatch != (analysis.SchemaMismatchError{File: 1, Column: 1, Reason: analysis.SchemaMismatchRepeated}) || r.Accepted != 0 {
+		t.Fatalf("a file holding the mapped column as a list was normalized or not named: %+v %v", r, err)
+	}
+	if err := e.ReleaseOutputs(); err != nil {
+		t.Fatal(err)
+	}
+	r, err = e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{first, grouped}, Mapping: mapping})
+	if !errors.As(err, &mismatch) || *mismatch != (analysis.SchemaMismatchError{File: 1, Column: 1, Reason: analysis.SchemaMismatchGroup}) || r.Accepted != 0 {
+		t.Fatalf("a file holding a group of fields at the mapped column was normalized or not named: %+v %v", r, err)
+	}
+	if err := e.ReleaseOutputs(); err != nil {
+		t.Fatal(err)
+	}
+	// Text that is not a number is a rejected measurement: without explicit
+	// acceptance the normalization fails, naming the file, the measure and
+	// the first rejected rows.
+	words := nativeAcceptanceFile(t, e, "words.parquet", "SELECT 1700000100+i AS ts, CASE WHEN i % 10 = 3 THEN 'n/a' ELSE (200+i)::VARCHAR END AS latency FROM range(60) t(i)")
+	_, err = e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{first, words}, Mapping: mapping})
+	var rejected *analysis.RejectedRowsError
+	if !errors.As(err, &rejected) || rejected.File != 1 || rejected.Measure != 0 || rejected.Count != 6 || !reflect.DeepEqual(rejected.Rows, []int64{3, 13, 23, 33, 43}) {
+		t.Fatalf("rejected rows: %#v %v", rejected, err)
+	}
+	if err := e.ReleaseOutputs(); err != nil {
+		t.Fatal(err)
+	}
+	r, err = e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{first, text}, Mapping: mapping})
 	if err != nil || r.Accepted != 120 || r.Rejected != 0 {
 		t.Fatalf("numeric text: accepted %d rejected %d %v", r.Accepted, r.Rejected, err)
 	}

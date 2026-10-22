@@ -112,6 +112,9 @@ type ciRunCreateRequest struct {
 	// fail_ci acceptance policy: pass or fail. It has no default; a project
 	// whose default acceptance policy is fail_ci requires it (C7).
 	TelemetryInconclusive string `json:"telemetry_inconclusive,omitempty"`
+	// JointEvidence chooses the run's joint evidence v4 projection, as on a
+	// direct run create; a CI run has no scenario to inherit one from.
+	JointEvidence *engine.JointProjection `json:"joint_evidence,omitempty"`
 }
 
 func (r ciRunCreateRequest) shouldPublishCheck() bool {
@@ -143,6 +146,10 @@ type ciRunMetadata struct {
 	// TelemetryInconclusive is the caller's mapping of an inconclusive
 	// telemetry verdict under a fail_ci policy: pass, fail or none.
 	TelemetryInconclusive string `json:"telemetry_inconclusive,omitempty"`
+
+	// JointEvidence is the run's requested joint evidence projection, part of
+	// the request a retry under the same key must repeat.
+	JointEvidence *engine.JointProjection `json:"joint_evidence,omitempty"`
 }
 
 type ciRunResponse struct {
@@ -206,6 +213,12 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.ProjectID = normalizeProjectID(req.ProjectID)
+	jointEvidence, err := normalizeJointEvidence(req.JointEvidence)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.JointEvidence = jointEvidence
 	project, err := s.store.GetProject(req.ProjectID)
 	if err != nil || project == nil {
 		writeError(w, http.StatusNotFound, "project not found")
@@ -275,7 +288,7 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "telemetry_inconclusive must be pass or fail")
 		return
 	}
-	metadata := ciRunMetadata{MonitorBindings: req.MonitorBindings, SchemaVersion: ciRunSchemaVersion, Source: req.Source, Name: strings.TrimSpace(req.Name), ReleaseID: strings.TrimSpace(req.ReleaseID), ScriptPath: firstNonEmpty(req.ScriptPath, req.Source.ScriptPath), ScriptIdentity: scriptIdentity, Execution: req.Execution, Goals: req.Goals, RequireSLA: req.Goals.RequireSLA, RequireResults: req.Goals.RequireResults, PublishCheck: req.shouldPublishCheck(), CheckInstallationID: githubPolicy.AppInstallationID, PolicyRevision: policy.Revision, ValidityGate: policy.ValidityGate, IdempotencySHA: sha256String(idempotencyKey), DeploymentLeaseTokenSHA: deploymentLeaseTokenSHA, TelemetryInconclusive: req.TelemetryInconclusive}
+	metadata := ciRunMetadata{MonitorBindings: req.MonitorBindings, SchemaVersion: ciRunSchemaVersion, Source: req.Source, Name: strings.TrimSpace(req.Name), ReleaseID: strings.TrimSpace(req.ReleaseID), ScriptPath: firstNonEmpty(req.ScriptPath, req.Source.ScriptPath), ScriptIdentity: scriptIdentity, Execution: req.Execution, Goals: req.Goals, RequireSLA: req.Goals.RequireSLA, RequireResults: req.Goals.RequireResults, PublishCheck: req.shouldPublishCheck(), CheckInstallationID: githubPolicy.AppInstallationID, PolicyRevision: policy.Revision, ValidityGate: policy.ValidityGate, IdempotencySHA: sha256String(idempotencyKey), DeploymentLeaseTokenSHA: deploymentLeaseTokenSHA, TelemetryInconclusive: req.TelemetryInconclusive, JointEvidence: req.JointEvidence.Clone()}
 	existing, existingOK := s.runner.GetTest(testID)
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	runActor := testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
@@ -437,6 +450,7 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		Duration: strings.TrimSpace(req.Execution.Duration), ReleaseID: strings.TrimSpace(req.ReleaseID), ProjectID: req.ProjectID,
 		ScriptID: effectiveScriptID, VUsers: req.Execution.VUsers, RampUp: strings.TrimSpace(req.Execution.RampUp), ScenarioMode: scenarioMode, GoalConfig: goalConfig,
 		RuntimeSettings: &RuntimeSettingsOverride{BaseURL: strings.TrimSpace(req.Execution.BaseURL), Env: cloneCIStringMap(req.Execution.Variables)},
+		JointEvidence:   req.JointEvidence.Clone(),
 	}
 	create.creationActor = runActor
 	if s.beforeCIRunMaterialize != nil {

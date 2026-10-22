@@ -1500,6 +1500,16 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	}
 
 	testGroups, engineGroups, totalVUsers, err := tr.compileManagedTestGroupsForModeWithRevisionLocked(groups, req.RuntimeSettings, sharedDataSources, scenarioMode, revisionSource, revisionDataPoolsChanged, projectQuota)
+	if err == nil {
+		err = validateJointEvidenceCategories(jointEvidence, testGroups)
+		// A revised copy may keep a projection its source run was admitted
+		// with before categories had to be promoted: one the source's own
+		// groups do not promote either. A copy whose changed groups dropped a
+		// promotion the source had is refused like any other run.
+		if err != nil && revisionSource != nil && reflect.DeepEqual(jointEvidence, revisionSource.JointEvidence) && validateJointEvidenceCategories(jointEvidence, revisionSource.Groups) != nil {
+			err = nil
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -2076,6 +2086,12 @@ func createTestRequestFromScenarioRevision(req CreateTestRequest, scenario *Stor
 			req.DataPools = cloneScenarioDataPoolBindings(scenario.DataPools)
 		} else if req.dataPoolOverridesByAlias {
 			req.DataPools = overlayDataPoolBindingsByAlias(scenario.DataPools, req.DataPools)
+		}
+		// Every entry point that runs a scenario (a direct run, a schedule, a
+		// plan entry) captures the scenario's joint evidence unless the
+		// request names another projection.
+		if req.JointEvidence == nil {
+			req.JointEvidence = scenario.JointEvidence.Clone()
 		}
 	}
 

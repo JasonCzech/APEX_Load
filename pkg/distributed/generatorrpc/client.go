@@ -307,6 +307,9 @@ type MetricsTelemetry struct {
 	// publications. Controller-internal.
 	ReceivedAt        time.Time     `json:"-"`
 	ReceivedMonotonic time.Duration `json:"-"`
+	// NewestCollectedAtUnixMs is a fleet aggregate's newest contributing
+	// collection time (CollectedAtUnixMs is its oldest). Controller-internal.
+	NewestCollectedAtUnixMs int64 `json:"-"`
 	// MissingMetricWindows is controller-computed from gaps in BatchSequence.
 	// It is cumulative for the target stream and remains zero for older
 	// generators that do not publish a sequence.
@@ -2270,7 +2273,7 @@ func durationSketchSnapshotToProto(value *engine.DurationSketchSnapshot) *pb.Dur
 }
 
 func tdigestSnapshotFromProto(value *pb.TDigestSnapshot) *engine.TDigestSnapshot {
-	if value == nil || value.GetCount() == 0 || len(value.GetCentroids()) > 1024 {
+	if value == nil || value.GetCount() == 0 || len(value.GetCentroids()) > engine.TDigestMaxCentroids {
 		return nil
 	}
 	centroids := make([]engine.TDigestCentroidSnapshot, 0, len(value.GetCentroids()))
@@ -2291,7 +2294,7 @@ func tdigestSnapshotFromProto(value *pb.TDigestSnapshot) *engine.TDigestSnapshot
 }
 
 func tdigestSnapshotToProto(value *engine.TDigestSnapshot) *pb.TDigestSnapshot {
-	if value == nil || value.Count == 0 || len(value.Centroids) > 1024 {
+	if value == nil || value.Count == 0 || len(value.Centroids) > engine.TDigestMaxCentroids {
 		return nil
 	}
 	centroids := make([]*pb.TDigestCentroid, 0, len(value.Centroids))

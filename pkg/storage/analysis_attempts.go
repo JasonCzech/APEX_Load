@@ -53,7 +53,9 @@ type AnalysisAttemptStore interface {
 	ClaimAnalysisImportAttempt(context.Context, string, string, int64, time.Duration) (*AnalysisImport, *AnalysisAttempt, error)
 	RenewAnalysisImportAttempt(context.Context, string, string, string, int64, time.Duration) (time.Time, error)
 	PublishAnalysisImportAttempt(context.Context, AnalysisAttemptPublication) (*AnalysisImport, error)
-	FailAnalysisImportAttempt(context.Context, string, string, string, int64) error
+	// FailAnalysisImportAttempt records a terminal failure; reason is a
+	// disclosure-safe explanation for the person, or "" for the generic one.
+	FailAnalysisImportAttempt(ctx context.Context, id, project, owner string, revision int64, reason string) error
 	ResolveAnalysisAttemptPublication(context.Context, string, string, string, string) (AnalysisAttemptResolution, error)
 	ConfirmAnalysisAttemptWritersQuiesced(context.Context, string, string, string) error
 }
@@ -601,7 +603,7 @@ func (s *SQLiteStore) PublishAnalysisImportAttempt(ctx context.Context, p Analys
 	}
 	return &committed, nil
 }
-func (s *SQLiteStore) FailAnalysisImportAttempt(ctx context.Context, id, project, owner string, revision int64) error {
+func (s *SQLiteStore) FailAnalysisImportAttempt(ctx context.Context, id, project, owner string, revision int64, reason string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -630,6 +632,9 @@ func (s *SQLiteStore) FailAnalysisImportAttempt(ctx context.Context, id, project
 	in.Revision++
 	in.UpdatedAt = now
 	in.Error = "Normalization failed; inspect mapping, schema, rejection and resource evidence."
+	if reason != "" {
+		in.Error = reason
+	}
 	a.CleanupQueued = true
 	if err = analysisAttemptJournalWrite(ctx, tx, a); err != nil {
 		return err

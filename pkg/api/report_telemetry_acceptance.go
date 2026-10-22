@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -25,6 +26,10 @@ type telemetryAcceptanceReportView struct {
 	Clock      string
 	Stages     []telemetryAcceptanceReportStage
 	Exclusions []string
+	// RenderPopulation states the run's render accounting for its reference
+	// dashboard client (TEL-A); RenderCounts are its figures for the CSV.
+	RenderPopulation string
+	RenderCounts     [][2]string
 }
 
 type telemetryAcceptanceReportCriterion struct {
@@ -204,7 +209,57 @@ func buildTelemetryAcceptanceReportView(manifest *RunArchiveManifest, verdict *T
 	for _, stage := range manifest.TelemetryStageDistributions {
 		view.Stages = append(view.Stages, telemetryAcceptanceReportStageOf(stage))
 	}
+	view.RenderPopulation, view.RenderCounts = telemetryRenderPopulationReport(manifest.TelemetryRenderPopulation, manifest.Provenance.StartedAt)
 	return view
+}
+
+// telemetryRenderPopulationReport states a render population for readers,
+// and its figures for the CSV. A population a controller began accounting
+// after the run started (it adopted the run) says so.
+func telemetryRenderPopulationReport(p *TelemetryRenderPopulation, startedAt *time.Time) (string, [][2]string) {
+	if p == nil {
+		return "The render population was not recorded for this run.", nil
+	}
+	counts := [][2]string{{"population", p.Population}, {"published_eligible", fmt.Sprint(p.PublishedEligible)}}
+	published := reportCountNoun(p.PublishedEligible, "eligible publication was", "eligible publications were") + " published"
+	whole := " in all"
+	if p.SampledFrom != nil {
+		counts = append(counts, [2]string{"sampled_from", p.SampledFrom.UTC().Format(time.RFC3339)})
+		if startedAt != nil && p.SampledFrom.After(*startedAt) {
+			published += fmt.Sprintf(" since %s, when this controller began publishing (it adopted the run)", p.SampledFrom.UTC().Format(time.RFC3339))
+			whole = ""
+		}
+	}
+	if p.ReferenceClient == "" {
+		return fmt.Sprintf("No dashboard tab reported a visible render of a named publication, so no reference client was accounted; %s.", published), counts
+	}
+	reasons := make([]string, 0, len(p.Unqualified))
+	for reason := range p.Unqualified {
+		reasons = append(reasons, reason)
+	}
+	sort.Strings(reasons)
+	unqualified, labels := int64(0), make([]string, 0, len(reasons))
+	for _, reason := range reasons {
+		unqualified += p.Unqualified[reason]
+		labels = append(labels, fmt.Sprintf("%s %s", telemetryReportLabel(reason), formatReportCount(p.Unqualified[reason])))
+	}
+	text := fmt.Sprintf("The reference dashboard tab's publications %s to %s: of %s, %s rendered, %s superseded, %s unqualified",
+		formatReportCount(int64(p.FirstSequence)), formatReportCount(int64(p.LastSequence)), reportCountNoun(p.Eligible, "eligible publication", "eligible publications"),
+		formatReportCount(p.Rendered), formatReportCount(p.Superseded), formatReportCount(unqualified))
+	if len(labels) > 0 {
+		text += " (" + strings.Join(labels, ", ") + ")"
+	}
+	text += fmt.Sprintf(" and %s unreported; %s%s.", formatReportCount(p.Unreported), published, whole)
+	if p.Ineligible > 0 || p.Unknown > 0 {
+		text += fmt.Sprintf(" Reports not counted: %s of publications without a new collection, %s the controller could not place.", formatReportCount(p.Ineligible), formatReportCount(p.Unknown))
+	}
+	counts = append(counts, [2]string{"reference_client", p.ReferenceClient}, [2]string{"first_sequence", fmt.Sprint(p.FirstSequence)}, [2]string{"last_sequence", fmt.Sprint(p.LastSequence)},
+		[2]string{"eligible", fmt.Sprint(p.Eligible)}, [2]string{"rendered", fmt.Sprint(p.Rendered)}, [2]string{"superseded", fmt.Sprint(p.Superseded)})
+	for _, reason := range reasons {
+		counts = append(counts, [2]string{"unqualified:" + reason, fmt.Sprint(p.Unqualified[reason])})
+	}
+	counts = append(counts, [2]string{"unreported", fmt.Sprint(p.Unreported)}, [2]string{"ineligible", fmt.Sprint(p.Ineligible)}, [2]string{"unknown", fmt.Sprint(p.Unknown)})
+	return text, counts
 }
 
 func telemetryAcceptanceReportCriterionOf(criterion TelemetryAcceptanceCriterion) telemetryAcceptanceReportCriterion {
@@ -317,7 +372,7 @@ func telemetryAcceptanceReportPDF(d *runArchiveHTMLReportData, lines *[]string) 
 	for _, loss := range view.Loss {
 		*lines = append(*lines, fmt.Sprintf("Loss %s: %s (%s)%s", loss.Label(), loss.Value, loss.StateLabel(), reportReasonSuffix(loss.ReasonLabel())))
 	}
-	*lines = append(*lines, "Coverage: "+view.Coverage, "Classified time: "+view.Breach, "Clock quality: "+view.Clock)
+	*lines = append(*lines, "Coverage: "+view.Coverage, "Classified time: "+view.Breach, "Clock quality: "+view.Clock, "Render population: "+view.RenderPopulation)
 	for _, stage := range view.Stages {
 		line := fmt.Sprintf("Stage %s: %s; samples %s; P50 %s P95 %s P99 %s max %s ms", stage.Label(), stage.AvailabilityLabel, stage.SamplesLabel, stage.P50, stage.P95, stage.P99, stage.Max)
 		if stage.ExcludedLabel != "" {
@@ -359,7 +414,11 @@ func telemetryAcceptanceReportCSV(d *runArchiveHTMLReportData, write reportCSVWr
 			rows = append(rows, [4]string{"telemetry_loss", loss.Counter, "reason", loss.Reason})
 		}
 	}
-	rows = append(rows, [4]string{"telemetry_coverage", "", "summary", view.Coverage}, [4]string{"telemetry_coverage", "", "classified", view.Breach}, [4]string{"telemetry_clock", "", "quality", view.Clock})
+	rows = append(rows, [4]string{"telemetry_coverage", "", "summary", view.Coverage}, [4]string{"telemetry_coverage", "", "classified", view.Breach}, [4]string{"telemetry_clock", "", "quality", view.Clock},
+		[4]string{"telemetry_render_population", "", "summary", view.RenderPopulation})
+	for _, count := range view.RenderCounts {
+		rows = append(rows, [4]string{"telemetry_render_population", "", count[0], count[1]})
+	}
 	for _, stage := range view.Stages {
 		for _, item := range [][2]string{{"availability", stage.Availability}, {"samples", stage.Samples}, {"p50_ms", stage.P50}, {"p95_ms", stage.P95}, {"p99_ms", stage.P99}, {"max_ms", stage.Max}, {"excluded", stage.Excluded}} {
 			rows = append(rows, [4]string{"telemetry_stage", stage.Stage, item[0], item[1]})

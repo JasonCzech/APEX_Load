@@ -51,7 +51,7 @@ func (s *Server) normalizeAnalysisImportOwned(parent context.Context, store stor
 		if quiescence != nil {
 			_ = s.confirmNativeWriterQuiescence(failureCtx, attempts, quiescence)
 		}
-		_ = attempts.FailAnalysisImportAttempt(failureCtx, in.ID, in.ProjectID, in.Owner, in.Revision)
+		_ = attempts.FailAnalysisImportAttempt(failureCtx, in.ID, in.ProjectID, in.Owner, in.Revision, "")
 		return
 	}
 	// On a close failure ReleaseOutputs leaves physical admission quarantined.
@@ -201,6 +201,25 @@ func (s *Server) normalizeAnalysisImportOwned(parent context.Context, store stor
 		if quiescence != nil {
 			_ = s.confirmNativeWriterQuiescence(failureCtx, attempts, quiescence)
 		}
-		_ = attempts.FailAnalysisImportAttempt(failureCtx, in.ID, in.ProjectID, in.Owner, in.Revision)
+		_ = attempts.FailAnalysisImportAttempt(failureCtx, in.ID, in.ProjectID, in.Owner, in.Revision, analysisFailureReason(in, err))
 	}
+}
+
+// analysisFailureReason explains a normalization failure the person can act
+// on, or "" for the generic message: a file whose schema drifted from the
+// mapping is named with the column it lacks, and a file with rejected rows
+// the import did not accept with the measure and the first rows.
+func analysisFailureReason(in storage.AnalysisImport, err error) string {
+	if in.Mapping == nil {
+		return ""
+	}
+	var mismatch *analysis.SchemaMismatchError
+	if errors.As(err, &mismatch) && mismatch.File >= 0 && mismatch.File < len(in.Files) {
+		return mismatch.Describe(in.Files[mismatch.File].RelativePath, *in.Mapping)
+	}
+	var rejected *analysis.RejectedRowsError
+	if errors.As(err, &rejected) && rejected.File >= 0 && rejected.File < len(in.Files) {
+		return rejected.Describe(in.Files[rejected.File].RelativePath, *in.Mapping)
+	}
+	return ""
 }

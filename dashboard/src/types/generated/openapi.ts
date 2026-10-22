@@ -4900,6 +4900,22 @@ export interface operations {
                   "value"?: number;
                 }) | null;
               }) | null;
+              "telemetry_render_population"?: ({
+                "eligible"?: number;
+                "epoch"?: string;
+                "first_sequence"?: number;
+                "ineligible"?: number;
+                "last_sequence"?: number;
+                "population"?: string;
+                "published_eligible"?: number;
+                "reference_client"?: string;
+                "rendered"?: number;
+                "sampled_from"?: (string) | null;
+                "superseded"?: number;
+                "unknown"?: number;
+                "unqualified"?: Record<string, number>;
+                "unreported"?: number;
+              }) | null;
               "telemetry_source_epoch_count"?: number;
               "telemetry_sources_file"?: string;
               "telemetry_sources_truncated"?: boolean;
@@ -6354,6 +6370,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "vusers"?: number;
             }>;
+            "joint_evidence"?: ({
+              "dimensions"?: Array<string>;
+              "population"?: string;
+            }) | null;
             "name"?: string;
             "project_id"?: string;
             "resource_baseline"?: boolean;
@@ -19930,6 +19950,7 @@ export interface operations {
                   "goal_config"?: (Record<string, unknown>) | null;
                   "groups": Array<Record<string, unknown>>;
                   "id": string;
+                  "joint_evidence"?: (Record<string, unknown>) | null;
                   "name": string;
                   "project_id": string;
                   "ref_key"?: string;
@@ -20046,6 +20067,10 @@ export interface operations {
                 }) | null;
               }) | null;
               "id": string;
+              "joint_evidence"?: ({
+                "dimensions": Array<string>;
+                "population": string;
+              }) | null;
               "last_run_at"?: (string) | null;
               "last_run_ended_at"?: (string) | null;
               "last_run_test_id"?: string;
@@ -22135,6 +22160,10 @@ export interface operations {
                   "vusers": number;
                 }>;
                 "id": string;
+                "joint_evidence"?: ({
+                  "dimensions": Array<string>;
+                  "population": string;
+                }) | null;
                 "name": string;
                 "project_id": string;
                 "ref_key"?: string;
@@ -22296,6 +22325,10 @@ export interface operations {
               }) | null;
             }) | null;
             "id": string;
+            "joint_evidence"?: ({
+              "dimensions": Array<string>;
+              "population": string;
+            }) | null;
             "last_run_at"?: (string) | null;
             "last_run_ended_at"?: (string) | null;
             "last_run_test_id"?: string;
@@ -23272,6 +23305,10 @@ export interface operations {
                   "vusers": number;
                 }>;
                 "id": string;
+                "joint_evidence"?: ({
+                  "dimensions": Array<string>;
+                  "population": string;
+                }) | null;
                 "name": string;
                 "project_id": string;
                 "ref_key"?: string;
@@ -23433,6 +23470,10 @@ export interface operations {
               }) | null;
             }) | null;
             "id": string;
+            "joint_evidence"?: ({
+              "dimensions": Array<string>;
+              "population": string;
+            }) | null;
             "last_run_at"?: (string) | null;
             "last_run_ended_at"?: (string) | null;
             "last_run_test_id"?: string;
@@ -33904,6 +33945,10 @@ export interface operations {
             "require_results"?: boolean;
             "require_sla"?: boolean;
           };
+          "joint_evidence"?: ({
+            "dimensions"?: Array<string>;
+            "population"?: string;
+          }) | null;
           "monitor_bindings"?: (Array<{
             "required"?: boolean;
             "source_id"?: string;
@@ -39339,7 +39384,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -40117,7 +40164,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -41502,6 +41551,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
+          "joint_evidence"?: ({
+            "dimensions"?: Array<string>;
+            "population"?: string;
+          }) | null;
           "name": string;
           "project_id"?: string;
           "resource_baseline"?: boolean;
@@ -42095,6 +42148,10 @@ export interface operations {
                   "vusers": number;
                 }>;
                 "id": string;
+                "joint_evidence"?: ({
+                  "dimensions": Array<string>;
+                  "population": string;
+                }) | null;
                 "name": string;
                 "project_id": string;
                 "ref_key"?: string;
@@ -42256,6 +42313,10 @@ export interface operations {
               }) | null;
             }) | null;
             "id": string;
+            "joint_evidence"?: ({
+              "dimensions": Array<string>;
+              "population": string;
+            }) | null;
             "last_run_at"?: (string) | null;
             "last_run_ended_at"?: (string) | null;
             "last_run_test_id"?: string;
@@ -48216,7 +48277,30 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "sampled_from"?: (string) | null;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -50544,7 +50628,30 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "sampled_from"?: (string) | null;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -54077,6 +54184,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "vusers"?: number;
             }>;
+            "joint_evidence"?: ({
+              "dimensions"?: Array<string>;
+              "population"?: string;
+            }) | null;
             "name"?: string;
             "project_id"?: string;
             "resource_baseline"?: boolean;
@@ -54772,6 +54883,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
+              "joint_evidence"?: ({
+                "dimensions": Array<string>;
+                "population": string;
+              }) | null;
               "name": string;
               "project_id"?: string;
               "resource_baseline"?: boolean;
@@ -55389,6 +55504,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "vusers"?: number;
             }>;
+            "joint_evidence"?: ({
+              "dimensions"?: Array<string>;
+              "population"?: string;
+            }) | null;
             "name"?: string;
             "project_id"?: string;
             "resource_baseline"?: boolean;
@@ -56084,6 +56203,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
+              "joint_evidence"?: ({
+                "dimensions": Array<string>;
+                "population": string;
+              }) | null;
               "name": string;
               "project_id"?: string;
               "resource_baseline"?: boolean;
@@ -67623,7 +67746,30 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "sampled_from"?: (string) | null;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -69947,7 +70093,30 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "sampled_from"?: (string) | null;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -72773,7 +72942,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -73551,7 +73722,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -77211,6 +77384,22 @@ export interface operations {
                 "state": string;
                 "value": number;
               }) | null;
+            }) | null;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
             }) | null;
             "telemetry_source_epoch_count"?: number;
             "telemetry_sources_file"?: string;
@@ -82027,6 +82216,22 @@ export interface operations {
                   "value": number;
                 }) | null;
               }) | null;
+              "telemetry_render_population"?: ({
+                "eligible": number;
+                "epoch"?: string;
+                "first_sequence"?: number;
+                "ineligible"?: number;
+                "last_sequence"?: number;
+                "population": string;
+                "published_eligible": number;
+                "reference_client"?: string;
+                "rendered": number;
+                "sampled_from"?: (string) | null;
+                "superseded": number;
+                "unknown"?: number;
+                "unqualified"?: Record<string, number>;
+                "unreported": number;
+              }) | null;
               "telemetry_source_epoch_count"?: number;
               "telemetry_sources_file"?: string;
               "telemetry_sources_truncated"?: boolean;
@@ -83679,6 +83884,10 @@ export interface operations {
                   "vusers": number;
                 }>;
                 "id": string;
+                "joint_evidence"?: ({
+                  "dimensions": Array<string>;
+                  "population": string;
+                }) | null;
                 "name": string;
                 "project_id": string;
                 "ref_key"?: string;
@@ -83840,6 +84049,10 @@ export interface operations {
               }) | null;
             }) | null;
             "id": string;
+            "joint_evidence"?: ({
+              "dimensions": Array<string>;
+              "population": string;
+            }) | null;
             "last_run_at"?: (string) | null;
             "last_run_ended_at"?: (string) | null;
             "last_run_test_id"?: string;
@@ -84778,6 +84991,10 @@ export interface operations {
                 "vusers": number;
               }>;
               "id": string;
+              "joint_evidence"?: ({
+                "dimensions": Array<string>;
+                "population": string;
+              }) | null;
               "name": string;
               "project_id": string;
               "ref_key"?: string;
@@ -90969,7 +91186,30 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "sampled_from"?: (string) | null;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -93297,7 +93537,30 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "sampled_from"?: (string) | null;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -101516,6 +101779,7 @@ export interface operations {
                   "duration": string;
                   "goal_config"?: (Record<string, unknown>) | null;
                   "groups": Array<Record<string, unknown>>;
+                  "joint_evidence"?: (Record<string, unknown>) | null;
                   "name": string;
                   "project_id"?: string;
                   "resource_baseline"?: boolean;
@@ -114030,7 +114294,30 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "sampled_from"?: (string) | null;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -116358,7 +116645,30 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "sampled_from"?: (string) | null;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -131134,7 +131444,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -131912,7 +132224,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -133488,7 +133802,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -134266,7 +134582,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -135842,7 +136160,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -136620,7 +136940,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -138196,7 +138518,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -138974,7 +139298,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -140550,7 +140876,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -141328,7 +141656,9 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
+                  "render_population"?: (Record<string, unknown>) | null;
                   "sample_age_ms"?: number;
                   "sample_age_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -143631,6 +143961,10 @@ export interface operations {
           "client_id"?: string;
           "samples"?: Array<{
             "observed_at"?: string;
+            "publication"?: ({
+              "epoch"?: string;
+              "sequence"?: number;
+            }) | null;
             "receive_to_render_ms"?: number;
             "state"?: string;
           }>;
@@ -145713,7 +146047,30 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "sampled_from"?: (string) | null;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -148041,7 +148398,30 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "sampled_from"?: (string) | null;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -156262,6 +156642,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
+              "joint_evidence"?: ({
+                "dimensions": Array<string>;
+                "population": string;
+              }) | null;
               "name": string;
               "project_id"?: string;
               "resource_baseline"?: boolean;
@@ -173095,7 +173479,30 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "sampled_from"?: (string) | null;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -175423,7 +175830,30 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "publication"?: ({
+                  "eligible": boolean;
+                  "epoch": string;
+                  "newest_collected_at"?: (string) | null;
+                  "oldest_collected_at"?: (string) | null;
+                  "sequence": number;
+                }) | null;
                 "published_at"?: string;
+                "render_population"?: ({
+                  "eligible": number;
+                  "epoch"?: string;
+                  "first_sequence"?: number;
+                  "ineligible"?: number;
+                  "last_sequence"?: number;
+                  "population": string;
+                  "published_eligible": number;
+                  "reference_client"?: string;
+                  "rendered": number;
+                  "sampled_from"?: (string) | null;
+                  "superseded": number;
+                  "unknown"?: number;
+                  "unqualified"?: Record<string, number>;
+                  "unreported": number;
+                }) | null;
                 "sample_age_ms"?: number;
                 "sample_age_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -181605,6 +182035,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
+          "joint_evidence"?: ({
+            "dimensions"?: Array<string>;
+            "population"?: string;
+          }) | null;
           "name": string;
           "project_id"?: string;
           "resource_baseline"?: boolean;
@@ -182196,6 +182630,10 @@ export interface operations {
                   "vusers": number;
                 }>;
                 "id": string;
+                "joint_evidence"?: ({
+                  "dimensions": Array<string>;
+                  "population": string;
+                }) | null;
                 "name": string;
                 "project_id": string;
                 "ref_key"?: string;
@@ -182357,6 +182795,10 @@ export interface operations {
               }) | null;
             }) | null;
             "id": string;
+            "joint_evidence"?: ({
+              "dimensions": Array<string>;
+              "population": string;
+            }) | null;
             "last_run_at"?: (string) | null;
             "last_run_ended_at"?: (string) | null;
             "last_run_test_id"?: string;
@@ -191779,6 +192221,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
+          "joint_evidence"?: ({
+            "dimensions"?: Array<string>;
+            "population"?: string;
+          }) | null;
           "name"?: string;
           "project_id"?: string;
           "resource_baseline"?: boolean;

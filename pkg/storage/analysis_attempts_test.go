@@ -184,7 +184,7 @@ func exerciseAnalysisNativeAttemptAuthority(t *testing.T, first, second *SQLiteS
 	if _, err = second.PublishAnalysisImportAttempt(ctx, changed); !errors.Is(err, ErrAnalysisAuthority) {
 		t.Fatal("changed publication replay accepted", err)
 	}
-	if err = second.FailAnalysisImportAttempt(ctx, in.ID, in.ProjectID, winner.attempt.ID, winner.in.Revision); !errors.Is(err, ErrAnalysisAuthority) {
+	if err = second.FailAnalysisImportAttempt(ctx, in.ID, in.ProjectID, winner.attempt.ID, winner.in.Revision, ""); !errors.Is(err, ErrAnalysisAuthority) {
 		t.Fatal("late failure changed ready data", err)
 	}
 	current, err := first.GetAnalysisImport(in.ID)
@@ -258,7 +258,7 @@ func TestAnalysisNativeAttemptCancellationAndReplacementCannotResurrect(t *testi
 	if _, err = s.PublishAnalysisImportAttempt(ctx, publication); !errors.Is(err, ErrAnalysisAuthority) {
 		t.Fatal("cancellation resurrected by worker", err)
 	}
-	if err = s.FailAnalysisImportAttempt(ctx, in.ID, in.ProjectID, a.ID, in.Revision); !errors.Is(err, ErrAnalysisAuthority) {
+	if err = s.FailAnalysisImportAttempt(ctx, in.ID, in.ProjectID, a.ID, in.Revision, ""); !errors.Is(err, ErrAnalysisAuthority) {
 		t.Fatal("late failure replaced cancellation", err)
 	}
 }
@@ -298,7 +298,7 @@ func TestAnalysisNativeAttemptCleanupDoesNotTreatObsoleteQueueAsAbandonment(t *t
 	if len(a.Obsolete) != 1 {
 		t.Fatal("legacy plan lost")
 	}
-	if err = s.FailAnalysisImportAttempt(ctx, in.ID, in.ProjectID, a.ID, in.Revision); err != nil {
+	if err = s.FailAnalysisImportAttempt(ctx, in.ID, in.ProjectID, a.ID, in.Revision, ""); err != nil {
 		t.Fatal(err)
 	}
 	plan, err = s.AnalysisAttemptCleanupPlan(ctx, AnalysisCleanupJob{Kind: "attempt", ProjectID: in.ProjectID, ResourceID: a.ID})
@@ -315,7 +315,7 @@ func TestAnalysisNativeCleanupObservesLatePriorOwnerSeal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.FailAnalysisImportAttempt(ctx, first.ID, first.ProjectID, a.ID, first.Revision); err != nil {
+	if err = s.FailAnalysisImportAttempt(ctx, first.ID, first.ProjectID, a.ID, first.Revision, ""); err != nil {
 		t.Fatal(err)
 	}
 	failed, err := s.GetAnalysisImport(first.ID)

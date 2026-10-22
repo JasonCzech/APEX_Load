@@ -1753,6 +1753,7 @@ func createScenarioRequestFromStored(scenario *StoredScenario) CreateScenarioReq
 		GoalConfig:       scenario.GoalConfig,
 		TrafficProfile:   cloneTrafficProfile(scenario.TrafficProfile),
 		RuntimeSettings:  scenario.RuntimeSettings,
+		JointEvidence:    scenario.JointEvidence,
 		DataPools:        scenario.DataPools,
 	}
 	shapeID := strings.TrimSpace(scenario.WorkloadShapeID)

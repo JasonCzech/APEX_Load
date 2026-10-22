@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/analysis"
 )
 
 const workerChildArgument = "--apexload-native-worker-v1"
@@ -241,7 +243,17 @@ finished:
 		if errors.Is(operation.err, ErrIncompatibleHistogramBounds) {
 			code = "incompatible_histogram_bounds"
 		}
-		if writes.send(workerFrame{Kind: "result", Result: &workerResult{Status: "error", Code: code}}) != nil {
+		var mismatch *analysis.SchemaMismatchError
+		var detail *workerSchemaMismatch
+		if errors.As(operation.err, &mismatch) {
+			code, detail = "schema_mismatch", &workerSchemaMismatch{File: mismatch.File, Column: mismatch.Column, Reason: mismatch.Reason}
+		}
+		var rejected *analysis.RejectedRowsError
+		var rejectedDetail *workerRejectedRows
+		if errors.As(operation.err, &rejected) {
+			code, rejectedDetail = "rejected_rows", &workerRejectedRows{File: rejected.File, Measure: rejected.Measure, Count: rejected.Count, Rows: rejected.Rows}
+		}
+		if writes.send(workerFrame{Kind: "result", Result: &workerResult{Status: "error", Code: code, Mismatch: detail, RejectedRows: rejectedDetail}}) != nil {
 			return 78
 		}
 		return 0

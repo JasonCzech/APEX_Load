@@ -226,7 +226,7 @@ func exerciseAnalysisPartitionCancellationAndRetry(t *testing.T, first, reader *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = first.FailAnalysisImportAttempt(ctx, failed.ID, failed.ProjectID, oldAttempt.ID, failed.Revision); err != nil {
+	if err = first.FailAnalysisImportAttempt(ctx, failed.ID, failed.ProjectID, oldAttempt.ID, failed.Revision, ""); err != nil {
 		t.Fatal(err)
 	}
 	failed, err = reader.GetAnalysisImport(failed.ID)

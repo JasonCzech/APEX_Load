@@ -269,6 +269,11 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 		if err != nil {
 			return result, err
 		}
+		// A file whose schema drifted from the mapping fails the import with
+		// the file and the column it lacks, before any row is read.
+		if mismatch := request.Mapping.SchemaMismatch(i, schema); mismatch != nil {
+			return result, mismatch
+		}
 		for _, c := range schema.Columns {
 			if len(c.PathComponents) == 1 && c.PathComponents[0] == "file_row_number" {
 				return result, errors.New("reserved Parquet file_row_number column prevents stable rejection provenance")
@@ -411,7 +416,8 @@ func nativeAdmitMappedRows(ctx context.Context, db *sql.DB, request NormalizeReq
 		}
 	}
 	if rejected > 0 && !request.AllowRejected {
-		return 0, fmt.Errorf("file %d measure %d contains %d rejected rows; explicit acceptance required", i, j, rejected)
+		named := result.Rejections[len(result.Rejections)-1].Rows
+		return 0, &analysis.RejectedRowsError{File: i, Measure: j, Count: rejected, Rows: append([]int64(nil), named[:min(len(named), analysis.MaxRejectedRowsNamed)]...)}
 	}
 	return accepted, nil
 }

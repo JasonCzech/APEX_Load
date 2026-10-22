@@ -17,9 +17,9 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-// Analytical acceptance through the import API (NA-6, B8): what an import of
-// several files does with duplicate content and with a file whose schema
-// drifted from the mapping.
+// Analytical acceptance through the import API (NA-6, B8; NA-A): what an
+// import of several files does with duplicate content and with a file whose
+// schema drifted from the mapping.
 
 type acceptanceImportFile struct {
 	name string
@@ -44,10 +44,11 @@ func acceptanceParquet(t *testing.T, query string) []byte {
 	return data
 }
 
-// acceptanceImport creates an import of files, uploads them, sets mapping and
-// commits; it returns the commit response code and body and the import as
-// it stands once normalization ends.
-func acceptanceImport(t *testing.T, server *Server, store storage.Store, files []acceptanceImportFile, mapping analysis.ParquetMapping) (int, string, storage.AnalysisImport) {
+// acceptanceImport creates an import of files, uploads them, runs any
+// beforeMapping check (a preview, say), sets mapping and commits; it returns
+// the commit response code and body and the import as it stands once
+// normalization ends.
+func acceptanceImport(t *testing.T, server *Server, store storage.Store, files []acceptanceImportFile, mapping analysis.ParquetMapping, beforeMapping ...func(storage.AnalysisImport)) (int, string, storage.AnalysisImport) {
 	t.Helper()
 	declared := []any{}
 	for _, file := range files {
@@ -70,6 +71,9 @@ func acceptanceImport(t *testing.T, server *Server, store storage.Store, files [
 		if response.Code != 200 {
 			t.Fatalf("upload %s: %d %s", file.name, response.Code, response.Body.String())
 		}
+	}
+	for _, check := range beforeMapping {
+		check(in)
 	}
 	current, err := store.(storage.AnalysisImportStore).GetAnalysisImport(in.ID)
 	if err != nil {
@@ -118,9 +122,28 @@ func TestAnalysisAcceptanceDuplicateAndDriftedFiles(t *testing.T) {
 	}
 
 	// A file whose schema drifted from the mapping fails the import closed:
-	// nothing is accepted, and the stored failure names no engine detail.
-	code, _, in = acceptanceImport(t, server, store, []acceptanceImportFile{{"a.parquet", first}, {"b.parquet", acceptanceParquet(t, "SELECT 1700000100+i AS ts, (200+i)::DOUBLE AS latency_ms FROM range(60) t(i)")}}, mapping)
-	if code != 202 || in.State != "failed" || in.Accepted != 0 || in.PartitionManifest != nil || in.Error != "Normalization failed; inspect mapping, schema, rejection and resource evidence." {
-		t.Fatalf("drifted file: commit %d, %s with %d accepted: %q", code, in.State, in.Accepted, in.Error)
+	// nothing is accepted, and the stored failure names the file and the
+	// mapped column it lacks or holds as a list, with no engine detail.
+	for _, drifted := range []struct{ query, want string }{
+		{"SELECT 1700000100+i AS ts, (200+i)::DOUBLE AS latency_ms FROM range(60) t(i)", `File "b.parquet" does not match the mapping: it has no column "latency".`},
+		{"SELECT 1700000100+i AS ts, [(200+i)::DOUBLE] AS latency FROM range(60) t(i)", `File "b.parquet" does not match the mapping: column "latency" is a list or repeated field, which cannot be mapped to a scalar measurement.`},
+		// Rows whose value is not a number are rejected; unaccepted, they
+		// fail the import naming the file, the measure and the first rows.
+		{"SELECT 1700000100+i AS ts, CASE WHEN i % 10 = 3 THEN 'n/a' ELSE (200+i)::VARCHAR END AS latency FROM range(60) t(i)", `File "b.parquet" has 6 rows whose measure "latency" was rejected (first source rows, counting from 0: 3, 13, 23, 33, 43). Accept rejected measurements to import the rest, or correct the file.`},
+	} {
+		code, _, in = acceptanceImport(t, server, store, []acceptanceImportFile{{"a.parquet", first}, {"b.parquet", acceptanceParquet(t, drifted.query)}}, mapping)
+		if code != 202 || in.State != "failed" || in.Accepted != 0 || in.PartitionManifest != nil || in.Error != drifted.want {
+			t.Fatalf("drifted file: commit %d, %s with %d accepted: %q", code, in.State, in.Accepted, in.Error)
+		}
+	}
+
+	// A mapped column other than the value (here a long table's name
+	// column, the third column the mapping reads) is named the same way.
+	long := analysis.ParquetMapping{Version: 1, Timestamp: []string{"ts"}, TimestampEncoding: "unix_s", Timezone: "UTC", Measures: []analysis.ParquetMeasure{{Value: []string{"value"}, NameColumn: []string{"metric"}, Kind: analysis.KindGauge, Unit: "ms"}}}
+	named := acceptanceParquet(t, "SELECT 1700000040+i AS ts, 'latency' AS metric, (100+i)::DOUBLE AS value FROM range(60) t(i)")
+	unnamed := acceptanceParquet(t, "SELECT 1700000100+i AS ts, (200+i)::DOUBLE AS value FROM range(60) t(i)")
+	code, _, in = acceptanceImport(t, server, store, []acceptanceImportFile{{"a.parquet", named}, {"b.parquet", unnamed}}, long)
+	if want := `File "b.parquet" does not match the mapping: it has no column "metric".`; code != 202 || in.State != "failed" || in.Accepted != 0 || in.Error != want {
+		t.Fatalf("missing name column: commit %d, %s with %d accepted: %q", code, in.State, in.Accepted, in.Error)
 	}
 }

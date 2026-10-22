@@ -607,10 +607,12 @@ func maskRunArchiveManifest(manifest *RunArchiveManifest) *RunArchiveManifest {
 	if manifest == nil {
 		return nil
 	}
-	masked := *manifest
-	masked.Provenance = maskRunArchiveProvenance(manifest.Provenance)
-	if manifest.InitialProvenance != nil {
-		initial := maskRunArchiveProvenance(*manifest.InitialProvenance)
+	// Telemetry text is scrubbed with the run's own redaction rules, read
+	// before the provenance holding them is masked (TEL-B).
+	masked := *scrubTelemetryText(manifest, newTelemetryTextScrubber(manifest))
+	masked.Provenance = maskRunArchiveProvenance(masked.Provenance)
+	if masked.InitialProvenance != nil {
+		initial := maskRunArchiveProvenance(*masked.InitialProvenance)
 		masked.InitialProvenance = &initial
 	}
 	return &masked

@@ -544,7 +544,7 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 		live.Telemetry.ControllerReceivedAt = now
 	}
 	if live.Telemetry.CollectedAt.IsZero() {
-		live.Telemetry.CollectedAt = live.Timestamp
+		live.Telemetry.CollectedAt, live.Telemetry.collectedAtAssumed = live.Timestamp, true
 	}
 	live.Telemetry.PublishedAt = now
 	if !live.Telemetry.ControllerReceivedAt.IsZero() {
@@ -592,6 +592,7 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 		}
 	}
 	sampleTelemetryStagesLocked(test, live)
+	assignTelemetryPublicationLocked(test, live)
 	live.ActiveRuntimeSeconds = activeRuntimeSecondsLocked(test, now)
 	live.LoadLevels = activeLoadLevelsLocked(test)
 	test.runTotals.apply(live, test.History)

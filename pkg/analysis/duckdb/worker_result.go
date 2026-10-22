@@ -13,8 +13,41 @@ import (
 	"github.com/jasonczech/apexload/pkg/credential"
 )
 
+// validWorkerRejectedRows holds a rejected_rows payload to what the engine
+// can report: a normalization that did not accept rejections, a file and
+// measure of it, a count within the file's rows and exactly
+// min(count, MaxRejectedRowsNamed) ascending row ordinals within the file's
+// rows (that they are the first is the engine's word, not checked here).
+func validWorkerRejectedRows(b workerBootstrap, rejected workerRejectedRows, request workerNormalizeOperation) bool {
+	if request.AllowRejected || rejected.File < 0 || rejected.File >= len(request.InputHandles) || rejected.Measure < 0 || rejected.Measure >= len(request.Mapping.Measures) ||
+		rejected.Count < 1 || int64(len(rejected.Rows)) != min(rejected.Count, int64(analysis.MaxRejectedRowsNamed)) {
+		return false
+	}
+	input, _ := b.handle(request.InputHandles[rejected.File], "input")
+	if input.Rows != nil && rejected.Count > *input.Rows {
+		return false
+	}
+	for index, row := range rejected.Rows {
+		if row < 0 || input.Rows != nil && row >= *input.Rows || index > 0 && row <= rejected.Rows[index-1] {
+			return false
+		}
+	}
+	return true
+}
+
 func (r workerResult) validate(b workerBootstrap, request workerRequest) error {
 	if request.validate(b) != nil || r.SeriesBounds != nil && (request.Series == nil || r.Status != "ok") {
+		return errWorkerProtocol
+	}
+	// A schema mismatch names a file and mapped column of this normalization.
+	if (r.Code == "schema_mismatch") != (r.Mismatch != nil) || r.Mismatch != nil && (r.Status != "error" || request.Normalize == nil ||
+		r.Mismatch.File < 0 || r.Mismatch.File >= len(request.Normalize.InputHandles) ||
+		r.Mismatch.Column < 0 || r.Mismatch.Column >= len(request.Normalize.Mapping.MappedColumns()) || !analysis.ValidSchemaMismatchReason(r.Mismatch.Reason)) {
+		return errWorkerProtocol
+	}
+	// Rejected rows name a file and measure of this normalization, a count
+	// and its first ascending row ordinals.
+	if (r.Code == "rejected_rows") != (r.RejectedRows != nil) || r.RejectedRows != nil && (r.Status != "error" || request.Normalize == nil || !validWorkerRejectedRows(b, *r.RejectedRows, *request.Normalize)) {
 		return errWorkerProtocol
 	}
 	n := 0
@@ -33,7 +66,7 @@ func (r workerResult) validate(b workerBootstrap, request workerRequest) error {
 				return errWorkerProtocol
 			}
 		case "error":
-			if r.CancelSequence != 0 || (r.Code != "invalid_input" && r.Code != "resource_limit" && r.Code != "crash" && r.Code != "unavailable" && r.Code != "internal" && r.Code != "incompatible_histogram_bounds") {
+			if r.CancelSequence != 0 || (r.Code != "invalid_input" && r.Code != "resource_limit" && r.Code != "crash" && r.Code != "unavailable" && r.Code != "internal" && r.Code != "incompatible_histogram_bounds" && r.Code != "schema_mismatch" && r.Code != "rejected_rows") {
 				return errWorkerProtocol
 			}
 		default:

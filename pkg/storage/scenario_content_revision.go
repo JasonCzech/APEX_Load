@@ -79,15 +79,15 @@ func validateScenarioAuthoringPrecondition(expected ScenarioAuthoringPreconditio
 	return nil
 }
 func scenarioSelectColumns(dialect storeDialect) string {
-	return `id, COALESCE(ref_key, ''), name, COALESCE(workload_shape_id, ''), duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(traffic_profile_json, ''), created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='scenario' AND a.resource_id=scenarios.id AND ` + archiveIncarnationMatch(dialect, "a.incarnation", "scenarios.created_at") + `)`
+	return `id, COALESCE(ref_key, ''), name, COALESCE(workload_shape_id, ''), duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(traffic_profile_json, ''), COALESCE(joint_evidence_json, ''), created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='scenario' AND a.resource_id=scenarios.id AND ` + archiveIncarnationMatch(dialect, "a.incarnation", "scenarios.created_at") + `)`
 }
 func scanScenarioRow(row scriptRowScanner) (*Scenario, error) {
 	var scenario Scenario
-	var assignment, goals, runtime, traffic string
-	if err := row.Scan(&scenario.ID, &scenario.RefKey, &scenario.Name, &scenario.WorkloadShapeID, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.TerminationMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignment, &goals, &runtime, &traffic, &scenario.CreatedAt, &scenario.UpdatedAt, &scenario.ArchivedAt); err != nil {
+	var assignment, goals, runtime, traffic, joint string
+	if err := row.Scan(&scenario.ID, &scenario.RefKey, &scenario.Name, &scenario.WorkloadShapeID, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.TerminationMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignment, &goals, &runtime, &traffic, &joint, &scenario.CreatedAt, &scenario.UpdatedAt, &scenario.ArchivedAt); err != nil {
 		return nil, err
 	}
-	if err := decodeScenarioJSON(&scenario, assignment, goals, runtime, traffic); err != nil {
+	if err := decodeScenarioJSON(&scenario, assignment, goals, runtime, traffic, joint); err != nil {
 		return nil, err
 	}
 	return &scenario, nil
@@ -463,7 +463,7 @@ func (s *SQLiteStore) createScenarioAuthoringIfAbsent(input *Scenario, groups []
 		return nil, err
 	}
 	scenario.CreatedAt = newRowTimestamp(scenario.CreatedAt)
-	assignment, goals, runtime, traffic, err := prepareScenarioForSave(scenario)
+	assignment, goals, runtime, traffic, joint, err := prepareScenarioForSave(scenario)
 	if err != nil {
 		return nil, err
 	}
@@ -496,7 +496,7 @@ func (s *SQLiteStore) createScenarioAuthoringIfAbsent(input *Scenario, groups []
 	if err := validateScenarioAuthoringPoolsActiveTx(tx, pools); err != nil {
 		return nil, err
 	}
-	applied, err := createScenarioWithBindingsTx(tx, scenario, groups, pools, assignment, goals, runtime, traffic)
+	applied, err := createScenarioWithBindingsTx(tx, scenario, groups, pools, assignment, goals, runtime, traffic, joint)
 	if err != nil {
 		return nil, err
 	}
@@ -537,7 +537,7 @@ func (s *SQLiteStore) updateScenarioAuthoringIfCurrent(input *Scenario, groups [
 	}
 	scenario.CreatedAt = expected.CreatedAt
 	scenario.ArchivedAt = nil
-	assignment, goals, runtime, traffic, err := prepareScenarioForSave(scenario)
+	assignment, goals, runtime, traffic, joint, err := prepareScenarioForSave(scenario)
 	if err != nil {
 		return nil, err
 	}
@@ -615,7 +615,7 @@ func (s *SQLiteStore) updateScenarioAuthoringIfCurrent(input *Scenario, groups [
 			return nil, err
 		}
 	}
-	if err := updateScenarioAuthoredRowTx(tx, scenario, assignment, goals, runtime, traffic); err != nil {
+	if err := updateScenarioAuthoredRowTx(tx, scenario, assignment, goals, runtime, traffic, joint); err != nil {
 		return nil, err
 	}
 	if err := replaceScenarioScriptsTx(tx, scenario.ID, groups); err != nil {
@@ -636,8 +636,8 @@ func (s *SQLiteStore) updateScenarioAuthoringIfCurrent(input *Scenario, groups [
 	}
 	return &ScenarioAuthoringMutationResult{Snapshot: snapshot, Applied: true}, nil
 }
-func updateScenarioAuthoredRowTx(tx *storeTx, scenario *Scenario, assignment, goals, runtime, traffic []byte) error {
-	_, err := tx.Exec(`UPDATE scenarios SET ref_key=?,name=?,workload_shape_id=?,duration=?,start_delay=?,scenario_mode=?,termination_mode=?,shakeout_enabled=?,resource_baseline_enabled=?,assignment_json=?,goal_config_json=?,runtime_settings_json=?,traffic_profile_json=?,updated_at=? WHERE id=?`, scenario.RefKey, scenario.Name, scenario.WorkloadShapeID, scenario.Duration, scenario.StartDelay, scenario.ScenarioMode, scenario.TerminationMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(assignment), string(goals), string(runtime), string(traffic), scenario.UpdatedAt, scenario.ID)
+func updateScenarioAuthoredRowTx(tx *storeTx, scenario *Scenario, assignment, goals, runtime, traffic, joint []byte) error {
+	_, err := tx.Exec(`UPDATE scenarios SET ref_key=?,name=?,workload_shape_id=?,duration=?,start_delay=?,scenario_mode=?,termination_mode=?,shakeout_enabled=?,resource_baseline_enabled=?,assignment_json=?,goal_config_json=?,runtime_settings_json=?,traffic_profile_json=?,joint_evidence_json=?,updated_at=? WHERE id=?`, scenario.RefKey, scenario.Name, scenario.WorkloadShapeID, scenario.Duration, scenario.StartDelay, scenario.ScenarioMode, scenario.TerminationMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(assignment), string(goals), string(runtime), string(traffic), string(joint), scenario.UpdatedAt, scenario.ID)
 	return err
 }
 

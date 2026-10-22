@@ -105,6 +105,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 76, Name: "browser-baseline-candidate-inventory", Fingerprint: "3b53081becf3ec7b776039bda59d7ffcfe3cf6f1093d3e97a1c103172dc21233"},
 	{Version: 77, Name: "browser-baseline-default-project-index", Fingerprint: "44bf5029b0676240b04a119aa682f6f62bcc84f904dc637807ef1e1a8c1e8908"},
 	{Version: 78, Name: "browser-authoring-schema-integration", Fingerprint: "b83cbdd0900bde9dc06f0614ae6ac7a13598a1faf18cf41f6742750a94d8045b"},
+	{Version: 79, Name: "scenario-joint-evidence", Fingerprint: "1d912aebbf1f83f3997271bc505a5cb53e4502fa90929a039f093718c664fb35"},
 }
 
 type SchemaMigrationRecord struct {

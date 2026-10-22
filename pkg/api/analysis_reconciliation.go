@@ -266,7 +266,7 @@ func (s *Server) reconcileNativePublication(ctx context.Context, attempts storag
 		record.publicationResolved, record.published = true, result.Published
 	}
 	if !record.published {
-		err := attempts.FailAnalysisImportAttempt(ctx, record.claim.id, record.claim.project, record.claim.owner, record.claim.revision)
+		err := attempts.FailAnalysisImportAttempt(ctx, record.claim.id, record.claim.project, record.claim.owner, record.claim.revision, "")
 		if err != nil && !errors.Is(err, storage.ErrAnalysisAuthority) {
 			return err
 		}
@@ -339,6 +339,6 @@ func (s *Server) failUnlaunchedAnalysisImport(pipelineContext, request context.C
 	if record != nil {
 		_ = s.confirmNativeWriterQuiescence(failure, attempts, record)
 	}
-	_ = attempts.FailAnalysisImportAttempt(failure, in.ID, in.ProjectID, in.Owner, in.Revision)
+	_ = attempts.FailAnalysisImportAttempt(failure, in.ID, in.ProjectID, in.Owner, in.Revision, "")
 	_ = closeNativeAnalysisPipeline(pipeline, dir)
 }

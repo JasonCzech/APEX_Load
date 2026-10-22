@@ -11,6 +11,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -106,14 +108,36 @@ func commitNativeAnalysisMapping(t *testing.T, server *Server, store storage.Sto
 	return current
 }
 
-// Merged histogram counts reconcile with an independent sum of the source
-// bins, and the manifest accounts for every source row.
-func TestAnalysisHistogramImportCommitQueryReconcile(t *testing.T) {
+// The preview shows the source rows, merged histogram counts reconcile with
+// an independent sum of the source bins, and the manifest accounts for every
+// source row.
+func TestAnalysisHistogramImportPreviewCommitQueryReconcile(t *testing.T) {
 	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "proj-a")
 	server, store := newTimeslotServer(t)
 	// Prometheus-style long rows: le-cumulative counters scraped each minute.
 	query := "SELECT ts, le, requests FROM (SELECT 1700000040+s*60 AS ts, s FROM range(5) t(s)), (SELECT * FROM (VALUES ('0.05', 1), ('0.25', 2), ('+Inf', 3)) b(le, k)) CROSS JOIN LATERAL (SELECT (s*(k+2)+k)::DOUBLE AS requests)"
 	in, path, dataset := uploadNativeAnalysisFixture(t, server, query)
+	r := timeslotRequest(t, server, "GET", path+"/files/"+in.Files[0].ID+"/preview", nil)
+	var preview analytics.Preview
+	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &preview) != nil || preview.Schema.Rows != 15 || len(preview.Samples) != 15 {
+		t.Fatalf("preview: %d %s", r.Code, r.Body.String())
+	}
+	// Text cells are redacted in a preview; the first scrape's counts are
+	// the source's 1, 2 and 3.
+	var firstScrape []float64
+	for _, sample := range preview.Samples {
+		if sample["le"] != "[redacted]" {
+			t.Fatalf("preview did not redact the bound text: %v", sample)
+		}
+		if sample["ts"] == 1700000040.0 {
+			count, _ := sample["requests"].(float64)
+			firstScrape = append(firstScrape, count)
+		}
+	}
+	sort.Float64s(firstScrape)
+	if !reflect.DeepEqual(firstScrape, []float64{1, 2, 3}) {
+		t.Fatalf("preview of the first scrape = %v, the source holds 1, 2 and 3", firstScrape)
+	}
 	mapping := analysis.ParquetMapping{Version: 1, Timestamp: []string{"ts"}, TimestampEncoding: "unix_s", Timezone: "UTC", Measures: []analysis.ParquetMeasure{{
 		Value: []string{"requests"}, Name: "latency", Kind: analysis.KindHistogram, Unit: "s",
 		Histogram: &analysis.ParquetHistogram{Bounds: []string{"0.05", "0.25", "+Inf"}, BucketCounts: analysis.HistogramLeCumulative, Temporality: analysis.HistogramCumulative, BoundColumn: []string{"le"}},

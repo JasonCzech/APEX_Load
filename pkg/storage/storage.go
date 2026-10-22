@@ -857,8 +857,11 @@ type Scenario struct {
 	GoalConfig       any        `json:"goal_config,omitempty"`
 	RuntimeSettings  any        `json:"runtime_settings,omitempty"`
 	TrafficProfile   any        `json:"traffic_profile,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	// JointEvidence is the scenario's joint evidence v4 projection (JSON
+	// blob), carried to every run created from the scenario.
+	JointEvidence any       `json:"joint_evidence,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type ScenarioScript struct {

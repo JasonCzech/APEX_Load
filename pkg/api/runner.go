@@ -1233,6 +1233,18 @@ type TelemetryHealth struct {
 	// Acceptance is the run's provisional telemetry verdict under its pinned
 	// acceptance policy; the finalized verdict is in the run report.
 	Acceptance *TelemetryAcceptanceVerdict `json:"acceptance,omitempty"`
+	// Publication identifies this live publication to dashboard viewers, and
+	// RenderPopulation is the run's render accounting so far (TEL-A).
+	Publication      *TelemetryPublication      `json:"publication,omitempty"`
+	RenderPopulation *TelemetryRenderPopulation `json:"render_population,omitempty"`
+	// publicationRepeated is set by a distributed install guard when every
+	// collection the point carries was already published; newestCollectedAt is
+	// a fleet point's newest contributing collection time; collectedAtAssumed
+	// marks a point whose collection time was not reported (the publication
+	// time stands in).
+	publicationRepeated bool
+	newestCollectedAt   time.Time
+	collectedAtAssumed  bool
 	// restoredFromHistory marks health rebuilt from a stored interval
 	// summary (a restarted controller, a follower): it carries none of the
 	// loss, coverage or stage evidence a verdict reads, so none is shown.
@@ -1608,24 +1620,27 @@ type StoredScript struct {
 }
 
 type StoredScenario struct {
-	ArchivedAt         *time.Time                        `json:"archived_at,omitempty"`
-	Activity           *ObjectActivitySummary            `json:"activity,omitempty"`
-	TerminationMode    string                            `json:"termination_mode,omitempty"`
-	LibraryAssignment  *storage.LibraryAssignment        `json:"library_assignment,omitempty"`
-	ID                 string                            `json:"id"`
-	RefKey             string                            `json:"ref_key,omitempty"`
-	Name               string                            `json:"name"`
-	WorkloadShapeID    string                            `json:"workload_shape_id,omitempty"`
-	ProjectID          string                            `json:"project_id,omitempty"`
-	Duration           string                            `json:"duration"`
-	StartDelay         string                            `json:"start_delay,omitempty"`
-	ScenarioMode       string                            `json:"scenario_mode,omitempty"`
-	ScriptShakeout     bool                              `json:"script_shakeout,omitempty"`
-	ResourceBaseline   bool                              `json:"resource_baseline,omitempty"`
-	Assignment         *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
-	GoalConfig         *GoalConfig                       `json:"goal_config,omitempty"`
-	TrafficProfile     *TrafficProfile                   `json:"traffic_profile,omitempty"`
-	RuntimeSettings    *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
+	ArchivedAt        *time.Time                   `json:"archived_at,omitempty"`
+	Activity          *ObjectActivitySummary       `json:"activity,omitempty"`
+	TerminationMode   string                       `json:"termination_mode,omitempty"`
+	LibraryAssignment *storage.LibraryAssignment   `json:"library_assignment,omitempty"`
+	ID                string                       `json:"id"`
+	RefKey            string                       `json:"ref_key,omitempty"`
+	Name              string                       `json:"name"`
+	WorkloadShapeID   string                       `json:"workload_shape_id,omitempty"`
+	ProjectID         string                       `json:"project_id,omitempty"`
+	Duration          string                       `json:"duration"`
+	StartDelay        string                       `json:"start_delay,omitempty"`
+	ScenarioMode      string                       `json:"scenario_mode,omitempty"`
+	ScriptShakeout    bool                         `json:"script_shakeout,omitempty"`
+	ResourceBaseline  bool                         `json:"resource_baseline,omitempty"`
+	Assignment        *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	GoalConfig        *GoalConfig                  `json:"goal_config,omitempty"`
+	TrafficProfile    *TrafficProfile              `json:"traffic_profile,omitempty"`
+	RuntimeSettings   *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	// JointEvidence is the joint evidence v4 projection every run created
+	// from this scenario captures, unless the run's request names another.
+	JointEvidence      *engine.JointProjection           `json:"joint_evidence,omitempty"`
 	Scripts            []ScenarioScriptRef               `json:"scripts"`
 	Schedules          []*storage.ScenarioSchedule       `json:"schedules,omitempty"`
 	DataPools          []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
@@ -2319,21 +2334,24 @@ type CreateTestRequest struct {
 }
 
 type CreateScenarioRequest struct {
-	TerminationMode  string                            `json:"termination_mode,omitempty"`
-	Name             string                            `json:"name"`
-	ProjectID        string                            `json:"project_id,omitempty"`
-	WorkloadShapeID  *string                           `json:"workload_shape_id,omitempty"`
-	Duration         string                            `json:"duration"`
-	StartDelay       string                            `json:"start_delay,omitempty"`
-	ScenarioMode     string                            `json:"scenario_mode,omitempty"`
-	ScriptShakeout   bool                              `json:"script_shakeout,omitempty"`
-	ResourceBaseline bool                              `json:"resource_baseline,omitempty"`
-	Assignment       *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
-	GoalConfig       *GoalConfig                       `json:"goal_config,omitempty"`
-	TrafficProfile   *TrafficProfile                   `json:"traffic_profile,omitempty"`
-	RuntimeSettings  *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
-	Groups           []CreateGroupEntry                `json:"groups"`
-	DataPools        []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	TerminationMode  string                       `json:"termination_mode,omitempty"`
+	Name             string                       `json:"name"`
+	ProjectID        string                       `json:"project_id,omitempty"`
+	WorkloadShapeID  *string                      `json:"workload_shape_id,omitempty"`
+	Duration         string                       `json:"duration"`
+	StartDelay       string                       `json:"start_delay,omitempty"`
+	ScenarioMode     string                       `json:"scenario_mode,omitempty"`
+	ScriptShakeout   bool                         `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool                         `json:"resource_baseline,omitempty"`
+	Assignment       *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	GoalConfig       *GoalConfig                  `json:"goal_config,omitempty"`
+	TrafficProfile   *TrafficProfile              `json:"traffic_profile,omitempty"`
+	RuntimeSettings  *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	// JointEvidence chooses the joint evidence v4 projection of every run
+	// created from the scenario (by a direct run, a schedule or a plan).
+	JointEvidence *engine.JointProjection           `json:"joint_evidence,omitempty"`
+	Groups        []CreateGroupEntry                `json:"groups"`
+	DataPools     []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
 
 	creationActor testCreationActor
 }

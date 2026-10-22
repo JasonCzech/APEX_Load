@@ -7,6 +7,7 @@ import type { RuntimeSettingsOverride } from './runtimeSettings'
 import type { ScenarioSchedule } from './scheduling'
 import type { ScriptDefinition } from './scripts'
 import type { GeneratorAssignmentSettings } from './testConfiguration'
+import type { JointEvidenceProjection } from './jointEvidence'
 import type { TrafficProfile } from './trafficProfiles'
 
 export interface LibraryAssignment {
@@ -135,6 +136,7 @@ export interface StoredScenario {
   goal_config?: GoalConfig
   traffic_profile?: TrafficProfile
   runtime_settings?: RuntimeSettingsOverride
+  joint_evidence?: JointEvidenceProjection
   scripts: Array<{
     order: number
     name?: string

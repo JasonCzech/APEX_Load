@@ -183,18 +183,57 @@ func maskTestRunManifest(manifest *TestRunManifest) *TestRunManifest {
 	if manifest == nil {
 		return nil
 	}
-	masked := *manifest
-	masked.TelemetryPolicy = cloneTelemetryPolicyEvidence(manifest.TelemetryPolicy)
+	// Its copies are masked; every generator target it lists, and its
+	// telemetry policy's keys, are scrubbed.
+	masked := *scrubTestRunManifestTargets(manifest)
 	masked.Archive = maskTestRunManifestArchive(manifest.Archive)
-	masked.InitialConfiguration = maskTestRunManifestConfiguration(manifest.InitialConfiguration)
-	masked.CurrentConfiguration = maskTestRunManifestConfiguration(manifest.CurrentConfiguration)
-	if len(manifest.Scripts) > 0 {
-		masked.Scripts = append([]TestRunManifestScript(nil), manifest.Scripts...)
-		for i := range masked.Scripts {
-			masked.Scripts[i].RuntimeSettings = maskRuntimeSettings(masked.Scripts[i].RuntimeSettings)
-		}
+	masked.InitialConfiguration = maskTestRunManifestConfiguration(masked.InitialConfiguration)
+	masked.CurrentConfiguration = maskTestRunManifestConfiguration(masked.CurrentConfiguration)
+	for i := range masked.Scripts {
+		masked.Scripts[i].RuntimeSettings = maskRuntimeSettings(masked.Scripts[i].RuntimeSettings)
 	}
 	return &masked
+}
+
+// scrubTestRunManifestTargets returns a copy of manifest with every generator
+// target and ID it lists (selected, shard and inventory, in its generator
+// lists, both configurations, their groups and its scripts), and its
+// telemetry policy's keys, scrubbed as identities, as the archive manifest's
+// projection scrubs them (TEL-B). What it changes is copied.
+func scrubTestRunManifestTargets(manifest *TestRunManifest) *TestRunManifest {
+	out := *manifest
+	if evidence := cloneTelemetryPolicyEvidence(manifest.TelemetryPolicy); evidence != nil {
+		evidence.Availability, evidence.Reason = scrubTelemetryIdentity(evidence.Availability), scrubTelemetryIdentity(evidence.Reason)
+		evidence.Policy = scrubTelemetryBudgetPolicy(evidence.Policy)
+		out.TelemetryPolicy = evidence
+	}
+	generators := &out.LoadGenerators
+	generators.Assignment = scrubGeneratorAssignment(generators.Assignment)
+	generators.GeneratorShards = scrubGeneratorShardTargets(generators.GeneratorShards)
+	generators.GeneratorInventory = scrubGeneratorInventoryTargets(generators.GeneratorInventory)
+	for _, configuration := range []*TestRunManifestConfiguration{&out.InitialConfiguration, &out.CurrentConfiguration} {
+		configuration.Assignment = scrubGeneratorAssignment(configuration.Assignment)
+		configuration.GeneratorShards = scrubGeneratorShardTargets(configuration.GeneratorShards)
+		configuration.Groups = scrubTestGroupAssignments(configuration.Groups)
+	}
+	if manifest.Scripts != nil {
+		out.Scripts = append(manifest.Scripts[:0:0], manifest.Scripts...)
+		for i := range out.Scripts {
+			out.Scripts[i].Assignment = scrubGeneratorAssignment(out.Scripts[i].Assignment)
+		}
+	}
+	return &out
+}
+
+// reportTestManifest is the generator-assignment manifest a run report
+// renders, with its generator targets scrubbed; nil when it is unavailable
+// (the report then says so).
+func (s *Server) reportTestManifest(testID string) *TestRunManifest {
+	manifest, err := s.archiveDomainService().GetTestManifest(testID)
+	if err != nil || manifest == nil {
+		return nil
+	}
+	return scrubTestRunManifestTargets(manifest)
 }
 
 func maskTestRunManifestArchive(archive *TestRunManifestArchive) *TestRunManifestArchive {
