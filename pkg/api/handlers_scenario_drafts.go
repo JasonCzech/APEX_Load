@@ -272,7 +272,8 @@ func (s *Server) handleDeleteScenarioDraft(w http.ResponseWriter, r *http.Reques
 
 var (
 	scenarioDraftCredentialField = regexp.MustCompile(`(?i)^(env|headers|extra_http_headers|cookies|storage_state|additional_vm_parameters|password|token|authorization|client_secret|private_key)$`)
-	scenarioDraftSecretReference = regexp.MustCompile(`^\{\{secret\.[\w.-]+\}\}$`)
+	// A reference may carry the spacing the runtime accepts ({{ secret.NAME }}).
+	scenarioDraftSecretReference = regexp.MustCompile(`^\s*\{\{\s*secret\.[\w.-]+\s*\}\}\s*$`)
 )
 
 // scenarioDraftInlineCredential mirrors the builder's own refusal

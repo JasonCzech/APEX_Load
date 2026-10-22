@@ -135,7 +135,7 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordAuditEvent(r, "scenario.create", "success", "scenario", scenario.ID, scenario.ProjectID, map[string]any{"name": scenario.Name, "duration": scenario.Duration})
 	markAuthoringReceiptVersion(w, receipt)
-	response := maskStoredScenario(scenario)
+	response := maskStoredScenarioForEditor(scenario)
 	// The created baseline and its strong tag let an editor save next without
 	// a separate authoring read. Both come from the snapshot read inside the
 	// create transaction, so a later writer cannot pair this body with its tag.
@@ -204,7 +204,7 @@ func (s *Server) handleGetScenario(w http.ResponseWriter, r *http.Request) {
 	if !s.scenarioLibraryAssignments(w, []*StoredScenario{scenario}) {
 		return
 	}
-	response := maskStoredScenario(scenario)
+	response := maskStoredScenarioForEditor(scenario)
 	if snapshot != nil {
 		attachScenarioAuthoringValidator(w, response, scenario, snapshot)
 	}
@@ -335,7 +335,7 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 	if !s.scenarioLibraryAssignments(w, []*StoredScenario{scenario}) {
 		return
 	}
-	response := maskStoredScenario(scenario)
+	response := maskStoredScenarioForEditor(scenario)
 	if committed != nil {
 		// The committed snapshot was read in the write transaction, so the new
 		// baseline and its tag describe exactly what this save persisted.

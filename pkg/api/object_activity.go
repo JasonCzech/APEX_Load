@@ -655,7 +655,7 @@ func (s *Server) handleArchiveObject(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, maskStoredScript(script))
 		return
 	}
-	writeJSON(w, http.StatusOK, maskStoredScenario(scenario))
+	writeJSON(w, http.StatusOK, maskStoredScenarioForEditor(scenario))
 }
 
 func activityScopeAllows(account *AuthenticatedServiceAccount, scope string) bool {

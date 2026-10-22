@@ -112,7 +112,7 @@ func (s *Server) handleApplyScenarioRuntimeToGroups(w http.ResponseWriter, r *ht
 		return
 	}
 	setScenarioWriterETag(w, resp.contentRevision)
-	resp.Scenario = maskStoredScenario(resp.Scenario)
+	resp.Scenario = maskStoredScenarioForEditor(resp.Scenario)
 	s.recordAuditEvent(r, "scenario.runtime.apply_to_groups", "success", "scenario", resp.Scenario.ID, resp.Scenario.ProjectID, map[string]any{"applied": resp.Applied, "source_group": req.SourceGroup})
 	writeJSON(w, http.StatusOK, resp)
 }

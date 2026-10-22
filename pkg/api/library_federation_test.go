@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -1261,6 +1262,63 @@ func writeLibraryArchiveText(t *testing.T, path string, value string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
 		t.Fatalf("write archive fixture %s: %v", path, err)
+	}
+}
+
+// A library import is a new script in the destination that keeps where the
+// source came from: its import provenance survives export and import.
+func TestLibraryImportKeepsScriptImportProvenance(t *testing.T) {
+	source := NewServer(ServerConfig{})
+	target := NewServer(ServerConfig{})
+	provenance := &dsl.ImportMetadata{Source: "har", SourceScriptName: "checkout.har", Inputs: map[string]dsl.ImportInput{"order_id": {Mode: "data", Column: "order_id"}}}
+	definition := libraryTestScript("provenance-script", "Imported checkout", "project-a", "/checkout")
+	definition.Metadata = &dsl.ScriptMetadata{Import: provenance}
+	script := source.runner.StoreScript(definition)
+	exportResp := httptest.NewRecorder()
+	source.mux.ServeHTTP(exportResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/export", bytes.NewReader(marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "script", ID: script.ID}))))
+	if exportResp.Code != http.StatusOK {
+		t.Fatalf("export status = %d body=%s", exportResp.Code, exportResp.Body.String())
+	}
+	var bundle LibraryBundle
+	if err := json.NewDecoder(exportResp.Body).Decode(&bundle); err != nil {
+		t.Fatal(err)
+	}
+	importResp := httptest.NewRecorder()
+	target.mux.ServeHTTP(importResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/import", bytes.NewReader(marshalLibraryTestJSON(t, LibraryImportRequest{Bundle: bundle, ProjectID: "project-b"}))))
+	if importResp.Code != http.StatusCreated {
+		t.Fatalf("import status = %d body=%s", importResp.Code, importResp.Body.String())
+	}
+	imported := target.runner.ListScriptsFiltered("project-b", nil)
+	if len(imported) != 1 || imported[0].Script.Metadata == nil || !reflect.DeepEqual(imported[0].Script.Metadata.Import, provenance) {
+		t.Fatalf("imported scripts = %#v, want one with the source's provenance %#v", imported, provenance)
+	}
+}
+
+// The archive route reaches the library import, which can add scripts, but
+// refuses every bundle item other than a result: a script bundle adds nothing.
+func TestLibraryArchiveImportRefusesScriptItems(t *testing.T) {
+	source := NewServer(ServerConfig{})
+	target := NewServer(ServerConfig{})
+	script := source.runner.StoreScript(libraryTestScript("archive-script", "Archive Script", "project-a", "/archive"))
+	exportResp := httptest.NewRecorder()
+	source.mux.ServeHTTP(exportResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/export", bytes.NewReader(marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "script", ID: script.ID}))))
+	if exportResp.Code != http.StatusOK {
+		t.Fatalf("export status = %d body=%s", exportResp.Code, exportResp.Body.String())
+	}
+	var bundle LibraryBundle
+	if err := json.NewDecoder(exportResp.Body).Decode(&bundle); err != nil || len(bundle.Items) != 1 {
+		t.Fatalf("export bundle = %#v, %v", bundle, err)
+	}
+	body, contentType := multipartArchiveImportBody(t, bundle, "project-b", []byte("zipbytes"))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/library/import/archive?project_id=project-b", body)
+	req.Header.Set("Content-Type", contentType)
+	resp := httptest.NewRecorder()
+	target.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "result items only") {
+		t.Fatalf("script archive import status = %d body=%s, want a result-only refusal", resp.Code, resp.Body.String())
+	}
+	if scripts := target.runner.ListScripts(); len(scripts) != 0 {
+		t.Fatalf("refused archive import stored scripts %#v", scripts)
 	}
 }
 

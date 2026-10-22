@@ -18,8 +18,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-// The authoring lifecycle parity matrix (AUTH-2, A7). Four parts, one
-// generated document (docs/qa/LIFECYCLE_PARITY_MATRIX.md):
+// The authoring lifecycle parity matrix (AUTH-2, A7; AUTH-C). Six parts,
+// one generated document (docs/qa/LIFECYCLE_PARITY_MATRIX.md):
 //
 //   - every validating entry point × a fixture corpus across protocols must
 //     report the same static findings (contextual runtime/install/policy
@@ -31,7 +31,11 @@ import (
 //   - every POST /api/v1/scripts/import/* route is inventoried with its
 //     lifecycle role, so a new launcher without a row fails the build;
 //   - every AUTH-2 row names the Playwright tests that prove it, and each
-//     runs in both e2e profiles.
+//     runs in both e2e profiles;
+//   - every AUTH-2 row proves each AUTH-2 property with named tests
+//     (lifecycle_parity_properties_test.go);
+//   - every route that can add a library script is inventoried by a walk of
+//     the package's call graph (lifecycle_parity_properties_test.go).
 
 const lifecycleParityMatrixPath = "../../docs/qa/LIFECYCLE_PARITY_MATRIX.md"
 
@@ -358,13 +362,7 @@ func TestLifecycleParityImportLaunchersAreInventoried(t *testing.T) {
 			t.Errorf("%s names no proof", path)
 		}
 		// A proof mentions the route, so it exercises it rather than merely
-		// naming a feature; a route with a path parameter, built at run time,
-		// is mentioned by what follows the parameter.
-		tail := "import/" + strings.TrimPrefix(path, "/api/v1/scripts/import/")
-		if _, after, ok := strings.Cut(path, "{id}"); ok {
-			tail = after
-		}
-		mention := regexp.MustCompile(regexp.QuoteMeta(tail) + `(?:[^\w/-]|$)`)
+		// naming a feature.
 		for _, proof := range route.Proof {
 			file := proof
 			if strings.HasSuffix(proof, ".spec.ts") {
@@ -375,7 +373,7 @@ func TestLifecycleParityImportLaunchersAreInventoried(t *testing.T) {
 				t.Errorf("%s names proof %s: %v", path, proof, err)
 				continue
 			}
-			if !mention.Match(source) {
+			if !lifecycleRouteMentioned(source, path) {
 				t.Errorf("%s names proof %s, which never mentions the route", path, proof)
 			}
 		}
@@ -504,27 +502,14 @@ func TestLifecycleParityRowsRunInBothProfiles(t *testing.T) {
 		t.Fatalf("AUTH-2 rows %q, spec table %q", rows, specRows)
 	}
 	localAuth, defaultIgnore := lifecycleE2EProfiles(t)
-	goTests := map[string]bool{}
-	files, err := filepath.Glob("*_test.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, file := range files {
-		source, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, match := range regexp.MustCompile(`(?m)^func (Test\w+)\(t \*testing\.T\)`).FindAllStringSubmatch(string(source), -1) {
-			goTests[match[1]] = true
-		}
-	}
+	goTests := lifecycleGoTests(t)
 	for _, row := range lifecycleAuth2Rows() {
 		if len(row.E2E) == 0 {
 			t.Errorf("AUTH-2 row %q has no Playwright proof", row.Entry)
 		}
 		for _, name := range row.Go {
-			if !goTests[name] {
-				t.Errorf("AUTH-2 row %q names Go test %s, which does not exist in pkg/api", row.Entry, name)
+			if problem := lifecycleGoProofProblem(goTests, name); problem != "" {
+				t.Errorf("AUTH-2 row %q names Go test %s, which %s", row.Entry, name, problem)
 			}
 		}
 		for file, titles := range row.E2E {
@@ -533,24 +518,12 @@ func TestLifecycleParityRowsRunInBothProfiles(t *testing.T) {
 				t.Errorf("AUTH-2 row %q names %s: %v", row.Entry, file, err)
 				continue
 			}
-			source := string(raw)
-			if !localAuth[file] {
-				t.Errorf("%s (AUTH-2 row %q) does not run in the local-auth profile", file, row.Entry)
-			}
-			for _, pattern := range defaultIgnore {
-				if matched, _ := filepath.Match(pattern, file); matched {
-					t.Errorf("%s (AUTH-2 row %q) is ignored by the default profile (%s)", file, row.Entry, pattern)
-				}
-			}
-			if len(titles) == 0 && lifecycleProfileSkip(source, "") {
-				t.Errorf("%s (AUTH-2 row %q) skips by profile", file, row.Entry)
+			if len(titles) == 0 {
+				titles = []string{""}
 			}
 			for _, title := range titles {
-				if !strings.Contains(source, "test('"+title+"'") {
-					t.Errorf("%s has no test %q (AUTH-2 row %q)", file, title, row.Entry)
-				}
-				if lifecycleProfileSkip(source, title) {
-					t.Errorf("%s test %q (AUTH-2 row %q) skips by profile, so it does not run in both", file, title, row.Entry)
+				for _, problem := range lifecycleE2EProofProblems(string(raw), file, title, localAuth, defaultIgnore) {
+					t.Errorf("AUTH-2 row %q: %s", row.Entry, problem)
 				}
 			}
 		}
@@ -612,7 +585,7 @@ func renderLifecycleParityMatrix() string {
 		route := lifecycleImportRoutes[path]
 		out.WriteString(fmt.Sprintf("| `%s` | %s | %s | `%s` |\n", path, route.Role, route.Row, strings.Join(route.Proof, "`, `")))
 	}
-	out.WriteString("\n## AUTH-2 rows\n\nEach row's Playwright tests exist, run in the local-auth profile, are not ignored by the default profile, and do not skip by profile; each named Go test exists. The proofs show that each entry point opens, saves and reopens what it should; they do not each prove every AUTH-2 property (see the deviations in the spec).\n\n| AUTH-2 row | Playwright | Go |\n| --- | --- | --- |\n")
+	out.WriteString("\n## AUTH-2 rows\n\nEach row's Playwright tests exist, run in the local-auth profile, are not ignored by the default profile, and do not skip by profile; each named Go test exists. The proofs show that each entry point opens, saves and reopens what it should; the properties section below holds each row to every AUTH-2 property.\n\n| AUTH-2 row | Playwright | Go |\n| --- | --- | --- |\n")
 	for _, row := range lifecycleAuth2Rows() {
 		files := make([]string, 0, len(row.E2E))
 		for file := range row.E2E {
@@ -634,6 +607,7 @@ func renderLifecycleParityMatrix() string {
 		}
 		out.WriteString(fmt.Sprintf("| %s | %s | %s |\n", row.Entry, strings.Join(proofs, "<br>"), goTests))
 	}
+	renderLifecycleParityProperties(&out)
 	return out.String()
 }
 

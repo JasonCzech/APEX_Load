@@ -109,6 +109,28 @@ func runGitHubBulkImport(t *testing.T, server *Server, stubURL string) *storage.
 	return job
 }
 
+// The sync-job route itself adds the repository's scripts to the library.
+func TestGitHubImportSyncJobRouteCreatesTheScript(t *testing.T) {
+	const path = "imports/order-flow.json"
+	stub := newGitHubBulkImportStub(t, []githubBulkImportFile{{
+		Path: path, SHA: "blob-order", Body: githubBulkImportScriptJSON(t, "", "Order Flow"),
+	}})
+	server := newGitHubTestServer(t, stub.server.URL)
+	seedGitHubConnection(t, server)
+	body, err := json.Marshal(githubSyncJobRequest{ProjectID: "team-a", Kind: "import", Owner: "octocat", Repo: "scripts", Branch: "main", Path: "imports"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := postGitHubJSON(t, server, "/api/v1/integrations/github/sync-jobs", body, http.StatusCreated)
+	if job["status"] != "complete" || job["created"] != float64(1) || job["errors"] != float64(0) {
+		t.Fatalf("import sync job = %#v", job)
+	}
+	stored, ok := server.runner.GetScript(deterministicGitHubImportScriptID("team-a", "octocat", "scripts", "main", path))
+	if !ok || stored.ProjectID != "team-a" || stored.Name != "Order Flow" {
+		t.Fatalf("imported script = %#v, %t", stored, ok)
+	}
+}
+
 func TestGitHubBulkImportIDLessRetryIsIdempotentAndSynced(t *testing.T) {
 	const path = "imports/order-flow.json"
 	stub := newGitHubBulkImportStub(t, []githubBulkImportFile{{

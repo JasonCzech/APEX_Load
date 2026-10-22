@@ -5926,6 +5926,29 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.parameter-grid-index')?.textContent?.trim()).toBe('2')
   })
 
+  it('debugs the resolved draft with an unblurred data cell rather than an earlier copy', async () => {
+    const pair = authoringFixture({ ...initialScript, parameters: [{ name: 'username', type: 'file', data_source: 'users', column: 'username' }], data_sources: [{ name: 'users', type: 'csv', strategy: 'sequential', first_row_header: true, inline_data: 'username\nalice' }] })
+    await act(async () => { root.render(<KeyboardShortcutProvider><ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} initialFocusedDataSourceName="users" projectId="project-1" /></KeyboardShortcutProvider>) })
+    const cell = container.querySelector<HTMLInputElement>('input[aria-label="Row 1, username for users"]')!
+    await act(async () => { cell.focus(); changeInputValue(cell, 'pending-cell') })
+    await act(async () => {
+      findOpenDebuggerButton(container)!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    // A stored script's debug session runs the editor's current draft.
+    expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+    const [scriptId, request] = apiMock.startScriptDebugSession.mock.calls[0]
+    expect(scriptId).toBe('script-1')
+    expect(request.script.data_sources[0].inline_data).toContain('pending-cell')
+    expect(request.script.data_sources[0].inline_data).not.toContain('alice')
+  })
+
   it('includes the active project id in draft replay payloads', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -105,5 +106,33 @@ func TestReconcileRuntimeEnvironmentRedactionRequiresPriorValue(t *testing.T) {
 	}
 	if _, exists := reconciled.Env["ORPHAN_DSN"]; exists {
 		t.Fatal("orphan redaction sentinel was persisted as a runtime credential")
+	}
+}
+
+// In a scenario response, a value that is only a project-secret reference
+// names a secret and stays readable; a controller-owned runtime reference, a
+// plaintext credential and a reference inside a credential-shaped value stay
+// masked. The content form (library export, hashes) still masks a reference
+// under a sensitive name.
+func TestMaskRuntimeSettingsForEditorShowsOnlyProjectSecretReferences(t *testing.T) {
+	settings := &RuntimeSettingsOverride{Env: map[string]string{
+		"API_TOKEN":     "{{secret.api_token}}",
+		"SPACED":        " {{ secret.spaced_token }} ",
+		"SESSION_TOKEN": "{{secret." + runtimeOverrideSecretName("scenario", 0, "env.SESSION_TOKEN") + "}}",
+		"PASSWORD":      "plaintext-password",
+		"AUTH":          "Bearer {{secret.api_token}}",
+	}}
+	want := map[string]string{
+		"API_TOKEN":     "{{secret.api_token}}",
+		"SPACED":        " {{ secret.spaced_token }} ",
+		"SESSION_TOKEN": scrub.Redacted,
+		"PASSWORD":      scrub.Redacted,
+		"AUTH":          scrub.Redacted,
+	}
+	if got := maskRuntimeSettingsForEditor(settings).Env; !reflect.DeepEqual(got, want) {
+		t.Fatalf("editor env = %#v, want %#v", got, want)
+	}
+	if got := maskRuntimeSettings(settings).Env["API_TOKEN"]; got != scrub.Redacted {
+		t.Fatalf("content env API_TOKEN = %q, want it masked as before", got)
 	}
 }
