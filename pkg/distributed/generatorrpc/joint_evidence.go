@@ -69,13 +69,42 @@ func jointAggregatesFromEngine(snapshot *engine.JointMetricsSnapshot) ([]MetricA
 		return nil, nil
 	}
 	info := &JointMetricsInfo{Version: uint32(snapshot.Version), Population: snapshot.Population, Dimensions: append([]string(nil), snapshot.Dimensions...), OmittedTuples: snapshot.OmittedTuples, Incomplete: snapshot.Incomplete}
-	if snapshot.Other != nil {
-		others := engineActionMetricsToAggregates(map[string]*engine.ActionMetrics{"other": snapshot.Other})
-		if len(others) == 1 {
-			info.Other = &others[0]
+	if snapshot.Other != nil && snapshot.Other.Count > 0 {
+		other := jointAggregateFromEngine("other", snapshot.Other)
+		info.Other = &other
+	}
+	names := make([]string, 0, len(snapshot.Tuples))
+	for name, metrics := range snapshot.Tuples {
+		if metrics != nil && metrics.Count > 0 {
+			names = append(names, name)
 		}
 	}
-	return engineActionMetricsToAggregates(snapshot.Tuples), info
+	slices.Sort(names)
+	out := make([]MetricAggregate, 0, len(names))
+	for _, name := range names {
+		out = append(out, jointAggregateFromEngine(name, snapshot.Tuples[name]))
+	}
+	return out, info
+}
+
+// jointAggregateFromEngine is one tuple as joint evidence publishes it: its
+// counts, latency summary and distributions, and nothing else. A tuple's
+// encoded size is then bounded by its key and the distribution limits, so the
+// largest publication a generator can build stays within the controller's
+// joint envelope (maxJointEncodedBytes).
+func jointAggregateFromEngine(name string, metrics *engine.ActionMetrics) MetricAggregate {
+	return MetricAggregate{
+		Name:           name,
+		Count:          metrics.Count,
+		Errors:         metrics.Errors,
+		AvgMs:          float64(metrics.AvgDuration.Microseconds()) / 1000.0,
+		P50Ms:          float64(metrics.P50.Microseconds()) / 1000.0,
+		P90Ms:          float64(metrics.P90.Microseconds()) / 1000.0,
+		P95Ms:          float64(metrics.P95.Microseconds()) / 1000.0,
+		P99Ms:          float64(metrics.P99.Microseconds()) / 1000.0,
+		DurationDigest: engine.CloneTDigestSnapshot(metrics.DurationDigest),
+		DurationSketch: engine.CloneDurationSketchSnapshot(metrics.DurationSketch),
+	}
 }
 
 // mergeJointEvidence merges the joint evidence of a generator's groups:

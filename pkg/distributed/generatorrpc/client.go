@@ -2223,7 +2223,7 @@ func durationSketchSnapshotToProto(value *engine.DurationSketchSnapshot) *pb.Dur
 }
 
 func tdigestSnapshotFromProto(value *pb.TDigestSnapshot) *engine.TDigestSnapshot {
-	if value == nil || value.GetCount() == 0 || len(value.GetCentroids()) > 1024 {
+	if value == nil || value.GetCount() == 0 || len(value.GetCentroids()) > engine.TDigestMaxCentroids {
 		return nil
 	}
 	centroids := make([]engine.TDigestCentroidSnapshot, 0, len(value.GetCentroids()))
@@ -2244,7 +2244,7 @@ func tdigestSnapshotFromProto(value *pb.TDigestSnapshot) *engine.TDigestSnapshot
 }
 
 func tdigestSnapshotToProto(value *engine.TDigestSnapshot) *pb.TDigestSnapshot {
-	if value == nil || value.Count == 0 || len(value.Centroids) > 1024 {
+	if value == nil || value.Count == 0 || len(value.Centroids) > engine.TDigestMaxCentroids {
 		return nil
 	}
 	centroids := make([]*pb.TDigestCentroid, 0, len(value.Centroids))

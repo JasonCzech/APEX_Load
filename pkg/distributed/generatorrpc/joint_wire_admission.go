@@ -35,7 +35,7 @@ func admitJointPublicationProto(info *pb.JointMetricsInfo, metrics []*pb.MetricA
 		return false
 	}
 	shape := func(m *pb.MetricAggregate) bool {
-		if m == nil || m.GetCount() < 0 || m.GetErrors() < 0 || m.GetErrors() > m.GetCount() || len(m.GetDurationDigest().GetCentroids()) > 1024 || len(m.GetDurationSketch().GetBins()) > engine.DurationSketchMaxBuckets {
+		if m == nil || m.GetCount() < 0 || m.GetErrors() < 0 || m.GetErrors() > m.GetCount() || len(m.GetDurationDigest().GetCentroids()) > engine.TDigestMaxCentroids || len(m.GetDurationSketch().GetBins()) > engine.DurationSketchMaxBuckets {
 			return false
 		}
 		for _, value := range []float64{m.GetAvgMs(), m.GetP50Ms(), m.GetP90Ms(), m.GetP95Ms(), m.GetP99Ms()} {

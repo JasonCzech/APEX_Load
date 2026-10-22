@@ -13,13 +13,16 @@ func ActionPropertyKey(action, property, value string) string {
 	return string(data)
 }
 
+// TDigestMaxCentroids bounds a retained or published digest snapshot.
+const TDigestMaxCentroids = 1024
+
 // CloneTDigestSnapshot copies a digest. It returns nil for one with more than
-// 1,024 centroids, which no engine digest reaches and ValidateDurationDigest
+// TDigestMaxCentroids centroids, which no engine digest reaches and ValidateDurationDigest
 // refuses, so an oversized peer or stored digest is never retained. Merges
 // then use the duration sketch beside it; without one, the merged percentiles
 // are marked averaged (live) or unavailable (archives).
 func CloneTDigestSnapshot(in *TDigestSnapshot) *TDigestSnapshot {
-	if in == nil || len(in.Centroids) > 1024 {
+	if in == nil || len(in.Centroids) > TDigestMaxCentroids {
 		return nil
 	}
 	out := *in
@@ -31,7 +34,7 @@ func CloneTDigestSnapshot(in *TDigestSnapshot) *TDigestSnapshot {
 // allocating or merging them. Values use nanoseconds, matching engine digests.
 func ValidateDurationDigest(in *TDigestSnapshot, count int64) error {
 	finite := func(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
-	if in == nil || count <= 0 || count > 1e12 || in.Count != count || !finite(in.Compression) || in.Compression < 1 || in.Compression > 300 || len(in.Centroids) == 0 || len(in.Centroids) > 1024 || !finite(in.TotalWeight) || math.Abs(in.TotalWeight-float64(count)) > 1e-6*float64(count) || !finite(in.Min) || !finite(in.Max) || in.Min < 0 || in.Max < in.Min || in.Max > float64(math.MaxInt64) {
+	if in == nil || count <= 0 || count > 1e12 || in.Count != count || !finite(in.Compression) || in.Compression < 1 || in.Compression > 300 || len(in.Centroids) == 0 || len(in.Centroids) > TDigestMaxCentroids || !finite(in.TotalWeight) || math.Abs(in.TotalWeight-float64(count)) > 1e-6*float64(count) || !finite(in.Min) || !finite(in.Max) || in.Min < 0 || in.Max < in.Min || in.Max > float64(math.MaxInt64) {
 		return errors.New("unavailable or invalid duration distribution")
 	}
 	sum := 0.0

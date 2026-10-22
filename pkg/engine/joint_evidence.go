@@ -25,8 +25,8 @@ const (
 	JointEvidenceVersion = 4
 	JointMaxDimensions   = 3
 	JointMaxKeys         = 512
-	jointMaxLabelBytes   = 256
-	jointMaxKeyBytes     = 1024
+	JointMaxLabelBytes   = 256
+	JointMaxKeyBytes     = 1024
 	// jointOmittedTracking bounds the memory spent counting distinct
 	// omitted tuples; past it the count is a lower bound.
 	jointOmittedTracking = 4096
@@ -144,12 +144,12 @@ func (p *JointProjection) tuple(r *protocol.Result, groupProtocols map[string]st
 // delimiter); false when a label is invalid or too long.
 func JointTupleKey(values []string) (string, bool) {
 	for _, value := range values {
-		if len(value) > jointMaxLabelBytes || !utf8.ValidString(value) {
+		if len(value) > JointMaxLabelBytes || !utf8.ValidString(value) {
 			return "", false
 		}
 	}
 	data, _ := json.Marshal(values)
-	if len(data) > jointMaxKeyBytes {
+	if len(data) > JointMaxKeyBytes {
 		return "", false
 	}
 	return string(data), true
@@ -158,11 +158,11 @@ func JointTupleKey(values []string) (string, bool) {
 // JointTupleValues decodes a tuple key for a projection of n dimensions.
 func JointTupleValues(key string, n int) ([]string, bool) {
 	var values []string
-	if len(key) > jointMaxKeyBytes || json.Unmarshal([]byte(key), &values) != nil || len(values) != n {
+	if len(key) > JointMaxKeyBytes || json.Unmarshal([]byte(key), &values) != nil || len(values) != n {
 		return nil, false
 	}
 	for _, value := range values {
-		if len(value) > jointMaxLabelBytes || !utf8.ValidString(value) {
+		if len(value) > JointMaxLabelBytes || !utf8.ValidString(value) {
 			return nil, false
 		}
 	}
@@ -217,10 +217,10 @@ func (a *jointAccumulator) add(p *JointProjection, r *protocol.Result, groupProt
 	snapshot := a.snapshot
 	if metrics := snapshot.Tuples[key]; valid && (metrics != nil || len(snapshot.Tuples) < JointMaxKeys) {
 		if metrics == nil {
-			metrics = &ActionMetrics{Name: key, MinDuration: r.Duration, MaxDuration: r.Duration}
+			metrics = &ActionMetrics{Name: key}
 			snapshot.Tuples[key] = metrics
 		}
-		mergeActionResult(metrics, r)
+		mergeJointSample(metrics, r)
 		recordDurationSample(a.digests, a.durations, key, r.Duration)
 		return
 	}
@@ -233,12 +233,25 @@ func (a *jointAccumulator) add(p *JointProjection, r *protocol.Result, groupProt
 	}
 	snapshot.OmittedTuples = int64(len(a.omitted))
 	if snapshot.Other == nil {
-		snapshot.Other = &ActionMetrics{Name: "other", MinDuration: r.Duration, MaxDuration: r.Duration}
+		snapshot.Other = &ActionMetrics{Name: "other"}
 		a.otherTD = newDurationDistribution()
 	}
-	mergeActionResult(snapshot.Other, r)
+	mergeJointSample(snapshot.Other, r)
 	a.otherSum += r.Duration
 	a.otherTD.Add(float64(r.Duration))
+}
+
+// mergeJointSample counts one sample into a joint tuple (or the other
+// bucket): only what joint evidence publishes, its count and errors, with
+// the duration distribution (and the average's total) recorded beside it.
+// Diagnostics, transport timings, bytes, duration bounds and correlation
+// samples belong to the marginal action metrics, so a tuple holds no state
+// the publication would not carry.
+func mergeJointSample(metrics *ActionMetrics, r *protocol.Result) {
+	metrics.Count++
+	if !r.Success {
+		metrics.Errors++
+	}
 }
 
 func (a *jointAccumulator) finish() *JointMetricsSnapshot {
