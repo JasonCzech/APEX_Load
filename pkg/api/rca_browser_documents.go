@@ -157,8 +157,9 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 	}
 	scope := archiveIdentityScope(manifest)
 	n := int(to.Sub(from) / bucket)
-	if maxPoints > 0 {
-		n = min(n, maxPoints)
+	if maxPoints > 0 && n > maxPoints {
+		limitations = append(limitations, rca.Limitation{Code: limitationDetectionEvidenceCut, Detail: fmt.Sprintf("the point budget left out %d browser document buckets", n-maxPoints)})
+		n = maxPoints
 	}
 	var series []rca.Series
 	for key, t := range tuples {

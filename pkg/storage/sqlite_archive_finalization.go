@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -301,12 +302,17 @@ func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 }
 
 func (s *SQLiteStore) GetArchiveFinalizationJob(testID string) (*ArchiveFinalizationJob, error) {
+	return s.GetArchiveFinalizationJobContext(context.Background(), testID)
+}
+
+// GetArchiveFinalizationJobContext includes database pool waits in the caller deadline.
+func (s *SQLiteStore) GetArchiveFinalizationJobContext(ctx context.Context, testID string) (*ArchiveFinalizationJob, error) {
 	var (
 		job              ArchiveFinalizationJob
 		recordJSON       string
 		persistArtifacts int
 	)
-	err := s.db.QueryRow(`SELECT test_id, project_id, archive_record_json,
+	err := s.db.QueryRowContext(ctx, `SELECT test_id, project_id, archive_record_json,
 		persist_artifacts, generation, COALESCE(intent_token, ''), COALESCE(refresh_token, ''), attempts, COALESCE(last_error, ''), created_at, updated_at, COALESCE(prepared_manifest_json, '')
 		FROM archive_finalization_jobs WHERE test_id = ?`, strings.TrimSpace(testID)).Scan(
 		&job.TestID, &job.ProjectID, &recordJSON, &persistArtifacts, &job.Generation, &job.IntentToken, &job.RefreshToken, &job.Attempts,

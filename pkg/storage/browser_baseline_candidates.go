@@ -26,6 +26,9 @@ type BrowserBaselineCandidateQuery struct {
 
 const MaxBrowserBaselineCandidatePage = 128
 
+// Shared with the expression index; DefaultProjectID is a compile-time constant.
+const browserBaselineProjectExpression = "COALESCE(NULLIF(project_id, ''), '" + DefaultProjectID + "')"
+
 // ListBrowserBaselineCandidates pages the completed inventory by canonical ID.
 // SQLite retains legacy timestamp offsets as text. Completion order and the
 // current-run time fence therefore belong to the caller's exact time.Time
@@ -35,7 +38,7 @@ func (s *SQLiteStore) ListBrowserBaselineCandidates(ctx context.Context, q Brows
 	if strings.TrimSpace(q.ProjectID) == "" || q.CurrentTestID == "" || q.Limit < 1 || q.Limit > MaxBrowserBaselineCandidatePage {
 		return nil, false, errors.New("invalid browser baseline candidate page")
 	}
-	query := `SELECT id, end_time FROM tests WHERE COALESCE(NULLIF(project_id, ''), 'default')=? AND COALESCE(application_id, '')=? AND COALESCE(scenario_id, '')=? AND id<>? AND status='COMPLETE' AND end_time IS NOT NULL AND id>? ORDER BY id ASC LIMIT ?`
+	query := `SELECT id, end_time FROM tests WHERE ` + browserBaselineProjectExpression + `=? AND COALESCE(application_id, '')=? AND COALESCE(scenario_id, '')=? AND id<>? AND status='COMPLETE' AND end_time IS NOT NULL AND id>? ORDER BY id ASC LIMIT ?`
 	rows, err := s.db.QueryContext(ctx, query, normalizeProjectID(q.ProjectID), q.ApplicationID, q.ScenarioID, q.CurrentTestID, q.AfterID, q.Limit+1)
 	if err != nil {
 		return nil, false, err

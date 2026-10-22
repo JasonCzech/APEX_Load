@@ -3,6 +3,7 @@ package storage
 // SQLite store — archives. Split from sqlite.go (same package, behavior-preserving).
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -179,8 +180,13 @@ func (s *SQLiteStore) UpdateRunArchiveTrendPointIfUnchanged(expected *RunArchive
 }
 
 func (s *SQLiteStore) GetRunArchive(testID string) (*RunArchiveRecord, error) {
+	return s.GetRunArchiveContext(context.Background(), testID)
+}
+
+// GetRunArchiveContext includes database pool waits in the caller deadline.
+func (s *SQLiteStore) GetRunArchiveContext(ctx context.Context, testID string) (*RunArchiveRecord, error) {
 	var record RunArchiveRecord
-	err := s.db.QueryRow(`SELECT test_id, COALESCE(ref_key, ''), schema_version, COALESCE(archive_backend, ''), archive_path, manifest_path, COALESCE(manifest_sha256, ''), COALESCE(archive_uri, ''), COALESCE(manifest_uri, ''), transaction_count, resource_sample_count, interval_summary_count, COALESCE(trend_point_json, ''), created_at, completed_at FROM run_archives WHERE test_id = ?`, testID).Scan(
+	err := s.db.QueryRowContext(ctx, `SELECT test_id, COALESCE(ref_key, ''), schema_version, COALESCE(archive_backend, ''), archive_path, manifest_path, COALESCE(manifest_sha256, ''), COALESCE(archive_uri, ''), COALESCE(manifest_uri, ''), transaction_count, resource_sample_count, interval_summary_count, COALESCE(trend_point_json, ''), created_at, completed_at FROM run_archives WHERE test_id = ?`, testID).Scan(
 		&record.TestID,
 		&record.RefKey,
 		&record.SchemaVersion,

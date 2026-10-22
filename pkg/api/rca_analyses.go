@@ -64,7 +64,8 @@ const (
 // descriptors; executable script identity alone cannot prove authored identity.
 // archive.8: original identity uses initial provenance and every observed
 // browser group must belong to both workloads; baseline IDs are canonical.
-const rcaArchiveAdapterVersion = "archive.8"
+// archive.9: latest-compatible admission freezes its selection/rejection receipt.
+const rcaArchiveAdapterVersion = "archive.9"
 
 // maxRCACoverageSources bounds the sources a monitor_sources coverage row
 // names.
@@ -142,9 +143,10 @@ type rcaEvidenceSource struct {
 
 // rcaAnalysisPayload is what an analysis row holds.
 type rcaAnalysisPayload struct {
-	Request    rcaAnalysisRequest `json:"request"`
-	Inputs     rca.InputDigests   `json:"inputs"`
-	Assessment *rca.Assessment    `json:"assessment,omitempty"`
+	BrowserSelection *rca.BrowserBaselineSelection `json:"browser_selection,omitempty"`
+	Request          rcaAnalysisRequest            `json:"request"`
+	Inputs           rca.InputDigests              `json:"inputs"`
+	Assessment       *rca.Assessment               `json:"assessment,omitempty"`
 	// Excerpts are the series windows the assessment's evidence references
 	// name, frozen with it.
 	Excerpts []RCAEvidenceExcerpt `json:"excerpts,omitempty"`
@@ -519,6 +521,7 @@ func (s *Server) queueRCAAnalysis(ctx context.Context, project, testID string, r
 	if err != nil {
 		return nil, false, &rcaRequestError{Status: http.StatusInternalServerError, Message: err.Error()}
 	}
+	var selection *rca.BrowserBaselineSelection
 	// Resolve only the immutable policy pinned by this run. Execution reads the
 	// resolved request below; later policy revisions must never reselect it.
 	// An explicit caller baseline remains available for non-browser RCA too;
@@ -531,12 +534,26 @@ func (s *Server) queueRCAAnalysis(ctx context.Context, project, testID string, r
 		if policy != nil && policy.Unavailable == "" && policy.Mode == "pinned_run" {
 			request.BaselineTestID = strings.TrimSpace(policy.RunID)
 		}
+		if policy != nil && policy.Unavailable == "" && policy.Mode == "latest_compatible" {
+			selection, err = s.selectRCABrowserBaseline(ctx, project, testID, record, manifest, policy)
+			if err != nil {
+				return nil, false, &rcaRequestError{Status: http.StatusServiceUnavailable, Message: "browser baseline selection could not complete: " + err.Error()}
+			}
+			request.BaselineTestID = selection.SelectedTestID
+		}
 	}
 	inputs := rca.InputDigests{Archive: archiveDigest, Engine: rcaEngineVersion, SignatureSet: signatures.Version}
+	if selection != nil {
+		raw, _ := json.Marshal(selection)
+		inputs.BrowserSelection = sha256BytesHex(raw)
+	}
 	if request.BaselineTestID != "" {
 		baseline, status, message := s.rcaBaselineArchive(ctx, testID, project, request.BaselineTestID)
 		if status != 0 {
 			return nil, false, &rcaRequestError{Status: status, Message: message}
+		}
+		if selection != nil && selection.SelectedDigest != baseline.Digest {
+			return nil, false, errRCAArchiveChanged
 		}
 		inputs.Baseline = baseline.Digest
 		request.BaselineTestID = baseline.TestID
@@ -564,7 +581,7 @@ func (s *Server) queueRCAAnalysis(ctx context.Context, project, testID string, r
 	var analysis *storage.RCAAnalysis
 	var created bool
 	for attempt := 0; ; attempt++ {
-		payload, _ := json.Marshal(rcaAnalysisPayload{Request: request, Inputs: inputs, ArchiveManifest: manifestDigest, Attempt: attempt})
+		payload, _ := json.Marshal(rcaAnalysisPayload{Request: request, Inputs: inputs, ArchiveManifest: manifestDigest, Attempt: attempt, BrowserSelection: selection})
 
 		if admission != nil {
 			fenced, ok := s.store.(rcaAutoAdmissionStore)
@@ -1021,6 +1038,9 @@ func (s *Server) assessRCAAnalysis(ctx context.Context, analysis *storage.RCAAna
 // assessRCAAnalysisWithExcerpts also takes the evidence excerpts the
 // assessment's references name, from the series it judged.
 func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *storage.RCAAnalysis, payload rcaAnalysisPayload) (*rca.Assessment, []RCAEvidenceExcerpt, error) {
+	if err := validateRCABrowserSelection(payload); err != nil {
+		return nil, nil, err
+	}
 	if payload.Inputs.Engine != rcaEngineVersion {
 		return nil, nil, errors.New("the analysis engine changed after this analysis was queued; request a new analysis")
 	}
@@ -1172,6 +1192,7 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 		return nil, nil, err
 	}
 	assessment := rca.Analyze(input, budgeter)
+	assessment.BrowserSelection = payload.BrowserSelection
 	assessment.AnalysisID, assessment.Revision, assessment.Inputs = analysis.ID, analysis.Revision, payload.Inputs
 	return &assessment, rcaEvidenceExcerpts(&assessment, input.Detection.Series), nil
 }

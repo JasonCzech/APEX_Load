@@ -845,8 +845,13 @@ func marshalTestField(name string, value any) (string, error) {
 }
 
 func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
+	return s.GetTestContext(context.Background(), id)
+}
+
+// GetTestContext includes database pool waits in the caller deadline.
+func (s *SQLiteStore) GetTestContext(ctx context.Context, id string) (*TestRecord, error) {
 	query := testSelectColumns() + ` FROM tests WHERE id = ? OR ref_key = ?`
-	test, err := scanTest(s.db.QueryRow(query, id, id))
+	test, err := scanTest(s.db.QueryRowContext(ctx, query, id, id))
 	if err != nil {
 		return nil, err
 	}

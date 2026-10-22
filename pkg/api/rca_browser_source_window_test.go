@@ -61,7 +61,10 @@ func TestRCABrowserDocumentSeriesRetainsWholeFinalWindowEnvelope(t *testing.T) {
 		t.Fatalf("cross-boundary window: %+v", out)
 	}
 	// The bounded projection must not retain window envelopes for omitted points.
-	limited, _, err := rcaBrowserDocumentSeries(context.Background(), record, manifest, summaries, -1, 5)
+	limited, truncation, err := rcaBrowserDocumentSeries(context.Background(), record, manifest, summaries, -1, 5)
+	if incomplete, unreadable := rcaDocumentEvidenceLoss(truncation); !incomplete || unreadable {
+		t.Fatalf("omitted later evidence must mark the projection incomplete: %+v", truncation)
+	}
 	if err != nil || len(limited) != 1 || len(limited[0].Document.Windows) != 0 {
 		t.Fatalf("bounded projection: %+v %v", limited, err)
 	}
