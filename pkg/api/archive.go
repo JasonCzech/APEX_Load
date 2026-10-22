@@ -374,6 +374,7 @@ type TransactionEvent struct {
 	TTFBMs                float64                   `json:"ttfb_ms,omitempty"`
 	BytesSent             int64                     `json:"bytes_sent,omitempty"`
 	BytesReceived         int64                     `json:"bytes_received,omitempty"`
+	ByteEvidence          string                    `json:"byte_evidence,omitempty"` // what the byte counts measure (protocol.ByteEvidence); without it they are unavailable, not zero
 	StatusCode            int                       `json:"status_code,omitempty"`
 	Success               bool                      `json:"success"`
 	ErrorMessage          string                    `json:"error_message,omitempty"`

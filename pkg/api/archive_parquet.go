@@ -62,6 +62,7 @@ type parquetTransactionEvent struct {
 	TTFBMs                 float64 `parquet:"name=ttfb_ms, type=DOUBLE"`
 	BytesSent              int64   `parquet:"name=bytes_sent, type=INT64"`
 	BytesReceived          int64   `parquet:"name=bytes_received, type=INT64"`
+	ByteEvidence           string  `parquet:"name=byte_evidence, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	StatusCode             int64   `parquet:"name=status_code, type=INT64"`
 	Success                bool    `parquet:"name=success, type=BOOLEAN"`
 	ErrorMessage           string  `parquet:"name=error_message, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
@@ -337,6 +338,7 @@ func toParquetTransactions(items []TransactionEvent, sourceRows ...[]byte) []par
 			TTFBMs:                 item.TTFBMs,
 			BytesSent:              item.BytesSent,
 			BytesReceived:          item.BytesReceived,
+			ByteEvidence:           item.ByteEvidence,
 			StatusCode:             int64(item.StatusCode),
 			Success:                item.Success,
 			ErrorMessage:           item.ErrorMessage,

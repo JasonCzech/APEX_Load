@@ -489,6 +489,9 @@ func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
 	if q.Population == analysis.PopulationJavaHTTPAction {
 		return validateNativeJavaHTTPQuery(q)
 	}
+	if q.Population == analysis.PopulationByte {
+		return validateNativeByteQuery(q)
+	}
 	if q.Population == analysis.PopulationMessage {
 		return validateNativeMessageQuery(q)
 	}

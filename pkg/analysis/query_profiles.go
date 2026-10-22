@@ -120,5 +120,9 @@ func nativeQueryProfiles() []NativeQueryProfile {
 	before = len(profiles)
 	add(PopulationJavaHTTPAction, "", "", "", "disabled", []string{"action"}, []string{"action"}, "java_http_diagnostics.v1")
 	profiles[before].AllowedAggregations = []string{"avg", "min", "max", "p50", "p90", "p95", "p99", "ratio_of_sums"}
+	// One archive selection of HTTP actions' body bytes (NA-C).
+	before = len(profiles)
+	add(PopulationByte, "", "", "", "disabled", []string{"action"}, nil, ByteEvidenceRequirement)
+	profiles[before].AllowedAggregations = []string{"sum", "rate", "avg", "min", "max", "p50", "p90", "p95", "p99"}
 	return profiles
 }

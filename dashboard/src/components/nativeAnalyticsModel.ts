@@ -46,6 +46,16 @@ export const nativePopulationMetrics: Record<string, { label: string; aggregatio
  success_observation_rate: { label: 'Successful retained observations / second', aggregations: ['rate'], unit: 'observations/s' },
 }
 
+// HTTP body bytes as the client handled them (byte evidence http_body.v1):
+// per-bucket sums, their rates and per-request distributions; not transport
+// bytes.
+export const nativeByteMetrics: Record<string, { label: string; aggregations: string[]; unit: string }> = {
+  bytes_sent: { label: 'HTTP request body (bytes)', aggregations: ['sum', 'avg', 'min', 'max', 'p50', 'p90', 'p95', 'p99'], unit: 'bytes' },
+  bytes_received: { label: 'HTTP response body (bytes)', aggregations: ['sum', 'avg', 'min', 'max', 'p50', 'p90', 'p95', 'p99'], unit: 'bytes' },
+  bytes_sent_rate: { label: 'HTTP request body (bytes/s)', aggregations: ['rate'], unit: 'bytes/s' },
+  bytes_received_rate: { label: 'HTTP response body (bytes/s)', aggregations: ['rate'], unit: 'bytes/s' },
+}
+
 // Each Java metric uses its own observed population and unit.
 export const nativeJavaHTTPMetrics: Record<string, { label: string; aggregations: string[]; unit: string }> = {
   java_http_input_bytes: { label: 'Runtime input representation (bytes)', aggregations: ["avg", "min", "max", "p50", "p90", "p95", "p99"], unit: 'bytes' },

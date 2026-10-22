@@ -170,17 +170,29 @@ func (h *HTTP) followMetaRefresh(ctx context.Context, action *protocol.Action, r
 	if err != nil {
 		return fail(err)
 	}
-	final.ContentCheckErrorMatches += result.ContentCheckErrorMatches
-	final.ContentCheckInfoMatches += result.ContentCheckInfoMatches
-	final.BytesSent += result.BytesSent
-	final.BytesReceived += result.BytesReceived
-	final.StartTime = result.StartTime
-	final.Duration = time.Since(result.StartTime)
-	final.DNSTime += result.DNSTime
-	final.ConnectTime += result.ConnectTime
-	final.TLSTime += result.TLSTime
+	mergeMetaRefreshPage(final, result)
 	final.ProtocolEvidence = buildHTTPProtocolEvidence(action, final)
 	return final, true
+}
+
+// mergeMetaRefreshPage folds the refreshing page into its follow-up's
+// result: the page's checks, bytes and connection timings count, and the
+// result spans from the page's start.
+func mergeMetaRefreshPage(final, page *protocol.Result) {
+	final.ContentCheckErrorMatches += page.ContentCheckErrorMatches
+	final.ContentCheckInfoMatches += page.ContentCheckInfoMatches
+	final.BytesSent += page.BytesSent
+	final.BytesReceived += page.BytesReceived
+	// A follow-up refused before sending leaves the page's measured bytes
+	// measurements (NA-C).
+	if final.ByteEvidence == protocol.ByteEvidenceNone {
+		final.ByteEvidence = page.ByteEvidence
+	}
+	final.StartTime = page.StartTime
+	final.Duration = time.Since(page.StartTime)
+	final.DNSTime += page.DNSTime
+	final.ConnectTime += page.ConnectTime
+	final.TLSTime += page.TLSTime
 }
 
 func sameRefreshOrigin(a, b *url.URL) bool {

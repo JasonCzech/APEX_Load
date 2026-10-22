@@ -47,8 +47,9 @@ func TestHTMLStepsResolveAgainstTheCurrentPage(t *testing.T) {
 	step := func(fields map[string]any) *protocol.Action {
 		return &protocol.Action{Type: "GET", Target: "#html-step", Params: map[string]any{HTMLStepParam: fields}}
 	}
-	if result := run(step(map[string]any{"kind": "image_check", "alt": "Logo"})); !result.Success {
-		t.Fatalf("image check: %s", result.ErrorMessage)
+	// A check dispatches no request: its bytes are not a request's (NA-C).
+	if result := run(step(map[string]any{"kind": "image_check", "alt": "Logo"})); !result.Success || result.ByteEvidence != protocol.ByteEvidenceNone {
+		t.Fatalf("image check: %s %q", result.ErrorMessage, result.ByteEvidence)
 	}
 	if result := run(step(map[string]any{"kind": "link", "text": "Next", "ordinal": float64(2)})); !result.Success || result.ProtocolEvidence["page_context_url"] != server.URL+"/start" {
 		t.Fatalf("link: %s %v", result.ErrorMessage, result.ProtocolEvidence)

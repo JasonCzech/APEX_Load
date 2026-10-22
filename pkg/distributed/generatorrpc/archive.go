@@ -116,6 +116,7 @@ type archiveTransactionEvent struct {
 	TTFBMs                float64                   `json:"ttfb_ms,omitempty"`
 	BytesSent             int64                     `json:"bytes_sent,omitempty"`
 	BytesReceived         int64                     `json:"bytes_received,omitempty"`
+	ByteEvidence          string                    `json:"byte_evidence,omitempty"` // what the byte counts measure (protocol.ByteEvidence)
 	StatusCode            int                       `json:"status_code,omitempty"`
 	Success               bool                      `json:"success"`
 	ErrorMessage          string                    `json:"error_message,omitempty"`
@@ -676,6 +677,7 @@ type parquetTransactionEvent struct {
 	TTFBMs                 float64 `parquet:"name=ttfb_ms, type=DOUBLE"`
 	BytesSent              int64   `parquet:"name=bytes_sent, type=INT64"`
 	BytesReceived          int64   `parquet:"name=bytes_received, type=INT64"`
+	ByteEvidence           string  `parquet:"name=byte_evidence, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	StatusCode             int64   `parquet:"name=status_code, type=INT64"`
 	Success                bool    `parquet:"name=success, type=BOOLEAN"`
 	ErrorMessage           string  `parquet:"name=error_message, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
@@ -1117,6 +1119,7 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 		TTFBMs:                durationMillis(result.TTFB),
 		BytesSent:             result.BytesSent,
 		BytesReceived:         result.BytesReceived,
+		ByteEvidence:          protocol.ByteEvidence(result),
 		StatusCode:            result.StatusCode,
 		Success:               result.Success,
 		ErrorMessage:          truncateSnapshotField(result.ErrorMessage, 16<<10),
@@ -1757,6 +1760,7 @@ func toParquetTransactions(items []archiveTransactionEvent, sourceRows ...[]byte
 			TTFBMs:                 item.TTFBMs,
 			BytesSent:              item.BytesSent,
 			BytesReceived:          item.BytesReceived,
+			ByteEvidence:           item.ByteEvidence,
 			StatusCode:             int64(item.StatusCode),
 			Success:                item.Success,
 			ErrorMessage:           item.ErrorMessage,

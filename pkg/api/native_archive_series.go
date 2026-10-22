@@ -35,9 +35,11 @@ type NativeArchiveSeries struct {
 	Buckets    []NativeArchiveBucket `json:"buckets"`
 	Identities []string              `json:"identities"`
 	Warnings   []string              `json:"warnings"`
-	// Excluded counts, by reason, the browser document measurements of the
-	// selection that are not final eligible values (unqualified_final,
-	// unavailable_final, provisional, censored); they never enter a value.
+	// Excluded counts, by reason, the measurements of the selection that never
+	// enter a value: browser documents that are not final eligible values
+	// (unqualified_final, unavailable_final, provisional, censored), Java
+	// representations and HTTP requests without their evidence, and HTTP
+	// steps that dispatched no request (no_request).
 	Excluded            map[string]int64 `json:"excluded,omitempty"`
 	JavaHTTPCompression string           `json:"java_http_compression,omitempty"`
 	Fingerprint         string           `json:"-"`
@@ -177,6 +179,9 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 	}
 	if q.Population == analysis.PopulationMessage {
 		return buildNativeMessageSeries(ctx, record, manifest, q, result, from, to, n)
+	}
+	if q.Population == analysis.PopulationByte {
+		return buildNativeByteSeries(ctx, record, manifest, q, result, from, to)
 	}
 	if q.Population == analysis.PopulationBrowserDocument {
 		return buildNativeBrowserDocumentSeries(ctx, record, manifest, q, result, from, to)
