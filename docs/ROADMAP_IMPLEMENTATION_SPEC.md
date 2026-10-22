@@ -288,6 +288,8 @@ Retain recommended **1–2 browser VUsers and maximum 5 per generator**. A highe
 
 ### BI-A — Qualified baseline selection and findings
 
+The [full measurement-window slice](qa/reviews/roadmap-browser-source-windows-2026-10-21/README.md) retains the earliest start and latest end of all final documents contributing to each RCA bucket. Comparisons remain unscored when a contributing window is absent, invalid or crosses its admitting steady-load span, including pauses between equal-load spans. Engine v6 prevents reuse under earlier qualification rules. Source-clock synchronization, complete source-coverage attestation and latest-compatible admission selection remain open.
+
 The [retained bucket-grid slice](qa/reviews/roadmap-browser-bucket-grid-2026-10-21/README.md) refuses duplicate, zero or off-cadence browser bucket timestamps without filling gaps. Engine v5 preserves historical assessments while invalidating reuse under the earlier qualification logic. Source-clock synchronization, source-window completeness and latest-compatible admission selection remain open.
 
 The [original-source qualification slice](qa/reviews/roadmap-browser-original-baseline-2026-10-21/README.md) requires matching valid retained original script and structure identities in addition to executable identity. Missing or changed source provenance leaves the affected browser group unscored in new assessments. Latest-compatible selection and clock/source-window qualification remain open.

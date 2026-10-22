@@ -34,15 +34,16 @@ func d2Cohort(version string) *protocol.BrowserRuntimeCohort {
 // provisional revisions, then its final eligible value (or none when final is
 // false), each in its own evidence record as a generator would send them.
 type d2Document struct {
-	id       int
-	metric   string
-	engine   string
-	cohort   *protocol.BrowserRuntimeCohort
-	at       time.Time
-	value    float64
-	progress int
-	final    bool
-	group    string
+	id          int
+	metric      string
+	engine      string
+	cohort      *protocol.BrowserRuntimeCohort
+	at          time.Time
+	windowStart time.Time
+	value       float64
+	progress    int
+	final       bool
+	group       string
 }
 
 func (d d2Document) records() []*protocol.BrowserDocumentEvidence {
@@ -62,6 +63,9 @@ func (d d2Document) records() []*protocol.BrowserDocumentEvidence {
 			Revision: revision, Metric: d.metric, Algorithm: protocol.BrowserVitalsAlgorithm, AlgorithmSHA256: protocol.BrowserVitalsAlgorithmSHA256, Unit: unit, Engine: engine,
 			DeviceProfile: "desktop", Cohort: d.cohort.Clone(), Group: d.group, FrameScope: "main_frame", LifecyclePhase: "navigation", State: state, Boundary: boundary,
 			WindowStart: d.at.Add(-time.Second), WindowEnd: d.at, CapturedAt: d.at, Available: true, Qualified: state == "final", Value: &v}
+		if !d.windowStart.IsZero() {
+			o.WindowStart = d.windowStart
+		}
 		if d.metric == "inp" {
 			o.InteractionCount = 1
 		}

@@ -27,6 +27,7 @@ type browserDocumentFinal struct {
 	tuple protocol.BrowserDocumentMetricSummary
 	key   string
 	at    time.Time
+	start time.Time
 	value float64
 }
 
@@ -71,7 +72,7 @@ func browserDocumentFinals(accumulator *archiveBrowserDocumentAccumulator, metri
 			excluded[reason]++
 		default:
 			tuple := protocol.BrowserDocumentObservationTuple(o)
-			finals = append(finals, browserDocumentFinal{tuple: tuple, key: protocol.BrowserDocumentMetricKey(tuple), at: o.WindowEnd, value: *o.Value})
+			finals = append(finals, browserDocumentFinal{tuple: tuple, key: protocol.BrowserDocumentMetricKey(tuple), at: o.WindowEnd, start: o.WindowStart, value: *o.Value})
 		}
 	}
 	return finals, excluded

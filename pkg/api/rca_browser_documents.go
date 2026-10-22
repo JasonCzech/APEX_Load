@@ -127,12 +127,13 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 	type tupleSeries struct {
 		tuple   protocol.BrowserDocumentMetricSummary
 		buckets map[int]*protocol.BrowserMetricDistribution
+		windows map[int]rca.DocumentWindow
 	}
 	tuples := map[string]*tupleSeries{}
 	for _, f := range finals {
 		t := tuples[f.key]
 		if t == nil {
-			t = &tupleSeries{tuple: f.tuple, buckets: map[int]*protocol.BrowserMetricDistribution{}}
+			t = &tupleSeries{tuple: f.tuple, buckets: map[int]*protocol.BrowserMetricDistribution{}, windows: map[int]rca.DocumentWindow{}}
 			tuples[f.key] = t
 		}
 		i := int(f.at.Sub(from) / bucket)
@@ -140,6 +141,15 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 			t.buckets[i] = &protocol.BrowserMetricDistribution{}
 		}
 		t.buckets[i].Add(f.value)
+		w, exists := t.windows[i]
+		if !exists || f.start.Before(w.Start) {
+			w.Start = f.start
+		}
+		if !exists || f.at.After(w.End) {
+			w.End = f.at
+		}
+		w.Invalid = w.Invalid || f.start.IsZero() || f.at.IsZero() || f.at.Before(f.start)
+		t.windows[i] = w
 	}
 	var limitations []rca.Limitation
 	if accumulator.incomplete {
@@ -159,11 +169,13 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 			Evidence: rca.EvidenceRef{Kind: "browser_document", Locator: browserDocumentsFileName + "#" + label},
 			Identity: rcaRunSeriesIdentity(scope, "browser_document", digest, metric, t.tuple.Unit, analysis.KindObservation, bucket),
 			Document: rcaDocumentCohort(t.tuple, accumulator.incomplete)}
+		s.Document.Windows = make(map[time.Time]rca.DocumentWindow, min(n, len(t.windows)))
 		for i := 0; i < n; i++ {
 			point := rca.SeriesPoint{At: from.Add(time.Duration(i) * bucket)}
 			if d := t.buckets[i]; d != nil {
 				if point.Value, point.Valid = d.Quantile(0.75); point.Valid {
 					point.Count = int32(min(d.Count, math.MaxInt32))
+					s.Document.Windows[point.At.UTC()] = t.windows[i]
 				}
 			}
 			s.Points = append(s.Points, point)

@@ -15,13 +15,14 @@ var browserBaselineStart = time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 // each bucket holding samples documents.
 func documentSeries(id, metric, unit, family string, fields map[string]string, values []float64, samples int64) Series {
 	s := Series{ID: id, Kind: SeriesBrowserDocument, Unit: unit, Observation: ObservationInterval, Bucket: time.Second,
-		Evidence: EvidenceRef{Kind: "browser_document", Locator: "browser_documents.jsonl#" + id}, Document: &DocumentCohort{Metric: metric, Family: family, Fields: fields}}
+		Evidence: EvidenceRef{Kind: "browser_document", Locator: "browser_documents.jsonl#" + id}, Document: &DocumentCohort{Metric: metric, Family: family, Fields: fields, Windows: map[time.Time]DocumentWindow{}}}
 	for i, v := range values {
 		point := SeriesPoint{At: browserBaselineStart.Add(time.Duration(i) * time.Second), Value: v, Valid: !math.IsNaN(v), Count: int32(samples)}
 		if !point.Valid {
 			point.Value, point.Count = 0, 0
 		}
 		s.Points = append(s.Points, point)
+		s.Document.Windows[point.At.UTC()] = DocumentWindow{Start: point.At, End: point.At.Add(time.Millisecond)}
 	}
 	return s
 }
@@ -536,5 +537,81 @@ func TestBrowserBucketGridBounds(t *testing.T) {
 				t.Fatalf("grid valid=%v want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestBrowserBaselineRequiresWholeSourceWindowWithinSteadyLoad(t *testing.T) {
+	for _, side := range []string{"current", "baseline"} {
+		for _, kind := range []string{"missing", "zero start", "zero end", "reversed", "invalid constituent", "ramp", "after span", "wrong bucket", "equal endpoints", "exact span start"} {
+			t.Run(side+"/"+kind, func(t *testing.T) {
+				current := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(20, 1400, 20), 3)
+				baseline := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(40, 1000, 20), 3)
+				changed := &current
+				reason := BrowserBaselineSourceWindowInvalid
+				if side == "baseline" {
+					changed, reason = &baseline, BrowserBaselineBaselineWindowInvalid
+				}
+				at := changed.Points[1].At.UTC()
+				w := changed.Document.Windows[at]
+				switch kind {
+				case "missing":
+					delete(changed.Document.Windows, at)
+				case "zero start":
+					w.Start = time.Time{}
+				case "zero end":
+					w.End = time.Time{}
+				case "reversed":
+					w.Start = w.End.Add(time.Second)
+				case "invalid constituent":
+					w.Invalid = true
+				case "ramp":
+					w.Start = browserBaselineStart.Add(-time.Nanosecond)
+				case "after span":
+					w.End = browserBaselineStart.Add(time.Minute + time.Nanosecond)
+				case "wrong bucket":
+					w.End = at.Add(time.Second)
+				case "equal endpoints":
+					w.Start = w.End
+				case "exact span start":
+					w.Start = browserBaselineStart
+				}
+				if kind != "missing" {
+					changed.Document.Windows[at] = w
+				}
+				got := DetectBrowserBaseline(browserBaselineInput([]Series{current}, []Series{baseline}, BaselineQualified), DefaultBrowserBaselineParams).Results[0]
+				if kind == "equal endpoints" || kind == "exact span start" {
+					if got.State != BrowserBaselineAnomaly {
+						t.Fatalf("valid window = %+v", got)
+					}
+				} else if got.State != BrowserBaselineUnscored || got.Reason != reason || got.Z != 0 || got.ExpectedHigh != 0 || len(got.Evidence) != 1 {
+					t.Fatalf("unqualified window = %+v", got)
+				}
+				if got.CurrentBuckets != 20 || got.BaselineBuckets != 40 || got.CurrentSamples != 60 || got.BaselineSamples != 120 {
+					t.Fatalf("lost retained population = %+v", got)
+				}
+			})
+		}
+	}
+}
+
+func TestBrowserBaselineSourceWindowCannotBridgePauseBetweenSameLoadSpans(t *testing.T) {
+	current := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(20, 1400, 20), 3)
+	baseline := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(60, 1000, 20), 3)
+	input := browserBaselineInput([]Series{current}, []Series{baseline}, BaselineQualified)
+	input.Baseline.Levels = []LoadLevel{
+		{Start: browserBaselineStart, End: browserBaselineStart.Add(20 * time.Second), VUsers: 10},
+		{Start: browserBaselineStart.Add(30 * time.Second), End: browserBaselineStart.Add(time.Minute), VUsers: 10},
+	}
+	at := baseline.Points[35].At.UTC()
+	baseline.Document.Windows[at] = DocumentWindow{Start: browserBaselineStart.Add(10 * time.Second), End: at.Add(time.Millisecond)}
+	got := DetectBrowserBaseline(input, DefaultBrowserBaselineParams).Results[0]
+	if got.State != BrowserBaselineUnscored || got.Reason != BrowserBaselineBaselineWindowInvalid || got.BaselineBuckets != 50 {
+		t.Fatalf("cross-pause population = %+v", got)
+	}
+	// An invalid window outside the compared spans must not poison valid evidence.
+	baseline.Document.Windows[at] = DocumentWindow{Start: at, End: at.Add(time.Millisecond)}
+	baseline.Document.Windows[baseline.Points[25].At.UTC()] = DocumentWindow{Invalid: true}
+	if got := DetectBrowserBaseline(input, DefaultBrowserBaselineParams).Results[0]; got.State != BrowserBaselineAnomaly {
+		t.Fatalf("excluded pause bucket = %+v", got)
 	}
 }

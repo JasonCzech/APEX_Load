@@ -35,21 +35,23 @@ const (
 
 // Reasons a browser baseline result is unscored, or evidence was excluded.
 const (
-	BrowserBaselineNoBaselineRun      = "no_qualified_baseline"
-	BrowserBaselineNoBaselineCohort   = "no_baseline_cohort"
-	BrowserBaselineCohortChanged      = "cohort_changed"
-	BrowserBaselineCadenceChanged     = "cadence_changed"
-	BrowserBaselineCadenceUnavailable = "cadence_unavailable"
-	BrowserBaselineBucketGridInvalid  = "bucket_grid_invalid"
-	BrowserBaselineNoSameLoadWindow   = "no_same_load_window"
-	BrowserBaselineInsufficient       = "insufficient_baseline"
-	BrowserBaselineZeroVariance       = "zero_variance"
-	BrowserBaselineNoEffectFloor      = "no_effect_floor"
-	BrowserBaselineOutsideSteadyLoad  = "outside_steady_load"
-	BrowserBaselineSourceLoss         = "source_loss"
-	BrowserBaselineBaselineSourceLoss = "baseline_source_loss"
-	BrowserBaselineResultsTruncated   = "browser_baseline_truncated"
-	BrowserBaselineLevelsUnavailable  = "load_levels_unavailable"
+	BrowserBaselineNoBaselineRun         = "no_qualified_baseline"
+	BrowserBaselineNoBaselineCohort      = "no_baseline_cohort"
+	BrowserBaselineCohortChanged         = "cohort_changed"
+	BrowserBaselineCadenceChanged        = "cadence_changed"
+	BrowserBaselineCadenceUnavailable    = "cadence_unavailable"
+	BrowserBaselineBucketGridInvalid     = "bucket_grid_invalid"
+	BrowserBaselineSourceWindowInvalid   = "source_window_invalid"
+	BrowserBaselineBaselineWindowInvalid = "baseline_source_window_invalid"
+	BrowserBaselineNoSameLoadWindow      = "no_same_load_window"
+	BrowserBaselineInsufficient          = "insufficient_baseline"
+	BrowserBaselineZeroVariance          = "zero_variance"
+	BrowserBaselineNoEffectFloor         = "no_effect_floor"
+	BrowserBaselineOutsideSteadyLoad     = "outside_steady_load"
+	BrowserBaselineSourceLoss            = "source_loss"
+	BrowserBaselineBaselineSourceLoss    = "baseline_source_loss"
+	BrowserBaselineResultsTruncated      = "browser_baseline_truncated"
+	BrowserBaselineLevelsUnavailable     = "load_levels_unavailable"
 	// BrowserBaselineEvidenceUnavailable: the baseline's document evidence
 	// was not fully read, so a missing cohort may exist there.
 	BrowserBaselineEvidenceUnavailable = "baseline_evidence_unavailable"
@@ -158,6 +160,18 @@ type DocumentCohort struct {
 	Family     string            `json:"family"`
 	Fields     map[string]string `json:"fields,omitempty"`
 	Incomplete bool              `json:"incomplete,omitempty"`
+	// Windows retains the full measurement envelope of each populated bucket.
+	// Keys are bucket starts in UTC; missing windows do not prove steady load.
+	Windows map[time.Time]DocumentWindow `json:"windows,omitempty"`
+}
+
+// DocumentWindow is the envelope of all final measurements contributing to a
+// bucket. Invalid preserves any malformed constituent instead of hiding it in
+// the envelope. These timestamps do not attest source-clock synchronization.
+type DocumentWindow struct {
+	Start   time.Time `json:"start"`
+	End     time.Time `json:"end"`
+	Invalid bool      `json:"invalid,omitempty"`
 }
 
 // BrowserBaseline is the detector's output for one assessment.
@@ -435,6 +449,23 @@ func browserBucketGridValid(points []SeriesPoint, bucket time.Duration) bool {
 	return true
 }
 
+// browserSourceWindowsWithin requires the whole measurement population, not
+// merely the bucket where its final publication landed, to belong to this span.
+func browserSourceWindowsWithin(s Series, points []SeriesPoint, level LoadLevel) bool {
+	for _, point := range points {
+		if !usable(point) {
+			continue
+		}
+		w, ok := s.Document.Windows[point.At.UTC()]
+		if !ok || w.Invalid || w.Start.IsZero() || w.End.IsZero() || w.End.Before(w.Start) ||
+			w.Start.Before(level.Start) || w.End.After(level.End) ||
+			w.End.Before(point.At) || !w.End.Before(point.At.Add(s.Bucket)) {
+			return false
+		}
+	}
+	return true
+}
+
 func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples int64, byID map[string]Series, byFamily map[string][]Series, baselineLevels []LoadLevel, ref BaselineRef, baselineIncomplete bool, params BrowserBaselineParams) BrowserBaselineResult {
 	sorted := slices.Clone(current)
 	slices.Sort(sorted)
@@ -481,9 +512,11 @@ func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples 
 	baselineSpans := segments(b, baselineLevels)
 	var values []float64
 	matched := false
+	baselineWindowsValid := true
 	for index, bl := range baselineLevels {
 		if sameLoad(level, bl, params.LevelTolerance) {
 			matched = true
+			baselineWindowsValid = baselineWindowsValid && browserSourceWindowsWithin(b, baselineSpans[index], bl)
 			v, n := spanValues(baselineSpans[index])
 			values = append(values, v...)
 			result.BaselineSamples += n
@@ -500,6 +533,12 @@ func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples 
 	}
 	if !matched {
 		return unscored(BrowserBaselineNoSameLoadWindow, "the baseline run has no steady level at this load")
+	}
+	if !browserSourceWindowsWithin(s, segments(s, []LoadLevel{level})[0], level) {
+		return unscored(BrowserBaselineSourceWindowInvalid, "the run's full document measurement windows are missing, invalid or cross the steady-load boundary")
+	}
+	if !baselineWindowsValid {
+		return unscored(BrowserBaselineBaselineWindowInvalid, "the baseline's full document measurement windows are missing, invalid or cross a matching steady-load boundary")
 	}
 	if len(values) < params.MinBaselineBuckets {
 		return unscored(BrowserBaselineInsufficient, fmt.Sprintf("%d of the %d valid baseline buckets needed", len(values), params.MinBaselineBuckets))

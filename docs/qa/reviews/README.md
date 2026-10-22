@@ -1,5 +1,7 @@
 # QA Review Records
 
+- [Browser baseline full measurement windows](roadmap-browser-source-windows-2026-10-21/README.md) — refuse populations whose source windows cross the compared steady-load span.
+
 - [Browser baseline bucket timestamps](roadmap-browser-bucket-grid-2026-10-21/README.md) — reject ambiguous retained grids without filling missing evidence.
 
 - [Independent documentation and roadmap review](roadmap-independent-review-2026-10-21/README.md) — expanded cross-commit independent audit and regression fixes.
