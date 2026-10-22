@@ -16,8 +16,11 @@ export interface ScenarioCreateIntentOwner {
   fresh?: boolean
 }
 
-/** Persists one reviewed scenario snapshot; publication remains scope-owned. */
-export async function persistScenarioAuthoringDraft(
+/**
+ * Persists one reviewed scenario snapshot; publication remains scope-owned.
+ * (Not named "…ScenarioAuthoring…": see readScenarioDraftCheckpoint.)
+ */
+export async function persistBuilderScenario(
   input: {
     editingId: string | null
     projectId?: string
