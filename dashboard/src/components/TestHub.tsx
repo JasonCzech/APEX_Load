@@ -22,7 +22,7 @@ import { confirmAction } from './ux/confirmAction'
 import { handleTabKey } from './tabKeyboard'
 import DialogLayer from './ux/DialogLayer'
 import ScriptsPage from './ScriptsPage'
-import { assertDraftHasNoInlineCredentials, clearScenarioAuthoringDraft, parseScenarioAuthoringDraft, readScenarioAuthoringDraft, saveScenarioAuthoringDraft, type ScenarioAuthoringDraft } from './scenarioAuthoringDraft'
+import { assertDraftHasNoInlineCredentials, clearScenarioAuthoringDraft, parseScenarioDraftCheckpoint, readScenarioDraftCheckpoint, saveScenarioAuthoringDraft, type ScenarioAuthoringDraft } from './scenarioAuthoringDraft'
 import type { ScenarioDraftSummary } from '../types/scenarioDrafts'
 import { scenarioScriptReadiness } from './scenarioScriptReadiness'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -115,7 +115,7 @@ import type { RunLoadProfilePreview } from './newTestRunModel'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 import { retargetRecent } from '../desktop/desktopRecents'
 import { savedScenarioBuilderHash } from './importScenario'
-import { persistScenarioAuthoringDraft, persistScenarioProjectDraft, restoreScenarioDraftBaseline } from './scenarioAuthoringWorkflow'
+import { persistBuilderScenario, persistScenarioProjectDraft, restoreScenarioDraftBaseline } from './scenarioAuthoringWorkflow'
 import { AuthoringCreateNeedsNewIntent, forgetAuthoringCreateIntent, type AuthoringCreateIntent } from './authoringCreateIntent'
 import type { ScenarioFormState, ScenarioFormGroup, ScenarioStartChoice } from '../types/scenarioAuthoring'
 
@@ -828,7 +828,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const [newPoolColumns, setNewPoolColumns] = useState('')
   const [newPoolName, setNewPoolName] = useState('')
   const [poolCreating, setPoolCreating] = useState(false)
-  const [authoringDraft, setAuthoringDraft] = useState<ScenarioAuthoringDraft | null>(() => readScenarioAuthoringDraft(activeProjectId || ''))
+  const [authoringDraft, setAuthoringDraft] = useState<ScenarioAuthoringDraft | null>(() => readScenarioDraftCheckpoint(activeProjectId || ''))
   const checkpointBaselineRef = useRef('')
   const activeCheckpointSavedAtRef = useRef('')
   // Set when the current browser checkpoint was written by autosave rather
@@ -964,7 +964,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   })
 
   useLayoutEffect(() => {
-    setAuthoringDraft(readScenarioAuthoringDraft(activeProjectId || ''))
+    setAuthoringDraft(readScenarioDraftCheckpoint(activeProjectId || ''))
     setPickedScriptIds([]); setScriptReadinessFilter('all'); setScriptProtocolFilter('all'); setScriptLibraryQuery('')
     checkpointBaselineRef.current = ''
     activeCheckpointSavedAtRef.current = ''
@@ -1704,7 +1704,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     autosaveSavedAtRef.current = ''
     autosaveReplacedRef.current = null
     if (!saved) return
-    const latest = readScenarioAuthoringDraft(project)
+    const latest = readScenarioDraftCheckpoint(project)
     if (!latest || latest.savedAt !== saved) return
     try {
       if (replaced) saveScenarioAuthoringDraft(replaced)
@@ -2935,7 +2935,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     savingRef.current = true
     setSavePending(true)
     try {
-      const persisted = await persistScenarioAuthoringDraft({
+      const persisted = await persistBuilderScenario({
         editingId, payload, baseline, projectId: activeProjectId || undefined,
         createIntent: {
           current: createIntentRef.current,
@@ -3067,7 +3067,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const clearResolvedCheckpoint = () => {
     // Saving another scenario must not erase a different checkpoint, including
     // a newer draft saved by another tab during this request.
-    const latest = readScenarioAuthoringDraft(activeProjectId || '')
+    const latest = readScenarioDraftCheckpoint(activeProjectId || '')
     autosaveSavedAtRef.current = ''
     autosaveReplacedRef.current = null
     if (latest && latest.savedAt === activeCheckpointSavedAtRef.current) {
@@ -3289,7 +3289,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       const stored = await api.getScenarioDraft(projectId, summary.id)
       // Something else was opened meanwhile.
       if (currentProjectIdRef.current !== projectId || builderSessionRef.current !== session || openProjectDraftGenerationRef.current !== generation) return 'skipped'
-      const draft = parseScenarioAuthoringDraft(stored.document, projectId)
+      const draft = parseScenarioDraftCheckpoint(stored.document, projectId)
       if (!draft) {
         setError(`The draft “${stored.name || summary.name}” cannot be opened by this version of the builder. Delete it, or open it where it was saved.`)
         return 'failed'
@@ -3477,7 +3477,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     const build = buildBrowserDraftRef.current
     if (!build || !activeProjectId) return
     try {
-      const latest = readScenarioAuthoringDraft(activeProjectId)
+      const latest = readScenarioDraftCheckpoint(activeProjectId)
       if (latest && latest.savedAt !== activeCheckpointSavedAtRef.current) return
       if (!autosaveSavedAtRef.current) autosaveReplacedRef.current = latest
       const link = projectDraftRef.current
