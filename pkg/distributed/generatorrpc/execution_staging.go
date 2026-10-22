@@ -130,6 +130,7 @@ type preparedAssignmentStage struct {
 func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment) (ack *pb.AssignmentAck, callErr error) {
 	defer func() {
 		if callErr == nil && ack.GetAccepted() {
+			ack.BrowserDocumentProofVersion = assignment.GetBrowserDocumentProofVersion()
 			ack.BrowserInteractionEvidenceVersion = assignment.GetBrowserInteractionEvidenceVersion()
 			ack.BrowserAuthoredDefinition = assignment.GetBrowserAuthoredDefinition()
 		}
@@ -1152,6 +1153,11 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if protocol.BrowserInteractionHasDispatch(int(request.GetBrowserInteractionEvidenceVersion())) && !dsl.BrowserInteractionCaptureRequested(&script) {
 		return nil, status.Errorf(codes.InvalidArgument, "interaction evidence v%d requires browser interaction capture", request.GetBrowserInteractionEvidenceVersion())
 	}
+	if request.GetBrowserDocumentProofVersion() == 1 {
+		if err := validateBrowserDocumentProofRuntime(&script, instance); err != nil {
+			return nil, err
+		}
+	}
 	if request.GetBrowserInteractionEvidenceVersion() == 3 {
 		if _, ok := instance.(protocol.BrowserInteractionEvidenceV3Provider); !ok {
 			return nil, status.Error(codes.FailedPrecondition, "runtime does not support browser interaction evidence v3")
@@ -1296,6 +1302,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			JavaBroker:                        javaHost,
 			Name:                              request.GetGroupName(),
 			BrowserAuthoredDefinition:         browserAuthoredDefinitionFromProto(request.GetBrowserAuthoredDefinition()),
+			BrowserDocumentProofVersion:       assignedBrowserDocumentProofVersion(request),
 			BrowserInteractionEvidenceVersion: assignedBrowserInteractionVersion(request),
 			StartOffset:                       plan.validated.startOffset,
 			Region:                            strings.TrimSpace(request.GetRegion()),

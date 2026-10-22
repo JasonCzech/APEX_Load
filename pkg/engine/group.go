@@ -26,6 +26,8 @@ type GroupConfig struct {
 	// BrowserAuthoredDefinition is trusted original-source provenance, never DSL configuration.
 	BrowserAuthoredDefinition protocol.BrowserAuthoredDefinition `json:"-"`
 	// BrowserInteractionEvidenceVersion is negotiated transport wiring; zero uses the current local version.
+	// BrowserDocumentProofVersion: zero selects local v1; -1 suppresses output for legacy peers.
+	BrowserDocumentProofVersion       int
 	BrowserInteractionEvidenceVersion int
 	DistributedRendezvousClient       rendezvous.Client
 	distributedRendezvous             *rendezvous.Aggregator
@@ -112,6 +114,10 @@ type ResultSink interface {
 
 // BrowserDocumentEvidenceSink stores lifecycle records in a distinct durable
 // population. It must never route them through action/transaction records.
+type BrowserDocumentReceiptSink interface {
+	RecordBrowserDocumentReceiptEvidence(*protocol.BrowserDocumentReceiptEvidence) error
+}
+
 type BrowserDocumentEvidenceSink interface {
 	RecordBrowserDocumentEvidence(*protocol.BrowserDocumentEvidence) error
 }
@@ -1997,6 +2003,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 	vu = &VUser{
 		correlation:                  groupVUserCorrelation(group),
 		browserInteractionVersion:    group.BrowserInteractionEvidenceVersion,
+		browserDocumentProofVersion:  group.BrowserDocumentProofVersion,
 		browserAuthoredDefinition:    group.BrowserAuthoredDefinition,
 		ID:                           -1,
 		TotalVUsers:                  group.VUsers,
@@ -2302,6 +2309,7 @@ func (mge *MultiGroupEngine) newPreparedVUser(prepared *preparedVUser) *VUser {
 	return &VUser{
 		correlation:                  groupVUserCorrelation(prepared.group),
 		browserInteractionVersion:    prepared.group.BrowserInteractionEvidenceVersion,
+		browserDocumentProofVersion:  prepared.group.BrowserDocumentProofVersion,
 		browserAuthoredDefinition:    prepared.group.BrowserAuthoredDefinition,
 		ID:                           prepared.runtimeID,
 		TotalVUsers:                  prepared.group.VUsers,
@@ -2881,6 +2889,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		vu = &VUser{
 			correlation:                  groupVUserCorrelation(group),
 			browserInteractionVersion:    group.BrowserInteractionEvidenceVersion,
+			browserDocumentProofVersion:  group.BrowserDocumentProofVersion,
 			browserAuthoredDefinition:    group.BrowserAuthoredDefinition,
 			ID:                           runtimeVUserID,
 			Group:                        group.Name,

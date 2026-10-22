@@ -267,7 +267,7 @@ func rcaEvidenceDigest(manifest *RunArchiveManifest) (string, error) {
 	read.BrowserHARArtifacts, read.BrowserHARIncomplete, read.BrowserHAROmitted = nil, false, nil
 	read.BrowserInteractionsFile, read.BrowserInteractionRecordCount, read.BrowserInteractionsIncomplete, read.BrowserInteractionsDropped, read.BrowserInteractionsArtifact = "", 0, false, 0, nil
 	inputs := map[string]bool{}
-	for _, name := range []string{manifest.TransactionsFile, manifest.IntervalSummariesFile, manifest.ResourceSamplesFile, manifest.IntervalDistributionsFile, manifest.MonitorEvidenceFile, manifest.BrowserDocumentsFile} {
+	for _, name := range []string{manifest.TransactionsFile, manifest.IntervalSummariesFile, manifest.ResourceSamplesFile, manifest.IntervalDistributionsFile, manifest.MonitorEvidenceFile, manifest.BrowserDocumentsFile, manifest.BrowserReceiptsFile} {
 		if strings.TrimSpace(name) != "" {
 			inputs[name] = true
 		}

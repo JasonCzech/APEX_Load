@@ -24,6 +24,11 @@ func browserRuntimeFeatures(instance protocol.Protocol) []string {
 	features := []string{dsl.FeatureBrowserSessionIdentitiesV1, dsl.FeatureBrowserSalesforceJWTV1}
 	if _, ok := instance.(protocol.BrowserDocumentEvidenceProvider); ok {
 		features = append(features, FeatureBrowserDocumentEvidenceV2)
+		if _, ok := instance.(protocol.BrowserDocumentReceiptEvidenceProvider); ok {
+			if _, wired := instance.(interface{ BrowserDocumentReceiptTransportVersion() int }); wired {
+				features = append(features, FeatureBrowserDocumentProofV1)
+			}
+		}
 	}
 	if _, ok := instance.(protocol.BrowserInteractionEvidenceProvider); ok {
 		features = append(features, FeatureBrowserInteractionEvidenceV1)

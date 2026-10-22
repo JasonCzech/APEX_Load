@@ -277,6 +277,7 @@ func buildRunArchiveArtifactInventory(record *storage.RunArchiveRecord, manifest
 		{Name: manifest.ResourceSamplesParquetFile, Kind: "dataset", Format: "parquet", RecordType: "resource_samples", Count: manifest.ResourceSampleCount},
 		{Name: manifest.IntervalSummariesFile, Kind: "dataset", Format: "jsonl", RecordType: "interval_summaries", Count: manifest.IntervalSummaryCount},
 		{Name: manifest.IntervalSummariesParquetFile, Kind: "dataset", Format: "parquet", RecordType: "interval_summaries", Count: manifest.IntervalSummaryCount},
+		{Name: manifest.BrowserReceiptsFile, Kind: "evidence", Format: "jsonl", RecordType: "browser_receipts_v1", Count: manifest.BrowserReceiptRecordCount},
 		{Name: manifest.BrowserDocumentsFile, Kind: "evidence", Format: "jsonl", RecordType: "browser_documents_v2", Count: manifest.BrowserDocumentRecordCount},
 		{Name: manifest.BrowserDocumentsParquetFile, Kind: "evidence", Format: "parquet", RecordType: "browser_documents_v2", Count: manifest.BrowserDocumentRecordCount},
 		{Name: manifest.TestManifestFile, Kind: "manifest", Format: "json", RecordType: "test_manifest"},

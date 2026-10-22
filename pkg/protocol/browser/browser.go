@@ -22,6 +22,7 @@ type Browser struct {
 	authoredIdentityReadPending bool // At most one native identity read, including a timed-out reader.
 	evidence                    browserEvidenceState
 	newUserPolicy               string
+	documentProofVersion        int
 	documentMetricsEnabled      bool
 	storageState                *playwright.OptionalStorageState
 	systemLanguage              string

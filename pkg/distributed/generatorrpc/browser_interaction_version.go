@@ -36,6 +36,7 @@ func (c *Client) observeBrowserInteractionVersion(pong *pb.HeartbeatPong) {
 	}
 	available := pong != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserInteractionEvidenceV2+"+"+FeaturePreparationV1)
 	c.connection.mu.Lock()
+	c.connection.browserDocumentProof = pong != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserDocumentProofV1+"+"+FeaturePreparationV1)
 	c.connection.browserOriginalSource = pong != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserOriginalSourceV1+"+"+FeaturePreparationV1)
 	c.connection.browserInteractionV2 = available
 	c.connection.browserInteractionV3 = pong != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserInteractionEvidenceV3+"+"+FeatureBrowserInteractionEvidenceV2+"+"+FeaturePreparationV1)

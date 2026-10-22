@@ -1026,8 +1026,11 @@ type WorkAssignment struct {
 	// Original authored source before controller runtime overlays. Send only to
 	// browser_original_source_v1 peers during traffic-free preparation.
 	BrowserAuthoredDefinition *BrowserAuthoredDefinition `protobuf:"bytes,53,opt,name=browser_authored_definition,json=browserAuthoredDefinition,proto3" json:"browser_authored_definition,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	// Separate receipt/proof sidecars; omitted requests preserve legacy output.
+	// Version 1 requires capability negotiation, staging and exact acknowledgement.
+	BrowserDocumentProofVersion uint32 `protobuf:"varint,54,opt,name=browser_document_proof_version,json=browserDocumentProofVersion,proto3" json:"browser_document_proof_version,omitempty"`
+	unknownFields               protoimpl.UnknownFields
+	sizeCache                   protoimpl.SizeCache
 }
 
 func (x *WorkAssignment) Reset() {
@@ -1429,6 +1432,13 @@ func (x *WorkAssignment) GetBrowserAuthoredDefinition() *BrowserAuthoredDefiniti
 		return x.BrowserAuthoredDefinition
 	}
 	return nil
+}
+
+func (x *WorkAssignment) GetBrowserDocumentProofVersion() uint32 {
+	if x != nil {
+		return x.BrowserDocumentProofVersion
+	}
+	return 0
 }
 
 type BrowserAuthoredDefinition struct {
@@ -3166,9 +3176,10 @@ type AssignmentAck struct {
 	// Confirms the staged interaction version before any protocol preflight.
 	BrowserInteractionEvidenceVersion uint32 `protobuf:"varint,7,opt,name=browser_interaction_evidence_version,json=browserInteractionEvidenceVersion,proto3" json:"browser_interaction_evidence_version,omitempty"`
 	// Exact source descriptor staged before CommitWork. Absent for legacy work.
-	BrowserAuthoredDefinition *BrowserAuthoredDefinition `protobuf:"bytes,8,opt,name=browser_authored_definition,json=browserAuthoredDefinition,proto3" json:"browser_authored_definition,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	BrowserAuthoredDefinition   *BrowserAuthoredDefinition `protobuf:"bytes,8,opt,name=browser_authored_definition,json=browserAuthoredDefinition,proto3" json:"browser_authored_definition,omitempty"`
+	BrowserDocumentProofVersion uint32                     `protobuf:"varint,9,opt,name=browser_document_proof_version,json=browserDocumentProofVersion,proto3" json:"browser_document_proof_version,omitempty"`
+	unknownFields               protoimpl.UnknownFields
+	sizeCache                   protoimpl.SizeCache
 }
 
 func (x *AssignmentAck) Reset() {
@@ -3255,6 +3266,13 @@ func (x *AssignmentAck) GetBrowserAuthoredDefinition() *BrowserAuthoredDefinitio
 		return x.BrowserAuthoredDefinition
 	}
 	return nil
+}
+
+func (x *AssignmentAck) GetBrowserDocumentProofVersion() uint32 {
+	if x != nil {
+		return x.BrowserDocumentProofVersion
+	}
+	return 0
 }
 
 // JavaVMOutcome is value-free: a mode, a stable reason code and counts.
@@ -9310,7 +9328,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0fsource_group_id\x18\x02 \x01(\tR\rsourceGroupId\x12\x1f\n" +
 	"\vscript_hash\x18\x03 \x01(\tR\n" +
 	"scriptHash\x12\x16\n" +
-	"\x06vusers\x18\x04 \x01(\x05R\x06vusers\"\xde\x17\n" +
+	"\x06vusers\x18\x04 \x01(\x05R\x06vusers\"\xa3\x18\n" +
 	"\x0eWorkAssignment\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x1d\n" +
 	"\n" +
@@ -9371,7 +9389,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x16throughput_cap_enabled\x182 \x01(\bR\x14throughputCapEnabled\x12,\n" +
 	"\x12throughput_cap_tps\x183 \x01(\x01R\x10throughputCapTps\x12O\n" +
 	"$browser_interaction_evidence_version\x184 \x01(\rR!browserInteractionEvidenceVersion\x12f\n" +
-	"\x1bbrowser_authored_definition\x185 \x01(\v2&.apexload.v1.BrowserAuthoredDefinitionR\x19browserAuthoredDefinition\x1a>\n" +
+	"\x1bbrowser_authored_definition\x185 \x01(\v2&.apexload.v1.BrowserAuthoredDefinitionR\x19browserAuthoredDefinition\x12C\n" +
+	"\x1ebrowser_document_proof_version\x186 \x01(\rR\x1bbrowserDocumentProofVersion\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a?\n" +
@@ -9538,7 +9557,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\vcontainment\x18\x04 \x01(\tR\vcontainment\x12\x1b\n" +
 	"\tmax_hosts\x18\x05 \x01(\x05R\bmaxHosts\x12\x1d\n" +
 	"\n" +
-	"max_vusers\x18\x06 \x01(\x05R\tmaxVusers\"\x8f\x04\n" +
+	"max_vusers\x18\x06 \x01(\x05R\tmaxVusers\"\xd4\x04\n" +
 	"\rAssignmentAck\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12-\n" +
@@ -9547,7 +9566,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x1aruntime_resource_admission\x18\x05 \x01(\v2%.apexload.v1.RuntimeResourceAdmissionR\x18runtimeResourceAdmission\x123\n" +
 	"\ajava_vm\x18\x06 \x01(\v2\x1a.apexload.v1.JavaVMOutcomeR\x06javaVm\x12O\n" +
 	"$browser_interaction_evidence_version\x18\a \x01(\rR!browserInteractionEvidenceVersion\x12f\n" +
-	"\x1bbrowser_authored_definition\x18\b \x01(\v2&.apexload.v1.BrowserAuthoredDefinitionR\x19browserAuthoredDefinition\"\x91\x01\n" +
+	"\x1bbrowser_authored_definition\x18\b \x01(\v2&.apexload.v1.BrowserAuthoredDefinitionR\x19browserAuthoredDefinition\x12C\n" +
+	"\x1ebrowser_document_proof_version\x18\t \x01(\rR\x1bbrowserDocumentProofVersion\"\x91\x01\n" +
 	"\rJavaVMOutcome\x12\x12\n" +
 	"\x04mode\x18\x01 \x01(\tR\x04mode\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x12\n" +

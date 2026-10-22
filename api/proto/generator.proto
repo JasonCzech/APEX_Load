@@ -289,6 +289,9 @@ message WorkAssignment {
   // Original authored source before controller runtime overlays. Send only to
   // browser_original_source_v1 peers during traffic-free preparation.
   BrowserAuthoredDefinition browser_authored_definition = 53;
+  // Separate receipt/proof sidecars; omitted requests preserve legacy output.
+  // Version 1 requires capability negotiation, staging and exact acknowledgement.
+  uint32 browser_document_proof_version = 54;
 }
 
 message BrowserAuthoredDefinition {
@@ -534,6 +537,7 @@ message AssignmentAck {
   uint32 browser_interaction_evidence_version = 7;
   // Exact source descriptor staged before CommitWork. Absent for legacy work.
   BrowserAuthoredDefinition browser_authored_definition = 8;
+  uint32 browser_document_proof_version = 9;
 }
 
 // JavaVMOutcome is value-free: a mode, a stable reason code and counts.

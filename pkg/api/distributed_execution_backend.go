@@ -1538,6 +1538,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				BrowserAuthoredDefinition:         group.browserAuthoredDefinition,
 				BrowserInteractionEvidenceVersion: requestedBrowserInteractionVersion(group.script),
 				PreferBrowserOutcomeClocks:        true,
+				PreferBrowserDocumentProof:        dsl.BrowserDocumentCaptureRequested(group.script),
 				SourcePlan:                        sourcePlan,
 				LiveTableBindingsJSON:             liveBindingsJSON,
 				RendezvousConfigJSON:              tr.rendezvousAssignment(test.ID, group.Name),

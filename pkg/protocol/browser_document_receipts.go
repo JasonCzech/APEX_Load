@@ -13,6 +13,7 @@ import (
 
 const BrowserDocumentReceiptVersion = 1
 const MaxBrowserDocumentReceipts = (MaxBrowserDocumentObservations / 5) * 7
+const MaxBrowserDocumentReceiptRecords = 2_000_000
 const MaxBrowserDocumentReceiptBytes = 512 << 10
 
 // BrowserDocumentReceipt is a one-way delivery observation, not a clock

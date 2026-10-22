@@ -90,3 +90,14 @@ func (b *Browser) BrowserDocumentReceiptEvidence() *BrowserDocumentReceiptEviden
 	})
 	return out
 }
+
+// BrowserDocumentReceiptTransportVersion is trusted runtime wiring; scripts
+// cannot opt a legacy receiving peer into a newer sidecar contract.
+func (b *Browser) BrowserDocumentReceiptTransportVersion() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.documentMetricsEnabled {
+		return 0
+	}
+	return b.documentProofVersion
+}

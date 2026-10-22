@@ -21,6 +21,7 @@ type VUser struct {
 	browserAuthoredDefinition        protocol.BrowserAuthoredDefinition
 	browserAuthoredIndexedDefinition protocol.BrowserAuthoredDefinition
 	browserInvocation                uint64
+	browserDocumentProofVersion      int
 	browserInteractionVersion        int
 	// browserAuthoredSource is the trusted authored script before an engine
 	// iteration/session copy. It is never read from executable script metadata.
@@ -825,6 +826,9 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 	handOffBrowserSessionEvidence(vu.Proto, vu.ResultSink, vu.RedactionConfig)
 	vu.bindRuntimeTextRedactor()
 	config := buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", vu.secretResolver())
+	if vu.browserDocumentProofVersion != 0 {
+		config["browser_document_proof_version"] = vu.browserDocumentProofVersion
+	}
 	if vu.sourceSamplers != nil {
 		vu.sourceSamplers.bindProtocolConfig(config, vu.Script)
 	}

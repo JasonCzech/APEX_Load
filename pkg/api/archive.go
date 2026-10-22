@@ -83,6 +83,10 @@ type RunArchiveManifest struct {
 	Continuity                        *RunContinuityStatus `json:"continuity,omitempty"`
 	BrowserDocumentCoverageIncomplete bool                 `json:"browser_document_coverage_incomplete,omitempty"`
 	BrowserDocumentCaptureRequested   bool                 `json:"browser_document_capture_requested,omitempty"`
+	BrowserReceiptIncomplete          bool                 `json:"browser_receipt_incomplete,omitempty"`
+	BrowserReceiptsFile               string               `json:"browser_receipts_file,omitempty"`
+	BrowserReceiptRecordCount         int64                `json:"browser_receipt_record_count,omitempty"`
+	BrowserReceiptsSHA256             string               `json:"browser_receipts_sha256,omitempty"`
 	BrowserDocumentsFile              string               `json:"browser_documents_file,omitempty"`
 	BrowserDocumentsParquetFile       string               `json:"browser_documents_parquet_file,omitempty"`
 	// BrowserHARArtifacts are the run's native HARs; BrowserHAROmitted
@@ -1158,6 +1162,7 @@ type runArchiveWriter struct {
 	resourceFile            *os.File
 	summaryFile             *os.File
 	elkFile                 *os.File
+	browserReceiptsFile     *os.File
 	browserDocumentsFile    *os.File
 	browserDocumentsBuf     *bufio.Writer
 	browserDocumentsEncoder *json.Encoder

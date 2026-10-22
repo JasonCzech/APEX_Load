@@ -3983,3 +3983,31 @@ func browserLoadAverage(sum float64, loads int64) float64 {
 	}
 	return sum / float64(loads)
 }
+
+func (sink *combinedSink) RecordBrowserDocumentReceiptEvidence(evidence *protocol.BrowserDocumentReceiptEvidence) error {
+	evidence = evidence.Clone()
+	if evidence == nil {
+		return fmt.Errorf("browser receipt evidence is malformed")
+	}
+	supported := false
+	for _, candidate := range sink.sinks {
+		if target, ok := candidate.(engine.BrowserDocumentReceiptSink); ok {
+			supported = true
+			if err := target.RecordBrowserDocumentReceiptEvidence(evidence.Clone()); err != nil {
+				return err
+			}
+		}
+	}
+	if !supported {
+		return fmt.Errorf("browser receipt archive sink is unavailable")
+	}
+	return nil
+}
+
+func (sink *combinedSink) MarkBrowserDocumentReceiptIncomplete() {
+	for _, child := range sink.sinks {
+		if target, ok := child.(interface{ MarkBrowserDocumentReceiptIncomplete() }); ok {
+			target.MarkBrowserDocumentReceiptIncomplete()
+		}
+	}
+}

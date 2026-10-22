@@ -17,3 +17,13 @@ Targeted contract/native round-trip tests passed. Both full affected package sui
 - Acquire native document expectations independently of JS receipts. Unsupported native discovery remains unavailable.
 - Map complete lifetimes with conservative causal bounds in a trusted controller domain. Bounds crossing a pause, transition, restart or unknown interval cannot qualify.
 - Run positive and refusal fixtures, the private HAR import regression, retained Salesforce replay, independent slice reviews and final cross-cutting reviews before PR publication.
+
+## Durable receipt transport
+
+Receipt snapshots now have a separate bounded JSONL sidecar. Local and generator archives retain its count and SHA-256, include it in artifact transfer/integrity and RCA input identity, and recover it through the durable source collection cache. Cache filenames follow the manifest, preserving old three-file and document-only four-file caches alongside receipt-only and combined layouts. Receipts do not create action or document measurement samples.
+
+Remote transport requires a fresh advertised capability, traffic-free staging, runtime provider/wiring validation and an exact version acknowledgement. Legacy assignments explicitly suppress the new sidecar. Group, dynamic, parallel and reinitialization configuration carry that choice. Receipt publication is serialized and deduplicated. A failed read, missing sink, failed write or wiring panic leaves sticky receipt-loss state, including a separate manifest flag when an archive sink exists; it never changes the raw v2 measurement population.
+
+Independent review identified missing durable loss disclosure and missing staged-runtime validation. A further review rejected a panic fallback that treated unavailable wiring as version 1. All were fixed, with tests for no publication on unsupported/panicking wiring, retry/deduplication, retirement, local/generator finalization, cache restart with and without receipt payloads, corruption/missing remote artifacts, and RCA digest invalidation. Both independent reviewers then reported zero remaining findings. This slice transports acquisition evidence only; it does not qualify clocks or source closure.
+
+Transport validation passed: targeted engine, generator RPC, API/archive and collection-cache checks (0.884 / 0.754 / 17.191 seconds), and engine receipt race checks (2.276 seconds). Logs: `/private/tmp/apex-browser-durable-backend/browser-receipt-transport-final2.log` and `/private/tmp/apex-browser-durable-backend/browser-receipt-transport-race.log`. Cross-package full-suite validation remains scheduled after the remaining proof slices.

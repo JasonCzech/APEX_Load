@@ -1090,3 +1090,31 @@ func (sink combinedResultSink) RecordBrowserHARArtifact(artifact protocol.Browse
 	}
 	return fmt.Errorf("browser HAR archive sink is unavailable")
 }
+
+func (sink combinedResultSink) RecordBrowserDocumentReceiptEvidence(evidence *protocol.BrowserDocumentReceiptEvidence) error {
+	evidence = evidence.Clone()
+	if evidence == nil {
+		return fmt.Errorf("browser receipt evidence is malformed")
+	}
+	supported := false
+	for _, candidate := range sink {
+		if target, ok := candidate.(engine.BrowserDocumentReceiptSink); ok {
+			supported = true
+			if err := target.RecordBrowserDocumentReceiptEvidence(evidence.Clone()); err != nil {
+				return err
+			}
+		}
+	}
+	if !supported {
+		return fmt.Errorf("browser receipt archive sink is unavailable")
+	}
+	return nil
+}
+
+func (sink combinedResultSink) MarkBrowserDocumentReceiptIncomplete() {
+	for _, child := range sink {
+		if target, ok := child.(interface{ MarkBrowserDocumentReceiptIncomplete() }); ok {
+			target.MarkBrowserDocumentReceiptIncomplete()
+		}
+	}
+}
