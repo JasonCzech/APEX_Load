@@ -123,7 +123,7 @@ func TestIdempotentScriptCreateAdoptsAnUnconfirmedEarlierCreate(t *testing.T) {
 	// Reproduce an attempt that reserved the key and durably created the
 	// script, then crashed before completing the receipt or responding.
 	probe := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", nil)
-	identity, err := server.authoringReceiptIdentity(probe, storage.AuthoringPurposeScriptCreate, request.Script.ProjectID, scriptCreateKey, "", request)
+	identity, err := server.authoringReceiptIdentity(probe, storage.AuthoringPurposeScriptCreate, request.Script.ProjectID, scriptCreateKey, "", authoringReceiptFingerprint{request: request})
 	if err != nil {
 		t.Fatal(err)
 	}

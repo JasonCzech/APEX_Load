@@ -691,8 +691,24 @@ func (tr *TestRunner) createScriptDurable(
 	sourceProfile string,
 	ordinaryCreates ...bool,
 ) (*StoredScript, bool, error) {
+	return tr.createScriptDurableCompletingReceipt(script, authoringApprovedJava, trustedImport, sourceProfile, len(ordinaryCreates) > 0 && ordinaryCreates[0], nil)
+}
+
+// createScriptDurableCompletingReceipt is createScriptDurable for an ordinary
+// create that may also complete an original-outcome receipt in its own
+// transaction.
+func (tr *TestRunner) createScriptDurableCompletingReceipt(
+	script *dsl.Script,
+	authoringApprovedJava bool,
+	trustedImport bool,
+	sourceProfile string,
+	ordinaryCreate bool,
+	receipt *storage.AuthoringReceiptCompletion,
+) (*StoredScript, bool, error) {
 	created := true
-	ordinaryCreate := len(ordinaryCreates) > 0 && ordinaryCreates[0]
+	if receipt != nil && !ordinaryCreate {
+		return nil, false, errAuthoringReceiptCreateUnsupported
+	}
 	if script == nil {
 		return nil, false, fmt.Errorf("script is required")
 	}
@@ -752,7 +768,19 @@ func (tr *TestRunner) createScriptDurable(
 		if err := tr.prepareNewScriptRefKeyLocked(script); err != nil {
 			return nil, false, err
 		}
+		var receiptStore storage.AuthoringReceiptCreateStore
+		if receipt != nil {
+			var supported bool
+			if receiptStore, supported = tr.scriptStore.(storage.AuthoringReceiptCreateStore); !supported {
+				return nil, false, errAuthoringReceiptCreateUnsupported
+			}
+		}
+		// Each store call is an inline OutsideLock callback, which the
+		// lock-held durable-write guard recognizes.
 		mutation, err := contentmutation.OutsideLock(&tr.mu, func() (*storage.ScriptAuthoringMutationResult, error) {
+			if receiptStore != nil {
+				return receiptStore.CreateScriptAuthoringCompletingReceipt(script, *receipt, renderScriptReceiptOutcome)
+			}
 			return store.CreateScriptAuthoringIfAbsent(script)
 		})
 		if errors.Is(err, storage.ErrScriptRefKeyTaken) {
@@ -761,6 +789,9 @@ func (tr *TestRunner) createScriptDurable(
 				return nil, false, err
 			}
 			mutation, err = contentmutation.OutsideLock(&tr.mu, func() (*storage.ScriptAuthoringMutationResult, error) {
+				if receiptStore != nil {
+					return receiptStore.CreateScriptAuthoringCompletingReceipt(script, *receipt, renderScriptReceiptOutcome)
+				}
 				return store.CreateScriptAuthoringIfAbsent(script)
 			})
 		}
@@ -781,6 +812,8 @@ func (tr *TestRunner) createScriptDurable(
 			return nil, false, err
 		}
 		persisted = cloneScriptDefinition(authored.Script)
+	} else if receipt != nil {
+		return nil, false, errAuthoringReceiptCreateUnsupported
 	} else if store, ok := tr.scriptStore.(createOnlyScriptPersistence); ok {
 		// Shared storage is authoritative. A replica can have an equivalent but
 		// stale cached script after another replica edited or replaced the durable

@@ -213,6 +213,8 @@ type Server struct {
 	clusterClients                    *clusterClientCache
 	clusterScalers                    clusterScalerResolver
 	clusterSecretWrapper              keywrap.KeyWrapper
+	receiptCredentialKeyMu            sync.Mutex
+	receiptCredentialKey              []byte
 	clusterProbes                     *clusterProbeThrottle
 	fleetProvisioningMu               sync.Mutex
 	fleetProvisioningActive           map[string]string
@@ -299,6 +301,7 @@ type Server struct {
 	brunoArtifactWrapper            keywrap.KeyWrapper
 	brunoSessionCleanupCancel       context.CancelFunc
 	grafanaSessionCleanupCancel     context.CancelFunc
+	receiptOutcomeCleanupCancel     context.CancelFunc
 	projectSecretStore              secretstore.Store
 	applicationSecretStore          secretstore.Store
 	protectedSourceSessions         *secretstore.ProtectedSourceSessionStore
@@ -1221,6 +1224,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scripts/{id}/bruno-imports/revisions", cors(log(auth(http.HandlerFunc(s.handleListImportSourceRevisions)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/bruno-imports/rollback", cors(log(auth(http.HandlerFunc(s.handleRollbackImportSource)))))
 	s.mux.Handle("POST /api/v1/scripts/validate", cors(log(auth(http.HandlerFunc(s.handleValidateDraftScript)))))
+	s.mux.Handle("POST /api/v1/scripts/validation-context", cors(log(auth(http.HandlerFunc(s.handleValidationContext)))))
 	s.mux.Handle("POST /api/v1/scripts/replay", cors(log(auth(http.HandlerFunc(s.handleReplayDraftScript)))))
 	s.mux.Handle("POST /api/v1/scripts/replay/sessions", cors(log(auth(http.HandlerFunc(s.handleStartReplaySessionDraftScript)))))
 	s.mux.Handle("POST /api/v1/scripts/debug/sessions", cors(log(auth(http.HandlerFunc(s.handleStartScriptDebugDraftScript)))))
@@ -1731,6 +1735,7 @@ func (s *Server) Start() (startErr error) {
 	s.startBrowserRecordingRetentionJanitor()
 	s.startBrunoImportSessionJanitor()
 	s.startGrafanaImportSessionJanitor()
+	s.startAuthoringReceiptOutcomeJanitor()
 	s.startProtectedSourceSecretSessionJanitor()
 	s.startCacheFanout()
 	s.startGeneratorDiscovery()
@@ -2373,6 +2378,10 @@ func (s *Server) shutdown(ctx context.Context) error {
 	if s.grafanaSessionCleanupCancel != nil {
 		s.grafanaSessionCleanupCancel()
 		s.grafanaSessionCleanupCancel = nil
+	}
+	if s.receiptOutcomeCleanupCancel != nil {
+		s.receiptOutcomeCleanupCancel()
+		s.receiptOutcomeCleanupCancel = nil
 	}
 	if s.sourceSecretCleanupCancel != nil {
 		s.sourceSecretCleanupCancel()

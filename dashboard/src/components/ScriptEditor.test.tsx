@@ -62,11 +62,14 @@ const apiMock = {
   createProjectSecrets: vi.fn(),
   rebindScriptSecretReference: vi.fn(),
   createScript: vi.fn(),
+  // Keyed creates reach the createScript mock; intent tests assert the key.
+  createScriptKeyed: vi.fn(async (...args: [script: unknown, projectId?: string, folderId?: string | null, key?: string]) => ({ kind: 'created' as const, resource: await apiMock.createScript(args[0], args[1], args[2]) })),
   updateScript: vi.fn(),
   downloadScript: vi.fn(),
   createAuthoringSession: vi.fn(),
   validateScript: vi.fn(),
   validateDraftScript: vi.fn(),
+  getScriptValidationContext: vi.fn(),
   replayDraftScript: vi.fn(),
   replayScript: vi.fn(),
   startDraftBrowserReplaySession: vi.fn(),
@@ -5923,6 +5926,29 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.parameter-grid-index')?.textContent?.trim()).toBe('2')
   })
 
+  it('debugs the resolved draft with an unblurred data cell rather than an earlier copy', async () => {
+    const pair = authoringFixture({ ...initialScript, parameters: [{ name: 'username', type: 'file', data_source: 'users', column: 'username' }], data_sources: [{ name: 'users', type: 'csv', strategy: 'sequential', first_row_header: true, inline_data: 'username\nalice' }] })
+    await act(async () => { root.render(<KeyboardShortcutProvider><ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} initialFocusedDataSourceName="users" projectId="project-1" /></KeyboardShortcutProvider>) })
+    const cell = container.querySelector<HTMLInputElement>('input[aria-label="Row 1, username for users"]')!
+    await act(async () => { cell.focus(); changeInputValue(cell, 'pending-cell') })
+    await act(async () => {
+      findOpenDebuggerButton(container)!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    // A stored script's debug session runs the editor's current draft.
+    expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+    const [scriptId, request] = apiMock.startScriptDebugSession.mock.calls[0]
+    expect(scriptId).toBe('script-1')
+    expect(request.script.data_sources[0].inline_data).toContain('pending-cell')
+    expect(request.script.data_sources[0].inline_data).not.toContain('alice')
+  })
+
   it('includes the active project id in draft replay payloads', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
@@ -7466,6 +7492,100 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-feedback-strip')?.textContent || '').not.toContain('browser action 1 is missing a selector')
   })
 
+  it('clears a readiness result whose controller context changed and says why (AUTH-B)', async () => {
+    const context = (secrets: string) => ({ version: 1, revision: `vctx1:${secrets}`, secret_reference_limit: 256, components: { capabilities: 'c', policy: 'p', approvals: 'a', secret_references: secrets } })
+    // Each focus probe is spaced past the minimum interval.
+    let clock = Date.now()
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => (clock += 10_000))
+    apiMock.validateDraftScript.mockResolvedValueOnce({ script_id: '', valid: true, issues: [], warnings: [], validation_context: context('secrets-a') })
+    apiMock.getScriptValidationContext.mockResolvedValue(context('secrets-a'))
+    await act(async () => { root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />) })
+    await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushReact()
+    expect(findReadinessCard(container)?.textContent).toContain('Script validation passed.')
+
+    // An unchanged context keeps the result.
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    await flushReact()
+    expect(apiMock.getScriptValidationContext).toHaveBeenCalledWith(expect.objectContaining({ project_id: 'project-1', script: expect.objectContaining({ name: initialScript.name }) }))
+    expect(findReadinessCard(container)?.textContent).toContain('Script validation passed.')
+
+    // A rebound project secret makes it stale, with the reason shown.
+    apiMock.getScriptValidationContext.mockResolvedValue(context('secrets-b'))
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    await flushReact()
+    const card = findReadinessCard(container)?.textContent || ''
+    expect(card).not.toContain('Script validation passed.')
+    expect(card).toContain('Readiness results no longer apply: project secrets changed since the check. Recheck readiness.')
+    now.mockRestore()
+  })
+
+  it('treats a newer stored revision as making the result stale (AUTH-B)', async () => {
+    const context = { version: 1, revision: 'vctx1:stored', secret_reference_limit: 256, components: { capabilities: 'c', policy: 'p', approvals: 'a', secret_references: 's' } }
+    let clock = Date.now()
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => (clock += 10_000))
+    apiMock.validateScript.mockResolvedValueOnce({ script_id: 'script-1', valid: true, issues: [], warnings: [], validation_context: context })
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />) })
+    await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushReact()
+    expect(findReadinessCard(container)?.textContent).toContain('Script validation passed.')
+    apiMock.getScriptValidationContext.mockRejectedValue(new ApiError('changed', 409, { error: 'changed', code: 'validation_context_revision_changed' }))
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    await flushReact()
+    expect(apiMock.getScriptValidationContext).toHaveBeenCalledWith(expect.objectContaining({ project_id: 'project-1', script_id: 'script-1' }))
+    const card = findReadinessCard(container)?.textContent || ''
+    expect(card).not.toContain('Script validation passed.')
+    expect(card).toContain('Readiness results no longer apply: the stored script changed since the check. Recheck readiness.')
+    now.mockRestore()
+  })
+
+  it('backs off a failing validation-context probe and probes the timer only with focus (AUTH-B)', async () => {
+    const context = { version: 1, revision: 'vctx1:a', secret_reference_limit: 256, components: { capabilities: 'c', policy: 'p', approvals: 'a', secret_references: 's' } }
+    let clock = 1_000_000
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      apiMock.validateDraftScript.mockResolvedValueOnce({ script_id: '', valid: true, issues: [], warnings: [], validation_context: context })
+      await act(async () => { root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />) })
+      await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      await flushReact()
+      expect(findReadinessCard(container)?.textContent).toContain('Script validation passed.')
+      apiMock.getScriptValidationContext.mockReset()
+      // A window without focus is not probed on the timer.
+      clock += 120_000
+      await act(async () => { vi.advanceTimersByTime(120_000) })
+      expect(apiMock.getScriptValidationContext).not.toHaveBeenCalled()
+      // A failed probe doubles the spacing before the next.
+      apiMock.getScriptValidationContext.mockRejectedValue(new ApiError('unavailable', 503, { error: 'unavailable' }))
+      const focus = async (advance: number) => { clock += advance; await act(async () => { window.dispatchEvent(new Event('focus')) }); await flushReact() }
+      await focus(6_000)
+      expect(apiMock.getScriptValidationContext).toHaveBeenCalledTimes(1)
+      await focus(6_000)
+      expect(apiMock.getScriptValidationContext).toHaveBeenCalledTimes(1)
+      await focus(6_000)
+      expect(apiMock.getScriptValidationContext).toHaveBeenCalledTimes(2)
+      // A new result starts afresh: the next probe needs only the base spacing.
+      apiMock.validateDraftScript.mockResolvedValueOnce({ script_id: '', valid: true, issues: [], warnings: [], validation_context: context })
+      await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      await flushReact()
+      await focus(6_000)
+      expect(apiMock.getScriptValidationContext).toHaveBeenCalledTimes(3)
+      // A window with focus is probed on the timer once the spacing allows.
+      hasFocus.mockReturnValue(true)
+      apiMock.getScriptValidationContext.mockResolvedValue(context)
+      clock += 60_000
+      await act(async () => { vi.advanceTimersByTime(60_000) })
+      await flushReact()
+      expect(apiMock.getScriptValidationContext).toHaveBeenCalledTimes(4)
+      expect(findReadinessCard(container)?.textContent).toContain('Script validation passed.')
+    } finally {
+      vi.useRealTimers()
+      hasFocus.mockRestore()
+      now.mockRestore()
+    }
+  })
+
   it('validates a draft script before save', async () => {
     apiMock.validateDraftScript.mockResolvedValueOnce({
       script_id: '',
@@ -8130,6 +8250,36 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Executed: Run Logic')
     expect(container.textContent).toContain('Partial: Logging')
     expect(container.textContent).toContain('No imported runtime settings matched the selected block statuses: blocked.')
+  })
+
+  it('retries a create under its draft-owned key and creates another script only on an explicit Save as new (AUTH-1)', async () => {
+    window.localStorage.clear()
+    apiMock.createScript.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} initiallyDirty projectId="project-1" />)
+    })
+    const save = () => container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')!
+    await act(async () => { save().click() })
+    await flushReact()
+    const key = apiMock.createScriptKeyed.mock.calls[0][3]
+    expect(key).toMatch(/^script-create-/)
+    expect(container.textContent).not.toContain('Save as new')
+
+    // The retry presents the same key; the controller refuses it because the
+    // earlier attempt may have created a script from a different draft.
+    apiMock.createScriptKeyed.mockRejectedValueOnce(new ApiError('reused', 409, { error: 'reused', code: 'idempotency_key_reused' }))
+    await act(async () => { save().click() })
+    await flushReact()
+    expect(apiMock.createScriptKeyed.mock.calls[1][3]).toBe(key)
+    expect(container.textContent).toContain('may already have created the script')
+    const saveAsNew = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save as new')!
+    expect(saveAsNew).toBeTruthy()
+
+    apiMock.createScript.mockResolvedValueOnce(savedAuthoringFixture(initialScript, 'created-as-new'))
+    await act(async () => { saveAsNew.click() })
+    await flushReact()
+    expect(apiMock.createScriptKeyed).toHaveBeenCalledTimes(3)
+    expect(apiMock.createScriptKeyed.mock.calls[2][3]).not.toBe(key)
   })
 
   it('deduplicates rapid saves before React commits the pending state', async () => {

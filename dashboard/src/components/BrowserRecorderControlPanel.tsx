@@ -2,6 +2,7 @@ import { confirmAction } from './ux/confirmAction'
 import { type ReactNode, useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 
 import { useRecordingApi } from '../hooks/useApi'
+import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
 import { hasDesktopApiCapability } from '../hooks/apiClient'
 import { getErrorMessage } from '../utils/errorUtils'
 import { downloadBlob } from '../utils/fileUtils'
@@ -409,6 +410,13 @@ export default function BrowserRecorderControlPanel({
     setSalesforceReviewGeneration(next)
     return next
   }, [])
+  // The review generation each draft was last saved at: a later conversion
+  // or edit is unsaved work again, so leaving asks first.
+  const [savedPreviewGeneration, setSavedPreviewGeneration] = useState<number | null>(null)
+  const [savedSalesforceGeneration, setSavedSalesforceGeneration] = useState<number | null>(null)
+  const reviewUnsaved = (preview !== null && savedPreviewGeneration !== previewReviewGeneration)
+    || (salesforceDraft !== null && savedSalesforceGeneration !== salesforceReviewGeneration)
+  useUnsavedWorkGuard('BrowserRecorderControlPanel', 'Recording review', reviewUnsaved, () => undefined)
   const previewPreparedScriptsRef = useRef<ScriptDefinition[] | null>(null)
   const previewSaveBindingsRef = useRef<Array<SecretBindingSelection & { script_index: number }>>([])
   const salesforcePreparedScriptsRef = useRef<ScriptDefinition[] | null>(null)
@@ -1180,6 +1188,7 @@ export default function BrowserRecorderControlPanel({
         return
       }
       setSavedScript(persisted[0])
+      setSavedPreviewGeneration(previewReviewGenerationRef.current)
       onImported?.({ scripts: persisted })
       setSaveFeedback({
         message: persisted.length === 1
@@ -1619,6 +1628,7 @@ export default function BrowserRecorderControlPanel({
         return
       }
       setSavedScript(persisted[0])
+      setSavedSalesforceGeneration(salesforceReviewGenerationRef.current)
       onImported?.({ scripts: persisted })
       setSalesforceSaveFeedback({
         message: `Saved ${persisted.length === 1 ? `Salesforce HTTP script "${persisted[0].name}"` : `${persisted.length} Salesforce HTTP scripts`} to the script library`,
@@ -1778,8 +1788,11 @@ export default function BrowserRecorderControlPanel({
           <span className={`brp-status brp-status-${session.status}`}>{statusLabel(session)}</span>
         </div>
         {onDismiss && !live && (
-          <button type="button" className="rec-inline-action" disabled={busy} onClick={() => {
+          <button type="button" className="rec-inline-action" disabled={busy} onClick={async () => {
             if (busy) return
+            // Dismissing is leaving: an unsaved review asks first, as the
+            // navigation guard does.
+            if (reviewUnsaved && !(await confirmAction('Its unsaved conversion is discarded.', { title: 'Dismiss recording review?', confirmLabel: 'Dismiss', destructive: true }))) return
             panelActiveRef.current = false
             previewReviewGenerationRef.current += 1
             salesforceReviewGenerationRef.current += 1

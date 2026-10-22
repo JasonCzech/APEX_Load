@@ -30,6 +30,7 @@ import { actionBreadcrumb, dedupeAuthorIssues, insertAuthorAction, remapInserted
 import { captureScript, type DebugRunRecord } from './debuggerExperience'
 import { withMappingReviewState } from './sourceMappingReviewState'
 import { persistScriptAuthoringDraft } from './scriptAuthoringWorkflow'
+import { AuthoringCreateNeedsNewIntent, forgetAuthoringCreateIntent, type AuthoringCreateIntent } from './authoringCreateIntent'
 import { ActionBodyWorkspace } from './ActionBodyWorkspace'
 import { debugContinuesAfterFailure, debugRunIdError, parameterUsageLabel } from './scriptSidebarModel'
 import { DatasetChangeReview, type DatasetChange } from './DatasetChangeReview'
@@ -232,7 +233,7 @@ import {
   useScriptJsonNavigationController,
 } from './useScriptJsonAuthoringController'
 import { useScriptAuthoringSession, type ResolvedScriptDraft } from './useScriptAuthoringSession'
-import { draftFingerprint, scriptSaveAvailability, validationContextKey } from './scriptAuthoringSession'
+import { describeValidationContextChanges, draftFingerprint, scriptSaveAvailability, validationContextKey } from './scriptAuthoringSession'
 import { CatalogFieldDraftContext, useCatalogFieldDrafts } from './catalogFieldDrafts'
 import {
   buildBrowserHTTPConversionReview,
@@ -1548,6 +1549,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }, [editorOwnsSavedEcho, sandboxSeedScope, setReplayOptions])
   const editorResourceScopeRef = useRef({ projectId, folderId, scriptId, initialScript })
   const editorResourceScopeVersionRef = useRef(0)
+  // The create intent belongs to the draft this editor opened in its project
+  // (AUTH-1): a folder change or a retry keeps it; another draft does not.
+  // Whether the held validation result attests the stored script (by ID)
+  // rather than a submitted draft.
+  const validatedStoredRef = useRef(false)
+  const createIntentRef = useRef<{ draft: unknown; projectId: string | undefined; intent: AuthoringCreateIntent | null; fresh: boolean }>({ draft: initialScript, projectId, intent: null, fresh: false })
+  if (createIntentRef.current.draft !== initialScript || createIntentRef.current.projectId !== projectId) {
+    createIntentRef.current = { draft: initialScript, projectId, intent: null, fresh: false }
+  }
+  // The intent owner whose key the controller refused for good, with the
+  // error that said so; Save as new applies to that draft and error only.
+  const [refusedIntent, setRefusedIntent] = useState<{ owner: object; message: string } | null>(null)
+  const createNeedsNewIntent = refusedIntent !== null && refusedIntent.owner === createIntentRef.current && refusedIntent.message === error
   if (
     editorResourceScopeRef.current.projectId !== projectId
     || editorResourceScopeRef.current.folderId !== folderId
@@ -1586,6 +1600,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     validatedBinding,
     currentBinding: currentValidationBinding,
     validationIsCurrent: validationResultIsCurrent,
+    validationContextChanged,
     authoringBaseline,
     authoringRevisionState,
     authoringRevisionReason,
@@ -1606,6 +1621,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     flushPendingEdits,
     documentKey: validationDocumentKey,
     context: validationContext,
+    // The held result is re-checked against the controller's context: a
+    // stored-script result by its ID, a draft result with the document it
+    // validated (the rendered one, since the binding is still current).
+    probeValidationContext: binding => validatedStoredRef.current && scriptId
+      ? api.getScriptValidationContext({ project_id: projectId, script_id: scriptId, content_revision: binding.contentRevision })
+      : api.getScriptValidationContext({ project_id: projectId, folder_id: folderId, script: currentAuthoringSourceRef.current.script }),
     baseline: {
       scriptId: scriptId || undefined,
       projectId,
@@ -3020,7 +3041,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       && saveRequestRef.current === requestID
     )
     saveInFlightScopeRef.current = requestResourceScope
-    setError(''); setSuccess(''); setWarnings([]); setSaving(true)
+    const intentOwner = createIntentRef.current
+    setError(''); setSuccess(''); setWarnings([]); setSaving(true); setRefusedIntent(null)
     setValidationEvidence(null)
     clearValidatedBinding()
     setValidationReplayPreflight(null)
@@ -3037,6 +3059,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       const persisted = await persistScriptAuthoringDraft({
         scriptId, projectId, folderId, baseline: authoringBaseline,
         draft: normalizedDraft, importBaseline: importBaselineScript || initialScript || null,
+        createIntent: { current: intentOwner.intent, fresh: intentOwner.fresh, update: next => { intentOwner.intent = next; intentOwner.fresh = false } },
       }, { api, isCurrent: requestIsCurrent })
       if (persisted.kind === 'superseded') return persisted.saved
       if (persisted.kind === 'invalid') { setShowAuthorProblems(true); return false }
@@ -3072,7 +3095,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       markSaved()
       const persistedSecretNames = new Set(scriptSecretReferenceSummaries(savedDefinition).map(binding => binding.name))
       pendingCreatedSecretNamesRef.current = pendingCreatedSecretNamesRef.current.filter(name => !persistedSecretNames.has(name))
-      setSuccess('Script saved successfully!')
+      setSuccess(persisted.replayed ? 'This draft had already been saved by an earlier attempt; the saved script is opening.' : 'Script saved successfully!')
       if (scriptId) {
         await refreshScriptSecretStatus()
         if (!requestIsCurrent()) return true
@@ -3105,9 +3128,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         ? `Saving failed on the server; your draft is kept here. Choose Save to try again. Server detail: ${getErrorMessage(e, 'none given')}`
         : getErrorMessage(e, 'Failed to save script')
       const createdNames = pendingCreatedSecretNamesRef.current
-      setError(createdNames.length > 0
+      const message = createdNames.length > 0
         ? `${baseMessage} ${createdNames.join(', ')} ${createdNames.length === 1 ? 'was' : 'were'} already created and remain in the project vault as unused entries until this draft is saved or the entries are removed administratively.`
-        : baseMessage)
+        : baseMessage
+      if (e instanceof AuthoringCreateNeedsNewIntent) setRefusedIntent({ owner: intentOwner, message })
+      setError(message)
       if (getErrorMessage(e, '').includes('Script JSON is invalid')) {
         setDebuggerBottomTab('problems')
       }
@@ -3201,7 +3226,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         authoring_health: res.authoring_health,
       })
       const validatedDocumentKey = formatScriptJson(validationScript)
-      adoptValidated(request, validatedDocumentKey)
+      validatedStoredRef.current = stored
+      adoptValidated(request, validatedDocumentKey, res.validation_context ?? null)
       // Validation can only add derived metadata (an import's runtime
       // settings parity): debug evidence for the document it validated still
       // describes the committed one.
@@ -3982,13 +4008,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     ? (projectProbeIsUnavailable || typeof api.getProjectSecretStatuses !== 'function' ? 'unavailable' : 'checking')
     : undefined
 
+  const validationContextChangeLabel = describeValidationContextChanges(validationContextChanged)
   useEffect(() => {
     if (validatedBinding === null || validationResultIsCurrent) return
     setValidationReplayPreflight(null)
     setValidationEvidence(null)
     clearValidatedBinding()
-    setValidationSidebarResult(null)
-  }, [clearValidatedBinding, validatedBinding, validationResultIsCurrent])
+    // A result made stale by the controller context (not by an edit) says
+    // why, so the author knows to recheck rather than look for a change.
+    setValidationSidebarResult(validationContextChangeLabel
+      ? { tone: 'warning', message: `Readiness results no longer apply: ${validationContextChangeLabel} changed since the check. Recheck readiness.`, warnings: [], issues: [] }
+      : null)
+  }, [clearValidatedBinding, validatedBinding, validationContextChangeLabel, validationResultIsCurrent])
   const replayFailingEventIndex = replayReport?.events.findIndex(event => !event.success) ?? -1
   const replayFailingEvent = replayReport && replayFailingEventIndex >= 0 ? replayReport.events[replayFailingEventIndex] : null
   const replayVariableTimeline = replayReport
@@ -7238,7 +7269,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       )}
       {(error || warnings.length > 0 || success) && (
         <div className="editor-feedback-strip">
-          {error && <div className="editor-toast error">{error}</div>}
+          {error && <div className="editor-toast error">
+            {error}
+            {createNeedsNewIntent && !scriptId && (
+              <button type="button" className="btn btn-sm btn-secondary" disabled={saving} onClick={() => {
+                // An explicit new intent: forget the old key, then create.
+                forgetAuthoringCreateIntent(createIntentRef.current.intent)
+                createIntentRef.current.intent = null
+                createIntentRef.current.fresh = true
+                setRefusedIntent(null)
+                void handleSave()
+              }}>Save as new</button>
+            )}
+          </div>}
           {warnings.length > 0 && (
             <div className="editor-toast warning">
               {warnings.map((warning, index) => (

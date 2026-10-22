@@ -50,7 +50,40 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	req.creationActor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
 
+	// An Idempotency-Key makes a run create (such as a queued run's revised
+	// copy) retry-safe under receipt contract 1: a retry returns the run the
+	// first attempt created, as it is now.
+	receipt, ok := s.claimTestCreate(w, r, &req)
+	if !ok {
+		return
+	}
+	defer receipt.release()
+	receipt.markAttempted()
 	test, err := s.runner.CreateTest(req)
+	if err != nil && errors.Is(err, errTestIdentityCollision) && receipt.adoptsExisting() {
+		// An earlier attempt with this key created the run, but its response
+		// (and receipt completion) was lost.
+		s.replayTestCreate(w, r, receipt)
+		return
+	}
+	if err != nil && receipt != nil {
+		if errors.Is(err, errTestIdentityCollision) {
+			// A caller-chosen run ID is never adopted: nothing proves the
+			// run there is this key's.
+			writeAuthoringIdempotencyError(w, http.StatusConflict, "test_identity_in_use", "a run with requested_test_id already exists; read it by that ID before creating another")
+			return
+		}
+		if receipt.derivedID && !s.durableTestAbsent(receipt.resourceID()) {
+			// The key fixed this run's ID, so a run there (or an unreadable
+			// store) means the failure may have followed the commit: answer
+			// as unknown so the client keeps the key, never as a refusal it
+			// may rotate, and let its retry resume the receipt at once. A
+			// caller-chosen ID proves nothing and keeps the original error.
+			receipt.outcomeUnknown = true
+			writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "test_create_outcome_unknown", "the run create's outcome is unknown; retry with the same Idempotency-Key, which returns the run if it was created")
+			return
+		}
+	}
 	if err != nil {
 		if errors.Is(err, errServiceAccountRuntimeSecretWrite) {
 			writeError(w, http.StatusForbidden, err.Error())
@@ -63,9 +96,58 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	receipt.complete("")
 	s.recordAuditEvent(r, "test.create", "success", "test", test.ID, test.ProjectID, map[string]any{"name": test.Name, "status": test.Status})
-
+	markAuthoringReceiptVersion(w, receipt)
 	writeJSON(w, http.StatusCreated, maskManagedTest(test))
+}
+
+// claimTestCreate claims a run create's Idempotency-Key, if any, and fixes
+// the run ID to the receipt's. ok is false when a response was written: a
+// refusal, or the replay of an earlier attempt's run.
+func (s *Server) claimTestCreate(w http.ResponseWriter, r *http.Request, req *CreateTestRequest) (*authoringCreateAttempt, bool) {
+	if len(r.Header.Values("Idempotency-Key")) > 0 {
+		if version, valid := authoringReceiptVersionRequested(r); valid && version != storage.AuthoringReceiptOutcomeLegacy {
+			writeAuthoringIdempotencyError(w, http.StatusBadRequest, "idempotency_receipt_version_unsupported", "run creates support receipt contract 1 only")
+			return nil, false
+		}
+	}
+	fingerprint, err := testCreateReceiptFingerprint(*req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return nil, false
+	}
+	projectID := normalizeProjectID(req.ProjectID)
+	if authorized, scoped := authorizedProjectFromRequest(r); scoped {
+		projectID = authorized
+	}
+	attempt, outcome := s.claimAuthoringCreate(w, r, storage.AuthoringPurposeTestCreate, "test", projectID, req.RequestedTestID, fingerprint)
+	switch outcome {
+	case authoringCreateHandled:
+		return nil, false
+	case authoringCreateReplay:
+		s.replayTestCreate(w, r, attempt)
+		return nil, false
+	}
+	if attempt == nil {
+		return nil, true
+	}
+	attempt.absent = s.durableTestAbsent
+	if strings.TrimSpace(req.RequestedTestID) == "" {
+		req.RequestedTestID = attempt.resourceID()
+	} else if !attempt.derivedID && !attempt.resumed && s.durableTestPresent(attempt.resourceID()) {
+		// Run creates never overwrite: whatever this attempt does, the run
+		// already at the caller's ID is not its creation.
+		attempt.cannotHaveCreated = true
+	}
+	if attempt.adoptsExisting() {
+		if _, found := s.runner.GetTest(attempt.resourceID()); found {
+			s.replayTestCreate(w, r, attempt)
+			attempt.release()
+			return nil, false
+		}
+	}
+	return attempt, true
 }
 
 func (s *Server) handleEstimateTest(w http.ResponseWriter, r *http.Request) {
@@ -790,7 +872,7 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	// the receipt like any other create.
 	var receipt *authoringCreateAttempt
 	if !credentialPreservingImportClaimsAttestation(script) {
-		attempt, outcome := s.claimAuthoringCreate(w, r, storage.AuthoringPurposeScriptCreate, "script", script.ProjectID, script.ID, scriptCreateFingerprint(wrapper))
+		attempt, outcome := s.claimAuthoringCreate(w, r, storage.AuthoringPurposeScriptCreate, "script", script.ProjectID, script.ID, authoringReceiptFingerprint{request: scriptCreateFingerprint(wrapper)})
 		switch outcome {
 		case authoringCreateHandled:
 			return
@@ -955,9 +1037,17 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		)
 	} else {
 		receipt.markAttempted()
-		stored, err = s.runner.CreateScriptAuthoringDurable(script)
+		if receipt.originalOutcome() {
+			stored, err = s.runner.CreateScriptAuthoringDurableCompletingReceipt(script, receipt.completion())
+			receipt.completedInTransaction = err == nil
+		} else {
+			stored, err = s.runner.CreateScriptAuthoringDurable(script)
+		}
 	}
 	if err != nil {
+		if writeAuthoringReceiptCreateError(w, err) {
+			return
+		}
 		if errors.Is(err, errScriptAuthoringAlreadyExists) {
 			if receipt.adoptsExisting() {
 				s.replayScriptCreate(w, r, receipt)
@@ -999,6 +1089,7 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	}
 	receipt.complete(stored.ContentRevision)
 	s.recordAuditEvent(r, "script.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": disclosureSafeScriptName(stored.Name, stored.Script), "folder_id": stored.FolderID})
+	markAuthoringReceiptVersion(w, receipt)
 	writeJSON(w, http.StatusCreated, viewStoredScript(stored))
 }
 
@@ -1159,12 +1250,86 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 	}
 	if err == nil && found && durable != nil && durable.Script != nil &&
 		durable.ID == script.ID && durable.ProjectID == script.ProjectID && durable.ContentRevision != "" {
-		response := buildScriptValidationResponse(id, durable.Script, s.runner.secretResolverForScript(durable.Script))
+		binding := s.runner.secretBindingForScript(durable.Script)
+		resolver := s.runner.secretResolverForBinding(binding)
+		response := buildScriptValidationResponse(id, durable.Script, resolver)
 		response.ValidatedContentRevision = durable.ContentRevision
+		s.attachValidationContext(r, &response, durable.ProjectID, durable.Script, binding, resolver)
 		writeJSON(w, http.StatusOK, response)
 		return
 	}
-	writeJSON(w, http.StatusOK, buildScriptValidationResponse(id, script.Script, s.runner.secretResolverForScript(script.Script)))
+	binding := s.runner.secretBindingForScript(script.Script)
+	resolver := s.runner.secretResolverForBinding(binding)
+	response := buildScriptValidationResponse(id, script.Script, resolver)
+	s.attachValidationContext(r, &response, script.ProjectID, script.Script, binding, resolver)
+	writeJSON(w, http.StatusOK, response)
+}
+
+// handleValidationContext answers the current validation context for a
+// draft or stored script, without validating it, so an editor can tell
+// whether a result it holds still describes the context it depended on.
+func (s *Server) handleValidationContext(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		ProjectID string      `json:"project_id,omitempty"`
+		FolderID  *string     `json:"folder_id,omitempty"`
+		ScriptID  string      `json:"script_id,omitempty"`
+		Script    *dsl.Script `json:"script,omitempty"`
+		// ContentRevision, with script_id, is the stored revision the held
+		// result validated; a newer one answers 409 rather than a context
+		// computed for content the result never saw.
+		ContentRevision string `json:"content_revision,omitempty"`
+	}
+	if !decodeJSONBody(w, r, &request) {
+		return
+	}
+	var script *dsl.Script
+	var projectID string
+	switch {
+	case request.Script != nil && strings.TrimSpace(request.ScriptID) == "":
+		script = request.Script
+		if request.ProjectID != "" {
+			script.ProjectID = request.ProjectID
+		}
+		if request.FolderID != nil {
+			script.FolderID = request.FolderID
+		}
+		if !s.bindValidationDraft(w, r, script) {
+			return
+		}
+		scoped, err := s.draftForSecretBinding(script)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "the validation context is unavailable")
+			return
+		}
+		script, projectID = scoped, script.ProjectID
+	case request.Script == nil && strings.TrimSpace(request.ScriptID) != "":
+		stored, found, err := s.runner.GetScriptAuthoringDurable(request.ScriptID)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "the script could not be read")
+			return
+		}
+		// Another project's script is as hidden as a missing one.
+		authorized, scoped := authorizedProjectFromRequest(r)
+		if !found || stored == nil || stored.Script == nil || (scoped && normalizeProjectID(stored.ProjectID) != authorized) {
+			writeError(w, http.StatusNotFound, "script not found")
+			return
+		}
+		if revision := strings.TrimSpace(request.ContentRevision); revision != "" && revision != stored.ContentRevision {
+			writeJSON(w, http.StatusConflict, AuthoringIdempotencyError{Error: "the stored script changed since the result was validated", Code: "validation_context_revision_changed"})
+			return
+		}
+		script, projectID = stored.Script, stored.ProjectID
+	default:
+		writeError(w, http.StatusBadRequest, "exactly one of script and script_id is required")
+		return
+	}
+	binding := s.runner.secretBindingForScript(script)
+	validation, err := s.buildValidationContext(r.Context(), projectID, script, binding, s.runner.secretResolverForBinding(binding))
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "the validation context is unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, validation)
 }
 
 // maxValidationFingerprintBytes bounds the opaque draft fingerprint a client
@@ -1209,15 +1374,67 @@ func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Reques
 	if wrapper.FolderID != nil {
 		script.FolderID = wrapper.FolderID
 	}
+	if !s.bindValidationDraft(w, r, script) {
+		return
+	}
 
+	// A draft whose ID could not be checked validates as an unsaved draft of
+	// its project, without a context: the context's binding is unknown.
+	scoped, scopeErr := s.draftForSecretBinding(script)
+	binding := s.runner.secretBindingForScript(scoped)
+	resolver := s.runner.secretResolverForBinding(binding)
 	response := buildDraftScriptValidationResponseWithVariables(
 		"",
 		script,
 		wrapper.Variables,
-		s.runner.secretResolverForScript(script),
+		resolver,
 	)
 	response.ValidatedFingerprint = wrapper.Fingerprint
+	if scopeErr == nil {
+		s.attachValidationContext(r, &response, script.ProjectID, scoped, binding, resolver)
+	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+// bindValidationDraft binds a draft to the project its request was
+// authorized for, as a draft save does, so its validation and context
+// describe that project rather than the default one.
+func (s *Server) bindValidationDraft(w http.ResponseWriter, r *http.Request, script *dsl.Script) bool {
+	if authorized, scoped := authorizedProjectFromRequest(r); scoped {
+		if err := bindDraftScriptProject(script, authorized); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return false
+		}
+	}
+	return true
+}
+
+// draftForSecretBinding is the draft as its secrets and approval resolve:
+// its ID selects a library assignment and an approval only when it names a
+// stored script in the draft's own project, read durably (as the binding
+// is), not from a replica's cache. Any other ID is dropped, so a draft cannot
+// borrow another project's assignment, application secrets or approval
+// state. A failed read returns the draft without its ID and the error.
+func (s *Server) draftForSecretBinding(script *dsl.Script) (*dsl.Script, error) {
+	id := strings.TrimSpace(script.ID)
+	if id == "" || s.runner == nil {
+		return script, nil
+	}
+	unbound := *script
+	unbound.ID = ""
+	stored, found, err := s.runner.GetScriptAuthoringDurable(id)
+	if errors.Is(err, errScriptAuthoringUnsupported) {
+		// A store without durable authoring reads has only the cache.
+		cached, ok := s.runner.GetScript(id)
+		stored, found, err = cached, ok, nil
+	}
+	if err != nil {
+		return &unbound, err
+	}
+	if found && stored != nil && stored.ID == id && normalizeProjectID(stored.ProjectID) == normalizeProjectID(script.ProjectID) {
+		return script, nil
+	}
+	return &unbound, nil
 }
 
 func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {

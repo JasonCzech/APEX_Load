@@ -1887,6 +1887,8 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 			resource_type TEXT NOT NULL,
 			resource_id TEXT NOT NULL,
 			resource_revision TEXT NOT NULL DEFAULT '',
+			outcome_version INTEGER NOT NULL DEFAULT 1,
+			original_outcome TEXT NOT NULL DEFAULT '',
 			state TEXT NOT NULL CHECK(state IN ('pending', 'complete')),
 			owner_token TEXT NOT NULL DEFAULT '',
 			lease_expires_at DATETIME,
@@ -2258,6 +2260,10 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "feature_evaluation_jobs.subject_id", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN subject_id TEXT NOT NULL DEFAULT ''`},
 		{name: "rca_analyses.origin", query: `ALTER TABLE rca_analyses ADD COLUMN origin TEXT NOT NULL DEFAULT 'requested'`},
 		{name: "feature_acceptance_records.seq", query: `ALTER TABLE feature_acceptance_records ADD COLUMN seq BIGINT NOT NULL DEFAULT 0`},
+		// Original-outcome (v2) authoring receipts. Existing receipts read as
+		// legacy (version 1) and keep replaying the current resource.
+		{name: "authoring_mutation_receipts.outcome_version", query: `ALTER TABLE authoring_mutation_receipts ADD COLUMN outcome_version INTEGER NOT NULL DEFAULT 1`},
+		{name: "authoring_mutation_receipts.original_outcome", query: `ALTER TABLE authoring_mutation_receipts ADD COLUMN original_outcome TEXT NOT NULL DEFAULT ''`},
 	}
 }
 
@@ -2413,6 +2419,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_rca_analyses_claim ON rca_analyses(state, lease_expires_at)`, "idx_rca_analyses_claim"},
 	{`CREATE INDEX IF NOT EXISTS idx_rca_critiques_analysis ON rca_critiques(analysis_id, created_at)`, "idx_rca_critiques_analysis"},
 	{`CREATE INDEX IF NOT EXISTS idx_authoring_mutation_receipts_resource ON authoring_mutation_receipts(resource_type, resource_id)`, "idx_authoring_mutation_receipts_resource"},
+	{`CREATE INDEX IF NOT EXISTS idx_authoring_mutation_receipts_unscrubbed_expiry ON authoring_mutation_receipts(expires_at) WHERE request_digest <> ''`, "idx_authoring_mutation_receipts_unscrubbed_expiry"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_key ON feature_evaluation_jobs(project_id, actor, kind, idempotency_key_hash) WHERE idempotency_key_hash <> ''`, "idx_feature_evaluation_jobs_key"},
 	{`CREATE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_claim ON feature_evaluation_jobs(state, created_at)`, "idx_feature_evaluation_jobs_claim"},
 	{`CREATE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_project ON feature_evaluation_jobs(project_id, created_at)`, "idx_feature_evaluation_jobs_project"},

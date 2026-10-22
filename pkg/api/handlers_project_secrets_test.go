@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -1487,6 +1488,62 @@ func TestScriptSecretReferencesIncludesNamedCredentialFieldsButNotAssetReference
 	}
 	if got := strings.Join(scriptSecretReferences(script), ","); got != "DATABASE_DSN,JMS_CA" {
 		t.Fatalf("script secret references = %q, want only logical credential fields", got)
+	}
+}
+
+// A clone is an independent draft that keeps where its source came from:
+// the import provenance survives the clone and the clone's own save.
+func TestCloneDraftKeepsSourceImportProvenance(t *testing.T) {
+	server, records, _, projectID := newProjectSecretAPIServer(t)
+	provenance := &dsl.ImportMetadata{
+		Source:           "har",
+		SourceScriptName: "checkout.har",
+		Inputs:           map[string]dsl.ImportInput{"order_id": {Mode: "data", Column: "order_id"}},
+	}
+	source := &dsl.Script{
+		ID: "imported-checkout", Name: "Imported checkout", Version: "1", Protocol: "http", ProjectID: projectID,
+		Metadata: &dsl.ScriptMetadata{Import: provenance},
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions:  []dsl.Action{{Name: "Open order", Type: "request", Method: "GET", Target: "/orders/{{var.order_id}}"}},
+	}
+	if err := records.SaveScript(source); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.runner.reloadStoredScripts(); err != nil {
+		t.Fatal(err)
+	}
+	clone := secretAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/"+source.ID+"/clone-draft", map[string]any{})
+	if clone.Code != http.StatusOK {
+		t.Fatalf("clone status = %d body=%s", clone.Code, clone.Body.String())
+	}
+	var cloned struct {
+		Script dsl.Script `json:"script"`
+	}
+	if err := json.Unmarshal(clone.Body.Bytes(), &cloned); err != nil {
+		t.Fatal(err)
+	}
+	if cloned.Script.ID != "" || cloned.Script.RefKey != "" || cloned.Script.Name != "Copy of Imported checkout" {
+		t.Fatalf("clone identity = id %q ref %q name %q, want a new unnamed draft", cloned.Script.ID, cloned.Script.RefKey, cloned.Script.Name)
+	}
+	if cloned.Script.Metadata == nil || !reflect.DeepEqual(cloned.Script.Metadata.Import, provenance) {
+		t.Fatalf("clone provenance = %#v, want %#v", cloned.Script.Metadata, provenance)
+	}
+
+	saved := secretAPIRequest(t, server, http.MethodPost, "/api/v1/scripts", map[string]any{"project_id": projectID, "script": cloned.Script})
+	if saved.Code != http.StatusCreated {
+		t.Fatalf("save clone status = %d body=%s", saved.Code, saved.Body.String())
+	}
+	var stored StoredScript
+	if err := json.Unmarshal(saved.Body.Bytes(), &stored); err != nil {
+		t.Fatal(err)
+	}
+	reread, ok := server.runner.GetScript(stored.ID)
+	if !ok || reread.ID == source.ID || reread.Script.Metadata == nil || !reflect.DeepEqual(reread.Script.Metadata.Import, provenance) {
+		t.Fatalf("saved clone = %#v, want a new script with the source's provenance", reread)
+	}
+	original, ok := server.runner.GetScript(source.ID)
+	if !ok || original.Name != "Imported checkout" || !reflect.DeepEqual(original.Script.Metadata.Import, provenance) {
+		t.Fatalf("source after clone and save = %#v", original)
 	}
 }
 

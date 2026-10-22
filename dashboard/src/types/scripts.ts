@@ -1327,6 +1327,22 @@ export interface ScriptValidationResponse {
   validated_fingerprint?: string
   // The stored script revision a stored-script validation read.
   validated_content_revision?: string
+  // The controller context the result depended on (absent from older
+  // controllers, whose results bind to the document only).
+  validation_context?: ScriptValidationContext
+}
+
+export type ScriptValidationContextComponent = 'capabilities' | 'policy' | 'approvals' | 'secret_references'
+
+// The controller context one validation result depended on. Opaque keyed
+// digests: a changed revision invalidates the result; components say why.
+export interface ScriptValidationContext {
+  version: number
+  revision: string
+  components: Record<ScriptValidationContextComponent, string>
+  contextual_findings?: Array<{ cause: 'secret_unavailable' | 'approval_required' | 'approval_stale' | 'capability_unavailable' | string; subject?: string; detail: string }>
+  secret_references_truncated?: boolean
+  secret_reference_limit: number
 }
 
 export interface ScriptExportResponse {

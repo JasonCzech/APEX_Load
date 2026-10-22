@@ -240,7 +240,7 @@ func (s *SQLiteStore) CreateScenarioAuthoringWithSourcesIfAbsent(input *Scenario
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.createScenarioAuthoringIfAbsent(input, groups, pools, admission)
+	result, err := s.createScenarioAuthoringIfAbsent(input, groups, pools, admission, nil, nil)
 	return sourceAdmissionResult(result, err)
 }
 func (s *SQLiteStore) UpdateScenarioAuthoringWithSourcesIfCurrent(input *Scenario, groups []ScenarioScript, pools []ScenarioDataPoolBinding, expected ScenarioAuthoringPrecondition, evidence ScenarioSourceAdmission) (*ScenarioAuthoringMutationResult, error) {

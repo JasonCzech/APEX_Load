@@ -843,3 +843,51 @@ func TestApplyScenarioRuntimeToGroupsRejectsStaleHASnapshot(t *testing.T) {
 		t.Fatalf("stale runtime update changed durable children: %+v", durableChildren)
 	}
 }
+
+// A scenario's project-secret references (root and group runtime env) are
+// stored and read back as the same references, through the API and after the
+// controller restarts on the same store.
+func TestScenarioSecretReferencesSurviveSaveAndReload(t *testing.T) {
+	server, store := newRuntimeOverrideTestServer(t)
+	server.runner.StoreScript(httpScript("script-secret-refs", "Secret refs"))
+	body, err := json.Marshal(CreateScenarioRequest{
+		Name: "Secret references", Duration: "1m",
+		RuntimeSettings: &RuntimeSettingsOverride{Env: map[string]string{"API_TOKEN": "{{secret.api_token}}"}},
+		Groups: []CreateGroupEntry{{
+			Name: "Checkout", ScriptID: "script-secret-refs", VUsers: 1,
+			RuntimeSettings: &RuntimeSettingsOverride{Env: map[string]string{"GROUP_TOKEN": "{{secret.group_token}}"}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := httptest.NewRecorder()
+	server.mux.ServeHTTP(created, httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", bytes.NewReader(body)))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create status = %d body=%s", created.Code, created.Body.String())
+	}
+	var scenario StoredScenario
+	if err := json.Unmarshal(created.Body.Bytes(), &scenario); err != nil {
+		t.Fatal(err)
+	}
+	read := func(server *Server) {
+		t.Helper()
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID, nil))
+		if resp.Code != http.StatusOK {
+			t.Fatalf("read status = %d body=%s", resp.Code, resp.Body.String())
+		}
+		var got StoredScenario
+		if err := json.Unmarshal(resp.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.RuntimeSettings == nil || got.RuntimeSettings.Env["API_TOKEN"] != "{{secret.api_token}}" {
+			t.Fatalf("root env = %#v", got.RuntimeSettings)
+		}
+		if len(got.Scripts) != 1 || got.Scripts[0].RuntimeSettings == nil || got.Scripts[0].RuntimeSettings.Env["GROUP_TOKEN"] != "{{secret.group_token}}" {
+			t.Fatalf("group env = %#v", got.Scripts)
+		}
+	}
+	read(server)
+	read(NewServer(ServerConfig{Store: store}))
+}

@@ -99,6 +99,11 @@ func TestScenarioDraftsSaveToTheProjectAndNeverLaunch(t *testing.T) {
 	if allowed.Code != http.StatusCreated {
 		t.Fatalf("secret references %d %s", allowed.Code, allowed.Body)
 	}
+	// With the spacing the runtime accepts, too.
+	spaced := call(http.MethodPost, "/api/v1/projects/draft-p/scenario-drafts", map[string]any{"name": "Spaced refs", "document": map[string]any{"version": 3, "form": map[string]any{"runtime_settings": map[string]any{"env": map[string]any{"API_KEY": "{{ secret.API_KEY }}"}}}}})
+	if spaced.Code != http.StatusCreated {
+		t.Fatalf("spaced secret references %d %s", spaced.Code, spaced.Body)
+	}
 	// An edit draft names a scenario of its own project, never another's.
 	scenarioIDs := map[string]string{}
 	for _, projectID := range []string{"draft-p", "draft-other"} {
