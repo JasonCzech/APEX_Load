@@ -30,8 +30,9 @@ This [TEL-A slice](../../../ROADMAP_IMPLEMENTATION_SPEC.md#tel-a--durable-window
   - **Running counters:** the range is accounted as it grows, so each read is constant-time. Eligible publications evicted past the range's end while it is open become `unreported` once the range passes them.
   - **Retention:** the ledger holds the newest 4,096 publications, but a publication is accounted before it leaves, so eviction loses no classification. A later report of an evicted publication counts as `unknown`.
   - `published_eligible`, `ineligible` and `unknown` complete it. These are delivery outcomes, separate from accepted-record loss.
+  - `sampled_from` records when the accounting began: the run's start, or this controller's adoption of the run.
 - **Stage interaction.** The reference tab's unmeasured outcomes count as `browser_render` exclusions when its ledger records them. Other tabs' do not, and publications never reported do not either. Any tab's visible render refused as stalled or implausibly timed is still excluded, as before. The advisory criterion's exclusion-aware bound is therefore often inconclusive while the reference tab is hidden or busy. It is advisory, so the verdict is unaffected.
-- **Reports (TEL-B consumer).** The run report's telemetry acceptance section states the archived population in HTML and PDF. Each of its figures is in the CSV (`telemetry_render_population` rows).
+- **Reports (TEL-B consumer).** The run report's telemetry acceptance section states the archived population in HTML and PDF. Each of its figures is in the CSV (`telemetry_render_population` rows). A population accounted from an adoption says its publications were counted since then, not in all.
 
 ## Validation
 
@@ -43,13 +44,13 @@ Go:
   - in-range late reports;
   - ineligible and unknown reports;
   - the exactly-once identity.
-- `TestTelemetryRenderLedgerAccountsPastEviction` covers pending evicted publications, a whole evicted range, unplaceable reports and re-adoption.
+- `TestTelemetryRenderLedgerAccountsPastEviction` covers pending evicted publications, a whole evicted range, unplaceable reports and re-adoption, accounted from the adoption.
 - `TestLivePublicationsCarryIdentityAndEligibility` covers sequences, eligibility, collection bounds and no fabricated bounds.
 - `TestDistributedPublicationRepeatedOnlyWhenEveryCollectionWasPublished` covers the repeat check, including a batch without telemetry.
 - `TestTelemetryCollectionReplayDoesNotReageTerminalMetrics` covers the install-guard wiring through a real distributed revision, under legacy and sequence identities: a new collection's publication is eligible, and a terminal replay's is ineligible with the next sequence. `TestLivePublicationsCarryIdentityAndEligibility` also shows that a point a guard rejects takes no sequence.
 - `TestClientRenderReportAccountsPublications` covers the report handler, the live projection, the manifest and the reference-only exclusions.
 - `TestClientRenderReportGuardsTheReferenceAndTheBudget` covers malformed names, unknown fields, a spoofed tab identifier, the budget and archived rows.
-- `TestTelemetryAcceptanceReportStatesTheRenderPopulation` covers the HTML, PDF and CSV report output.
+- `TestTelemetryAcceptanceReportStatesTheRenderPopulation` covers the HTML, PDF and CSV report output, including a population accounted from an adoption.
 
 Dashboard:
 - the reporter: superseded, rendered and background outcomes; batching into one render with no double reports; nothing reported from before activation or before a visible render;

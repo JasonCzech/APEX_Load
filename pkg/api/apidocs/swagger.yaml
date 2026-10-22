@@ -13568,6 +13568,10 @@ paths:
                             rendered:
                               type: integer
                               format: int64
+                            sampled_from:
+                              type: string
+                              format: date-time
+                              nullable: true
                             superseded:
                               type: integer
                               format: int64
@@ -365956,6 +365960,10 @@ paths:
                                 rendered:
                                   type: integer
                                   format: int64
+                                sampled_from:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 superseded:
                                   type: integer
                                   format: int64
@@ -373987,6 +373995,10 @@ paths:
                               rendered:
                                 type: integer
                                 format: int64
+                              sampled_from:
+                                type: string
+                                format: date-time
+                                nullable: true
                               superseded:
                                 type: integer
                                 format: int64
@@ -383409,6 +383421,10 @@ paths:
                                 rendered:
                                   type: integer
                                   format: int64
+                                sampled_from:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 superseded:
                                   type: integer
                                   format: int64
@@ -391440,6 +391456,10 @@ paths:
                               rendered:
                                 type: integer
                                 format: int64
+                              sampled_from:
+                                type: string
+                                format: date-time
+                                nullable: true
                               superseded:
                                 type: integer
                                 format: int64
@@ -403665,6 +403685,10 @@ paths:
                       rendered:
                         type: integer
                         format: int64
+                      sampled_from:
+                        type: string
+                        format: date-time
+                        nullable: true
                       superseded:
                         type: integer
                         format: int64
@@ -420059,6 +420083,10 @@ paths:
                           rendered:
                             type: integer
                             format: int64
+                          sampled_from:
+                            type: string
+                            format: date-time
+                            nullable: true
                           superseded:
                             type: integer
                             format: int64
@@ -438112,6 +438140,10 @@ paths:
                                 rendered:
                                   type: integer
                                   format: int64
+                                sampled_from:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 superseded:
                                   type: integer
                                   format: int64
@@ -446143,6 +446175,10 @@ paths:
                               rendered:
                                 type: integer
                                 format: int64
+                              sampled_from:
+                                type: string
+                                format: date-time
+                                nullable: true
                               superseded:
                                 type: integer
                                 format: int64
@@ -455402,6 +455438,10 @@ paths:
                                 rendered:
                                   type: integer
                                   format: int64
+                                sampled_from:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 superseded:
                                   type: integer
                                   format: int64
@@ -463433,6 +463473,10 @@ paths:
                               rendered:
                                 type: integer
                                 format: int64
+                              sampled_from:
+                                type: string
+                                format: date-time
+                                nullable: true
                               superseded:
                                 type: integer
                                 format: int64
@@ -478756,6 +478800,10 @@ paths:
                                 rendered:
                                   type: integer
                                   format: int64
+                                sampled_from:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 superseded:
                                   type: integer
                                   format: int64
@@ -486787,6 +486835,10 @@ paths:
                               rendered:
                                 type: integer
                                 format: int64
+                              sampled_from:
+                                type: string
+                                format: date-time
+                                nullable: true
                               superseded:
                                 type: integer
                                 format: int64
@@ -497442,6 +497494,10 @@ paths:
                                 rendered:
                                   type: integer
                                   format: int64
+                                sampled_from:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 superseded:
                                   type: integer
                                   format: int64
@@ -505461,6 +505517,10 @@ paths:
                               rendered:
                                 type: integer
                                 format: int64
+                              sampled_from:
+                                type: string
+                                format: date-time
+                                nullable: true
                               superseded:
                                 type: integer
                                 format: int64

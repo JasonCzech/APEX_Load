@@ -2609,6 +2609,9 @@ export interface TelemetryRenderPopulation {
   unreported: number
   ineligible?: number
   unknown?: number
+  // When this accounting began: the run's start, or the adoption by this
+  // controller.
+  sampled_from?: string
 }
 
 // One telemetry acceptance criterion with the evidence it read (C7).

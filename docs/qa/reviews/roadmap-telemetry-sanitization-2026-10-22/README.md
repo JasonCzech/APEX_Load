@@ -33,7 +33,8 @@ Before this slice, that text reached run reports, comparisons, the archive manif
     - generator shard targets;
     - inventory targets and IDs;
     - the run's and each group's selected targets;
-  - coverage source names, its algorithm, its observer-lost marker, and segment reasons;
+  - coverage source names, its algorithm, its observer-lost marker, and segment reasons and policy hashes;
+  - the budget policy's keys (policy ID, hash, schema, capture boundary, algorithm, cadence scope, coverage rule, budget stages) and stage-digest keys (keys that scrub alike keep the first);
   - loss states and reasons;
   - stage names, units, availability, reasons and exclusion keys;
   - the render population's name, epoch, reference client and unqualified keys;
@@ -41,10 +42,11 @@ Before this slice, that text reached run reports, comparisons, the archive manif
   - host-network sources.
 
   Empty lists stay empty. That projection is the run report's manifest (JSON, HTML, PDF, DOCX, CSV), the manifest view, safe archive export and the browser diagnostics bundle. The report's host-network rows come from it too.
-- **Generator lists.** `scrubTestRunManifestTargets` scrubs every generator target and ID a test manifest lists, as identities:
+- **Generator lists.** `scrubTestRunManifestTargets` scrubs, as identities, every generator target and ID a test manifest lists, and its telemetry policy's keys:
   - selected, shard and inventory targets in its generator lists;
   - selected and shard targets in both configurations;
-  - each group's and each script's selected targets.
+  - each group's and each script's selected targets;
+  - the stored telemetry policy's availability, reason and keys (an imported archive's test manifest is stored as it came).
 
   The test manifest view and the safe export's test manifest (`maskTestRunManifest`) use it. So does the run report's generator-assignment appendix, in every report format (`reportTestManifest`). The report's completeness finding and the run calendar's topology (live and archived, `topologyForCalendar`) name generators the same way.
 - **Verdicts.** They are judged on the recorded evidence. `scrubTelemetryVerdict` then scrubs their text: the policy pin, mode, criterion IDs and reasons, reasons and exclusions. Criterion IDs and the mode are keys clients match on; a real one passes unchanged. This applies in:
@@ -133,6 +135,9 @@ Round 1 also fixed:
 - The test of rules past 128 did not use pure JSON, so it did not prove their order.
 - A configuration the engine refused would have dropped its rules silently.
 - Two statements about rule limits were wrong.
+
+**Whole-branch review** found these, all fixed:
+- The budget policy's keys, stage-digest keys and segment policy hashes from an imported manifest were raw in the projection, and so were a stored test manifest's policy keys.
 
 ## Remaining
 

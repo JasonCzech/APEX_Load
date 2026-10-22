@@ -15,8 +15,9 @@ import (
 
 // validWorkerRejectedRows holds a rejected_rows payload to what the engine
 // can report: a normalization that did not accept rejections, a file and
-// measure of it, a count within the file's rows and exactly its first
-// ascending row ordinals (as many as MaxRejectedRowsNamed allows).
+// measure of it, a count within the file's rows and exactly
+// min(count, MaxRejectedRowsNamed) ascending row ordinals within the file's
+// rows (that they are the first is the engine's word, not checked here).
 func validWorkerRejectedRows(b workerBootstrap, rejected workerRejectedRows, request workerNormalizeOperation) bool {
 	if request.AllowRejected || rejected.File < 0 || rejected.File >= len(request.InputHandles) || rejected.Measure < 0 || rejected.Measure >= len(request.Mapping.Measures) ||
 		rejected.Count < 1 || int64(len(rejected.Rows)) != min(rejected.Count, int64(analysis.MaxRejectedRowsNamed)) {

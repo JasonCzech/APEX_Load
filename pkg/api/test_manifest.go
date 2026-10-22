@@ -183,9 +183,9 @@ func maskTestRunManifest(manifest *TestRunManifest) *TestRunManifest {
 	if manifest == nil {
 		return nil
 	}
-	// Its copies are masked; every generator target it lists is scrubbed.
+	// Its copies are masked; every generator target it lists, and its
+	// telemetry policy's keys, are scrubbed.
 	masked := *scrubTestRunManifestTargets(manifest)
-	masked.TelemetryPolicy = cloneTelemetryPolicyEvidence(manifest.TelemetryPolicy)
 	masked.Archive = maskTestRunManifestArchive(manifest.Archive)
 	masked.InitialConfiguration = maskTestRunManifestConfiguration(masked.InitialConfiguration)
 	masked.CurrentConfiguration = maskTestRunManifestConfiguration(masked.CurrentConfiguration)
@@ -197,11 +197,16 @@ func maskTestRunManifest(manifest *TestRunManifest) *TestRunManifest {
 
 // scrubTestRunManifestTargets returns a copy of manifest with every generator
 // target and ID it lists (selected, shard and inventory, in its generator
-// lists, both configurations, their groups and its scripts) scrubbed as an
-// identity, as the archive manifest's projection scrubs them (TEL-B). What it
-// changes is copied.
+// lists, both configurations, their groups and its scripts), and its
+// telemetry policy's keys, scrubbed as identities, as the archive manifest's
+// projection scrubs them (TEL-B). What it changes is copied.
 func scrubTestRunManifestTargets(manifest *TestRunManifest) *TestRunManifest {
 	out := *manifest
+	if evidence := cloneTelemetryPolicyEvidence(manifest.TelemetryPolicy); evidence != nil {
+		evidence.Availability, evidence.Reason = scrubTelemetryIdentity(evidence.Availability), scrubTelemetryIdentity(evidence.Reason)
+		evidence.Policy = scrubTelemetryBudgetPolicy(evidence.Policy)
+		out.TelemetryPolicy = evidence
+	}
 	generators := &out.LoadGenerators
 	generators.Assignment = scrubGeneratorAssignment(generators.Assignment)
 	generators.GeneratorShards = scrubGeneratorShardTargets(generators.GeneratorShards)

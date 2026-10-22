@@ -108,10 +108,15 @@ func TestTelemetryRenderLedgerAccountsPastEviction(t *testing.T) {
 	if evicted := recorder.renderPopulation(); evicted.Eligible != population.Eligible || evicted.Rendered != 2 || evicted.Unreported != population.Unreported {
 		t.Fatalf("after the range was evicted %+v", evicted)
 	}
-	// A controller that adopts the run again starts another epoch.
-	recorder.adopted(time.Now())
+	// A controller that adopts the run again starts another epoch, accounted
+	// from the adoption.
+	adoptedAt := time.Now().Add(time.Minute).UTC()
+	recorder.adopted(adoptedAt)
 	if again, _ := recorder.nextPublication(true); again == epoch || recorder.renderPopulation().ReferenceClient != "" {
 		t.Fatal("re-adoption kept the earlier epoch or reference")
+	}
+	if from := recorder.renderPopulation().SampledFrom; from == nil || !from.Equal(adoptedAt) {
+		t.Fatalf("the adopted population is accounted from %v, not the adoption", from)
 	}
 }
 
@@ -262,9 +267,27 @@ func TestTelemetryAcceptanceReportStatesTheRenderPopulation(t *testing.T) {
 		nil: "The render population was not recorded for this run.",
 		{Population: telemetryRenderPopulationName, PublishedEligible: 1}: "No dashboard tab reported a visible render of a named publication, so no reference client was accounted; 1 eligible publication was published.",
 	} {
-		if text, _ := telemetryRenderPopulationReport(population); text != want {
+		if text, _ := telemetryRenderPopulationReport(population, nil); text != want {
 			t.Fatalf("population %+v: %q", population, text)
 		}
+	}
+	// A population accounted from an adoption does not claim the whole run.
+	started := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	adopted := started.Add(50 * time.Minute)
+	for _, population := range []*TelemetryRenderPopulation{
+		{Population: telemetryRenderPopulationName, PublishedEligible: 600, SampledFrom: &adopted},
+		{Population: telemetryRenderPopulationName, PublishedEligible: 600, SampledFrom: &adopted, ReferenceClient: "ref", FirstSequence: 1, LastSequence: 2, Eligible: 2, Rendered: 2},
+	} {
+		text, counts := telemetryRenderPopulationReport(population, &started)
+		if !strings.Contains(text, "600 eligible publications were published since 2026-10-22T12:50:00Z, when this controller began publishing (it adopted the run).") || strings.Contains(text, "in all") {
+			t.Fatalf("adopted population: %q", text)
+		}
+		if !slices.Contains(counts, [2]string{"sampled_from", "2026-10-22T12:50:00Z"}) {
+			t.Fatalf("adopted population counts %v", counts)
+		}
+	}
+	if text, _ := telemetryRenderPopulationReport(&TelemetryRenderPopulation{Population: telemetryRenderPopulationName, PublishedEligible: 3, SampledFrom: &started, ReferenceClient: "ref", FirstSequence: 1, LastSequence: 1, Eligible: 1, Rendered: 1}, &started); !strings.HasSuffix(text, "3 eligible publications were published in all.") {
+		t.Fatalf("a population accounted from the start: %q", text)
 	}
 }
 

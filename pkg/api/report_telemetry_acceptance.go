@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -208,20 +209,29 @@ func buildTelemetryAcceptanceReportView(manifest *RunArchiveManifest, verdict *T
 	for _, stage := range manifest.TelemetryStageDistributions {
 		view.Stages = append(view.Stages, telemetryAcceptanceReportStageOf(stage))
 	}
-	view.RenderPopulation, view.RenderCounts = telemetryRenderPopulationReport(manifest.TelemetryRenderPopulation)
+	view.RenderPopulation, view.RenderCounts = telemetryRenderPopulationReport(manifest.TelemetryRenderPopulation, manifest.Provenance.StartedAt)
 	return view
 }
 
 // telemetryRenderPopulationReport states a render population for readers,
-// and its figures for the CSV.
-func telemetryRenderPopulationReport(p *TelemetryRenderPopulation) (string, [][2]string) {
+// and its figures for the CSV. A population a controller began accounting
+// after the run started (it adopted the run) says so.
+func telemetryRenderPopulationReport(p *TelemetryRenderPopulation, startedAt *time.Time) (string, [][2]string) {
 	if p == nil {
 		return "The render population was not recorded for this run.", nil
 	}
 	counts := [][2]string{{"population", p.Population}, {"published_eligible", fmt.Sprint(p.PublishedEligible)}}
-	published := reportCountNoun(p.PublishedEligible, "eligible publication was", "eligible publications were")
+	published := reportCountNoun(p.PublishedEligible, "eligible publication was", "eligible publications were") + " published"
+	whole := " in all"
+	if p.SampledFrom != nil {
+		counts = append(counts, [2]string{"sampled_from", p.SampledFrom.UTC().Format(time.RFC3339)})
+		if startedAt != nil && p.SampledFrom.After(*startedAt) {
+			published += fmt.Sprintf(" since %s, when this controller began publishing (it adopted the run)", p.SampledFrom.UTC().Format(time.RFC3339))
+			whole = ""
+		}
+	}
 	if p.ReferenceClient == "" {
-		return fmt.Sprintf("No dashboard tab reported a visible render of a named publication, so no reference client was accounted; %s published.", published), counts
+		return fmt.Sprintf("No dashboard tab reported a visible render of a named publication, so no reference client was accounted; %s.", published), counts
 	}
 	reasons := make([]string, 0, len(p.Unqualified))
 	for reason := range p.Unqualified {
@@ -239,7 +249,7 @@ func telemetryRenderPopulationReport(p *TelemetryRenderPopulation) (string, [][2
 	if len(labels) > 0 {
 		text += " (" + strings.Join(labels, ", ") + ")"
 	}
-	text += fmt.Sprintf(" and %s unreported; %s published in all.", formatReportCount(p.Unreported), published)
+	text += fmt.Sprintf(" and %s unreported; %s%s.", formatReportCount(p.Unreported), published, whole)
 	if p.Ineligible > 0 || p.Unknown > 0 {
 		text += fmt.Sprintf(" Reports not counted: %s of publications without a new collection, %s the controller could not place.", formatReportCount(p.Ineligible), formatReportCount(p.Unknown))
 	}

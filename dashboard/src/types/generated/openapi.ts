@@ -4881,6 +4881,7 @@ export interface operations {
                 "published_eligible"?: number;
                 "reference_client"?: string;
                 "rendered"?: number;
+                "sampled_from"?: (string) | null;
                 "superseded"?: number;
                 "unknown"?: number;
                 "unqualified"?: Record<string, number>;
@@ -48198,6 +48199,7 @@ export interface operations {
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
+                  "sampled_from"?: (string) | null;
                   "superseded": number;
                   "unknown"?: number;
                   "unqualified"?: Record<string, number>;
@@ -50548,6 +50550,7 @@ export interface operations {
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
+                  "sampled_from"?: (string) | null;
                   "superseded": number;
                   "unknown"?: number;
                   "unqualified"?: Record<string, number>;
@@ -67610,6 +67613,7 @@ export interface operations {
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
+                  "sampled_from"?: (string) | null;
                   "superseded": number;
                   "unknown"?: number;
                   "unqualified"?: Record<string, number>;
@@ -69956,6 +69960,7 @@ export interface operations {
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
+                  "sampled_from"?: (string) | null;
                   "superseded": number;
                   "unknown"?: number;
                   "unqualified"?: Record<string, number>;
@@ -77212,6 +77217,7 @@ export interface operations {
               "published_eligible": number;
               "reference_client"?: string;
               "rendered": number;
+              "sampled_from"?: (string) | null;
               "superseded": number;
               "unknown"?: number;
               "unqualified"?: Record<string, number>;
@@ -81999,6 +82005,7 @@ export interface operations {
                 "published_eligible": number;
                 "reference_client"?: string;
                 "rendered": number;
+                "sampled_from"?: (string) | null;
                 "superseded": number;
                 "unknown"?: number;
                 "unqualified"?: Record<string, number>;
@@ -90934,6 +90941,7 @@ export interface operations {
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
+                  "sampled_from"?: (string) | null;
                   "superseded": number;
                   "unknown"?: number;
                   "unqualified"?: Record<string, number>;
@@ -93284,6 +93292,7 @@ export interface operations {
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
+                  "sampled_from"?: (string) | null;
                   "superseded": number;
                   "unknown"?: number;
                   "unqualified"?: Record<string, number>;
@@ -113899,6 +113908,7 @@ export interface operations {
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
+                  "sampled_from"?: (string) | null;
                   "superseded": number;
                   "unknown"?: number;
                   "unqualified"?: Record<string, number>;
@@ -116249,6 +116259,7 @@ export interface operations {
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
+                  "sampled_from"?: (string) | null;
                   "superseded": number;
                   "unknown"?: number;
                   "unqualified"?: Record<string, number>;
@@ -145580,6 +145591,7 @@ export interface operations {
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
+                  "sampled_from"?: (string) | null;
                   "superseded": number;
                   "unknown"?: number;
                   "unqualified"?: Record<string, number>;
@@ -147930,6 +147942,7 @@ export interface operations {
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
+                  "sampled_from"?: (string) | null;
                   "superseded": number;
                   "unknown"?: number;
                   "unqualified"?: Record<string, number>;
@@ -172776,6 +172789,7 @@ export interface operations {
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
+                  "sampled_from"?: (string) | null;
                   "superseded": number;
                   "unknown"?: number;
                   "unqualified"?: Record<string, number>;
@@ -175126,6 +175140,7 @@ export interface operations {
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
+                  "sampled_from"?: (string) | null;
                   "superseded": number;
                   "unknown"?: number;
                   "unqualified"?: Record<string, number>;

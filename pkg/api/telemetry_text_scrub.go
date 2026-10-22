@@ -1,6 +1,8 @@
 package api
 
 import (
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -187,11 +189,20 @@ func scrubTelemetryText(manifest *RunArchiveManifest, s telemetryTextScrubber) *
 		if record.Segments != nil {
 			copied.Segments = make([]TelemetryPolicySegment, len(record.Segments))
 			for i, segment := range record.Segments {
-				segment.Unavailable = scrubTelemetryIdentity(segment.Unavailable)
+				segment.Unavailable, segment.PolicyHash = scrubTelemetryIdentity(segment.Unavailable), scrubTelemetryIdentity(segment.PolicyHash)
 				copied.Segments[i] = segment
 			}
 		}
 		out.TelemetryCoverage = &copied
+	}
+	if manifest.TelemetryStageDigests != nil {
+		// Keys that scrub alike keep the first, in key order.
+		out.TelemetryStageDigests = make(map[string]engine.TDigestSnapshot, len(manifest.TelemetryStageDigests))
+		for _, stage := range slices.Sorted(maps.Keys(manifest.TelemetryStageDigests)) {
+			if key := scrubTelemetryIdentity(stage); !telemetryDigestKeyTaken(out.TelemetryStageDigests, key) {
+				out.TelemetryStageDigests[key] = manifest.TelemetryStageDigests[stage]
+			}
+		}
 	}
 	if loss := manifest.TelemetryLoss.clone(); loss != nil {
 		scrubTelemetryLoss(loss, s)
@@ -232,9 +243,31 @@ func scrubTelemetryText(manifest *RunArchiveManifest, s telemetryTextScrubber) *
 	return &out
 }
 
+// scrubTelemetryBudgetPolicy returns a copy of a budget policy with its keys
+// scrubbed as identities (a real one, and so its hash, passes unchanged).
+func scrubTelemetryBudgetPolicy(policy *TelemetryBudgetPolicy) *TelemetryBudgetPolicy {
+	policy = cloneTelemetryBudgetPolicy(policy)
+	if policy == nil {
+		return nil
+	}
+	for _, key := range []*string{&policy.SchemaVersion, &policy.PolicyID, &policy.Hash, &policy.CaptureBoundary, &policy.ClassificationAlgorithm, &policy.CadenceScope, &policy.CoverageRule} {
+		*key = scrubTelemetryIdentity(*key)
+	}
+	for i := range policy.Budgets {
+		policy.Budgets[i].Stage = scrubTelemetryIdentity(policy.Budgets[i].Stage)
+	}
+	return policy
+}
+
+func telemetryDigestKeyTaken(digests map[string]engine.TDigestSnapshot, key string) bool {
+	_, taken := digests[key]
+	return taken
+}
+
 // scrubTelemetryProvenance scrubs the policy and generator text a run's
 // provenance carries; the slices and snapshot it changes are copied.
 func scrubTelemetryProvenance(provenance RunArchiveProvenance, s telemetryTextScrubber) RunArchiveProvenance {
+	provenance.TelemetryPolicy = scrubTelemetryBudgetPolicy(provenance.TelemetryPolicy)
 	if provenance.PolicyPins != nil {
 		pins := make([]RunPolicyPin, len(provenance.PolicyPins))
 		for i, pin := range provenance.PolicyPins {

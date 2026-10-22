@@ -65,6 +65,11 @@ func telemetrySentinelManifest(rule bool) *RunArchiveManifest {
 	// the completeness finding names it.
 	manifest.SourceCoverage = &RunArchiveSourceCoverage{Mode: "required", Sources: []archivecontract.RunArchiveSource{{Target: "10.0.0.1:50051", Collected: true}, {Target: "https://user:COVER_PASS@10.0.0.2:50051"}}}
 	manifest.HostNetwork = []hostnet.RunEvidence{{Source: "host password=HOST_SECRET"}}
+	// Keys an imported manifest can hold: the budget policy's, the stage
+	// digests' and a policy segment's.
+	manifest.Provenance.TelemetryPolicy = &TelemetryBudgetPolicy{PolicyID: "policy token=POLICYID_SECRET", CadenceScope: "https://u:CADENCE_PASS@x", Budgets: []TelemetryStageBudget{{Stage: "stage token=BUDGETSTAGE_SECRET"}}}
+	manifest.TelemetryStageDigests = map[string]engine.TDigestSnapshot{"browser_render token=DIGEST_SECRET": {}}
+	manifest.TelemetryCoverage.Segments = []TelemetryPolicySegment{{PolicyHash: "hash password=SEGHASH_SECRET"}}
 	initial := manifest.Provenance
 	initial.Groups = cloneArchiveTestGroups(manifest.Provenance.Groups)
 	initial.PolicyPins = cloneRunPolicyPins(manifest.Provenance.PolicyPins)
@@ -74,7 +79,8 @@ func telemetrySentinelManifest(rule bool) *RunArchiveManifest {
 }
 
 var telemetryCredentialSentinels = []string{"URL_PASS", "URL_TOKEN", "SOURCE_SECRET", "REASON_SECRET", "STAGE_SECRET", "EXCL_SECRET", "UNQ_SECRET", "REF_SECRET", "PIN_SECRET", "BUDGET_SECRET", "DESC_SECRET", "SHARD_PASS", "INV_SECRET", "COVER_PASS", "HOST_SECRET", "SEL_PASS", "TM_SHARD_PASS", "TM_INV_PASS",
-	"LAG_SECRET", "PINID_SECRET", "PINSRC_SECRET", "PROV_SEL_PASS", "GROUP_SEL_PASS", "CFG_SEL_PASS", "CFG_SHARD_PASS", "CFG_GROUP_PASS", "SCRIPT_SEL_PASS"}
+	"LAG_SECRET", "PINID_SECRET", "PINSRC_SECRET", "PROV_SEL_PASS", "GROUP_SEL_PASS", "CFG_SEL_PASS", "CFG_SHARD_PASS", "CFG_GROUP_PASS", "SCRIPT_SEL_PASS",
+	"POLICYID_SECRET", "CADENCE_PASS", "BUDGETSTAGE_SECRET", "DIGEST_SECRET", "SEGHASH_SECRET", "TM_CADENCE_PASS", "TM_STAGE_SECRET", "TM_AVAIL_SECRET"}
 
 // telemetrySentinelTestManifest is a generator-assignment manifest whose
 // generator lists, configurations, groups and scripts carry credentials in
@@ -83,7 +89,9 @@ func telemetrySentinelTestManifest() *TestRunManifest {
 	configuration := TestRunManifestConfiguration{Assignment: &GeneratorAssignmentSettings{SelectedTargets: []string{"https://user:CFG_SEL_PASS@gen.example:9090"}},
 		GeneratorShards: []GeneratorShardSummary{{Group: "buyers", Target: "https://user:CFG_SHARD_PASS@gen.example:9090"}},
 		Groups:          []TestGroup{{Name: "buyers", Assignment: &GeneratorAssignmentSettings{SelectedTargets: []string{"https://user:CFG_GROUP_PASS@gen.example:9090"}}}}}
-	return &TestRunManifest{TestID: "telemetry-sentinels", InitialConfiguration: configuration, CurrentConfiguration: configuration,
+	// A stored test manifest (an imported archive's) can hold any policy keys.
+	policy := &TelemetryPolicyEvidence{Availability: "available token=TM_AVAIL_SECRET", Policy: &TelemetryBudgetPolicy{CadenceScope: "https://u:TM_CADENCE_PASS@x", Budgets: []TelemetryStageBudget{{Stage: "stage token=TM_STAGE_SECRET"}}}}
+	return &TestRunManifest{TestID: "telemetry-sentinels", TelemetryPolicy: policy, InitialConfiguration: configuration, CurrentConfiguration: configuration,
 		Scripts: []TestRunManifestScript{{Assignment: &GeneratorAssignmentSettings{SelectedTargets: []string{"https://user:SCRIPT_SEL_PASS@gen.example:9090"}}}},
 		LoadGenerators: TestRunManifestLoadGenerators{
 			Assignment:         &GeneratorAssignmentSettings{Mode: "selected", SelectedTargets: []string{"https://user:SEL_PASS@gen.example:9090"}},

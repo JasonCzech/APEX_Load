@@ -80,6 +80,10 @@ type TelemetryRenderPopulation struct {
 	// (another epoch, or a sequence it never or no longer holds).
 	Ineligible int64 `json:"ineligible,omitempty"`
 	Unknown    int64 `json:"unknown,omitempty"`
+	// SampledFrom is when this accounting began: the run's start, or when
+	// this controller adopted the run (an adoption starts a new epoch, and
+	// the earlier ownership's publications are not counted).
+	SampledFrom *time.Time `json:"sampled_from,omitempty"`
 }
 
 // clientRenderPublication names the publication a client sample is about.
@@ -283,6 +287,8 @@ func (r *telemetryStageRecorder) renderPopulation() *TelemetryRenderPopulation {
 	out := ledger.counts.clone()
 	out.Population, out.Epoch, out.PublishedEligible, out.ReferenceClient, out.Unknown = telemetryRenderPopulationName, ledger.epoch, ledger.published, ledger.referenceID, ledger.unknown
 	out.FirstSequence, out.LastSequence = ledger.first, ledger.last
+	since := r.since
+	out.SampledFrom = &since
 	return out
 }
 
@@ -296,6 +302,10 @@ func (p *TelemetryRenderPopulation) clone() *TelemetryRenderPopulation {
 		for reason, count := range p.Unqualified {
 			out.Unqualified[reason] = count
 		}
+	}
+	if p.SampledFrom != nil {
+		since := *p.SampledFrom
+		out.SampledFrom = &since
 	}
 	return &out
 }

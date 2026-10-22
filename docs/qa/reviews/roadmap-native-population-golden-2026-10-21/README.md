@@ -1,6 +1,6 @@
 # Native population reconciliation golden — 2026-10-21
 
-This [NA-A slice](../../../ROADMAP_IMPLEMENTATION_SPEC.md#na-a--deterministic-import-semantics) adds a raw-observation and counter golden through the import API. Summaries already reconcile across preview, commit and query (`TestAnalysisSummaryImportPreviewCommitQueryReconcile`), and histograms across commit and query (`TestAnalysisHistogramImportCommitQueryReconcile`).
+This [NA-A slice](../../../ROADMAP_IMPLEMENTATION_SPEC.md#na-a--deterministic-import-semantics) adds a raw-observation and counter golden through the import API. Summaries already reconcile across preview, commit and query (`TestAnalysisSummaryImportPreviewCommitQueryReconcile`), and histograms across commit and query (`TestAnalysisHistogramImportCommitQueryReconcile` (since renamed `TestAnalysisHistogramImportPreviewCommitQueryReconcile`)).
 
 ## What changed
 
