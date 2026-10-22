@@ -23,7 +23,11 @@ const maxMultiGroupRuntimeSecretRedactionBytes = 32 << 20
 var ErrInitialRampInProgress = errors.New("initial vuser ramp is still in progress")
 
 type GroupConfig struct {
+	// BrowserAuthoredDefinition is trusted original-source provenance, never DSL configuration.
+	BrowserAuthoredDefinition protocol.BrowserAuthoredDefinition `json:"-"`
 	// BrowserInteractionEvidenceVersion is negotiated transport wiring; zero uses the current local version.
+	// BrowserDocumentProofVersion: zero selects the current local version; -1 suppresses output for legacy peers.
+	BrowserDocumentProofVersion       int
 	BrowserInteractionEvidenceVersion int
 	DistributedRendezvousClient       rendezvous.Client
 	distributedRendezvous             *rendezvous.Aggregator
@@ -110,6 +114,10 @@ type ResultSink interface {
 
 // BrowserDocumentEvidenceSink stores lifecycle records in a distinct durable
 // population. It must never route them through action/transaction records.
+type BrowserDocumentReceiptSink interface {
+	RecordBrowserDocumentReceiptEvidence(*protocol.BrowserDocumentReceiptEvidence) error
+}
+
 type BrowserDocumentEvidenceSink interface {
 	RecordBrowserDocumentEvidence(*protocol.BrowserDocumentEvidence) error
 }
@@ -138,18 +146,20 @@ type MultiGroupConfig struct {
 }
 
 type MultiGroupEngine struct {
-	runtimeResources *engineRuntimeResources
-	runtimePause     *engineRuntimePause
-	brokerRunUsed    atomic.Bool
-	terminationMode  string
-	groups           []GroupConfig
-	duration         time.Duration
-	preBaseline      time.Duration
-	postBaseline     time.Duration
-	metrics          *MetricsCollector
-	cancel           context.CancelFunc
-	readyCh          chan struct{}
-	readyOnce        sync.Once
+	browserProofPhaseActive bool
+	browserProofDynamic     bool
+	runtimeResources        *engineRuntimeResources
+	runtimePause            *engineRuntimePause
+	brokerRunUsed           atomic.Bool
+	terminationMode         string
+	groups                  []GroupConfig
+	duration                time.Duration
+	preBaseline             time.Duration
+	postBaseline            time.Duration
+	metrics                 *MetricsCollector
+	cancel                  context.CancelFunc
+	readyCh                 chan struct{}
+	readyOnce               sync.Once
 
 	// Dynamic control state
 	mu                     sync.Mutex
@@ -800,6 +810,7 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 		close(mge.pauseCh)
 	}
 	mge.pauseChanged = make(chan struct{})
+	mge.browserSourcePhaseLocked(false)
 	mge.controlsReady = false
 	mge.initialRampInProgress = false
 	mge.baseTargetDuration = mge.duration
@@ -887,6 +898,7 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	mge.mu.Lock()
 	expiredBeforeBaseline := mge.terminationMode != dsl.TerminationIterations && !mge.paused && mge.activeElapsedAtLocked(time.Now()) >= mge.preBaseline+mge.baseTargetDuration
 	if expiredBeforeBaseline {
+		mge.browserSourcePhaseLocked(false)
 		mge.controlsReady = false
 		mge.scalingOpen = false
 		mge.initialRampInProgress = false
@@ -935,6 +947,7 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 					continue
 				}
 				mge.scalingOpen = false
+				mge.browserSourcePhaseLocked(false)
 				mge.controlsReady = false
 				mge.initialRampInProgress = false
 				mge.launchOpen = false
@@ -978,6 +991,7 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	}
 	mge.mu.Lock()
 	if (mge.terminationMode != dsl.TerminationIterations && mge.activeElapsedAtLocked(time.Now()) >= mge.preBaseline+mge.baseTargetDuration) || mge.launchCtx.Err() != nil {
+		mge.browserSourcePhaseLocked(false)
 		mge.controlsReady = false
 		mge.scalingOpen = false
 		mge.initialRampInProgress = false
@@ -1233,6 +1247,7 @@ groupLoop:
 				if outcome.err != nil {
 					groupStartupErrors <- fmt.Errorf("group %q init-once failed: %w", group.Name, outcome.err)
 					mge.mu.Lock()
+					mge.browserSourcePhaseLocked(false)
 					mge.controlsReady = false
 					mge.scalingOpen = false
 					mge.launchOpen = false
@@ -1995,6 +2010,8 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 	vu = &VUser{
 		correlation:                  groupVUserCorrelation(group),
 		browserInteractionVersion:    group.BrowserInteractionEvidenceVersion,
+		browserDocumentProofVersion:  group.BrowserDocumentProofVersion,
+		browserAuthoredDefinition:    group.BrowserAuthoredDefinition,
 		ID:                           -1,
 		TotalVUsers:                  group.VUsers,
 		ParameterAllocation:          groupParameterAllocation(group, 0),
@@ -2284,45 +2301,56 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 		defer recoverVUserGoroutine(prepared.runtimeID, redaction)
 		defer mge.finishPreparedVUser(prepared, redaction)
 
-		vu = &VUser{
-			correlation:                  groupVUserCorrelation(prepared.group),
-			browserInteractionVersion:    prepared.group.BrowserInteractionEvidenceVersion,
-			ID:                           prepared.runtimeID,
-			TotalVUsers:                  prepared.group.VUsers,
-			ParameterAllocation:          groupParameterAllocation(prepared.group, prepared.identity.local),
-			Group:                        prepared.group.Name,
-			Region:                       prepared.group.Region,
-			RunID:                        prepared.group.RunID,
-			Proto:                        prepared.proto,
-			Script:                       prepared.script,
-			browserAuthoredSource:        prepared.group.Script,
-			browserIdentity:              prepared.browserIdentity,
-			sessionStartNotBefore:        browserSessionStart(mge.runStartedAt, prepared.browserIdentity, prepared.script),
-			Metrics:                      mge.metrics,
-			ResultSink:                   prepared.group.ResultSink,
-			RedactionConfig:              prepared.group.RedactionConfig,
-			importedCredentialInspection: prepared.group.importedCredentials,
-			sourceParameters:             prepared.group.sourceParameters,
-			sourceSamplers:               prepared.group.sourceSamplers,
-			SecretResolver:               prepared.group.SecretResolver,
-			PauseControl:                 mge,
-			IterationRateLimiter:         prepared.group.rateLimiter,
-			ThroughputCap:                prepared.group.throughputCap,
-			Rendezvous:                   prepared.group.rendezvous,
-			DistributedRendezvous:        prepared.group.distributedRendezvous,
-			ExecutionGoals:               prepared.group.executionGoals,
-			HardStopCtx:                  prepared.shedCtx,
-			ActionBoundaryCtx:            prepared.boundaryCtx,
-			DataProvider:                 prepared.group.dataProvider,
-			LiveTableClient:              prepared.group.LiveTableClient,
-			LiveTableClientID:            prepared.group.LiveTableClientID,
-			LiveTableBindings:            prepared.group.LiveTableBindings,
-			SkipInit:                     groupLifecycleAtOnce(prepared.group),
-			SkipTeardown:                 groupLifecycleAtOnce(prepared.group),
-		}
+		vu = mge.newPreparedVUser(prepared)
 		vu.Run(prepared.vuCtx)
 	}()
 	return true
+}
+
+// newPreparedVUser builds the startup state outside the parked goroutine's
+// frame. Copying GroupConfig while constructing a VUser in that frame keeps
+// lifecycle waits above the GC stack-shrink threshold as source metadata grows.
+//
+//go:noinline
+func (mge *MultiGroupEngine) newPreparedVUser(prepared *preparedVUser) *VUser {
+	return &VUser{
+		correlation:                  groupVUserCorrelation(prepared.group),
+		browserInteractionVersion:    prepared.group.BrowserInteractionEvidenceVersion,
+		browserDocumentProofVersion:  prepared.group.BrowserDocumentProofVersion,
+		browserAuthoredDefinition:    prepared.group.BrowserAuthoredDefinition,
+		ID:                           prepared.runtimeID,
+		TotalVUsers:                  prepared.group.VUsers,
+		ParameterAllocation:          groupParameterAllocation(prepared.group, prepared.identity.local),
+		Group:                        prepared.group.Name,
+		Region:                       prepared.group.Region,
+		RunID:                        prepared.group.RunID,
+		Proto:                        prepared.proto,
+		Script:                       prepared.script,
+		browserAuthoredSource:        prepared.group.Script,
+		browserIdentity:              prepared.browserIdentity,
+		sessionStartNotBefore:        browserSessionStart(mge.runStartedAt, prepared.browserIdentity, prepared.script),
+		Metrics:                      mge.metrics,
+		ResultSink:                   prepared.group.ResultSink,
+		RedactionConfig:              prepared.group.RedactionConfig,
+		importedCredentialInspection: prepared.group.importedCredentials,
+		sourceParameters:             prepared.group.sourceParameters,
+		sourceSamplers:               prepared.group.sourceSamplers,
+		SecretResolver:               prepared.group.SecretResolver,
+		PauseControl:                 mge,
+		IterationRateLimiter:         prepared.group.rateLimiter,
+		ThroughputCap:                prepared.group.throughputCap,
+		Rendezvous:                   prepared.group.rendezvous,
+		DistributedRendezvous:        prepared.group.distributedRendezvous,
+		ExecutionGoals:               prepared.group.executionGoals,
+		HardStopCtx:                  prepared.shedCtx,
+		ActionBoundaryCtx:            prepared.boundaryCtx,
+		DataProvider:                 prepared.group.dataProvider,
+		LiveTableClient:              prepared.group.LiveTableClient,
+		LiveTableClientID:            prepared.group.LiveTableClientID,
+		LiveTableBindings:            prepared.group.LiveTableBindings,
+		SkipInit:                     groupLifecycleAtOnce(prepared.group),
+		SkipTeardown:                 groupLifecycleAtOnce(prepared.group),
+	}
 }
 
 func (mge *MultiGroupEngine) finishPreparedVUser(prepared *preparedVUser, redaction func() *RedactionConfig) {
@@ -2868,6 +2896,8 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		vu = &VUser{
 			correlation:                  groupVUserCorrelation(group),
 			browserInteractionVersion:    group.BrowserInteractionEvidenceVersion,
+			browserDocumentProofVersion:  group.BrowserDocumentProofVersion,
+			browserAuthoredDefinition:    group.BrowserAuthoredDefinition,
 			ID:                           runtimeVUserID,
 			Group:                        group.Name,
 			Region:                       group.Region,
@@ -2917,11 +2947,17 @@ func (mge *MultiGroupEngine) SetGroupThroughputCap(groupName string, tps float64
 			break
 		}
 	}
-	mge.mu.Unlock()
 	if throughputCap == nil {
+		mge.mu.Unlock()
 		return fmt.Errorf("group not found: %s", groupName)
 	}
+	oldTPS, oldEnabled := throughputCap.Target()
+	if oldTPS != tps || oldEnabled != enabled {
+		mge.browserSourcePhaseLocked(false)
+		mge.browserProofDynamic = true
+	}
 	throughputCap.Set(tps, enabled)
+	mge.mu.Unlock()
 	return nil
 }
 
@@ -3121,6 +3157,10 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 			return err
 		}
 	}
+	if delta > 0 {
+		mge.browserSourcePhaseLocked(false)
+		mge.browserProofDynamic = true
+	}
 	group.VUsers = targetVUsers
 
 	if delta > 0 {
@@ -3189,6 +3229,8 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 			}
 			return fmt.Errorf("group %q only has %d active vusers available to remove", groupName, len(ids))
 		}
+		mge.browserSourcePhaseLocked(false)
+		mge.browserProofDynamic = true
 		if targetVUsers == 0 && !mge.scaleGuard {
 			// Keep Run's WaitGroup non-zero while the group is paused at zero so a
 			// later resume can safely Add VUsers. Install it only after validating
@@ -3277,6 +3319,7 @@ func (mge *MultiGroupEngine) Pause() error {
 }
 
 func (mge *MultiGroupEngine) pauseLocked() error {
+	mge.browserSourcePhaseLocked(false)
 
 	if mge.baseCtx == nil {
 		mge.runtimePause.latch()
@@ -3404,6 +3447,7 @@ func (mge *MultiGroupEngine) Resume() error {
 	mge.pauseCompensation += pauseDuration
 	mge.targetDuration = mge.baseTargetDuration + mge.pauseCompensation
 
+	mge.browserSourcePhaseLocked(true)
 	slog.Info("test execution resumed", "pause_duration", pauseDuration)
 	return nil
 }
@@ -3505,6 +3549,7 @@ func (mge *MultiGroupEngine) finishInitialRamp() {
 	// normal group may accept scaling only while at least one configured VUser is
 	// still reserved; otherwise Run's WaitGroup may already be completing.
 	mge.scalingOpen = mge.activeReserved > 0 || mge.scaleGuard
+	mge.browserSourcePhaseLocked(true)
 }
 
 // ActiveElapsed returns elapsed execution time excluding completed and current
@@ -3553,6 +3598,9 @@ func (mge *MultiGroupEngine) closeRuntimeAdmissionOnDone(ctx context.Context) {
 	<-ctx.Done()
 	mge.mu.Lock()
 	mge.scalingOpen = false
+	if mge.browserProofPhaseActive {
+		mge.invalidateBrowserSourcePhaseLocked()
+	}
 	mge.controlsReady = false
 	mge.runtimePause.beginTerminal(true)
 	mge.mu.Unlock()
@@ -3570,6 +3618,7 @@ func (mge *MultiGroupEngine) stop(hard bool) {
 	// published after Stop has linearized.
 	mge.launchOpen = false
 	mge.scalingOpen = false
+	mge.browserSourcePhaseLocked(false)
 	mge.controlsReady = false
 	mge.runtimePause.beginTerminal(hard)
 	if hard {
@@ -3603,6 +3652,7 @@ func (mge *MultiGroupEngine) GracefulStop() {
 	// a window where a control plan admitted before the fence can spawn VUsers
 	// after the fence has returned.
 	mge.scalingOpen = false
+	mge.browserSourcePhaseLocked(false)
 	mge.controlsReady = false
 	mge.launchOpen = false
 	cancel := mge.softStop

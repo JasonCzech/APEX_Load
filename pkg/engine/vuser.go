@@ -18,8 +18,11 @@ import (
 )
 
 type VUser struct {
-	browserInvocation         uint64
-	browserInteractionVersion int
+	browserAuthoredDefinition        protocol.BrowserAuthoredDefinition
+	browserAuthoredIndexedDefinition protocol.BrowserAuthoredDefinition
+	browserInvocation                uint64
+	browserDocumentProofVersion      int
+	browserInteractionVersion        int
 	// browserAuthoredSource is the trusted authored script before an engine
 	// iteration/session copy. It is never read from executable script metadata.
 	browserAuthoredSource        *dsl.Script
@@ -823,8 +826,16 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 	handOffBrowserSessionEvidence(vu.Proto, vu.ResultSink, vu.RedactionConfig)
 	vu.bindRuntimeTextRedactor()
 	config := buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", vu.secretResolver())
+	if vu.browserDocumentProofVersion != 0 {
+		config["browser_document_proof_version"] = vu.browserDocumentProofVersion
+	}
 	if vu.sourceSamplers != nil {
 		vu.sourceSamplers.bindProtocolConfig(config, vu.Script)
+	}
+	if vu.browserDocumentProofVersion == 0 || vu.browserDocumentProofVersion >= 3 {
+		if sink, ok := vu.ResultSink.(protocol.BrowserSourceJournalProvider); ok && dsl.BrowserDocumentCaptureRequested(vu.Script) {
+			config["browser_document_source_journal"] = sink
+		}
 	}
 	config, err := withBrowserIdentityConfig(config, vu.browserIdentity, vu.Script)
 	if err != nil {

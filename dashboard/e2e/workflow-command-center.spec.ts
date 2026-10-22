@@ -254,26 +254,29 @@ test('the Transactions table attributes each live transaction to the groups that
     await page.goto(`/#/command-center/${testId}?${scopeQuery(workspace)}`)
     const tables = page.getByRole('region', { name: 'Command center run tables', exact: true })
     await tables.getByRole('tab', { name: 'Transactions', exact: true }).click()
-    // Each group is a heading row (its toggle names it) with the transactions
-    // it ran beneath it, so a transaction two groups run appears under both.
-    const sections = () => tables.locator('tbody tr').evaluateAll(rows => {
-      const byGroup: Record<string, string[]> = {}
-      // A row before any heading is kept under its own key, so it fails the match.
-      let group = '(no heading)'
+    // Group headings own their following child rows; group names no longer
+    // repeat in each transaction row. Check the actual hierarchy and counts.
+    const groupedTransactions = () => tables.locator('tbody tr').evaluateAll(rows => {
+      const groups: Record<string, string[]> = {}
+      let group = ''
       for (const row of rows) {
-        const heading = row.querySelector('button[aria-expanded] strong')
-        if (heading) {
-          group = heading.textContent ?? ''
-          byGroup[group] = []
-          continue
+        if (row.classList.contains('command-table-section-row')) {
+          group = row.querySelector('strong')?.textContent?.trim() || ''
+          groups[group] = []
+        } else if (row.classList.contains('command-table-child-row') && group) {
+          groups[group].push(row.querySelector('td strong')?.textContent?.trim() || '')
         }
-        const name = row.querySelector('td strong')?.textContent
-        if (name) (byGroup[group] ??= []).push(name)
       }
-      for (const names of Object.values(byGroup)) names.sort()
-      return byGroup
+      for (const names of Object.values(groups)) names.sort()
+      return groups
     })
-    await expect.poll(sections, { timeout: 60_000 }).toEqual({ Buyers: ['Login', 'Search'], Sellers: ['Login'] })
+    await expect.poll(groupedTransactions, { timeout: 60_000 }).toEqual({ Buyers: ['Login', 'Search'], Sellers: ['Login'] })
+    const buyersHeading = tables.getByRole('button', { name: /Buyers/ })
+    await expect(buyersHeading).toHaveAttribute('aria-expanded', 'true')
+    await buyersHeading.click()
+    await expect.poll(groupedTransactions).toEqual({ Buyers: [], Sellers: ['Login'] })
+    await buyersHeading.click()
+    await expect.poll(groupedTransactions).toEqual({ Buyers: ['Login', 'Search'], Sellers: ['Login'] })
     await expect(tables.getByText(/Each group, then the transactions it ran/)).toBeVisible()
   } finally {
     await abortLiveRun(request, { testId, scriptId: buyers })

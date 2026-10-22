@@ -1095,8 +1095,17 @@ func TestGeneratorLossEvacuationSurvivesDeadSourceAndKeepsTheRunOnItsReplacement
 		defer close(keeperDone)
 		backend.maintainGeneratorExecutionEpoch(keeperCtx, runner)
 	}()
+	// Production also has a per-run assignment keeper. The staged keeper ends
+	// when evacuation publishes the replacement; the fleet keeper above renews
+	// only its process epoch and cannot keep that assignment alive on its own.
+	runKeeperDone := make(chan struct{})
+	go func() {
+		defer close(runKeeperDone)
+		backend.renewGeneratorExecutionEpoch(keeperCtx, runner, test, 91)
+	}()
 	t.Cleanup(func() {
 		stopKeeper()
+		<-runKeeperDone
 		<-keeperDone
 	})
 

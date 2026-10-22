@@ -151,3 +151,33 @@ func assertHARDirEmpty(t *testing.T, dir string) {
 		t.Fatalf("HAR directory holds %v", names)
 	}
 }
+
+func TestRuntimeSecretHARSuppressionWarning(t *testing.T) {
+	for _, policy := range []string{HARCaptureAlways, HARCaptureOnError, HARCaptureOff, ""} {
+		t.Run(policy, func(t *testing.T) {
+			b := &Browser{harCapturePolicy: policy, harDir: t.TempDir()}
+			b.SetRuntimeSecretActivity(func() bool { return true })
+			var options playwright.BrowserNewContextOptions
+			if err := b.applyHARCaptureOptions(&options); err != nil {
+				t.Fatal(err)
+			}
+			if options.RecordHarPath != nil || b.harOwner != nil || b.harWorkingPath != "" {
+				t.Fatal("secret suppression opened capture")
+			}
+			assertHARDirEmpty(t, b.harDir)
+			first, second := &protocol.Result{Success: true}, &protocol.Result{Success: true}
+			b.applyEvidenceOutcome(first)
+			b.applyEvidenceOutcome(second)
+			var want []string
+			if policy != HARCaptureOff && policy != "" {
+				want = []string{"browser_har_unavailable_har_runtime_secrets"}
+			}
+			if !first.Success || !second.Success || !slices.Equal(first.WarningCodes, want) || len(second.WarningCodes) != 0 {
+				t.Fatalf("warnings %v / %v", first.WarningCodes, second.WarningCodes)
+			}
+			if len(b.TakeBrowserHARCaptureOmissions()) != 0 {
+				t.Fatal("policy suppression counted as capture failure")
+			}
+		})
+	}
+}

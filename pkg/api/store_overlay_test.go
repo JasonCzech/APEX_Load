@@ -278,6 +278,15 @@ func (o *sqliteStoreOverlay) AnalysisUploadWriterCleanupPlan(a0 context.Context,
 	return o.base().AnalysisUploadWriterCleanupPlan(a0, a1)
 }
 
+func (o *sqliteStoreOverlay) AppendBrowserIntelligenceAcceptanceRecord(a0 *storage.FeatureAcceptanceRecord) error {
+	if fake, ok := o.fake.(interface {
+		AppendBrowserIntelligenceAcceptanceRecord(*storage.FeatureAcceptanceRecord) error
+	}); ok {
+		return fake.AppendBrowserIntelligenceAcceptanceRecord(a0)
+	}
+	return o.base().AppendBrowserIntelligenceAcceptanceRecord(a0)
+}
+
 func (o *sqliteStoreOverlay) AppendFeatureAcceptanceRecord(a0 *storage.FeatureAcceptanceRecord) error {
 	if fake, ok := o.fake.(interface {
 		AppendFeatureAcceptanceRecord(*storage.FeatureAcceptanceRecord) error
@@ -312,6 +321,15 @@ func (o *sqliteStoreOverlay) AppendProjectLiveTableOperatorEntry(a0 context.Cont
 		return fake.AppendProjectLiveTableOperatorEntry(a0, a1, a2, a3, a4)
 	}
 	return o.base().AppendProjectLiveTableOperatorEntry(a0, a1, a2, a3, a4)
+}
+
+func (o *sqliteStoreOverlay) AppendRCAEvidenceForAutoAdmission(a0 context.Context, a1 storage.RCAAutoAdmission, a2 []byte, a3 time.Time, a4 func(*storage.RCAEvidenceRevision) bool) (*storage.RCAEvidenceRevision, error) {
+	if fake, ok := o.fake.(interface {
+		AppendRCAEvidenceForAutoAdmission(context.Context, storage.RCAAutoAdmission, []byte, time.Time, func(*storage.RCAEvidenceRevision) bool) (*storage.RCAEvidenceRevision, error)
+	}); ok {
+		return fake.AppendRCAEvidenceForAutoAdmission(a0, a1, a2, a3, a4)
+	}
+	return o.base().AppendRCAEvidenceForAutoAdmission(a0, a1, a2, a3, a4)
 }
 
 func (o *sqliteStoreOverlay) AppendRCAEvidenceRevision(a0 string, a1 string, a2 []byte, a3 time.Time, a4 func(latest *storage.RCAEvidenceRevision) bool) (*storage.RCAEvidenceRevision, error) {
@@ -382,6 +400,15 @@ func (o *sqliteStoreOverlay) BeginManagementPoll(a0 string, a1 string, a2 string
 		return fake.BeginManagementPoll(a0, a1, a2, a3, a4, a5)
 	}
 	return o.base().BeginManagementPoll(a0, a1, a2, a3, a4, a5)
+}
+
+func (o *sqliteStoreOverlay) BeginReplayArtifactReceipt(a0 context.Context, a1 storage.ReplayArtifactSpec, a2 string, a3 time.Duration, a4 storage.ReplayArtifactLimits) error {
+	if fake, ok := o.fake.(interface {
+		BeginReplayArtifactReceipt(context.Context, storage.ReplayArtifactSpec, string, time.Duration, storage.ReplayArtifactLimits) error
+	}); ok {
+		return fake.BeginReplayArtifactReceipt(a0, a1, a2, a3, a4)
+	}
+	return o.base().BeginReplayArtifactReceipt(a0, a1, a2, a3, a4)
 }
 
 func (o *sqliteStoreOverlay) BindCapacityReservationToTest(a0 string, a1 string, a2 time.Time) (storage.CapacityBindingResult, error) {
@@ -535,6 +562,15 @@ func (o *sqliteStoreOverlay) CancelUnissuedManagementPoll(a0 string, a1 string, 
 		return fake.CancelUnissuedManagementPoll(a0, a1, a2, a3, a4, a5)
 	}
 	return o.base().CancelUnissuedManagementPoll(a0, a1, a2, a3, a4, a5)
+}
+
+func (o *sqliteStoreOverlay) CheckBrowserAcceptanceDependencies(a0 *storage.FeatureAcceptanceRecord) error {
+	if fake, ok := o.fake.(interface {
+		CheckBrowserAcceptanceDependencies(*storage.FeatureAcceptanceRecord) error
+	}); ok {
+		return fake.CheckBrowserAcceptanceDependencies(a0)
+	}
+	return o.base().CheckBrowserAcceptanceDependencies(a0)
 }
 
 func (o *sqliteStoreOverlay) ClaimAnalysisImportAttempt(a0 context.Context, a1 string, a2 string, a3 int64, a4 time.Duration) (*storage.AnalysisImport, *storage.AnalysisAttempt, error) {
@@ -715,6 +751,24 @@ func (o *sqliteStoreOverlay) ClaimRendezvous(a0 context.Context, a1 string, a2 s
 		return fake.ClaimRendezvous(a0, a1, a2, a3, a4)
 	}
 	return o.base().ClaimRendezvous(a0, a1, a2, a3, a4)
+}
+
+func (o *sqliteStoreOverlay) ClaimReplayArtifactCleanup(a0 context.Context, a1 int) ([]storage.ReplayArtifactReceipt, error) {
+	if fake, ok := o.fake.(interface {
+		ClaimReplayArtifactCleanup(context.Context, int) ([]storage.ReplayArtifactReceipt, error)
+	}); ok {
+		return fake.ClaimReplayArtifactCleanup(a0, a1)
+	}
+	return o.base().ClaimReplayArtifactCleanup(a0, a1)
+}
+
+func (o *sqliteStoreOverlay) ClaimReplayArtifactCleanupAfter(a0 context.Context, a1 string, a2 int) ([]storage.ReplayArtifactReceipt, error) {
+	if fake, ok := o.fake.(interface {
+		ClaimReplayArtifactCleanupAfter(context.Context, string, int) ([]storage.ReplayArtifactReceipt, error)
+	}); ok {
+		return fake.ClaimReplayArtifactCleanupAfter(a0, a1, a2)
+	}
+	return o.base().ClaimReplayArtifactCleanupAfter(a0, a1, a2)
 }
 
 func (o *sqliteStoreOverlay) ClaimReverseGeneratorIdentity(a0 string, a1 string) (bool, error) {
@@ -1517,6 +1571,15 @@ func (o *sqliteStoreOverlay) CreateRCAAnalysis(a0 string, a1 string, a2 string, 
 		return fake.CreateRCAAnalysis(a0, a1, a2, a3, a4)
 	}
 	return o.base().CreateRCAAnalysis(a0, a1, a2, a3, a4)
+}
+
+func (o *sqliteStoreOverlay) CreateRCAAnalysisForAutoAdmission(a0 context.Context, a1 storage.RCAAutoAdmission, a2 string, a3 []byte, a4 time.Time) (*storage.RCAAnalysis, bool, error) {
+	if fake, ok := o.fake.(interface {
+		CreateRCAAnalysisForAutoAdmission(context.Context, storage.RCAAutoAdmission, string, []byte, time.Time) (*storage.RCAAnalysis, bool, error)
+	}); ok {
+		return fake.CreateRCAAnalysisForAutoAdmission(a0, a1, a2, a3, a4)
+	}
+	return o.base().CreateRCAAnalysisForAutoAdmission(a0, a1, a2, a3, a4)
 }
 
 func (o *sqliteStoreOverlay) CreateRCAAnalysisWithOrigin(a0 string, a1 string, a2 string, a3 string, a4 []byte, a5 time.Time) (*storage.RCAAnalysis, bool, error) {
@@ -2645,6 +2708,15 @@ func (o *sqliteStoreOverlay) EnsurePrometheusSchema() error {
 	return o.base().EnsurePrometheusSchema()
 }
 
+func (o *sqliteStoreOverlay) EnsureRCAAutoAdmission(a0 context.Context, a1 string) (*storage.RCAAutoAdmission, error) {
+	if fake, ok := o.fake.(interface {
+		EnsureRCAAutoAdmission(context.Context, string) (*storage.RCAAutoAdmission, error)
+	}); ok {
+		return fake.EnsureRCAAutoAdmission(a0, a1)
+	}
+	return o.base().EnsureRCAAutoAdmission(a0, a1)
+}
+
 func (o *sqliteStoreOverlay) EnsureRunArchiveRefKey(a0 string, a1 string) (string, error) {
 	if fake, ok := o.fake.(interface {
 		EnsureRunArchiveRefKey(string, string) (string, error)
@@ -2753,6 +2825,24 @@ func (o *sqliteStoreOverlay) FinishConfluencePublication(a0 string, a1 string, a
 	return o.base().FinishConfluencePublication(a0, a1, a2, a3, a4, a5)
 }
 
+func (o *sqliteStoreOverlay) FinishRCAAutoAdmission(a0 context.Context, a1 storage.RCAAutoAdmission) error {
+	if fake, ok := o.fake.(interface {
+		FinishRCAAutoAdmission(context.Context, storage.RCAAutoAdmission) error
+	}); ok {
+		return fake.FinishRCAAutoAdmission(a0, a1)
+	}
+	return o.base().FinishRCAAutoAdmission(a0, a1)
+}
+
+func (o *sqliteStoreOverlay) FinishReplayArtifactCleanup(a0 context.Context, a1 string, a2 string, a3 string) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		FinishReplayArtifactCleanup(context.Context, string, string, string) (bool, error)
+	}); ok {
+		return fake.FinishReplayArtifactCleanup(a0, a1, a2, a3)
+	}
+	return o.base().FinishReplayArtifactCleanup(a0, a1, a2, a3)
+}
+
 func (o *sqliteStoreOverlay) FinishTelemetryNotificationDelivery(a0 context.Context, a1 storage.TelemetryNotificationDelivery, a2 string, a3 time.Time) (bool, error) {
 	if fake, ok := o.fake.(interface {
 		FinishTelemetryNotificationDelivery(context.Context, storage.TelemetryNotificationDelivery, string, time.Time) (bool, error)
@@ -2803,6 +2893,15 @@ func (o *sqliteStoreOverlay) GetAnalysisImport(a0 string) (*storage.AnalysisImpo
 		return fake.GetAnalysisImport(a0)
 	}
 	return o.base().GetAnalysisImport(a0)
+}
+
+func (o *sqliteStoreOverlay) GetAnalysisPolicyRevision(a0 string, a1 string, a2 int64) (*storage.AnalysisDefinition, *storage.AnalysisDefinition, error) {
+	if fake, ok := o.fake.(interface {
+		GetAnalysisPolicyRevision(string, string, int64) (*storage.AnalysisDefinition, *storage.AnalysisDefinition, error)
+	}); ok {
+		return fake.GetAnalysisPolicyRevision(a0, a1, a2)
+	}
+	return o.base().GetAnalysisPolicyRevision(a0, a1, a2)
 }
 
 func (o *sqliteStoreOverlay) GetAppDynamicsConnection(a0 string) (*storage.AppDynamicsConnection, error) {
@@ -2868,6 +2967,15 @@ func (o *sqliteStoreOverlay) GetArchiveFinalizationJob(a0 string) (*storage.Arch
 	return o.base().GetArchiveFinalizationJob(a0)
 }
 
+func (o *sqliteStoreOverlay) GetArchiveFinalizationJobContext(a0 context.Context, a1 string) (*storage.ArchiveFinalizationJob, error) {
+	if fake, ok := o.fake.(interface {
+		GetArchiveFinalizationJobContext(context.Context, string) (*storage.ArchiveFinalizationJob, error)
+	}); ok {
+		return fake.GetArchiveFinalizationJobContext(a0, a1)
+	}
+	return o.base().GetArchiveFinalizationJobContext(a0, a1)
+}
+
 func (o *sqliteStoreOverlay) GetArchiveRefreshJob(a0 string) (*storage.ArchiveRefreshJob, error) {
 	if fake, ok := o.fake.(interface {
 		GetArchiveRefreshJob(string) (*storage.ArchiveRefreshJob, error)
@@ -2875,6 +2983,15 @@ func (o *sqliteStoreOverlay) GetArchiveRefreshJob(a0 string) (*storage.ArchiveRe
 		return fake.GetArchiveRefreshJob(a0)
 	}
 	return o.base().GetArchiveRefreshJob(a0)
+}
+
+func (o *sqliteStoreOverlay) GetArchiveRefreshJobContext(a0 context.Context, a1 string) (*storage.ArchiveRefreshJob, error) {
+	if fake, ok := o.fake.(interface {
+		GetArchiveRefreshJobContext(context.Context, string) (*storage.ArchiveRefreshJob, error)
+	}); ok {
+		return fake.GetArchiveRefreshJobContext(a0, a1)
+	}
+	return o.base().GetArchiveRefreshJobContext(a0, a1)
 }
 
 func (o *sqliteStoreOverlay) GetAuthoringSession(a0 string) (*storage.AuthoringSession, error) {
@@ -3591,6 +3708,15 @@ func (o *sqliteStoreOverlay) GetRelease(a0 string) (*storage.Release, error) {
 	return o.base().GetRelease(a0)
 }
 
+func (o *sqliteStoreOverlay) GetReplayArtifactReceipt(a0 context.Context, a1 string, a2 string) (*storage.ReplayArtifactReceipt, error) {
+	if fake, ok := o.fake.(interface {
+		GetReplayArtifactReceipt(context.Context, string, string) (*storage.ReplayArtifactReceipt, error)
+	}); ok {
+		return fake.GetReplayArtifactReceipt(a0, a1, a2)
+	}
+	return o.base().GetReplayArtifactReceipt(a0, a1, a2)
+}
+
 func (o *sqliteStoreOverlay) GetRepositoryCategory(a0 string) (*storage.RepositoryCategory, error) {
 	if fake, ok := o.fake.(interface {
 		GetRepositoryCategory(string) (*storage.RepositoryCategory, error)
@@ -3643,6 +3769,15 @@ func (o *sqliteStoreOverlay) GetRunArchiveCollection(a0 string) (*storage.RunArc
 		return fake.GetRunArchiveCollection(a0)
 	}
 	return o.base().GetRunArchiveCollection(a0)
+}
+
+func (o *sqliteStoreOverlay) GetRunArchiveContext(a0 context.Context, a1 string) (*storage.RunArchiveRecord, error) {
+	if fake, ok := o.fake.(interface {
+		GetRunArchiveContext(context.Context, string) (*storage.RunArchiveRecord, error)
+	}); ok {
+		return fake.GetRunArchiveContext(a0, a1)
+	}
+	return o.base().GetRunArchiveContext(a0, a1)
 }
 
 func (o *sqliteStoreOverlay) GetRunArchiveFailure(a0 string) (*storage.RunArchiveFailure, error) {
@@ -3886,6 +4021,15 @@ func (o *sqliteStoreOverlay) GetTest(a0 string) (*storage.TestRecord, error) {
 	return o.base().GetTest(a0)
 }
 
+func (o *sqliteStoreOverlay) GetTestContext(a0 context.Context, a1 string) (*storage.TestRecord, error) {
+	if fake, ok := o.fake.(interface {
+		GetTestContext(context.Context, string) (*storage.TestRecord, error)
+	}); ok {
+		return fake.GetTestContext(a0, a1)
+	}
+	return o.base().GetTestContext(a0, a1)
+}
+
 func (o *sqliteStoreOverlay) GetTestNote(a0 string) (*storage.TestNote, error) {
 	if fake, ok := o.fake.(interface {
 		GetTestNote(string) (*storage.TestNote, error)
@@ -4031,6 +4175,15 @@ func (o *sqliteStoreOverlay) IsMonitorArtifactReferenced(a0 string, a1 string) (
 		return fake.IsMonitorArtifactReferenced(a0, a1)
 	}
 	return o.base().IsMonitorArtifactReferenced(a0, a1)
+}
+
+func (o *sqliteStoreOverlay) JoinReplayArtifactWriter(a0 context.Context, a1 string, a2 string, a3 string, a4 string) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		JoinReplayArtifactWriter(context.Context, string, string, string, string) (bool, error)
+	}); ok {
+		return fake.JoinReplayArtifactWriter(a0, a1, a2, a3, a4)
+	}
+	return o.base().JoinReplayArtifactWriter(a0, a1, a2, a3, a4)
 }
 
 func (o *sqliteStoreOverlay) LastThresholdEvaluation(a0 string) (*time.Time, error) {
@@ -4247,6 +4400,15 @@ func (o *sqliteStoreOverlay) ListAuthoringSessionsPage(a0 string, a1 int, a2 int
 		return fake.ListAuthoringSessionsPage(a0, a1, a2)
 	}
 	return o.base().ListAuthoringSessionsPage(a0, a1, a2)
+}
+
+func (o *sqliteStoreOverlay) ListBrowserBaselineCandidates(a0 context.Context, a1 storage.BrowserBaselineCandidateQuery) ([]storage.BrowserBaselineCandidate, bool, error) {
+	if fake, ok := o.fake.(interface {
+		ListBrowserBaselineCandidates(context.Context, storage.BrowserBaselineCandidateQuery) ([]storage.BrowserBaselineCandidate, bool, error)
+	}); ok {
+		return fake.ListBrowserBaselineCandidates(a0, a1)
+	}
+	return o.base().ListBrowserBaselineCandidates(a0, a1)
 }
 
 func (o *sqliteStoreOverlay) ListCapacityInstanceIntents(a0 string, a1 string) ([]*storage.CapacityInstanceIntent, error) {
@@ -5023,6 +5185,15 @@ func (o *sqliteStoreOverlay) ListProvisioningRequests(a0 string, a1 int, a2 int)
 	return o.base().ListProvisioningRequests(a0, a1, a2)
 }
 
+func (o *sqliteStoreOverlay) ListRCAAutoAdmissions(a0 context.Context, a1 string, a2 int) ([]storage.RCAAutoAdmission, string, error) {
+	if fake, ok := o.fake.(interface {
+		ListRCAAutoAdmissions(context.Context, string, int) ([]storage.RCAAutoAdmission, string, error)
+	}); ok {
+		return fake.ListRCAAutoAdmissions(a0, a1, a2)
+	}
+	return o.base().ListRCAAutoAdmissions(a0, a1, a2)
+}
+
 func (o *sqliteStoreOverlay) ListRCACritiques(a0 string, a1 string, a2 string) ([]storage.RCACritique, error) {
 	if fake, ok := o.fake.(interface {
 		ListRCACritiques(string, string, string) ([]storage.RCACritique, error)
@@ -5338,6 +5509,15 @@ func (o *sqliteStoreOverlay) LoadTelemetryCheckpoint(a0 string, a1 string, a2 st
 	return o.base().LoadTelemetryCheckpoint(a0, a1, a2, a3)
 }
 
+func (o *sqliteStoreOverlay) LookupReplayArtifactScope(a0 context.Context, a1 string) (*storage.ReplayArtifactScope, error) {
+	if fake, ok := o.fake.(interface {
+		LookupReplayArtifactScope(context.Context, string) (*storage.ReplayArtifactScope, error)
+	}); ok {
+		return fake.LookupReplayArtifactScope(a0, a1)
+	}
+	return o.base().LookupReplayArtifactScope(a0, a1)
+}
+
 func (o *sqliteStoreOverlay) MarkArchiveCleanupJobFailed(a0 string, a1 error, a2 time.Time) error {
 	if fake, ok := o.fake.(interface {
 		MarkArchiveCleanupJobFailed(string, error, time.Time) error
@@ -5591,6 +5771,15 @@ func (o *sqliteStoreOverlay) PublishProjectLiveTableCheckpoint(a0 context.Contex
 	return o.base().PublishProjectLiveTableCheckpoint(a0, a1, a2, a3, a4)
 }
 
+func (o *sqliteStoreOverlay) PublishReplayArtifactReceipt(a0 context.Context, a1 string, a2 string, a3 string, a4 string) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		PublishReplayArtifactReceipt(context.Context, string, string, string, string) (bool, error)
+	}); ok {
+		return fake.PublishReplayArtifactReceipt(a0, a1, a2, a3, a4)
+	}
+	return o.base().PublishReplayArtifactReceipt(a0, a1, a2, a3, a4)
+}
+
 func (o *sqliteStoreOverlay) PublishRunEvidenceReceipts(a0 string) (int64, error) {
 	if fake, ok := o.fake.(interface{ PublishRunEvidenceReceipts(string) (int64, error) }); ok {
 		return fake.PublishRunEvidenceReceipts(a0)
@@ -5605,6 +5794,15 @@ func (o *sqliteStoreOverlay) QueueMonitorObjectCleanup(a0 string, a1 string, a2 
 		return fake.QueueMonitorObjectCleanup(a0, a1, a2)
 	}
 	return o.base().QueueMonitorObjectCleanup(a0, a1, a2)
+}
+
+func (o *sqliteStoreOverlay) RCAAutoAdmissionCurrent(a0 context.Context, a1 storage.RCAAutoAdmission) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		RCAAutoAdmissionCurrent(context.Context, storage.RCAAutoAdmission) (bool, error)
+	}); ok {
+		return fake.RCAAutoAdmissionCurrent(a0, a1)
+	}
+	return o.base().RCAAutoAdmissionCurrent(a0, a1)
 }
 
 func (o *sqliteStoreOverlay) ReadBrowserResourceArchiveIdentityContext(a0 context.Context, a1 string) (*storage.BrowserResourceArchiveIdentity, error) {

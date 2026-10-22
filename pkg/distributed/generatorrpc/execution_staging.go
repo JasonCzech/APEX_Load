@@ -130,7 +130,9 @@ type preparedAssignmentStage struct {
 func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment) (ack *pb.AssignmentAck, callErr error) {
 	defer func() {
 		if callErr == nil && ack.GetAccepted() {
+			ack.BrowserDocumentProofVersion = assignment.GetBrowserDocumentProofVersion()
 			ack.BrowserInteractionEvidenceVersion = assignment.GetBrowserInteractionEvidenceVersion()
+			ack.BrowserAuthoredDefinition = assignment.GetBrowserAuthoredDefinition()
 		}
 	}()
 	defer func() {
@@ -1148,8 +1150,35 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			}
 		}
 	}
-	if request.GetBrowserInteractionEvidenceVersion() == 2 && !dsl.BrowserInteractionCaptureRequested(&script) {
-		return nil, status.Error(codes.InvalidArgument, "interaction evidence v2 requires browser interaction capture")
+	if protocol.BrowserInteractionHasDispatch(int(request.GetBrowserInteractionEvidenceVersion())) && !dsl.BrowserInteractionCaptureRequested(&script) {
+		return nil, status.Errorf(codes.InvalidArgument, "interaction evidence v%d requires browser interaction capture", request.GetBrowserInteractionEvidenceVersion())
+	}
+	if request.GetBrowserDocumentProofVersion() > 0 {
+		if request.GetBrowserDocumentProofVersion() >= 2 {
+			max, ok := instance.(interface{ BrowserDocumentReceiptMaxVersion() int })
+			if !ok || max.BrowserDocumentReceiptMaxVersion() < int(request.GetBrowserDocumentProofVersion()) {
+				return nil, status.Error(codes.FailedPrecondition, "runtime does not support browser receipt lifetime v2")
+			}
+		}
+		if request.GetBrowserDocumentProofVersion() == 3 {
+			if _, ok := instance.(protocol.BrowserSourceLeaseProvider); !ok {
+				return nil, status.Error(codes.FailedPrecondition, "runtime lacks independent source ledger")
+			}
+		}
+		if err := validateBrowserDocumentProofRuntime(&script, instance); err != nil {
+			return nil, err
+		}
+	}
+	if request.GetBrowserInteractionEvidenceVersion() == 3 {
+		if _, ok := instance.(protocol.BrowserInteractionEvidenceV3Provider); !ok {
+			return nil, status.Error(codes.FailedPrecondition, "runtime does not support browser interaction evidence v3")
+		}
+	}
+	if source := request.GetBrowserAuthoredDefinition(); source != nil {
+		runtimeSource := engine.BrowserOriginalAuthoredDefinition(&script)
+		if !runtimeSource.Valid() || runtimeSource.StructureSHA256 != source.StructureSha256 {
+			return nil, status.Error(codes.InvalidArgument, "browser original source structure does not match runtime")
+		}
 	}
 	validationIssues := dsl.ValidateScriptIssues(&script)
 	if assignmentPreservesImportedCredentials(&script) {
@@ -1283,6 +1312,8 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			RuntimeResourceReservation:        plan.runtimeResources.reservation,
 			JavaBroker:                        javaHost,
 			Name:                              request.GetGroupName(),
+			BrowserAuthoredDefinition:         browserAuthoredDefinitionFromProto(request.GetBrowserAuthoredDefinition()),
+			BrowserDocumentProofVersion:       assignedBrowserDocumentProofVersion(request),
 			BrowserInteractionEvidenceVersion: assignedBrowserInteractionVersion(request),
 			StartOffset:                       plan.validated.startOffset,
 			Region:                            strings.TrimSpace(request.GetRegion()),

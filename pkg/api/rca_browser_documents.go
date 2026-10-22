@@ -12,6 +12,7 @@ import (
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
@@ -62,7 +63,24 @@ func (s *Server) rcaBrowserBaselinePolicy(projectID string, manifest *RunArchive
 		return out, nil //nolint:nilerr // an invalid pinned revision is reported in Unavailable and the defaults apply
 	}
 	out.TimingMs, out.TimingRelative, out.CLS = policy.EffectFloors.TimingMs, policy.EffectFloors.TimingRelative, policy.EffectFloors.CLS
+	if len(policy.EffectFloors.TimingByMetricMs) > 0 {
+		out.MetricFloors = make(map[string]float64, len(policy.EffectFloors.TimingByMetricMs))
+		for metric, value := range policy.EffectFloors.TimingByMetricMs {
+			out.MetricFloors[metric] = value
+		}
+	}
 	out.Mode, out.RunID = policy.Baseline.Mode, policy.Baseline.RunID
+	if out.Mode == "pinned_run" {
+		// Stored revisions may name a reference key. Compare canonical run
+		// identities, while preserving unavailable pins for normal disclosure.
+		run, lookupErr := s.store.GetTest(out.RunID)
+		if lookupErr != nil && !errors.Is(lookupErr, sql.ErrNoRows) {
+			return nil, fmt.Errorf("the pinned baseline identity could not be read: %w", lookupErr)
+		}
+		if run != nil && normalizeProjectID(run.ProjectID) == normalizeProjectID(projectID) {
+			out.RunID = run.ID
+		}
+	}
 	return out, nil
 }
 
@@ -103,18 +121,83 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 	if accumulator == nil {
 		return nil, nil, nil
 	}
+	proof, proofErr := readBrowserSourceProof(ctx, record, manifest)
+	if ctx.Err() != nil {
+		return nil, nil, ctx.Err()
+	}
+	// Remote owner clocks retain their evidence, but cannot be substituted for
+	// the controller authority without a separately acquired causal envelope.
+	localProof := proofErr == nil && proof != nil && manifest.BrowserProofAuthorityMode == "local" && len(manifest.BrowserProofExpectedOwners) == 1 && manifest.BrowserProofExpectedOwners[0] == "controller"
+	// The journal must cover raw sources too, including censored observations.
+	if proof != nil {
+		for _, measurement := range accumulator.measurements {
+			if ctx.Err() != nil {
+				return nil, nil, ctx.Err()
+			}
+			p, _, ok := proof.Context(measurement.observation.SourceGeneration)
+			known := false
+			if ok {
+				for _, d := range p.Receipts.Closure.Documents {
+					if d.DocumentID == measurement.observation.DocumentID && d.LifecycleID == measurement.observation.LifecycleID {
+						known = true
+						break
+					}
+				}
+			}
+			if !known {
+				proof = nil
+				localProof = false
+				break
+			}
+		}
+	}
 	finals, _ := browserDocumentFinals(accumulator, rcaBrowserDocumentMetrics, func(o protocol.BrowserDocumentObservation) bool {
-		return !o.WindowEnd.Before(from) && o.WindowEnd.Before(to)
+		return localProof || !o.WindowEnd.Before(from) && o.WindowEnd.Before(to)
 	})
+	clockProofComplete := localProof
 	type tupleSeries struct {
 		tuple   protocol.BrowserDocumentMetricSummary
 		buckets map[int]*protocol.BrowserMetricDistribution
+		windows map[int]rca.DocumentWindow
+		mapped  bool
 	}
 	tuples := map[string]*tupleSeries{}
 	for _, f := range finals {
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		mappedVUsers := 0
+		mappedSpanID := ""
+		if localProof {
+			window, spans, mapErr := proof.Map(f.observation)
+			if mapErr == nil {
+				p, _, _ := proof.Context(f.observation.SourceGeneration)
+				// These UTC values label the owner's monotonic bounds. They are not
+				// interpolated browser event times or cross-telemetry alignment claims.
+				f.start = p.AuthorityStartedAt.Add(time.Duration(window.StartNS))
+				f.at = p.AuthorityStartedAt.Add(time.Duration(window.EndNS))
+				for _, span := range spans {
+					if protocol.ContainedInBrowserSteadySpan(window, []protocol.BrowserMonotonicSpan{span.BrowserMonotonicSpan}) {
+						mappedVUsers = span.VUsers
+						mappedSpanID = sha256BytesHex([]byte(fmt.Sprintf("%s/%s/%s/%d/%d", span.Authority.RunID, span.Authority.Incarnation, span.Authority.DomainID, span.StartNS, span.EndNS)))
+						break
+					}
+				}
+			}
+			if mapErr != nil {
+				clockProofComplete = false
+			}
+		}
+		if f.at.Before(from) || !f.at.Before(to) {
+			if localProof {
+				clockProofComplete = false
+			}
+			continue
+		}
+
 		t := tuples[f.key]
 		if t == nil {
-			t = &tupleSeries{tuple: f.tuple, buckets: map[int]*protocol.BrowserMetricDistribution{}}
+			t = &tupleSeries{tuple: f.tuple, buckets: map[int]*protocol.BrowserMetricDistribution{}, windows: map[int]rca.DocumentWindow{}, mapped: localProof}
 			tuples[f.key] = t
 		}
 		i := int(f.at.Sub(from) / bucket)
@@ -122,6 +205,21 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 			t.buckets[i] = &protocol.BrowserMetricDistribution{}
 		}
 		t.buckets[i].Add(f.value)
+		w, exists := t.windows[i]
+		if !exists || f.start.Before(w.Start) {
+			w.Start = f.start
+		}
+		if !exists || f.at.After(w.End) {
+			w.End = f.at
+		}
+		validMap := mappedVUsers > 0 && (!exists || w.MonotonicVerified && w.MonotonicVUsers == mappedVUsers && w.MonotonicSpanID == mappedSpanID)
+		w.MonotonicVerified = validMap
+		w.MonotonicVUsers = mappedVUsers
+		w.MonotonicSpanID = mappedSpanID
+		t.mapped = t.mapped && clockProofComplete
+		w.Invalid = w.Invalid || localProof && !validMap
+		w.Invalid = w.Invalid || f.start.IsZero() || f.at.IsZero() || f.at.Before(f.start)
+		t.windows[i] = w
 	}
 	var limitations []rca.Limitation
 	if accumulator.incomplete {
@@ -129,8 +227,9 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 	}
 	scope := archiveIdentityScope(manifest)
 	n := int(to.Sub(from) / bucket)
-	if maxPoints > 0 {
-		n = min(n, maxPoints)
+	if maxPoints > 0 && n > maxPoints {
+		limitations = append(limitations, rca.Limitation{Code: limitationDetectionEvidenceCut, Detail: fmt.Sprintf("the point budget left out %d browser document buckets", n-maxPoints)})
+		n = maxPoints
 	}
 	var series []rca.Series
 	for key, t := range tuples {
@@ -141,11 +240,20 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 			Evidence: rca.EvidenceRef{Kind: "browser_document", Locator: browserDocumentsFileName + "#" + label},
 			Identity: rcaRunSeriesIdentity(scope, "browser_document", digest, metric, t.tuple.Unit, analysis.KindObservation, bucket),
 			Document: rcaDocumentCohort(t.tuple, accumulator.incomplete)}
+		if t.mapped && clockProofComplete {
+			s.Document.ClockQualification = rca.BrowserEvidenceQualified
+			s.Document.TimelineQualification = rca.BrowserEvidenceUnavailable
+		}
+		if proof != nil && proofErr == nil {
+			s.Document.SourceCoverageQualification = rca.BrowserEvidenceQualified
+		}
+		s.Document.Windows = make(map[time.Time]rca.DocumentWindow, min(n, len(t.windows)))
 		for i := 0; i < n; i++ {
 			point := rca.SeriesPoint{At: from.Add(time.Duration(i) * bucket)}
 			if d := t.buckets[i]; d != nil {
 				if point.Value, point.Valid = d.Quantile(0.75); point.Valid {
 					point.Count = int32(min(d.Count, math.MaxInt32))
+					s.Document.Windows[point.At.UTC()] = t.windows[i]
 				}
 			}
 			s.Points = append(s.Points, point)
@@ -167,7 +275,10 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 func rcaDocumentCohort(tuple protocol.BrowserDocumentMetricSummary, incomplete bool) *rca.DocumentCohort {
 	family := tuple
 	family.Cohort = nil
-	return &rca.DocumentCohort{Metric: tuple.Metric, Group: tuple.Group, Family: browserDocumentTupleDigest(protocol.BrowserDocumentMetricKey(family)), Fields: browserCohortFields(tuple.Cohort), Incomplete: incomplete}
+	// Retained v1 browser documents have no browser-to-host calibration or
+	// expected-source/terminal ledger. Do not infer either from generator clock
+	// samples, local execution, or successful archive collection.
+	return &rca.DocumentCohort{ClockQualification: rca.BrowserEvidenceUnavailable, SourceCoverageQualification: rca.BrowserEvidenceUnavailable, Metric: tuple.Metric, Group: tuple.Group, Family: browserDocumentTupleDigest(protocol.BrowserDocumentMetricKey(family)), Fields: browserCohortFields(tuple.Cohort), Incomplete: incomplete}
 }
 
 // browserCohortFields are a runtime cohort's fields as text, so two cohorts'
@@ -190,4 +301,46 @@ func browserCohortFields(c *protocol.BrowserRuntimeCohort) map[string]string {
 		"cache_enabled": optional(c.CacheEnabled), "cache_content_urls": optional(c.CacheContentURLs), "check_newer_versions": optional(c.CheckNewerVersions),
 		"new_user_policy": c.NewUserPolicy, "new_user_policy_applied": strconv.FormatBool(c.NewUserPolicyApplied), "unavailable_reason": c.UnavailableReason,
 	}
+}
+
+// rcaBrowserScriptChangedGroups requires original authored identity in addition
+// to executable identity. Runtime overrides can make different original sources
+// execute alike, while equal originals do not prove equal runtime behavior.
+// Missing historical provenance remains unknown; it is never reconstructed from
+// executable digests. Only browser detection consumes this additional guard.
+func rcaBrowserScriptChangedGroups(current, candidate rca.WorkloadKey, currentManifest, candidateManifest *RunArchiveManifest, observed ...rca.Series) map[string]bool {
+	changed := rca.ScriptChangedGroups(current, candidate)
+	source := func(manifest *RunArchiveManifest, group string) protocol.BrowserAuthoredDefinition {
+		if manifest == nil {
+			return protocol.BrowserAuthoredDefinition{}
+		}
+		if manifest.InitialProvenance != nil {
+			return manifest.InitialProvenance.BrowserAuthoredSources[group]
+		}
+		return manifest.Provenance.BrowserAuthoredSources[group]
+	}
+	groups := make(map[string]bool, len(current.Groups))
+	for group := range current.Groups {
+		groups[group] = true
+	}
+	// Retained observations may have blank or foreign groups. They must not
+	// acquire identity merely because neither workload names that group.
+	for _, series := range observed {
+		if series.Kind == rca.SeriesBrowserDocument && series.Document != nil {
+			groups[series.Document.Group] = true
+		}
+	}
+	for group := range groups {
+		_, inCurrent := current.Groups[group]
+		_, inCandidate := candidate.Groups[group]
+		if strings.TrimSpace(group) == "" || !inCurrent || !inCandidate {
+			changed[group] = true
+			continue
+		}
+		a, b := source(currentManifest, group), source(candidateManifest, group)
+		if !a.Valid() || !b.Valid() || a != b {
+			changed[group] = true
+		}
+	}
+	return changed
 }

@@ -90,9 +90,10 @@ type BrowserInteractionTarget struct {
 // BrowserInteractionOutcome is the gesture's declared outcome (the action's
 // wait condition) with its deadline, and what was observed.
 type BrowserInteractionOutcome struct {
-	Declared   string `json:"declared"`
-	DeadlineMS int    `json:"deadline_ms,omitempty"`
-	Observed   string `json:"observed"`
+	Clock      *BrowserOutcomeClock `json:"clock,omitempty"`
+	Declared   string               `json:"declared"`
+	DeadlineMS int                  `json:"deadline_ms,omitempty"`
+	Observed   string               `json:"observed"`
 }
 
 type BrowserInteraction struct {
@@ -142,6 +143,14 @@ func browserInteractionFinite(v, limit float64) bool {
 
 // Valid checks one interaction record.
 func (i BrowserInteraction) Valid() bool {
+	if i.Version == BrowserInteractionVersion3 && (i.Outcome.Observed == InteractionOutcomeMet || i.Outcome.Observed == InteractionOutcomeMissed) {
+		if !i.Outcome.Clock.Valid() || i.Outcome.Observed == InteractionOutcomeMet && i.Outcome.Clock.ObservedAt.After(i.Outcome.Clock.DeadlineAt) || i.Outcome.Observed == InteractionOutcomeMissed && i.Outcome.Clock.ObservedAt.Before(i.Outcome.Clock.DeadlineAt) {
+			return false
+		}
+	}
+	if i.Outcome.Clock != nil && (i.Version != BrowserInteractionVersion3 || !i.Outcome.Clock.Valid() || i.Outcome.Clock.BudgetMS != i.Outcome.DeadlineMS || i.Outcome.Declared == "" || i.Outcome.Clock.ObservedAt.After(i.CapturedAt)) {
+		return false
+	}
 	if !browserInteractionV2FieldsValid(i) || !BrowserEvidenceGeneration(i.SourceGeneration) || !browserEvidenceID(i.InteractionID, i.SourceGeneration, false) || !browserEvidenceID(i.ActionID, i.SourceGeneration, true) || !browserEvidenceID(i.DocumentID, i.SourceGeneration, true) || !browserEvidenceText(i.ActionName, 256) || !browserInteractionKinds[i.Kind] {
 		return false
 	}
@@ -230,7 +239,7 @@ func browserInteractionToken(s string) bool {
 
 // Clone returns a deep copy, or nil when the evidence is malformed.
 func (e *BrowserInteractionEvidence) Clone() *BrowserInteractionEvidence {
-	if e == nil || (e.Version != BrowserInteractionVersion && e.Version != BrowserInteractionVersion2) || !BrowserEvidenceGeneration(e.SourceGeneration) || len(e.Interactions) > MaxBrowserInteractionsPerEvidence || e.Dropped < 0 || e.Dropped > 1e12 {
+	if e == nil || (e.Version != BrowserInteractionVersion && !BrowserInteractionHasDispatch(e.Version)) || !BrowserEvidenceGeneration(e.SourceGeneration) || len(e.Interactions) > MaxBrowserInteractionsPerEvidence || e.Dropped < 0 || e.Dropped > 1e12 {
 		return nil
 	}
 	out := *e
@@ -246,6 +255,7 @@ func (e *BrowserInteractionEvidence) Clone() *BrowserInteractionEvidence {
 			target := *i.Target
 			i.Target = &target
 		}
+		i.Outcome.Clock = i.Outcome.Clock.Clone()
 		i.Execution = i.Execution.Clone()
 		i.AuthoredStep = i.AuthoredStep.Clone()
 		if i.Dispatch != nil {

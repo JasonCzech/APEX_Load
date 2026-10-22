@@ -49,18 +49,20 @@ type RunArchiveSourceCoverage = archivecontract.RunArchiveSourceCoverage
 type RunArchiveSource = archivecontract.RunArchiveSource
 
 type RunArchiveManifest struct {
-	SourceCoverage      *RunArchiveSourceCoverage   `json:"source_coverage,omitempty"`
-	CSVExports          []RunArchiveCSVExportStatus `json:"csv_exports,omitempty"`
-	CSVExportIncomplete string                      `json:"csv_export_incomplete,omitempty"`
-	TerminationReason   string                      `json:"termination_reason,omitempty"`
-	SchemaVersion       string                      `json:"schema_version"`
-	TestID              string                      `json:"test_id"`
-	TestName            string                      `json:"test_name"`
-	CreatedAt           time.Time                   `json:"created_at"`
-	CompletedAt         time.Time                   `json:"completed_at,omitempty"`
-	Status              string                      `json:"status,omitempty"`
-	Error               string                      `json:"error,omitempty"`
-	Provenance          RunArchiveProvenance        `json:"provenance,omitempty"`
+	BrowserProofExpectedOwners []string                    `json:"browser_proof_expected_owners,omitempty"`
+	BrowserProofAuthorityMode  string                      `json:"browser_proof_authority_mode,omitempty"`
+	SourceCoverage             *RunArchiveSourceCoverage   `json:"source_coverage,omitempty"`
+	CSVExports                 []RunArchiveCSVExportStatus `json:"csv_exports,omitempty"`
+	CSVExportIncomplete        string                      `json:"csv_export_incomplete,omitempty"`
+	TerminationReason          string                      `json:"termination_reason,omitempty"`
+	SchemaVersion              string                      `json:"schema_version"`
+	TestID                     string                      `json:"test_id"`
+	TestName                   string                      `json:"test_name"`
+	CreatedAt                  time.Time                   `json:"created_at"`
+	CompletedAt                time.Time                   `json:"completed_at,omitempty"`
+	Status                     string                      `json:"status,omitempty"`
+	Error                      string                      `json:"error,omitempty"`
+	Provenance                 RunArchiveProvenance        `json:"provenance,omitempty"`
 	// ExecutorCompletedAt keeps the executing controller's own completion time
 	// when failover recovery restamps CompletedAt with the durable run end.
 	ExecutorCompletedAt *time.Time `json:"executor_completed_at,omitempty"`
@@ -83,6 +85,10 @@ type RunArchiveManifest struct {
 	Continuity                        *RunContinuityStatus `json:"continuity,omitempty"`
 	BrowserDocumentCoverageIncomplete bool                 `json:"browser_document_coverage_incomplete,omitempty"`
 	BrowserDocumentCaptureRequested   bool                 `json:"browser_document_capture_requested,omitempty"`
+	BrowserReceiptIncomplete          bool                 `json:"browser_receipt_incomplete,omitempty"`
+	BrowserReceiptsFile               string               `json:"browser_receipts_file,omitempty"`
+	BrowserReceiptRecordCount         int64                `json:"browser_receipt_record_count,omitempty"`
+	BrowserReceiptsSHA256             string               `json:"browser_receipts_sha256,omitempty"`
 	BrowserDocumentsFile              string               `json:"browser_documents_file,omitempty"`
 	BrowserDocumentsParquetFile       string               `json:"browser_documents_parquet_file,omitempty"`
 	// BrowserHARArtifacts are the run's native HARs; BrowserHAROmitted
@@ -222,15 +228,17 @@ type RunArchiveExecutionSettingsSnapshot struct {
 }
 
 type RunArchiveProvenance struct {
+	// Original authored definitions do not by themselves qualify runtime equivalence.
+	BrowserAuthoredSources map[string]protocol.BrowserAuthoredDefinition `json:"browser_authored_sources,omitempty"`
 	// RunIncarnation is minted by controller admission and frozen in the durable
 	// initial provenance. It survives leadership changes, unlike completion time.
 	RunIncarnation    string                                 `json:"run_incarnation,omitempty"`
 	ProjectLiveTables []RunArchiveProjectLiveTableAttachment `json:"project_live_tables,omitempty"`
 	LiveTables        []RunArchiveLiveTableSummary           `json:"live_tables,omitempty"`
 	TelemetryPolicy   *TelemetryBudgetPolicy                 `json:"telemetry_policy,omitempty"`
-	// PolicyPins are the project policy revisions in force at Start: null on
-	// runs admitted before policies existed, an empty list when no default
-	// policy was configured. The field is always present so the two differ.
+	// PolicyPins are the selected or default policy revisions frozen at Start:
+	// null on runs admitted before policies existed, an empty list when neither
+	// explicit selections nor project defaults apply. The field is always present so the two differ.
 	PolicyPins []RunPolicyPin `json:"policy_pins"`
 	// TelemetryAcceptancePolicy is the pinned telemetry acceptance policy's
 	// definition, frozen at Start so the run's verdict never follows a later
@@ -583,6 +591,7 @@ type RunArchiveIdentityNames struct {
 
 type RunArchiveReport struct {
 	TelemetryPolicy                  *TelemetryPolicyEvidence              `json:"telemetry_policy,omitempty"`
+	BrowserAuthoredPages             *BrowserAuthoredPageReport            `json:"browser_authored_pages,omitempty"`
 	BrowserDocumentEvidence          []protocol.BrowserDocumentObservation `json:"browser_document_evidence,omitempty"`
 	BrowserDocumentEvidenceTruncated bool                                  `json:"browser_document_evidence_truncated,omitempty"`
 	BrowserDocuments                 *protocol.BrowserDocumentSummary      `json:"browser_documents,omitempty"`
@@ -1146,6 +1155,9 @@ var archiveErrorWhitespacePattern = regexp.MustCompile(`\s+`)
 var archiveSnapshotLeadingTemplateBasePattern = regexp.MustCompile(`^\{\{\s*(?:var|param)\.[^{}]+\s*\}\}\s*(.*)$`)
 
 type runArchiveWriter struct {
+	browserProofMu      sync.Mutex
+	browserProofJournal *protocol.BrowserSourceJournal
+	browserProofSealed  bool
 	// businessKeys digests the run's business-key values (G16).
 	businessKeys            *businessKeyArchiver
 	captureBudget           *archiveCaptureBudget
@@ -1159,6 +1171,7 @@ type runArchiveWriter struct {
 	resourceFile            *os.File
 	summaryFile             *os.File
 	elkFile                 *os.File
+	browserReceiptsFile     *os.File
 	browserDocumentsFile    *os.File
 	browserDocumentsBuf     *bufio.Writer
 	browserDocumentsEncoder *json.Encoder

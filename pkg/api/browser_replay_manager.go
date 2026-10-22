@@ -58,7 +58,8 @@ func (m *BrowserReplayManager) setSessionIDReserver(reserve replaySessionIDReser
 }
 func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req BrowserReplayStartRequest) (*BrowserReplaySession, error) {
 	return m.BrowserReplayManager.Start(scriptID, script, recordbridge.BrowserReplayStartRequest{
-		LiveTableSeeds: req.LiveTableSeeds, GroupName: req.GroupName, ProjectID: req.ProjectID, ReplaySessionID: req.ReplaySessionID,
+		BrowserAuthoredDefinition: req.browserAuthoredDefinition,
+		LiveTableSeeds:            req.LiveTableSeeds, GroupName: req.GroupName, ProjectID: req.ProjectID, ReplaySessionID: req.ReplaySessionID,
 		Variables: req.Variables, RedactionRules: req.RedactionRules, StartPaused: req.StartPaused, Breakpoints: req.Breakpoints,
 		Browser: req.Browser, IgnoreThinkTime: req.IgnoreThinkTime, RunID: req.RunID, ContinueOnError: req.ContinueOnError,
 		RecordHAR: req.RecordHAR, Script: req.Script, Preflight: req.Preflight, SecretResolver: req.SecretResolver,

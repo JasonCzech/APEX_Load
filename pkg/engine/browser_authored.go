@@ -1,6 +1,9 @@
 package engine
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -77,14 +80,65 @@ func newBrowserAuthoredIndex(script *dsl.Script, sources ...*dsl.Script) *browse
 	return index
 }
 
+// BrowserOriginalAuthoredDefinition snapshots original source before trusted
+// runtime overrides. Empty/invalid scripts provide no original-source proof.
+func BrowserOriginalAuthoredDefinition(script *dsl.Script) protocol.BrowserAuthoredDefinition {
+	structure := browserAuthoredStructureDigest(script)
+	if structure == "" {
+		return protocol.BrowserAuthoredDefinition{}
+	}
+	definition := protocol.BrowserAuthoredDefinition{Version: 1, ScriptSHA256: replayScriptHash(script), StructureSHA256: structure}
+	if !definition.Valid() {
+		return protocol.BrowserAuthoredDefinition{}
+	}
+	return definition
+}
+func browserAuthoredStructureDigest(script *dsl.Script) string {
+	if script == nil || !strings.EqualFold(strings.TrimSpace(script.Protocol), "browser") {
+		return ""
+	}
+	var entries [][2]string
+	seen := map[*dsl.Action]bool{}
+	if err := dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+		if seen[ref.Action] {
+			return fmt.Errorf("ambiguous authored browser location")
+		}
+		seen[ref.Action] = true
+		entries = append(entries, [2]string{ref.Path, ref.Action.Type})
+		return nil
+	}); err != nil {
+		return ""
+	}
+	raw, err := json.Marshal(entries)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(append([]byte("browser_authored_structure.v1\x00"), raw...))
+	return hex.EncodeToString(sum[:])
+}
+func newBrowserOriginalAuthoredIndex(script, source *dsl.Script, definition protocol.BrowserAuthoredDefinition) *browserAuthoredIndex {
+	index := newBrowserAuthoredIndex(script, source)
+	if definition == (protocol.BrowserAuthoredDefinition{}) {
+		return index
+	}
+	if index == nil || !definition.Valid() || browserAuthoredStructureDigest(script) != definition.StructureSHA256 {
+		return nil
+	}
+	for action, step := range index.byAction {
+		index.byAction[action] = protocol.NewBrowserOriginalAuthoredStep(definition, step.StepPath)
+	}
+	return index
+}
+
 func (vu *VUser) browserAuthoredIndex() *browserAuthoredIndex {
 	if vu.Script == nil {
 		return nil
 	}
-	if vu.browserAuthoredScript != vu.Script || vu.browserAuthoredIndexedSource != vu.browserAuthoredSource {
+	if vu.browserAuthoredScript != vu.Script || vu.browserAuthoredIndexedSource != vu.browserAuthoredSource || vu.browserAuthoredIndexedDefinition != vu.browserAuthoredDefinition {
 		vu.browserAuthoredScript = vu.Script
 		vu.browserAuthoredIndexedSource = vu.browserAuthoredSource
-		vu.browserAuthored = newBrowserAuthoredIndex(vu.Script, vu.browserAuthoredSource)
+		vu.browserAuthoredIndexedDefinition = vu.browserAuthoredDefinition
+		vu.browserAuthored = newBrowserOriginalAuthoredIndex(vu.Script, vu.browserAuthoredSource, vu.browserAuthoredDefinition)
 	}
 	return vu.browserAuthored
 }

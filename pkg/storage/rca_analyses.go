@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -122,16 +123,22 @@ func lockRCARunTx(tx *storeTx, project, test string) error {
 // check runs under the run's lock, so concurrent captures of the same
 // evidence share one revision.
 func (s *SQLiteStore) AppendRCAEvidenceRevision(project, test string, payload []byte, now time.Time, reuse func(latest *RCAEvidenceRevision) bool) (*RCAEvidenceRevision, error) {
+	return s.appendRCAEvidenceRevision(context.Background(), project, test, payload, now, reuse, nil)
+}
+func (s *SQLiteStore) appendRCAEvidenceRevision(ctx context.Context, project, test string, payload []byte, now time.Time, reuse func(*RCAEvidenceRevision) bool, admission *RCAAutoAdmission) (*RCAEvidenceRevision, error) {
 	project, test = strings.TrimSpace(project), strings.TrimSpace(test)
 	if project == "" || test == "" || !validRCAPayload(payload) {
 		return nil, errors.New("invalid root-cause evidence revision")
 	}
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 	if err := lockRCARunTx(tx, project, test); err != nil {
+		return nil, err
+	}
+	if err := s.lockRCAAutoAdmissionTx(tx, admission); err != nil {
 		return nil, err
 	}
 	if reuse != nil {
@@ -304,16 +311,22 @@ func (s *SQLiteStore) CreateRCAAnalysis(project, test, inputDigest string, paylo
 // except that a request for the inputs of a still-queued automatic analysis
 // makes it a requested one, so it is claimed ahead of the automatic queue.
 func (s *SQLiteStore) CreateRCAAnalysisWithOrigin(project, test, inputDigest, origin string, payload []byte, now time.Time) (*RCAAnalysis, bool, error) {
+	return s.createRCAAnalysisWithOrigin(context.Background(), project, test, inputDigest, origin, payload, now, nil)
+}
+func (s *SQLiteStore) createRCAAnalysisWithOrigin(ctx context.Context, project, test, inputDigest, origin string, payload []byte, now time.Time, admission *RCAAutoAdmission) (*RCAAnalysis, bool, error) {
 	project, test = strings.TrimSpace(project), strings.TrimSpace(test)
 	if project == "" || test == "" || !validRCADigest(inputDigest) || !validRCAPayload(payload) || (origin != RCAOriginRequested && origin != RCAOriginAutomatic) {
 		return nil, false, errors.New("invalid root-cause analysis")
 	}
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, false, err
 	}
 	defer tx.Rollback()
 	if err := lockRCARunTx(tx, project, test); err != nil {
+		return nil, false, err
+	}
+	if err := s.lockRCAAutoAdmissionTx(tx, admission); err != nil {
 		return nil, false, err
 	}
 	existing, err := scanRCAAnalysis(tx.QueryRow(`SELECT `+rcaAnalysisColumns+` FROM rca_analyses WHERE test_id = ? AND input_digest = ? AND state IN (?, ?, ?) ORDER BY revision DESC LIMIT 1`,

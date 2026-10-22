@@ -591,3 +591,41 @@ func TestTelemetryAcceptancePolicyIsNotJudgedByCapacityEstimates(t *testing.T) {
 		t.Fatalf("an estimate during a policy-read outage: %v", err)
 	}
 }
+
+// A run's browser or journey policy selection (by immutable revision) and
+// its chosen telemetry acceptance policy (TEL-B) are pinned together at
+// Start, each as run_selection, while other kinds keep their defaults.
+func TestRunPolicySelectionsAndChosenTelemetryPolicyPinTogether(t *testing.T) {
+	server, store := newAuditTestServer(t)
+	defer store.Close()
+	project := storage.DefaultProjectID
+	browser := storage.AnalysisDefinition{ID: "selected-browser", ProjectID: project, Kind: storage.AnalysisDefinitionKindBrowserPolicy, Name: "Selected browser", Definition: json.RawMessage(selectedBrowserPolicyJSON)}
+	if _, err := store.SaveAnalysisDefinition(browser, 0); err != nil {
+		t.Fatal(err)
+	}
+	seedPolicy(t, store, project, "default-gate", storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, `{"version":1,"apply_by_default":true,"min_wall_time_coverage":0.5}`)
+	seedPolicy(t, store, project, "chosen-gate", storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, `{"version":1,"mode":"fail_ci","min_wall_time_coverage":0.9}`)
+	pins, acceptance, err := server.runner.resolveRunPolicyPinsForRun(project, &RunAnalysisPolicySelections{Browser: &RunAnalysisPolicySelection{ID: browser.ID, Revision: 1}}, "chosen-gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byKind := map[string]RunPolicyPin{}
+	for _, pin := range pins {
+		byKind[pin.Kind] = pin
+	}
+	if pin := byKind[storage.AnalysisDefinitionKindBrowserPolicy]; pin.ID != browser.ID || pin.Source != runPolicySourceSelected {
+		t.Fatalf("browser pin %+v", pin)
+	}
+	if pin := byKind[storage.AnalysisDefinitionKindTelemetryAcceptancePolicy]; pin.ID != "chosen-gate" || pin.Source != runPolicySourceSelected {
+		t.Fatalf("telemetry acceptance pin %+v", pin)
+	}
+	if acceptance == nil || acceptance.Pin.ID != "chosen-gate" || acceptance.Definition.EffectiveMode() != "fail_ci" {
+		t.Fatalf("acceptance snapshot %+v", acceptance)
+	}
+	// Without a telemetry choice the browser selection still applies and the
+	// acceptance policy is the default.
+	pins, acceptance, err = server.runner.resolveRunPolicyPinsWithSelections(project, &RunAnalysisPolicySelections{Browser: &RunAnalysisPolicySelection{ID: browser.ID, Revision: 1}})
+	if err != nil || acceptance == nil || acceptance.Pin.ID != "default-gate" || acceptance.Pin.Source != "project_default" || len(pins) != 2 {
+		t.Fatalf("browser selection alone: %+v %+v %v", pins, acceptance, err)
+	}
+}

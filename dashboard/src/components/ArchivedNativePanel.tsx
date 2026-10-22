@@ -1,3 +1,4 @@
+import BrowserTupleArchivePanel, { type BrowserTupleResult } from './BrowserTupleArchivePanel'
 import { browserDocumentPanelMetrics, nativeByteMetrics, nativePopulationMetrics, nativeJavaHTTPMetrics } from './nativeAnalyticsModel'
 import { useEffect, useState } from 'react'
 import { Line, LineChart, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
@@ -7,8 +8,8 @@ import ExportableChart from './ExportableChart'
 import TransactionBucketInspector from './TransactionBucketInspector'
 
 interface Bucket { from: string; to: string; offset_seconds: number; count: number; value: number | null; reason?: string }
-interface Series { run_id: string; unit?: string; java_http_compression?: string; buckets: Bucket[]; warnings: string[]; identities: string[] }
-interface Result { current: Series; baseline?: Series; comparable: boolean; warnings: string[]; added: string[]; removed: string[]; derivation?: { operation: string } }
+interface Series { browser_tuples?: BrowserTupleResult; excluded?: Record<string, number>; run_id: string; unit?: string; java_http_compression?: string; buckets: Bucket[]; warnings: string[]; identities: string[] }
+interface Result { browser_tuple_comparisons?: { tuple_id: string; status: string; reason?: string }[]; current: Series; baseline?: Series; comparable: boolean; warnings: string[]; added: string[]; removed: string[]; derivation?: { operation: string } }
 
 // missingLabel names why a bucket has no value, when the server says.
 const missingLabel = (bucket?: Pick<Bucket, 'reason'>) => bucket?.reason ? `Missing (${bucket.reason.replace(/_/g, ' ')})` : 'Missing'
@@ -16,17 +17,18 @@ const missingLabel = (bucket?: Pick<Bucket, 'reason'>) => bucket?.reason ? `Miss
 export default function ArchivedNativePanel({ panel, testId }: { panel: DashboardDefinitionPanel; testId: string }) {
   const [revision, setRevision] = useState(0)
   const encoded = JSON.stringify(panel.query)
+  const inputRunId = panel.query?.browser_inputs?.current.run_id || testId
   const [result, setResult] = useState<Result | null>(null)
   const [error, setError] = useState('')
   const [selection, setSelection] = useState<{ run: string; bucket: Bucket } | null>(null)
   useEffect(() => {
     const abort = new AbortController()
     setResult(null); setError(''); setSelection(null)
-    request<Result>(`/tests/${encodeURIComponent(testId)}/archive/native-series`, { method: 'POST', body: encoded, signal: abort.signal, timeoutMs: 35000 })
+    request<Result>(`/tests/${encodeURIComponent(inputRunId)}/archive/native-series`, { method: 'POST', body: encoded, signal: abort.signal, timeoutMs: 35000 })
       .then(value => { if (!abort.signal.aborted) setResult(value) })
       .catch(reason => { if (!abort.signal.aborted) setError(reason instanceof Error ? reason.message : 'Archive query failed') })
     return () => abort.abort()
-  }, [testId, encoded, revision])
+  }, [inputRunId, encoded, revision])
   if (error) return <div><p role="alert">Archive panel unavailable: {error}</p><button onClick={() => setRevision(revision + 1)}>Retry archive panel</button></div>
   if (!result) return <p role="status">Loading archived observations…</p>
   const metric = panel.query?.metric || ''
@@ -45,6 +47,7 @@ export default function ArchivedNativePanel({ panel, testId }: { panel: Dashboar
   // derivation, so the raw baseline is not plotted beside it.
   const derived = result.derivation?.operation
   const unit = result.current.unit || nativePopulationMetrics[metric]?.unit || browserDocumentPanelMetrics[metric]?.unit || nativeJavaHTTPMetrics[metric]?.unit || nativeByteMetrics[metric]?.unit || 'observations'
+  if (documents && panel.query?.browser_tuple_mode === 'separate') return <BrowserTupleArchivePanel panel={panel} unit={unit} current={result.current} baseline={result.baseline} comparisons={result.browser_tuple_comparisons} warnings={result.warnings} />
   const baseline = derived ? undefined : result.baseline
   // Byte and Java panels count their own measured observations and say why a
   // bucket is unscored, in the table and the export.

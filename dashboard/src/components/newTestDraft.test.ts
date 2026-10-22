@@ -34,3 +34,18 @@ describe('New Test draft storage and presentation', () => {
     expect(targetOrigin(undefined)).toBeNull()
   })
 })
+
+
+describe('run policy selection drafts', () => {
+  it('preserves immutable revisions and explicit project-default clears', () => {
+    for (const analysisPolicySelections of [{}, { browser: { id: 'browser', revision: 2 }, journey: { id: 'journey', revision: 1 } }]) {
+      const draft = { ...draftFixture(), analysisPolicySelections }
+      saveNewTestDraft(draft)
+      expect(readNewTestDraft('project', 'app')?.analysisPolicySelections).toEqual(analysisPolicySelections)
+    }
+  })
+  it('refuses a malformed stored selection without restoring a default draft', () => {
+    window.sessionStorage.setItem('apexload.newTest.draft.v1.project.app', JSON.stringify({ ...draftFixture(), analysisPolicySelections: { browser: { id: 'browser', revision: 0 } } }))
+    expect(readNewTestDraft('project', 'app')).toBeNull()
+  })
+})

@@ -738,7 +738,7 @@ func applyCORSOriginHeadersWithAuth(w http.ResponseWriter, r *http.Request, allo
 	if !decision.allowed {
 		return decision
 	}
-	w.Header().Set("Access-Control-Expose-Headers", "X-APEXLOAD-Audit-Status, ETag, X-APEX-Script-Save-Mode, X-APEX-Scenario-Save-Mode, X-APEX-Original-Content-Revision, Idempotent-Replayed, X-APEX-Authoring-Receipt-Version, X-Request-ID")
+	w.Header().Set("Access-Control-Expose-Headers", "X-APEXLOAD-Audit-Status, ETag, X-APEX-Script-Save-Mode, X-APEX-Scenario-Save-Mode, X-APEX-Original-Content-Revision, Idempotent-Replayed, X-APEX-Authoring-Receipt-Version, X-Request-ID, X-APEXLoad-Replay-Durability")
 	if decision.wildcard {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Del("Access-Control-Allow-Credentials")

@@ -12,7 +12,7 @@ Before this slice, a run could choose its telemetry acceptance policy only on `P
   - `CreateScenarioRequest` (`POST /api/v1/scenarios`, `PUT /api/v1/scenarios/{id}`);
   - `StoredScenario`;
   - the authoring projection (`ScenarioAuthoringDocument`).
-- It is stored on the scenarios table (`telemetry_acceptance_policy_id`, schema v75, SQLite and PostgreSQL), NULL when the scenario uses its project's default.
+- It is stored on the scenarios table (`telemetry_acceptance_policy_id`, schema v75, renumbered v81 when merged with `origin/main`, SQLite and PostgreSQL), NULL when the scenario uses its project's default.
 - The column is authored content. It is in `scenarioAuthoredColumns` (the revision trigger) and in `scenarioRuntimeCommitFingerprint`, so a change to it alone mints a new content revision.
 
 ### At save
@@ -36,7 +36,7 @@ Empty and `project_default` both store no choice. `runPolicyErrorStatus` maps th
 - An inherited choice is then validated like any run's choice. One deleted since the scenario was saved refuses the run with a message naming the scenario's choice and the way out (`telemetryPolicyFromScenario`). It is never silently judged by the default.
 - **Schedules.** A schedule occurrence refused this way is recorded as `failed`, including for a governed schedule (any created through the API), whose sweep first builds a capacity preview.
 - **Policy-read outages.** When the policy read fails (`errRunPolicyStoreUnavailable`) for a choice inherited from the scenario, the run is still created with the choice. That covers a schedule occurrence, a plan entry, and a direct run naming no policy. The choice was validated when the scenario was saved, and Start pins it or refuses.
-  - This slice changes only creation. Start reads the project's policies of every kind for every run (`resolveRunPolicyPins`), so a run started while they cannot be read is refused at Start, with or without a choice, as before this slice. A schedule or plan entry that starts its run at once during the outage records that Start failure.
+  - This slice changes only creation. Start reads the project's policies of every kind for every run (`resolveRunPolicyPinsForRun`), so a run started while they cannot be read is refused at Start, with or without a choice, as before this slice. A schedule or plan entry that starts its run at once during the outage records that Start failure.
   - A run naming its own policy is still answered `503` at creation.
 - **Remote runs.** A remote run of a scenario with a choice must name the remote policy or `project_default`. Otherwise it is refused (`409`, `errRemoteRunScenarioPolicy`), because the pushed bundle omits the choice. The remote would judge the run by its linked copy's own choice or its project's default, never by the local choice.
 - **Estimates and capacity previews.** These builds skip the check (`skipTelemetryPolicyCheck`), so a lost or unreadable choice never fails one or hides a schedule preview's capacity findings:
@@ -87,7 +87,7 @@ A policy ID names one of the source project's policies, and a bundle does not ca
   - the choice stored and read by `GetScenario`, `ListScenarios` and the authoring snapshot;
   - a change to it alone, including a direct column write, mints a new content revision;
   - clearing it.
-- **`TestSchemaReleaseFingerprintIsCurrent`** records schema v75.
+- **`TestSchemaReleaseFingerprintIsCurrent`** records schema v75 (v81 after the `origin/main` merge, which also renumbered the run-level slice's release to v80, after main's v73–v79).
 - **`TestScenarioTelemetryAcceptancePolicyCarriesThroughEveryEntryPoint`**:
   - `400` for a missing policy and for another project's policy, with the same message;
   - `409` for an invalid policy;
@@ -266,6 +266,23 @@ Gates on the reviewed code (before the `origin/main` merge):
 - the PostgreSQL storage suite (`-tags postgres_integration`), including `TestPostgresScenarioContentRevisionIntegration/telemetry_acceptance_policy`;
 - the dashboard's full Vitest suite, `typecheck`, `lint` and `contracts:check`;
 - `cmd/apexctl`, `pkg/runcontract` and the scenario storage tests.
+
+### Merge with `origin/main`
+
+`origin/main` added run analysis policy selections (`RunAnalysisPolicySelections`, `analysis_policy_selections_json`) and schema releases v73–v79. The merge resolution:
+- **Schema releases.** Main keeps v73–v79. The run-level slice's release becomes v80 (`run-telemetry-acceptance-policy`) and this slice's becomes v81 (`scenario-telemetry-acceptance-policy`), with fingerprints recomputed on the merged schema.
+- **`tests` table.** `sqlite_schema.go` and `sqlite_tests.go` keep both sides' columns. The insert has one placeholder per column.
+- **Policy pins.** `resolveRunPolicyPinsForRun` pins a telemetry acceptance choice by ID and refuses one that no longer exists. Main's browser and journey selections go through `selectedRunAnalysisPolicy`, and every other kind uses the project default. The start path (`persistManagedTestStartOutsideLockLocked`) passes both the selections and the acceptance choice.
+- **Dashboard.** `scenarioDraftUtils.ts` keeps both fields. `ArchivedNativePanel.tsx` and `NativeAnalyticsPanel.tsx` take main's version, plus NA-C's byte metrics.
+- **Combined pins.** `TestRunPolicySelectionsAndChosenTelemetryPolicyPinTogether` covers the case where a run carries both a browser selection and a telemetry acceptance choice, and both are pinned. With only a browser selection, the acceptance policy falls back to the project default.
+
+Gates on the merged tree:
+- the full `pkg/api` suite;
+- the PostgreSQL storage suite, including `TestPostgresScenarioContentRevisionIntegration/telemetry_acceptance_policy`;
+- the dashboard's full Vitest suite, `typecheck`, `lint` and `contracts:check`;
+- `cmd/apexctl`, `pkg/runcontract` and `pkg/storage`.
+
+A reviewer of the merge found only stale documentation statements, which are fixed.
 
 ## Remaining
 

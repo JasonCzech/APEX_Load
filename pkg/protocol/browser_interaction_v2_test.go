@@ -52,7 +52,7 @@ func TestBrowserInteractionV2RefusesInventedOrInconsistentDispatch(t *testing.T)
 	for name, mutate := range map[string]func(*BrowserInteraction){
 		"invalid_attempt":             func(i *BrowserInteraction) { i.Execution.Attempt = 0 },
 		"execution_without_step":      func(i *BrowserInteraction) { i.AuthoredStep = nil },
-		"version":                     func(i *BrowserInteraction) { i.Version = 3 },
+		"version":                     func(i *BrowserInteraction) { i.Version = 4 },
 		"legacy_enrichment":           func(i *BrowserInteraction) { i.Version = 1 },
 		"foreign_document":            func(i *BrowserInteraction) { i.Dispatch.DocumentID = strings.Repeat("d", 32) + "-d1" },
 		"foreign_lifecycle":           func(i *BrowserInteraction) { i.Dispatch.LifecycleID = strings.Repeat("d", 32) + "-l1" },

@@ -27,6 +27,16 @@ func buildProtoConfigForRunModeWithSecretResolver(script *dsl.Script, runMode st
 
 func buildGroupProtoConfig(group GroupConfig, runMode string) map[string]any {
 	cfg := buildProtoConfigForRunModeWithSecretResolver(group.Script, runMode, group.SecretResolver)
+	if group.BrowserDocumentProofVersion == 0 || group.BrowserDocumentProofVersion >= 3 {
+		if dsl.BrowserDocumentCaptureRequested(group.Script) {
+			if sink, ok := group.ResultSink.(protocol.BrowserSourceJournalProvider); ok {
+				cfg["browser_document_source_journal"] = sink
+			}
+		}
+	}
+	if group.BrowserDocumentProofVersion != 0 {
+		cfg["browser_document_proof_version"] = group.BrowserDocumentProofVersion
+	}
 	if group.BrowserInteractionEvidenceVersion != 0 {
 		cfg["browser_interaction_evidence_version"] = group.BrowserInteractionEvidenceVersion
 	}

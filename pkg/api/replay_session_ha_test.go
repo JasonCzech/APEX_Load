@@ -241,13 +241,18 @@ func TestReplaySessionLeaseGuardFailsClosedAtLocalDeadline(t *testing.T) {
 }
 
 func TestHAReplaySessionRenewalLossTerminatesActiveBrowserReplay(t *testing.T) {
+	testReplaySessionRenewalLossTerminatesActiveBrowserReplay(t, true)
+}
+
+func testReplaySessionRenewalLossTerminatesActiveBrowserReplay(t *testing.T, ha bool) {
+	t.Helper()
 	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "replay-session-renewal-loss.db"))
 	if err != nil {
 		t.Fatalf("open replay-session store: %v", err)
 	}
 	t.Cleanup(func() { _ = base.Close() })
 	store := &loseReplayLeaseOnRenewStore{Store: base, delegate: base}
-	server := NewServer(ServerConfig{Store: store, HAExecutionLeadership: true})
+	server := NewServer(ServerConfig{Store: store, HAExecutionLeadership: ha})
 	server.replaySessionLeaseTTL = 150 * time.Millisecond
 	var leaseSignal *replaySessionLeaseSignal
 	server.browserReplay.setSessionIDReserver(func(ctx context.Context, requested, project string) (string, func(), *replaySessionLeaseSignal, error) {
@@ -255,10 +260,10 @@ func TestHAReplaySessionRenewalLossTerminatesActiveBrowserReplay(t *testing.T) {
 		leaseSignal = signal
 		return id, release, signal, err
 	})
-	t.Cleanup(server.browserReplay.Close)
+	closeBatchTestServer(t, server)
 
 	session, err := server.browserReplay.Start("browser-script", &dsl.Script{
-		Name: "Paused HA replay", Protocol: "browser", ProjectID: "project-a",
+		Name: "Paused replay", Protocol: "browser", ProjectID: "project-a",
 	}, BrowserReplayStartRequest{ReplaySessionID: uuid.New().String(), StartPaused: true})
 	if err != nil {
 		t.Fatalf("start browser replay: %v", err)

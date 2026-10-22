@@ -432,6 +432,17 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 			expires_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS replay_artifact_receipts (
+            session_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            generation TEXT NOT NULL UNIQUE,
+            owner_token TEXT NOT NULL,
+            state TEXT NOT NULL CHECK (state IN ('staging','ready','cleanup')),
+            spec_json TEXT NOT NULL,
+            reserved_bytes BIGINT NOT NULL CHECK (reserved_bytes > 0),
+            writer_joined INTEGER NOT NULL CHECK (writer_joined IN (0,1)),
+            expires_at DATETIME NOT NULL
+        )`,
 		`CREATE TABLE IF NOT EXISTS deployment_leases (
 			name TEXT PRIMARY KEY,
 			owner_id TEXT NOT NULL,
@@ -736,6 +747,7 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 			monitor_bindings_json TEXT,
 			trace_context_json TEXT,
 			joint_evidence_json TEXT,
+			analysis_policy_selections_json TEXT,
 			telemetry_acceptance_policy_id TEXT,
 			start_authorization_json TEXT,
 			execution_plan_approval_json TEXT,
@@ -2032,6 +2044,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.monitor_bindings_json", query: `ALTER TABLE tests ADD COLUMN monitor_bindings_json TEXT`},
 		{name: "tests.trace_context_json", query: `ALTER TABLE tests ADD COLUMN trace_context_json TEXT`},
 		{name: "tests.joint_evidence_json", query: `ALTER TABLE tests ADD COLUMN joint_evidence_json TEXT`},
+		{name: "tests.analysis_policy_selections_json", query: `ALTER TABLE tests ADD COLUMN analysis_policy_selections_json TEXT`},
 		{name: "tests.telemetry_acceptance_policy_id", query: `ALTER TABLE tests ADD COLUMN telemetry_acceptance_policy_id TEXT`},
 		{name: "tests.start_authorization_json", query: `ALTER TABLE tests ADD COLUMN start_authorization_json TEXT`},
 		{name: "tests.timeslot_id", query: `ALTER TABLE tests ADD COLUMN timeslot_id TEXT`},
@@ -2263,6 +2276,8 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "feature_evaluation_jobs.result_bytes", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN result_bytes INTEGER NOT NULL DEFAULT 0`},
 		{name: "feature_evaluation_jobs.subject_id", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN subject_id TEXT NOT NULL DEFAULT ''`},
 		{name: "rca_analyses.origin", query: `ALTER TABLE rca_analyses ADD COLUMN origin TEXT NOT NULL DEFAULT 'requested'`},
+		{name: "feature_acceptance_records.cohort_sha256", query: `ALTER TABLE feature_acceptance_records ADD COLUMN cohort_sha256 TEXT NOT NULL DEFAULT ''`},
+		{name: "feature_acceptance_records.qualification", query: `ALTER TABLE feature_acceptance_records ADD COLUMN qualification TEXT NOT NULL DEFAULT 'null'`},
 		{name: "feature_acceptance_records.seq", query: `ALTER TABLE feature_acceptance_records ADD COLUMN seq BIGINT NOT NULL DEFAULT 0`},
 		// Original-outcome (v2) authoring receipts. Existing receipts read as
 		// legacy (version 1) and keep replaying the current resource.
@@ -2351,6 +2366,8 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_scenario_schedule_occurrences_retention ON scenario_schedule_occurrences(planned_at, status)`, "idx_scenario_schedule_occurrences_retention"},
 	{`CREATE INDEX IF NOT EXISTS idx_replay_session_leases_state_expiry ON replay_session_leases(state, expires_at)`, "idx_replay_session_leases_state_expiry"},
 	{`CREATE INDEX IF NOT EXISTS idx_replay_session_leases_project_state_expiry ON replay_session_leases(project_id, state, expires_at)`, "idx_replay_session_leases_project_state_expiry"},
+	{`CREATE INDEX IF NOT EXISTS idx_replay_artifact_receipts_project ON replay_artifact_receipts(project_id)`, "idx_replay_artifact_receipts_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_replay_artifact_receipts_cleanup ON replay_artifact_receipts(writer_joined,expires_at,session_id)`, "idx_replay_artifact_receipts_cleanup"},
 	{`CREATE INDEX IF NOT EXISTS idx_replay_session_leases_expiry ON replay_session_leases(expires_at)`, "idx_replay_session_leases_expiry"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_cluster_connections_name ON cluster_connections(name)`, "idx_cluster_connections_name"},
 	{`CREATE INDEX IF NOT EXISTS idx_fleet_pools_cluster ON fleet_pools(cluster_id)`, "idx_fleet_pools_cluster"},
@@ -2358,6 +2375,8 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_domain_deployment_targets_cluster ON domain_deployment_targets(default_cluster_id)`, "idx_domain_deployment_targets_cluster"},
 	{`CREATE INDEX IF NOT EXISTS idx_capacity_reservations_project_time ON capacity_reservations(project_id, start_at, end_at)`, "idx_capacity_reservations_project_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_capacity_reservations_bound_test ON capacity_reservations(bound_test_id)`, "idx_capacity_reservations_bound_test"},
+	{`CREATE INDEX IF NOT EXISTS idx_tests_browser_baseline_inventory ON tests(COALESCE(NULLIF(project_id, ''), 'default'), COALESCE(application_id, ''), COALESCE(scenario_id, ''), status, id)`, "idx_tests_browser_baseline_inventory"},
+	{`CREATE INDEX IF NOT EXISTS idx_tests_browser_baseline_inventory_v2 ON tests(` + browserBaselineProjectExpression + `, COALESCE(application_id, ''), COALESCE(scenario_id, ''), status, id)`, "idx_tests_browser_baseline_inventory_v2"},
 	{`CREATE INDEX IF NOT EXISTS idx_tests_timeslot ON tests(timeslot_id)`, "idx_tests_timeslot"},
 	{`CREATE INDEX IF NOT EXISTS idx_scenario_data_pool_bindings_pool ON scenario_data_pool_bindings(pool_id)`, "idx_scenario_data_pool_bindings_pool"},
 	{`CREATE INDEX IF NOT EXISTS idx_shared_data_pools_project ON shared_data_pools(project_id)`, "idx_shared_data_pools_project"},

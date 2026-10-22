@@ -224,9 +224,10 @@ type BrowserPolicyApplicability struct {
 // anomalies must clear in addition to the statistical rule. They can only
 // raise the minimums: 50 ms and 10% for timings, 0.02 for CLS.
 type BrowserPolicyEffectFloors struct {
-	TimingMs       *float64 `json:"timing_ms,omitempty"`
-	TimingRelative *float64 `json:"timing_relative,omitempty"`
-	CLS            *float64 `json:"cls,omitempty"`
+	TimingByMetricMs map[string]float64 `json:"timing_by_metric_ms,omitempty"`
+	TimingMs         *float64           `json:"timing_ms,omitempty"`
+	TimingRelative   *float64           `json:"timing_relative,omitempty"`
+	CLS              *float64           `json:"cls,omitempty"`
 }
 
 type BrowserPolicyBaseline struct {
@@ -298,6 +299,17 @@ func (p BrowserPolicyDefinition) validate() error {
 	}
 	if floors.CLS != nil && !finiteInRange(*floors.CLS, 0.02, 10) {
 		return errors.New("effect floor cls must be between 0.02 and 10")
+	}
+	if len(floors.TimingByMetricMs) > 3 {
+		return errors.New("at most three per-metric timing floors")
+	}
+	for metric, value := range floors.TimingByMetricMs {
+		if metric != "fcp" && metric != "lcp" && metric != "inp" {
+			return errors.New("per-metric timing floors only support fcp, lcp and inp")
+		}
+		if !finiteInRange(value, 50, 600_000) {
+			return errors.New("per-metric timing floors must be between 50 and 600000 ms")
+		}
 	}
 	switch p.Baseline.Mode {
 	case "none", "latest_compatible":
@@ -899,34 +911,57 @@ func (tr *TestRunner) validateRunTelemetryAcceptancePolicy(projectID, id string)
 	return id, nil
 }
 
-// resolveRunPolicyPins returns the policy revisions a run is judged by, in
-// stable kind order: each kind's project default, except the telemetry
-// acceptance policy the run chose (selectedAcceptance), and that policy's
-// definition to freeze beside its pin. A chosen policy that is gone refuses
-// Start rather than falling back to the default. Stores without analysis
-// definitions have no policies.
-func (tr *TestRunner) resolveRunPolicyPins(projectID, selectedAcceptance string) ([]RunPolicyPin, *TelemetryAcceptancePolicySnapshot, error) {
+// resolveRunPolicyPins returns the default policy revisions for a project, in
+// stable kind order, and the telemetry acceptance policy's definition to
+// freeze beside its pin. Stores without analysis definitions have no
+// policies.
+func (tr *TestRunner) resolveRunPolicyPins(projectID string) ([]RunPolicyPin, *TelemetryAcceptancePolicySnapshot, error) {
+	return tr.resolveRunPolicyPinsForRun(projectID, nil, "")
+}
+
+func (tr *TestRunner) resolveRunPolicyPinsWithSelections(projectID string, requested *RunAnalysisPolicySelections) ([]RunPolicyPin, *TelemetryAcceptancePolicySnapshot, error) {
+	return tr.resolveRunPolicyPinsForRun(projectID, requested, "")
+}
+
+// resolveRunPolicyPinsForRun returns the policy revisions a run is judged by,
+// in stable kind order: each kind's project default, except a browser or
+// journey policy revision the run selected (requested) and the telemetry
+// acceptance policy the run chose (selectedAcceptance, TEL-B), and the
+// acceptance policy's definition to freeze beside its pin. A chosen policy
+// that is gone refuses Start rather than falling back to the default. Stores
+// without analysis definitions have no policies.
+func (tr *TestRunner) resolveRunPolicyPinsForRun(projectID string, requested *RunAnalysisPolicySelections, selectedAcceptance string) ([]RunPolicyPin, *TelemetryAcceptancePolicySnapshot, error) {
+	selections, err := normalizeRunAnalysisPolicySelections(requested)
+	if err != nil {
+		return nil, nil, err
+	}
+	selectedAcceptance = strings.TrimSpace(selectedAcceptance)
 	store, ok := tr.testStore.(storage.AnalysisDefinitionStore)
 	if !ok || store == nil {
-		if strings.TrimSpace(selectedAcceptance) != "" {
+		if selections != nil && (selections.Browser != nil || selections.Journey != nil) {
+			return nil, nil, fmt.Errorf("%w: storage does not support run policy selection", errRunPolicyConfiguration)
+		}
+		if selectedAcceptance != "" {
 			return nil, nil, fmt.Errorf("%w: the run's chosen telemetry acceptance policy cannot be read here", errRunPolicyConfiguration)
 		}
 		return nil, nil, nil
 	}
 	projectID = normalizeProjectID(projectID)
-	selectedAcceptance = strings.TrimSpace(selectedAcceptance)
 	pins := []RunPolicyPin{}
 	var acceptance *TelemetryAcceptancePolicySnapshot
 	for _, kind := range storage.AnalysisPolicyKinds {
-		source := "project_default"
 		var policy *storage.AnalysisDefinition
 		var err error
+		source := "project_default"
 		if kind == storage.AnalysisDefinitionKindTelemetryAcceptancePolicy && selectedAcceptance != "" {
 			source = runPolicySourceSelected
 			policy, err = projectPolicyByID(store, projectID, kind, selectedAcceptance)
 			if err == nil && policy == nil {
 				err = fmt.Errorf("%w: the run's chosen telemetry acceptance policy %q no longer exists", errRunPolicyConfiguration, selectedAcceptance)
 			}
+		} else if choice := selections.forKind(kind); choice != nil {
+			policy, err = selectedRunAnalysisPolicy(store, projectID, kind, choice)
+			source = runPolicySourceSelected
 		} else {
 			policy, err = projectDefaultPolicy(store, projectID, kind)
 		}

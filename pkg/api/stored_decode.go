@@ -6,6 +6,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -17,6 +18,7 @@ import (
 // the run. Older rows decode with nil RuntimeScript and are rebuilt from their
 // current durable script as a compatibility fallback.
 type storedTestGroup struct {
+	BrowserAuthoredDefinition protocol.BrowserAuthoredDefinition `json:"browser_authored_definition,omitzero"`
 	TestGroup
 	RuntimeScript     *dsl.Script            `json:"runtime_script,omitempty"`
 	BaseScript        *dsl.Script            `json:"base_script,omitempty"`
@@ -31,11 +33,12 @@ func encodeStoredGroups(groups []TestGroup) any {
 	stored := make([]storedTestGroup, 0, len(groups))
 	for _, group := range groups {
 		entry := storedTestGroup{
-			TestGroup:         group,
-			RuntimeScript:     cloneScriptForStoredGroup(group.script),
-			BaseScript:        cloneScriptForStoredGroup(group.baseScript),
-			SharedDataSources: cloneDataSources(group.sharedDataSources),
-			RedactionRules:    cloneRedactionRules(group.redactionRules),
+			TestGroup:                 group,
+			BrowserAuthoredDefinition: group.browserAuthoredDefinition,
+			RuntimeScript:             cloneScriptForStoredGroup(group.script),
+			BaseScript:                cloneScriptForStoredGroup(group.baseScript),
+			SharedDataSources:         cloneDataSources(group.sharedDataSources),
+			RedactionRules:            cloneRedactionRules(group.redactionRules),
 		}
 		stored = append(stored, entry)
 	}
@@ -72,6 +75,7 @@ func decodeStoredGroups(value any) []TestGroup {
 	groups := make([]TestGroup, 0, len(stored))
 	for _, entry := range stored {
 		group := entry.TestGroup
+		group.browserAuthoredDefinition = entry.BrowserAuthoredDefinition
 		group.script = cloneScriptForStoredGroup(entry.RuntimeScript)
 		group.baseScript = cloneScriptForStoredGroup(entry.BaseScript)
 		group.sharedDataSources = cloneDataSources(entry.SharedDataSources)

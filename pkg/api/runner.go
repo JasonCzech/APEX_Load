@@ -538,6 +538,7 @@ func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
 }
 
 type ManagedTest struct {
+	AnalysisPolicySelections    *RunAnalysisPolicySelections `json:"analysis_policy_selections,omitempty"`
 	telemetryCheckpointRevision int64
 	telemetryCheckpointRestored bool
 	telemetryCheckpointReadOnly bool
@@ -861,13 +862,15 @@ type VUserRampStatus struct {
 }
 
 type TestGroup struct {
-	Name        string `json:"name"`
-	ScriptID    string `json:"script_id"`
-	ScriptName  string `json:"script_name"`
-	Protocol    string `json:"protocol"`
-	Role        string `json:"role,omitempty"`
-	VUsers      int    `json:"vusers"`
-	StartOffset string `json:"start_offset,omitempty"`
+	// Original source proof is controller-owned, never decoded from a public group.
+	browserAuthoredDefinition protocol.BrowserAuthoredDefinition
+	Name                      string `json:"name"`
+	ScriptID                  string `json:"script_id"`
+	ScriptName                string `json:"script_name"`
+	Protocol                  string `json:"protocol"`
+	Role                      string `json:"role,omitempty"`
+	VUsers                    int    `json:"vusers"`
+	StartOffset               string `json:"start_offset,omitempty"`
 	// TargetDuration is this group's operator-controlled active runtime. Empty
 	// legacy snapshots inherit the enclosing test duration.
 	TargetDuration string              `json:"target_duration,omitempty"`
@@ -2274,10 +2277,11 @@ const (
 // Helper to convert map back to LiveMetrics (since GetHistory returns any)
 
 type CreateTestRequest struct {
-	MonitorBindings *[]storage.MonitorBinding `json:"monitor_bindings,omitempty"`
-	TraceContext    *RunTraceContextSettings  `json:"trace_context,omitempty"`
-	TerminationMode string                    `json:"termination_mode,omitempty"`
-	Name            string                    `json:"name"`
+	AnalysisPolicySelections *RunAnalysisPolicySelections `json:"analysis_policy_selections,omitempty"`
+	MonitorBindings          *[]storage.MonitorBinding    `json:"monitor_bindings,omitempty"`
+	TraceContext             *RunTraceContextSettings     `json:"trace_context,omitempty"`
+	TerminationMode          string                       `json:"termination_mode,omitempty"`
+	Name                     string                       `json:"name"`
 	// RequestedTestID is used by controller-to-controller run creation to make
 	// the remote side effect recoverable across a lost response. It must be a
 	// UUID and is always persisted through the create-only test path.

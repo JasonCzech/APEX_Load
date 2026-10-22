@@ -253,6 +253,7 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
     revisionContext: initialScenario?.revisionContext
       ? {
         ...initialScenario.revisionContext,
+        ...(initialScenario.revisionContext.analysisPolicySelections ? { analysisPolicySelections: structuredClone(initialScenario.revisionContext.analysisPolicySelections) } : {}),
         ...(initialScenario.revisionContext.monitorBindings !== undefined ? { monitorBindings: initialScenario.revisionContext.monitorBindings.map(binding => ({ ...binding })) } : {}),
         dataPools: initialScenario.revisionContext.dataPools.map(binding => structuredClone(binding)),
       }
@@ -326,6 +327,7 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
       ...(test.monitor_bindings ? { monitorBindings: test.monitor_bindings.sources.map(binding => ({ ...binding })) } : {}),
       ...(test.joint_evidence ? { jointEvidence: structuredClone(test.joint_evidence) } : {}),
       ...(test.telemetry_acceptance_policy_id ? { telemetryAcceptancePolicyId: test.telemetry_acceptance_policy_id } : {}),
+      ...(test.analysis_policy_selections ? { analysisPolicySelections: structuredClone(test.analysis_policy_selections) } : {}),
       sourceTestId: test.id,
       applicationId: test.application_id,
       releaseId: test.release_id,

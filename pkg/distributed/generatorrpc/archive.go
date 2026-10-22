@@ -36,6 +36,10 @@ const archiveSchemaVersion = "apexload.archive.v4"
 
 type archiveManifest struct {
 	BrowserDocumentCaptureRequested bool   `json:"browser_document_capture_requested,omitempty"`
+	BrowserReceiptIncomplete        bool   `json:"browser_receipt_incomplete,omitempty"`
+	BrowserReceiptsFile             string `json:"browser_receipts_file,omitempty"`
+	BrowserReceiptRecordCount       int64  `json:"browser_receipt_record_count,omitempty"`
+	BrowserReceiptsSHA256           string `json:"browser_receipts_sha256,omitempty"`
 	BrowserDocumentsFile            string `json:"browser_documents_file,omitempty"`
 	BrowserDocumentsParquetFile     string `json:"browser_documents_parquet_file,omitempty"`
 	BrowserDocumentRecordCount      int64  `json:"browser_document_record_count,omitempty"`
@@ -401,6 +405,9 @@ type archiveTelemetryHealth struct {
 }
 
 type archiveRecorder struct {
+	browserProofMu      sync.Mutex
+	browserProofJournal *protocol.BrowserSourceJournal
+	browserProofSealed  bool
 	// harMu serializes HAR moves with Finalize and Discard; it is taken
 	// before mu.
 	harMu    sync.Mutex
@@ -413,6 +420,7 @@ type archiveRecorder struct {
 	interactionsBroken bool
 	// interactionCount is the interactions written into the sidecar.
 	interactionCount        int64
+	browserReceiptsFile     *os.File
 	browserDocumentsFile    *os.File
 	browserDocumentsEncoder *json.Encoder
 	mu                      sync.Mutex
@@ -938,7 +946,7 @@ type archiveRecorderCleanup struct {
 
 func (w *archiveRecorder) detachCleanupLocked() archiveRecorderCleanup {
 	cleanup := archiveRecorderCleanup{
-		files:         []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.browserDocumentsFile, w.interactionsFile},
+		files:         []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.browserDocumentsFile, w.browserReceiptsFile, w.interactionsFile},
 		namespace:     w.namespace,
 		runRoot:       w.runRoot,
 		runIdentity:   w.runIdentity,
@@ -954,6 +962,7 @@ func (w *archiveRecorder) detachCleanupLocked() archiveRecorderCleanup {
 	w.resourceFile = nil
 	w.summaryFile = nil
 	w.browserDocumentsFile = nil
+	w.browserReceiptsFile = nil
 	w.interactionsFile = nil
 	w.runRoot = nil
 	w.closed = true
@@ -1358,6 +1367,9 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 	if w == nil {
 		return nil, fmt.Errorf("generator archive recorder is unavailable")
 	}
+	if err := w.sealBrowserSourceJournal(status == "COMPLETE"); err != nil {
+		w.MarkBrowserDocumentReceiptIncomplete()
+	}
 	w.harMu.Lock()
 	defer w.harMu.Unlock()
 	w.mu.Lock()
@@ -1384,7 +1396,7 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 	w.manifest.CompletedAt = completedAt
 	w.manifest.Error = errStr
 
-	for _, file := range []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.browserDocumentsFile} {
+	for _, file := range []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.browserDocumentsFile, w.browserReceiptsFile} {
 		if file == nil {
 			continue
 		}
@@ -1399,6 +1411,7 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 	w.resourceFile = nil
 	w.summaryFile = nil
 	w.browserDocumentsFile = nil
+	w.browserReceiptsFile = nil
 	if w.runRoot == nil {
 		return nil, fmt.Errorf("archive run root is unavailable")
 	}
@@ -1407,6 +1420,12 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 	}
 	if err := writeArchiveParquetFilesAtWithBudget(w.runRoot, &w.manifest, w.byteBudget); err != nil {
 		return nil, err
+	}
+	if w.manifest.BrowserReceiptsFile != "" {
+		w.manifest.BrowserReceiptsSHA256, err = archiveBrowserDocumentSHA256(w.runRoot, w.manifest.BrowserReceiptsFile)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if w.manifest.BrowserDocumentsFile != "" {
 		w.manifest.BrowserDocumentsSHA256, err = archiveBrowserDocumentSHA256(w.runRoot, w.manifest.BrowserDocumentsFile)
@@ -1506,7 +1525,7 @@ func archiveArtifactNames(manifest *archiveManifest) []string {
 		return nil
 	}
 	names := []string{"manifest.json", manifest.TransactionsFile, manifest.ResourceSamplesFile, manifest.IntervalSummariesFile}
-	for _, name := range []string{manifest.TransactionsParquetFile, manifest.ResourceSamplesParquetFile, manifest.IntervalSummariesParquetFile, manifest.BrowserDocumentsFile, manifest.BrowserDocumentsParquetFile} {
+	for _, name := range []string{manifest.TransactionsParquetFile, manifest.ResourceSamplesParquetFile, manifest.IntervalSummariesParquetFile, manifest.BrowserDocumentsFile, manifest.BrowserDocumentsParquetFile, manifest.BrowserReceiptsFile} {
 		if name != "" {
 			names = append(names, name)
 		}

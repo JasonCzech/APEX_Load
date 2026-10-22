@@ -14,6 +14,7 @@ import (
 // adapters supply project, audit and response policies; the local bridge supplies
 // its paired-session policies. Constructing this view does not start goroutines.
 type Service struct {
+	RetainedReplay      RetainedReplayReader
 	Conversion          ConversionPorts
 	Library             *MemoryScriptLibrary
 	Recording           *BrowserRecordingManager

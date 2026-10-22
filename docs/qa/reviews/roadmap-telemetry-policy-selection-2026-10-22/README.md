@@ -25,7 +25,7 @@ Before this slice, every run was judged by its project's default telemetry accep
 | An invalid policy (`errRunPolicyConfiguration`) | `409` |
 | A failed read (`errRunPolicyStoreUnavailable`) | `503` |
 
-The choice is persisted with the run on the tests table (`telemetry_acceptance_policy_id`, schema v74, SQLite and PostgreSQL). An older binary refuses the v74 database.
+The choice is persisted with the run on the tests table (`telemetry_acceptance_policy_id`, schema v74, SQLite and PostgreSQL). The release was renumbered v80 when the branch was merged with `origin/main`, whose own v73–v79 came first. An older binary refuses the v80 database.
 
 A revised copy of a queued run keeps its source's choice unless it names another, or `project_default`. An inherited choice that is no longer usable is refused with a message that names the source run's choice and the way out.
 
@@ -44,7 +44,7 @@ A remote controller that does not echo the forwarded choice would judge the run 
 
 ### At Start
 
-`resolveRunPolicyPins(projectID, selected)` pins the chosen policy's current revision with source `run_selection` (`runPolicySourceSelected`), and freezes its definition beside the pin in place of the default. The other policy kinds keep their defaults.
+`resolveRunPolicyPins(projectID, selected)` pinned the chosen policy's current revision. Since the `origin/main` merge, `resolveRunPolicyPinsForRun(projectID, selections, selectedAcceptance)` does this alongside main's browser and journey selections. It pins the chosen revision with source `run_selection` (`runPolicySourceSelected`), and freezes its definition beside the pin in place of the default. The other policy kinds keep their defaults.
 
 A chosen policy that is gone or invalid by Start refuses Start (`errRunPolicyConfiguration`), as an invalid default does, rather than falling back to the default. A direct Start leaves the run queued.
 
@@ -79,7 +79,7 @@ A chosen policy that is gone or invalid by Start refuses Start (`errRunPolicyCon
   - the `apexctl` flag, with `project_default` as no choice;
   - the derived key, pinned for an unchosen request to the value before this slice, and changed by a choice;
   - an unconfirmed create stopped without polling and reported as a configuration error.
-- **`TestSchemaReleaseFingerprintIsCurrent`**: records schema v74. The PostgreSQL storage integration suite passes on v74: `go test -tags postgres_integration ./pkg/storage` with `APEXLOAD_TEST_POSTGRES_URL` set.
+- **`TestSchemaReleaseFingerprintIsCurrent`**: records schema v74 (v80 after the `origin/main` merge; the schema is now v81). The PostgreSQL storage integration suite passed on v74 with `go test -tags postgres_integration ./pkg/storage` and `APEXLOAD_TEST_POSTGRES_URL` set. It is run again on the merged v81 schema; the merge records that run in the scenario policy slice's README.
 
 ## Review
 

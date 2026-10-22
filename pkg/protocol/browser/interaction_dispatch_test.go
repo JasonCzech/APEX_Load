@@ -84,17 +84,17 @@ func TestBrowserInteractionDispatchV2UsesNativeEventAndGeometry(t *testing.T) {
 }
 
 func TestBrowserInteractionDispatchVersionValidation(t *testing.T) {
-	for _, value := range []any{0, 3, -1, 1.5, "2", true, math.NaN()} {
+	for _, value := range []any{0, 4, -1, 1.5, "2", true, math.NaN()} {
 		if err := (&Browser{}).applyConfig(map[string]any{"browser_interaction_evidence_version": value}); err == nil {
 			t.Fatalf("accepted version %v", value)
 		}
 	}
-	for _, value := range []any{1, 2, float64(1), float64(2)} {
+	for _, value := range []any{1, 2, 3, float64(1), float64(2), float64(3)} {
 		b := &Browser{}
 		if err := b.applyConfig(map[string]any{"browser_interaction_evidence_version": value}); err != nil {
 			t.Fatal(err)
 		}
-		if b.interactionVersion < 1 || b.interactionVersion > 2 {
+		if b.interactionVersion < 1 || b.interactionVersion > 3 {
 			t.Fatalf("version=%d", b.interactionVersion)
 		}
 	}

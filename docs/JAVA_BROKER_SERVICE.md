@@ -2,10 +2,10 @@
 
 This guide owns broker configuration, API usage and deployment. The [dedicated execution contracts](JAVA_DEDICATED_EXECUTION_CONTRACTS.md) describe authority, supervision and preparation invariants; [implementation scope and release gates](JAVA_VUSER_POOLING_IMPLEMENTATION.md) distinguish local validation from production qualification.
 
-Status: runnable internal broker, loopback facade and experimental single-group
-engine integration with local component tests; no AKS qualification or distributed
-assignment integration. Dedicated local execution remains the
-default. This command does not enable an AKS backend in the controller.
+Status: runnable internal broker, loopback facade and experimental explicit
+distributed dedicated integration, validated with local component tests. AKS
+qualification remains open. Dedicated local execution remains the default;
+this command does not automatically enable a backend in the controller.
 
 Build with `make java-host-broker`. The container recipe is
 `runners/java_vuser/Dockerfile.broker`. Mount configuration and credentials

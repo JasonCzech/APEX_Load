@@ -43,7 +43,7 @@ func (b *Browser) applyConfig(config map[string]any) error {
 		default:
 			return fmt.Errorf("browser interaction evidence version must be numeric")
 		}
-		if value != 1 && value != 2 {
+		if value != 1 && value != 2 && value != 3 {
 			return fmt.Errorf("unsupported browser interaction evidence version")
 		}
 	}
@@ -87,6 +87,7 @@ func (b *Browser) applyConfig(config map[string]any) error {
 func (b *Browser) applyDefaultConfig() {
 	b.interactionVersion = protocol.BrowserInteractionVersion
 	b.storageState = nil
+	b.documentProofVersion = protocol.BrowserDocumentReceiptClosureVersion
 	b.documentMetricsEnabled = false
 	b.newUserPolicy = "persistent_context"
 	b.engine = browsercontract.DefaultEngine
@@ -149,6 +150,9 @@ func (b *Browser) applyDefaultConfig() {
 
 func (b *Browser) applyConfigOverrides(config map[string]any) {
 	b.documentMetricsEnabled, _ = config["browser_capture_document_metrics"].(bool)
+	if _, present := config["browser_document_proof_version"]; present {
+		b.documentProofVersion = protocol.ConfigInt(config, "browser_document_proof_version")
+	}
 	b.interactionsEnabled, _ = config["browser_capture_interactions"].(bool)
 	if _, present := config["browser_interaction_evidence_version"]; present {
 		b.interactionVersion = protocol.ConfigInt(config, "browser_interaction_evidence_version")

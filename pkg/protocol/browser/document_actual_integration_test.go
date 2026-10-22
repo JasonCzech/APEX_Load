@@ -14,11 +14,14 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
-func documentActualBrowser(t *testing.T, engine, baseURL string) (*Browser, context.Context) {
+func documentActualBrowser(t *testing.T, engine, baseURL string, leases ...*protocol.BrowserSourceLease) (*Browser, context.Context) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	t.Cleanup(cancel)
 	b := &Browser{}
+	if len(leases) > 0 {
+		b.SetBrowserDocumentSourceLease(leases[0])
+	}
 	if err := b.Init(ctx, map[string]any{"base_url": baseURL, "browser_engine": engine, "browser_headless": true, "browser_capture_document_metrics": true, "browser_runtime_new_user_policy": "persistent_context", "browser_viewport_width": 1280, "browser_viewport_height": 900}); err != nil {
 		requireBrowserRuntime(t, engine, err)
 	}

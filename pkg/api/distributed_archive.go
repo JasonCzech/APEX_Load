@@ -166,6 +166,18 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 
 	manifest := mergeRemoteArchiveManifest(tr, test, bundles, finalStatus, finalError, completedAt)
 	manifest.SourceCoverage = coverage
+	manifest.BrowserProofAuthorityMode = "distributed"
+	intent, intentErr := tr.runArchiveCollectionIntent(test)
+	if intentErr != nil {
+		return nil, intentErr
+	}
+	if intent != nil {
+		for _, owner := range intent.Sources {
+			manifest.BrowserProofExpectedOwners = append(manifest.BrowserProofExpectedOwners, owner)
+		}
+		sort.Strings(manifest.BrowserProofExpectedOwners)
+	}
+
 	if !requireAll {
 		manifest.CSVExportIncomplete = "not all generator archives were required; complete export cannot be verified"
 	}
@@ -455,6 +467,7 @@ type remoteArchiveBundle struct {
 	manifest                  RunArchiveManifest
 	transactionsPath          string
 	resourcesPath             string
+	browserReceiptsPath       string
 	browserDocumentsPath      string
 	summariesPath             string
 	// hars are the source's fetched, verified HARs; harOmitted counts the
@@ -848,6 +861,13 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundleTargetForSource(ct
 	names := []string{transactionsName, resourcesName, summariesName}
 	labels := []string{"transaction", "resource", "interval summaries"}
 	documentsPath := ""
+	receiptsPath := ""
+	if manifest.BrowserReceiptsFile != "" {
+		receiptsPath = filepath.Join(targetDir, browserReceiptsFileName)
+		paths = append(paths, receiptsPath)
+		names = append(names, manifest.BrowserReceiptsFile)
+		labels = append(labels, "browser receipts")
+	}
 	if manifest.BrowserDocumentsFile != "" {
 		documentsPath = filepath.Join(targetDir, browserDocumentsFileName)
 		paths = append(paths, documentsPath)
@@ -864,7 +884,12 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundleTargetForSource(ct
 			return remoteArchiveBundle{}, false, fmt.Errorf("validate browser documents from %s: %w", target, err)
 		}
 	}
-	return remoteArchiveBundle{target: target, region: strings.TrimSpace(b.regionForTarget(target)), manifest: manifest, manifestData: append([]byte(nil), manifestBuffer.Bytes()...), browserDocumentsPath: documentsPath, transactionsPath: paths[0], resourcesPath: paths[1], summariesPath: paths[2], transferStageRoot: transferStageRoot}, false, nil
+	if receiptsPath != "" {
+		if err := forEachBrowserReceiptArtifact(targetCtx, targetDir, browserReceiptsFileName, manifest.BrowserReceiptsSHA256, manifest.BrowserReceiptRecordCount, func(*protocol.BrowserDocumentReceiptEvidence) error { return nil }); err != nil {
+			return remoteArchiveBundle{}, false, err
+		}
+	}
+	return remoteArchiveBundle{browserReceiptsPath: receiptsPath, target: target, region: strings.TrimSpace(b.regionForTarget(target)), manifest: manifest, manifestData: append([]byte(nil), manifestBuffer.Bytes()...), browserDocumentsPath: documentsPath, transactionsPath: paths[0], resourcesPath: paths[1], summariesPath: paths[2], transferStageRoot: transferStageRoot}, false, nil
 }
 
 // remoteArchiveFinalizingPoll is the first and longest wait between asks to a
@@ -1102,6 +1127,11 @@ func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []rem
 		manifest.TransactionCount += bundle.manifest.TransactionCount
 		manifest.ResourceSampleCount += bundle.manifest.ResourceSampleCount
 		manifest.IntervalSummaryCount += bundle.manifest.IntervalSummaryCount
+		manifest.BrowserReceiptIncomplete = manifest.BrowserReceiptIncomplete || bundle.manifest.BrowserReceiptIncomplete
+		if bundle.manifest.BrowserReceiptsFile != "" {
+			manifest.BrowserReceiptsFile = browserReceiptsFileName
+			manifest.BrowserReceiptRecordCount += bundle.manifest.BrowserReceiptRecordCount
+		}
 		if bundle.manifest.BrowserDocumentsFile != "" {
 			manifest.BrowserDocumentsFile = browserDocumentsFileName
 			manifest.BrowserDocumentsParquetFile = browserDocumentsParquetFileName

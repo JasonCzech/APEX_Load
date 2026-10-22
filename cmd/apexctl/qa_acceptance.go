@@ -34,8 +34,8 @@ var errAcceptanceUnsupported = errors.New("acceptance gate: not every matching s
 // qaActionFlags are the flags each action accepts; any other flag is refused
 // rather than silently ignored.
 var qaActionFlags = map[string]map[string]bool{
-	"acceptance":        {"api": true, "requirement": true, "feature": true, "profile": true, "provider": true, "platform": true, "commit": true, "binary": true, "require-supported": true},
-	"record-acceptance": {"api": true, "requirement": true, "feature": true, "profile": true, "provider": true, "platform": true, "commit": true, "binary": true, "suite": true, "result": true, "notes": true, "artifact": true},
+	"acceptance":        {"api": true, "requirement": true, "feature": true, "profile": true, "provider": true, "platform": true, "commit": true, "binary": true, "require-supported": true, "cohort": true},
+	"record-acceptance": {"api": true, "requirement": true, "feature": true, "profile": true, "provider": true, "platform": true, "commit": true, "binary": true, "suite": true, "result": true, "notes": true, "artifact": true, "qualification": true},
 }
 
 type stringListFlag []string
@@ -64,6 +64,8 @@ func executeQACommand(ctx context.Context, args []string, out io.Writer) error {
 	binary := fs.String("binary", "", "path of the tested binary; its SHA-256 is recorded")
 	suite := fs.String("suite", "", "suite name")
 	result := fs.String("result", "", "passed, failed, pending or revoked")
+	cohort := fs.String("cohort", "", "acceptance: exact returned browser cohort SHA-256")
+	qualification := fs.String("qualification", "", "path of a browser cohort/dependency JSON object (at most 16 KiB)")
 	notes := fs.String("notes", "", "short notes (at most 256 bytes)")
 	requireSupported := fs.Bool("require-supported", false, "acceptance: fail (exit 1) unless at least one subject matches and every match is supported")
 	var artifacts stringListFlag
@@ -94,7 +96,7 @@ func executeQACommand(ctx context.Context, args []string, out io.Writer) error {
 	switch action {
 	case "acceptance":
 		query := url.Values{}
-		for name, value := range map[string]string{"requirement": *requirement, "feature": *feature, "profile": *profile, "provider": *provider, "platform": *platform, "commit_sha": strings.ToLower(*commit)} {
+		for name, value := range map[string]string{"requirement": *requirement, "feature": *feature, "profile": *profile, "provider": *provider, "platform": *platform, "commit_sha": strings.ToLower(*commit), "cohort_sha256": *cohort} {
 			if value != "" {
 				query.Set(name, value)
 			}
@@ -150,6 +152,13 @@ func executeQACommand(ctx context.Context, args []string, out io.Writer) error {
 			}
 			request["binary_sha256"] = digest
 		}
+		if *qualification != "" {
+			data, err := readBrowserAcceptanceQualification(*qualification)
+			if err != nil {
+				return err
+			}
+			request["qualification"] = data
+		}
 		recorded := []map[string]string{}
 		for _, path := range artifacts {
 			digest, err := fileSHA256(path)
@@ -185,4 +194,33 @@ func fileSHA256(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// Keep the original object bytes for the server's strict duplicate/unknown-key
+// validator. Parsing into a map here would silently collapse duplicate keys.
+func readBrowserAcceptanceQualification(path string) (json.RawMessage, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open qualification: %w", err)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > 16<<10 {
+		return nil, errors.New("qualification must be a regular JSON file at most 16 KiB")
+	}
+	body, err := io.ReadAll(io.LimitReader(f, (16<<10)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > 16<<10 {
+		return nil, errors.New("qualification exceeds 16 KiB")
+	}
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 || len(body) > 16<<10 || body[0] != '{' || !json.Valid(body) {
+		return nil, errors.New("qualification must be a JSON object at most 16 KiB")
+	}
+	return json.RawMessage(body), nil
 }

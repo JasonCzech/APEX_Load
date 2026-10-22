@@ -271,7 +271,7 @@ func newInteractionAnalyzer(runID string, cohorts map[string]browserGenerationCo
 
 func (a *interactionAnalyzer) add(evidence *protocol.BrowserInteractionEvidence) {
 	a.analysis.Coverage.Records++
-	a.hasV2 = a.hasV2 || evidence.Version == protocol.BrowserInteractionVersion2
+	a.hasV2 = a.hasV2 || protocol.BrowserInteractionHasDispatch(evidence.Version)
 	a.analysis.Coverage.Dropped += evidence.Dropped
 	a.analysis.Coverage.Incomplete = a.analysis.Coverage.Incomplete || evidence.Incomplete
 	for _, interaction := range evidence.Interactions {
@@ -292,7 +292,7 @@ func (a *interactionAnalyzer) add(evidence *protocol.BrowserInteractionEvidence)
 // table.
 func (a *interactionAnalyzer) mapInteraction(i protocol.BrowserInteraction) {
 	exclude := func(reason string) { a.analysis.Coverage.Excluded[reason]++ }
-	if i.Version == protocol.BrowserInteractionVersion2 && i.Dispatch == nil {
+	if protocol.BrowserInteractionHasDispatch(i.Version) && i.Dispatch == nil {
 		exclude("dispatch_unavailable")
 		return
 	}
@@ -346,7 +346,7 @@ func (a *interactionAnalyzer) mapInteraction(i protocol.BrowserInteraction) {
 	}
 	key := strings.Join([]string{i.Route, i.LayoutRevision, fmt.Sprintf("%dx%d@%g", i.ViewportWidth, i.ViewportHeight, i.DeviceScaleFactor), orientation, cohort.engine, cohort.profile, fmt.Sprintf("%g,%g", canonicalScroll(i.ScrollX), canonicalScroll(i.ScrollY))}, "\x00")
 	observation := "post_action"
-	if i.Version == protocol.BrowserInteractionVersion2 {
+	if protocol.BrowserInteractionHasDispatch(i.Version) {
 		observation = "native_dispatch"
 		key = "native_dispatch\x00" + key
 	}
@@ -479,7 +479,7 @@ func findInteractionPatterns(interactions []protocol.BrowserInteraction) []Brows
 	var documents []string
 	for _, i := range interactions {
 		key := i.SourceGeneration + "\x00" + i.DocumentID
-		if i.Version == protocol.BrowserInteractionVersion2 && i.Dispatch != nil {
+		if protocol.BrowserInteractionHasDispatch(i.Version) && i.Dispatch != nil {
 			key += "\x00" + i.Dispatch.LifecycleID
 		}
 		if _, ok := byDocument[key]; !ok {
@@ -496,7 +496,7 @@ func findInteractionPatterns(interactions []protocol.BrowserInteraction) []Brows
 		// Their first attempt must also stay out of repetition.
 		retryInvocations := map[string]bool{}
 		for _, row := range gestures {
-			if row.Version == protocol.BrowserInteractionVersion2 && row.Execution.Valid() && row.Execution.Attempt > 1 {
+			if protocol.BrowserInteractionHasDispatch(row.Version) && row.Execution.Valid() && row.Execution.Attempt > 1 {
 				retryInvocations[interactionInvocationKey(row)] = true
 			}
 		}
@@ -527,10 +527,10 @@ func findInteractionPatterns(interactions []protocol.BrowserInteraction) []Brows
 			// (each engine retry is a new execution with its own action ID,
 			// so a step is its action name and gesture kind); the attempts
 			// never count as repeated gestures.
-			if !g.Success && !retryReported[g.InteractionID] && (g.Version == protocol.BrowserInteractionVersion2 || !retried[g.InteractionID]) {
+			if !g.Success && !retryReported[g.InteractionID] && (protocol.BrowserInteractionHasDispatch(g.Version) || !retried[g.InteractionID]) {
 				attempts := []protocol.BrowserInteraction{g}
 				for _, next := range gestures[index+1:] {
-					if !sameInteractionStep(g, next) || (g.Version == protocol.BrowserInteractionVersion2 && (!sameInvocation(g, next) || next.Execution.Attempt != attempts[len(attempts)-1].Execution.Attempt+1)) {
+					if !sameInteractionStep(g, next) || (protocol.BrowserInteractionHasDispatch(g.Version) && (!sameInvocation(g, next) || next.Execution.Attempt != attempts[len(attempts)-1].Execution.Attempt+1)) {
 						break
 					}
 					attempts = append(attempts, next)
@@ -557,7 +557,7 @@ func findInteractionPatterns(interactions []protocol.BrowserInteraction) []Brows
 
 // sameInteractionStep reports whether next is another attempt of g's step.
 func sameInteractionStep(g, next protocol.BrowserInteraction) bool {
-	if g.Version == protocol.BrowserInteractionVersion2 || next.Version == protocol.BrowserInteractionVersion2 {
+	if protocol.BrowserInteractionHasDispatch(g.Version) || protocol.BrowserInteractionHasDispatch(next.Version) {
 		return g.Version == next.Version && g.AuthoredStep.Valid() && next.AuthoredStep.Valid() && g.AuthoredStep.StepID == next.AuthoredStep.StepID && g.Kind == next.Kind
 	}
 	if g.ActionName == "" {
@@ -640,7 +640,7 @@ func repeatRuns(candidates []protocol.BrowserInteraction, match func(first, next
 		end := start + 1
 		for end < len(candidates) {
 			next := candidates[end]
-			if next.Route != first.Route || next.LayoutRevision != first.LayoutRevision || interactionClock(next).Sub(interactionClock(first)) > repeatWindow || (first.Version == protocol.BrowserInteractionVersion2 && (!sameInteractionStep(first, next) || first.ScrollX != next.ScrollX || first.ScrollY != next.ScrollY || first.ViewportWidth != next.ViewportWidth || first.ViewportHeight != next.ViewportHeight || first.DeviceScaleFactor != next.DeviceScaleFactor)) || !match(first, next) {
+			if next.Route != first.Route || next.LayoutRevision != first.LayoutRevision || interactionClock(next).Sub(interactionClock(first)) > repeatWindow || (protocol.BrowserInteractionHasDispatch(first.Version) && (!sameInteractionStep(first, next) || first.ScrollX != next.ScrollX || first.ScrollY != next.ScrollY || first.ViewportWidth != next.ViewportWidth || first.ViewportHeight != next.ViewportHeight || first.DeviceScaleFactor != next.DeviceScaleFactor)) || !match(first, next) {
 				break
 			}
 			end++
