@@ -433,10 +433,13 @@ func (tr *TestRunner) javaVuserApprovalState(script *dsl.Script) (string, error)
 		return "Java Vuser authoring approval cannot be verified by the configured store", nil
 	}
 	session, err := reader.GetAuthoringSession(evidence.SessionID)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		session = nil
+	case err != nil:
 		return "", err
 	}
-	if err != nil || session == nil || session.Status != "approved" || normalizeProjectID(session.ProjectID) != normalizeProjectID(script.ProjectID) {
+	if session == nil || session.Status != "approved" || normalizeProjectID(session.ProjectID) != normalizeProjectID(script.ProjectID) {
 		return "Java Vuser authoring approval is missing or stale; review and approve the current script revision", nil
 	}
 	if strings.TrimSpace(fmt.Sprint(session.ReviewState["approved_script_id"])) != strings.TrimSpace(script.ID) {

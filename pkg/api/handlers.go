@@ -1283,7 +1283,7 @@ func (s *Server) handleValidationContext(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var script *dsl.Script
-	projectID := request.ProjectID
+	var projectID string
 	switch {
 	case request.Script != nil && strings.TrimSpace(request.ScriptID) == "":
 		script = request.Script
