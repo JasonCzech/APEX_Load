@@ -254,11 +254,27 @@ test('the Transactions table attributes each live transaction to the groups that
     await page.goto(`/#/command-center/${testId}?${scopeQuery(workspace)}`)
     const tables = page.getByRole('region', { name: 'Command center run tables', exact: true })
     await tables.getByRole('tab', { name: 'Transactions', exact: true }).click()
-    const rows = tables.locator('tbody tr')
-    await expect(rows.filter({ hasText: 'Login' }).filter({ hasText: 'Buyers' })).toHaveCount(1, { timeout: 60_000 })
-    await expect(rows.filter({ hasText: 'Login' }).filter({ hasText: 'Sellers' })).toHaveCount(1)
-    await expect(rows.filter({ hasText: 'Search' })).toContainText('Buyers')
-    await expect(tables.getByText(/has a row for each group's share/)).toBeVisible()
+    // Each group is a heading row (its toggle names it) with the transactions
+    // it ran beneath it, so a transaction two groups run appears under both.
+    const sections = () => tables.locator('tbody tr').evaluateAll(rows => {
+      const byGroup: Record<string, string[]> = {}
+      // A row before any heading is kept under its own key, so it fails the match.
+      let group = '(no heading)'
+      for (const row of rows) {
+        const heading = row.querySelector('button[aria-expanded] strong')
+        if (heading) {
+          group = heading.textContent ?? ''
+          byGroup[group] = []
+          continue
+        }
+        const name = row.querySelector('td strong')?.textContent
+        if (name) (byGroup[group] ??= []).push(name)
+      }
+      for (const names of Object.values(byGroup)) names.sort()
+      return byGroup
+    })
+    await expect.poll(sections, { timeout: 60_000 }).toEqual({ Buyers: ['Login', 'Search'], Sellers: ['Login'] })
+    await expect(tables.getByText(/Each group, then the transactions it ran/)).toBeVisible()
   } finally {
     await abortLiveRun(request, { testId, scriptId: buyers })
     await request.delete(`/api/v1/scripts/${sellers}`)
