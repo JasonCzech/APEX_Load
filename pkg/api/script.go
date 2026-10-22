@@ -768,25 +768,32 @@ func (tr *TestRunner) createScriptDurableCompletingReceipt(
 		if err := tr.prepareNewScriptRefKeyLocked(script); err != nil {
 			return nil, false, err
 		}
-		create := func() (*storage.ScriptAuthoringMutationResult, error) {
-			return store.CreateScriptAuthoringIfAbsent(script)
-		}
+		var receiptStore storage.AuthoringReceiptCreateStore
 		if receipt != nil {
-			receiptStore, supported := tr.scriptStore.(storage.AuthoringReceiptCreateStore)
-			if !supported {
+			var supported bool
+			if receiptStore, supported = tr.scriptStore.(storage.AuthoringReceiptCreateStore); !supported {
 				return nil, false, errAuthoringReceiptCreateUnsupported
 			}
-			create = func() (*storage.ScriptAuthoringMutationResult, error) {
+		}
+		// Each store call is an inline OutsideLock callback, which the
+		// lock-held durable-write guard recognizes.
+		mutation, err := contentmutation.OutsideLock(&tr.mu, func() (*storage.ScriptAuthoringMutationResult, error) {
+			if receiptStore != nil {
 				return receiptStore.CreateScriptAuthoringCompletingReceipt(script, *receipt, renderScriptReceiptOutcome)
 			}
-		}
-		mutation, err := contentmutation.OutsideLock(&tr.mu, create)
+			return store.CreateScriptAuthoringIfAbsent(script)
+		})
 		if errors.Is(err, storage.ErrScriptRefKeyTaken) {
 			// Another replica took the key since this one indexed its scripts.
 			if err := tr.assignNextScriptRefKeyLocked(script); err != nil {
 				return nil, false, err
 			}
-			mutation, err = contentmutation.OutsideLock(&tr.mu, create)
+			mutation, err = contentmutation.OutsideLock(&tr.mu, func() (*storage.ScriptAuthoringMutationResult, error) {
+				if receiptStore != nil {
+					return receiptStore.CreateScriptAuthoringCompletingReceipt(script, *receipt, renderScriptReceiptOutcome)
+				}
+				return store.CreateScriptAuthoringIfAbsent(script)
+			})
 		}
 		if err != nil {
 			return nil, false, err
