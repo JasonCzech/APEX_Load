@@ -3,6 +3,7 @@ import type { GoalConfig, ScenarioMode } from './goals'
 import type { LoadStageDraft } from './loadModels'
 import type { RuntimeSettingsOverride, ScenarioRuntimeSettingsDraft } from './runtimeSettings'
 import type { GeneratorAssignmentSettings } from './testConfiguration'
+import type { JointEvidenceProjection } from './jointEvidence'
 import type { TrafficProfile } from './trafficProfiles'
 
 export type ScenarioWizardStep = 'scripts' | 'source' | 'run' | 'data' | 'review'
@@ -21,6 +22,8 @@ export interface ScenarioFormState {
   resource_baseline: boolean
   goal_config?: GoalConfig
   traffic_profile?: TrafficProfile
+  /** The joint evidence every run of the scenario captures; absent is none. */
+  joint_evidence?: JointEvidenceProjection
   /**
    * The scenario-wide runtime defaults, as stored. Every editor writes this
    * canonical override directly (AUTH-3): there are no flat display mirrors.

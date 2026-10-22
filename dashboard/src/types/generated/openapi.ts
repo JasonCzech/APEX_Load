@@ -6325,6 +6325,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "vusers"?: number;
             }>;
+            "joint_evidence"?: ({
+              "dimensions"?: Array<string>;
+              "population"?: string;
+            }) | null;
             "name"?: string;
             "project_id"?: string;
             "resource_baseline"?: boolean;
@@ -19901,6 +19905,7 @@ export interface operations {
                   "goal_config"?: (Record<string, unknown>) | null;
                   "groups": Array<Record<string, unknown>>;
                   "id": string;
+                  "joint_evidence"?: (Record<string, unknown>) | null;
                   "name": string;
                   "project_id": string;
                   "ref_key"?: string;
@@ -20017,6 +20022,10 @@ export interface operations {
                 }) | null;
               }) | null;
               "id": string;
+              "joint_evidence"?: ({
+                "dimensions": Array<string>;
+                "population": string;
+              }) | null;
               "last_run_at"?: (string) | null;
               "last_run_ended_at"?: (string) | null;
               "last_run_test_id"?: string;
@@ -22106,6 +22115,10 @@ export interface operations {
                   "vusers": number;
                 }>;
                 "id": string;
+                "joint_evidence"?: ({
+                  "dimensions": Array<string>;
+                  "population": string;
+                }) | null;
                 "name": string;
                 "project_id": string;
                 "ref_key"?: string;
@@ -22267,6 +22280,10 @@ export interface operations {
               }) | null;
             }) | null;
             "id": string;
+            "joint_evidence"?: ({
+              "dimensions": Array<string>;
+              "population": string;
+            }) | null;
             "last_run_at"?: (string) | null;
             "last_run_ended_at"?: (string) | null;
             "last_run_test_id"?: string;
@@ -23243,6 +23260,10 @@ export interface operations {
                   "vusers": number;
                 }>;
                 "id": string;
+                "joint_evidence"?: ({
+                  "dimensions": Array<string>;
+                  "population": string;
+                }) | null;
                 "name": string;
                 "project_id": string;
                 "ref_key"?: string;
@@ -23404,6 +23425,10 @@ export interface operations {
               }) | null;
             }) | null;
             "id": string;
+            "joint_evidence"?: ({
+              "dimensions": Array<string>;
+              "population": string;
+            }) | null;
             "last_run_at"?: (string) | null;
             "last_run_ended_at"?: (string) | null;
             "last_run_test_id"?: string;
@@ -33875,6 +33900,10 @@ export interface operations {
             "require_results"?: boolean;
             "require_sla"?: boolean;
           };
+          "joint_evidence"?: ({
+            "dimensions"?: Array<string>;
+            "population"?: string;
+          }) | null;
           "monitor_bindings"?: (Array<{
             "required"?: boolean;
             "source_id"?: string;
@@ -41426,6 +41455,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
+          "joint_evidence"?: ({
+            "dimensions"?: Array<string>;
+            "population"?: string;
+          }) | null;
           "name": string;
           "project_id"?: string;
           "resource_baseline"?: boolean;
@@ -42019,6 +42052,10 @@ export interface operations {
                   "vusers": number;
                 }>;
                 "id": string;
+                "joint_evidence"?: ({
+                  "dimensions": Array<string>;
+                  "population": string;
+                }) | null;
                 "name": string;
                 "project_id": string;
                 "ref_key"?: string;
@@ -42180,6 +42217,10 @@ export interface operations {
               }) | null;
             }) | null;
             "id": string;
+            "joint_evidence"?: ({
+              "dimensions": Array<string>;
+              "population": string;
+            }) | null;
             "last_run_at"?: (string) | null;
             "last_run_ended_at"?: (string) | null;
             "last_run_test_id"?: string;
@@ -53981,6 +54022,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "vusers"?: number;
             }>;
+            "joint_evidence"?: ({
+              "dimensions"?: Array<string>;
+              "population"?: string;
+            }) | null;
             "name"?: string;
             "project_id"?: string;
             "resource_baseline"?: boolean;
@@ -54676,6 +54721,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
+              "joint_evidence"?: ({
+                "dimensions": Array<string>;
+                "population": string;
+              }) | null;
               "name": string;
               "project_id"?: string;
               "resource_baseline"?: boolean;
@@ -55293,6 +55342,10 @@ export interface operations {
               "transaction_response_time_sla_ms"?: (number) | null;
               "vusers"?: number;
             }>;
+            "joint_evidence"?: ({
+              "dimensions"?: Array<string>;
+              "population"?: string;
+            }) | null;
             "name"?: string;
             "project_id"?: string;
             "resource_baseline"?: boolean;
@@ -55988,6 +56041,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
+              "joint_evidence"?: ({
+                "dimensions": Array<string>;
+                "population": string;
+              }) | null;
               "name": string;
               "project_id"?: string;
               "resource_baseline"?: boolean;
@@ -83458,6 +83515,10 @@ export interface operations {
                   "vusers": number;
                 }>;
                 "id": string;
+                "joint_evidence"?: ({
+                  "dimensions": Array<string>;
+                  "population": string;
+                }) | null;
                 "name": string;
                 "project_id": string;
                 "ref_key"?: string;
@@ -83619,6 +83680,10 @@ export interface operations {
               }) | null;
             }) | null;
             "id": string;
+            "joint_evidence"?: ({
+              "dimensions": Array<string>;
+              "population": string;
+            }) | null;
             "last_run_at"?: (string) | null;
             "last_run_ended_at"?: (string) | null;
             "last_run_test_id"?: string;
@@ -84557,6 +84622,10 @@ export interface operations {
                 "vusers": number;
               }>;
               "id": string;
+              "joint_evidence"?: ({
+                "dimensions": Array<string>;
+                "population": string;
+              }) | null;
               "name": string;
               "project_id": string;
               "ref_key"?: string;
@@ -101252,6 +101321,7 @@ export interface operations {
                   "duration": string;
                   "goal_config"?: (Record<string, unknown>) | null;
                   "groups": Array<Record<string, unknown>>;
+                  "joint_evidence"?: (Record<string, unknown>) | null;
                   "name": string;
                   "project_id"?: string;
                   "resource_baseline"?: boolean;
@@ -155740,6 +155810,10 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
+              "joint_evidence"?: ({
+                "dimensions": Array<string>;
+                "population": string;
+              }) | null;
               "name": string;
               "project_id"?: string;
               "resource_baseline"?: boolean;
@@ -180897,6 +180971,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
+          "joint_evidence"?: ({
+            "dimensions"?: Array<string>;
+            "population"?: string;
+          }) | null;
           "name": string;
           "project_id"?: string;
           "resource_baseline"?: boolean;
@@ -181488,6 +181566,10 @@ export interface operations {
                   "vusers": number;
                 }>;
                 "id": string;
+                "joint_evidence"?: ({
+                  "dimensions": Array<string>;
+                  "population": string;
+                }) | null;
                 "name": string;
                 "project_id": string;
                 "ref_key"?: string;
@@ -181649,6 +181731,10 @@ export interface operations {
               }) | null;
             }) | null;
             "id": string;
+            "joint_evidence"?: ({
+              "dimensions": Array<string>;
+              "population": string;
+            }) | null;
             "last_run_at"?: (string) | null;
             "last_run_ended_at"?: (string) | null;
             "last_run_test_id"?: string;
@@ -191007,6 +191093,10 @@ export interface operations {
             "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
+          "joint_evidence"?: ({
+            "dimensions"?: Array<string>;
+            "population"?: string;
+          }) | null;
           "name"?: string;
           "project_id"?: string;
           "resource_baseline"?: boolean;

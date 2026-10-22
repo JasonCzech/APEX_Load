@@ -17436,6 +17436,16 @@ paths:
                           vusers:
                             type: integer
                             format: int64
+                    joint_evidence:
+                      type: object
+                      properties:
+                        dimensions:
+                          type: array
+                          items:
+                            type: string
+                        population:
+                          type: string
+                      nullable: true
                     name:
                       type: string
                     project_id:
@@ -51378,6 +51388,16 @@ paths:
                       type: boolean
                     require_sla:
                       type: boolean
+                joint_evidence:
+                  type: object
+                  properties:
+                    dimensions:
+                      type: array
+                      items:
+                        type: string
+                    population:
+                      type: string
+                  nullable: true
                 monitor_bindings:
                   type: array
                   items:
@@ -64199,6 +64219,10 @@ paths:
                                     type: object
                                     description: 'Go type: CreateGroupEntry'
                                     additionalProperties: true
+                                joint_evidence:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 name:
                                   type: string
                                 project_id:
@@ -161904,6 +161928,16 @@ paths:
                       vusers:
                         type: integer
                         format: int64
+                joint_evidence:
+                  type: object
+                  properties:
+                    dimensions:
+                      type: array
+                      items:
+                        type: string
+                    population:
+                      type: string
+                  nullable: true
                 name:
                   type: string
                 project_id:
@@ -163454,6 +163488,19 @@ paths:
                                     - vusers
                               id:
                                 type: string
+                              joint_evidence:
+                                type: object
+                                properties:
+                                  dimensions:
+                                    type: array
+                                    items:
+                                      type: string
+                                  population:
+                                    type: string
+                                required:
+                                  - dimensions
+                                  - population
+                                nullable: true
                               name:
                                 type: string
                               project_id:
@@ -163952,6 +163999,19 @@ paths:
                         nullable: true
                       id:
                         type: string
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       last_run_at:
                         type: string
                         format: date-time
@@ -166791,6 +166851,19 @@ paths:
                                     - vusers
                               id:
                                 type: string
+                              joint_evidence:
+                                type: object
+                                properties:
+                                  dimensions:
+                                    type: array
+                                    items:
+                                      type: string
+                                  population:
+                                    type: string
+                                required:
+                                  - dimensions
+                                  - population
+                                nullable: true
                               name:
                                 type: string
                               project_id:
@@ -167289,6 +167362,19 @@ paths:
                         nullable: true
                       id:
                         type: string
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       last_run_at:
                         type: string
                         format: date-time
@@ -169936,6 +170022,19 @@ paths:
                                 - vusers
                           id:
                             type: string
+                          joint_evidence:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: string
+                              population:
+                                type: string
+                            required:
+                              - dimensions
+                              - population
+                            nullable: true
                           name:
                             type: string
                           project_id:
@@ -171751,6 +171850,16 @@ paths:
                       vusers:
                         type: integer
                         format: int64
+                joint_evidence:
+                  type: object
+                  properties:
+                    dimensions:
+                      type: array
+                      items:
+                        type: string
+                    population:
+                      type: string
+                  nullable: true
                 name:
                   type: string
                 project_id:
@@ -173300,6 +173409,19 @@ paths:
                                 - vusers
                           id:
                             type: string
+                          joint_evidence:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: string
+                              population:
+                                type: string
+                            required:
+                              - dimensions
+                              - population
+                            nullable: true
                           name:
                             type: string
                           project_id:
@@ -173798,6 +173920,19 @@ paths:
                     nullable: true
                   id:
                     type: string
+                  joint_evidence:
+                    type: object
+                    properties:
+                      dimensions:
+                        type: array
+                        items:
+                          type: string
+                      population:
+                        type: string
+                    required:
+                      - dimensions
+                      - population
+                    nullable: true
                   last_run_at:
                     type: string
                     format: date-time
@@ -176516,6 +176651,19 @@ paths:
                                 - vusers
                           id:
                             type: string
+                          joint_evidence:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: string
+                              population:
+                                type: string
+                            required:
+                              - dimensions
+                              - population
+                            nullable: true
                           name:
                             type: string
                           project_id:
@@ -177014,6 +177162,19 @@ paths:
                     nullable: true
                   id:
                     type: string
+                  joint_evidence:
+                    type: object
+                    properties:
+                      dimensions:
+                        type: array
+                        items:
+                          type: string
+                      population:
+                        type: string
+                    required:
+                      - dimensions
+                      - population
+                    nullable: true
                   last_run_at:
                     type: string
                     format: date-time
@@ -180596,6 +180757,19 @@ paths:
                                 - vusers
                           id:
                             type: string
+                          joint_evidence:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: string
+                              population:
+                                type: string
+                            required:
+                              - dimensions
+                              - population
+                            nullable: true
                           name:
                             type: string
                           project_id:
@@ -181094,6 +181268,19 @@ paths:
                     nullable: true
                   id:
                     type: string
+                  joint_evidence:
+                    type: object
+                    properties:
+                      dimensions:
+                        type: array
+                        items:
+                          type: string
+                      population:
+                        type: string
+                    required:
+                      - dimensions
+                      - population
+                    nullable: true
                   last_run_at:
                     type: string
                     format: date-time
@@ -183699,6 +183886,10 @@ paths:
                                   additionalProperties: true
                               id:
                                 type: string
+                              joint_evidence:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               name:
                                 type: string
                               project_id:
@@ -184039,6 +184230,19 @@ paths:
                         nullable: true
                       id:
                         type: string
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       last_run_at:
                         type: string
                         format: date-time
@@ -187746,6 +187950,16 @@ paths:
                           vusers:
                             type: integer
                             format: int64
+                    joint_evidence:
+                      type: object
+                      properties:
+                        dimensions:
+                          type: array
+                          items:
+                            type: string
+                        population:
+                          type: string
+                      nullable: true
                     name:
                       type: string
                     project_id:
@@ -189685,6 +189899,19 @@ paths:
                             - name
                             - script_id
                             - vusers
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       name:
                         type: string
                       project_id:
@@ -191833,6 +192060,19 @@ paths:
                             - name
                             - script_id
                             - vusers
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       name:
                         type: string
                       project_id:
@@ -193583,6 +193823,16 @@ paths:
                           vusers:
                             type: integer
                             format: int64
+                    joint_evidence:
+                      type: object
+                      properties:
+                        dimensions:
+                          type: array
+                          items:
+                            type: string
+                        population:
+                          type: string
+                      nullable: true
                     name:
                       type: string
                     project_id:
@@ -195522,6 +195772,19 @@ paths:
                             - name
                             - script_id
                             - vusers
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       name:
                         type: string
                       project_id:
@@ -197692,6 +197955,16 @@ paths:
                       vusers:
                         type: integer
                         format: int64
+                joint_evidence:
+                  type: object
+                  properties:
+                    dimensions:
+                      type: array
+                      items:
+                        type: string
+                    population:
+                      type: string
+                  nullable: true
                 name:
                   type: string
                 project_id:

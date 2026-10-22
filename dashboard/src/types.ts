@@ -856,6 +856,8 @@ export interface TestSummary {
   goal_config?: GoalConfig
   /** A traffic-profile run's replayed profile: its per-group TPS (or VUser) points by offset. */
   traffic_profile?: import('./types/trafficProfiles').TrafficProfile
+  /** The joint evidence projection the run captures. */
+  joint_evidence?: import('./types/jointEvidence').JointEvidenceProjection
   /** The execution-plan run that started this run. */
   execution_plan?: TestExecutionPlanLink
   archive?: RunArchiveRecord
@@ -2353,6 +2355,8 @@ export interface ScenarioDraftRevisionContext {
   dynatraceConnectionId?: string
   monitorBindings?: import('./types/runMonitoring').MonitorBinding[]
   sourceTestId: string
+  /** The source run's joint evidence, shown read-only; a revised copy keeps it. */
+  jointEvidence?: import('./types/jointEvidence').JointEvidenceProjection
   applicationId?: string
   releaseId?: string
   scenarioId?: string
@@ -2375,6 +2379,8 @@ export interface ScenarioDraft {
   runtimeSettings: ScenarioRuntimeSettingsDraft
   /** Authored production traffic profile (TestHub's production-replay shape). */
   trafficProfile?: TrafficProfile
+  /** The joint evidence the scenario's runs capture (absent: none). */
+  jointEvidence?: import('./types/jointEvidence').JointEvidenceProjection
   /** Authored data-pool bindings of a saved scenario (a revision keeps its source's in revisionContext). */
   dataPools?: ScenarioDataPoolBinding[]
   /** Immutable source-run context carried only when a queued run is revised. */

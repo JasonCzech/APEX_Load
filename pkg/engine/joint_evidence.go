@@ -78,6 +78,12 @@ func (p JointProjection) Validate() error {
 	return nil
 }
 
+// JointPropertyCategory reports whether a projected dimension is a promoted
+// property category, and its name.
+func JointPropertyCategory(dimension string) (string, bool) {
+	return strings.CutPrefix(dimension, jointPropertyPrefix)
+}
+
 // Clone copies a projection.
 func (p *JointProjection) Clone() *JointProjection {
 	if p == nil {

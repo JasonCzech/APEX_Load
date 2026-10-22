@@ -130,6 +130,19 @@ describe('scenario assembly', () => {
     expect(() => assertDraftHasNoInlineCredentials({ ...form, runtime_settings: { env: { API_TOKEN: 'literal-token' } } })).toThrow()
   })
 
+  it("carries a scenario's joint evidence into its save and run payloads (NA-B)", () => {
+    const projection = { population: 'action' as const, dimensions: ['name', 'property:operation'] }
+    const stored = { ...kitchenSinkScenario(), joint_evidence: projection }
+    const form = scenarioFormStateFromStoredScenario(stored, '')
+    expect(form.joint_evidence).toEqual(projection)
+    expect(form.joint_evidence).not.toBe(projection)
+    const draft = scenarioDraftFromForm(form)
+    expect(scenarioUpsertPayload(draft).joint_evidence).toEqual(projection)
+    expect(scenarioCreatePayload(draft).joint_evidence).toEqual(projection)
+    // Turned off, a save sends none, which clears it.
+    expect(scenarioUpsertPayload(scenarioDraftFromForm({ ...form, joint_evidence: undefined }))).not.toHaveProperty('joint_evidence')
+  })
+
   it('assembles TestHub edits the way the form shows them', () => {
     const form = scenarioFormStateFromStoredScenario(kitchenSinkScenario(), '')
     // The goal fields edit the form's goal config, its only goal store

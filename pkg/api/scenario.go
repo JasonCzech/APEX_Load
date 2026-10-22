@@ -333,6 +333,10 @@ func (tr *TestRunner) storeScenarioLockedWithSources(id string, req CreateScenar
 	if err != nil {
 		return nil, err
 	}
+	jointEvidence, err := normalizeJointEvidence(req.JointEvidence)
+	if err != nil {
+		return nil, err
+	}
 	if err := validateTrafficProfile(req.TrafficProfile, groups, req.Duration, req.ScenarioMode, req.GoalConfig); err != nil {
 		return nil, err
 	}
@@ -378,6 +382,9 @@ func (tr *TestRunner) storeScenarioLockedWithSources(id string, req CreateScenar
 		return nil, err
 	}
 	if err := validateTrafficProfileCompiledGroups(req.TrafficProfile, testGroups); err != nil {
+		return nil, err
+	}
+	if err := validateJointEvidenceCategories(jointEvidence, testGroups); err != nil {
 		return nil, err
 	}
 	scenarioDuration, err := parseTerminationDuration(req.Duration, req.TerminationMode)
@@ -439,6 +446,7 @@ func (tr *TestRunner) storeScenarioLockedWithSources(id string, req CreateScenar
 		GoalConfig:       goalConfigForStorage(req.GoalConfig),
 		TrafficProfile:   trafficProfileForStorage(req.TrafficProfile),
 		RuntimeSettings:  runtimeSettingsForStorage(req.RuntimeSettings),
+		JointEvidence:    jointEvidenceForStorage(jointEvidence),
 		CreatedAt:        createdAt,
 		UpdatedAt:        now,
 	}
@@ -607,6 +615,7 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 		GoalConfig       any
 		TrafficProfile   any
 		RuntimeSettings  any
+		JointEvidence    any `json:",omitempty"`
 		Scripts          []storage.ScenarioScript
 	}{
 		ID:               scenario.ID,
@@ -623,6 +632,7 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 		GoalConfig:       scenario.GoalConfig,
 		TrafficProfile:   scenario.TrafficProfile,
 		RuntimeSettings:  scenario.RuntimeSettings,
+		JointEvidence:    scenario.JointEvidence,
 		Scripts:          canonicalScripts,
 	}))
 }
@@ -1554,6 +1564,7 @@ func cloneStoredScenarioForReadLocked(scenario *StoredScenario) *StoredScenario 
 	cloned.GoalConfig = cloneGoalConfig(scenario.GoalConfig)
 	cloned.TrafficProfile = cloneTrafficProfile(scenario.TrafficProfile)
 	cloned.RuntimeSettings = cloneRuntimeSettings(scenario.RuntimeSettings)
+	cloned.JointEvidence = scenario.JointEvidence.Clone()
 	cloned.Scripts = cloneScenarioScriptRefs(scenario.Scripts)
 	cloned.Schedules = make([]*storage.ScenarioSchedule, len(scenario.Schedules))
 	for index, schedule := range scenario.Schedules {

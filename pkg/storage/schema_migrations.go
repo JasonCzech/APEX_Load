@@ -99,6 +99,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 70, Name: "durable-java-http-action-history", Fingerprint: "e1cfdf7cb8281eb9236da48ff4df94cdab8e72f9da16e18e2de36d414662cd9d"},
 	{Version: 71, Name: "deleted-test-identities", Fingerprint: "eb3e5fd1f6988061c86d0c4c50dee89c0c3853732dddd91c1439e9cc43f0fd5c"},
 	{Version: 72, Name: "authoring-receipt-original-outcomes", Fingerprint: "3a95b9a7636dfe578c7ea62353c9604d1c772c9ca54d0bfeee61ecfd7f39f9c5"},
+	{Version: 73, Name: "scenario-joint-evidence", Fingerprint: "ef537d03bafd0be1fa05de02b58b818b7ec4eb9c7871d34206e45c8f9d73cb9f"},
 }
 
 type SchemaMigrationRecord struct {

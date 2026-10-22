@@ -328,6 +328,7 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 			goal_config_json TEXT,
 			runtime_settings_json TEXT,
 			traffic_profile_json TEXT,
+			joint_evidence_json TEXT,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
@@ -2264,6 +2265,9 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		// legacy (version 1) and keep replaying the current resource.
 		{name: "authoring_mutation_receipts.outcome_version", query: `ALTER TABLE authoring_mutation_receipts ADD COLUMN outcome_version INTEGER NOT NULL DEFAULT 1`},
 		{name: "authoring_mutation_receipts.original_outcome", query: `ALTER TABLE authoring_mutation_receipts ADD COLUMN original_outcome TEXT NOT NULL DEFAULT ''`},
+		// A scenario's joint evidence projection, carried to every run created
+		// from it. Existing scenarios have none.
+		{name: "scenarios.joint_evidence_json", query: `ALTER TABLE scenarios ADD COLUMN joint_evidence_json TEXT`},
 	}
 }
 

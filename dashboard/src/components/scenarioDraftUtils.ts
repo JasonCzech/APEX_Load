@@ -244,6 +244,7 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
       : { stop_on_sla_breach: false, stop_on_max_errors: false, sla_breach_window: '30s' },
     runtimeSettings: cloneRuntimeSettingsDraft(initialScenario?.runtimeSettings),
     ...(initialScenario?.trafficProfile ? { trafficProfile: structuredClone(initialScenario.trafficProfile) } : {}),
+    ...(initialScenario?.jointEvidence ? { jointEvidence: structuredClone(initialScenario.jointEvidence) } : {}),
     ...(initialScenario?.dataPools ? { dataPools: initialScenario.dataPools.map(binding => structuredClone(binding)) } : {}),
     groups: initialScenario?.groups.length
       ? initialScenario.groups.map(cloneScenarioGroup)
@@ -322,6 +323,7 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
       ...(test.elk_capture?.connection_id ? { elkConnectionId: test.elk_capture.connection_id } : {}),
       ...(test.dynatrace_capture?.connection_id ? { dynatraceConnectionId: test.dynatrace_capture.connection_id } : {}),
       ...(test.monitor_bindings ? { monitorBindings: test.monitor_bindings.sources.map(binding => ({ ...binding })) } : {}),
+      ...(test.joint_evidence ? { jointEvidence: structuredClone(test.joint_evidence) } : {}),
       sourceTestId: test.id,
       applicationId: test.application_id,
       releaseId: test.release_id,

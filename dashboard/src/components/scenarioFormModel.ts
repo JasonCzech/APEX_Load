@@ -347,6 +347,7 @@ export function scenarioFormStateFromStoredScenario(
 			: undefined,
     } : undefined,
     traffic_profile: scenario.traffic_profile ? structuredClone(scenario.traffic_profile) : undefined,
+    joint_evidence: scenario.joint_evidence ? structuredClone(scenario.joint_evidence) : undefined,
     runtime_settings: scenario.runtime_settings ? structuredClone(scenario.runtime_settings) : undefined,
     assignment: cloneAssignment(scenario.assignment),
     data_pools: scenario.data_pools?.map(binding => cloneDraft ? {

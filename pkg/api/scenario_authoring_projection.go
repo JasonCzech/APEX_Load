@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -67,6 +68,7 @@ type ScenarioAuthoringDocument struct {
 	GoalConfig       *GoalConfig                        `json:"goal_config,omitempty"`
 	TrafficProfile   *TrafficProfile                    `json:"traffic_profile,omitempty"`
 	RuntimeSettings  *RuntimeSettingsOverride           `json:"runtime_settings,omitempty"`
+	JointEvidence    *engine.JointProjection            `json:"joint_evidence,omitempty"`
 	Groups           []ScenarioAuthoringGroup           `json:"groups"`
 	DataPools        []ScenarioAuthoringDataPoolBinding `json:"data_pools"`
 }
@@ -151,6 +153,7 @@ func buildScenarioAuthoringProjection(snapshot *storage.ScenarioAuthoringSnapsho
 		GoalConfig:      decodeStoredGoalConfig(scenario.GoalConfig),
 		TrafficProfile:  decodeStoredTrafficProfile(scenario.TrafficProfile),
 		RuntimeSettings: maskRuntimeSettingsForEditor(decodeStoredRuntimeSettings(scenario.RuntimeSettings)),
+		JointEvidence:   decodeStoredJointEvidence(scenario.JointEvidence),
 		Groups:          make([]ScenarioAuthoringGroup, 0, len(groups)),
 		DataPools:       make([]ScenarioAuthoringDataPoolBinding, 0, len(snapshot.DataPools)),
 	}

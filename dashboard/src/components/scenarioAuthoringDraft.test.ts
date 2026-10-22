@@ -169,6 +169,16 @@ describe('a scenario draft built from imported scripts', () => {
     expect(() => assertDraftHasNoInlineCredentials(draft.form)).not.toThrow()
   })
 
+  it('keeps a joint evidence projection through a checkpoint and refuses one it could not edit (NA-B)', () => {
+    const value = draft()
+    value.form.joint_evidence = { population: 'transaction', dimensions: ['group', 'property:operation'] }
+    saveScenarioAuthoringDraft(value)
+    expect(readScenarioDraftCheckpoint('project-a')?.form.joint_evidence).toEqual({ population: 'transaction', dimensions: ['group', 'property:operation'] })
+    const malformed = JSON.parse(JSON.stringify(value))
+    malformed.form.joint_evidence = { population: 'action' }
+    expect(parseScenarioDraftCheckpoint(malformed, 'project-a')).toBeNull()
+  })
+
   it('names the groups of scripts that share a name apart, as the builder does', () => {
     const draft = scenarioAuthoringDraftFromScripts('project-a', 'Users', [{ id: 's1', name: 'Get user' }, { id: 's2', name: 'Get user' }, { id: 's3', name: 'get user' }])
     expect(draft.form.groups.map(group => group.name)).toEqual(['Get user', 'Get user (#2)', 'get user (#3)'])

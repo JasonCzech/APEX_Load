@@ -823,6 +823,30 @@ describe('CreateTestModal', () => {
     expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 'run-1' }))
   })
 
+  it("shows the joint evidence a revised copy keeps from its source run (NA-B)", async () => {
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, joint_evidence: { population: 'action', dimensions: ['name', 'group', 'property:operation'] } } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    // No edit here stops a promotion, so there is nothing to warn about.
+    expect(container.querySelector('[data-testid="revision-joint-evidence"]')?.textContent).toBe("Joint evidence: Actions by Name, Group and Property: operation. The revised copy keeps the source run's projection.")
+    // The copy inherits it: the request does not resend it.
+    await click('Create revised copy')
+    expect(apiMock.createTest.mock.calls[0][0]).not.toHaveProperty('joint_evidence')
+  })
+
+  it("warns when a revised copy's edits stop promoting the kept property category (NA-B)", async () => {
+    const scripts = [
+      { id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z', script: { config: { results: { property_analytics: [{ name: 'operation', extraction: 'operation_type', values: ['checkout'] }] } } } },
+      { id: 'script-2', name: 'Browse Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' },
+    ] as never[]
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, joint_evidence: { population: 'action', dimensions: ['name', 'property:operation'] },
+      groups: [{ name: 'orders', script_id: 'script-1', vusers: 1 }, { name: 'browse', script_id: 'script-2', vusers: 1 }] } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={scripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    const notice = () => container.querySelector('[data-testid="revision-joint-evidence"]')?.textContent
+    expect(notice()).toBe("Joint evidence: Actions by Name and Property: operation. The revised copy keeps the source run's projection.")
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[title="Remove group"]')!.click() })
+    expect(notice()).toContain('These changes stop promoting "operation": restore its promotion, or the copy may be refused.')
+  })
+
   it('replays rather than queues another when a replayed draft is created again (AUTH-1)', async () => {
     window.localStorage.clear()
     const replay = { kind: 'replayed' as const, resource: { id: 'run-1', ref_key: 'RUN-1', status: 'QUEUED' } as never }

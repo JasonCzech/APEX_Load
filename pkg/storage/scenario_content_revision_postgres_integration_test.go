@@ -79,6 +79,7 @@ func TestPostgresScenarioContentRevisionIntegration(t *testing.T) {
 		{"active_dependencies_context", exerciseScenarioAuthoringLifecycle},
 		{"monitor_corruption", exerciseScenarioAuthoringMonitorCorruption},
 		{"blank_source_repair", exerciseScenarioRevisionBlankIDRepair},
+		{"joint_evidence", exerciseScenarioJointEvidence},
 	} {
 		t.Run(tc.name, func(t *testing.T) { store, _ := newPostgresScenarioRevisionFixture(t); tc.run(t, store) })
 	}

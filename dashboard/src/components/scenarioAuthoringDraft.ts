@@ -204,7 +204,10 @@ export function parseScenarioDraftCheckpoint(parsed: unknown, project: string): 
     }
     for (const name of ['data_pool_id','data_pool_alias','data_pool_access_mode','data_pool_selection_strategy']) delete f[name]
     if (f.data_pools !== undefined && (!Array.isArray(f.data_pools) || !f.data_pools.every(binding => record(binding) && typeof binding.pool_id === 'string' && typeof binding.alias === 'string' && (binding.access_mode === 'live' ? ['manual', 'next', 'pop', 'lease'] : ['sequential', 'random', 'unique']).includes(String(binding.selection_strategy))))) return null
-    if (['runtime_settings', 'goal_config', 'traffic_profile', 'assignment'].some(name => f[name] !== undefined && !record(f[name]))) return null
+    if (['runtime_settings', 'goal_config', 'traffic_profile', 'joint_evidence', 'assignment'].some(name => f[name] !== undefined && !record(f[name]))) return null
+    // A joint evidence projection the builder could not edit is not a usable draft.
+    const joint = f.joint_evidence
+    if (record(joint) && !((joint.population === 'action' || joint.population === 'transaction') && Array.isArray(joint.dimensions) && joint.dimensions.every(dimension => typeof dimension === 'string'))) return null
     assertDraftHasNoInlineCredentials(f)
     // An intent belongs to a new scenario in this project; anything else is dropped.
     if (d.createIntent !== undefined && !(d.editingId === null && isAuthoringCreateIntent(d.createIntent) && d.createIntent.purpose === 'scenario_create' && d.createIntent.projectId === project)) delete d.createIntent

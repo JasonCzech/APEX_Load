@@ -28,6 +28,7 @@ import ConfiguredGeneratorChips from './ConfiguredGeneratorChips'
 import { formatEstimate } from './generatorNames'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { confirmAction } from './ux/confirmAction'
+import { BROWSER_ITERATION_CATEGORY, describeJointEvidence, jointPropertyCategory, promotedPropertyCategories } from './jointEvidenceModel'
 import { AuthoringCreateNeedsNewIntent, authoringPayloadDigest, forgetAuthoringCreateIntent, nextAuthoringCreateIntent, sendUnderAuthoringCreateIntent, startingAuthoringCreateIntent, type AuthoringCreateIntent } from './authoringCreateIntent'
 
 interface Props {
@@ -107,6 +108,18 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
   const { name, duration, terminationMode, startDelay, scenarioMode, scriptShakeout, resourceBaseline, assignment, groups, goalConfig, runtimeSettings, revisionContext } = scenarioDraft
   const isReviseMode = mode === 'revise-queued-run'
+  // A kept property category that this modal's group edits stop promoting:
+  // the controller refuses a copy whose groups no longer promote it.
+  // Unchanged groups keep the source run's script snapshots, which the
+  // library cannot show, so only the edits are judged here, both sides
+  // against the library's current scripts; the controller decides.
+  const revisionCategory = revisionContext?.jointEvidence?.dimensions.map(jointPropertyCategory).find((name): name is string => name !== null && name !== BROWSER_ITERATION_CATEGORY) ?? null
+  const promotionSource = (draft: { groups: ReadonlyArray<{ scriptId: string; runtimeSettings?: ScenarioDraft['runtimeSettings'] }>; runtimeSettings?: ScenarioDraft['runtimeSettings'] }) => ({ groups: draft.groups.map(group => ({ script_id: group.scriptId, runtimeSettings: group.runtimeSettings })), runtime_settings: draft.runtimeSettings })
+  const revisionCategoryNote = revisionCategory && initialScenario
+    && promotedPropertyCategories(promotionSource(initialScenario), scripts).includes(revisionCategory)
+    && !promotedPropertyCategories(promotionSource({ groups, runtimeSettings }), scripts).includes(revisionCategory)
+    ? `These changes stop promoting "${revisionCategory}": restore its promotion, or the copy may be refused.`
+    : ''
   const modalTitle = isReviseMode ? 'Create revised queued run' : 'Create queued run'
   const submitLabel = isReviseMode ? 'Create revised copy' : 'Create queued run'
   const loadingLabel = isReviseMode ? 'Creating revised copy…' : 'Creating queued run…'
@@ -611,6 +624,12 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 				onGroupOverrideChange={(index, value) => updateGroup(index, { transactionResponseTimeSlaMs: value })}
 			/>
 
+          {revisionContext?.jointEvidence && (
+            <p className="settings-inline-notice" data-testid="revision-joint-evidence">
+              {`Joint evidence: ${describeJointEvidence(revisionContext.jointEvidence)}. The revised copy keeps the source run's projection.`}
+              {revisionCategoryNote ? ` ${revisionCategoryNote}` : ''}
+            </p>
+          )}
           <RunMonitorBindingSelector projectId={revisionContext?.projectId ?? projectId} scenarioId={revisionContext?.scenarioId} legacyELKConnectionId={elkConnectionId} onConflictChange={setElasticMonitorConflict} value={monitorBindings} onChange={setMonitorBindings} />
           <MonitorRuleEditor projectId={revisionContext?.projectId ?? projectId} value={goalConfig.monitor_rules || []} onChange={rules => updateGoalConfig('monitor_rules', rules)} onValidationChange={setMonitorEditorError} />
           <CreateTestRuntimeOverrides
