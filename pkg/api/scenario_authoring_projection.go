@@ -70,6 +70,7 @@ type ScenarioAuthoringDocument struct {
 	RuntimeSettings             *RuntimeSettingsOverride           `json:"runtime_settings,omitempty"`
 	JointEvidence               *engine.JointProjection            `json:"joint_evidence,omitempty"`
 	TelemetryAcceptancePolicyID string                             `json:"telemetry_acceptance_policy_id,omitempty"`
+	TelemetryBudgetPolicyID     string                             `json:"telemetry_budget_policy_id,omitempty"`
 	Groups                      []ScenarioAuthoringGroup           `json:"groups"`
 	DataPools                   []ScenarioAuthoringDataPoolBinding `json:"data_pools"`
 }
@@ -156,6 +157,7 @@ func buildScenarioAuthoringProjection(snapshot *storage.ScenarioAuthoringSnapsho
 		RuntimeSettings:             maskRuntimeSettingsForEditor(decodeStoredRuntimeSettings(scenario.RuntimeSettings)),
 		JointEvidence:               decodeStoredJointEvidence(scenario.JointEvidence),
 		TelemetryAcceptancePolicyID: scenario.TelemetryAcceptancePolicyID,
+		TelemetryBudgetPolicyID:     scenario.TelemetryBudgetPolicyID,
 		Groups:                      make([]ScenarioAuthoringGroup, 0, len(groups)),
 		DataPools:                   make([]ScenarioAuthoringDataPoolBinding, 0, len(snapshot.DataPools)),
 	}

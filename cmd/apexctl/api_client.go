@@ -29,6 +29,9 @@ type ApiClient struct {
 	// TelemetryPolicy chooses the created run's telemetry acceptance policy;
 	// the controller must echo it before the run starts.
 	TelemetryPolicy string
+	// TelemetryBudgetPolicy chooses the telemetry budget policy that sets the
+	// created run's live budgets; the controller must echo it too.
+	TelemetryBudgetPolicy string
 	// pollWait is a test seam for entering a terminal polling condition without
 	// spending the command-wide timeout budget on preparation requests.
 	pollWait func(context.Context, time.Duration) error
@@ -391,6 +394,7 @@ func (c *ApiClient) createTestContext(ctx context.Context, scriptID string, vuse
 		RampUp:                      rampUp,
 		VUsers:                      vusers,
 		TelemetryAcceptancePolicyID: c.TelemetryPolicy,
+		TelemetryBudgetPolicyID:     c.TelemetryBudgetPolicy,
 	}
 	if goalConfig != nil {
 		reqBody.ScenarioMode = "goal_oriented"
@@ -409,7 +413,7 @@ func (c *ApiClient) createTestContext(ctx context.Context, scriptID string, vuse
 		// A controller refusing the chosen policy (missing: 400, invalid:
 		// 409) refuses the command's input, as apexctl ci run reports it.
 		// Other refusals keep their usual classification.
-		if c.TelemetryPolicy != "" && (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusConflict) && telemetryPolicyRefusal(string(b)) {
+		if (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusConflict) && ((c.TelemetryPolicy != "" && telemetryPolicyRefusal(string(b))) || (c.TelemetryBudgetPolicy != "" && telemetryBudgetPolicyRefusal(string(b)))) {
 			return "", cliConfigurationErrorf("bad status: %s, %s", resp.Status, string(b))
 		}
 		return "", fmt.Errorf("bad status: %s, %s", resp.Status, string(b))
@@ -425,19 +429,29 @@ func (c *ApiClient) createTestContext(ctx context.Context, scriptID string, vuse
 	// A controller that predates policy selection ignores the choice and
 	// would judge the run by the project's default: the queued run is
 	// deleted before it starts, never reported as judged by the choice.
+	// Likewise for the budget choice, which such a controller would replace
+	// with its system threshold settings.
+	var unconfirmed error
 	if chosen := c.TelemetryPolicy; chosen != "" && test.TelemetryAcceptancePolicyID != chosen {
-		var err error
 		if test.TelemetryAcceptancePolicyID == "" {
-			err = cliConfigurationErrorf("the controller did not confirm --telemetry-policy %q, so the run would be judged by the project's default telemetry policy; upgrade the controller", chosen)
+			unconfirmed = cliConfigurationErrorf("the controller did not confirm --telemetry-policy %q, so the run would be judged by the project's default telemetry policy; upgrade the controller", chosen)
 		} else {
-			err = cliConfigurationErrorf("the controller did not confirm --telemetry-policy %q: it reported the run's policy as %q", chosen, test.TelemetryAcceptancePolicyID)
+			unconfirmed = cliConfigurationErrorf("the controller did not confirm --telemetry-policy %q: it reported the run's policy as %q", chosen, test.TelemetryAcceptancePolicyID)
 		}
+	} else if chosen := c.TelemetryBudgetPolicy; chosen != "" && test.TelemetryBudgetPolicyID != chosen {
+		if test.TelemetryBudgetPolicyID == "" {
+			unconfirmed = cliConfigurationErrorf("the controller did not confirm --telemetry-budget-policy %q, so the run would be classified by the system threshold settings; upgrade the controller", chosen)
+		} else {
+			unconfirmed = cliConfigurationErrorf("the controller did not confirm --telemetry-budget-policy %q: it reported the run's budget policy as %q", chosen, test.TelemetryBudgetPolicyID)
+		}
+	}
+	if unconfirmed != nil {
 		if deleteErr := c.deleteQueuedTestContext(context.WithoutCancel(ctx), test.ID); deleteErr != nil {
 			// The queued run is still on the controller: a controller
 			// failure (exit 3), naming the run to delete.
-			return "", fmt.Errorf("%s; the unconfirmed queued run %s could not be deleted, delete it before it is started: %w", err.Error(), test.ID, deleteErr)
+			return "", fmt.Errorf("%s; the unconfirmed queued run %s could not be deleted, delete it before it is started: %w", unconfirmed.Error(), test.ID, deleteErr)
 		}
-		return "", err
+		return "", unconfirmed
 	}
 	return test.ID, nil
 }
@@ -449,6 +463,16 @@ func (c *ApiClient) createTestContext(ctx context.Context, scriptID string, vuse
 func telemetryPolicyRefusal(body string) bool {
 	body = strings.ToLower(body)
 	return strings.Contains(body, "telemetry acceptance policy") || strings.Contains(body, "telemetry_acceptance_policy")
+}
+
+// telemetryBudgetPolicyRefusal reports a create refusal that names the
+// chosen telemetry budget policy: a missing one ("telemetry budget policy ...
+// was not found"), an over-long ID ("telemetry_budget_policy_id ..."), an
+// invalid one ("... telemetry_policy policy ... is invalid", "telemetry
+// budget policy ... is invalid") or one with another sustained window.
+func telemetryBudgetPolicyRefusal(body string) bool {
+	body = strings.ToLower(body)
+	return strings.Contains(body, "telemetry budget policy") || strings.Contains(body, "telemetry_budget_policy") || strings.Contains(body, "telemetry_policy policy")
 }
 
 // deleteQueuedTestContext deletes a run that was created but never started.

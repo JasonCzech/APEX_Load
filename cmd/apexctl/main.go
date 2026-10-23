@@ -123,6 +123,7 @@ func runTest() {
 		client := NewApiClientWithAuth(args.api, args.apiKey, args.bearerToken)
 		client.PollTimeout = args.timeout
 		client.TelemetryPolicy = args.telemetryPolicy
+		client.TelemetryBudgetPolicy = args.telemetryBudgetPolicy
 		apiResult, runErr = client.RunPreparedTest(args.script, scriptBody, args.vusers, args.duration.String(), args.rampUp.String(), args.format, goalConfig)
 		if apiResult != nil {
 			slaSummary = apiResult.SLASummary
@@ -319,6 +320,7 @@ type runArgs struct {
 	transactionRules         []runcontract.TransactionSLARule
 	transactionRulesFile     string
 	telemetryPolicy          string
+	telemetryBudgetPolicy    string
 }
 
 type envAssignments map[string]string
@@ -386,6 +388,7 @@ func parseRunArgs(args []string) runArgs {
 	})
 	flags.StringVar(&r.transactionRulesFile, "transaction-rules-file", "", "JSON transaction SLA rule file")
 	flags.StringVar(&r.telemetryPolicy, "telemetry-policy", "", "judge the run by this project telemetry acceptance policy (its ID) instead of the project's default")
+	flags.StringVar(&r.telemetryBudgetPolicy, "telemetry-budget-policy", "", "set the run's live telemetry budgets from this project telemetry budget policy (its ID) instead of the system threshold settings")
 	if err := flags.Parse(args); err != nil {
 		r.err = err
 	} else if flags.NArg() != 0 {
@@ -416,6 +419,8 @@ func parseRunArgs(args []string) runArgs {
 		r.err = fmt.Errorf("invalid transaction SLA rule: %w", err)
 	} else if policy := strings.TrimSpace(r.telemetryPolicy); policy != "" && policy != "project_default" && strings.TrimSpace(r.api) == "" {
 		r.err = fmt.Errorf("--telemetry-policy requires --api: a local run has no telemetry acceptance policy")
+	} else if policy := strings.TrimSpace(r.telemetryBudgetPolicy); policy != "" && policy != "project_default" && strings.TrimSpace(r.api) == "" {
+		r.err = fmt.Errorf("--telemetry-budget-policy requires --api: a local run has no telemetry budget policy")
 	} else if r.timeout == 0 {
 		r.timeout = r.duration + 30*time.Minute
 	}
@@ -423,6 +428,11 @@ func parseRunArgs(args []string) runArgs {
 	// already selects.
 	if r.telemetryPolicy = strings.TrimSpace(r.telemetryPolicy); r.telemetryPolicy == "project_default" {
 		r.telemetryPolicy = ""
+	}
+	// For the budget choice, project_default is the system threshold
+	// settings, which omitting the flag already selects.
+	if r.telemetryBudgetPolicy = strings.TrimSpace(r.telemetryBudgetPolicy); r.telemetryBudgetPolicy == "project_default" {
+		r.telemetryBudgetPolicy = ""
 	}
 	r.api = strings.TrimRight(strings.TrimSpace(r.api), "/")
 	r.apiKey = strings.TrimSpace(r.apiKey)
@@ -487,6 +497,9 @@ Run Flags:
                                   project's default (requires --api). The controller must confirm the choice
                                   before the run starts; otherwise the queued run is deleted (exit 2), or
                                   named if it could not be deleted (exit 3).
+  --telemetry-budget-policy ID    Set the run's live telemetry budgets from this project telemetry budget
+                                  policy instead of the system threshold settings (requires --api). The
+                                  controller must confirm it as for --telemetry-policy.
 
 Examples:
   apexctl run --script order-flow.json --vusers 100 --duration 5m

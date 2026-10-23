@@ -461,6 +461,7 @@ func (tr *TestRunner) buildStoredScenarioFromPartsLocked(scenario *storage.Scena
 		RuntimeSettings:             decodeStoredRuntimeSettings(scenario.RuntimeSettings),
 		JointEvidence:               decodeStoredJointEvidence(scenario.JointEvidence),
 		TelemetryAcceptancePolicyID: scenario.TelemetryAcceptancePolicyID,
+		TelemetryBudgetPolicyID:     scenario.TelemetryBudgetPolicyID,
 		Scripts:                     refs,
 		Schedules:                   schedules,
 		DataPools:                   dataPools,
@@ -1593,6 +1594,7 @@ func storedScenarioToStorage(stored *StoredScenario) *storage.Scenario {
 		RuntimeSettings:             runtimeSettingsForStorage(stored.RuntimeSettings),
 		JointEvidence:               jointEvidenceForStorage(stored.JointEvidence),
 		TelemetryAcceptancePolicyID: stored.TelemetryAcceptancePolicyID,
+		TelemetryBudgetPolicyID:     stored.TelemetryBudgetPolicyID,
 		CreatedAt:                   stored.CreatedAt,
 		UpdatedAt:                   stored.UpdatedAt,
 	}

@@ -89,9 +89,14 @@ vi.mock('../hooks/useProject', () => ({
   useProject: () => projectState,
 }))
 
-// The project's telemetry acceptance policies (TEL-B); none by default.
-const telemetryPolicyList = vi.hoisted(() => vi.fn(async (): Promise<unknown[]> => []))
-vi.mock('../hooks/api/analysisPoliciesApi', () => ({ analysisPoliciesApi: { list: telemetryPolicyList } }))
+// The project's telemetry acceptance and budget policies (TEL-B), each kind
+// read by its own mock; none by default.
+type PolicyListCall = (projectId: string, kind: string, signal?: AbortSignal) => Promise<unknown[]>
+const telemetryPolicyList = vi.hoisted(() => vi.fn<PolicyListCall>(async () => []))
+const telemetryBudgetPolicyList = vi.hoisted(() => vi.fn<PolicyListCall>(async () => []))
+vi.mock('../hooks/api/analysisPoliciesApi', () => ({ analysisPoliciesApi: {
+  list: (projectId: string, kind: string, signal?: AbortSignal) => kind === 'telemetry_policy' ? telemetryBudgetPolicyList(projectId, kind, signal) : telemetryPolicyList(projectId, kind, signal),
+} }))
 
 // Isolate the scenario's save-handoff decisions; real import/editor persistence
 // is covered by workflow-scenario-composition through the HTTP controller.
@@ -748,6 +753,8 @@ describe('TestHub', () => {
     localStorage.clear()
     telemetryPolicyList.mockReset()
     telemetryPolicyList.mockResolvedValue([])
+    telemetryBudgetPolicyList.mockReset()
+    telemetryBudgetPolicyList.mockResolvedValue([])
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -1421,6 +1428,88 @@ describe('TestHub', () => {
     await flushPromises()
     expect(apiMock.updateScenario).toHaveBeenCalledTimes(1)
     expect(apiMock.updateScenario.mock.calls[0][1]).not.toHaveProperty('telemetry_acceptance_policy_id')
+  })
+
+  it('saves the telemetry budget policy that sets the live budgets of every run of the scenario (TEL-B)', async () => {
+    telemetryBudgetPolicyList.mockResolvedValue([
+      { id: 'house-budgets', project_id: 'project-1', kind: 'telemetry_policy', name: 'House budgets', revision: 1, definition: { version: 1, apply_by_default: true }, deleted: false, created_at: '' },
+      { id: 'tight-budgets', project_id: 'project-1', kind: 'telemetry_policy', name: 'Tight budgets', revision: 2, definition: { version: 1, sustained_window_seconds: 15 }, deleted: false, created_at: '' },
+    ])
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Budget probe'))
+    await clickWizardStep('Run settings')
+    await clickScenarioSettingsSection('Advanced settings')
+    await flushPromises()
+    expect(telemetryBudgetPolicyList).toHaveBeenCalledWith('project-1', 'telemetry_policy', expect.anything())
+    const select = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-budget-policy-select"] select')!
+    // The project's default budget policy never sets a run's budgets.
+    expect(select.options[0].textContent).toBe('System threshold settings')
+    await act(async () => setSelectValue(select, 'tight-budgets'))
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({ name: 'Budget probe', telemetry_budget_policy_id: 'tight-budgets' }))
+    expect(apiMock.createScenario.mock.calls[0][0]).not.toHaveProperty('telemetry_acceptance_policy_id')
+  })
+
+  it('saves an unrelated edit that keeps a stored telemetry budget policy deleted since, and never estimates with it (TEL-B)', async () => {
+    const stored: StoredScenario = { id: 'budget-kept', name: 'Budget kept', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven',
+      telemetry_budget_policy_id: 'gone-budgets',
+      scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await flushPromises()
+    await clickWizardStep('Run settings')
+    await clickScenarioSettingsSection('Advanced settings')
+    await flushPromises()
+    const select = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-budget-policy-select"] select')!
+    expect(select.selectedOptions[0].textContent).toBe('gone-budgets (no longer available)')
+    expect(container.querySelector('[data-testid="telemetry-budget-policy-select"] .settings-inline-warning')?.textContent).toContain('runs created from it are refused')
+    await clickWizardStep('Review')
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Budget kept, renamed'))
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.updateScenario).toHaveBeenCalledTimes(1)
+    expect(apiMock.updateScenario.mock.calls[0][1]).toMatchObject({ name: 'Budget kept, renamed', telemetry_budget_policy_id: 'gone-budgets' })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)) })
+    expect(apiMock.estimateTest).toHaveBeenCalled()
+    for (const [request] of apiMock.estimateTest.mock.calls) expect(request).not.toHaveProperty('telemetry_budget_policy_id')
+  })
+
+  it('blocks a telemetry budget policy revised since the select loaded to one it cannot use, judged by a fresh read, and opens the panel that shows it (TEL-B)', async () => {
+    const tight = { id: 'tight-budgets', project_id: 'project-1', kind: 'telemetry_policy', name: 'Tight budgets', revision: 1, definition: { version: 1 }, deleted: false, created_at: '' }
+    // The select's first read offers tight-budgets; the save check's read
+    // (and the select's reload) find it changed to another sustained window.
+    telemetryBudgetPolicyList.mockResolvedValue([{ ...tight, revision: 2, definition: { version: 1, sustained_window_seconds: 30 } }])
+    telemetryBudgetPolicyList.mockResolvedValueOnce([tight])
+    const stored: StoredScenario = { id: 'budget-edit', name: 'Budget edit', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven',
+      scripts: [{ order: 0, script_id: 'script-1', vusers: 2 }], created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await flushPromises()
+    await clickWizardStep('Run settings')
+    await clickScenarioSettingsSection('Advanced settings')
+    await flushPromises()
+    await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[data-testid="telemetry-budget-policy-select"] select')!, 'tight-budgets'))
+    await clickWizardStep('Review')
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.updateScenario).not.toHaveBeenCalled()
+    expect(container.querySelector('.page-error-banner')?.textContent).toContain('"tight-budgets" cannot set a run\'s budgets: it sets a 30 s sustained window')
+    const select = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-budget-policy-select"] select')!
+    expect(select.value).toBe('tight-budgets')
+    expect(select.getAttribute('aria-invalid')).toBe('true')
+    // Dropping the choice returns to the system threshold settings and saves none.
+    await act(async () => setSelectValue(select, ''))
+    await clickButton('Save scenario')
+    await flushPromises()
+    expect(apiMock.updateScenario).toHaveBeenCalledTimes(1)
+    expect(apiMock.updateScenario.mock.calls[0][1]).not.toHaveProperty('telemetry_budget_policy_id')
   })
 
   it('reloads an open telemetry policy select when a save is blocked by a policy deleted since it loaded (TEL-B)', async () => {

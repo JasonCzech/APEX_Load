@@ -120,6 +120,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const policyCheckAbortRef = useRef<AbortController | null>(null)
   useEffect(() => () => policyCheckAbortRef.current?.abort(), [])
   const [telemetryPolicyRefresh, setTelemetryPolicyRefresh] = useState(0)
+  const [telemetryBudgetPolicyRefresh, setTelemetryBudgetPolicyRefresh] = useState(0)
   useEffect(() => {
     mountedRef.current = true
     return () => { mountedRef.current = false }
@@ -304,27 +305,33 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     if (monitorEditorError) { setError(monitorEditorError); return false }
     if (elasticMonitorConflict) { setError('Turn legacy Elastic log capture off or remove the conflicting run-bound source before launching.'); return false }
     if (captureNeedsReview) { setError('Review the unavailable capture connection, retry, or explicitly turn capture off before launching.'); return false }
-    // A chosen (or kept) telemetry acceptance policy the project no longer has
-    // is refused here, against a fresh read, rather than by the controller.
-    // The modal shows it is busy from here on.
+    // A chosen (or kept) telemetry acceptance or budget policy the project no
+    // longer has (or, for budgets, cannot use) is refused here, against a
+    // fresh read, rather than by the controller. The modal shows it is busy
+    // from here on.
     setError('')
     setLoading(true)
     policyCheckAbortRef.current = new AbortController()
     // Fields stay editable (keyboard focus must not be lost); a form changed
     // while its policy was checked is not created from the stale snapshot.
     const checkedFingerprint = authoringFingerprint
-    const policyIssue = await telemetryPolicySaveIssue(revisionContext?.projectId ?? projectId, scenarioDraft.telemetryAcceptancePolicyId, revisionContext?.telemetryAcceptancePolicyId, undefined, policyCheckAbortRef.current.signal)
+    const policyProject = revisionContext?.projectId ?? projectId
+    const [acceptanceIssue, budgetIssue] = await Promise.all([
+      telemetryPolicySaveIssue(policyProject, scenarioDraft.telemetryAcceptancePolicyId, revisionContext?.telemetryAcceptancePolicyId, undefined, policyCheckAbortRef.current.signal),
+      telemetryPolicySaveIssue(policyProject, scenarioDraft.telemetryBudgetPolicyId, revisionContext?.telemetryBudgetPolicyId, undefined, policyCheckAbortRef.current.signal, 'budget'),
+    ])
     if (!mountedRef.current) return false
     if (latestAuthoringFingerprintRef.current !== checkedFingerprint) {
       setLoading(false)
-      setError('The run settings changed while the telemetry acceptance policy was being checked; review them and create again.')
+      setError('The run settings changed while the telemetry policies were being checked; review them and create again.')
       return false
     }
-    if (policyIssue) {
+    if (acceptanceIssue || budgetIssue) {
       setLoading(false)
-      setError(policyIssue)
-      // The select reloads, so it marks the policy the project lost.
-      setTelemetryPolicyRefresh(count => count + 1)
+      setError([acceptanceIssue, budgetIssue].filter(Boolean).join(' '))
+      // The blocking select reloads, so it marks the policy the project lost.
+      if (acceptanceIssue) setTelemetryPolicyRefresh(count => count + 1)
+      if (budgetIssue) setTelemetryBudgetPolicyRefresh(count => count + 1)
       return false
     }
     // A replay notice stays until another run is queued: a later refusal of a
@@ -680,6 +687,15 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
             inheritedId={revisionContext?.telemetryAcceptancePolicyId}
             refreshKey={telemetryPolicyRefresh}
             onChange={value => updateScenarioField('telemetryAcceptancePolicyId', value || undefined)}
+          />
+          <TelemetryPolicySelect
+            kind="budget"
+            projectId={revisionContext?.projectId ?? projectId}
+            subject="run"
+            value={scenarioDraft.telemetryBudgetPolicyId ?? ''}
+            inheritedId={revisionContext?.telemetryBudgetPolicyId}
+            refreshKey={telemetryBudgetPolicyRefresh}
+            onChange={value => updateScenarioField('telemetryBudgetPolicyId', value || undefined)}
           />
           <RunMonitorBindingSelector projectId={revisionContext?.projectId ?? projectId} scenarioId={revisionContext?.scenarioId} legacyELKConnectionId={elkConnectionId} onConflictChange={setElasticMonitorConflict} value={monitorBindings} onChange={setMonitorBindings} />
           <MonitorRuleEditor projectId={revisionContext?.projectId ?? projectId} value={goalConfig.monitor_rules || []} onChange={rules => updateGoalConfig('monitor_rules', rules)} onValidationChange={setMonitorEditorError} />

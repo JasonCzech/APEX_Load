@@ -872,9 +872,13 @@ type Scenario struct {
 	// TelemetryAcceptancePolicyID names the project telemetry acceptance
 	// policy every run created from the scenario inherits; empty uses the
 	// project's default.
-	TelemetryAcceptancePolicyID string    `json:"telemetry_acceptance_policy_id,omitempty"`
-	CreatedAt                   time.Time `json:"created_at"`
-	UpdatedAt                   time.Time `json:"updated_at"`
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID names the project telemetry budget policy that
+	// sets the live budgets of every run created from the scenario; empty
+	// uses the system threshold settings.
+	TelemetryBudgetPolicyID string    `json:"telemetry_budget_policy_id,omitempty"`
+	CreatedAt               time.Time `json:"created_at"`
+	UpdatedAt               time.Time `json:"updated_at"`
 }
 
 type ScenarioScript struct {

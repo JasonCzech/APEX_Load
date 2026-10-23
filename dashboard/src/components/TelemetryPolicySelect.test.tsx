@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TelemetryPolicySelect from './TelemetryPolicySelect'
-import { TELEMETRY_POLICY_PROJECT_DEFAULT, TELEMETRY_POLICY_SAVE_READ_TIMEOUT_MS, telemetryPolicyIssue, telemetryPolicySaveIssue } from './telemetryAcceptanceChoice'
+import { TELEMETRY_POLICY_PROJECT_DEFAULT, TELEMETRY_POLICY_SAVE_READ_TIMEOUT_MS, telemetryPolicyIssue, telemetryPolicySaveIssue, telemetryPolicyUnusableReason } from './telemetryAcceptanceChoice'
 import type { AnalysisPolicyRecord } from '../hooks/api/analysisPoliciesApi'
 
 const list = vi.hoisted(() => vi.fn())
@@ -163,5 +163,92 @@ describe('TelemetryPolicySelect (TEL-B)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+const budget = (id: string, name: string, definition: unknown = { version: 1, sustained_window_seconds: 15 }): AnalysisPolicyRecord =>
+  ({ id, project_id: 'project-a', kind: 'telemetry_policy', name, revision: 1, definition, deleted: false, created_at: '' })
+
+// A project's default budget policy is pinned only: it never sets a run's budgets.
+const budgets = [budget('house-budgets', 'House budgets', { version: 1, apply_by_default: true }), budget('tight-budgets', 'Tight budgets'), budget('slow-window', 'Slow window', { version: 1, sustained_window_seconds: 30 })]
+const budgetSelect = () => container.querySelector<HTMLSelectElement>('[data-testid="telemetry-budget-policy-select"] select')!
+const budgetLabels = () => Array.from(budgetSelect().options).map(option => `${option.value}=${option.textContent}${option.disabled ? ' [disabled]' : ''}`)
+
+describe('TelemetryPolicySelect budget (TEL-B)', () => {
+  it("offers the project's budget policies beside the system threshold settings, never a project default", async () => {
+    list.mockResolvedValue(budgets)
+    const onChange = vi.fn()
+    await act(async () => root.render(<TelemetryPolicySelect kind="budget" projectId="project-a" subject="scenario" value="" onChange={onChange} />))
+    await flush()
+    expect(list).toHaveBeenCalledWith('project-a', 'telemetry_policy', expect.any(AbortSignal))
+    expect(container.textContent).toContain('Telemetry budget policy')
+    expect(budgetLabels()).toEqual([
+      '=System threshold settings',
+      'house-budgets=House budgets (house-budgets)',
+      'tight-budgets=Tight budgets (tight-budgets)',
+      "slow-window=Slow window (slow-window) (unusable: it sets a 30 s sustained window, and a run's live classification uses 15 s) [disabled]",
+    ])
+    expect(document.getElementById(budgetSelect().getAttribute('aria-describedby')!)?.textContent).toContain('takes its live telemetry budgets from this policy')
+    await act(async () => {
+      budgetSelect().value = 'tight-budgets'
+      budgetSelect().dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onChange).toHaveBeenCalledWith('tight-budgets')
+  })
+
+  it('names a chosen budget policy the project cannot use, or no longer has', async () => {
+    list.mockResolvedValue(budgets)
+    await act(async () => root.render(<TelemetryPolicySelect kind="budget" projectId="project-a" subject="run" value="slow-window" onChange={vi.fn()} />))
+    await flush()
+    expect(budgetSelect().value).toBe('slow-window')
+    // The choice itself stays selectable so the issue can name it.
+    expect(budgetSelect().selectedOptions[0].disabled).toBe(false)
+    expect(container.querySelector('.form-error')?.textContent).toBe(`The chosen telemetry budget policy "slow-window" cannot set a run's budgets: it sets a 30 s sustained window, and a run's live classification uses 15 s; choose another or the system threshold settings.`)
+    expect(budgetSelect().getAttribute('aria-invalid')).toBe('true')
+    await act(async () => root.render(<TelemetryPolicySelect kind="budget" projectId="project-a" subject="run" value="gone-budgets" onChange={vi.fn()} />))
+    await flush()
+    expect(budgetLabels()).toContain('gone-budgets=gone-budgets (no longer available)')
+    expect(container.querySelector('.form-error')?.textContent).toContain('"gone-budgets" no longer exists in this project; choose another or the system threshold settings.')
+  })
+
+  it("lets a revised copy keep its source run's budget choice or drop it for the system threshold settings", async () => {
+    list.mockResolvedValue(budgets)
+    await act(async () => root.render(<TelemetryPolicySelect kind="budget" projectId="project-a" subject="run" value="" inheritedId="gone-budgets" onChange={vi.fn()} />))
+    await flush()
+    expect(budgetLabels().slice(0, 2)).toEqual(["=Keep the source run's choice (gone-budgets (no longer available))", `${TELEMETRY_POLICY_PROJECT_DEFAULT}=System threshold settings`])
+    expect(container.querySelector('.form-error')?.textContent).toContain(`The source run's telemetry budget policy "gone-budgets" no longer exists`)
+  })
+
+  it("warns that runs will be refused when the scenario's stored budget choice is gone", async () => {
+    list.mockResolvedValue(budgets)
+    await act(async () => root.render(<TelemetryPolicySelect kind="budget" projectId="project-a" subject="scenario" value="gone-budgets" storedId="gone-budgets" onChange={vi.fn()} />))
+    await flush()
+    expect(container.querySelector('.form-error')).toBeNull()
+    expect(container.querySelector('.settings-inline-warning')?.textContent).toBe(`The scenario's telemetry budget policy "gone-budgets" no longer exists in this project: runs created from it are refused until you choose another or the system threshold settings.`)
+    expect(budgetSelect().getAttribute('aria-invalid')).toBeNull()
+  })
+
+  it('keeps the current budget choice when the budget policies cannot be loaded', async () => {
+    list.mockRejectedValue(new Error('offline'))
+    await act(async () => root.render(<TelemetryPolicySelect kind="budget" projectId="project-a" subject="run" value="tight-budgets" onChange={vi.fn()} />))
+    await flush()
+    expect(budgetSelect().value).toBe('tight-budgets')
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("The project's telemetry budget policies could not be loaded; the current choice is kept.")
+  })
+
+  it('judges a budget choice by kind, including the sustained window', async () => {
+    expect(telemetryPolicyUnusableReason(budgets[2], 'budget')).toContain('30 s sustained window')
+    expect(telemetryPolicyUnusableReason(budgets[2])).toBe('')
+    expect(telemetryPolicyUnusableReason(budgets[0], 'budget')).toBe('')
+    expect(telemetryPolicyIssue('tight-budgets', budgets, undefined, 'budget')).toBe('')
+    expect(telemetryPolicyIssue('slow-window', budgets, undefined, 'budget')).toContain('cannot set a run\'s budgets')
+    expect(telemetryPolicyIssue('', budgets, 'slow-window', 'budget')).toContain("source run's telemetry budget policy")
+    list.mockResolvedValue(budgets)
+    expect(await telemetryPolicySaveIssue('project-a', 'slow-window', undefined, undefined, undefined, 'budget')).toContain('cannot set a run')
+    expect(list).toHaveBeenLastCalledWith('project-a', 'telemetry_policy', expect.any(AbortSignal))
+    list.mockClear()
+    expect(await telemetryPolicySaveIssue('project-a', 'slow-window', undefined, 'slow-window', undefined, 'budget')).toBe('')
+    expect(await telemetryPolicySaveIssue('project-a', TELEMETRY_POLICY_PROJECT_DEFAULT, 'slow-window', undefined, undefined, 'budget')).toBe('')
+    expect(list).not.toHaveBeenCalled()
   })
 })

@@ -1487,8 +1487,15 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	} else {
 		telemetryBudgetPolicyID, err = tr.validateRunTelemetryBudgetPolicy(projectID, req.TelemetryBudgetPolicyID)
 	}
+	if errors.Is(err, errRunPolicyStoreUnavailable) && req.telemetryBudgetPolicyFromScenario {
+		// As for the acceptance choice: the scenario's choice was judged at
+		// save, and Start pins it or refuses.
+		telemetryBudgetPolicyID, err = normalizeTelemetryPolicyChoice(req.TelemetryBudgetPolicyID), nil
+	}
 	if err != nil && req.telemetryBudgetPolicyInherited && !errors.Is(err, errRunPolicyStoreUnavailable) {
 		err = fmt.Errorf("the source run's chosen telemetry budget policy is no longer usable (%w); name another, or %s for the system threshold settings", err, runPolicyProjectDefault)
+	} else if err != nil && req.telemetryBudgetPolicyFromScenario && !errors.Is(err, errRunPolicyStoreUnavailable) {
+		err = fmt.Errorf("the scenario's chosen telemetry budget policy is no longer usable (%w); choose another in the scenario, or name one (or %s for the system threshold settings) on the run", err, runPolicyProjectDefault)
 	}
 	if err != nil {
 		return nil, err
@@ -2150,6 +2157,11 @@ func createTestRequestFromScenarioRevision(req CreateTestRequest, scenario *Stor
 		if strings.TrimSpace(req.TelemetryAcceptancePolicyID) == "" && scenario.TelemetryAcceptancePolicyID != "" {
 			req.TelemetryAcceptancePolicyID = scenario.TelemetryAcceptancePolicyID
 			req.telemetryPolicyFromScenario = true
+		}
+		// And its chosen telemetry budget policy, likewise.
+		if strings.TrimSpace(req.TelemetryBudgetPolicyID) == "" && scenario.TelemetryBudgetPolicyID != "" {
+			req.TelemetryBudgetPolicyID = scenario.TelemetryBudgetPolicyID
+			req.telemetryBudgetPolicyFromScenario = true
 		}
 	}
 

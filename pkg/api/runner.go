@@ -1658,18 +1658,23 @@ type StoredScenario struct {
 	// TelemetryAcceptancePolicyID names the project telemetry acceptance
 	// policy every run created from this scenario is judged by, unless the
 	// run's request names another; empty uses the project's default.
-	TelemetryAcceptancePolicyID string                            `json:"telemetry_acceptance_policy_id,omitempty"`
-	Scripts                     []ScenarioScriptRef               `json:"scripts"`
-	Schedules                   []*storage.ScenarioSchedule       `json:"schedules,omitempty"`
-	DataPools                   []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
-	CreatedAt                   time.Time                         `json:"created_at"`
-	UpdatedAt                   time.Time                         `json:"updated_at"`
-	ScriptCount                 int                               `json:"script_count"`
-	ResultCount                 int                               `json:"result_count,omitempty"`
-	AssociatedReleases          []ReleaseRef                      `json:"associated_releases,omitempty"`
-	LastRunTestID               string                            `json:"last_run_test_id,omitempty"`
-	LastRunAt                   *time.Time                        `json:"last_run_at,omitempty"`
-	LastRunEndedAt              *time.Time                        `json:"last_run_ended_at,omitempty"`
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID names the project telemetry budget policy that
+	// sets the live budgets of every run created from this scenario, unless
+	// the run's request names another; empty uses the system threshold
+	// settings.
+	TelemetryBudgetPolicyID string                            `json:"telemetry_budget_policy_id,omitempty"`
+	Scripts                 []ScenarioScriptRef               `json:"scripts"`
+	Schedules               []*storage.ScenarioSchedule       `json:"schedules,omitempty"`
+	DataPools               []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	CreatedAt               time.Time                         `json:"created_at"`
+	UpdatedAt               time.Time                         `json:"updated_at"`
+	ScriptCount             int                               `json:"script_count"`
+	ResultCount             int                               `json:"result_count,omitempty"`
+	AssociatedReleases      []ReleaseRef                      `json:"associated_releases,omitempty"`
+	LastRunTestID           string                            `json:"last_run_test_id,omitempty"`
+	LastRunAt               *time.Time                        `json:"last_run_at,omitempty"`
+	LastRunEndedAt          *time.Time                        `json:"last_run_ended_at,omitempty"`
 	// ContentRevision and AuthoringProjection are set on create and save
 	// responses from the snapshot read in the write transaction, and on an
 	// idempotent create replay only when the durable snapshot is the state in
@@ -2352,6 +2357,9 @@ type CreateTestRequest struct {
 	// telemetryPolicyFromScenario says the choice came from the run's
 	// scenario (a direct start, a schedule or a plan entry).
 	telemetryPolicyFromScenario bool
+	// telemetryBudgetPolicyFromScenario is telemetryPolicyFromScenario for
+	// the budget policy choice.
+	telemetryBudgetPolicyFromScenario bool
 	// skipTelemetryPolicyCheck builds a capacity estimate or preview (an
 	// editor's estimate or load-model check, a schedule's capacity preview, a
 	// plan entry's secret preflight), which does not depend on the run's
@@ -2396,9 +2404,15 @@ type CreateScenarioRequest struct {
 	// acceptance policies for every run created from the scenario, unless
 	// the run's request names another; empty or project_default uses the
 	// project's default. It is validated when the scenario is saved.
-	TelemetryAcceptancePolicyID string                            `json:"telemetry_acceptance_policy_id,omitempty"`
-	Groups                      []CreateGroupEntry                `json:"groups"`
-	DataPools                   []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID chooses one of the project's telemetry budget
+	// policies (telemetry_policy) to set the live budgets of every run
+	// created from the scenario, unless the run's request names another;
+	// empty or project_default uses the system threshold settings. It is
+	// validated when the scenario is saved.
+	TelemetryBudgetPolicyID string                            `json:"telemetry_budget_policy_id,omitempty"`
+	Groups                  []CreateGroupEntry                `json:"groups"`
+	DataPools               []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
 
 	creationActor testCreationActor
 }

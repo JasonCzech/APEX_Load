@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-var scenarioAuthoredColumns = []string{"id", "ref_key", "name", "workload_shape_id", "duration", "start_delay", "scenario_mode", "termination_mode", "shakeout_enabled", "resource_baseline_enabled", "assignment_json", "goal_config_json", "runtime_settings_json", "traffic_profile_json", "joint_evidence_json", "telemetry_acceptance_policy_id", "created_at", "materialization_key"}
+var scenarioAuthoredColumns = []string{"id", "ref_key", "name", "workload_shape_id", "duration", "start_delay", "scenario_mode", "termination_mode", "shakeout_enabled", "resource_baseline_enabled", "assignment_json", "goal_config_json", "runtime_settings_json", "traffic_profile_json", "joint_evidence_json", "telemetry_acceptance_policy_id", "telemetry_budget_policy_id", "created_at", "materialization_key"}
 var scenarioGroupAuthoredColumns = []string{"scenario_id", "sort_order", "name", "script_id", "vusers", "ramp_up", "ramp_down", "start_offset", "stages_json", "iterations", "initialization", "role", "runtime_settings_json", "assignment_json", "transaction_response_time_sla_ms"}
 var scenarioPoolAuthoredColumns = []string{"id", "scenario_id", "pool_id", "alias", "access_mode", "selection_strategy", "live_options_json", "scope", "project_table_id"}
 var scenarioMonitorAuthoredColumns = []string{"scenario_id", "project_id", "revision", "payload"}

@@ -863,8 +863,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   // offered with that error only.
   const [createNeedsNewIntent, setCreateNeedsNewIntent] = useState('')
   const [form, setForm] = useState<ScenarioFormState>(() => emptyScenarioForm())
-  // Reloads the telemetry policy select after a save check found its list stale.
+  // Reloads a telemetry policy select after a save check found its list stale.
   const [telemetryPolicyRefresh, setTelemetryPolicyRefresh] = useState(0)
+  const [telemetryBudgetPolicyRefresh, setTelemetryBudgetPolicyRefresh] = useState(0)
   // Ends a save-time policy read when the builder closes or the hub unmounts;
   // the save it guarded is then dropped, never sent unchecked.
   const telemetryPolicyCheckAbortRef = useRef<AbortController | null>(null)
@@ -2956,20 +2957,26 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     savingRef.current = true
     setSavePending(true)
     try {
-      // A chosen telemetry acceptance policy is judged against a fresh read
-      // of the project's policies, under the save lock.
+      // The chosen telemetry acceptance and budget policies are judged
+      // against a fresh read of the project's policies, under the save lock.
       // A save that keeps the loaded scenario's choice is not judged, as the
       // controller does not judge it.
       const savedChoice = editingId ? baseline?.projection.scenario.telemetry_acceptance_policy_id : undefined
+      const savedBudgetChoice = editingId ? baseline?.projection.scenario.telemetry_budget_policy_id : undefined
       const policyCheck = new AbortController()
       telemetryPolicyCheckAbortRef.current = policyCheck
-      const policyIssue = await telemetryPolicySaveIssue(submittedDraft.activeProjectId, submittedDraft.form.telemetry_acceptance_policy_id, undefined, typeof savedChoice === 'string' ? savedChoice : undefined, policyCheck.signal)
+      const [acceptanceIssue, budgetIssue] = await Promise.all([
+        telemetryPolicySaveIssue(submittedDraft.activeProjectId, submittedDraft.form.telemetry_acceptance_policy_id, undefined, typeof savedChoice === 'string' ? savedChoice : undefined, policyCheck.signal),
+        telemetryPolicySaveIssue(submittedDraft.activeProjectId, submittedDraft.form.telemetry_budget_policy_id, undefined, typeof savedBudgetChoice === 'string' ? savedBudgetChoice : undefined, policyCheck.signal, 'budget'),
+      ])
       // An ended check (the builder closed) or a draft changed meanwhile drops
       // the save it guarded.
       if (policyCheck.signal.aborted || !stillCurrent() || builderSessionRef.current !== submittedSession) return null
-      if (policyIssue) {
-        setError(policyIssue)
-        setTelemetryPolicyRefresh(count => count + 1)
+      if (acceptanceIssue || budgetIssue) {
+        setError([acceptanceIssue, budgetIssue].filter(Boolean).join(' '))
+        // The blocking select reloads, so it marks the policy the project lost.
+        if (acceptanceIssue) setTelemetryPolicyRefresh(count => count + 1)
+        if (budgetIssue) setTelemetryBudgetPolicyRefresh(count => count + 1)
         setWizardStep('run')
         setRunSettingsTab('scenario')
         setScenarioSettingsSection('advanced')
@@ -3740,16 +3747,29 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     </div>
   )
 
-  // The telemetry acceptance policy every run of the scenario is judged by.
+  // The telemetry acceptance policy every run of the scenario is judged by,
+  // and the telemetry budget policy that sets its live budgets.
+  const storedBudgetChoice = scenarioBaseline?.projection.scenario.telemetry_budget_policy_id
   const renderTelemetryPolicy = () => (
-    <TelemetryPolicySelect
-      projectId={activeProjectId}
-      subject="scenario"
-      refreshKey={telemetryPolicyRefresh}
-      storedId={editingId && typeof scenarioBaseline?.projection.scenario.telemetry_acceptance_policy_id === 'string' ? scenarioBaseline.projection.scenario.telemetry_acceptance_policy_id : undefined}
-      value={form.telemetry_acceptance_policy_id ?? ''}
-      onChange={value => setForm(previous => ({ ...previous, telemetry_acceptance_policy_id: value || undefined }))}
-    />
+    <>
+      <TelemetryPolicySelect
+        projectId={activeProjectId}
+        subject="scenario"
+        refreshKey={telemetryPolicyRefresh}
+        storedId={editingId && typeof scenarioBaseline?.projection.scenario.telemetry_acceptance_policy_id === 'string' ? scenarioBaseline.projection.scenario.telemetry_acceptance_policy_id : undefined}
+        value={form.telemetry_acceptance_policy_id ?? ''}
+        onChange={value => setForm(previous => ({ ...previous, telemetry_acceptance_policy_id: value || undefined }))}
+      />
+      <TelemetryPolicySelect
+        kind="budget"
+        projectId={activeProjectId}
+        subject="scenario"
+        refreshKey={telemetryBudgetPolicyRefresh}
+        storedId={editingId && typeof storedBudgetChoice === 'string' ? storedBudgetChoice : undefined}
+        value={form.telemetry_budget_policy_id ?? ''}
+        onChange={value => setForm(previous => ({ ...previous, telemetry_budget_policy_id: value || undefined }))}
+      />
+    </>
   )
 
   // A scenario's joint evidence projection, captured by every run created

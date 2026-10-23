@@ -6580,6 +6580,7 @@ export interface operations {
             "script_shakeout"?: boolean;
             "start_delay"?: string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "termination_mode"?: string;
             "traffic_profile"?: ({
               "amplitude"?: {
@@ -19966,6 +19967,7 @@ export interface operations {
                   "script_shakeout"?: boolean;
                   "start_delay"?: string;
                   "telemetry_acceptance_policy_id"?: string;
+                  "telemetry_budget_policy_id"?: string;
                   "termination_mode"?: string;
                   "traffic_profile"?: (Record<string, unknown>) | null;
                   "workload_shape_id"?: string;
@@ -20405,6 +20407,7 @@ export interface operations {
               }>;
               "start_delay"?: string;
               "telemetry_acceptance_policy_id"?: string;
+              "telemetry_budget_policy_id"?: string;
               "termination_mode"?: string;
               "traffic_profile"?: ({
                 "amplitude"?: {
@@ -22201,6 +22204,7 @@ export interface operations {
                 "script_shakeout"?: boolean;
                 "start_delay"?: string;
                 "telemetry_acceptance_policy_id"?: string;
+                "telemetry_budget_policy_id"?: string;
                 "termination_mode"?: string;
                 "traffic_profile"?: ({
                   "amplitude"?: Record<string, unknown>;
@@ -22995,6 +22999,7 @@ export interface operations {
             }>;
             "start_delay"?: string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "termination_mode"?: string;
             "traffic_profile"?: ({
               "amplitude"?: {
@@ -23348,6 +23353,7 @@ export interface operations {
                 "script_shakeout"?: boolean;
                 "start_delay"?: string;
                 "telemetry_acceptance_policy_id"?: string;
+                "telemetry_budget_policy_id"?: string;
                 "termination_mode"?: string;
                 "traffic_profile"?: ({
                   "amplitude"?: Record<string, unknown>;
@@ -24142,6 +24148,7 @@ export interface operations {
             }>;
             "start_delay"?: string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "termination_mode"?: string;
             "traffic_profile"?: ({
               "amplitude"?: {
@@ -41907,6 +41914,7 @@ export interface operations {
           "script_shakeout"?: boolean;
           "start_delay"?: string;
           "telemetry_acceptance_policy_id"?: string;
+          "telemetry_budget_policy_id"?: string;
           "termination_mode"?: string;
           "traffic_profile"?: ({
             "amplitude"?: {
@@ -42212,6 +42220,7 @@ export interface operations {
                 "script_shakeout"?: boolean;
                 "start_delay"?: string;
                 "telemetry_acceptance_policy_id"?: string;
+                "telemetry_budget_policy_id"?: string;
                 "termination_mode"?: string;
                 "traffic_profile"?: ({
                   "amplitude"?: Record<string, unknown>;
@@ -43006,6 +43015,7 @@ export interface operations {
             }>;
             "start_delay"?: string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "termination_mode"?: string;
             "traffic_profile"?: ({
               "amplitude"?: {
@@ -54430,6 +54440,7 @@ export interface operations {
             "script_shakeout"?: boolean;
             "start_delay"?: string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "termination_mode"?: string;
             "traffic_profile"?: ({
               "amplitude"?: {
@@ -55130,6 +55141,7 @@ export interface operations {
               "script_shakeout"?: boolean;
               "start_delay"?: string;
               "telemetry_acceptance_policy_id"?: string;
+              "telemetry_budget_policy_id"?: string;
               "termination_mode"?: string;
               "traffic_profile"?: ({
                 "amplitude"?: {
@@ -55752,6 +55764,7 @@ export interface operations {
             "script_shakeout"?: boolean;
             "start_delay"?: string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "termination_mode"?: string;
             "traffic_profile"?: ({
               "amplitude"?: {
@@ -56452,6 +56465,7 @@ export interface operations {
               "script_shakeout"?: boolean;
               "start_delay"?: string;
               "telemetry_acceptance_policy_id"?: string;
+              "telemetry_budget_policy_id"?: string;
               "termination_mode"?: string;
               "traffic_profile"?: ({
                 "amplitude"?: {
@@ -83977,6 +83991,7 @@ export interface operations {
                 "script_shakeout"?: boolean;
                 "start_delay"?: string;
                 "telemetry_acceptance_policy_id"?: string;
+                "telemetry_budget_policy_id"?: string;
                 "termination_mode"?: string;
                 "traffic_profile"?: ({
                   "amplitude"?: Record<string, unknown>;
@@ -84771,6 +84786,7 @@ export interface operations {
             }>;
             "start_delay"?: string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "termination_mode"?: string;
             "traffic_profile"?: ({
               "amplitude"?: {
@@ -85261,6 +85277,7 @@ export interface operations {
               "script_shakeout"?: boolean;
               "start_delay"?: string;
               "telemetry_acceptance_policy_id"?: string;
+              "telemetry_budget_policy_id"?: string;
               "termination_mode"?: string;
               "traffic_profile"?: ({
                 "amplitude"?: {
@@ -101858,6 +101875,7 @@ export interface operations {
                   "script_shakeout"?: boolean;
                   "start_delay"?: string;
                   "telemetry_acceptance_policy_id"?: string;
+                  "telemetry_budget_policy_id"?: string;
                   "termination_mode"?: string;
                   "traffic_profile"?: (Record<string, unknown>) | null;
                   "workload_shape_id"?: (string) | null;
@@ -156950,6 +156968,7 @@ export interface operations {
               "script_shakeout"?: boolean;
               "start_delay"?: string;
               "telemetry_acceptance_policy_id"?: string;
+              "telemetry_budget_policy_id"?: string;
               "termination_mode"?: string;
               "traffic_profile"?: ({
                 "amplitude"?: {
@@ -182471,6 +182490,7 @@ export interface operations {
           "script_shakeout"?: boolean;
           "start_delay"?: string;
           "telemetry_acceptance_policy_id"?: string;
+          "telemetry_budget_policy_id"?: string;
           "termination_mode"?: string;
           "traffic_profile"?: ({
             "amplitude"?: {
@@ -182774,6 +182794,7 @@ export interface operations {
                 "script_shakeout"?: boolean;
                 "start_delay"?: string;
                 "telemetry_acceptance_policy_id"?: string;
+                "telemetry_budget_policy_id"?: string;
                 "termination_mode"?: string;
                 "traffic_profile"?: ({
                   "amplitude"?: Record<string, unknown>;
@@ -183568,6 +183589,7 @@ export interface operations {
             }>;
             "start_delay"?: string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "termination_mode"?: string;
             "traffic_profile"?: ({
               "amplitude"?: {
@@ -192660,6 +192682,7 @@ export interface operations {
           "script_shakeout"?: boolean;
           "start_delay"?: string;
           "telemetry_acceptance_policy_id"?: string;
+          "telemetry_budget_policy_id"?: string;
           "termination_mode"?: string;
           "traffic_profile"?: ({
             "amplitude"?: {

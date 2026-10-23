@@ -18134,6 +18134,8 @@ paths:
                       type: string
                     telemetry_acceptance_policy_id:
                       type: string
+                    telemetry_budget_policy_id:
+                      type: string
                     termination_mode:
                       type: string
                     traffic_profile:
@@ -64652,6 +64654,8 @@ paths:
                                 start_delay:
                                   type: string
                                 telemetry_acceptance_policy_id:
+                                  type: string
+                                telemetry_budget_policy_id:
                                   type: string
                                 termination_mode:
                                   type: string
@@ -163957,6 +163961,8 @@ paths:
                   type: string
                 telemetry_acceptance_policy_id:
                   type: string
+                telemetry_budget_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 traffic_profile:
@@ -164806,6 +164812,8 @@ paths:
                               start_delay:
                                 type: string
                               telemetry_acceptance_policy_id:
+                                type: string
+                              telemetry_budget_policy_id:
                                 type: string
                               termination_mode:
                                 type: string
@@ -167025,6 +167033,8 @@ paths:
                       start_delay:
                         type: string
                       telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -168174,6 +168184,8 @@ paths:
                                 type: string
                               telemetry_acceptance_policy_id:
                                 type: string
+                              telemetry_budget_policy_id:
+                                type: string
                               termination_mode:
                                 type: string
                               traffic_profile:
@@ -170392,6 +170404,8 @@ paths:
                       start_delay:
                         type: string
                       telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -171821,6 +171835,8 @@ paths:
                           start_delay:
                             type: string
                           telemetry_acceptance_policy_id:
+                            type: string
+                          telemetry_budget_policy_id:
                             type: string
                           termination_mode:
                             type: string
@@ -173891,6 +173907,8 @@ paths:
                   type: string
                 telemetry_acceptance_policy_id:
                   type: string
+                telemetry_budget_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 traffic_profile:
@@ -174739,6 +174757,8 @@ paths:
                           start_delay:
                             type: string
                           telemetry_acceptance_policy_id:
+                            type: string
+                          telemetry_budget_policy_id:
                             type: string
                           termination_mode:
                             type: string
@@ -176958,6 +176978,8 @@ paths:
                   start_delay:
                     type: string
                   telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   termination_mode:
                     type: string
@@ -177986,6 +178008,8 @@ paths:
                             type: string
                           telemetry_acceptance_policy_id:
                             type: string
+                          telemetry_budget_policy_id:
+                            type: string
                           termination_mode:
                             type: string
                           traffic_profile:
@@ -180204,6 +180228,8 @@ paths:
                   start_delay:
                     type: string
                   telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   termination_mode:
                     type: string
@@ -182096,6 +182122,8 @@ paths:
                             type: string
                           telemetry_acceptance_policy_id:
                             type: string
+                          telemetry_budget_policy_id:
+                            type: string
                           termination_mode:
                             type: string
                           traffic_profile:
@@ -184315,6 +184343,8 @@ paths:
                     type: string
                   telemetry_acceptance_policy_id:
                     type: string
+                  telemetry_budget_policy_id:
+                    type: string
                   termination_mode:
                     type: string
                   traffic_profile:
@@ -185148,6 +185178,8 @@ paths:
                               start_delay:
                                 type: string
                               telemetry_acceptance_policy_id:
+                                type: string
+                              telemetry_budget_policy_id:
                                 type: string
                               termination_mode:
                                 type: string
@@ -186429,6 +186461,8 @@ paths:
                       start_delay:
                         type: string
                       telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -189758,6 +189792,8 @@ paths:
                       type: string
                     telemetry_acceptance_policy_id:
                       type: string
+                    telemetry_budget_policy_id:
+                      type: string
                     termination_mode:
                       type: string
                     traffic_profile:
@@ -191718,6 +191754,8 @@ paths:
                       start_delay:
                         type: string
                       telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -193882,6 +193920,8 @@ paths:
                         type: string
                       telemetry_acceptance_policy_id:
                         type: string
+                      telemetry_budget_policy_id:
+                        type: string
                       termination_mode:
                         type: string
                       traffic_profile:
@@ -195636,6 +195676,8 @@ paths:
                     start_delay:
                       type: string
                     telemetry_acceptance_policy_id:
+                      type: string
+                    telemetry_budget_policy_id:
                       type: string
                     termination_mode:
                       type: string
@@ -197597,6 +197639,8 @@ paths:
                       start_delay:
                         type: string
                       telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -200023,6 +200067,8 @@ paths:
                 start_delay:
                   type: string
                 telemetry_acceptance_policy_id:
+                  type: string
+                telemetry_budget_policy_id:
                   type: string
                 termination_mode:
                   type: string

@@ -870,7 +870,7 @@ describe('CreateTestModal', () => {
     let policyReads = 0
     monitorRequest.mockImplementation((path: string) => {
       if (path.includes('/analysis/capabilities')) return Promise.resolve({ monitoring_enabled: false })
-      if (!path.includes('/analysis/policies')) return Promise.resolve([])
+      if (!path.includes('/analysis/policies') || path.includes('kind=telemetry_policy')) return Promise.resolve([])
       policyReads += 1
       if (policyReads === 1) return Promise.resolve([otherGate])
       if (policyReads === 2) return new Promise(resolve => { releaseCheck = resolve })
@@ -902,7 +902,7 @@ describe('CreateTestModal', () => {
     let policyReads = 0
     monitorRequest.mockImplementation((path: string) => {
       if (path.includes('/analysis/capabilities')) return Promise.resolve({ monitoring_enabled: false })
-      if (!path.includes('/analysis/policies')) return Promise.resolve([])
+      if (!path.includes('/analysis/policies') || path.includes('kind=telemetry_policy')) return Promise.resolve([])
       policyReads += 1
       return policyReads === 1 ? Promise.resolve([]) : new Promise(resolve => { releaseCheck = resolve })
     })
@@ -923,7 +923,7 @@ describe('CreateTestModal', () => {
     const strictGate = { id: 'strict-gate', project_id: 'project-a', kind: 'telemetry_acceptance_policy', name: 'Strict gate', revision: 1, definition: { version: 1 }, deleted: false, created_at: '' }
     monitorRequest.mockImplementation((path: string) => {
       if (path.includes('/analysis/capabilities')) return Promise.resolve({ monitoring_enabled: false })
-      if (!path.includes('/analysis/policies')) return Promise.resolve([])
+      if (!path.includes('/analysis/policies') || path.includes('kind=telemetry_policy')) return Promise.resolve([])
       policyReads += 1
       return policyReads === 2 ? new Promise(resolve => { releaseCheck = resolve }) : Promise.resolve([strictGate])
     })
@@ -941,7 +941,7 @@ describe('CreateTestModal', () => {
     await act(async () => { releaseCheck([strictGate]) })
     await act(async () => { await Promise.resolve() })
     expect(apiMock.createTest).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('changed while the telemetry acceptance policy was being checked')
+    expect(container.textContent).toContain('changed while the telemetry policies were being checked')
     await click('Create revised copy')
     expect(apiMock.createTest).toHaveBeenCalledTimes(1)
     expect(apiMock.createTest.mock.calls[0][0]).toHaveProperty('telemetry_acceptance_policy_id', 'project_default')
@@ -996,6 +996,103 @@ describe('CreateTestModal', () => {
     })
     await click('Create revised copy')
     expect(apiMock.createTest.mock.calls[0][0]).toHaveProperty('telemetry_acceptance_policy_id', 'project_default')
+  })
+
+  it("keeps a revised copy's telemetry budget policy, drops it for the system threshold settings, or sends another (TEL-B)", async () => {
+    const budgets = [
+      { id: 'house-budgets', project_id: 'project-a', kind: 'telemetry_policy', name: 'House budgets', revision: 1, definition: { version: 1, apply_by_default: true }, deleted: false, created_at: '' },
+      { id: 'tight-budgets', project_id: 'project-a', kind: 'telemetry_policy', name: 'Tight budgets', revision: 1, definition: { version: 1 }, deleted: false, created_at: '' },
+    ]
+    monitorRequest.mockImplementation((path: string) => Promise.resolve(path.includes('/analysis/capabilities') ? { monitoring_enabled: false } : path.includes('kind=telemetry_policy') ? budgets : []))
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, telemetry_budget_policy_id: 'tight-budgets' } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    await act(async () => { await Promise.resolve() })
+    const select = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-budget-policy-select"] select')!
+    expect(Array.from(select.options).slice(0, 2).map(option => option.textContent)).toEqual(["Keep the source run's choice (Tight budgets)", 'System threshold settings'])
+    // Kept: the copy inherits the choice, so the request does not resend it.
+    await click('Create revised copy')
+    expect(apiMock.createTest.mock.calls[0][0]).not.toHaveProperty('telemetry_budget_policy_id')
+    apiMock.createTest.mockClear()
+    // Dropped: project_default returns the copy to the system threshold settings.
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest({ ...source, id: 'source-2' })} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    await act(async () => { await Promise.resolve() })
+    const dropping = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-budget-policy-select"] select')!
+    await act(async () => {
+      dropping.value = 'project_default'
+      dropping.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click('Create revised copy')
+    expect(apiMock.createTest).toHaveBeenCalledTimes(1)
+    expect(apiMock.createTest.mock.calls[0][0]).toHaveProperty('telemetry_budget_policy_id', 'project_default')
+    apiMock.createTest.mockClear()
+    // Another: choosing another usable policy sends its ID.
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest({ ...source, id: 'source-3' })} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    await act(async () => { await Promise.resolve() })
+    const another = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-budget-policy-select"] select')!
+    await act(async () => {
+      another.value = 'house-budgets'
+      another.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click('Create revised copy')
+    expect(apiMock.createTest).toHaveBeenCalledTimes(1)
+    expect(apiMock.createTest.mock.calls[0][0]).toHaveProperty('telemetry_budget_policy_id', 'house-budgets')
+  })
+
+  it("refuses a revised copy whose kept or chosen telemetry budget policy is gone or unusable, judged by a fresh read (TEL-B)", async () => {
+    const slow = { id: 'slow-window', project_id: 'project-a', kind: 'telemetry_policy', name: 'Slow window', revision: 1, definition: { version: 1, sustained_window_seconds: 30 }, deleted: false, created_at: '' }
+    // drifting-budgets is usable when the select loads; every later read
+    // (the create checks and the select's reloads) finds it revised to
+    // another sustained window, so only a fresh read can refuse it.
+    const drifting = { id: 'drifting-budgets', project_id: 'project-a', kind: 'telemetry_policy', name: 'Drifting budgets', revision: 1, definition: { version: 1 }, deleted: false, created_at: '' }
+    let budgetReads = 0
+    monitorRequest.mockImplementation((path: string) => {
+      if (path.includes('/analysis/capabilities')) return Promise.resolve({ monitoring_enabled: false })
+      if (!path.includes('kind=telemetry_policy')) return Promise.resolve([])
+      budgetReads += 1
+      return Promise.resolve(budgetReads === 1 ? [slow, drifting] : [slow, { ...drifting, revision: 2, definition: { version: 1, sustained_window_seconds: 45 } }])
+    })
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, telemetry_budget_policy_id: 'gone-budgets' } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    await act(async () => { await Promise.resolve() })
+    const select = container.querySelector<HTMLSelectElement>('[data-testid="telemetry-budget-policy-select"] select')!
+    expect(select.options[0].textContent).toBe("Keep the source run's choice (gone-budgets (no longer available))")
+    // The select's list offers drifting-budgets as usable; the create's
+    // fresh read refuses it.
+    await act(async () => {
+      select.value = 'drifting-budgets'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click('Create revised copy')
+    expect(apiMock.createTest).not.toHaveBeenCalled()
+    expect(budgetReads).toBeGreaterThan(1)
+    expect(container.textContent).toContain(`"drifting-budgets" cannot set a run's budgets: it sets a 45 s sustained window`)
+    // A kept choice the project no longer has is refused too.
+    await act(async () => {
+      select.value = ''
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click('Create revised copy')
+    expect(apiMock.createTest).not.toHaveBeenCalled()
+    expect(container.textContent).toContain(`The source run's telemetry budget policy "gone-budgets" no longer exists`)
+    // An unusable policy is refused too.
+    await act(async () => {
+      select.value = 'slow-window'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click('Create revised copy')
+    expect(apiMock.createTest).not.toHaveBeenCalled()
+    expect(container.textContent).toContain(`"slow-window" cannot set a run's budgets: it sets a 30 s sustained window`)
+    await act(async () => {
+      select.value = 'project_default'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click('Create revised copy')
+    expect(apiMock.createTest).toHaveBeenCalledTimes(1)
+    expect(apiMock.createTest.mock.calls[0][0]).toHaveProperty('telemetry_budget_policy_id', 'project_default')
   })
 
   it('replays rather than queues another when a replayed draft is created again (AUTH-1)', async () => {

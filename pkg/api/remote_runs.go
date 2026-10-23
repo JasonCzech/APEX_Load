@@ -453,8 +453,8 @@ func maskRemoteRunAction(action map[string]any) map[string]any {
 }
 
 // errRemoteRunScenarioPolicy refuses a remote run whose scenario chose a
-// telemetry acceptance policy the request does not translate.
-var errRemoteRunScenarioPolicy = errors.New("the scenario's telemetry acceptance policy is local to this controller")
+// telemetry acceptance or budget policy the request does not translate.
+var errRemoteRunScenarioPolicy = errors.New("the scenario's telemetry policy choice is local to this controller")
 
 func (s *Server) prepareRemoteRunCreateRequest(ctx context.Context, remote LibraryRemote, req CreateTestRequest, explicitRemoteProjectID string) (CreateTestRequest, []LibraryImportResultItem, string, string, string, error) {
 	localProjectID, err := s.remoteRunCreateLocalProject(req)
@@ -469,6 +469,13 @@ func (s *Server) prepareRemoteRunCreateRequest(ctx context.Context, remote Libra
 	if localScenarioID != "" && strings.TrimSpace(req.TelemetryAcceptancePolicyID) == "" {
 		if scenario, ok := s.runner.GetScenario(localScenarioID); ok && scenario != nil && scenario.TelemetryAcceptancePolicyID != "" {
 			return req, nil, "", "", "", fmt.Errorf("%w: scenario %s chooses telemetry acceptance policy %q, which does not travel to the remote controller; name a remote policy with telemetry_acceptance_policy_id, or %s", errRemoteRunScenarioPolicy, localScenarioID, scenario.TelemetryAcceptancePolicyID, runPolicyProjectDefault)
+		}
+	}
+	// Likewise its telemetry budget policy: the remote would classify the run
+	// by its copy's own choice or its system threshold settings.
+	if localScenarioID != "" && strings.TrimSpace(req.TelemetryBudgetPolicyID) == "" {
+		if scenario, ok := s.runner.GetScenario(localScenarioID); ok && scenario != nil && scenario.TelemetryBudgetPolicyID != "" {
+			return req, nil, "", "", "", fmt.Errorf("%w: scenario %s chooses telemetry budget policy %q, which does not travel to the remote controller; name a remote policy with telemetry_budget_policy_id, or %s for the remote's system threshold settings", errRemoteRunScenarioPolicy, localScenarioID, scenario.TelemetryBudgetPolicyID, runPolicyProjectDefault)
 		}
 	}
 	// The destination is an administrator-configured trust mapping. A project

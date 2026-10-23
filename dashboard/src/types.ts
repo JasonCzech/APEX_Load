@@ -2368,6 +2368,8 @@ export interface ScenarioDraftRevisionContext {
   jointEvidence?: import('./types/jointEvidence').JointEvidenceProjection
   /** The source run's chosen telemetry acceptance policy; a revised copy keeps it unless it names another. */
   telemetryAcceptancePolicyId?: string
+  /** The source run's chosen telemetry budget policy; a revised copy keeps it unless it names another. */
+  telemetryBudgetPolicyId?: string
   applicationId?: string
   releaseId?: string
   scenarioId?: string
@@ -2394,6 +2396,8 @@ export interface ScenarioDraft {
   jointEvidence?: import('./types/jointEvidence').JointEvidenceProjection
   /** The telemetry acceptance policy chosen for the scenario's (or this) run; absent: the default, or a revised copy's inherited choice. */
   telemetryAcceptancePolicyId?: string
+  /** The telemetry budget policy that sets the live budgets of the scenario's (or this) run; absent: the system threshold settings, or a revised copy's inherited choice. */
+  telemetryBudgetPolicyId?: string
   /** Authored data-pool bindings of a saved scenario (a revision keeps its source's in revisionContext). */
   dataPools?: ScenarioDataPoolBinding[]
   /** Immutable source-run context carried only when a queued run is revised. */

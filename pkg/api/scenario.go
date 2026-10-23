@@ -502,6 +502,12 @@ func (tr *TestRunner) storeScenarioLockedWithSources(id string, req CreateScenar
 	if existing == nil || telemetryPolicyID != existing.TelemetryAcceptancePolicyID || normalizeProjectID(existing.ProjectID) != normalizeProjectID(projectID) {
 		telemetryPolicyID, telemetryPolicyErr = tr.validateRunTelemetryAcceptancePolicy(projectID, req.TelemetryAcceptancePolicyID)
 	}
+	// The chosen telemetry budget policy is judged the same way, and only
+	// when the save changes it or the scenario's project.
+	telemetryBudgetPolicyID, telemetryBudgetPolicyErr := normalizeTelemetryPolicyChoice(req.TelemetryBudgetPolicyID), error(nil)
+	if existing == nil || telemetryBudgetPolicyID != existing.TelemetryBudgetPolicyID || normalizeProjectID(existing.ProjectID) != normalizeProjectID(projectID) {
+		telemetryBudgetPolicyID, telemetryBudgetPolicyErr = tr.validateRunTelemetryBudgetPolicy(projectID, req.TelemetryBudgetPolicyID)
+	}
 	tr.mu.Lock()
 	if poolProjectErr != nil {
 		return nil, poolProjectErr
@@ -509,7 +515,11 @@ func (tr *TestRunner) storeScenarioLockedWithSources(id string, req CreateScenar
 	if telemetryPolicyErr != nil {
 		return nil, telemetryPolicyErr
 	}
+	if telemetryBudgetPolicyErr != nil {
+		return nil, telemetryBudgetPolicyErr
+	}
 	scenario.TelemetryAcceptancePolicyID = telemetryPolicyID
+	scenario.TelemetryBudgetPolicyID = telemetryBudgetPolicyID
 	if poolArchiveErr != nil {
 		return nil, poolArchiveErr
 	}
@@ -632,6 +642,7 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 		RuntimeSettings  any
 		JointEvidence    any    `json:",omitempty"`
 		TelemetryPolicy  string `json:",omitempty"`
+		TelemetryBudget  string `json:",omitempty"`
 		Scripts          []storage.ScenarioScript
 	}{
 		ID:               scenario.ID,
@@ -650,6 +661,7 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 		RuntimeSettings:  scenario.RuntimeSettings,
 		JointEvidence:    scenario.JointEvidence,
 		TelemetryPolicy:  scenario.TelemetryAcceptancePolicyID,
+		TelemetryBudget:  scenario.TelemetryBudgetPolicyID,
 		Scripts:          canonicalScripts,
 	}))
 }

@@ -330,6 +330,7 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 			traffic_profile_json TEXT,
 			joint_evidence_json TEXT,
 			telemetry_acceptance_policy_id TEXT,
+			telemetry_budget_policy_id TEXT,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
@@ -2291,6 +2292,10 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		// The telemetry acceptance policy every run created from a scenario
 		// inherits (TEL-B). Existing scenarios use their project's default.
 		{name: "scenarios.telemetry_acceptance_policy_id", query: `ALTER TABLE scenarios ADD COLUMN telemetry_acceptance_policy_id TEXT`},
+		// The telemetry budget policy every run created from a scenario
+		// inherits (TEL-B). Existing scenarios' runs use the system threshold
+		// settings.
+		{name: "scenarios.telemetry_budget_policy_id", query: `ALTER TABLE scenarios ADD COLUMN telemetry_budget_policy_id TEXT`},
 	}
 }
 

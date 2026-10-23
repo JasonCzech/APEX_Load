@@ -8,8 +8,8 @@ import { request } from '../apiClient'
 
 export type EditableAnalysisPolicyKind = 'browser_policy' | 'journey_policy'
 
-/** Every kind the policy list serves; telemetry acceptance policies are read-only here. */
-export type AnalysisPolicyKind = EditableAnalysisPolicyKind | 'telemetry_acceptance_policy'
+/** Every kind the policy list serves; telemetry acceptance and budget policies are read-only here. */
+export type AnalysisPolicyKind = EditableAnalysisPolicyKind | 'telemetry_acceptance_policy' | 'telemetry_policy'
 
 export interface AnalysisPolicyRecord {
   id: string
