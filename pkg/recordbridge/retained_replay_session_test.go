@@ -73,10 +73,10 @@ func TestRetainedNativeReplayCannotBecomeSynthetic(t *testing.T) {
 	// Ordinary local-only bridges retain their disclosed synthetic behavior.
 	retained.artifactDurability = "local_only"
 	har, ok, err = manager.ReplayHARFor(retained)
-	defer har.Close()
 	if err != nil || !ok || har.Fidelity == "native" {
 		t.Fatalf("local synthetic contract changed: %v %v", ok, err)
 	}
+	defer har.Close()
 }
 
 func TestRestoreRetainedReplayPreservesHistoricalEvidence(t *testing.T) {
