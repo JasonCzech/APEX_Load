@@ -342,8 +342,12 @@ func TestEvacuationRollbackKeepsFailClosedPaths(t *testing.T) {
 			if f.tr.isRunAdoptionCandidate(f.test) {
 				t.Fatal("journal became a rollback candidate")
 			}
-			if err := f.tr.reconcileStoredActiveTest(f.test); err != nil || f.test.Status != "STOPPING" {
-				t.Fatalf("journal reconciled to %s: %v", f.test.Status, err)
+			if err := f.tr.reconcileStoredActiveTest(f.test); err != nil {
+				t.Fatal(err)
+			}
+			record, err := f.store.GetTest(f.test.ID)
+			if err != nil || record.Status != "STOPPING" || record.EndTime != nil || !strings.HasPrefix(record.Error, "generator evacuation state is uncertain") || record.ContinuityCheckpoint != f.guard {
+				t.Fatalf("journal reconciled to %+v, %v", record, err)
 			}
 		})
 	}
@@ -388,6 +392,11 @@ func TestEvacuationRollbackPlanRejectsUnsafeJournals(t *testing.T) {
 		"pre-image headroom":    {func(g *runEvacuationCheckpoint) { g.StandbyPreImages[0].HeadroomPct = 7 }, "invalid standby pre-image"},
 		"pre-image budget":      {func(g *runEvacuationCheckpoint) { g.StandbyPreImages[0].Budget.VUsers++ }, "invalid standby pre-image"},
 		"pre-image demand":      {func(g *runEvacuationCheckpoint) { g.StandbyPreImages[0].Demand = rollbackDemand }, "invalid standby pre-image"},
+		"pre-image budget vs claim": {func(g *runEvacuationCheckpoint) {
+			g.StandbyPreImages[0].Budget.VUsers++
+			g.StandbyPreImages[0].Demand.VUsers++
+		}, "invalid standby pre-image"},
+		"claim without incarnation": {func(g *runEvacuationCheckpoint) { g.CapacityClaims[0].Incarnation = "" }, "invalid replacement claim"},
 	}
 	for name, c := range mutations {
 		t.Run(name, func(t *testing.T) {
@@ -506,7 +515,11 @@ func TestEvacuationRollbackResumesAfterAnotherLeaderChange(t *testing.T) {
 	}
 	_, raw := f.durableGuard(t)
 	_, secondGeneration := f.handOver(t, "rollback-second-successor")
-	restored := &ManagedTest{ID: f.test.ID, Name: f.test.ID, Status: "RUNNING", Assignment: f.test.Assignment}
+	record, err := f.store.GetTest(f.test.ID)
+	if err != nil || record.Status != "RUNNING" {
+		t.Fatalf("a lost rollback intent left the run %+v, %v", record, err)
+	}
+	restored := &ManagedTest{ID: f.test.ID, Name: f.test.ID, Status: record.Status, Assignment: f.test.Assignment}
 	setContinuityCheckpointLocked(restored, raw)
 	f.tr.mu.Lock()
 	f.tr.tests[f.test.ID] = restored
@@ -527,6 +540,14 @@ func TestEvacuationRollbackResumesAfterAnotherLeaderChange(t *testing.T) {
 	}
 	if got := f.ledger(t)["gen-b"]; got.Generation != secondGeneration || got.State != "committed" || !standbyCapacityReservation(got) {
 		t.Fatalf("standby after second successor = %+v", got)
+	}
+	if claims, _ := f.spareGen.snapshot(); len(claims) != 1 || len(claims[0]) != 0 {
+		t.Fatalf("replacement epoch claims = %+v", claims)
+	}
+	if _, final := f.durableGuard(t); final == raw {
+		t.Fatal("the rolling_back journal was not replaced")
+	} else if _, present, err := decodeRunContinuityCheckpoint(final); err != nil || !present {
+		t.Fatalf("final checkpoint is not plain: %v", err)
 	}
 }
 
@@ -608,6 +629,13 @@ func TestRestoredRunEvacuationStandbyMatchesFrozenIdentity(t *testing.T) {
 		"demand":      func(r *storage.PodCapacityReservation) { r.Demand = rollbackDemand },
 		"shared":      func(r *storage.PodCapacityReservation) { r.Dedicated = false },
 		"attempt":     func(r *storage.PodCapacityReservation) { r.ReservationID = "other" },
+		"model":       func(r *storage.PodCapacityReservation) { r.ModelVersion = "other" },
+		"headroom":    func(r *storage.PodCapacityReservation) { r.HeadroomPct = 7 },
+		"placement": func(r *storage.PodCapacityReservation) {
+			r.RecoveryPlacement = &storage.PodCapacityRecoveryPlacement{NodeName: "other"}
+		},
+		"run":    func(r *storage.PodCapacityReservation) { r.TestID = "other" },
+		"target": func(r *storage.PodCapacityReservation) { r.Target = "gen-z" },
 	} {
 		row := standby
 		mutate(&row)
@@ -814,7 +842,7 @@ func TestEvacuationRollbackRefusesChangedLedger(t *testing.T) {
 				t.Fatal(err)
 			}
 			f.assertFailedRollbackHeld(t, generation, c.want, true)
-			if _, capacity := f.spareGen.snapshot(); c.rewrite != nil && len(capacity) != 0 {
+			if _, capacity := f.spareGen.snapshot(); !c.swapFail && len(capacity) != 0 {
 				t.Fatalf("changed ledger still reached the generator: %+v", capacity)
 			}
 		})
@@ -1058,5 +1086,68 @@ func TestAbandonedEvacuationJournalIsNeverRolledBack(t *testing.T) {
 	original, _, _ := decodeRunContinuityCheckpoint(before)
 	if err != nil || !present || restored.Shards["ga"][0].Target != "gen-a" || !restored.ArmedAt.Equal(original.ArmedAt) {
 		t.Fatalf("abandoned journal was not restored: %+v, %v", restored, err)
+	}
+}
+
+func TestFailedEvacuationRollbackWaitsWhenTermIsUnknown(t *testing.T) {
+	f := newEvacuationRollbackFixture(t, runEvacuationPhaseStaged, false)
+	f.spareDown = true
+	if err := f.tr.adoptOrphanedRuns(); err != nil {
+		t.Fatal(err)
+	}
+	// A replica that cannot read its own term must not fence either.
+	f.tr.leadership = newExecutionLeadership(f.store, "unknown-term")
+	f.tr.resumeInterruptedRunEvacuations()
+	f.tr.terminalRetryMu.Lock()
+	_, queued := f.tr.terminalRetrying["evacuation-guard:"+f.test.ID]
+	f.tr.terminalRetryMu.Unlock()
+	if queued {
+		t.Fatal("recovery was queued without a readable term")
+	}
+}
+
+func TestRollingBackJournalRejectsContradictions(t *testing.T) {
+	f := newEvacuationRollbackFixture(t, runEvacuationPhaseStaged, false)
+	owner, generation := f.tr.leadership.executionLeaseTerm()
+	guard, _, err := runEvacuationRollbackPlan(f.guard, f.test.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned, _, err := f.tr.planRunAdoptionIntent(context.Background(), f.test.ID, guard.Prior, generation, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rolling, raw, err := f.tr.persistRunEvacuationRollbackIntent(f.test, f.guard, guard, planned, generation, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := interruptedEvacuationTargets(raw, f.test.ID); err != nil {
+		t.Fatalf("valid rolling_back journal rejected: %v", err)
+	}
+	if _, _, err := runEvacuationRollbackPlan(raw, f.test.ID); err != nil {
+		t.Fatalf("valid rolling_back journal rejected for rollback: %v", err)
+	}
+	for name, mutate := range map[string]func(*runEvacuationCheckpoint){
+		"version 3":          func(g *runEvacuationCheckpoint) { g.Version = runEvacuationCheckpointVersion },
+		"rollback term":      func(g *runEvacuationCheckpoint) { g.RollbackGeneration = g.Generation },
+		"rollback owner":     func(g *runEvacuationCheckpoint) { g.RollbackOwnerID = "" },
+		"rollback start":     func(g *runEvacuationCheckpoint) { g.RollbackStartedAt = time.Time{} },
+		"staged targets":     func(g *runEvacuationCheckpoint) { g.StagedTargets = []string{"gen-z"} },
+		"unstaged targets":   func(g *runEvacuationCheckpoint) { g.StagedAt = time.Time{} },
+		"source fenced":      func(g *runEvacuationCheckpoint) { g.SourceFencedAt = time.Now().UTC() },
+		"replacement commit": func(g *runEvacuationCheckpoint) { g.ReplacementCommittedAt = time.Now().UTC() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := rolling
+			g.StagedTargets = append([]string(nil), rolling.StagedTargets...)
+			mutate(&g)
+			encoded := encodeEvacuationGuard(t, g)
+			if _, _, err := interruptedEvacuationTargets(encoded, f.test.ID); err == nil || !strings.Contains(err.Error(), "rolling-back evacuation has contradictory progress") {
+				t.Fatalf("fail-closed recovery accepted it: %v", err)
+			}
+			if _, _, err := runEvacuationRollbackPlan(encoded, f.test.ID); err == nil {
+				t.Fatal("rollback accepted it")
+			}
+		})
 	}
 }

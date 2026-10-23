@@ -95,11 +95,11 @@ Status: implemented behind an opt-in; local qualification only.
 - **`TestEvacuationRollbackFailurePanicHoldsRun`**: a panic while force-stopping after a failed rollback still holds the run `STOPPING` under its `rolling_back` journal.
 - **`TestEvacuationRollbackPanicKeepsJournal`**: a panic in the capacity rollback keeps the journal, force-stops the adopted source and holds the run `STOPPING` for attestation.
 - **`TestCleanSameLeaderRollbackRestoresPriorCheckpoint`**:
-  - an armed run gets back its exact prior checkpoint, and the run can be re-armed with new VUser counts afterwards;
+  - an armed run gets back its prior checkpoint (the same topology and arming time), and the run can be re-armed with new VUser counts afterwards;
   - an unarmed run returns to no checkpoint.
 - **`TestCleanRollbackLeavesOtherJournals`**: version 3, `source_fenced`, other-term and other-owner journals are not replaced. The owner check in `abandonRunEvacuationCheckpoint` is defence in depth: the store's lease-fenced swap already refuses another owner, so removing the check does not fail this test.
 - **`TestVersionFourJournalCarriesFailoverHistory`**: a version 4 journal still supplies the run's failover history.
-- **`TestEvacuationRollbackRefusesChangedLedger`** covers seven changes, each of which keeps the journal and holds the run `STOPPING`, and none of which reaches the generator's capacity RPC:
+- **`TestEvacuationRollbackRefusesChangedLedger`** covers seven changes, each of which keeps the journal and holds the run `STOPPING`. None of the six ledger changes reaches the generator's capacity RPC. The swap failure happens after the capacity was returned. The cases:
   - a replacement row that changed since the journal, or was committed;
   - a predecessor-restored standby from a newer term;
   - a replacement row without peaks;
@@ -125,7 +125,7 @@ Round 2 used two fresh reviewers. The safety reviewer confirmed both round-1 fix
 - **Low:** a panic before the journal was replaced bound an ordinary adoption failure, which installed a runtime and blocked attestation. Fixed with a rollback-specific recovery.
 - **Low:** failover history was not loaded from version 4 journals. Fixed in `setContinuityCheckpointLocked`.
 The tests-and-docs reviewer of round 2 found weak tests: three mutations of safety checks survived. Its findings and the fixes:
-- **Tests added:** changed replacement and standby rows, every capacity-journal validation (each asserting its error), predecessor release states, unprovable targets, a paused run, the journal swap failure, the same-term skip, and version 4 promotion. The fail-closed cases now check `evacuationRollbackGuard` directly. All three mutations now fail the tests.
+- **Tests added:** changed replacement and standby rows, the capacity-journal validations (each asserting its error), predecessor release states, unprovable targets, a paused run, the journal swap failure, the same-term skip, and version 4 promotion. The fail-closed cases now check `evacuationRollbackGuard` directly. All three mutations now fail the tests.
 - **Storage:** the exemption now also requires the standby to be committed, with a negative test for a pending one.
 - **Remaining:** now lists the real-generator drain proof and the write failures that are still untested.
 - **Docs:** the README.md entry names its prerequisites and the attestation, and the spec no longer contradicts itself.
@@ -136,7 +136,26 @@ Round 3 used two fresh reviewers. The safety reviewer confirmed the round-2 fixe
 - **Low:** a panic inside the rollback failure handling reached `failRunAdoption`. Fixed in `isolateRunAdoption`.
 - **Low:** a clean same-leader rollback replaced the journal before returning the capacity, which could lose the standby pre-image. Fixed: capacity is returned first, and the journal is kept if that fails.
 
-A mutation pass after round 3 removed seven safety checks in `run_evacuation_rollback.go`. Tests were added for the two that survived and have their own effect: the replacement-row state and the standby generation bound. Now every removed check fails the tests except the defence-in-depth owner check described above. The force-stop mutation did not compile, but its effect is asserted by `assertFailedRollbackHeld`.
+A mutation pass after round 3 removed seven safety checks in `run_evacuation_rollback.go`. Tests were added for the two that survived and have their own effect: the replacement-row state and the standby generation bound. The round-4 reviewer then found three more surviving mutations, listed under round 4 below. The force-stop mutation did not compile, but its effect is asserted by `assertFailedRollbackHeld`.
+
+Round 4 used two fresh reviewers. The safety reviewer confirmed the round-3 fixes and found two Low issues, both in the same-leader journal restore when capacity is not returned:
+- **Stale journal on a failed capacity return.** A capacity return that failed kept the journal forever, so its prior topology could go stale while the run was scaled.
+- **Silent ordinary release.** An ordinary release reports no error, so the journal could be replaced while the replacement reservation remained.
+
+The fix:
+- the restore now checks the ledger itself (`runEvacuationCapacityReturned`);
+- it retries after the deferred capacity rollback;
+- otherwise it marks the journal abandoned (`AbandonedAt`, via `markRunEvacuationCheckpointAbandoned`). A successor never rolls back to an abandoned journal, and it stays on the fail-closed path.
+
+The tests-and-docs reviewer found three surviving mutations: the standby budget against its claim, a claim without an incarnation, and the whole `rolling_back` consistency check. It also found several weak assertions and README overstatements. All of these are fixed:
+- **New plan cases.** One changes the budget and demand together; one blanks the claim's incarnation.
+- **`TestRollingBackJournalRejectsContradictions`.** Each contradiction is refused by both the fail-closed recovery and the rollback plan.
+- **Durable checks in `TestEvacuationRollbackKeepsFailClosedPaths`.** It now checks the stored status, reason and unchanged journal.
+- **`TestEvacuationRollbackResumesAfterAnotherLeaderChange`.** It reads the stored `RUNNING` status. It also checks the replacement fence and the final plain checkpoint.
+- **`TestEvacuationRollbackRefusesChangedLedger`.** It now checks for no capacity RPC on every ledger change.
+- **More identity cases** in `TestRestoredRunEvacuationStandbyMatchesFrozenIdentity`.
+- **`TestFailedEvacuationRollbackWaitsWhenTermIsUnknown`.** It covers the unreadable-term skip.
+- **`TestRunEvacuationCapacityReturnedReadsTheLedger` and `TestAbandonedEvacuationJournalIsNeverRolledBack`.** They cover the safety fixes.
 
 ## Remaining
 
