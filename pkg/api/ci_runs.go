@@ -543,6 +543,13 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		// The create judges the telemetry policy choices again: a policy read
+		// failing after the pre-check stays retryable (503), and a policy
+		// changed since stays a conflict (409), as at the pre-check.
+		if status, ok := runPolicyErrorStatus(err); ok {
+			writeError(w, status, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
