@@ -718,14 +718,14 @@ func TestCleanRollbackLeavesOtherJournals(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			abandonGeneration, abandonOwner := generation, owner
+			restoreGeneration, restoreOwner := generation, owner
 			switch mode {
 			case "other term":
-				abandonGeneration++
+				restoreGeneration++
 			case "other owner":
-				abandonOwner = "another-leader"
+				restoreOwner = "another-leader"
 			}
-			tr.restoreRunEvacuationPriorCheckpoint(test, guard, abandonGeneration, abandonOwner)
+			tr.restoreRunEvacuationPriorCheckpoint(test, guard, restoreGeneration, restoreOwner)
 			record, err := store.GetTest(test.ID)
 			if err != nil || record.ContinuityCheckpoint != guard {
 				t.Fatalf("%s journal was replaced: %v", mode, err)
@@ -1178,7 +1178,7 @@ func TestRollingBackJournalRejectsContradictions(t *testing.T) {
 }
 
 func TestReArmMarksADeadSameTermJournalAbandoned(t *testing.T) {
-	for _, mode := range []string{"same term", "version 3", "other term"} {
+	for _, mode := range []string{"same term", "same term staged", "version 3", "other term"} {
 		t.Run(mode, func(t *testing.T) {
 			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 			tr.evacuationRollbackRecovery = mode != "version 3"
@@ -1186,6 +1186,12 @@ func TestReArmMarksADeadSameTermJournalAbandoned(t *testing.T) {
 			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 			if err != nil {
 				t.Fatal(err)
+			}
+			if mode == "same term staged" {
+				// The lease and supervision failures roll back after staging.
+				if guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}); err != nil {
+					t.Fatal(err)
+				}
 			}
 			// A scale after a rollback whose journal could not be cleared.
 			scaled := cloneGroupShardMap(previous)
@@ -1203,7 +1209,7 @@ func TestReArmMarksADeadSameTermJournalAbandoned(t *testing.T) {
 			}
 			_, _, planErr := runEvacuationRollbackPlan(record.ContinuityCheckpoint, test.ID)
 			switch mode {
-			case "same term":
+			case "same term", "same term staged":
 				if planErr == nil || !strings.Contains(planErr.Error(), "abandoned by its leader") {
 					t.Fatalf("dead same-term journal stayed eligible for rollback: %v", planErr)
 				}

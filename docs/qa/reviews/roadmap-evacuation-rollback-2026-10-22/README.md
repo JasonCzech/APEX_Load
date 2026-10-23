@@ -61,8 +61,8 @@ Status: implemented behind an opt-in; local qualification only.
 - **Dead journals left by this leader.** A journal can survive a clean rollback because a journal write failed or the staging rollback errored. The next re-arm of the run, such as a VUser scale, is refused by an unresolved journal. `writeRunContinuity` therefore marks a version 4 `prepared` or `staged` journal of the same term and owner abandoned. A re-arm never overlaps an evacuation of the run, so such a journal is dead, and its prior topology is about to go stale.
 - **Clean same-leader rollback, ordering.** The leader returns the evacuation's capacity first. The journal holds the standby pre-images, so it is replaced only once the capacity is back:
   - The leader checks the ledger itself (`runEvacuationCapacityReturned`), because an ordinary release reports no error.
-  - If the capacity is not back, the deferred capacity rollback retries, and the restore follows if that succeeds (`finishRestore`).
-  - Otherwise the journal is kept and marked abandoned (`markRunEvacuationCheckpointAbandoned`). A successor never rolls back to an abandoned journal and holds the run `STOPPING`, as for a version 3 journal.
+  - If the capacity is not back, the journal is marked abandoned at once (`markRunEvacuationCheckpointAbandoned`). A successor never rolls back to an abandoned journal and holds the run `STOPPING`, as for a version 3 journal.
+  - The deferred capacity rollback then retries. If the ledger then shows the capacity returned, `finishRestore` restores the prior checkpoint.
   - While any journal remains, the run can neither start another evacuation (`beginRunEvacuationCheckpoint`) nor re-arm its checkpoint.
 - **A new term after `rolling_back`** rolls back again, and its source adoption carries the earlier term's token proof.
 
@@ -125,8 +125,8 @@ Status: implemented behind an opt-in; local qualification only.
 - **`TestAbandonedEvacuationJournalIsNeverRolledBack`**:
   - the abandoned marker is durable and is not applied twice;
   - the rollback plan refuses the journal, while the fail-closed participants remain;
-  - the leader can still restore the prior checkpoint once the capacity is back.
-- **`TestReArmMarksADeadSameTermJournalAbandoned`**: a refused re-arm marks a same-term version 4 journal abandoned, and leaves version 3 and other-term journals unchanged.
+  - restoring the prior checkpoint still accepts an abandoned journal. The capacity gate lives in `evacuateGenerator`; see Remaining.
+- **`TestReArmMarksADeadSameTermJournalAbandoned`**: a refused re-arm marks a same-term version 4 `prepared` or `staged` journal abandoned, and leaves version 3 and other-term journals unchanged. The owner check in `markRunEvacuationCheckpointAbandoned` is defence in depth: the store's lease-fenced swap already refuses another owner, so this test cannot distinguish it.
 - **`TestVersionFourCommittedEvacuationIsPromoted`**: a version 4 `replacement_committed` journal is promoted and its replacement adopted, as for version 3.
 - **`TestAdoptPodCapacityAcceptsCurrentTermStandby`** (`pkg/storage`, and the PostgreSQL integration test): adoption is refused while a standby reserved under the new term is still pending, and succeeds once it is committed. The existing `TestAdoptPodCapacityRequiresEveryStandby` still refuses an old-term standby that was left out.
 
@@ -183,6 +183,13 @@ The round-5 tests-and-docs reviewer found nine issues, all fixed:
   - The unreadable-term test is described as a regression check.
 - **Naming.** The restore functions were renamed, from `abandon…` to `restoreRunEvacuationPriorCheckpoint`, `restoreGuard` and `finishRestore`.
 - **Docs.** The abandoned-journal behaviour is added to this contract, the README.md entry and the spec. The four round-4 tests are listed under Validation. The abandon wiring inside `evacuateGenerator` is listed under Remaining.
+
+Round 6 used two fresh reviewers. The safety reviewer found nothing: no caller of the re-arm can overlap an evacuation of the same run in the same term, and the marking can only remove rollback eligibility. The tests-and-docs reviewer found five Low or Nit issues, all fixed:
+- the re-arm test now covers a `staged` journal;
+- the marker's owner check is described as defence in depth;
+- the order of the abandoned marker and the deferred restore is corrected here and in the spec;
+- an overstated test claim is corrected;
+- two leftover names from the rename are changed.
 
 ## Remaining
 
