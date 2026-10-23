@@ -18,7 +18,7 @@ import (
 func TestSameLeaderEvacuationAttestationEligibility(t *testing.T) {
 	tr, _, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	raw, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	raw, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func testSameLeaderEvacuationAttestation(t *testing.T, exhausted bool) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	markEvacuationRecoveryRunStarted(t, store, test)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next); err != nil {
+	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{}); err != nil {
 		t.Fatal(err)
 	}
 	source := newFaultEvacuationGeneratorClient("gen-a", 5)
@@ -217,7 +217,7 @@ func TestSameLeaderEvacuationInterventionRequiresDurableOwnedState(t *testing.T)
 			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 			markEvacuationRecoveryRunStarted(t, store, test)
 			tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-			if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next); err != nil {
+			if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{}); err != nil {
 				t.Fatal(err)
 			}
 			ctx, cancel := context.WithCancel(context.Background())
@@ -312,7 +312,7 @@ func TestSameLeaderEvacuationAttestationSurvivesSuccessorReload(t *testing.T) {
 	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 	markEvacuationRecoveryRunStarted(t, store, test)
 	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
-	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next); err != nil {
+	if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{}); err != nil {
 		t.Fatal(err)
 	}
 	// Model a crash after the exact terminal proof committed but before any

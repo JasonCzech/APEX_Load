@@ -19,12 +19,26 @@ import (
 // adopting work that could exceed the run's remaining duration.
 const runEvacuationCheckpointVersion = 3
 
+// Version 4 adds the replacement capacity claims and the standby pre-images a
+// successor needs to roll a prepared or staged evacuation back to its prior
+// topology. It is written only when that recovery is enabled: an older peer
+// cannot decode it and keeps the run STOPPING instead of guessing.
+const runEvacuationRollbackCheckpointVersion = 4
+
 const (
 	runEvacuationPhasePrepared             = "prepared"
 	runEvacuationPhaseStaged               = "staged"
 	runEvacuationPhaseSourceFenced         = "source_fenced"
 	runEvacuationPhaseReplacementCommitted = "replacement_committed"
+	// runEvacuationPhaseRollingBack records a successor's adoption intent for
+	// the prior topology before any generator sees it. Until the replacement is
+	// fenced and its capacity restored, every later reader keeps the journal.
+	runEvacuationPhaseRollingBack = "rolling_back"
 )
+
+func supportedRunEvacuationCheckpointVersion(version int) bool {
+	return version == runEvacuationCheckpointVersion || version == runEvacuationRollbackCheckpointVersion
+}
 
 type runEvacuationCheckpoint struct {
 	Version                int                                `json:"version"`
@@ -41,12 +55,32 @@ type runEvacuationCheckpoint struct {
 	BeforeShards           map[string][]GeneratorShardSummary `json:"before_shards"`
 	Prior                  runContinuityCheckpoint            `json:"prior"`
 	NextShards             map[string][]GeneratorShardSummary `json:"next_shards"`
+	// CapacityClaims are the replacement reservations written before staging,
+	// and StandbyPreImages the idle standby rows they activated (version 4).
+	CapacityClaims   []storage.PodCapacityReservation `json:"capacity_claims,omitempty"`
+	StandbyPreImages []storage.PodCapacityReservation `json:"standby_pre_images,omitempty"`
+	// RollbackGeneration is the newest successor term that may have adopted
+	// the prior topology under this journal (phase rolling_back).
+	RollbackGeneration uint64    `json:"rollback_generation,omitempty"`
+	RollbackOwnerID    string    `json:"rollback_owner_id,omitempty"`
+	RollbackStartedAt  time.Time `json:"rollback_started_at,omitempty"`
+	// AbandonedAt marks a prepared or staged journal its leader no longer
+	// drives: a capacity return that did not complete, or a dead journal found
+	// on re-arm. Its prior topology may go stale while the run continues, so it
+	// is never rolled back to; recovery stays fail-closed.
+	AbandonedAt time.Time `json:"abandoned_at,omitempty"`
+}
+
+// runEvacuationCapacity is the capacity journal of one evacuation attempt.
+type runEvacuationCapacity struct {
+	claims    []storage.PodCapacityReservation
+	preImages []storage.PodCapacityReservation
 }
 
 // beginRunEvacuationCheckpoint runs before AssignWork can stage a replacement.
 // The opaque returned guard binds completion to this exact durable intent. An
 // unsuccessful evacuation leaves it in place, conservatively disabling adoption.
-func (tr *TestRunner) beginRunEvacuationCheckpoint(ctx context.Context, test *ManagedTest, generation uint64, owner, source string, token []byte, previous, next map[string][]GeneratorShardSummary) (string, error) {
+func (tr *TestRunner) beginRunEvacuationCheckpoint(ctx context.Context, test *ManagedTest, generation uint64, owner, source string, token []byte, previous, next map[string][]GeneratorShardSummary, capacity runEvacuationCapacity) (string, error) {
 	tr.mu.RLock()
 	policy := effectiveFailoverPolicy(test.Assignment)
 	expected := test.continuityCheckpoint
@@ -101,6 +135,11 @@ func (tr *TestRunner) beginRunEvacuationCheckpoint(ctx context.Context, test *Ma
 		Prior:        prior,
 		BeforeShards: cloneGroupShardMap(previous),
 		NextShards:   cloneGroupShardMap(next),
+	}
+	if tr.evacuationRollbackRecovery {
+		guard.Version = runEvacuationRollbackCheckpointVersion
+		guard.CapacityClaims = clonePodCapacityReservations(capacity.claims)
+		guard.StandbyPreImages = clonePodCapacityReservations(capacity.preImages)
 	}
 	encoded, err := json.Marshal(guard)
 	if err != nil {
@@ -288,7 +327,7 @@ func (tr *TestRunner) advanceRunEvacuationCheckpoint(ctx context.Context, test *
 	if err := json.Unmarshal([]byte(raw), &guard); err != nil {
 		return "", fmt.Errorf("decode evacuation checkpoint: %w", err)
 	}
-	if guard.Version != runEvacuationCheckpointVersion || guard.TestID != test.ID || guard.Generation != generation || guard.OwnerID != owner || guard.Source == "" || guard.PreparedAt.IsZero() || guard.Phase != phase {
+	if !supportedRunEvacuationCheckpointVersion(guard.Version) || guard.TestID != test.ID || guard.Generation != generation || guard.OwnerID != owner || guard.Source == "" || guard.PreparedAt.IsZero() || guard.Phase != phase {
 		return "", errors.New("evacuation progress does not match durable intent")
 	}
 	tr.mu.RLock()
@@ -339,7 +378,7 @@ func validateRunEvacuationCompletion(raw, testID string, generation uint64, owne
 	if err := json.Unmarshal([]byte(raw), &guard); err != nil {
 		return fmt.Errorf("decode evacuation checkpoint: %w", err)
 	}
-	if guard.Version != runEvacuationCheckpointVersion || guard.TestID != testID || guard.Generation != generation || guard.OwnerID != owner || guard.Source == "" || guard.PreparedAt.IsZero() || guard.Phase != runEvacuationPhaseReplacementCommitted || guard.StagedAt.IsZero() || len(guard.StagedTargets) == 0 || guard.SourceFencedAt.IsZero() || guard.ReplacementCommittedAt.IsZero() || !reflect.DeepEqual(guard.NextShards, shards) {
+	if !supportedRunEvacuationCheckpointVersion(guard.Version) || guard.TestID != testID || guard.Generation != generation || guard.OwnerID != owner || guard.Source == "" || guard.PreparedAt.IsZero() || guard.Phase != runEvacuationPhaseReplacementCommitted || guard.StagedAt.IsZero() || len(guard.StagedTargets) == 0 || guard.SourceFencedAt.IsZero() || guard.ReplacementCommittedAt.IsZero() || !reflect.DeepEqual(guard.NextShards, shards) {
 		return errors.New("evacuation completion does not match durable intent")
 	}
 	expected, err := runEvacuationReplacementTargets(guard)
@@ -427,5 +466,20 @@ func (tr *TestRunner) promoteCommittedRunEvacuationCheckpoint(ctx context.Contex
 
 func interruptedRunEvacuation(raw string) bool {
 	var guard runEvacuationCheckpoint
-	return json.Unmarshal([]byte(raw), &guard) == nil && (guard.Version == 2 || guard.Version == runEvacuationCheckpointVersion) && guard.Source != ""
+	return json.Unmarshal([]byte(raw), &guard) == nil && (guard.Version == 2 || supportedRunEvacuationCheckpointVersion(guard.Version)) && guard.Source != ""
+}
+
+func clonePodCapacityReservations(rows []storage.PodCapacityReservation) []storage.PodCapacityReservation {
+	if len(rows) == 0 {
+		return nil
+	}
+	encoded, err := json.Marshal(rows)
+	if err != nil {
+		return nil
+	}
+	var cloned []storage.PodCapacityReservation
+	if json.Unmarshal(encoded, &cloned) != nil {
+		return nil
+	}
+	return cloned
 }

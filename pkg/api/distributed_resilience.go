@@ -409,11 +409,17 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	}
 	podClaims, podErr := tr.reservePodEvacuation(executionCtx, b, testID, target, nextByGroup, clientsByTarget, dryRun, standbys)
 	podCommitted := false
+	// finishRestore is set when a clean rollback kept its journal because the
+	// capacity was not yet back; the deferred retry completes the restore.
+	var finishRestore func()
 	defer func() {
 		if !podCommitted && len(podClaims) > 0 {
 			if err := tr.rollbackEvacuationPodClaims(b, podClaims, standbys); err != nil {
 				slog.Warn("evacuation capacity rollback remains reserved", "test_id", testID, "error", err)
 			}
+		}
+		if finishRestore != nil {
+			finishRestore()
 		}
 	}()
 	if podErr != nil {
@@ -429,13 +435,45 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		return impacts, fmt.Errorf("generator evacuation refused: %s", strings.Join(refused, "; "))
 	}
 
-	evacuationGuard, guardErr := tr.beginRunEvacuationCheckpoint(executionCtx, test, executionGeneration, executionLeaseOwnerID, target, runSupervisionToken, shardsByGroup, nextByGroup)
+	capacityJournal := runEvacuationCapacity{claims: podClaims}
+	for _, claim := range podClaims {
+		if standby, reserved := standbys[claim.Target]; reserved {
+			capacityJournal.preImages = append(capacityJournal.preImages, standby)
+		}
+	}
+	evacuationGuard, guardErr := tr.beginRunEvacuationCheckpoint(executionCtx, test, executionGeneration, executionLeaseOwnerID, target, runSupervisionToken, shardsByGroup, nextByGroup, capacityJournal)
 	if guardErr != nil {
 		closeDialedClients()
 		return impacts, fmt.Errorf("persist evacuation intent before replacement staging: %w", guardErr)
 	}
 	if evacuationGuard != "" {
 		waitAfterEvacuationGuard(executionCtx)
+	}
+	// restoreGuard runs only after the staging was positively rolled back. The
+	// journal holds the standby pre-images, so it is restored away only once
+	// the evacuation's capacity is back as well.
+	restoreGuard := func() {
+		if evacuationGuard == "" {
+			return
+		}
+		if len(podClaims) > 0 {
+			err := tr.rollbackEvacuationPodClaims(b, podClaims, standbys)
+			if err != nil || !tr.runEvacuationCapacityReturned(testID, podClaims, standbys) {
+				// Keep the pre-images, but stop a successor from rolling back to
+				// a topology this run may outgrow. The deferred retry restores
+				// the checkpoint if the capacity comes back.
+				slog.Warn("evacuation capacity rollback remains reserved; its journal is kept and marked abandoned", "test_id", testID, "error", err)
+				evacuationGuard = tr.markRunEvacuationCheckpointAbandoned(test, evacuationGuard, executionGeneration, executionLeaseOwnerID)
+				finishRestore = func() {
+					if tr.runEvacuationCapacityReturned(testID, podClaims, standbys) {
+						tr.restoreRunEvacuationPriorCheckpoint(test, evacuationGuard, executionGeneration, executionLeaseOwnerID)
+					}
+				}
+				return
+			}
+			podCommitted = true // returned already; the deferred rollback must not repeat it
+		}
+		tr.restoreRunEvacuationPriorCheckpoint(test, evacuationGuard, executionGeneration, executionLeaseOwnerID)
 	}
 
 	openedStreams, newlyAssigned, touchedTargets, rollback, err := b.applyEvacuationShardAdjustments(executionCtx, remoteLifecycleCtx, tr, test, testID, executionGeneration, requireTestExecutionLease, remainingDuration, steadyElapsed, startPaused, groupByName, clientsByTarget, streamsByTarget, shardsByGroup, nextByGroup, target, runSupervisionToken)
@@ -453,6 +491,9 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 			_ = stream.CloseSend()
 		}
 		closeDialedClients()
+		// applyEvacuationShardAdjustments rolled the staging back, or it would
+		// have returned the uncertain error above.
+		restoreGuard()
 		return impacts, err
 	}
 	if evacuationGuard != "" {
@@ -501,6 +542,9 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 			}
 			rollbackErr := rollback()
 			closeDialedClients()
+			if rollbackErr == nil {
+				restoreGuard()
+			}
 			return impacts, errors.Join(fmt.Errorf("establish replacement assignment leases: %w", leaseErr), rollbackErr)
 		}
 		stagedLeaseCtx, cancelStagedLeaseKeeper := context.WithCancel(executionCtx)
@@ -515,6 +559,9 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		if err := b.claimRunSupervisionClients(executionCtx, testID, replacementClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken); err != nil {
 			rollbackErr := rollback()
 			closeDialedClients()
+			if rollbackErr == nil {
+				restoreGuard()
+			}
 			return impacts, errors.Join(fmt.Errorf("claim replacement run supervision: %w", err), rollbackErr)
 		}
 		stopReplacementSupervision = b.startRunSupervisionTargetKeeper(executionCtx, testID, replacementClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken)
@@ -549,6 +596,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, uncertain, streamsByTarget, openedStreams, releaseTopology)
 		}
 		closeDialedClients()
+		restoreGuard()
 		return impacts, fmt.Errorf("generator evacuation became stale before the source fence")
 	}
 	if test.remoteTargetStates == nil {
