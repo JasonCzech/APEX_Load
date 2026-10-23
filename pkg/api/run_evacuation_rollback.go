@@ -66,6 +66,9 @@ func runEvacuationRollbackPlan(raw, testID string) (runEvacuationCheckpoint, []s
 	default:
 		return runEvacuationCheckpoint{}, nil, errors.New("evacuation passed its source fence")
 	}
+	if !guard.AbandonedAt.IsZero() {
+		return runEvacuationCheckpoint{}, nil, errors.New("evacuation was abandoned by its leader")
+	}
 	if slices.Contains(guard.Prior.CompletedTargets, guard.Source) {
 		return runEvacuationCheckpoint{}, nil, errors.New("evacuation source already completed in the prior topology")
 	}
@@ -451,6 +454,59 @@ func (tr *TestRunner) abandonRunEvacuationCheckpoint(test *ManagedTest, raw stri
 	if err := tr.swapRunContinuityCheckpoint(test, raw, restored, owner); err != nil {
 		slog.Warn("evacuation journal remains after a clean rollback; a successor may roll the run back to the journal's topology", "test_id", test.ID, "error", err)
 	}
+}
+
+// markRunEvacuationCheckpointAbandoned records that the journal's leader rolled
+// the staging back but could not return its capacity. The journal and its
+// pre-images stay; only the successor rollback is refused. It returns the
+// journal now in effect.
+func (tr *TestRunner) markRunEvacuationCheckpointAbandoned(test *ManagedTest, raw string, generation uint64, owner string) string {
+	var guard runEvacuationCheckpoint
+	if tr == nil || test == nil || raw == "" || json.Unmarshal([]byte(raw), &guard) != nil || guard.Version != runEvacuationRollbackCheckpointVersion ||
+		(guard.Phase != runEvacuationPhasePrepared && guard.Phase != runEvacuationPhaseStaged) || guard.TestID != test.ID || guard.Generation != generation || guard.OwnerID != owner || !guard.AbandonedAt.IsZero() {
+		return raw
+	}
+	guard.AbandonedAt = time.Now().UTC()
+	encoded, err := json.Marshal(guard)
+	if err != nil {
+		return raw
+	}
+	if err := tr.swapRunContinuityCheckpoint(test, raw, string(encoded), owner); err != nil {
+		slog.Warn("could not mark an evacuation journal abandoned; a successor may roll the run back to its topology", "test_id", test.ID, "error", err)
+		return raw
+	}
+	return string(encoded)
+}
+
+// runEvacuationCapacityReturned checks the ledger itself, since an ordinary
+// release reports no error: every replacement reservation is gone and every
+// activated standby is idle and committed again.
+func (tr *TestRunner) runEvacuationCapacityReturned(testID string, claims []storage.PodCapacityReservation, standbys map[string]storage.PodCapacityReservation) bool {
+	store, ok := tr.testStore.(podCapacityStore)
+	if !ok {
+		return false
+	}
+	rows, err := store.ListPodCapacityReservations()
+	if err != nil {
+		return false
+	}
+	current := make(map[string]storage.PodCapacityReservation)
+	for _, row := range rows {
+		if row.TestID == testID {
+			current[row.Target] = row
+		}
+	}
+	for _, claim := range claims {
+		row, present := current[claim.Target]
+		standby, reserved := standbys[claim.Target]
+		switch {
+		case reserved && (!present || row.State != "committed" || !restoredRunEvacuationStandby(row, standby)):
+			return false
+		case !reserved && present:
+			return false
+		}
+	}
+	return true
 }
 
 // WithEvacuationRollbackRecovery enables version 4 evacuation journals and

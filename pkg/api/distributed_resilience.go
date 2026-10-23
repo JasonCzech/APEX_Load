@@ -409,11 +409,17 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	}
 	podClaims, podErr := tr.reservePodEvacuation(executionCtx, b, testID, target, nextByGroup, clientsByTarget, dryRun, standbys)
 	podCommitted := false
+	// finishAbandon is set when a clean rollback kept its journal because the
+	// capacity was not yet back; the deferred retry completes the restore.
+	var finishAbandon func()
 	defer func() {
 		if !podCommitted && len(podClaims) > 0 {
 			if err := tr.rollbackEvacuationPodClaims(b, podClaims, standbys); err != nil {
 				slog.Warn("evacuation capacity rollback remains reserved", "test_id", testID, "error", err)
 			}
+		}
+		if finishAbandon != nil {
+			finishAbandon()
 		}
 	}()
 	if podErr != nil {
@@ -451,8 +457,18 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 			return
 		}
 		if len(podClaims) > 0 {
-			if err := tr.rollbackEvacuationPodClaims(b, podClaims, standbys); err != nil {
-				slog.Warn("evacuation capacity rollback remains reserved; its journal is kept for a successor", "test_id", testID, "error", err)
+			err := tr.rollbackEvacuationPodClaims(b, podClaims, standbys)
+			if err != nil || !tr.runEvacuationCapacityReturned(testID, podClaims, standbys) {
+				// Keep the pre-images, but stop a successor from rolling back to
+				// a topology this run may outgrow. The deferred retry restores
+				// the checkpoint if the capacity comes back.
+				slog.Warn("evacuation capacity rollback remains reserved; its journal is kept and marked abandoned", "test_id", testID, "error", err)
+				evacuationGuard = tr.markRunEvacuationCheckpointAbandoned(test, evacuationGuard, executionGeneration, executionLeaseOwnerID)
+				finishAbandon = func() {
+					if tr.runEvacuationCapacityReturned(testID, podClaims, standbys) {
+						tr.abandonRunEvacuationCheckpoint(test, evacuationGuard, executionGeneration, executionLeaseOwnerID)
+					}
+				}
 				return
 			}
 			podCommitted = true // returned already; the deferred rollback must not repeat it

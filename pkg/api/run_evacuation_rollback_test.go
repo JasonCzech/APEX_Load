@@ -992,3 +992,71 @@ func TestEvacuationRollbackFailurePanicHoldsRun(t *testing.T) {
 		t.Fatalf("panicking rollback failure lost its hold: phase %q resume %+v", guard.Phase, f.test.adoptedResume)
 	}
 }
+
+func TestRunEvacuationCapacityReturnedReadsTheLedger(t *testing.T) {
+	ordinary := newEvacuationRollbackFixture(t, runEvacuationPhaseStaged, false)
+	claims := []storage.PodCapacityReservation{ordinary.claim}
+	if ordinary.tr.runEvacuationCapacityReturned(ordinary.test.ID, claims, nil) {
+		t.Fatal("a pending replacement reservation counted as returned")
+	}
+	owner, generation := ordinary.tr.leadership.executionLeaseTerm()
+	for _, state := range []string{"releasing", "released"} {
+		if err := ordinary.store.TransitionPodCapacity("gen-b", ordinary.test.ID, "pod-b", ordinary.claim.ReservationID, state, executionLeaseName, owner, generation); err != nil {
+			t.Fatal(err)
+		}
+		if returned := ordinary.tr.runEvacuationCapacityReturned(ordinary.test.ID, claims, nil); returned != (state == "released") {
+			t.Fatalf("%s replacement reservation returned = %v", state, returned)
+		}
+	}
+
+	standby := newEvacuationRollbackFixture(t, runEvacuationPhaseStaged, true, func(f *evacuationRollbackFixture) {
+		predecessorRestoreStandby(t, f, false)
+	})
+	preImages := map[string]storage.PodCapacityReservation{"gen-b": *standby.standby}
+	if standby.tr.runEvacuationCapacityReturned(standby.test.ID, []storage.PodCapacityReservation{standby.claim}, preImages) {
+		t.Fatal("a pending idle standby counted as returned")
+	}
+	owner, generation = standby.tr.leadership.executionLeaseTerm()
+	if err := standby.store.TransitionPodCapacity("gen-b", standby.test.ID, "pod-b", standby.claim.ReservationID, "committed", executionLeaseName, owner, generation); err != nil {
+		t.Fatal(err)
+	}
+	if !standby.tr.runEvacuationCapacityReturned(standby.test.ID, []storage.PodCapacityReservation{standby.claim}, preImages) {
+		t.Fatal("a committed idle standby did not count as returned")
+	}
+}
+
+func TestAbandonedEvacuationJournalIsNeverRolledBack(t *testing.T) {
+	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+	tr.evacuationRollbackRecovery = true
+	tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
+	before := test.continuityCheckpoint
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	marked := tr.markRunEvacuationCheckpointAbandoned(test, guard, generation, owner)
+	var decoded runEvacuationCheckpoint
+	if err := json.Unmarshal([]byte(marked), &decoded); err != nil || decoded.AbandonedAt.IsZero() || decoded.Phase != runEvacuationPhasePrepared {
+		t.Fatalf("abandoned journal = %+v, %v", decoded, err)
+	}
+	if record, _ := store.GetTest(test.ID); record.ContinuityCheckpoint != marked {
+		t.Fatal("abandoned marker is not durable")
+	}
+	if _, _, err := runEvacuationRollbackPlan(marked, test.ID); err == nil || !strings.Contains(err.Error(), "abandoned by its leader") {
+		t.Fatalf("abandoned journal plan = %v", err)
+	}
+	if _, _, err := interruptedEvacuationTargets(marked, test.ID); err != nil {
+		t.Fatalf("abandoned journal lost its fail-closed participants: %v", err)
+	}
+	if again := tr.markRunEvacuationCheckpointAbandoned(test, marked, generation, owner); again != marked {
+		t.Fatal("an abandoned journal was marked twice")
+	}
+	// Once the capacity is back, the leader still restores the prior checkpoint.
+	tr.abandonRunEvacuationCheckpoint(test, marked, generation, owner)
+	record, _ := store.GetTest(test.ID)
+	restored, present, err := decodeRunContinuityCheckpoint(record.ContinuityCheckpoint)
+	original, _, _ := decodeRunContinuityCheckpoint(before)
+	if err != nil || !present || restored.Shards["ga"][0].Target != "gen-a" || !restored.ArmedAt.Equal(original.ArmedAt) {
+		t.Fatalf("abandoned journal was not restored: %+v, %v", restored, err)
+	}
+}

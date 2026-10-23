@@ -64,6 +64,10 @@ type runEvacuationCheckpoint struct {
 	RollbackGeneration uint64    `json:"rollback_generation,omitempty"`
 	RollbackOwnerID    string    `json:"rollback_owner_id,omitempty"`
 	RollbackStartedAt  time.Time `json:"rollback_started_at,omitempty"`
+	// AbandonedAt marks a journal whose leader rolled the staging back but
+	// could not return its capacity. Its prior topology may go stale while the
+	// run continues, so it is never rolled back to; recovery stays fail-closed.
+	AbandonedAt time.Time `json:"abandoned_at,omitempty"`
 }
 
 // runEvacuationCapacity is the capacity journal of one evacuation attempt.
