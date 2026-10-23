@@ -176,8 +176,19 @@ func decodeTelemetryPolicyCLI(raw []byte) (*telemetrypolicy.TelemetryPolicyEvide
 		return nil, invalid
 	}
 	names := []string{"schema_version", "policy_id", "revision", "hash", "captured_at", "capture_boundary", "classification_algorithm", "expected_controller_publication_interval_ms", "cadence_scope", "sustained_breach_window_ms", "coverage_rule", "budgets"}
-	policyFields, err := analysisCLIObject(fields["policy"], 32<<10, names)
-	if err != nil || len(policyFields) != len(names) {
+	// A version 2 receipt also names its project policy's definition digest.
+	policyFields, err := analysisCLIObject(fields["policy"], 32<<10, append(names, "definition_sha256"))
+	if err != nil {
+		return nil, invalid
+	}
+	expected := len(names)
+	if digest, exists := policyFields["definition_sha256"]; exists {
+		if _, err := analysisCLIText(digest, 64, true); err != nil {
+			return nil, invalid
+		}
+		expected++
+	}
+	if len(policyFields) != expected {
 		return nil, invalid
 	}
 	for _, field := range []string{"schema_version", "policy_id", "hash", "captured_at", "capture_boundary", "classification_algorithm", "cadence_scope", "coverage_rule"} {

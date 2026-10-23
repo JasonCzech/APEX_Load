@@ -646,6 +646,11 @@ type ManagedTest struct {
 	// policy the run asked for instead of the project's default (TEL-B); its
 	// revision is pinned at Start.
 	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID names the project telemetry budget policy
+	// (telemetry_policy) the run asked for instead of the system threshold
+	// settings (TEL-B); its revision is pinned at Start and sets the run's
+	// budget receipt.
+	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
 
 	// deprecated single-script fields kept for backwards compat in JSON
 	ScriptID   string `json:"script_id,omitempty"`
@@ -2333,9 +2338,17 @@ type CreateTestRequest struct {
 	// acceptance policies instead of its default; a revised copy keeps its
 	// source's choice unless it names another, or project_default.
 	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID chooses one of the project's telemetry budget
+	// policies (telemetry_policy) to set the run's live budgets instead of
+	// the system threshold settings; a revised copy keeps its source's
+	// choice unless it names another, or project_default.
+	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
 	// telemetryPolicyInherited says the choice came from the revision
 	// source, for an error that names where it came from.
 	telemetryPolicyInherited bool
+	// telemetryBudgetPolicyInherited is telemetryPolicyInherited for the
+	// budget policy choice.
+	telemetryBudgetPolicyInherited bool
 	// telemetryPolicyFromScenario says the choice came from the run's
 	// scenario (a direct start, a schedule or a plan entry).
 	telemetryPolicyFromScenario bool

@@ -100,6 +100,9 @@ type CIRunRequest struct {
 	// TelemetryAcceptancePolicyID judges the run by one of the project's
 	// telemetry acceptance policies instead of its default; omitted when unset.
 	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID sets the run's live telemetry budgets from one
+	// of the project's telemetry budget policies; omitted when unset.
+	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
 }
 
 type CIMetrics struct {
@@ -146,6 +149,9 @@ type CIRunResponse struct {
 	// TelemetryAcceptancePolicyID echoes the run's chosen telemetry
 	// acceptance policy; controllers before policy selection omit it.
 	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID echoes the run's chosen telemetry budget
+	// policy; controllers before the budget choice omit it.
+	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
 }
 
 // CITelemetryVerdict is a run's telemetry acceptance verdict (pass, fail or

@@ -12872,6 +12872,8 @@ paths:
                                   type: string
                                 coverage_rule:
                                   type: string
+                                definition_sha256:
+                                  type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
                                   format: int64
@@ -13393,6 +13395,8 @@ paths:
                                 classification_algorithm:
                                   type: string
                                 coverage_rule:
+                                  type: string
+                                definition_sha256:
                                   type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
@@ -16179,6 +16183,8 @@ paths:
                             classification_algorithm:
                               type: string
                             coverage_rule:
+                              type: string
+                            definition_sha256:
                               type: string
                             expected_controller_publication_interval_ms:
                               type: integer
@@ -51847,6 +51853,8 @@ paths:
                       type: string
                 telemetry_acceptance_policy_id:
                   type: string
+                telemetry_budget_policy_id:
+                  type: string
                 telemetry_inconclusive:
                   type: string
       responses:
@@ -52000,6 +52008,8 @@ paths:
                   status_url:
                     type: string
                   telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   telemetry_verdict:
                     type: object
@@ -52358,6 +52368,8 @@ paths:
                     type: string
                   telemetry_acceptance_policy_id:
                     type: string
+                  telemetry_budget_policy_id:
+                    type: string
                   telemetry_verdict:
                     type: object
                     properties:
@@ -52685,6 +52697,8 @@ paths:
                   status_url:
                     type: string
                   telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   telemetry_verdict:
                     type: object
@@ -64542,6 +64556,8 @@ paths:
                                 stopped_by_subject:
                                   type: string
                                 telemetry_acceptance_policy_id:
+                                  type: string
+                                telemetry_budget_policy_id:
                                   type: string
                                 telemetry_health:
                                   type: object
@@ -92511,6 +92527,8 @@ paths:
                   nullable: true
                 telemetry_acceptance_policy_id:
                   type: string
+                telemetry_budget_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 test:
@@ -93633,6 +93651,8 @@ paths:
                     start_delay:
                       type: string
                     telemetry_acceptance_policy_id:
+                      type: string
+                    telemetry_budget_policy_id:
                       type: string
                     termination_mode:
                       type: string
@@ -97368,6 +97388,8 @@ paths:
                                       type: string
                                     coverage_rule:
                                       type: string
+                                    definition_sha256:
+                                      type: string
                                     expected_controller_publication_interval_ms:
                                       type: integer
                                       format: int64
@@ -99958,6 +99980,8 @@ paths:
                                     type: string
                                   coverage_rule:
                                     type: string
+                                  definition_sha256:
+                                    type: string
                                   expected_controller_publication_interval_ms:
                                     type: integer
                                     format: int64
@@ -101013,6 +101037,8 @@ paths:
                       stopped_by_subject:
                         type: string
                       telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -104765,6 +104791,8 @@ paths:
                                       type: string
                                     coverage_rule:
                                       type: string
+                                    definition_sha256:
+                                      type: string
                                     expected_controller_publication_interval_ms:
                                       type: integer
                                       format: int64
@@ -107355,6 +107383,8 @@ paths:
                                     type: string
                                   coverage_rule:
                                     type: string
+                                  definition_sha256:
+                                    type: string
                                   expected_controller_publication_interval_ms:
                                     type: integer
                                     format: int64
@@ -108410,6 +108440,8 @@ paths:
                       stopped_by_subject:
                         type: string
                       telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -112157,6 +112189,8 @@ paths:
                                       type: string
                                     coverage_rule:
                                       type: string
+                                    definition_sha256:
+                                      type: string
                                     expected_controller_publication_interval_ms:
                                       type: integer
                                       format: int64
@@ -114747,6 +114781,8 @@ paths:
                                     type: string
                                   coverage_rule:
                                     type: string
+                                  definition_sha256:
+                                    type: string
                                   expected_controller_publication_interval_ms:
                                     type: integer
                                     format: int64
@@ -115802,6 +115838,8 @@ paths:
                       stopped_by_subject:
                         type: string
                       telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -119561,6 +119599,8 @@ paths:
                                       type: string
                                     coverage_rule:
                                       type: string
+                                    definition_sha256:
+                                      type: string
                                     expected_controller_publication_interval_ms:
                                       type: integer
                                       format: int64
@@ -122151,6 +122191,8 @@ paths:
                                     type: string
                                   coverage_rule:
                                     type: string
+                                  definition_sha256:
+                                    type: string
                                   expected_controller_publication_interval_ms:
                                     type: integer
                                     format: int64
@@ -123206,6 +123248,8 @@ paths:
                       stopped_by_subject:
                         type: string
                       telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -126965,6 +127009,8 @@ paths:
                                       type: string
                                     coverage_rule:
                                       type: string
+                                    definition_sha256:
+                                      type: string
                                     expected_controller_publication_interval_ms:
                                       type: integer
                                       format: int64
@@ -129555,6 +129601,8 @@ paths:
                                     type: string
                                   coverage_rule:
                                     type: string
+                                  definition_sha256:
+                                    type: string
                                   expected_controller_publication_interval_ms:
                                     type: integer
                                     format: int64
@@ -130610,6 +130658,8 @@ paths:
                       stopped_by_subject:
                         type: string
                       telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -134369,6 +134419,8 @@ paths:
                                       type: string
                                     coverage_rule:
                                       type: string
+                                    definition_sha256:
+                                      type: string
                                     expected_controller_publication_interval_ms:
                                       type: integer
                                       format: int64
@@ -136959,6 +137011,8 @@ paths:
                                     type: string
                                   coverage_rule:
                                     type: string
+                                  definition_sha256:
+                                    type: string
                                   expected_controller_publication_interval_ms:
                                     type: integer
                                     format: int64
@@ -138014,6 +138068,8 @@ paths:
                       stopped_by_subject:
                         type: string
                       telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -141773,6 +141829,8 @@ paths:
                                       type: string
                                     coverage_rule:
                                       type: string
+                                    definition_sha256:
+                                      type: string
                                     expected_controller_publication_interval_ms:
                                       type: integer
                                       format: int64
@@ -144363,6 +144421,8 @@ paths:
                                     type: string
                                   coverage_rule:
                                     type: string
+                                  definition_sha256:
+                                    type: string
                                   expected_controller_publication_interval_ms:
                                     type: integer
                                     format: int64
@@ -145418,6 +145478,8 @@ paths:
                       stopped_by_subject:
                         type: string
                       telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -361134,6 +361196,8 @@ paths:
                   type: string
                 telemetry_acceptance_policy_id:
                   type: string
+                telemetry_budget_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 timeslot_id:
@@ -367962,6 +368026,8 @@ paths:
                                 classification_algorithm:
                                   type: string
                                 coverage_rule:
+                                  type: string
+                                definition_sha256:
                                   type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
@@ -376041,6 +376107,8 @@ paths:
                                 type: string
                               coverage_rule:
                                 type: string
+                              definition_sha256:
+                                type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
                                 format: int64
@@ -378292,6 +378360,8 @@ paths:
                   stopped_by_subject:
                     type: string
                   telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   telemetry_health:
                     type: object
@@ -385454,6 +385524,8 @@ paths:
                                   type: string
                                 coverage_rule:
                                   type: string
+                                definition_sha256:
+                                  type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
                                   format: int64
@@ -393532,6 +393604,8 @@ paths:
                                 type: string
                               coverage_rule:
                                 type: string
+                              definition_sha256:
+                                type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
                                 format: int64
@@ -395783,6 +395857,8 @@ paths:
                   stopped_by_subject:
                     type: string
                   telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   telemetry_health:
                     type: object
@@ -402052,6 +402128,8 @@ paths:
                             type: string
                           coverage_rule:
                             type: string
+                          definition_sha256:
+                            type: string
                           expected_controller_publication_interval_ms:
                             type: integer
                             format: int64
@@ -405122,6 +405200,8 @@ paths:
                           classification_algorithm:
                             type: string
                           coverage_rule:
+                            type: string
+                          definition_sha256:
                             type: string
                           expected_controller_publication_interval_ms:
                             type: integer
@@ -420280,6 +420360,8 @@ paths:
                                 type: string
                               coverage_rule:
                                 type: string
+                              definition_sha256:
+                                type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
                                 format: int64
@@ -421922,6 +422004,8 @@ paths:
                               classification_algorithm:
                                 type: string
                               coverage_rule:
+                                type: string
+                              definition_sha256:
                                 type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
@@ -425652,6 +425736,8 @@ paths:
                           classification_algorithm:
                             type: string
                           coverage_rule:
+                            type: string
+                          definition_sha256:
                             type: string
                           expected_controller_publication_interval_ms:
                             type: integer
@@ -440546,6 +440632,8 @@ paths:
                                   type: string
                                 coverage_rule:
                                   type: string
+                                definition_sha256:
+                                  type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
                                   format: int64
@@ -448624,6 +448712,8 @@ paths:
                                 type: string
                               coverage_rule:
                                 type: string
+                              definition_sha256:
+                                type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
                                 format: int64
@@ -450875,6 +450965,8 @@ paths:
                   stopped_by_subject:
                     type: string
                   telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   telemetry_health:
                     type: object
@@ -457874,6 +457966,8 @@ paths:
                                   type: string
                                 coverage_rule:
                                   type: string
+                                definition_sha256:
+                                  type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
                                   format: int64
@@ -465952,6 +466046,8 @@ paths:
                                 type: string
                               coverage_rule:
                                 type: string
+                              definition_sha256:
+                                type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
                                 format: int64
@@ -468203,6 +468299,8 @@ paths:
                   stopped_by_subject:
                     type: string
                   telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   telemetry_health:
                     type: object
@@ -481266,6 +481364,8 @@ paths:
                                   type: string
                                 coverage_rule:
                                   type: string
+                                definition_sha256:
+                                  type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
                                   format: int64
@@ -489344,6 +489444,8 @@ paths:
                                 type: string
                               coverage_rule:
                                 type: string
+                              definition_sha256:
+                                type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
                                 format: int64
@@ -491595,6 +491697,8 @@ paths:
                   stopped_by_subject:
                     type: string
                   telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   telemetry_health:
                     type: object
@@ -496916,6 +497020,8 @@ paths:
                             type: string
                           coverage_rule:
                             type: string
+                          definition_sha256:
+                            type: string
                           expected_controller_publication_interval_ms:
                             type: integer
                             format: int64
@@ -499961,6 +500067,8 @@ paths:
                                 classification_algorithm:
                                   type: string
                                 coverage_rule:
+                                  type: string
+                                definition_sha256:
                                   type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
@@ -508027,6 +508135,8 @@ paths:
                               classification_algorithm:
                                 type: string
                               coverage_rule:
+                                type: string
+                              definition_sha256:
                                 type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
@@ -518411,6 +518521,8 @@ paths:
                   type: string
                 telemetry_acceptance_policy_id:
                   type: string
+                telemetry_budget_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 timeslot_id:
@@ -521289,6 +521401,8 @@ paths:
                 start_delay:
                   type: string
                 telemetry_acceptance_policy_id:
+                  type: string
+                telemetry_budget_policy_id:
                   type: string
                 termination_mode:
                   type: string

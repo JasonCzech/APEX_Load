@@ -1096,6 +1096,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 	}
 	managedTest.durableExecutionGeneration = record.ExecutionGeneration
 	managedTest.TelemetryAcceptancePolicyID = record.TelemetryAcceptancePolicyID
+	managedTest.TelemetryBudgetPolicyID = record.TelemetryBudgetPolicyID
 	if record.EndTime != nil {
 		managedTest.EndedAt = record.EndTime
 	}
@@ -1997,6 +1998,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		TraceContext:                   runTraceContextForStorage(test.TraceContext),
 		JointEvidence:                  jointEvidenceForStorage(test.JointEvidence),
 		TelemetryAcceptancePolicyID:    test.TelemetryAcceptancePolicyID,
+		TelemetryBudgetPolicyID:        test.TelemetryBudgetPolicyID,
 		AnalysisPolicySelections:       runAnalysisPolicySelectionsForStorage(test.AnalysisPolicySelections),
 	}
 }

@@ -456,7 +456,7 @@ export interface GitHubActionsPolicy {
   updated_by?: string
   /** Fails CI runs whose validity is "invalid", or with "suspect" also suspect runs; empty is advisory. */
   validity_gate?: '' | 'invalid' | 'suspect'
-  /** Lets a CI run choose which of the project's telemetry acceptance policies judges it; off, CI runs use the default. */
+  /** Lets a CI run choose which of the project's telemetry acceptance policies judges it and which telemetry budget policy sets its live budgets; off, CI runs are judged by the project's default acceptance policy and classified by the system threshold settings. */
   allow_telemetry_policy_selection?: boolean
 }
 
@@ -863,6 +863,8 @@ export interface TestSummary {
   joint_evidence?: import('./types/jointEvidence').JointEvidenceProjection
   /** The project telemetry acceptance policy the run chose instead of the default (TEL-B). */
   telemetry_acceptance_policy_id?: string
+  /** The project telemetry budget policy that set the run's live budgets instead of the system threshold settings (TEL-B). */
+  telemetry_budget_policy_id?: string
   /** The execution-plan run that started this run. */
   execution_plan?: TestExecutionPlanLink
   archive?: RunArchiveRecord

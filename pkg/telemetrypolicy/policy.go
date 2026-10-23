@@ -6,17 +6,31 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"math"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 const Version = "apexload.telemetry_policy.v1"
 const telemetryPolicyVersion = Version
 const SustainedBreachWindow = 15 * time.Second
 
+// VersionProjectPolicy is a receipt resolved from a project telemetry_policy
+// revision a run chose, instead of the system threshold settings. It names that
+// revision and its definition digest; everything else keeps version 1's rules.
+const VersionProjectPolicy = "apexload.telemetry_policy.v2"
+
+// SystemPolicyID identifies the version 1 receipt of the system settings.
+const SystemPolicyID = "system-telemetry-budgets"
+
+const maxProjectPolicyIDBytes = 128
+
 type TelemetryBudgetPolicy struct {
 	SchemaVersion                           string                 `json:"schema_version"`
 	PolicyID                                string                 `json:"policy_id"`
 	Revision                                int                    `json:"revision"`
+	DefinitionSHA256                        string                 `json:"definition_sha256,omitempty"`
 	Hash                                    string                 `json:"hash"`
 	CapturedAt                              time.Time              `json:"captured_at"`
 	CaptureBoundary                         string                 `json:"capture_boundary"`
@@ -65,7 +79,7 @@ func Clone(policy *TelemetryBudgetPolicy) *TelemetryBudgetPolicy {
 }
 
 func Validate(policy *TelemetryBudgetPolicy) bool {
-	if policy == nil || policy.SchemaVersion != telemetryPolicyVersion || policy.PolicyID != "system-telemetry-budgets" || policy.Revision != 1 ||
+	if policy == nil || !validIdentity(policy) ||
 		policy.CapturedAt.IsZero() || policy.CapturedAt.Location() != time.UTC ||
 		policy.CaptureBoundary != "execution-admission-before-staging" || policy.ClassificationAlgorithm != "legacy-mixed-diagnostic.v1" ||
 		policy.SustainedBreachWindowMs != SustainedBreachWindow.Milliseconds() ||
@@ -86,3 +100,39 @@ func Validate(policy *TelemetryBudgetPolicy) bool {
 }
 
 func ValidateTelemetryBudgetPolicy(policy *TelemetryBudgetPolicy) bool { return Validate(policy) }
+
+// validIdentity accepts the system receipt (version 1) or a chosen project
+// policy revision (version 2) with its definition digest.
+func validIdentity(policy *TelemetryBudgetPolicy) bool {
+	switch policy.SchemaVersion {
+	case telemetryPolicyVersion:
+		return policy.PolicyID == SystemPolicyID && policy.Revision == 1 && policy.DefinitionSHA256 == ""
+	case VersionProjectPolicy:
+		return validProjectPolicyID(policy.PolicyID) && policy.Revision >= 1 && lowerHexSHA256(policy.DefinitionSHA256)
+	}
+	return false
+}
+
+func validProjectPolicyID(id string) bool {
+	if id == "" || len(id) > maxProjectPolicyIDBytes || id == SystemPolicyID || strings.TrimSpace(id) != id || !utf8.ValidString(id) {
+		return false
+	}
+	for _, r := range id {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func lowerHexSHA256(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, r := range value {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}

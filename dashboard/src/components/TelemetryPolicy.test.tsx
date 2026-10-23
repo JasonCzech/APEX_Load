@@ -34,6 +34,16 @@ describe('TelemetryPolicy consumers', () => {
     expect(container.textContent).not.toContain('do-not-render')
     expect(container.querySelector('[aria-label="Retained telemetry stage budgets"]')).toBeNull()
   })
+  it('labels the system receipt and a project budget policy the run chose', async () => {
+    await act(async () => root.render(<TelemetryPolicy evidence={receipt()} />))
+    expect(container.textContent).toContain('System threshold settings (system-telemetry-budgets · revision 1)')
+    expect(container.textContent).not.toContain('Definition digest')
+    const chosen = { availability: 'available' as const, policy: { ...receipt().policy, schema_version: 'apexload.telemetry_policy.v2', policy_id: 'tight-budgets', revision: 3, definition_sha256: 'ab'.repeat(32), hash: 'f034a3ac9bc132b32ff6487f8f2598e799676832958d96049f4b2dd7914a265b' } }
+    await act(async () => root.render(<TelemetryPolicy evidence={chosen} />))
+    expect(container.textContent).toContain('Project policy tight-budgets · revision 3 (chosen by the run)')
+    expect(container.textContent).toContain('Definition digest' + 'ab'.repeat(32))
+    expect(container.textContent).toContain('11 ms')
+  })
   it('shows explicit unavailable legacy evidence without default or zero budgets', async () => {
     await act(async () => root.render(<TelemetryPolicy />))
     expect(container.textContent).toContain('No immutable policy receipt')

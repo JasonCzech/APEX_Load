@@ -20,6 +20,9 @@ type CreateTestRequest struct {
 	// TelemetryAcceptancePolicyID judges the run by one of its project's
 	// telemetry acceptance policies instead of the default; omitted when unset.
 	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID sets the run's live telemetry budgets from one
+	// of its project's telemetry budget policies; omitted when unset.
+	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
 }
 
 // TestStatus is the managed-run projection consumed by first-party clients.
@@ -35,6 +38,9 @@ type TestStatus struct {
 	// TelemetryAcceptancePolicyID echoes the run's chosen telemetry
 	// acceptance policy; a controller that predates the choice omits it.
 	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID echoes the run's chosen telemetry budget
+	// policy; a controller that predates the choice omits it.
+	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
 }
 
 // LiveMetrics contains the metrics used by run/wait clients. Extra server

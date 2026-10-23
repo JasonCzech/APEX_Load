@@ -605,7 +605,7 @@ func TestRunPolicySelectionsAndChosenTelemetryPolicyPinTogether(t *testing.T) {
 	}
 	seedPolicy(t, store, project, "default-gate", storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, `{"version":1,"apply_by_default":true,"min_wall_time_coverage":0.5}`)
 	seedPolicy(t, store, project, "chosen-gate", storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, `{"version":1,"mode":"fail_ci","min_wall_time_coverage":0.9}`)
-	pins, acceptance, err := server.runner.resolveRunPolicyPinsForRun(project, &RunAnalysisPolicySelections{Browser: &RunAnalysisPolicySelection{ID: browser.ID, Revision: 1}}, "chosen-gate")
+	pins, acceptance, _, err := server.runner.resolveRunPolicyPinsForRun(project, &RunAnalysisPolicySelections{Browser: &RunAnalysisPolicySelection{ID: browser.ID, Revision: 1}}, runPolicyChoices{Acceptance: "chosen-gate"})
 	if err != nil {
 		t.Fatal(err)
 	}

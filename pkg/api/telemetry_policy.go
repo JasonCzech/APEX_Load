@@ -1,11 +1,15 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/storage"
 	"github.com/jasonczech/apexload/pkg/telemetrypolicy"
 )
 
@@ -165,4 +169,67 @@ func (tr *TestRunner) telemetryAdmissionProvenanceLocked(test *ManagedTest) (*Ru
 	}
 	owned := maskRunArchiveProvenance(initial)
 	return &owned, nil
+}
+
+// telemetryBudgetPolicyDefinition decodes a project telemetry_policy revision
+// a run can be classified by. Live classification keeps its fixed sustained-
+// breach window, so a policy with another window cannot set a run's budgets.
+func telemetryBudgetPolicyDefinition(definition *storage.AnalysisDefinition) (TelemetryPolicyDefinition, error) {
+	var payload TelemetryPolicyDefinition
+	if definition == nil || definition.Kind != storage.AnalysisDefinitionKindTelemetryPolicy {
+		return payload, fmt.Errorf("%w: not a telemetry budget policy", errRunPolicyConfiguration)
+	}
+	if _, err := decodeAnalysisPolicy(definition.Kind, definition.Definition); err != nil {
+		return payload, fmt.Errorf("%w: telemetry budget policy %q is invalid: %v", errRunPolicyConfiguration, definition.Name, err)
+	}
+	if err := json.Unmarshal(definition.Definition, &payload); err != nil {
+		return payload, fmt.Errorf("%w: telemetry budget policy %q is invalid: %v", errRunPolicyConfiguration, definition.Name, err)
+	}
+	if payload.SustainedWindowSeconds != nil && time.Duration(*payload.SustainedWindowSeconds)*time.Second != telemetrySustainedBreachWindow {
+		return payload, fmt.Errorf("%w: telemetry budget policy %q sets a %d s sustained window; a run's live classification uses %d s", errRunPolicyConfiguration, definition.Name, *payload.SustainedWindowSeconds, int(telemetrySustainedBreachWindow/time.Second))
+	}
+	return payload, nil
+}
+
+// projectTelemetryBudgetPolicy replaces the system receipt captured at
+// admission with one resolved from the run's chosen telemetry_policy revision.
+// Cadence, scope and capture time stay the system receipt's: they describe the
+// controller, not the policy. A stage the policy leaves unset uses its
+// built-in default, as re-evaluation does; a stage set to 0 is disabled.
+func projectTelemetryBudgetPolicy(system *TelemetryBudgetPolicy, definition *storage.AnalysisDefinition) (*TelemetryBudgetPolicy, error) {
+	if !validTelemetryBudgetPolicy(system) || system.SchemaVersion != telemetryPolicyVersion {
+		return nil, fmt.Errorf("resolve telemetry policy: the admission receipt is invalid")
+	}
+	payload, err := telemetryBudgetPolicyDefinition(definition)
+	if err != nil {
+		return nil, err
+	}
+	digest := sha256.Sum256(definition.Definition)
+	policy := cloneTelemetryBudgetPolicy(system)
+	policy.SchemaVersion = telemetrypolicy.VersionProjectPolicy
+	if definition.Revision < 1 || definition.Revision > math.MaxInt32 {
+		return nil, fmt.Errorf("%w: telemetry budget policy %q has revision %d", errRunPolicyConfiguration, definition.Name, definition.Revision)
+	}
+	policy.PolicyID, policy.Revision, policy.DefinitionSHA256 = definition.ID, int(definition.Revision), hex.EncodeToString(digest[:])
+	for index, limit := range []struct {
+		value    *float64
+		fallback float64
+	}{
+		{payload.SampleAgeMs, defaultTelemetrySampleAgeBudgetMs},
+		{payload.GeneratorLagMs, defaultTelemetryGeneratorProcessingBudgetMs},
+		{payload.TransportLagMs, defaultTelemetryTransportBudgetMs},
+		{payload.ControllerFanoutMs, defaultTelemetryControllerFanoutBudgetMs},
+		{payload.BrowserRenderLagMs, defaultTelemetryBrowserRenderBudgetMs},
+	} {
+		value := limit.fallback
+		if limit.value != nil {
+			value = *limit.value
+		}
+		policy.Budgets[index] = TelemetryStageBudget{Stage: policy.Budgets[index].Stage, Enabled: value > 0, LimitMs: value}
+	}
+	policy.Hash = telemetryBudgetPolicyHash(policy)
+	if !validTelemetryBudgetPolicy(policy) {
+		return nil, fmt.Errorf("%w: telemetry budget policy %q cannot form a valid receipt", errRunPolicyConfiguration, definition.Name)
+	}
+	return policy, nil
 }

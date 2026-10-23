@@ -4617,6 +4617,7 @@ export interface operations {
                   "captured_at"?: string;
                   "classification_algorithm"?: string;
                   "coverage_rule"?: string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms"?: number;
                   "hash"?: string;
                   "policy_id"?: string;
@@ -4806,6 +4807,7 @@ export interface operations {
                   "captured_at"?: string;
                   "classification_algorithm"?: string;
                   "coverage_rule"?: string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms"?: number;
                   "hash"?: string;
                   "policy_id"?: string;
@@ -5843,6 +5845,7 @@ export interface operations {
                 "captured_at"?: string;
                 "classification_algorithm"?: string;
                 "coverage_rule"?: string;
+                "definition_sha256"?: string;
                 "expected_controller_publication_interval_ms"?: number;
                 "hash"?: string;
                 "policy_id"?: string;
@@ -9200,6 +9203,7 @@ export interface operations {
             "status": string;
             "status_url": string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "telemetry_verdict"?: ({
               "criteria": Array<{
                 "advisory"?: boolean;
@@ -33991,6 +33995,7 @@ export interface operations {
             "workflow_ref"?: string;
           };
           "telemetry_acceptance_policy_id"?: string;
+          "telemetry_budget_policy_id"?: string;
           "telemetry_inconclusive"?: string;
         };
       };
@@ -34054,6 +34059,7 @@ export interface operations {
             "status": string;
             "status_url": string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "telemetry_verdict"?: ({
               "criteria": Array<{
                 "advisory"?: boolean;
@@ -37828,6 +37834,7 @@ export interface operations {
             "preparation_id"?: string;
           }) | null;
           "telemetry_acceptance_policy_id"?: string;
+          "telemetry_budget_policy_id"?: string;
           "termination_mode"?: string;
           "test"?: ({
             "analysis_policy_selections"?: ({
@@ -38239,6 +38246,7 @@ export interface operations {
             "script_shakeout"?: boolean;
             "start_delay"?: string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "trace_context"?: ({
@@ -39443,6 +39451,7 @@ export interface operations {
                     "captured_at": string;
                     "classification_algorithm": string;
                     "coverage_rule": string;
+                    "definition_sha256"?: string;
                     "expected_controller_publication_interval_ms": number;
                     "hash": string;
                     "policy_id": string;
@@ -40223,6 +40232,7 @@ export interface operations {
                     "captured_at": string;
                     "classification_algorithm": string;
                     "coverage_rule": string;
+                    "definition_sha256"?: string;
                     "expected_controller_publication_interval_ms": number;
                     "hash": string;
                     "policy_id": string;
@@ -40584,6 +40594,7 @@ export interface operations {
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "telemetry_acceptance_policy_id"?: string;
+              "telemetry_budget_policy_id"?: string;
               "telemetry_health"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -46232,6 +46243,7 @@ export interface operations {
           "script_shakeout"?: boolean;
           "start_delay"?: string;
           "telemetry_acceptance_policy_id"?: string;
+          "telemetry_budget_policy_id"?: string;
           "termination_mode"?: string;
           "timeslot_id"?: (string) | null;
           "trace_context"?: ({
@@ -48367,6 +48379,7 @@ export interface operations {
                   "captured_at": string;
                   "classification_algorithm": string;
                   "coverage_rule": string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms": number;
                   "hash": string;
                   "policy_id": string;
@@ -50731,6 +50744,7 @@ export interface operations {
                   "captured_at": string;
                   "classification_algorithm": string;
                   "coverage_rule": string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms": number;
                   "hash": string;
                   "policy_id": string;
@@ -51473,6 +51487,7 @@ export interface operations {
             "stopped_by_display_name"?: string;
             "stopped_by_subject"?: string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "telemetry_health"?: ({
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
@@ -59241,6 +59256,7 @@ export interface operations {
           "script_shakeout"?: boolean;
           "start_delay"?: string;
           "telemetry_acceptance_policy_id"?: string;
+          "telemetry_budget_policy_id"?: string;
           "termination_mode"?: string;
           "timeslot_id"?: (string) | null;
           "trace_context"?: ({
@@ -64907,6 +64923,7 @@ export interface operations {
             "status": string;
             "status_url": string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "telemetry_verdict"?: ({
               "criteria": Array<{
                 "advisory"?: boolean;
@@ -67843,6 +67860,7 @@ export interface operations {
                   "captured_at": string;
                   "classification_algorithm": string;
                   "coverage_rule": string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms": number;
                   "hash": string;
                   "policy_id": string;
@@ -70203,6 +70221,7 @@ export interface operations {
                   "captured_at": string;
                   "classification_algorithm": string;
                   "coverage_rule": string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms": number;
                   "hash": string;
                   "policy_id": string;
@@ -73020,6 +73039,7 @@ export interface operations {
                     "captured_at": string;
                     "classification_algorithm": string;
                     "coverage_rule": string;
+                    "definition_sha256"?: string;
                     "expected_controller_publication_interval_ms": number;
                     "hash": string;
                     "policy_id": string;
@@ -73800,6 +73820,7 @@ export interface operations {
                     "captured_at": string;
                     "classification_algorithm": string;
                     "coverage_rule": string;
+                    "definition_sha256"?: string;
                     "expected_controller_publication_interval_ms": number;
                     "hash": string;
                     "policy_id": string;
@@ -74161,6 +74182,7 @@ export interface operations {
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "telemetry_acceptance_policy_id"?: string;
+              "telemetry_budget_policy_id"?: string;
               "telemetry_health"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -76248,6 +76270,7 @@ export interface operations {
                 "captured_at": string;
                 "classification_algorithm": string;
                 "coverage_rule": string;
+                "definition_sha256"?: string;
                 "expected_controller_publication_interval_ms": number;
                 "hash": string;
                 "policy_id": string;
@@ -77266,6 +77289,7 @@ export interface operations {
                 "captured_at": string;
                 "classification_algorithm": string;
                 "coverage_rule": string;
+                "definition_sha256"?: string;
                 "expected_controller_publication_interval_ms": number;
                 "hash": string;
                 "policy_id": string;
@@ -81616,6 +81640,7 @@ export interface operations {
                   "captured_at": string;
                   "classification_algorithm": string;
                   "coverage_rule": string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms": number;
                   "hash": string;
                   "policy_id": string;
@@ -82134,6 +82159,7 @@ export interface operations {
                   "captured_at": string;
                   "classification_algorithm": string;
                   "coverage_rule": string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms": number;
                   "hash": string;
                   "policy_id": string;
@@ -83273,6 +83299,7 @@ export interface operations {
                 "captured_at": string;
                 "classification_algorithm": string;
                 "coverage_rule": string;
+                "definition_sha256"?: string;
                 "expected_controller_publication_interval_ms": number;
                 "hash": string;
                 "policy_id": string;
@@ -91289,6 +91316,7 @@ export interface operations {
                   "captured_at": string;
                   "classification_algorithm": string;
                   "coverage_rule": string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms": number;
                   "hash": string;
                   "policy_id": string;
@@ -93653,6 +93681,7 @@ export interface operations {
                   "captured_at": string;
                   "classification_algorithm": string;
                   "coverage_rule": string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms": number;
                   "hash": string;
                   "policy_id": string;
@@ -94395,6 +94424,7 @@ export interface operations {
             "stopped_by_display_name"?: string;
             "stopped_by_subject"?: string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "telemetry_health"?: ({
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
@@ -97537,6 +97567,7 @@ export interface operations {
                 "captured_at": string;
                 "classification_algorithm": string;
                 "coverage_rule": string;
+                "definition_sha256"?: string;
                 "expected_controller_publication_interval_ms": number;
                 "hash": string;
                 "policy_id": string;
@@ -101800,6 +101831,7 @@ export interface operations {
                   "stopped_by_display_name"?: string;
                   "stopped_by_subject"?: string;
                   "telemetry_acceptance_policy_id"?: string;
+                  "telemetry_budget_policy_id"?: string;
                   "telemetry_health"?: (Record<string, unknown>) | null;
                   "termination_mode"?: string;
                   "timeslot_id"?: (string) | null;
@@ -114400,6 +114432,7 @@ export interface operations {
                   "captured_at": string;
                   "classification_algorithm": string;
                   "coverage_rule": string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms": number;
                   "hash": string;
                   "policy_id": string;
@@ -116764,6 +116797,7 @@ export interface operations {
                   "captured_at": string;
                   "classification_algorithm": string;
                   "coverage_rule": string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms": number;
                   "hash": string;
                   "policy_id": string;
@@ -117506,6 +117540,7 @@ export interface operations {
             "stopped_by_display_name"?: string;
             "stopped_by_subject"?: string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "telemetry_health"?: ({
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
@@ -118375,6 +118410,7 @@ export interface operations {
           "script_shakeout"?: boolean;
           "start_delay"?: string;
           "telemetry_acceptance_policy_id"?: string;
+          "telemetry_budget_policy_id"?: string;
           "termination_mode"?: string;
           "timeslot_id"?: (string) | null;
           "trace_context"?: ({
@@ -131531,6 +131567,7 @@ export interface operations {
                     "captured_at": string;
                     "classification_algorithm": string;
                     "coverage_rule": string;
+                    "definition_sha256"?: string;
                     "expected_controller_publication_interval_ms": number;
                     "hash": string;
                     "policy_id": string;
@@ -132311,6 +132348,7 @@ export interface operations {
                     "captured_at": string;
                     "classification_algorithm": string;
                     "coverage_rule": string;
+                    "definition_sha256"?: string;
                     "expected_controller_publication_interval_ms": number;
                     "hash": string;
                     "policy_id": string;
@@ -132672,6 +132710,7 @@ export interface operations {
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "telemetry_acceptance_policy_id"?: string;
+              "telemetry_budget_policy_id"?: string;
               "telemetry_health"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -133890,6 +133929,7 @@ export interface operations {
                     "captured_at": string;
                     "classification_algorithm": string;
                     "coverage_rule": string;
+                    "definition_sha256"?: string;
                     "expected_controller_publication_interval_ms": number;
                     "hash": string;
                     "policy_id": string;
@@ -134670,6 +134710,7 @@ export interface operations {
                     "captured_at": string;
                     "classification_algorithm": string;
                     "coverage_rule": string;
+                    "definition_sha256"?: string;
                     "expected_controller_publication_interval_ms": number;
                     "hash": string;
                     "policy_id": string;
@@ -135031,6 +135072,7 @@ export interface operations {
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "telemetry_acceptance_policy_id"?: string;
+              "telemetry_budget_policy_id"?: string;
               "telemetry_health"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -136249,6 +136291,7 @@ export interface operations {
                     "captured_at": string;
                     "classification_algorithm": string;
                     "coverage_rule": string;
+                    "definition_sha256"?: string;
                     "expected_controller_publication_interval_ms": number;
                     "hash": string;
                     "policy_id": string;
@@ -137029,6 +137072,7 @@ export interface operations {
                     "captured_at": string;
                     "classification_algorithm": string;
                     "coverage_rule": string;
+                    "definition_sha256"?: string;
                     "expected_controller_publication_interval_ms": number;
                     "hash": string;
                     "policy_id": string;
@@ -137390,6 +137434,7 @@ export interface operations {
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "telemetry_acceptance_policy_id"?: string;
+              "telemetry_budget_policy_id"?: string;
               "telemetry_health"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -138608,6 +138653,7 @@ export interface operations {
                     "captured_at": string;
                     "classification_algorithm": string;
                     "coverage_rule": string;
+                    "definition_sha256"?: string;
                     "expected_controller_publication_interval_ms": number;
                     "hash": string;
                     "policy_id": string;
@@ -139388,6 +139434,7 @@ export interface operations {
                     "captured_at": string;
                     "classification_algorithm": string;
                     "coverage_rule": string;
+                    "definition_sha256"?: string;
                     "expected_controller_publication_interval_ms": number;
                     "hash": string;
                     "policy_id": string;
@@ -139749,6 +139796,7 @@ export interface operations {
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "telemetry_acceptance_policy_id"?: string;
+              "telemetry_budget_policy_id"?: string;
               "telemetry_health"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -140967,6 +141015,7 @@ export interface operations {
                     "captured_at": string;
                     "classification_algorithm": string;
                     "coverage_rule": string;
+                    "definition_sha256"?: string;
                     "expected_controller_publication_interval_ms": number;
                     "hash": string;
                     "policy_id": string;
@@ -141747,6 +141796,7 @@ export interface operations {
                     "captured_at": string;
                     "classification_algorithm": string;
                     "coverage_rule": string;
+                    "definition_sha256"?: string;
                     "expected_controller_publication_interval_ms": number;
                     "hash": string;
                     "policy_id": string;
@@ -142108,6 +142158,7 @@ export interface operations {
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "telemetry_acceptance_policy_id"?: string;
+              "telemetry_budget_policy_id"?: string;
               "telemetry_health"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -146160,6 +146211,7 @@ export interface operations {
                   "captured_at": string;
                   "classification_algorithm": string;
                   "coverage_rule": string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms": number;
                   "hash": string;
                   "policy_id": string;
@@ -148524,6 +148576,7 @@ export interface operations {
                   "captured_at": string;
                   "classification_algorithm": string;
                   "coverage_rule": string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms": number;
                   "hash": string;
                   "policy_id": string;
@@ -149266,6 +149319,7 @@ export interface operations {
             "stopped_by_display_name"?: string;
             "stopped_by_subject"?: string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "telemetry_health"?: ({
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
@@ -173594,6 +173648,7 @@ export interface operations {
                   "captured_at": string;
                   "classification_algorithm": string;
                   "coverage_rule": string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms": number;
                   "hash": string;
                   "policy_id": string;
@@ -175958,6 +176013,7 @@ export interface operations {
                   "captured_at": string;
                   "classification_algorithm": string;
                   "coverage_rule": string;
+                  "definition_sha256"?: string;
                   "expected_controller_publication_interval_ms": number;
                   "hash": string;
                   "policy_id": string;
@@ -176700,6 +176756,7 @@ export interface operations {
             "stopped_by_display_name"?: string;
             "stopped_by_subject"?: string;
             "telemetry_acceptance_policy_id"?: string;
+            "telemetry_budget_policy_id"?: string;
             "telemetry_health"?: ({
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;

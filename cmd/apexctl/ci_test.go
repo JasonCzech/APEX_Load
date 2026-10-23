@@ -1665,3 +1665,87 @@ func parseGitHubEnvironmentFile(t *testing.T, contents []byte) map[string]string
 	}
 	return values
 }
+
+// A chosen telemetry budget policy is sent, changes the derived idempotency
+// key and must be echoed like the acceptance choice: a controller that
+// predates it would classify the run by its system threshold settings, so
+// apexctl stops the accepted run and reports a configuration error (TEL-B).
+func TestControllerCIRunNeedsTheChosenBudgetPolicyConfirmed(t *testing.T) {
+	type create struct {
+		key    string
+		budget string
+	}
+	creates := make(chan create, 4)
+	var echo atomic.Bool
+	var aborts, polls atomic.Int32
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs":
+			var request CIRunRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decode create: %v", err)
+			}
+			creates <- create{key: r.Header.Get("Idempotency-Key"), budget: request.TelemetryBudgetPolicyID}
+			response := CIRunResponse{SchemaVersion: 1, TestID: "test-1", Status: "COMPLETE", Outcome: ciOutcomePassed}
+			if echo.Load() {
+				response.TelemetryBudgetPolicyID = request.TelemetryBudgetPolicyID
+			} else if request.TelemetryBudgetPolicyID != "" {
+				response.Status, response.Outcome = "RUNNING", ""
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(response)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs/test-1/abort":
+			aborts.Add(1)
+			_, _ = io.WriteString(w, `{"schema_version":1,"test_id":"test-1","status":"ABORTED"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/ci/runs/test-1":
+			polls.Add(1)
+			_, _ = io.WriteString(w, `{"schema_version":1,"test_id":"test-1","status":"RUNNING"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer controller.Close()
+	script := filepath.Join(t.TempDir(), "script.json")
+	if err := os.WriteFile(script, []byte(`{"name":"ci","protocol":"http","actions":[{"name":"home","type":"request","method":"GET","target":"https://example.com"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(budget string) (CIResult, create, error) {
+		t.Helper()
+		args := defaultCIArgs()
+		args.controllerURL, args.projectID, args.scriptPath = controller.URL, "project-1", script
+		args.authMode, args.apiKey = "api-key", "key-1"
+		args.publishCheck, args.requireSLA, args.requireResults = false, false, false
+		args.telemetryBudgetPolicy = budget
+		result, err := executeControllerCI(t.Context(), args, nil)
+		select {
+		case sent := <-creates:
+			return result, sent, err
+		default:
+			t.Fatalf("no CI run was created: %#v %v", result, err)
+			return result, create{}, err
+		}
+	}
+	result, unchosen, err := run("")
+	if err != nil || result.Outcome != ciOutcomePassed || unchosen.budget != "" {
+		t.Fatalf("without a choice: %#v %v %+v", result, err, unchosen)
+	}
+	result, unconfirmed, err := run("tight-budgets")
+	if unconfirmed.budget != "tight-budgets" || unconfirmed.key == unchosen.key {
+		t.Fatalf("the choice was not sent, or kept the unchosen key: %+v %+v", unconfirmed, unchosen)
+	}
+	if err == nil || result.Outcome != ciOutcomeConfigurationError || result.TestID != "test-1" || !strings.Contains(err.Error(), "did not confirm --telemetry-budget-policy") {
+		t.Fatalf("an unconfirmed choice: %#v %v", result, err)
+	}
+	if aborts.Load() != 1 || polls.Load() != 0 {
+		t.Fatalf("an unconfirmed run was observed rather than stopped: %d aborts, %d polls", aborts.Load(), polls.Load())
+	}
+	echo.Store(true)
+	result, confirmed, err := run("tight-budgets")
+	if err != nil || result.Outcome != ciOutcomePassed || confirmed.key != unconfirmed.key {
+		t.Fatalf("a confirmed choice: %#v %v %+v", result, err, confirmed)
+	}
+	if aborts.Load() != 1 {
+		t.Fatalf("a confirmed run was aborted: %d aborts", aborts.Load())
+	}
+}

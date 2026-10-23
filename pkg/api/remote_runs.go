@@ -173,6 +173,16 @@ func (s *Server) handleCreateRemoteRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, fmt.Sprintf("the remote controller did not confirm telemetry acceptance policy %.128q, so it would judge the run by its project's default; upgrade it, or create the run without the choice", chosen))
 		return
 	}
+	// Likewise a controller that predates the budget choice would classify the
+	// run by its system threshold settings.
+	if chosen := normalizeTelemetryPolicyChoice(prepared.TelemetryBudgetPolicyID); chosen != "" && remoteTest.TelemetryBudgetPolicyID != chosen {
+		if cleanupErr := s.attemptRemoteRunCleanup(cleanup); cleanupErr != nil {
+			slog.Warn("unconfirmed remote telemetry budget policy cleanup remains pending", "remote_id", remote.ID, "remote_test_id", requestedRemoteTestID, "err", cleanupErr)
+			s.startRemoteRunCleanupRetry()
+		}
+		writeError(w, http.StatusConflict, fmt.Sprintf("the remote controller did not confirm telemetry budget policy %.128q, so it would classify the run by its system threshold settings; upgrade it, or create the run without the choice", chosen))
+		return
+	}
 	link, err := s.upsertRemoteRunLink(RemoteRunLink{
 		LocalRunID:      uuid.New().String(),
 		RemoteID:        remote.ID,

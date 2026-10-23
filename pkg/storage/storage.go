@@ -564,10 +564,12 @@ type GitHubActionsPolicy struct {
 	ValidityGate string `json:"validity_gate,omitempty"`
 
 	// AllowTelemetryPolicySelection lets a CI run choose which of the
-	// project's telemetry acceptance policies judges it. Off, a CI run is
-	// judged by the project's default, so a pipeline cannot exchange the
-	// default's fail_ci gate for a weaker policy. Changing it is a new
-	// policy revision.
+	// project's telemetry acceptance policies judges it, and which of its
+	// telemetry budget policies sets its live budgets. Off, a CI run is
+	// judged by the project's default under the system threshold settings,
+	// so a pipeline cannot exchange the default's fail_ci gate, or the
+	// budgets behind its breached-time criterion, for weaker ones. Changing
+	// it is a new policy revision.
 	AllowTelemetryPolicySelection bool `json:"allow_telemetry_policy_selection,omitempty"`
 }
 
@@ -1477,6 +1479,9 @@ type TestRecord struct {
 	// TelemetryAcceptancePolicyID names the telemetry acceptance policy the
 	// run asked for instead of its project's default; empty uses the default.
 	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID names the telemetry budget policy the run asked
+	// for instead of the system threshold settings; empty uses the settings.
+	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
 	// ExecutionGeneration is the HA execution lease generation of the term that
 	// executes the run. The lease-fenced Start transition stamps it and run
 	// adoption advances it; SaveTest never writes it. Zero means the run was

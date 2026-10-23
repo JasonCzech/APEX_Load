@@ -1479,6 +1479,20 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	// The budget choice is judged like the acceptance choice: not for a
+	// capacity estimate or preview, and refused at Start if it is gone.
+	var telemetryBudgetPolicyID string
+	if req.skipTelemetryPolicyCheck {
+		telemetryBudgetPolicyID = normalizeTelemetryPolicyChoice(req.TelemetryBudgetPolicyID)
+	} else {
+		telemetryBudgetPolicyID, err = tr.validateRunTelemetryBudgetPolicy(projectID, req.TelemetryBudgetPolicyID)
+	}
+	if err != nil && req.telemetryBudgetPolicyInherited && !errors.Is(err, errRunPolicyStoreUnavailable) {
+		err = fmt.Errorf("the source run's chosen telemetry budget policy is no longer usable (%w); name another, or %s for the system threshold settings", err, runPolicyProjectDefault)
+	}
+	if err != nil {
+		return nil, err
+	}
 	dynatraceCapture, err := tr.resolveDynatraceCaptureForTest(projectID, req.DynatraceCapture)
 	if err != nil {
 		return nil, err
@@ -1637,6 +1651,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		TraceContext:                 traceContext,
 		JointEvidence:                jointEvidence,
 		TelemetryAcceptancePolicyID:  telemetryPolicyID,
+		TelemetryBudgetPolicyID:      telemetryBudgetPolicyID,
 		AnalysisPolicySelections:     policySelections,
 		TotalVUsers:                  totalVUsers,
 		Duration:                     dur,
@@ -2091,6 +2106,10 @@ func createTestRequestFromScenarioRevision(req CreateTestRequest, scenario *Stor
 		if strings.TrimSpace(req.TelemetryAcceptancePolicyID) == "" && revisionSource.TelemetryAcceptancePolicyID != "" {
 			req.TelemetryAcceptancePolicyID = revisionSource.TelemetryAcceptancePolicyID
 			req.telemetryPolicyInherited = true
+		}
+		if strings.TrimSpace(req.TelemetryBudgetPolicyID) == "" && revisionSource.TelemetryBudgetPolicyID != "" {
+			req.TelemetryBudgetPolicyID = revisionSource.TelemetryBudgetPolicyID
+			req.telemetryBudgetPolicyInherited = true
 		}
 	} else if scenario != nil {
 		req.Name = firstNonEmpty(req.Name, scenario.Name)

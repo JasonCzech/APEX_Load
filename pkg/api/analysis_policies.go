@@ -887,28 +887,55 @@ func normalizeTelemetryPolicyChoice(id string) string {
 // policy the project lacks is refused, an invalid one is an
 // errRunPolicyConfiguration, and a failed read is errRunPolicyStoreUnavailable.
 func (tr *TestRunner) validateRunTelemetryAcceptancePolicy(projectID, id string) (string, error) {
+	id, _, err := tr.validateRunTelemetryPolicyChoice(projectID, storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, "telemetry_acceptance_policy_id", "telemetry acceptance policy", id)
+	return id, err
+}
+
+// validateRunTelemetryBudgetPolicy checks a run's chosen telemetry budget
+// policy (telemetry_policy) as validateRunTelemetryAcceptancePolicy does, and
+// that it can set the run's live budgets: live classification keeps its fixed
+// sustained-breach window, so a policy with another window is invalid here.
+func (tr *TestRunner) validateRunTelemetryBudgetPolicy(projectID, id string) (string, error) {
+	id, policy, err := tr.validateRunTelemetryPolicyChoice(projectID, storage.AnalysisDefinitionKindTelemetryPolicy, "telemetry_budget_policy_id", "telemetry budget policy", id)
+	if err != nil || policy == nil {
+		return id, err
+	}
+	if _, err := telemetryBudgetPolicyDefinition(policy); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func (tr *TestRunner) validateRunTelemetryPolicyChoice(projectID, kind, field, label, id string) (string, *storage.AnalysisDefinition, error) {
 	id = strings.TrimSpace(id)
 	if id == "" || id == runPolicyProjectDefault {
-		return "", nil
+		return "", nil, nil
 	}
 	if len(id) > 128 {
-		return "", errors.New("telemetry_acceptance_policy_id exceeds 128 bytes")
+		return "", nil, fmt.Errorf("%s exceeds 128 bytes", field)
 	}
 	store, ok := tr.testStore.(storage.AnalysisDefinitionStore)
 	if !ok || store == nil {
-		return "", errors.New("telemetry acceptance policies are unavailable")
+		return "", nil, fmt.Errorf("%spolicies are unavailable", strings.TrimSuffix(label, "policy"))
 	}
-	policy, err := projectPolicyByID(store, normalizeProjectID(projectID), storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, id)
+	policy, err := projectPolicyByID(store, normalizeProjectID(projectID), kind, id)
 	if err != nil && !errors.Is(err, errRunPolicyConfiguration) {
-		return "", fmt.Errorf("%w: %v", errRunPolicyStoreUnavailable, err)
+		return "", nil, fmt.Errorf("%w: %v", errRunPolicyStoreUnavailable, err)
 	}
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if policy == nil {
-		return "", fmt.Errorf("telemetry acceptance policy %q was not found in the project", id)
+		return "", nil, fmt.Errorf("%s %q was not found in the project", label, id)
 	}
-	return id, nil
+	return id, policy, nil
+}
+
+// runPolicyChoices are the policies a run chose by ID; empty is the
+// project's default.
+type runPolicyChoices struct {
+	Acceptance string
+	Budget     string
 }
 
 // resolveRunPolicyPins returns the default policy revisions for a project, in
@@ -916,39 +943,47 @@ func (tr *TestRunner) validateRunTelemetryAcceptancePolicy(projectID, id string)
 // freeze beside its pin. Stores without analysis definitions have no
 // policies.
 func (tr *TestRunner) resolveRunPolicyPins(projectID string) ([]RunPolicyPin, *TelemetryAcceptancePolicySnapshot, error) {
-	return tr.resolveRunPolicyPinsForRun(projectID, nil, "")
+	pins, acceptance, _, err := tr.resolveRunPolicyPinsForRun(projectID, nil, runPolicyChoices{})
+	return pins, acceptance, err
 }
 
 func (tr *TestRunner) resolveRunPolicyPinsWithSelections(projectID string, requested *RunAnalysisPolicySelections) ([]RunPolicyPin, *TelemetryAcceptancePolicySnapshot, error) {
-	return tr.resolveRunPolicyPinsForRun(projectID, requested, "")
+	pins, acceptance, _, err := tr.resolveRunPolicyPinsForRun(projectID, requested, runPolicyChoices{})
+	return pins, acceptance, err
 }
 
 // resolveRunPolicyPinsForRun returns the policy revisions a run is judged by,
 // in stable kind order: each kind's project default, except a browser or
 // journey policy revision the run selected (requested) and the telemetry
-// acceptance policy the run chose (selectedAcceptance, TEL-B), and the
-// acceptance policy's definition to freeze beside its pin. A chosen policy
-// that is gone refuses Start rather than falling back to the default. Stores
-// without analysis definitions have no policies.
-func (tr *TestRunner) resolveRunPolicyPinsForRun(projectID string, requested *RunAnalysisPolicySelections, selectedAcceptance string) ([]RunPolicyPin, *TelemetryAcceptancePolicySnapshot, error) {
+// acceptance and budget policies the run chose (choices, TEL-B). It also
+// returns the acceptance policy's definition to freeze beside its pin, and a
+// chosen budget policy's revision, which sets the run's budget receipt. A
+// chosen policy that is gone refuses Start rather than falling back to the
+// default. Stores without analysis definitions have no policies.
+func (tr *TestRunner) resolveRunPolicyPinsForRun(projectID string, requested *RunAnalysisPolicySelections, choices runPolicyChoices) ([]RunPolicyPin, *TelemetryAcceptancePolicySnapshot, *storage.AnalysisDefinition, error) {
 	selections, err := normalizeRunAnalysisPolicySelections(requested)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	selectedAcceptance = strings.TrimSpace(selectedAcceptance)
+	selectedAcceptance := strings.TrimSpace(choices.Acceptance)
+	selectedBudget := strings.TrimSpace(choices.Budget)
 	store, ok := tr.testStore.(storage.AnalysisDefinitionStore)
 	if !ok || store == nil {
 		if selections != nil && (selections.Browser != nil || selections.Journey != nil) {
-			return nil, nil, fmt.Errorf("%w: storage does not support run policy selection", errRunPolicyConfiguration)
+			return nil, nil, nil, fmt.Errorf("%w: storage does not support run policy selection", errRunPolicyConfiguration)
 		}
 		if selectedAcceptance != "" {
-			return nil, nil, fmt.Errorf("%w: the run's chosen telemetry acceptance policy cannot be read here", errRunPolicyConfiguration)
+			return nil, nil, nil, fmt.Errorf("%w: the run's chosen telemetry acceptance policy cannot be read here", errRunPolicyConfiguration)
 		}
-		return nil, nil, nil
+		if selectedBudget != "" {
+			return nil, nil, nil, fmt.Errorf("%w: the run's chosen telemetry budget policy cannot be read here", errRunPolicyConfiguration)
+		}
+		return nil, nil, nil, nil
 	}
 	projectID = normalizeProjectID(projectID)
 	pins := []RunPolicyPin{}
 	var acceptance *TelemetryAcceptancePolicySnapshot
+	var budget *storage.AnalysisDefinition
 	for _, kind := range storage.AnalysisPolicyKinds {
 		var policy *storage.AnalysisDefinition
 		var err error
@@ -959,6 +994,16 @@ func (tr *TestRunner) resolveRunPolicyPinsForRun(projectID string, requested *Ru
 			if err == nil && policy == nil {
 				err = fmt.Errorf("%w: the run's chosen telemetry acceptance policy %q no longer exists", errRunPolicyConfiguration, selectedAcceptance)
 			}
+		} else if kind == storage.AnalysisDefinitionKindTelemetryPolicy && selectedBudget != "" {
+			source = runPolicySourceSelected
+			policy, err = projectPolicyByID(store, projectID, kind, selectedBudget)
+			if err == nil && policy == nil {
+				err = fmt.Errorf("%w: the run's chosen telemetry budget policy %q no longer exists", errRunPolicyConfiguration, selectedBudget)
+			}
+			if err == nil {
+				_, err = telemetryBudgetPolicyDefinition(policy)
+				budget = policy
+			}
 		} else if choice := selections.forKind(kind); choice != nil {
 			policy, err = selectedRunAnalysisPolicy(store, projectID, kind, choice)
 			source = runPolicySourceSelected
@@ -966,7 +1011,7 @@ func (tr *TestRunner) resolveRunPolicyPinsForRun(projectID string, requested *Ru
 			policy, err = projectDefaultPolicy(store, projectID, kind)
 		}
 		if err != nil {
-			return nil, nil, fmt.Errorf("resolve %s policy: %w", kind, err)
+			return nil, nil, nil, fmt.Errorf("resolve %s policy: %w", kind, err)
 		}
 		if policy == nil {
 			continue
@@ -979,9 +1024,9 @@ func (tr *TestRunner) resolveRunPolicyPinsForRun(projectID string, requested *Ru
 			// already validated.
 			acceptance = &TelemetryAcceptancePolicySnapshot{Pin: pin}
 			if err := json.Unmarshal(policy.Definition, &acceptance.Definition); err != nil {
-				return nil, nil, fmt.Errorf("%w: %s policy %q is invalid: %v", errRunPolicyConfiguration, kind, policy.Name, err)
+				return nil, nil, nil, fmt.Errorf("%w: %s policy %q is invalid: %v", errRunPolicyConfiguration, kind, policy.Name, err)
 			}
 		}
 	}
-	return pins, acceptance, nil
+	return pins, acceptance, budget, nil
 }

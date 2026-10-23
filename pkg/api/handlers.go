@@ -50,6 +50,7 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	// Normalized before the keyed-create digest, so a retry spelling the
 	// same choice differently is the same request.
 	req.TelemetryAcceptancePolicyID = strings.TrimSpace(req.TelemetryAcceptancePolicyID)
+	req.TelemetryBudgetPolicyID = strings.TrimSpace(req.TelemetryBudgetPolicyID)
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	req.creationActor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
 
