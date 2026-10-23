@@ -3686,6 +3686,12 @@ func (mge *MultiGroupEngine) LatestSnapshot() (MetricsSnapshot, bool) {
 	return mge.metrics.LatestSnapshot()
 }
 
+// CollectionTicked returns a channel closed after the engine's next metrics
+// collection tick (see MetricsCollector.CollectionTicked).
+func (mge *MultiGroupEngine) CollectionTicked() <-chan struct{} {
+	return mge.metrics.CollectionTicked()
+}
+
 func (mge *MultiGroupEngine) GroupNames() []string {
 	names := make([]string, len(mge.groups))
 	for i := range mge.groups {

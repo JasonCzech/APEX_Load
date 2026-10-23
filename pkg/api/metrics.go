@@ -951,55 +951,51 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 	if !ok || interval <= 0 {
 		interval = time.Second
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
 	lastLatencyCheck := time.Time{}
 	lastPublishedSnapshot := time.Time{}
 
-	for {
-		select {
-		case <-done:
-			return lastPublishedSnapshot
-		case <-ticker.C:
-			snap, ok := mge.LatestSnapshot()
-			if !ok || (!lastPublishedSnapshot.IsZero() && !snap.Timestamp.After(lastPublishedSnapshot)) {
-				continue
-			}
-			lastPublishedSnapshot = snap.Timestamp
-
-			// Runtime scaling mutates the group targets while this broadcaster is
-			// alive. Snapshot them for every sample so active-VUser accounting and
-			// goal-control decisions use the configuration that produced it.
-			groupVUsers := tr.groupVUsersSnapshot(test)
-			live := buildLiveMetricsForBroadcast(snap, groupVUsers, time.Now())
-			// Prefer the engine's observed per-group count when the collector
-			// reports one; the runner snapshot remains the fallback for quiet groups.
-			for groupName, metrics := range live.GroupMetrics {
-				if metrics != nil {
-					groupVUsers[groupName] = metrics.VUsers
-				}
-			}
-			if update, ok := tr.evaluateGoalControllerLocked(test, live, groupVUsers); ok {
-				applyGoalControllerUpdate(tr, test, live, groupVUsers, update, mge.ScaleVUsers)
-			}
-
-			// Throttle network latency pings to every 5 seconds
-			if time.Since(lastLatencyCheck) >= 5*time.Second {
-				tr.mu.RLock()
-				probeCtx := test.executionCtx
-				tr.mu.RUnlock()
-				if probeCtx == nil {
-					probeCtx = context.Background()
-				}
-				go tr.measureNetworkLatency(probeCtx, test, live)
-				lastLatencyCheck = time.Now()
-			}
-
-			tr.publishLiveMetrics(test, live, artifacts)
-			tr.evaluateThresholdAlertsAndStops(test, live, true)
+	// Publish right after the engine's collections, at the receipt's cadence:
+	// on an unrelated ticker the published snapshot was as old as the two
+	// tickers' phase offset, which was reported as generator processing.
+	engine.PublishOnCollection(done, interval, mge.CollectionTicked, func() {
+		snap, ok := mge.LatestSnapshot()
+		if !ok || (!lastPublishedSnapshot.IsZero() && !snap.Timestamp.After(lastPublishedSnapshot)) {
+			return
 		}
-	}
+		lastPublishedSnapshot = snap.Timestamp
+
+		// Runtime scaling mutates the group targets while this broadcaster is
+		// alive. Snapshot them for every sample so active-VUser accounting and
+		// goal-control decisions use the configuration that produced it.
+		groupVUsers := tr.groupVUsersSnapshot(test)
+		live := buildLiveMetricsForBroadcast(snap, groupVUsers, time.Now())
+		// Prefer the engine's observed per-group count when the collector
+		// reports one; the runner snapshot remains the fallback for quiet groups.
+		for groupName, metrics := range live.GroupMetrics {
+			if metrics != nil {
+				groupVUsers[groupName] = metrics.VUsers
+			}
+		}
+		if update, ok := tr.evaluateGoalControllerLocked(test, live, groupVUsers); ok {
+			applyGoalControllerUpdate(tr, test, live, groupVUsers, update, mge.ScaleVUsers)
+		}
+
+		// Throttle network latency pings to every 5 seconds
+		if time.Since(lastLatencyCheck) >= 5*time.Second {
+			tr.mu.RLock()
+			probeCtx := test.executionCtx
+			tr.mu.RUnlock()
+			if probeCtx == nil {
+				probeCtx = context.Background()
+			}
+			go tr.measureNetworkLatency(probeCtx, test, live)
+			lastLatencyCheck = time.Now()
+		}
+
+		tr.publishLiveMetrics(test, live, artifacts)
+		tr.evaluateThresholdAlertsAndStops(test, live, true)
+	})
+	return lastPublishedSnapshot
 }
 
 func (tr *TestRunner) groupVUsersSnapshot(test *ManagedTest) map[string]int {

@@ -757,6 +757,12 @@ type ManagedTest struct {
 	remoteStopFinalizerRunning                     bool
 	remoteMetricsLastPublishedAt                   time.Time
 	remoteMetricsFlushScheduled                    bool
+	// remoteMetricsStoredRevisionByTarget is the accepted revision of each
+	// target's latest stored window, and remoteMetricsGateRevision the
+	// accepted revision at the gate's last publication: a target has a new
+	// window when its stored revision is the greater.
+	remoteMetricsStoredRevisionByTarget map[string]uint64
+	remoteMetricsGateRevision           uint64
 	// Accepted/published revisions and the gate make distributed aggregate
 	// publication monotonic when per-target consumers finish out of order.
 	remoteMetricsAcceptedRevision uint64

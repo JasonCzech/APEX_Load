@@ -1374,6 +1374,8 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 	test.remoteMetricsFlushScheduled = false
 	test.remoteMetricsAcceptedRevision = 0
 	test.remoteMetricsPublishedRevision = 0
+	test.remoteMetricsStoredRevisionByTarget = nil
+	test.remoteMetricsGateRevision = 0
 	test.remoteMetricsPublishGate = make(chan struct{}, 1)
 	test.remoteMetricsPublishGate <- struct{}{}
 	test.remoteGoalAcceptedErrorWindows = make(map[string]distributedGoalErrorAccumulator)

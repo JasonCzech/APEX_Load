@@ -2714,16 +2714,16 @@ func (s *Service) runExecutionPublisher(ctx context.Context, testID string, grou
 	if exec != nil && exec.publisherDone != nil {
 		defer close(exec.publisherDone)
 	}
-	ticker := time.NewTicker(s.publishInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.publishTestExecutionSnapshot(testID, groupName, exec, true)
-		}
+	// Publish right after each of the engine's collections: on an unrelated
+	// ticker the published snapshot was as old as the two tickers' phase
+	// offset, which was reported as generator processing.
+	var ticked func() <-chan struct{}
+	if exec != nil && exec.engine != nil {
+		ticked = exec.engine.CollectionTicked
 	}
+	engine.PublishOnCollection(ctx.Done(), s.publishInterval, ticked, func() {
+		s.publishTestExecutionSnapshot(testID, groupName, exec, true)
+	})
 }
 
 func (s *Service) publishExecutionSnapshot(testID string, groupName string, exec *groupExecution) {

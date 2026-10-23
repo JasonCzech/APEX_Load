@@ -132,6 +132,8 @@ func (b *distributedExecutionBackend) prepareDistributedTestRunWithLifecycle(tr 
 	test.remoteMetricsFlushScheduled = false
 	test.remoteMetricsAcceptedRevision = 0
 	test.remoteMetricsPublishedRevision = 0
+	test.remoteMetricsStoredRevisionByTarget = nil
+	test.remoteMetricsGateRevision = 0
 	test.remoteMetricsPublishGate = make(chan struct{}, 1)
 	test.remoteMetricsPublishGate <- struct{}{}
 	test.remoteGoalAcceptedErrorWindows = make(map[string]distributedGoalErrorAccumulator)
@@ -193,6 +195,8 @@ func (b *distributedExecutionBackend) prepareDistributedTestRunWithLifecycle(tr 
 		test.remoteMetricsFlushScheduled = false
 		test.remoteMetricsAcceptedRevision = 0
 		test.remoteMetricsPublishedRevision = 0
+		test.remoteMetricsStoredRevisionByTarget = nil
+		test.remoteMetricsGateRevision = 0
 		test.remoteMetricsPublishGate = nil
 		test.remoteGoalAcceptedErrorWindows = nil
 		test.remoteGoalPublishedErrorWindows = nil
@@ -1149,30 +1153,99 @@ func (b *distributedExecutionBackend) shouldPublishDistributedMetricsBatch(tr *T
 	if len(fences) > 0 && !distributedMetricsConsumerFenceCurrentLocked(tr, test, fences[0].target, fences[0], false) {
 		return false, -1, time.Time{}
 	}
-	if test.remoteMetricsLastPublishedAt.IsZero() || now.Sub(test.remoteMetricsLastPublishedAt) >= time.Second {
+	// The gate publishes about once a second. Generators publish right after
+	// each collection, so their windows arrive close together: the gate
+	// publishes as soon as every connected generator has a new window (at
+	// least the minimum spacing after its last publication), and otherwise
+	// waits a short coalescing window for the missing ones, never publishing
+	// a partial set sooner than a second after its last publication. A gate
+	// that published at once only a full second after its last publication
+	// held the second of two windows arriving together for about a second,
+	// which was reported as controller fan-out.
+	if test.remoteMetricsLastPublishedAt.IsZero() {
 		test.remoteMetricsLastPublishedAt = now
+		test.remoteMetricsGateRevision = test.remoteMetricsAcceptedRevision
+		test.remoteMetricsFlushScheduled = false
+		return true, 0, time.Time{}
+	}
+	since := now.Sub(test.remoteMetricsLastPublishedAt)
+	complete := distributedMetricsEveryTargetHasNewWindowLocked(test)
+	// A partial set is published once overdue, whatever flush is pending: a
+	// lost flush can never hold publication back beyond it.
+	overdue := since >= time.Second+2*distributedMetricsCoalescingWindow
+	if (complete && since >= distributedMetricsMinimumSpacing) || overdue {
+		test.remoteMetricsLastPublishedAt = now
+		test.remoteMetricsGateRevision = test.remoteMetricsAcceptedRevision
 		test.remoteMetricsFlushScheduled = false
 		return true, 0, time.Time{}
 	}
 	if !test.remoteMetricsFlushScheduled {
 		test.remoteMetricsFlushScheduled = true
-		return false, time.Second - now.Sub(test.remoteMetricsLastPublishedAt), test.remoteMetricsLastPublishedAt
+		delay := distributedMetricsMinimumSpacing - since
+		if !complete {
+			delay = max(distributedMetricsCoalescingWindow, time.Second-since)
+		}
+		return false, delay, test.remoteMetricsLastPublishedAt
 	}
 	return false, -1, time.Time{}
 }
 
+const (
+	// distributedMetricsMinimumSpacing is the shortest interval between two
+	// gate publications of a complete set of windows: the one-second cadence
+	// less a quarter, so arrival jitter never defers one by a whole second. A
+	// partial set waits for the full second.
+	distributedMetricsMinimumSpacing = time.Second - time.Second/4
+	// distributedMetricsCoalescingWindow is how long a new window waits for
+	// its siblings before the gate publishes without them.
+	distributedMetricsCoalescingWindow = 150 * time.Millisecond
+)
+
+// distributedMetricsEveryTargetHasNewWindowLocked reports whether every
+// generator the run is connected to stored a window after the gate's last
+// publication.
+func distributedMetricsEveryTargetHasNewWindowLocked(test *ManagedTest) bool {
+	if len(test.remoteClientsByTarget) == 0 {
+		return true
+	}
+	for target := range test.remoteClientsByTarget {
+		// A generator whose workload ended sends no further window.
+		if batch, ok := test.remoteMetricsBatchesByTarget[target]; ok && isTerminalRemoteLifecycle(batch.LifecycleState) {
+			continue
+		}
+		if test.remoteMetricsStoredRevisionByTarget[target] <= test.remoteMetricsGateRevision {
+			return false
+		}
+	}
+	return true
+}
+
 func (b *distributedExecutionBackend) flushStoredDistributedMetricsAfterDelay(ctx context.Context, tr *TestRunner, test *ManagedTest, target string, delay time.Duration, flushFrom time.Time, fences ...distributedMetricsConsumerFence) {
+	// A flush that ends without publishing releases its reservation, so the
+	// gate can schedule another one.
+	releaseLocked := func() {
+		if test.remoteMetricsFlushScheduled && test.remoteMetricsLastPublishedAt.Equal(flushFrom) {
+			test.remoteMetricsFlushScheduled = false
+		}
+	}
+	release := func() {
+		tr.mu.Lock()
+		releaseLocked()
+		tr.mu.Unlock()
+	}
 	if delay > 0 {
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
+			release()
 			return
 		case <-timer.C:
 		}
 	} else {
 		select {
 		case <-ctx.Done():
+			release()
 			return
 		default:
 		}
@@ -1180,6 +1253,7 @@ func (b *distributedExecutionBackend) flushStoredDistributedMetricsAfterDelay(ct
 
 	tr.mu.Lock()
 	if len(fences) > 0 && !distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fences[0], false) {
+		releaseLocked()
 		tr.mu.Unlock()
 		return
 	}
@@ -1197,6 +1271,7 @@ func (b *distributedExecutionBackend) flushStoredDistributedMetricsAfterDelay(ct
 		return
 	}
 	test.remoteMetricsLastPublishedAt = time.Now()
+	test.remoteMetricsGateRevision = test.remoteMetricsAcceptedRevision
 	test.remoteMetricsFlushScheduled = false
 	tr.mu.Unlock()
 
@@ -1534,6 +1609,10 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 	}
 	rebuildRemoteTransactionResponseTimeSLA(test)
 	test.remoteMetricsAcceptedRevision++
+	if test.remoteMetricsStoredRevisionByTarget == nil {
+		test.remoteMetricsStoredRevisionByTarget = make(map[string]uint64)
+	}
+	test.remoteMetricsStoredRevisionByTarget[target] = test.remoteMetricsAcceptedRevision
 	stageDistributedGoalErrorWindowLocked(tr, test, target, batch)
 	stored = true
 	return true
